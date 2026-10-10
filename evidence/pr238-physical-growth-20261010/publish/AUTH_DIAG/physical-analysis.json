@@ -1,0 +1,473 @@
+{
+  "key": "AUTH_DIAG",
+  "load_start": 1791608546.339062,
+  "load_end": 1791609472.7644885,
+  "errors": [
+    {
+      "ts": 1791609536.37238,
+      "error": "task command failed rc=1: Error response from daemon: No such container: pr238-physical-auth-diag-20261010-postgres-1\n"
+    }
+  ],
+  "windows": [
+    {
+      "offset_s": [
+        0,
+        360
+      ],
+      "samples": 36,
+      "db_mib_median": 405.9,
+      "retained_receipts": [
+        0,
+        275661
+      ],
+      "eligible_receipts_max": 0,
+      "oldest_due_s_max": 0,
+      "pending_max": 12577,
+      "pending_age_s_max": 5.233388,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 128.0,
+          "index_bytes": 76.312
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 50.852,
+          "index_bytes": 35.773
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 16.547,
+          "index_bytes": 30.527
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 1.422,
+          "index_bytes": 0.414
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 15.047,
+          "index_bytes": 30.59
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    },
+    {
+      "offset_s": [
+        360,
+        600
+      ],
+      "samples": 24,
+      "db_mib_median": 593.986,
+      "retained_receipts": [
+        283681,
+        287563
+      ],
+      "eligible_receipts_max": 47210,
+      "oldest_due_s_max": 58.412332,
+      "pending_max": 4437,
+      "pending_age_s_max": 1.804112,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 130.855,
+          "index_bytes": 98.82
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 137.699,
+          "index_bytes": 96.562
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 16.953,
+          "index_bytes": 31.336
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 1.422,
+          "index_bytes": 0.414
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 22.953,
+          "index_bytes": 38.633
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    },
+    {
+      "offset_s": [
+        600,
+        900
+      ],
+      "samples": 30,
+      "db_mib_median": 618.736,
+      "retained_receipts": [
+        287510,
+        287638
+      ],
+      "eligible_receipts_max": 46385,
+      "oldest_due_s_max": 57.402091,
+      "pending_max": 18653,
+      "pending_age_s_max": 7.75995,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 131.359,
+          "index_bytes": 99.988
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 157.117,
+          "index_bytes": 110.555
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 15.859,
+          "index_bytes": 32.57
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 1.422,
+          "index_bytes": 0.414
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 17.211,
+          "index_bytes": 39.117
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    },
+    {
+      "offset_s": [
+        900,
+        1200
+      ],
+      "samples": 9,
+      "db_mib_median": 631.474,
+      "retained_receipts": [
+        239852,
+        287601
+      ],
+      "eligible_receipts_max": 51196,
+      "oldest_due_s_max": 63.401868,
+      "pending_max": 164,
+      "pending_age_s_max": 0.060359,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 133.242,
+          "index_bytes": 101.344
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 157.117,
+          "index_bytes": 114.359
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 5.18,
+          "index_bytes": 32.57
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 1.422,
+          "index_bytes": 0.414
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 26.141,
+          "index_bytes": 39.727
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    }
+  ],
+  "last_physical": {
+    "offset_s": 962.0308067798615,
+    "relations": {
+      "oauth_token_issuances": {
+        "table_len": 164675584,
+        "tuple_count": 291048,
+        "tuple_len": 109143000,
+        "tuple_percent": 66.28,
+        "dead_tuple_count": 37602,
+        "dead_tuple_len": 14100750,
+        "dead_tuple_percent": 8.56,
+        "free_space": 39225004,
+        "free_percent": 23.82
+      },
+      "security_audit_events": {
+        "table_len": 139640832,
+        "tuple_count": 75384,
+        "tuple_len": 21107520,
+        "tuple_percent": 15.12,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 116977368,
+        "free_percent": 83.77
+      },
+      "oauth_refresh_families": {
+        "table_len": 4562944,
+        "tuple_count": 13319,
+        "tuple_len": 3117200,
+        "tuple_percent": 68.32,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 1353336,
+        "free_percent": 29.66
+      },
+      "security_audit_chain_entries": {
+        "table_len": 0,
+        "tuple_count": 0,
+        "tuple_len": 0,
+        "tuple_percent": 0,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 0,
+        "free_percent": 0
+      }
+    },
+    "indexes": {
+      "security_audit_events_pkey": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 25190400,
+        "root_block_no": 295,
+        "internal_pages": 8,
+        "leaf_pages": 1221,
+        "empty_pages": 0,
+        "deleted_pages": 1845,
+        "avg_leaf_density": 21.55,
+        "leaf_fragmentation": 17.04
+      },
+      "idx_authorization_decision_request": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 24182784,
+        "root_block_no": 124,
+        "internal_pages": 16,
+        "leaf_pages": 1197,
+        "empty_pages": 0,
+        "deleted_pages": 1738,
+        "avg_leaf_density": 53.37,
+        "leaf_fragmentation": 15.96
+      },
+      "idx_authorization_decision_par": {
+        "version": 4,
+        "tree_level": 3,
+        "index_size": 39944192,
+        "root_block_no": 3847,
+        "internal_pages": 95,
+        "leaf_pages": 4780,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 22.22,
+        "leaf_fragmentation": 50.61
+      },
+      "idx_security_audit_events_pending_order": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 8257536,
+        "root_block_no": 657,
+        "internal_pages": 2,
+        "leaf_pages": 1,
+        "empty_pages": 0,
+        "deleted_pages": 1004,
+        "avg_leaf_density": 0,
+        "leaf_fragmentation": 0
+      },
+      "idx_authorization_decision_reclaim": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 8593408,
+        "root_block_no": 461,
+        "internal_pages": 3,
+        "leaf_pages": 372,
+        "empty_pages": 0,
+        "deleted_pages": 673,
+        "avg_leaf_density": 89.73,
+        "leaf_fragmentation": 0.27
+      },
+      "oauth_token_issuances_pkey": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 15466496,
+        "root_block_no": 295,
+        "internal_pages": 8,
+        "leaf_pages": 1321,
+        "empty_pages": 0,
+        "deleted_pages": 558,
+        "avg_leaf_density": 89.96,
+        "leaf_fragmentation": 0.15
+      },
+      "oauth_token_issuances_single_use_key_idx": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 54673408,
+        "root_block_no": 101,
+        "internal_pages": 92,
+        "leaf_pages": 6581,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 54.99,
+        "leaf_fragmentation": 49.45
+      },
+      "oauth_token_issuances_tenant_jti_idx": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 32595968,
+        "root_block_no": 124,
+        "internal_pages": 40,
+        "leaf_pages": 3221,
+        "empty_pages": 0,
+        "deleted_pages": 717,
+        "avg_leaf_density": 90.09,
+        "leaf_fragmentation": 0.06
+      },
+      "oauth_token_issuances_retention_idx": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 17096704,
+        "root_block_no": 232,
+        "internal_pages": 12,
+        "leaf_pages": 1698,
+        "empty_pages": 0,
+        "deleted_pages": 376,
+        "avg_leaf_density": 90.07,
+        "leaf_fragmentation": 0.12
+      },
+      "ix_oauth_token_issuances_tenant_user": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "pk_oauth_refresh_families": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 9519104,
+        "root_block_no": 190,
+        "internal_pages": 3,
+        "leaf_pages": 146,
+        "empty_pages": 0,
+        "deleted_pages": 1012,
+        "avg_leaf_density": 49.77,
+        "leaf_fragmentation": 0.68
+      },
+      "ux_oauth_refresh_families_current_digest": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 16842752,
+        "root_block_no": 124,
+        "internal_pages": 24,
+        "leaf_pages": 2024,
+        "empty_pages": 0,
+        "deleted_pages": 7,
+        "avg_leaf_density": 6.32,
+        "leaf_fragmentation": 50.74
+      },
+      "ix_orf_scope_active": {
+        "version": 4,
+        "tree_level": 1,
+        "index_size": 1449984,
+        "root_block_no": 3,
+        "internal_pages": 1,
+        "leaf_pages": 175,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 58.97,
+        "leaf_fragmentation": 48
+      },
+      "ix_orf_client_active": {
+        "version": 4,
+        "tree_level": 1,
+        "index_size": 1343488,
+        "root_block_no": 3,
+        "internal_pages": 1,
+        "leaf_pages": 17,
+        "empty_pages": 0,
+        "deleted_pages": 145,
+        "avg_leaf_density": 54.44,
+        "leaf_fragmentation": 0
+      },
+      "ix_orf_expires": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 5062656,
+        "root_block_no": 412,
+        "internal_pages": 2,
+        "leaf_pages": 47,
+        "empty_pages": 0,
+        "deleted_pages": 568,
+        "avg_leaf_density": 69.75,
+        "leaf_fragmentation": 21.28
+      },
+      "idx_oauth_refresh_families_contract": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 1343488,
+        "root_block_no": 124,
+        "internal_pages": 3,
+        "leaf_pages": 160,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 13.05,
+        "leaf_fragmentation": 48.12
+      },
+      "ix_orf_revoked_cleanup": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 5971968,
+        "root_block_no": 463,
+        "internal_pages": 2,
+        "leaf_pages": 25,
+        "empty_pages": 0,
+        "deleted_pages": 701,
+        "avg_leaf_density": 86.96,
+        "leaf_fragmentation": 0
+      }
+    },
+    "options": [
+      {
+        "relname": "security_audit_events",
+        "reloptions": [
+          "autovacuum_analyze_scale_factor=0",
+          "autovacuum_analyze_threshold=500",
+          "autovacuum_vacuum_scale_factor=0",
+          "autovacuum_vacuum_threshold=2000",
+          "autovacuum_vacuum_cost_delay=0"
+        ]
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "reloptions": null
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "reloptions": null
+      }
+    ],
+    "vacuum_progress": []
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "ts": 1791615188.4743774,
+  "change": "Add WAL directory total/checkpoint counters to existing SQL sampler before the retest. Original 4000/s load, 992 VUs, exporter batch 256, safety configuration and capacity thresholds are unchanged.",
+  "reason": "Separate cumulative WAL generation from actual retained file allocation; initial CC_B15 late probe missed its cleaned-up database."
+}

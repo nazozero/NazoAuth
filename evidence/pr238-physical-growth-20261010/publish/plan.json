@@ -1,0 +1,9 @@
+{
+  "source_sha": "432d87e523106b476dc5249390c29f82cb2615b4",
+  "purpose": "Determine necessary live state versus dead/free heap and index page fragmentation; no vacuum, delete or TTL changes",
+  "rate": 800,
+  "vus": 992,
+  "window": 900,
+  "diagnostic_only": true,
+  "created_at": 1791608432.177321
+}

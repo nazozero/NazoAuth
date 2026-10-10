@@ -1,0 +1,1866 @@
+[
+  {
+    "key": "AUTH_DIAG",
+    "verdict": "INVALID",
+    "result": {
+      "name": "pr238-physical-auth-diag-20261010",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 800,
+      "window_seconds": 900,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-auth-diag-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 291048,
+        "issuance_inserts": 732001,
+        "subject_bindings": 0,
+        "database_bytes": 633902783
+      },
+      "verdict": "INVALID",
+      "metrics": {
+        "rps": 3199.947,
+        "p50": 4.947,
+        "p95": 21.355,
+        "p99": 35.714,
+        "dropped": 0,
+        "drop_fraction": 0.0,
+        "error_rate": 0.0,
+        "status": "passed",
+        "measured_ops_s": 799.999,
+        "successful_ops_s": 799.999,
+        "window_seconds": 900.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791608566.794,
+          "window_end_s": 1791609466.794,
+          "measure_started_exact": 719999,
+          "measure_completed_exact": 719999,
+          "measure_dropped_exact": 0,
+          "measure_scheduled_observed": 719999,
+          "measure_drop_fraction": 0.0,
+          "measure_outcomes": {
+            "success": 719999
+          },
+          "measure_outcome_sum": 719999,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 720000,
+          "schedule_delta_vs_rational": -1,
+          "observed_schedule_rate": 799.999,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 65.0,
+        "gate_p99": 95.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 18325212,
+          "overflow_dropped_points": 4790684,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/AUTH_DIAG/results/multi/pr238-physical-auth-diag-20261010/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 799.999,
+        "threshold_status_diagnostic": "passed",
+        "main_verdict": "PASS",
+        "complete_operation_latency_ms": {
+          "p50": 25.0,
+          "p95": 65.0,
+          "p99": 95.0
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": false,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 8379004112.403364,
+          "field": "wal_bytes",
+          "window_s": 900.0,
+          "sample_span": [
+            1791608543,
+            1791609503
+          ]
+        },
+        "wal_per_success_bytes": 11637.522,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 673078.4860640367,
+            "field": "wal_io.writes",
+            "window_s": 900.0,
+            "sample_span": [
+              1791608543,
+              1791609503
+            ]
+          },
+          "write_bytes": {
+            "delta": 19339787184.205402,
+            "field": "wal_io.write_bytes",
+            "window_s": 900.0,
+            "sample_span": [
+              1791608543,
+              1791609503
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 900.0,
+            "sample_span": [
+              1791608543,
+              1791609503
+            ]
+          },
+          "fsyncs": {
+            "delta": 671562.3730638424,
+            "field": "wal_io.fsyncs",
+            "window_s": 900.0,
+            "sample_span": [
+              1791608543,
+              1791609503
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 900.0,
+            "sample_span": [
+              1791608543,
+              1791609503
+            ]
+          }
+        },
+        "wal_writes_per_op": 0.9348,
+        "wal_fsyncs_per_op": 0.9327,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 1.76,
+        "postgres": 4.05
+      },
+      "audit": {
+        "point": "pr238-physical-auth-diag-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 2187075,
+        "accepted_events_delta": 2187075,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "cc03af1a1d8821e29909a37b732d92f9ddfe6faffb7739668f7ecfb0dcd66768",
+          "journal_bytes": 2261639949,
+          "batches": 30590,
+          "remote_path": "sis-rcv-pr238-physical-auth-diag-20261010:/data/journal.jsonl",
+          "events_in_range": 2187075,
+          "expected_in_range": 2187075,
+          "by_event_type": {
+            "authorization_decision_committed": 732001,
+            "token_issued": 732001,
+            "refresh_family_capacity_retired": 723073
+          },
+          "token_issued_in_range": 732001,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 732001,
+        "expected_issuances": null,
+        "token_issued_scope": "reported_only_no_clean_denominator"
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 1007.7
+    }
+  },
+  {
+    "key": "AUTH_B",
+    "verdict": "INVALID",
+    "result": {
+      "health": {
+        "collector_copy_complete": false
+      },
+      "original_verdict": "INVALID",
+      "verdict": "INVALID"
+    }
+  },
+  {
+    "key": "AUTH_B30",
+    "verdict": "FAIL",
+    "result": {
+      "name": "pr238-physical-auth-b30-20261010",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 800,
+      "window_seconds": 1800,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-auth-b30-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 0,
+        "issuance_inserts": 1450894,
+        "subject_bindings": 0,
+        "database_bytes": 346601151
+      },
+      "verdict": "FAIL",
+      "metrics": {
+        "rps": 3197.405,
+        "p50": 24.655,
+        "p95": 101.804,
+        "p99": 246.225,
+        "dropped": 1107,
+        "drop_fraction": 0.0007623961691486438,
+        "error_rate": 0.0,
+        "status": "target_miss",
+        "measured_ops_s": 799.385,
+        "successful_ops_s": 799.385,
+        "window_seconds": 1800.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791610313.27,
+          "window_end_s": 1791612113.27,
+          "measure_started_exact": 1438893,
+          "measure_completed_exact": 1438893,
+          "measure_dropped_exact": 1107,
+          "measure_scheduled_observed": 1440000,
+          "measure_drop_fraction": 0.000769,
+          "measure_outcomes": {
+            "success": 1438893
+          },
+          "measure_outcome_sum": 1438893,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 1440000,
+          "schedule_delta_vs_rational": 0,
+          "observed_schedule_rate": 800.0,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 347.0,
+        "gate_p99": 948.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 31687729,
+          "overflow_dropped_points": 15370891,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/AUTH_B30/results/multi/pr238-physical-auth-b30-20261010/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 799.385,
+        "threshold_status_diagnostic": "target_miss",
+        "main_verdict": "FAIL",
+        "complete_operation_latency_ms": {
+          "p50": 125.0,
+          "p95": 347.0,
+          "p99": 948.0
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": true,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 16731689768.593233,
+          "field": "wal_bytes",
+          "window_s": 1800.0,
+          "sample_span": [
+            1791610290,
+            1791612589
+          ]
+        },
+        "wal_per_success_bytes": 11628.168,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 862298.6050093174,
+            "field": "wal_io.writes",
+            "window_s": 1800.0,
+            "sample_span": [
+              1791610290,
+              1791612589
+            ]
+          },
+          "write_bytes": {
+            "delta": 29404151931.38086,
+            "field": "wal_io.write_bytes",
+            "window_s": 1800.0,
+            "sample_span": [
+              1791610290,
+              1791612589
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 1800.0,
+            "sample_span": [
+              1791610290,
+              1791612589
+            ]
+          },
+          "fsyncs": {
+            "delta": 859267.8750092983,
+            "field": "wal_io.fsyncs",
+            "window_s": 1800.0,
+            "sample_span": [
+              1791610290,
+              1791612589
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 1800.0,
+            "sample_span": [
+              1791610290,
+              1791612589
+            ]
+          }
+        },
+        "wal_writes_per_op": 0.5993,
+        "wal_fsyncs_per_op": 0.5972,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 1.75,
+        "postgres": 4.04
+      },
+      "audit": {
+        "point": "pr238-physical-auth-b30-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 4343754,
+        "accepted_events_delta": 4343754,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "6cdb0441b872c89a1ced8c450aedb03fa0dd8cec23a597a2d9a543c1ee80532b",
+          "journal_bytes": 4480396567,
+          "batches": 33528,
+          "remote_path": "sis-rcv-pr238-physical-auth-b30-20261010:/data/journal.jsonl",
+          "events_in_range": 4343754,
+          "expected_in_range": 4343754,
+          "by_event_type": {
+            "authorization_decision_committed": 1450894,
+            "token_issued": 1450894,
+            "refresh_family_capacity_retired": 1441966
+          },
+          "token_issued_in_range": 1450894,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 1450894,
+        "expected_issuances": null,
+        "token_issued_scope": "reported_only_no_clean_denominator"
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 2346.9
+    }
+  },
+  {
+    "key": "CC_B15",
+    "verdict": "FAIL",
+    "result": {
+      "name": "pr238-physical-cc-b15-20261010",
+      "mode": "multi",
+      "scenario": "cap_client_credentials",
+      "rate": 4000,
+      "window_seconds": 900,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-cc-b15-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 0,
+        "issuance_inserts": 0,
+        "subject_bindings": 0,
+        "database_bytes": 269481663
+      },
+      "verdict": "FAIL",
+      "metrics": {
+        "rps": 3538.561,
+        "p50": 220.478,
+        "p95": 361.263,
+        "p99": 429.015,
+        "dropped": 421897,
+        "drop_fraction": 0.11527237287640085,
+        "error_rate": 0.0,
+        "status": "target_miss",
+        "measured_ops_s": 3540.747,
+        "successful_ops_s": 3540.747,
+        "window_seconds": 900.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791612802.371,
+          "window_end_s": 1791613702.371,
+          "measure_started_exact": 3186672,
+          "measure_completed_exact": 3186672,
+          "measure_dropped_exact": 413327,
+          "measure_scheduled_observed": 3599999,
+          "measure_drop_fraction": 0.114813,
+          "measure_outcomes": {
+            "success": 3186672
+          },
+          "measure_outcome_sum": 3186672,
+          "drops_pre_window": 8570,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 3600000,
+          "schedule_delta_vs_rational": -1,
+          "observed_schedule_rate": 3999.999,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 361.0,
+        "gate_p99": 430.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 45762811,
+          "overflow_dropped_points": 13839908,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/CC_B15/results/multi/pr238-physical-cc-b15-20261010/load/capacity-cap-client-credentials.diag.jsonl.gz"
+        },
+        "load_generator_evidence": "absent",
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 3540.747,
+        "threshold_status_diagnostic": "target_miss",
+        "main_verdict": "FAIL",
+        "complete_operation_latency_ms": {
+          "p50": 220.0,
+          "p95": 361.0,
+          "p99": 430.0
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": true,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 5967098176.728263,
+          "field": "wal_bytes",
+          "window_s": 900.0,
+          "sample_span": [
+            1791612776,
+            1791613943
+          ]
+        },
+        "wal_per_success_bytes": 1872.517,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 496024.76463429135,
+            "field": "wal_io.writes",
+            "window_s": 900.0,
+            "sample_span": [
+              1791612776,
+              1791613943
+            ]
+          },
+          "write_bytes": {
+            "delta": 13864035793.949219,
+            "field": "wal_io.write_bytes",
+            "window_s": 900.0,
+            "sample_span": [
+              1791612776,
+              1791613943
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 900.0,
+            "sample_span": [
+              1791612776,
+              1791613943
+            ]
+          },
+          "fsyncs": {
+            "delta": 494942.5738010009,
+            "field": "wal_io.fsyncs",
+            "window_s": 900.0,
+            "sample_span": [
+              1791612776,
+              1791613943
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 900.0,
+            "sample_span": [
+              1791612776,
+              1791613943
+            ]
+          }
+        },
+        "wal_writes_per_op": 0.1557,
+        "wal_fsyncs_per_op": 0.1553,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 2.34,
+        "postgres": 2.04
+      },
+      "audit": {
+        "point": "pr238-physical-cc-b15-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true,
+          "token_issued_eq_expected": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 3238104,
+        "accepted_events_delta": 3238104,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "c85ce34aaab83a1ea36982e1b3b2f19978650a403ca934950a90641d400a7987",
+          "journal_bytes": 2785243247,
+          "batches": 12677,
+          "remote_path": "sis-rcv-pr238-physical-cc-b15-20261010:/data/journal.jsonl",
+          "events_in_range": 3238104,
+          "expected_in_range": 3238104,
+          "by_event_type": {
+            "token_issued": 3238104
+          },
+          "token_issued_in_range": 3238104,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 3238104,
+        "expected_issuances": 3238104
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 1215.2
+    }
+  },
+  {
+    "key": "AUTH_A_CAP",
+    "verdict": "INVALID",
+    "result": {
+      "name": "pr238-physical-auth-a-cap-20261010",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 800,
+      "window_seconds": 180,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-auth-a-cap-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 152745,
+        "issuance_inserts": 152745,
+        "subject_bindings": 0,
+        "database_bytes": 415987391
+      },
+      "verdict": "INVALID",
+      "metrics": {
+        "rps": 3130.933,
+        "p50": 60.42,
+        "p95": 409.467,
+        "p99": 656.996,
+        "dropped": 3256,
+        "drop_fraction": 0.020871661079095646,
+        "error_rate": 0.0,
+        "status": "target_miss",
+        "measured_ops_s": 781.906,
+        "successful_ops_s": 781.906,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791614156.562,
+          "window_end_s": 1791614336.562,
+          "measure_started_exact": 140743,
+          "measure_completed_exact": 140743,
+          "measure_dropped_exact": 3256,
+          "measure_scheduled_observed": 143999,
+          "measure_drop_fraction": 0.022611,
+          "measure_outcomes": {
+            "success": 140743
+          },
+          "measure_outcome_sum": 140743,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 144000,
+          "schedule_delta_vs_rational": -1,
+          "observed_schedule_rate": 799.994,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 1414.0,
+        "gate_p99": 1524.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 3784556,
+          "overflow_dropped_points": 329803,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP/results/multi/pr238-physical-auth-a-cap-20261010/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "load_generator_evidence": "absent",
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 781.906,
+        "threshold_status_diagnostic": "target_miss",
+        "main_verdict": "FAIL",
+        "complete_operation_latency_ms": {
+          "p50": 279.0,
+          "p95": 1414.0,
+          "p99": 1524.0
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": false,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 1519926578.2222168,
+          "field": "wal_bytes",
+          "window_s": 180.0,
+          "sample_span": [
+            1791614131,
+            1791614364
+          ]
+        },
+        "wal_per_success_bytes": 10799.305,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 72784.80499827862,
+            "field": "wal_io.writes",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614131,
+              1791614364
+            ]
+          },
+          "write_bytes": {
+            "delta": 3667939275.855143,
+            "field": "wal_io.write_bytes",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614131,
+              1791614364
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614131,
+              1791614364
+            ]
+          },
+          "fsyncs": {
+            "delta": 72508.80499827862,
+            "field": "wal_io.fsyncs",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614131,
+              1791614364
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614131,
+              1791614364
+            ]
+          }
+        },
+        "wal_writes_per_op": 0.5171,
+        "wal_fsyncs_per_op": 0.5152,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 1.74,
+        "postgres": 4.09
+      },
+      "audit": {
+        "point": "pr238-physical-auth-a-cap-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 449307,
+        "accepted_events_delta": 449307,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "30eb7837e8be52dfecdd4807cce0c39ca9a32920e2c1b1acb3c5d3967625a0ea",
+          "journal_bytes": 464750648,
+          "batches": 2785,
+          "remote_path": "sis-rcv-pr238-physical-auth-a-cap-20261010:/data/journal.jsonl",
+          "events_in_range": 449307,
+          "expected_in_range": 449307,
+          "by_event_type": {
+            "authorization_decision_committed": 152745,
+            "token_issued": 152745,
+            "refresh_family_capacity_retired": 143817
+          },
+          "token_issued_in_range": 152745,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 152745,
+        "expected_issuances": null,
+        "token_issued_scope": "reported_only_no_clean_denominator"
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 280.9
+    }
+  },
+  {
+    "key": "AUTH_CAP",
+    "verdict": "PASS",
+    "result": {
+      "name": "pr238-physical-auth-cap-20261010",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 800,
+      "window_seconds": 180,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-auth-cap-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 156000,
+        "issuance_inserts": 156000,
+        "subject_bindings": 0,
+        "database_bytes": 368457407
+      },
+      "verdict": "PASS",
+      "metrics": {
+        "rps": 3199.839,
+        "p50": 1.472,
+        "p95": 7.518,
+        "p99": 13.416,
+        "dropped": 0,
+        "drop_fraction": 0.0,
+        "error_rate": 0.0,
+        "status": "passed",
+        "measured_ops_s": 800.0,
+        "successful_ops_s": 800.0,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791614681.688,
+          "window_end_s": 1791614861.688,
+          "measure_started_exact": 144000,
+          "measure_completed_exact": 144000,
+          "measure_dropped_exact": 0,
+          "measure_scheduled_observed": 144000,
+          "measure_drop_fraction": 0.0,
+          "measure_outcomes": {
+            "success": 144000
+          },
+          "measure_outcome_sum": 144000,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 144000,
+          "schedule_delta_vs_rational": 0,
+          "observed_schedule_rate": 800.0,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 20.0,
+        "gate_p99": 38.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 4080165,
+          "overflow_dropped_points": 326004,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/AUTH_CAP/results/multi/pr238-physical-auth-cap-20261010/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 800.0,
+        "threshold_status_diagnostic": "passed",
+        "main_verdict": "PASS",
+        "complete_operation_latency_ms": {
+          "p50": 11.0,
+          "p95": 20.0,
+          "p99": 38.0
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": true,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 1492010374.5942483,
+          "field": "wal_bytes",
+          "window_s": 180.0,
+          "sample_span": [
+            1791614659,
+            1791614885
+          ]
+        },
+        "wal_per_success_bytes": 10361.183,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 171625.8853416443,
+            "field": "wal_io.writes",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614659,
+              1791614885
+            ]
+          },
+          "write_bytes": {
+            "delta": 4430027554.869141,
+            "field": "wal_io.write_bytes",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614659,
+              1791614885
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614659,
+              1791614885
+            ]
+          },
+          "fsyncs": {
+            "delta": 171356.57334160805,
+            "field": "wal_io.fsyncs",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614659,
+              1791614885
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 180.0,
+            "sample_span": [
+              1791614659,
+              1791614885
+            ]
+          }
+        },
+        "wal_writes_per_op": 1.1918,
+        "wal_fsyncs_per_op": 1.19,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 1.63,
+        "postgres": 3.47
+      },
+      "audit": {
+        "point": "pr238-physical-auth-cap-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 459072,
+        "accepted_events_delta": 459072,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "117d33c7930e3480d433efa120f8e3bb41f3b5796b935e2fec21248e950513d4",
+          "journal_bytes": 477579503,
+          "batches": 10182,
+          "remote_path": "sis-rcv-pr238-physical-auth-cap-20261010:/data/journal.jsonl",
+          "events_in_range": 459072,
+          "expected_in_range": 459072,
+          "by_event_type": {
+            "authorization_decision_committed": 156000,
+            "token_issued": 156000,
+            "refresh_family_capacity_retired": 147072
+          },
+          "token_issued_in_range": 156000,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 156000,
+        "expected_issuances": null,
+        "token_issued_scope": "reported_only_no_clean_denominator"
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 269.9
+    }
+  },
+  {
+    "key": "AUTH_A_CAP2",
+    "verdict": "PASS",
+    "result": {
+      "name": "pr238-physical-auth-a-cap2-20261010",
+      "mode": "multi",
+      "scenario": "cap_authorization_code",
+      "rate": 800,
+      "window_seconds": 180,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-auth-a-cap2-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 156000,
+        "issuance_inserts": 156000,
+        "subject_bindings": 0,
+        "database_bytes": 366573247
+      },
+      "verdict": "PASS",
+      "metrics": {
+        "rps": 3199.802,
+        "p50": 1.676,
+        "p95": 8.148,
+        "p99": 17.618,
+        "dropped": 0,
+        "drop_fraction": 0.0,
+        "error_rate": 0.0,
+        "status": "passed",
+        "measured_ops_s": 800.0,
+        "successful_ops_s": 800.0,
+        "window_seconds": 180.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791615079.217,
+          "window_end_s": 1791615259.217,
+          "measure_started_exact": 144000,
+          "measure_completed_exact": 144000,
+          "measure_dropped_exact": 0,
+          "measure_scheduled_observed": 144000,
+          "measure_drop_fraction": 0.0,
+          "measure_outcomes": {
+            "success": 144000
+          },
+          "measure_outcome_sum": 144000,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 144000,
+          "schedule_delta_vs_rational": 0,
+          "observed_schedule_rate": 800.0,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 24.0,
+        "gate_p99": 56.01000000000931,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 4079202,
+          "overflow_dropped_points": 326144,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2/results/multi/pr238-physical-auth-a-cap2-20261010/load/capacity-cap-authorization-code.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 800.0,
+        "threshold_status_diagnostic": "passed",
+        "main_verdict": "PASS",
+        "complete_operation_latency_ms": {
+          "p50": 12.0,
+          "p95": 24.0,
+          "p99": 56.01000000000931
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": true,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 1512843689.3694715,
+          "field": "wal_bytes",
+          "window_s": 180.0,
+          "sample_span": [
+            1791615056,
+            1791615284
+          ]
+        },
+        "wal_per_success_bytes": 10505.859,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 167820.29649209976,
+            "field": "wal_io.writes",
+            "window_s": 180.0,
+            "sample_span": [
+              1791615056,
+              1791615284
+            ]
+          },
+          "write_bytes": {
+            "delta": 4439097143.105469,
+            "field": "wal_io.write_bytes",
+            "window_s": 180.0,
+            "sample_span": [
+              1791615056,
+              1791615284
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 180.0,
+            "sample_span": [
+              1791615056,
+              1791615284
+            ]
+          },
+          "fsyncs": {
+            "delta": 167545.1219921112,
+            "field": "wal_io.fsyncs",
+            "window_s": 180.0,
+            "sample_span": [
+              1791615056,
+              1791615284
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 180.0,
+            "sample_span": [
+              1791615056,
+              1791615284
+            ]
+          }
+        },
+        "wal_writes_per_op": 1.1654,
+        "wal_fsyncs_per_op": 1.1635,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 1.66,
+        "postgres": 3.72
+      },
+      "audit": {
+        "point": "pr238-physical-auth-a-cap2-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 459072,
+        "accepted_events_delta": 459072,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "5029277f4c5d2072099e78f70c2cd000a6d73061d38abad87d9749cc1208c34e",
+          "journal_bytes": 476854566,
+          "batches": 8267,
+          "remote_path": "sis-rcv-pr238-physical-auth-a-cap2-20261010:/data/journal.jsonl",
+          "events_in_range": 459072,
+          "expected_in_range": 459072,
+          "by_event_type": {
+            "authorization_decision_committed": 156000,
+            "token_issued": 156000,
+            "refresh_family_capacity_retired": 147072
+          },
+          "token_issued_in_range": 156000,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 156000,
+        "expected_issuances": null,
+        "token_issued_scope": "reported_only_no_clean_denominator"
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 275.5
+    }
+  },
+  {
+    "key": "CC_RETEST",
+    "verdict": "PASS",
+    "result": {
+      "name": "pr238-physical-cc-retest-20261010",
+      "mode": "multi",
+      "scenario": "cap_client_credentials",
+      "rate": 4000,
+      "window_seconds": 600,
+      "app_cpus": 16,
+      "confirmation": false,
+      "point_path": "multi/pr238-physical-cc-retest-20261010/point.json",
+      "token_state": {
+        "collected": true,
+        "fresh_rows": 0,
+        "legacy_rows": 0,
+        "issuance_rows": 0,
+        "issuance_inserts": 0,
+        "subject_bindings": 0,
+        "database_bytes": 89732799
+      },
+      "verdict": "PASS",
+      "metrics": {
+        "rps": 3999.972,
+        "p50": 2.636,
+        "p95": 9.354,
+        "p99": 26.143,
+        "dropped": 0,
+        "drop_fraction": 0.0,
+        "error_rate": 0.0,
+        "status": "passed",
+        "measured_ops_s": 4000.002,
+        "successful_ops_s": 4000.002,
+        "window_seconds": 600.0,
+        "rate_basis": "scenario_window_stream",
+        "measurement_contract": "cap-scenario-window-v1",
+        "classified_errors": 0,
+        "expected_invalid_grant": 0,
+        "unexpected_errors": 0,
+        "capacity_gate_contract": "successful-ops-v1",
+        "measure": {
+          "window_start_s": 1791615532.393,
+          "window_end_s": 1791616132.393,
+          "measure_started_exact": 2400001,
+          "measure_completed_exact": 2400001,
+          "measure_dropped_exact": 0,
+          "measure_scheduled_observed": 2400001,
+          "measure_drop_fraction": 0.0,
+          "measure_outcomes": {
+            "success": 2400001
+          },
+          "measure_outcome_sum": 2400001,
+          "drops_pre_window": 0,
+          "drops_post_window": 0,
+          "drops_pending_unclassified": 0,
+          "pending_drops_overflow": false,
+          "valid": true,
+          "problems": [],
+          "rational_planned_arrivals": 2400000,
+          "schedule_delta_vs_rational": 1,
+          "observed_schedule_rate": 4000.002,
+          "cohort_source": "k6_stream_exact",
+          "late_vu_fraction": 0.0
+        },
+        "subject_lifecycle": {
+          "initial_mint": 0,
+          "refresh_update": 0,
+          "expired_reauth": 0
+        },
+        "gate_population": "measurement_cohort",
+        "gate_p95": 10.0,
+        "gate_p99": 26.0,
+        "prepare_failures": {
+          "prepare_failed": 0,
+          "prepare_local_failed": 0,
+          "prepare_sut_failed": 0
+        },
+        "forensic_diag": {
+          "status": "TRUNCATED",
+          "truncated": true,
+          "budget_exceeded_points": 34908639,
+          "overflow_dropped_points": 10065253,
+          "logical_bytes_cap": 536870912,
+          "file": "/src/evidence/pr238-physical-growth-20261010/CC_RETEST/results/multi/pr238-physical-cc-retest-20261010/load/capacity-cap-client-credentials.diag.jsonl.gz"
+        },
+        "latency_gate": "complete_operation_100_250ms",
+        "rate_for_gate": 4000.002,
+        "threshold_status_diagnostic": "passed",
+        "main_verdict": "PASS",
+        "complete_operation_latency_ms": {
+          "p50": 3.0,
+          "p95": 10.0,
+          "p99": 26.0
+        }
+      },
+      "health": {
+        "app_affinity_verified": true,
+        "postgres_affinity_verified": true,
+        "valkey_affinity_verified": true,
+        "service_affinity_verified": true,
+        "generator_affinity_verified": true,
+        "point_completed": true,
+        "unexpected_zero": true,
+        "preparation_valid": true,
+        "prepare_sut_zero": true,
+        "oom_none": true,
+        "no_restarts": true,
+        "queue_full_zero": true,
+        "dropped_required_zero": true,
+        "db_outbox_drained": true,
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "expected_rejection_zero": true,
+        "collector_copy_complete": true
+      },
+      "maintenance": null,
+      "provenance_valid": true,
+      "token_state_verdict": "PASS",
+      "cost": {
+        "wal_windowed": {
+          "delta": 4253970560.0576224,
+          "field": "wal_bytes",
+          "window_s": 600.0,
+          "sample_span": [
+            1791615508,
+            1791616347
+          ]
+        },
+        "wal_per_success_bytes": 1772.487,
+        "wal_io_windowed": {
+          "writes": {
+            "delta": 653581.4556053877,
+            "field": "wal_io.writes",
+            "window_s": 600.0,
+            "sample_span": [
+              1791615508,
+              1791616347
+            ]
+          },
+          "write_bytes": {
+            "delta": 13385928251.891602,
+            "field": "wal_io.write_bytes",
+            "window_s": 600.0,
+            "sample_span": [
+              1791615508,
+              1791616347
+            ]
+          },
+          "write_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.write_time_ms",
+            "window_s": 600.0,
+            "sample_span": [
+              1791615508,
+              1791616347
+            ]
+          },
+          "fsyncs": {
+            "delta": 652808.8486052752,
+            "field": "wal_io.fsyncs",
+            "window_s": 600.0,
+            "sample_span": [
+              1791615508,
+              1791616347
+            ]
+          },
+          "fsync_time_ms": {
+            "delta": 0.0,
+            "field": "wal_io.fsync_time_ms",
+            "window_s": 600.0,
+            "sample_span": [
+              1791615508,
+              1791616347
+            ]
+          }
+        },
+        "wal_writes_per_op": 0.2723,
+        "wal_fsyncs_per_op": 0.272,
+        "wait_per_acq_ms": null,
+        "acquire_per_op_windowed": null,
+        "oom_killed": false,
+        "restart_count": 0
+      },
+      "component_cpu_cores": {
+        "app": 2.18,
+        "postgres": 2.07
+      },
+      "audit": {
+        "point": "pr238-physical-cc-retest-20261010",
+        "checks": {
+          "collected": true,
+          "fault_none": true,
+          "pending_zero": true,
+          "db_head_eq_anchor_seq": true,
+          "db_head_eq_anchor_hash": true,
+          "rcv_seq_eq_anchor": true,
+          "rcv_hash_eq_anchor": true,
+          "deployment_match": true,
+          "checkpoint_progress_valid": true,
+          "accepted_events_delta_eq": true,
+          "journal_collected": true,
+          "journal_clean": true,
+          "journal_range_eq_delta": true,
+          "token_issued_eq_expected": true
+        },
+        "verdict": "PASS",
+        "checkpoint_advanced": true,
+        "empty_prefix_allowed": false,
+        "delta_events": 2460004,
+        "accepted_events_delta": 2460004,
+        "journal": {
+          "collected": true,
+          "journal_sha256": "3dbb76a7c264206ef63fb3a8a59ddfbdf627e19f544336deb24d450037bca176",
+          "journal_bytes": 2120920393,
+          "batches": 23375,
+          "remote_path": "sis-rcv-pr238-physical-cc-retest-20261010:/data/journal.jsonl",
+          "events_in_range": 2460004,
+          "expected_in_range": 2460004,
+          "by_event_type": {
+            "token_issued": 2460004
+          },
+          "token_issued_in_range": 2460004,
+          "malformed_lines": 0,
+          "foreign_deployment_batches": 0,
+          "sequence_gaps": 0,
+          "duplicate_sequences": 0,
+          "range_contiguous": true
+        },
+        "token_issued_delta": 2460004,
+        "expected_issuances": 2460004
+      },
+      "queue": {
+        "collected": false,
+        "status": "UNVERIFIED",
+        "contract": "blackbox-db-v1",
+        "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+        "enqueued": null,
+        "persisted": null,
+        "dropped": null,
+        "pending_in_process": null
+      },
+      "collection_contract": "blackbox-db-v1",
+      "unverified_internal_gates": {
+        "queue_dropped_zero": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "pending_zero_post_drain": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        },
+        "enqueued_eq_persisted": {
+          "status": "UNVERIFIED",
+          "value": null,
+          "reason": "in-process best-effort queue collection removed"
+        }
+      },
+      "elapsed_s": 884.3
+    }
+  }
+]

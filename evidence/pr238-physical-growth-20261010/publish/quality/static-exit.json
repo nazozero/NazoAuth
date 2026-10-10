@@ -1,0 +1,13 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "nazoauth-long-builder-20261010",
+    "python3",
+    "scripts/verify_static_contracts.py",
+    "--check"
+  ],
+  "exit": 1,
+  "start": 1791609613.221912,
+  "end": 1791609613.5461793
+}

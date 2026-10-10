@@ -1,0 +1,24 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "pr238-physical-cc-b15-20261010-postgres-1",
+    "psql",
+    "-X",
+    "-A",
+    "-t",
+    "-U",
+    "postgres",
+    "-d",
+    "oauth",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    "SELECT json_build_object('ts',extract(epoch FROM clock_timestamp()),'database_bytes',pg_database_size(current_database()),'wal_disk_bytes',(SELECT sum(size) FROM pg_ls_waldir()),'replication_slots',(SELECT count(*) FROM pg_replication_slots),'checkpointer',(SELECT row_to_json(s) FROM pg_stat_checkpointer s),'settings',(SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN ('max_wal_size','min_wal_size','checkpoint_timeout','archive_mode','wal_keep_size')));"
+  ],
+  "exit": 1,
+  "start": 1791614019.557959,
+  "end": 1791614019.568377,
+  "sample": null,
+  "error": "Error response from daemon: No such container: pr238-physical-cc-b15-20261010-postgres-1\n"
+}

@@ -1,0 +1,5 @@
+{
+  "defined_at": 1791614661.8243687,
+  "occurred_at_lte": 1791614781.8243687,
+  "rule": "all decisions created before load launch + 120s; original retention, full load continues"
+}

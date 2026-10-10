@@ -1,0 +1,11 @@
+BEGIN
+CREATE TABLE
+INSERT 0 300000
+CREATE INDEX
+CREATE INDEX
+                                       json_build_object                                        
+------------------------------------------------------------------------------------------------
+ {"rows" : 300000, "with_tenant_bytes" : 28688384, "without_redundant_tenant_bytes" : 23265280}
+(1 row)
+
+ROLLBACK

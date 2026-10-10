@@ -1,0 +1,39 @@
+{
+ "census_exact": {
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 1,
+  "evicted_keys": 0,
+  "expired_keys": 0,
+  "keyspace_hits": 16,
+  "keyspace_misses": 32,
+  "mem_fragmentation_ratio": 9.19,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 1298296,
+  "used_memory_rss": 10633216
+ },
+ "keys_seen": 1,
+ "mem_bytes_sampled": {
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "pr238-physical-cc-retest-20261010",
+  "sample_per_cat": 400,
+  "sampled_at": 1791615505,
+  "scan_ms": 9,
+  "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+ },
+ "sampled_per_cat": {
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 1,
+ "ttl_buckets_sampled": {
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

@@ -1,0 +1,44 @@
+{
+  "census_exact": {
+    "oauth:session": 993,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 994,
+    "evicted_keys": 0,
+    "expired_keys": 1450956,
+    "keyspace_hits": 20321508,
+    "keyspace_misses": 7759,
+    "mem_fragmentation_ratio": 6.48,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 2003896,
+    "used_memory_rss": 12865536
+  },
+  "keys_seen": 994,
+  "mem_bytes_sampled": {
+    "oauth:session": 35840,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "pr238-physical-auth-b30-20261010",
+    "sample_per_cat": 80,
+    "sampled_at": 1791612544,
+    "scan_ms": 13,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 994,
+  "ttl_buckets_sampled": {
+    "oauth:session|442m+": 80,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "/workspace/evidence/pr238-physical-growth-20261010/tools/resource-analysis.py",
+    "AUTH_DIAG",
+    "AUTH_B",
+    "AUTH_B30"
+  ],
+  "exit": 0,
+  "start": 1791612688.691327,
+  "end": 1791612688.853745
+}

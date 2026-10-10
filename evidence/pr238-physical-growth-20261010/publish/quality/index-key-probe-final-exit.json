@@ -1,0 +1,20 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "pr238-physical-quality-20261010-pg",
+    "psql",
+    "-X",
+    "-U",
+    "postgres",
+    "-d",
+    "oauth",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-f",
+    "/tmp/physical-index-probe.sql"
+  ],
+  "exit": 0,
+  "start": 1791616410.1017594,
+  "end": 1791616411.0441995
+}

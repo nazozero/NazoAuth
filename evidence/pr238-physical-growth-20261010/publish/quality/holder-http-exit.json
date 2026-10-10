@@ -1,0 +1,20 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "--env-file",
+    "/tmp/physical-quality.env",
+    "nazoauth-long-builder-20261010",
+    "cargo",
+    "test",
+    "--locked",
+    "--all-features",
+    "-p",
+    "nazoauth",
+    "--lib",
+    "authorization_code_tests::identity"
+  ],
+  "exit": 0,
+  "start": 1791609689.7985828,
+  "end": 1791609854.4234197
+}

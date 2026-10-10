@@ -1,0 +1,11 @@
+{
+  "label": "pr238-physical-auth-cap-20261010",
+  "key": "AUTH_CAP",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.586,
+  "total_elapsed_s": 292.101,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

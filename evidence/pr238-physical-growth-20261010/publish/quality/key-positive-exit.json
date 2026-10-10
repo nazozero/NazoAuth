@@ -1,0 +1,20 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "--env-file",
+    "/tmp/physical-quality.env",
+    "nazoauth-long-builder-20261010",
+    "cargo",
+    "test",
+    "--locked",
+    "--all-features",
+    "-p",
+    "nazo-postgres",
+    "--test",
+    "receipt_key_scope"
+  ],
+  "exit": 0,
+  "start": 1791609508.9508057,
+  "end": 1791609540.2494392
+}

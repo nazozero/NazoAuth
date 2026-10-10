@@ -1,0 +1,57 @@
+{
+  "census_exact": {
+    "oauth:jar": 156000,
+    "oauth:rate": 2,
+    "oauth:session": 993,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 156996,
+    "evicted_keys": 0,
+    "expired_keys": 6,
+    "keyspace_hits": 2185858,
+    "keyspace_misses": 493,
+    "mem_fragmentation_ratio": 1.19,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 57963592,
+    "used_memory_rss": 68980736
+  },
+  "keys_seen": 156996,
+  "mem_bytes_sampled": {
+    "oauth:jar": 26240,
+    "oauth:rate": 512,
+    "oauth:session": 35840,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:jar": 80,
+    "oauth:rate": 2,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "pr238-physical-auth-cap-20261010",
+    "sample_per_cat": 80,
+    "sampled_at": 1791614869,
+    "scan_ms": 410,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:jar": 80,
+    "oauth:rate": 2,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 156996,
+  "ttl_buckets_sampled": {
+    "oauth:jar|0m+": 9,
+    "oauth:jar|1m+": 18,
+    "oauth:jar|2m+": 31,
+    "oauth:jar|3m+": 22,
+    "oauth:rate|0m+": 2,
+    "oauth:session|476m+": 80,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

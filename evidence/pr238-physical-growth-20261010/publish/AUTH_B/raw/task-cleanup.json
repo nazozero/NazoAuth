@@ -1,0 +1,11 @@
+{
+  "label": "pr238-physical-auth-b-20261010",
+  "key": "AUTH_B",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 0.105,
+  "total_elapsed_s": 0.298,
+  "request_sha256_unchanged": true,
+  "verdict": "INVALID",
+  "error": "RuntimeError: load budget exceeded: used=0.0s + planned=1845s > 1800s",
+  "cleanup_error": null
+}

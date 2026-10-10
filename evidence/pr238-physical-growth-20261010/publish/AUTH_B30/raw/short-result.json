@@ -1,0 +1,261 @@
+{
+  "name": "pr238-physical-auth-b30-20261010",
+  "mode": "multi",
+  "scenario": "cap_authorization_code",
+  "rate": 800,
+  "window_seconds": 1800,
+  "app_cpus": 16,
+  "confirmation": false,
+  "point_path": "multi/pr238-physical-auth-b30-20261010/point.json",
+  "token_state": {
+    "collected": true,
+    "fresh_rows": 0,
+    "legacy_rows": 0,
+    "issuance_rows": 0,
+    "issuance_inserts": 1450894,
+    "subject_bindings": 0,
+    "database_bytes": 346601151
+  },
+  "verdict": "FAIL",
+  "metrics": {
+    "rps": 3197.405,
+    "p50": 24.655,
+    "p95": 101.804,
+    "p99": 246.225,
+    "dropped": 1107,
+    "drop_fraction": 0.0007623961691486438,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 799.385,
+    "successful_ops_s": 799.385,
+    "window_seconds": 1800.0,
+    "rate_basis": "scenario_window_stream",
+    "measurement_contract": "cap-scenario-window-v1",
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "capacity_gate_contract": "successful-ops-v1",
+    "measure": {
+      "window_start_s": 1791610313.27,
+      "window_end_s": 1791612113.27,
+      "measure_started_exact": 1438893,
+      "measure_completed_exact": 1438893,
+      "measure_dropped_exact": 1107,
+      "measure_scheduled_observed": 1440000,
+      "measure_drop_fraction": 0.000769,
+      "measure_outcomes": {
+        "success": 1438893
+      },
+      "measure_outcome_sum": 1438893,
+      "drops_pre_window": 0,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 1440000,
+      "schedule_delta_vs_rational": 0,
+      "observed_schedule_rate": 800.0,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "subject_lifecycle": {
+      "initial_mint": 0,
+      "refresh_update": 0,
+      "expired_reauth": 0
+    },
+    "gate_population": "measurement_cohort",
+    "gate_p95": 347.0,
+    "gate_p99": 948.0,
+    "prepare_failures": {
+      "prepare_failed": 0,
+      "prepare_local_failed": 0,
+      "prepare_sut_failed": 0
+    },
+    "forensic_diag": {
+      "status": "TRUNCATED",
+      "truncated": true,
+      "budget_exceeded_points": 31687729,
+      "overflow_dropped_points": 15370891,
+      "logical_bytes_cap": 536870912,
+      "file": "/src/evidence/pr238-physical-growth-20261010/AUTH_B30/results/multi/pr238-physical-auth-b30-20261010/load/capacity-cap-authorization-code.diag.jsonl.gz"
+    },
+    "latency_gate": "complete_operation_100_250ms",
+    "rate_for_gate": 799.385,
+    "threshold_status_diagnostic": "target_miss",
+    "main_verdict": "FAIL",
+    "complete_operation_latency_ms": {
+      "p50": 125.0,
+      "p95": 347.0,
+      "p99": 948.0
+    }
+  },
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "local_no_request_zero": true,
+    "expected_rejection_zero": true,
+    "collector_copy_complete": true
+  },
+  "maintenance": null,
+  "provenance_valid": true,
+  "token_state_verdict": "PASS",
+  "cost": {
+    "wal_windowed": {
+      "delta": 16731689768.593233,
+      "field": "wal_bytes",
+      "window_s": 1800.0,
+      "sample_span": [
+        1791610290,
+        1791612589
+      ]
+    },
+    "wal_per_success_bytes": 11628.168,
+    "wal_io_windowed": {
+      "writes": {
+        "delta": 862298.6050093174,
+        "field": "wal_io.writes",
+        "window_s": 1800.0,
+        "sample_span": [
+          1791610290,
+          1791612589
+        ]
+      },
+      "write_bytes": {
+        "delta": 29404151931.38086,
+        "field": "wal_io.write_bytes",
+        "window_s": 1800.0,
+        "sample_span": [
+          1791610290,
+          1791612589
+        ]
+      },
+      "write_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.write_time_ms",
+        "window_s": 1800.0,
+        "sample_span": [
+          1791610290,
+          1791612589
+        ]
+      },
+      "fsyncs": {
+        "delta": 859267.8750092983,
+        "field": "wal_io.fsyncs",
+        "window_s": 1800.0,
+        "sample_span": [
+          1791610290,
+          1791612589
+        ]
+      },
+      "fsync_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.fsync_time_ms",
+        "window_s": 1800.0,
+        "sample_span": [
+          1791610290,
+          1791612589
+        ]
+      }
+    },
+    "wal_writes_per_op": 0.5993,
+    "wal_fsyncs_per_op": 0.5972,
+    "wait_per_acq_ms": null,
+    "acquire_per_op_windowed": null,
+    "oom_killed": false,
+    "restart_count": 0
+  },
+  "component_cpu_cores": {
+    "app": 1.75,
+    "postgres": 4.04
+  },
+  "audit": {
+    "point": "pr238-physical-auth-b30-20261010",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 4343754,
+    "accepted_events_delta": 4343754,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "6cdb0441b872c89a1ced8c450aedb03fa0dd8cec23a597a2d9a543c1ee80532b",
+      "journal_bytes": 4480396567,
+      "batches": 33528,
+      "remote_path": "sis-rcv-pr238-physical-auth-b30-20261010:/data/journal.jsonl",
+      "events_in_range": 4343754,
+      "expected_in_range": 4343754,
+      "by_event_type": {
+        "authorization_decision_committed": 1450894,
+        "token_issued": 1450894,
+        "refresh_family_capacity_retired": 1441966
+      },
+      "token_issued_in_range": 1450894,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 1450894,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "queue": {
+    "collected": false,
+    "status": "UNVERIFIED",
+    "contract": "blackbox-db-v1",
+    "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+    "enqueued": null,
+    "persisted": null,
+    "dropped": null,
+    "pending_in_process": null
+  },
+  "collection_contract": "blackbox-db-v1",
+  "unverified_internal_gates": {
+    "queue_dropped_zero": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "pending_zero_post_drain": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "enqueued_eq_persisted": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    }
+  },
+  "elapsed_s": 2346.9
+}

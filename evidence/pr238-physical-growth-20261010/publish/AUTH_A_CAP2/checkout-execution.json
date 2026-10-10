@@ -1,0 +1,58 @@
+{
+  "original_branch": "verify/longrun-20261010",
+  "original_head": "4ccd02de2767a7dd586f19ccb7cf502197e02aeb",
+  "records": [
+    {
+      "command": [
+        "git",
+        "switch",
+        "--detach",
+        "6714d3187c528ac2b9aac5c67729b1653b67a427"
+      ],
+      "exit": 0,
+      "start": 1791614987.122918,
+      "end": 1791614987.1591785
+    },
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "SIS_WORKSPACE=/src",
+        "-e",
+        "SIS_LOAD_BUDGET_S=2700",
+        "-e",
+        "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2",
+        "-w",
+        "/src",
+        "nazoauth-long-controller-20261010",
+        "python",
+        "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2/point-observer-cycle.py",
+        "setup"
+      ],
+      "exit": 0,
+      "start": 1791614987.16023,
+      "end": 1791614988.9193804
+    },
+    {
+      "command": [
+        "python3",
+        "/tmp/physical-growth-execute.py",
+        "AUTH_A_CAP2"
+      ],
+      "exit": 0,
+      "start": 1791614988.9213166,
+      "end": 1791615329.6392424
+    },
+    {
+      "command": [
+        "git",
+        "switch",
+        "verify/longrun-20261010"
+      ],
+      "exit": 0,
+      "start": 1791615329.639626,
+      "end": 1791615330.0414007
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "label": "pr238-physical-auth-diag-20261010",
+  "key": "AUTH_DIAG",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 22.052,
+  "total_elapsed_s": 1030.757,
+  "request_sha256_unchanged": true,
+  "verdict": "INVALID",
+  "error": null,
+  "cleanup_error": null
+}

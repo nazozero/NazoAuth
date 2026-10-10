@@ -1,0 +1,19 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-e",
+    "CARGO_BUILD_JOBS=2",
+    "nazoauth-long-builder-20261010",
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "nazo-auth",
+    "--lib",
+    "authorization_code_holder_serialization_omits_absent_proofs"
+  ],
+  "exit": 101,
+  "start": 1791608721.428739,
+  "end": 1791608799.4493494
+}

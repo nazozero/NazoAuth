@@ -1,0 +1,1 @@
+{"key": "AUTH_A_CAP", "capacity": "INVALID", "lanes": {"load": {"rate": 781.906, "latency_ms": {"p50": 279.0, "p95": 1414.0, "p99": 1524.0}, "unexpected_errors": 0}}, "pending": {"min": 0, "median": 176, "max": 3338, "first": 0, "last": 30}, "age": {"min": 0, "median": 0.132338, "max": 1.461248, "first": 0, "last": 0.053009}, "natural_count": 0, "cycle": true}

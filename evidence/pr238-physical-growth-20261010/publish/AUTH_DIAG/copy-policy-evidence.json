@@ -1,0 +1,1563 @@
+{
+  "source_sha": "432d87e523106b476dc5249390c29f82cb2615b4",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791608544.8258483,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608544.8422592,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608550.042393,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608550.1190803,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608555.3094237,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608555.392208,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608560.5974436,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608560.6824105,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608565.8755963,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608565.943542,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608571.13206,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608571.2008848,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608576.3964727,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608576.4754882,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608581.8291836,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608581.9024546,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608587.1587608,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608587.231894,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608592.4173355,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608592.4983892,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608597.689427,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608597.7640283,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608602.9772964,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608603.052383,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608608.2540798,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608608.3449984,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608613.5369072,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608613.616987,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608618.8200817,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608618.896632,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608624.1032538,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608624.177155,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608629.447523,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608629.5218499,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608634.7455962,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608634.8630614,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608640.0593982,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608640.1815054,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608645.3800447,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608645.4546738,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608650.66314,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608650.7511172,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608655.9657319,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608656.0590563,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608661.326905,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608661.4374526,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608666.6510131,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608666.731663,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608671.9382727,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608672.018184,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608677.2866518,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608677.3646033,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608682.6573043,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608682.7468877,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608687.976379,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608688.0637226,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608693.3526895,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608693.4277685,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608698.6664205,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608698.7856386,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608704.0835323,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608704.1617506,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608709.408263,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608709.4881496,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608714.7154307,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608714.7942753,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608720.0319145,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608720.1090193,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608725.3545988,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608725.4374137,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608730.707156,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608730.8062947,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608736.0412192,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608736.145178,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608741.366286,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608741.4511569,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608746.6995554,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608746.7859905,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608751.993129,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608752.076184,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608757.3185444,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608757.4073534,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608762.7077527,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608762.78501,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608768.0087206,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608768.0892112,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608773.2964866,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608773.377113,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608778.6146073,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608778.6984165,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608783.9551995,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608784.0415301,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608789.2567117,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608789.3397033,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608794.5567439,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608794.6334891,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608799.8728228,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608799.951724,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608805.1649165,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608805.2613356,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608810.4870546,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608810.575191,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608815.8046803,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608815.8899603,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608821.1299007,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608821.2134042,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608826.4446883,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608826.5255475,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608831.8428338,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608831.935275,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608837.2120962,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608837.2962418,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608842.5925927,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608842.6765807,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608847.9105716,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608847.9912996,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608853.2800553,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608853.3649929,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608858.6435015,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608858.7210474,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608863.9567327,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608864.0327973,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608869.3247178,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608869.4081283,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608874.633163,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608874.721973,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608879.96554,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608880.039544,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608885.2493813,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608885.329258,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608890.570386,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608890.653436,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608896.0400157,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608896.126817,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608901.3497605,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608901.438943,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608906.724903,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608906.8120558,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608912.0468671,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608912.1269937,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608917.3624017,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608917.4661186,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608922.6901963,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608922.7812643,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608928.0046291,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608928.089196,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608933.3197293,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608933.4123447,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608938.6826262,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608938.7842202,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608944.0161562,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608944.160773,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608949.403085,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608949.4909868,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608954.7245376,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608954.8062901,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608960.0365458,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608960.120473,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608965.4000573,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608965.482989,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608970.7032702,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608970.775932,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608976.0088882,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608976.0895374,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608981.3330288,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608981.4177864,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608986.6733468,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608986.7851083,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608992.0257487,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608992.1713812,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608997.4231217,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791608997.5195003,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609002.9056008,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609003.0056357,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609008.253235,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609008.3347914,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609013.5932562,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609013.6830559,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609018.9341645,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609019.0283742,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609024.2516706,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609024.3687265,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609029.6177113,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609029.6970608,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609034.9499228,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609035.0602813,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609040.306382,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609040.4373324,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609045.7477329,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609045.839308,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609051.096607,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609051.1984372,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609056.5287373,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609056.6321912,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609061.8980901,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609062.0117521,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609067.3177416,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609067.4129212,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609072.7191017,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609072.8098857,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609078.0730698,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609078.2103689,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609083.4661078,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609083.557607,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609088.8108182,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609088.9047663,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609094.2100916,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609094.3224716,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609099.5736048,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609099.673993,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609104.931645,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609105.0297554,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609110.2883978,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609110.3778656,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609115.6491709,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609115.7731223,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609121.1178524,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609121.229274,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609126.4963605,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609126.592374,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609131.8590062,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609131.954931,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609137.2170951,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609137.3065166,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609142.5634735,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609142.6577716,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609147.9153454,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609148.0195975,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609153.2923386,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609153.3978894,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609158.6431155,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609158.7441778,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609164.128316,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609164.2195692,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609169.4936137,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609169.586558,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609175.0037065,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609175.1007714,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609180.3650196,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609180.4616,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609185.7521813,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609185.8448644,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609191.114757,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609191.2354789,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609196.5071611,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609196.6072798,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609201.894229,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609202.072358,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609207.4948502,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609207.6745079,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609212.9465065,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609213.0371153,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609218.2957666,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609218.3856099,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609223.6530683,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609223.7726898,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609229.051773,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609229.1452632,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609234.4008036,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609234.483809,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609239.764614,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609239.853302,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609245.1539307,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609245.2534928,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609250.531191,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609250.7018933,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609255.9648738,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609256.054527,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609261.3059106,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609261.416095,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609266.7470899,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609266.842317,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609272.141818,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609272.232676,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609277.4988704,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609277.598484,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609282.9244263,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609283.0170865,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609288.280923,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609288.3639107,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609293.7075853,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609293.7938695,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609299.076368,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609299.1676722,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609304.5463643,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609304.654381,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609309.9294624,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609310.0404363,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609315.305576,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609315.4343412,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609320.7288396,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609320.8359473,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609326.1744158,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609326.2830524,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609331.5980015,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609331.7276533,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609337.012585,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609337.1051874,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609342.444027,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609342.5418165,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609347.8500915,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609347.9509985,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609353.230331,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609353.3229206,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609358.6023138,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609358.6958697,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609364.0258453,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609364.1176267,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609369.4520233,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609369.556366,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609374.8350248,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609374.9336226,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609380.2440193,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609380.3307517,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609385.6047695,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609385.701386,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609390.9705305,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609391.0640981,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609396.3495414,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609396.4701147,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609401.8729541,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609401.9870481,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609407.2777371,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609407.3983953,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609412.6791723,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609412.7999125,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609418.116621,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609418.2189054,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609423.5773888,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609423.6758041,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609428.9890904,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609429.095262,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609434.3879097,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609434.4922674,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609439.8465688,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609439.9414515,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609445.2308068,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609445.3283994,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609450.6173937,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609450.7605186,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609456.0835674,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609456.1754208,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609461.5697515,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609461.671618,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609466.9572542,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609467.062211,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609472.3208463,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609472.342768,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609472.3579755,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609472.3739388,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609472.7574751,
+      "container": "sis-load-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609495.191153,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609495.2059057,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609505.6971648,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609505.7133987,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609516.177809,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010"
+    },
+    {
+      "ts": 1791609516.2010503,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791608544.7539504,
+      "ts_end": 1791608544.776872,
+      "elapsed_ms": 22.9227,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791608544.7768998,
+      "ts_end": 1791608544.8096838,
+      "elapsed_ms": 32.7848,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791608544.8425863,
+      "ts_end": 1791608544.8678405,
+      "elapsed_ms": 25.2546,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791608544.867863,
+      "ts_end": 1791608544.894752,
+      "elapsed_ms": 26.8893,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791609472.3907676,
+      "ts_end": 1791609472.44767,
+      "elapsed_ms": 56.9026,
+      "container": "sis-load-pr238-physical-auth-diag-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "f42f29880c5bf703c9f1cd9ff378695a6adc331317be958110933afc12073452",
+        "owner": "pr238-physical-auth-diag-20261010",
+        "running": false,
+        "checked_at": 1791609472.4047716,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791609473.1914957,
+      "ts_end": 1791609473.2170215,
+      "elapsed_ms": 25.5258,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791609473.217043,
+      "ts_end": 1791609473.2430854,
+      "elapsed_ms": 26.0427,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791609505.592031,
+      "ts_end": 1791609505.6433926,
+      "elapsed_ms": 51.3621,
+      "container": "sis-sampler-pr238-physical-auth-diag-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "9e64975ebf482b50890ac31054a20f0c4990402434c270f14e3ff28d6e103272",
+        "owner": "pr238-physical-auth-diag-20261010",
+        "running": false,
+        "checked_at": 1791609505.6072063,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791609515.9601874,
+      "ts_end": 1791609516.004711,
+      "elapsed_ms": 44.5234,
+      "container": "sis-proc-pr238-physical-auth-diag-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "6d169bae07760253d343aae228a5bec0e76d4d24713cf50f8f78f003165f1cc1",
+        "owner": "pr238-physical-auth-diag-20261010",
+        "running": false,
+        "checked_at": 1791609515.977228,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr238-physical-auth-diag-20261010",
+    "sis-proc-pr238-physical-auth-diag-20261010",
+    "sis-sampler-pr238-physical-auth-diag-20261010"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-pr238-physical-auth-diag-20261010",
+      "sis-proc-pr238-physical-auth-diag-20261010",
+      "sis-sampler-pr238-physical-auth-diag-20261010"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

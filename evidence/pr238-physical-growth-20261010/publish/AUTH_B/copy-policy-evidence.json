@@ -1,0 +1,17 @@
+{
+  "source_sha": "4ccd02de2767a7dd586f19ccb7cf502197e02aeb",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [],
+  "copies": [],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "owner": "pr238-physical-quality-20261010",
+  "records": [
+    {
+      "command": [
+        "docker",
+        "start",
+        "pr238-physical-quality-20261010-pg"
+      ],
+      "exit": 0,
+      "start": 1791616408.5335398,
+      "end": 1791616408.9553072
+    },
+    {
+      "command": [
+        "docker",
+        "cp",
+        "/tmp/physical-index-probe.sql",
+        "pr238-physical-quality-20261010-pg:/tmp/physical-index-probe.sql"
+      ],
+      "exit": 0,
+      "start": 1791616410.0619552,
+      "end": 1791616410.0845432
+    },
+    {
+      "command": [
+        "python3",
+        "/tmp/physical-quality-command.py",
+        "index-key-probe-final",
+        "docker",
+        "exec",
+        "pr238-physical-quality-20261010-pg",
+        "psql",
+        "-X",
+        "-U",
+        "postgres",
+        "-d",
+        "oauth",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        "/tmp/physical-index-probe.sql"
+      ],
+      "exit": 0,
+      "start": 1791616410.084546,
+      "end": 1791616411.048915
+    },
+    {
+      "command": [
+        "docker",
+        "stop",
+        "pr238-physical-quality-20261010-pg"
+      ],
+      "exit": 0,
+      "start": 1791616411.0489192,
+      "end": 1791616411.310541
+    },
+    {
+      "command": [
+        "docker",
+        "rm",
+        "-v",
+        "pr238-physical-quality-20261010-pg",
+        "pr238-physical-quality-20261010-vk"
+      ],
+      "exit": 0,
+      "start": 1791616411.3105462,
+      "end": 1791616411.3855193
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "disconnect",
+        "pr238-physical-quality-20261010",
+        "nazoauth-long-builder-20261010"
+      ],
+      "exit": 0,
+      "start": 1791616411.385525,
+      "end": 1791616411.52595
+    },
+    {
+      "command": [
+        "docker",
+        "network",
+        "rm",
+        "pr238-physical-quality-20261010"
+      ],
+      "exit": 0,
+      "start": 1791616411.5259554,
+      "end": 1791616411.6674433
+    }
+  ],
+  "private_test_env_removed": true
+}

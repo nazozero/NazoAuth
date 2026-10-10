@@ -1,0 +1,10 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.96s
+     Running tests/receipt_key_scope.rs (target/debug/deps/receipt_key_scope-ad9d6376e86391d6)
+
+running 2 tests
+test populated_receipt_key_migration_preserves_facts_and_tenant_isolation ... ok
+test receipt_key_does_not_repeat_globally_identified_clients_tenant ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+

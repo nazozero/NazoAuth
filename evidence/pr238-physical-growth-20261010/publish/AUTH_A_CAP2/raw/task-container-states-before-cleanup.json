@@ -1,0 +1,312 @@
+{
+  "sis-rcv-pr238-physical-auth-a-cap2-20261010": {
+    "image": "sha256:25fc3dbf717cab36b55d2f34d3593f7c55c3f54466b0007e56c594d8318f6b43",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 4044488,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-10T06:50:46.970893678Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/data",
+        "rw": true
+      },
+      {
+        "type": "volume",
+        "destination": "/run/anchor-tls",
+        "rw": false
+      }
+    ]
+  },
+  "sis-worker-pr238-physical-auth-a-cap2-20261010": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 4044925,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-10T06:50:49.049033018Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "AUDIT_ANCHOR_MODE": "optional"
+    },
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/run/anchor-tls",
+        "rw": false
+      }
+    ]
+  },
+  "pr238-physical-auth-a-cap2-20261010-nazoauth-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 4041105,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-10T06:50:37.195737546Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "RUST_LOG": "warn,nazoauth::jobs::security_state=info",
+      "AUDIT_ANCHOR_MODE": "disabled",
+      "DATABASE_MAX_CONNECTIONS": "32"
+    },
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/var/lib/nazo_oauth",
+        "rw": true
+      },
+      {
+        "type": "volume",
+        "destination": "/pinbin",
+        "rw": false
+      }
+    ]
+  },
+  "pr238-physical-auth-a-cap2-20261010-postgres-1": {
+    "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 4039908,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-10T06:50:21.750399213Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-10T06:54:32.604356655Z",
+            "End": "2026-10-10T06:54:32.640542258Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:37.641796759Z",
+            "End": "2026-10-10T06:54:37.673099037Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:42.673411388Z",
+            "End": "2026-10-10T06:54:42.710180708Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:47.710591397Z",
+            "End": "2026-10-10T06:54:47.759876079Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:52.760609001Z",
+            "End": "2026-10-10T06:54:52.80166907Z",
+            "ExitCode": 0,
+            "Output": "/var/run/postgresql:5432 - accepting connections\n"
+          }
+        ]
+      }
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/var/lib/postgresql",
+        "rw": true
+      }
+    ]
+  },
+  "pr238-physical-auth-a-cap2-20261010-valkey-1": {
+    "image": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 4039907,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-10T06:50:21.753962837Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-10T06:54:32.6036593Z",
+            "End": "2026-10-10T06:54:32.637885655Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:37.63846583Z",
+            "End": "2026-10-10T06:54:37.670378925Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:42.671647066Z",
+            "End": "2026-10-10T06:54:42.704376963Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:47.705651253Z",
+            "End": "2026-10-10T06:54:47.758024999Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          },
+          {
+            "Start": "2026-10-10T06:54:52.758827269Z",
+            "End": "2026-10-10T06:54:52.799474957Z",
+            "ExitCode": 0,
+            "Output": "PONG\n"
+          }
+        ]
+      }
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": []
+  },
+  "pr238-physical-auth-a-cap2-20261010-migrate-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 4040320,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-10-10T06:50:28.558008088Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Health": {
+        "Status": "healthy",
+        "FailingStreak": 0,
+        "Log": [
+          {
+            "Start": "2026-10-10T06:54:46.974578127Z",
+            "End": "2026-10-10T06:54:47.018551733Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-10T06:54:49.01900284Z",
+            "End": "2026-10-10T06:54:49.076095794Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-10T06:54:51.07711334Z",
+            "End": "2026-10-10T06:54:51.120534878Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-10T06:54:53.121036524Z",
+            "End": "2026-10-10T06:54:53.15709387Z",
+            "ExitCode": 0,
+            "Output": ""
+          },
+          {
+            "Start": "2026-10-10T06:54:55.157644775Z",
+            "End": "2026-10-10T06:54:55.254239931Z",
+            "ExitCode": 0,
+            "Output": ""
+          }
+        ]
+      }
+    },
+    "restart_count": 0,
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {},
+    "mounts": [
+      {
+        "type": "volume",
+        "destination": "/var/lib/nazo_oauth",
+        "rw": true
+      }
+    ]
+  }
+}

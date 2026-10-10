@@ -1,0 +1,46 @@
+{
+  "key": "AUTH_A_CAP2",
+  "from_ts": 1791615059.18065,
+  "to_ts": 1791615260.833962,
+  "db_delta_bytes": 380518400,
+  "observed_relation_delta_bytes": {
+    "access_token_revocations": {
+      "table_bytes": 0,
+      "index_bytes": 0
+    },
+    "security_audit_events": {
+      "table_bytes": 110108672,
+      "index_bytes": 67207168
+    },
+    "oauth_token_issuances": {
+      "table_bytes": 61210624,
+      "index_bytes": 42893312
+    },
+    "security_audit_chain_entries": {
+      "table_bytes": 18489344,
+      "index_bytes": 28712960
+    },
+    "oauth_refresh_contracts": {
+      "table_bytes": 1474560,
+      "index_bytes": 425984
+    },
+    "oauth_refresh_families": {
+      "table_bytes": 13066240,
+      "index_bytes": 29425664
+    },
+    "oauth_refresh_spent_tokens": {
+      "table_bytes": 0,
+      "index_bytes": 0
+    }
+  },
+  "other_database_bytes_first_last": [
+    12252863,
+    19756735
+  ],
+  "other_database_bytes_min_max": [
+    12252863,
+    19756735
+  ],
+  "terminal_other_database_bytes": 19543743,
+  "note": "Seven hot relations include heap/TOAST/FSM/VM via pg_table_size and their indexes. Residual includes other relations, catalogs and allocation overhead. Values are physical allocations, not necessary live domain bytes."
+}

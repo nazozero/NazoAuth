@@ -1,0 +1,346 @@
+META|run_id|pr238-physical-auth-diag-20261010
+META|phase|post
+META|sampled_at|2026-10-10 05:18:12.306622
+META|server_version_num|180006
+META|server_version|PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+META|database|oauth
+META|schema_version|20261010000500
+META|pg_stat_statements_track|all
+META|db_stats_reset|
+RELATION_BYTES|17849|public.oauth_token_issuances|164675584|65536|119914496|8192|284663808|290993|53604|732001|0|0|440953|0|10|284663808
+RELATION_BYTES|17750|public.security_audit_events|139640832|65536|106266624|8192|245981184|75949|114989|2187075|732001|0|2111691|0|15|245981184
+RELATION_BYTES|18579|public.oauth_refresh_families|27369472|32768|41656320|8192|69066752|13481|69208|732993|723073|0|719674|0|15|69066752
+RELATION_BYTES|18451|public.security_audit_chain_entries|5513216|24576|34152448|8192|39698432|0|47916|2187075|0|0|2187075|0|15|39698432
+RELATION_BYTES|16540|public.user_client_grants|1597440|32768|5382144|8192|7020544|992|21038|992|732001|0|0|0|15|7020544
+RELATION_BYTES|18560|public.oauth_refresh_contracts|1449984|32768|434176|8192|1925120|992|0|1984|0|0|992|0|1|1925120
+RELATION_BYTES|16438|public.users|303104|24576|565248|8192|901120|993|0|993|0|0|0|0|0|901120
+RELATION_BYTES|17737|public.security_audit_chain_state|221184|32768|16384|8192|278528|1|53|1|61278|61230|0|0|1|278528
+RELATION_BYTES|17182|public.runtime_module_state_events|57344|24576|57344|8192|147456|41|16|41|16|16|0|0|0|147456
+RELATION_BYTES|16470|public.oauth_clients|8192|0|122880|8192|139264|6|0|6|0|0|0|0|0|139264
+RELATION_BYTES|17596|public.oauth_client_mtls_trust_anchor_requests|8192|0|98304|8192|114688|1|0|1|0|0|0|0|0|114688
+RELATION_BYTES|18418|public.tenant_signing_keysets|8192|0|16384|57344|81920|1|0|1|0|0|0|0|0|81920
+RELATION_BYTES|16592|public.client_access_requests|0|0|73728|8192|81920|0|0|0|0|0|0|0|0|81920
+RELATION_BYTES|16727|public.organizations|8192|0|65536|0|73728|1|0|1|0|0|0|0|0|73728
+RELATION_BYTES|17038|public.scim_tokens|8192|0|57344|8192|73728|1|0|1|0|0|0|0|0|73728
+RELATION_BYTES|16704|public.realms|8192|0|65536|0|73728|1|0|1|0|0|0|0|0|73728
+RELATION_BYTES|18325|public.tenant_runtime_bindings|8192|0|49152|8192|65536|1|0|1|0|0|0|0|0|65536
+RELATION_BYTES|17163|public.runtime_module_instance_states|8192|0|49152|0|57344|16|9|16|9|0|0|0|0|57344
+RELATION_BYTES|17993|public.openid4vc_trust_policies|0|0|40960|8192|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17212|public.identity_security_events|0|0|49152|0|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17475|public.openid4vp_transactions|0|0|40960|8192|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17424|public.openid4vci_deferred_transactions|0|0|40960|8192|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17141|public.runtime_module_desired_states|8192|0|32768|8192|49152|16|16|16|16|16|0|0|0|49152
+RELATION_BYTES|17348|public.openid4vci_offers|0|0|32768|8192|40960|0|0|0|0|0|0|0|0|40960
+RELATION_BYTES|17108|public.backchannel_logout_deliveries|0|0|32768|8192|40960|0|0|0|0|0|0|0|0|40960
+RELATION_BYTES|16687|public.tenants|8192|0|32768|0|40960|1|0|1|0|0|0|0|0|40960
+RELATION_BYTES|18625|public.oauth_refresh_spent_tokens|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17005|public.external_identity_links|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17454|public.openid4vci_notifications|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17068|public.scim_audit_events|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|18084|public.controller_registry_slots|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|18155|public.controller_recovery_challenges|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|18033|public.openid4vc_trust_policy_clients|0|0|32768|0|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17821|public.openid4vci_issuance_responses|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17256|public.scim_security_events|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17955|public.tenant_resource_bindings|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17378|public.openid4vci_access_grants|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|16911|public.user_totp_credentials|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|16975|public.user_passkey_credentials|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17658|public.oauth_client_mtls_trust_anchor_events|0|0|16384|8192|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|18312|public.tenant_runtime_directory_state|8192|0|16384|0|24576|1|1|1|1|1|0|0|0|24576
+RELATION_BYTES|16954|public.user_mfa_remembered_devices|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|17412|public.openid4vci_nonces|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|16430|public.__diesel_schema_migrations|8192|0|16384|0|24576|121|0|121|0|0|0|0|0|24576
+RELATION_BYTES|17561|public.openid4vci_credential_dataset_events|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|16572|public.access_token_revocations|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|18114|public.controller_identity_approvals|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|17530|public.openid4vci_credential_datasets|0|0|16384|8192|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|18250|public.controller_recovery_root_key_history|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18198|public.tenant_resource_control_operations|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18220|public.recovery_invalidations|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18676|public.oauth_subject_bindings|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18280|public.admin_provision_receipts|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|17280|public.scim_security_event_receipts|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|16935|public.user_mfa_backup_codes|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18134|public.controller_recovery_roots|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18368|public.tenant_directory_control_operations|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|17894|public.tenant_resource_states|0|0|8192|0|8192|0|0|0|0|0|0|0|0|8192
+INDEX_DETAIL|16436|public.__diesel_schema_migrations|__diesel_schema_migrations_pkey|16384|1|CREATE UNIQUE INDEX __diesel_schema_migrations_pkey ON public.__diesel_schema_migrations USING btree (version)
+INDEX_DETAIL|16591|public.access_token_revocations|ix_access_token_revocations_expires_at|8192|0|CREATE INDEX ix_access_token_revocations_expires_at ON public.access_token_revocations USING btree (expires_at)
+INDEX_DETAIL|16865|public.access_token_revocations|ix_access_token_revocations_tenant_id|8192|0|CREATE INDEX ix_access_token_revocations_tenant_id ON public.access_token_revocations USING btree (tenant_id)
+INDEX_DETAIL|16857|public.access_token_revocations|access_token_revocations_pkey|8192|0|CREATE UNIQUE INDEX access_token_revocations_pkey ON public.access_token_revocations USING btree (tenant_id, access_token_jti_blake3)
+INDEX_DETAIL|18291|public.admin_provision_receipts|admin_provision_receipts_pkey|8192|0|CREATE UNIQUE INDEX admin_provision_receipts_pkey ON public.admin_provision_receipts USING btree (operation_id)
+INDEX_DETAIL|18303|public.admin_provision_receipts|uq_admin_provision_receipts_user|8192|0|CREATE UNIQUE INDEX uq_admin_provision_receipts_user ON public.admin_provision_receipts USING btree (user_id)
+INDEX_DETAIL|17131|public.backchannel_logout_deliveries|backchannel_logout_deliveries_pkey|8192|0|CREATE UNIQUE INDEX backchannel_logout_deliveries_pkey ON public.backchannel_logout_deliveries USING btree (id)
+INDEX_DETAIL|17251|public.backchannel_logout_deliveries|uq_backchannel_logout_operation_client|8192|0|CREATE UNIQUE INDEX uq_backchannel_logout_operation_client ON public.backchannel_logout_deliveries USING btree (tenant_id, operation_key, client_id) WHERE (operation_key IS NOT NULL)
+INDEX_DETAIL|17139|public.backchannel_logout_deliveries|idx_backchannel_logout_deliveries_client|8192|0|CREATE INDEX idx_backchannel_logout_deliveries_client ON public.backchannel_logout_deliveries USING btree (tenant_id, client_id, created_at)
+INDEX_DETAIL|17138|public.backchannel_logout_deliveries|idx_backchannel_logout_deliveries_due|8192|194|CREATE INDEX idx_backchannel_logout_deliveries_due ON public.backchannel_logout_deliveries USING btree (next_attempt_at, created_at) WHERE ((delivered_at IS NULL) AND (failed_at IS NULL))
+INDEX_DETAIL|18721|public.client_access_requests|ix_access_request_required_approval_event|8192|2111691|CREATE INDEX ix_access_request_required_approval_event ON public.client_access_requests USING btree (required_approval_event_id) WHERE (required_approval_event_id IS NOT NULL)
+INDEX_DETAIL|16866|public.client_access_requests|ix_client_access_requests_tenant_id|8192|0|CREATE INDEX ix_client_access_requests_tenant_id ON public.client_access_requests USING btree (tenant_id)
+INDEX_DETAIL|16628|public.client_access_requests|ix_client_access_requests_status|8192|0|CREATE INDEX ix_client_access_requests_status ON public.client_access_requests USING btree (status)
+INDEX_DETAIL|16860|public.client_access_requests|ux_client_access_requests_tenant_user_pending|8192|0|CREATE UNIQUE INDEX ux_client_access_requests_tenant_user_pending ON public.client_access_requests USING btree (tenant_id, user_id) WHERE (status = 0)
+INDEX_DETAIL|16627|public.client_access_requests|ix_client_access_requests_user_id|8192|0|CREATE INDEX ix_client_access_requests_user_id ON public.client_access_requests USING btree (user_id)
+INDEX_DETAIL|16610|public.client_access_requests|client_access_requests_pkey|8192|0|CREATE UNIQUE INDEX client_access_requests_pkey ON public.client_access_requests USING btree (id)
+INDEX_DETAIL|16631|public.client_access_requests|ix_client_access_requests_created_at|8192|0|CREATE INDEX ix_client_access_requests_created_at ON public.client_access_requests USING btree (created_at DESC)
+INDEX_DETAIL|16630|public.client_access_requests|ix_client_access_requests_status_created_at|8192|0|CREATE INDEX ix_client_access_requests_status_created_at ON public.client_access_requests USING btree (status, created_at DESC)
+INDEX_DETAIL|16629|public.client_access_requests|ix_client_access_requests_user_created_at|8192|0|CREATE INDEX ix_client_access_requests_user_created_at ON public.client_access_requests USING btree (user_id, created_at DESC)
+INDEX_DETAIL|18737|public.controller_identity_approvals|ix_controller_identity_approvals_expiry|8192|0|CREATE INDEX ix_controller_identity_approvals_expiry ON public.controller_identity_approvals USING btree (expires_at, approval_id)
+INDEX_DETAIL|18131|public.controller_identity_approvals|pk_controller_identity_approvals|8192|0|CREATE UNIQUE INDEX pk_controller_identity_approvals ON public.controller_identity_approvals USING btree (approval_id)
+INDEX_DETAIL|18133|public.controller_identity_approvals|ux_controller_identity_approvals_token_hash|8192|0|CREATE UNIQUE INDEX ux_controller_identity_approvals_token_hash ON public.controller_identity_approvals USING btree (token_hash)
+INDEX_DETAIL|18248|public.controller_recovery_challenges|uq_controller_recovery_challenges_allocation_nonce|8192|0|CREATE UNIQUE INDEX uq_controller_recovery_challenges_allocation_nonce ON public.controller_recovery_challenges USING btree (deployment_id, allocation_nonce)
+INDEX_DETAIL|18188|public.controller_recovery_challenges|ux_controller_recovery_challenges_pending_per_deployment|8192|1|CREATE UNIQUE INDEX ux_controller_recovery_challenges_pending_per_deployment ON public.controller_recovery_challenges USING btree (deployment_id) WHERE (consumed_at IS NULL)
+INDEX_DETAIL|18181|public.controller_recovery_challenges|pk_controller_recovery_challenges|8192|0|CREATE UNIQUE INDEX pk_controller_recovery_challenges ON public.controller_recovery_challenges USING btree (challenge_id)
+INDEX_DETAIL|18260|public.controller_recovery_root_key_history|pk_controller_recovery_root_key_history|8192|0|CREATE UNIQUE INDEX pk_controller_recovery_root_key_history ON public.controller_recovery_root_key_history USING btree (deployment_id, recovery_public_key)
+INDEX_DETAIL|18153|public.controller_recovery_roots|pk_controller_recovery_roots|8192|0|CREATE UNIQUE INDEX pk_controller_recovery_roots ON public.controller_recovery_roots USING btree (deployment_id)
+INDEX_DETAIL|18112|public.controller_registry_slots|ux_controller_registry_slots_deployment_kid|8192|0|CREATE UNIQUE INDEX ux_controller_registry_slots_deployment_kid ON public.controller_registry_slots USING btree (deployment_id, kid)
+INDEX_DETAIL|18110|public.controller_registry_slots|pk_controller_registry_slots|8192|0|CREATE UNIQUE INDEX pk_controller_registry_slots ON public.controller_registry_slots USING btree (deployment_id, controller_id)
+INDEX_DETAIL|18113|public.controller_registry_slots|ux_controller_registry_slots_active_slot_index|8192|0|CREATE UNIQUE INDEX ux_controller_registry_slots_active_slot_index ON public.controller_registry_slots USING btree (deployment_id, slot_index) WHERE ((status)::text = 'active'::text)
+INDEX_DETAIL|17034|public.external_identity_links|ux_external_identity_links_tenant_provider_subject|8192|0|CREATE UNIQUE INDEX ux_external_identity_links_tenant_provider_subject ON public.external_identity_links USING btree (tenant_id, provider_type, provider_id, subject)
+INDEX_DETAIL|17035|public.external_identity_links|ix_external_identity_links_tenant_user|8192|0|CREATE INDEX ix_external_identity_links_tenant_user ON public.external_identity_links USING btree (tenant_id, user_id)
+INDEX_DETAIL|17027|public.external_identity_links|external_identity_links_pkey|8192|0|CREATE UNIQUE INDEX external_identity_links_pkey ON public.external_identity_links USING btree (id)
+INDEX_DETAIL|18311|public.identity_security_events|uq_identity_security_event_admin_provision_request|8192|0|CREATE UNIQUE INDEX uq_identity_security_event_admin_provision_request ON public.identity_security_events USING btree (request_id) WHERE ((event_type)::text = 'admin_user_created'::text)
+INDEX_DETAIL|17248|public.identity_security_events|idx_identity_security_events_actor_time|8192|0|CREATE INDEX idx_identity_security_events_actor_time ON public.identity_security_events USING btree (actor_id, occurred_at DESC) WHERE (actor_id IS NOT NULL)
+INDEX_DETAIL|17230|public.identity_security_events|identity_security_events_pkey|8192|0|CREATE UNIQUE INDEX identity_security_events_pkey ON public.identity_security_events USING btree (id)
+INDEX_DETAIL|18304|public.identity_security_events|uq_identity_security_event_bootstrap_request|8192|0|CREATE UNIQUE INDEX uq_identity_security_event_bootstrap_request ON public.identity_security_events USING btree (request_id) WHERE ((event_type)::text = 'initial_admin_bootstrap'::text)
+INDEX_DETAIL|17247|public.identity_security_events|idx_identity_security_events_tenant_time|8192|0|CREATE INDEX idx_identity_security_events_tenant_time ON public.identity_security_events USING btree (tenant_id, occurred_at DESC)
+INDEX_DETAIL|17249|public.identity_security_events|idx_identity_security_events_target_time|8192|0|CREATE INDEX idx_identity_security_events_target_time ON public.identity_security_events USING btree (target_user_id, occurred_at DESC) WHERE (target_user_id IS NOT NULL)
+INDEX_DETAIL|17673|public.oauth_client_mtls_trust_anchor_events|oauth_client_mtls_trust_anchor_events_pkey|8192|0|CREATE UNIQUE INDEX oauth_client_mtls_trust_anchor_events_pkey ON public.oauth_client_mtls_trust_anchor_events USING btree (id)
+INDEX_DETAIL|17685|public.oauth_client_mtls_trust_anchor_events|ix_mtls_trust_anchor_events_request_created|8192|0|CREATE INDEX ix_mtls_trust_anchor_events_request_created ON public.oauth_client_mtls_trust_anchor_events USING btree (tenant_id, request_id, created_at, id)
+INDEX_DETAIL|17628|public.oauth_client_mtls_trust_anchor_requests|uq_mtls_trust_anchor_request_tenant|16384|0|CREATE UNIQUE INDEX uq_mtls_trust_anchor_request_tenant ON public.oauth_client_mtls_trust_anchor_requests USING btree (id, tenant_id)
+INDEX_DETAIL|17657|public.oauth_client_mtls_trust_anchor_requests|ix_mtls_trust_anchor_active_bundle|16384|0|CREATE INDEX ix_mtls_trust_anchor_active_bundle ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, certificate_sha256) WHERE (status = 1)
+INDEX_DETAIL|17656|public.oauth_client_mtls_trust_anchor_requests|ix_mtls_trust_anchor_status_created|16384|1|CREATE INDEX ix_mtls_trust_anchor_status_created ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, status, created_at DESC)
+INDEX_DETAIL|17655|public.oauth_client_mtls_trust_anchor_requests|ix_mtls_trust_anchor_requester_created|16384|0|CREATE INDEX ix_mtls_trust_anchor_requester_created ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, user_id, created_at DESC)
+INDEX_DETAIL|17626|public.oauth_client_mtls_trust_anchor_requests|ux_mtls_trust_anchor_client_certificate|16384|1|CREATE UNIQUE INDEX ux_mtls_trust_anchor_client_certificate ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, client_id, certificate_sha256)
+INDEX_DETAIL|17624|public.oauth_client_mtls_trust_anchor_requests|oauth_client_mtls_trust_anchor_requests_pkey|16384|0|CREATE UNIQUE INDEX oauth_client_mtls_trust_anchor_requests_pkey ON public.oauth_client_mtls_trust_anchor_requests USING btree (id)
+INDEX_DETAIL|16498|public.oauth_clients|oauth_clients_pkey|16384|0|CREATE UNIQUE INDEX oauth_clients_pkey ON public.oauth_clients USING btree (id)
+INDEX_DETAIL|16852|public.oauth_clients|ux_oauth_clients_tenant_client_id|16384|6|CREATE UNIQUE INDEX ux_oauth_clients_tenant_client_id ON public.oauth_clients USING btree (tenant_id, client_id)
+INDEX_DETAIL|16869|public.oauth_clients|uq_oauth_clients_id_tenant|16384|992|CREATE UNIQUE INDEX uq_oauth_clients_id_tenant ON public.oauth_clients USING btree (id, tenant_id)
+INDEX_DETAIL|16862|public.oauth_clients|ix_oauth_clients_tenant_id|16384|0|CREATE INDEX ix_oauth_clients_tenant_id ON public.oauth_clients USING btree (tenant_id)
+INDEX_DETAIL|18078|public.oauth_clients|uq_oauth_clients_tenant_internal_public_id|16384|7314061|CREATE UNIQUE INDEX uq_oauth_clients_tenant_internal_public_id ON public.oauth_clients USING btree (tenant_id, id, client_id)
+INDEX_DETAIL|17991|public.oauth_clients|uq_oauth_clients_tenant_internal_id|16384|0|CREATE UNIQUE INDEX uq_oauth_clients_tenant_internal_id ON public.oauth_clients USING btree (tenant_id, id)
+INDEX_DETAIL|16501|public.oauth_clients|ix_oauth_clients_created_at_desc|16384|0|CREATE INDEX ix_oauth_clients_created_at_desc ON public.oauth_clients USING btree (created_at DESC)
+INDEX_DETAIL|17105|public.oauth_clients|ux_oauth_clients_registration_access_token_blake3|8192|0|CREATE UNIQUE INDEX ux_oauth_clients_registration_access_token_blake3 ON public.oauth_clients USING btree (registration_access_token_blake3) WHERE (registration_access_token_blake3 IS NOT NULL)
+INDEX_DETAIL|18664|public.oauth_refresh_contracts|ix_oauth_refresh_contract_scan|221184|6293|CREATE INDEX ix_oauth_refresh_contract_scan ON public.oauth_refresh_contracts USING btree (created_at, tenant_id, contract_blake3)
+INDEX_DETAIL|18572|public.oauth_refresh_contracts|pk_oauth_refresh_contracts|212992|2173690|CREATE UNIQUE INDEX pk_oauth_refresh_contracts ON public.oauth_refresh_contracts USING btree (tenant_id, contract_blake3)
+INDEX_DETAIL|18600|public.oauth_refresh_families|ux_oauth_refresh_families_current_digest|16842752|0|CREATE UNIQUE INDEX ux_oauth_refresh_families_current_digest ON public.oauth_refresh_families USING btree (tenant_id, current_token_blake3)
+INDEX_DETAIL|18598|public.oauth_refresh_families|pk_oauth_refresh_families|9519104|2822020|CREATE UNIQUE INDEX pk_oauth_refresh_families ON public.oauth_refresh_families USING btree (tenant_id, token_family_id)
+INDEX_DETAIL|18705|public.oauth_refresh_families|ix_orf_revoked_cleanup|5971968|2885|CREATE INDEX ix_orf_revoked_cleanup ON public.oauth_refresh_families USING btree (revoked_at, tenant_id, token_family_id) WHERE (revoked_at IS NOT NULL)
+INDEX_DETAIL|18624|public.oauth_refresh_families|ix_orf_expires|5062656|1393360|CREATE INDEX ix_orf_expires ON public.oauth_refresh_families USING btree (current_expires_at)
+INDEX_DETAIL|18622|public.oauth_refresh_families|ix_orf_scope_active|1449984|731815|CREATE INDEX ix_orf_scope_active ON public.oauth_refresh_families USING btree (tenant_id, user_id, client_id, current_issued_at, token_family_id) WHERE (revoked_at IS NULL)
+INDEX_DETAIL|18660|public.oauth_refresh_families|idx_oauth_refresh_families_contract|1343488|1219007|CREATE INDEX idx_oauth_refresh_families_contract ON public.oauth_refresh_families USING btree (tenant_id, contract_blake3)
+INDEX_DETAIL|18623|public.oauth_refresh_families|ix_orf_client_active|1343488|31747|CREATE INDEX ix_orf_client_active ON public.oauth_refresh_families USING btree (tenant_id, client_id) WHERE (revoked_at IS NULL)
+INDEX_DETAIL|18646|public.oauth_refresh_spent_tokens|ix_orst_family|8192|2157533|CREATE INDEX ix_orst_family ON public.oauth_refresh_spent_tokens USING btree (tenant_id, token_family_id)
+INDEX_DETAIL|18639|public.oauth_refresh_spent_tokens|pk_oauth_refresh_spent_tokens|8192|0|CREATE UNIQUE INDEX pk_oauth_refresh_spent_tokens ON public.oauth_refresh_spent_tokens USING btree (tenant_id, refresh_token_blake3)
+INDEX_DETAIL|18647|public.oauth_refresh_spent_tokens|ix_orst_expires|8192|0|CREATE INDEX ix_orst_expires ON public.oauth_refresh_spent_tokens USING btree (expires_at)
+INDEX_DETAIL|18683|public.oauth_subject_bindings|oauth_subject_bindings_pkey|8192|0|CREATE UNIQUE INDEX oauth_subject_bindings_pkey ON public.oauth_subject_bindings USING btree (tenant_id, subject)
+INDEX_DETAIL|18690|public.oauth_subject_bindings|oauth_subject_bindings_owner_idx|8192|0|CREATE INDEX oauth_subject_bindings_owner_idx ON public.oauth_subject_bindings USING btree (user_id, tenant_id)
+INDEX_DETAIL|17879|public.oauth_token_issuances|oauth_token_issuances_single_use_key_idx|54673408|732001|CREATE UNIQUE INDEX oauth_token_issuances_single_use_key_idx ON public.oauth_token_issuances USING btree (tenant_id, client_id, single_use_key_blake3) WHERE (single_use_key_blake3 IS NOT NULL)
+INDEX_DETAIL|17880|public.oauth_token_issuances|oauth_token_issuances_tenant_jti_idx|32595968|0|CREATE UNIQUE INDEX oauth_token_issuances_tenant_jti_idx ON public.oauth_token_issuances USING btree (tenant_id, access_token_jti)
+INDEX_DETAIL|17881|public.oauth_token_issuances|oauth_token_issuances_retention_idx|17096704|4182|CREATE INDEX oauth_token_issuances_retention_idx ON public.oauth_token_issuances USING btree (retain_until, issuance_id)
+INDEX_DETAIL|17862|public.oauth_token_issuances|oauth_token_issuances_pkey|15466496|446537|CREATE UNIQUE INDEX oauth_token_issuances_pkey ON public.oauth_token_issuances USING btree (issuance_id)
+INDEX_DETAIL|17882|public.oauth_token_issuances|ix_oauth_token_issuances_tenant_user|8192|0|CREATE INDEX ix_oauth_token_issuances_tenant_user ON public.oauth_token_issuances USING btree (tenant_id, user_id) WHERE (user_id IS NOT NULL)
+INDEX_DETAIL|18019|public.openid4vc_trust_policies|openid4vc_trust_policies_pkey|8192|0|CREATE UNIQUE INDEX openid4vc_trust_policies_pkey ON public.openid4vc_trust_policies USING btree (id)
+INDEX_DETAIL|18030|public.openid4vc_trust_policies|ix_openid4vc_trust_policies_resource_history|8192|0|CREATE INDEX ix_openid4vc_trust_policies_resource_history ON public.openid4vc_trust_policies USING btree (tenant_id, resource_id, resource_digest, created_at DESC)
+INDEX_DETAIL|18029|public.openid4vc_trust_policies|ix_openid4vc_trust_policies_tenant_active|8192|0|CREATE INDEX ix_openid4vc_trust_policies_tenant_active ON public.openid4vc_trust_policies USING btree (tenant_id, active, updated_at DESC)
+INDEX_DETAIL|18021|public.openid4vc_trust_policies|uq_openid4vc_trust_policy_tenant_binding|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_tenant_binding ON public.openid4vc_trust_policies USING btree (tenant_id, id)
+INDEX_DETAIL|18028|public.openid4vc_trust_policies|uq_openid4vc_trust_policy_active|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_active ON public.openid4vc_trust_policies USING btree (tenant_id, resource_id) WHERE active
+INDEX_DETAIL|18061|public.openid4vc_trust_policy_clients|uq_openid4vc_trust_policy_client_active|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_client_active ON public.openid4vc_trust_policy_clients USING btree (tenant_id, oauth_client_id) WHERE active
+INDEX_DETAIL|18062|public.openid4vc_trust_policy_clients|ix_openid4vc_trust_policy_clients_policy|8192|0|CREATE INDEX ix_openid4vc_trust_policy_clients_policy ON public.openid4vc_trust_policy_clients USING btree (tenant_id, policy_id, active)
+INDEX_DETAIL|18049|public.openid4vc_trust_policy_clients|uq_openid4vc_trust_policy_client_history|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_client_history ON public.openid4vc_trust_policy_clients USING btree (policy_id, oauth_client_id)
+INDEX_DETAIL|18047|public.openid4vc_trust_policy_clients|openid4vc_trust_policy_clients_pkey|8192|0|CREATE UNIQUE INDEX openid4vc_trust_policy_clients_pkey ON public.openid4vc_trust_policy_clients USING btree (id)
+INDEX_DETAIL|17399|public.openid4vci_access_grants|openid4vci_access_grants_token_hash_key|8192|0|CREATE UNIQUE INDEX openid4vci_access_grants_token_hash_key ON public.openid4vci_access_grants USING btree (token_hash)
+INDEX_DETAIL|17397|public.openid4vci_access_grants|openid4vci_access_grants_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_access_grants_pkey ON public.openid4vci_access_grants USING btree (token_id)
+INDEX_DETAIL|18665|public.openid4vci_access_grants|ix_openid4vci_access_expiry_scan|8192|0|CREATE INDEX ix_openid4vci_access_expiry_scan ON public.openid4vci_access_grants USING btree (expires_at, token_id)
+INDEX_DETAIL|17595|public.openid4vci_credential_dataset_events|ix_openid4vci_credential_dataset_events_actor|8192|0|CREATE INDEX ix_openid4vci_credential_dataset_events_actor ON public.openid4vci_credential_dataset_events USING btree (tenant_id, actor_user_id, created_at DESC)
+INDEX_DETAIL|17594|public.openid4vci_credential_dataset_events|ix_openid4vci_credential_dataset_events_subject|8192|0|CREATE INDEX ix_openid4vci_credential_dataset_events_subject ON public.openid4vci_credential_dataset_events USING btree (tenant_id, subject_id, credential_configuration_id, created_at DESC)
+INDEX_DETAIL|17577|public.openid4vci_credential_dataset_events|openid4vci_credential_dataset_events_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_credential_dataset_events_pkey ON public.openid4vci_credential_dataset_events USING btree (id)
+INDEX_DETAIL|17548|public.openid4vci_credential_datasets|openid4vci_credential_datasets_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_credential_datasets_pkey ON public.openid4vci_credential_datasets USING btree (tenant_id, subject_id, credential_configuration_id)
+INDEX_DETAIL|17560|public.openid4vci_credential_datasets|ix_openid4vci_credential_datasets_validity|8192|0|CREATE INDEX ix_openid4vci_credential_datasets_validity ON public.openid4vci_credential_datasets USING btree (tenant_id, subject_id, valid_until)
+INDEX_DETAIL|18662|public.openid4vci_deferred_transactions|ix_openid4vci_deferred_token|8192|0|CREATE INDEX ix_openid4vci_deferred_token ON public.openid4vci_deferred_transactions USING btree (token_id)
+INDEX_DETAIL|17446|public.openid4vci_deferred_transactions|openid4vci_deferred_transactions_transaction_hash_key|8192|0|CREATE UNIQUE INDEX openid4vci_deferred_transactions_transaction_hash_key ON public.openid4vci_deferred_transactions USING btree (transaction_hash)
+INDEX_DETAIL|17444|public.openid4vci_deferred_transactions|openid4vci_deferred_transactions_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_deferred_transactions_pkey ON public.openid4vci_deferred_transactions USING btree (id)
+INDEX_DETAIL|17453|public.openid4vci_deferred_transactions|ix_openid4vci_deferred_expiry|8192|0|CREATE INDEX ix_openid4vci_deferred_expiry ON public.openid4vci_deferred_transactions USING btree (expires_at)
+INDEX_DETAIL|17820|public.openid4vci_deferred_transactions|ix_openid4vci_deferred_claim_expiry|8192|0|CREATE INDEX ix_openid4vci_deferred_claim_expiry ON public.openid4vci_deferred_transactions USING btree (claim_expires_at) WHERE (claim_id IS NOT NULL)
+INDEX_DETAIL|17841|public.openid4vci_issuance_responses|uq_openid4vci_issuance_response_request|8192|0|CREATE UNIQUE INDEX uq_openid4vci_issuance_response_request ON public.openid4vci_issuance_responses USING btree (token_id, request_digest)
+INDEX_DETAIL|17848|public.openid4vci_issuance_responses|ix_openid4vci_issuance_response_expiry|8192|0|CREATE INDEX ix_openid4vci_issuance_response_expiry ON public.openid4vci_issuance_responses USING btree (expires_at)
+INDEX_DETAIL|17839|public.openid4vci_issuance_responses|openid4vci_issuance_responses_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_issuance_responses_pkey ON public.openid4vci_issuance_responses USING btree (issuance_id)
+INDEX_DETAIL|17819|public.openid4vci_nonces|ix_openid4vci_nonce_claim_expiry|8192|0|CREATE INDEX ix_openid4vci_nonce_claim_expiry ON public.openid4vci_nonces USING btree (claim_expires_at) WHERE (claim_id IS NOT NULL)
+INDEX_DETAIL|17423|public.openid4vci_nonces|ix_openid4vci_nonce_expiry|8192|0|CREATE INDEX ix_openid4vci_nonce_expiry ON public.openid4vci_nonces USING btree (expires_at)
+INDEX_DETAIL|17421|public.openid4vci_nonces|openid4vci_nonces_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_nonces_pkey ON public.openid4vci_nonces USING btree (nonce_hash)
+INDEX_DETAIL|17468|public.openid4vci_notifications|openid4vci_notifications_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_notifications_pkey ON public.openid4vci_notifications USING btree (notification_id)
+INDEX_DETAIL|18663|public.openid4vci_notifications|ix_openid4vci_notification_token|8192|0|CREATE INDEX ix_openid4vci_notification_token ON public.openid4vci_notifications USING btree (token_id)
+INDEX_DETAIL|18661|public.openid4vci_notifications|ix_openid4vci_notification_expiry|8192|0|CREATE INDEX ix_openid4vci_notification_expiry ON public.openid4vci_notifications USING btree (expires_at)
+INDEX_DETAIL|17377|public.openid4vci_offers|ix_openid4vci_offer_expiry|8192|0|CREATE INDEX ix_openid4vci_offer_expiry ON public.openid4vci_offers USING btree (expires_at)
+INDEX_DETAIL|17376|public.openid4vci_offers|ux_openid4vci_offer_pre_authorized_code_hash|8192|0|CREATE UNIQUE INDEX ux_openid4vci_offer_pre_authorized_code_hash ON public.openid4vci_offers USING btree (pre_authorized_code_hash) WHERE (pre_authorized_code_hash IS NOT NULL)
+INDEX_DETAIL|17375|public.openid4vci_offers|ux_openid4vci_offer_issuer_state_hash|8192|0|CREATE UNIQUE INDEX ux_openid4vci_offer_issuer_state_hash ON public.openid4vci_offers USING btree (issuer_state_hash) WHERE (issuer_state_hash IS NOT NULL)
+INDEX_DETAIL|17363|public.openid4vci_offers|openid4vci_offers_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_offers_pkey ON public.openid4vci_offers USING btree (id)
+INDEX_DETAIL|17504|public.openid4vp_transactions|openid4vp_transactions_state_hash_key|8192|0|CREATE UNIQUE INDEX openid4vp_transactions_state_hash_key ON public.openid4vp_transactions USING btree (state_hash)
+INDEX_DETAIL|17502|public.openid4vp_transactions|openid4vp_transactions_pkey|8192|0|CREATE UNIQUE INDEX openid4vp_transactions_pkey ON public.openid4vp_transactions USING btree (id)
+INDEX_DETAIL|18071|public.openid4vp_transactions|ix_openid4vp_transactions_openid4vc_trust_policy|8192|0|CREATE INDEX ix_openid4vp_transactions_openid4vc_trust_policy ON public.openid4vp_transactions USING btree (tenant_id, openid4vc_trust_policy_binding_id) WHERE (openid4vc_trust_policy_binding_id IS NOT NULL)
+INDEX_DETAIL|17512|public.openid4vp_transactions|ux_openid4vp_create_request_jti|8192|0|CREATE UNIQUE INDEX ux_openid4vp_create_request_jti ON public.openid4vp_transactions USING btree (tenant_id, create_request_jti)
+INDEX_DETAIL|17511|public.openid4vp_transactions|ix_openid4vp_transaction_expiry|8192|0|CREATE INDEX ix_openid4vp_transaction_expiry ON public.openid4vp_transactions USING btree (expires_at)
+INDEX_DETAIL|16754|public.organizations|ix_organizations_tenant_id|16384|0|CREATE INDEX ix_organizations_tenant_id ON public.organizations USING btree (tenant_id)
+INDEX_DETAIL|16743|public.organizations|organizations_pkey|16384|1|CREATE UNIQUE INDEX organizations_pkey ON public.organizations USING btree (id)
+INDEX_DETAIL|16752|public.organizations|ux_organizations_tenant_slug_lower|16384|0|CREATE UNIQUE INDEX ux_organizations_tenant_slug_lower ON public.organizations USING btree (tenant_id, lower((slug)::text))
+INDEX_DETAIL|16757|public.organizations|uq_organizations_id_tenant|16384|0|CREATE UNIQUE INDEX uq_organizations_id_tenant ON public.organizations USING btree (id, tenant_id)
+INDEX_DETAIL|16755|public.realms|uq_realms_id_tenant|16384|0|CREATE UNIQUE INDEX uq_realms_id_tenant ON public.realms USING btree (id, tenant_id)
+INDEX_DETAIL|16753|public.realms|ix_realms_tenant_id|16384|0|CREATE INDEX ix_realms_tenant_id ON public.realms USING btree (tenant_id)
+INDEX_DETAIL|16720|public.realms|realms_pkey|16384|1|CREATE UNIQUE INDEX realms_pkey ON public.realms USING btree (id)
+INDEX_DETAIL|16751|public.realms|ux_realms_tenant_slug_lower|16384|0|CREATE UNIQUE INDEX ux_realms_tenant_slug_lower ON public.realms USING btree (tenant_id, lower((slug)::text))
+INDEX_DETAIL|18233|public.recovery_invalidations|recovery_invalidations_pkey|8192|0|CREATE UNIQUE INDEX recovery_invalidations_pkey ON public.recovery_invalidations USING btree (operation_id)
+INDEX_DETAIL|18235|public.recovery_invalidations|uq_recovery_invalidations_tenant_epoch|8192|0|CREATE UNIQUE INDEX uq_recovery_invalidations_tenant_epoch ON public.recovery_invalidations USING btree (tenant_id, state_epoch)
+INDEX_DETAIL|17162|public.runtime_module_desired_states|idx_runtime_module_desired_states_updated_at|16384|0|CREATE INDEX idx_runtime_module_desired_states_updated_at ON public.runtime_module_desired_states USING btree (updated_at DESC)
+INDEX_DETAIL|18393|public.runtime_module_desired_states|runtime_module_desired_states_pkey|16384|32|CREATE UNIQUE INDEX runtime_module_desired_states_pkey ON public.runtime_module_desired_states USING btree (tenant_id, module_id)
+INDEX_DETAIL|18401|public.runtime_module_instance_states|runtime_module_instance_states_pkey|16384|0|CREATE UNIQUE INDEX runtime_module_instance_states_pkey ON public.runtime_module_instance_states USING btree (tenant_id, instance_id, module_id)
+INDEX_DETAIL|18414|public.runtime_module_instance_states|idx_runtime_module_instance_states_module_state|16384|15538|CREATE INDEX idx_runtime_module_instance_states_module_state ON public.runtime_module_instance_states USING btree (tenant_id, module_id, actual_state)
+INDEX_DETAIL|17180|public.runtime_module_instance_states|idx_runtime_module_instance_states_updated_at|16384|0|CREATE INDEX idx_runtime_module_instance_states_updated_at ON public.runtime_module_instance_states USING btree (updated_at DESC)
+INDEX_DETAIL|18416|public.runtime_module_state_events|idx_runtime_module_state_events_module_time|16384|0|CREATE INDEX idx_runtime_module_state_events_module_time ON public.runtime_module_state_events USING btree (tenant_id, module_id, occurred_at DESC, event_id DESC)
+INDEX_DETAIL|17202|public.runtime_module_state_events|runtime_module_state_events_pkey|16384|0|CREATE UNIQUE INDEX runtime_module_state_events_pkey ON public.runtime_module_state_events USING btree (event_id)
+INDEX_DETAIL|18415|public.runtime_module_state_events|idx_runtime_module_state_events_occurred_at|16384|0|CREATE INDEX idx_runtime_module_state_events_occurred_at ON public.runtime_module_state_events USING btree (tenant_id, occurred_at DESC, event_id DESC)
+INDEX_DETAIL|18417|public.runtime_module_state_events|idx_runtime_module_state_events_actor_time|8192|0|CREATE INDEX idx_runtime_module_state_events_actor_time ON public.runtime_module_state_events USING btree (tenant_id, actor_id, occurred_at DESC) WHERE (actor_id IS NOT NULL)
+INDEX_DETAIL|17095|public.scim_audit_events|ix_scim_audit_events_token_time|8192|0|CREATE INDEX ix_scim_audit_events_token_time ON public.scim_audit_events USING btree (scim_token_id, created_at DESC)
+INDEX_DETAIL|17083|public.scim_audit_events|scim_audit_events_pkey|8192|0|CREATE UNIQUE INDEX scim_audit_events_pkey ON public.scim_audit_events USING btree (id)
+INDEX_DETAIL|17096|public.scim_audit_events|ix_scim_audit_events_tenant_time|8192|0|CREATE INDEX ix_scim_audit_events_tenant_time ON public.scim_audit_events USING btree (tenant_id, created_at DESC)
+INDEX_DETAIL|17292|public.scim_security_event_receipts|scim_security_event_receipts_pkey|8192|0|CREATE UNIQUE INDEX scim_security_event_receipts_pkey ON public.scim_security_event_receipts USING btree (event_id, scim_token_id)
+INDEX_DETAIL|17278|public.scim_security_events|ix_scim_security_events_tenant_poll|8192|0|CREATE INDEX ix_scim_security_events_tenant_poll ON public.scim_security_events USING btree (tenant_id, occurred_at, id)
+INDEX_DETAIL|17279|public.scim_security_events|ix_scim_security_events_expiry|8192|0|CREATE INDEX ix_scim_security_events_expiry ON public.scim_security_events USING btree (expires_at)
+INDEX_DETAIL|17271|public.scim_security_events|scim_security_events_pkey|8192|0|CREATE UNIQUE INDEX scim_security_events_pkey ON public.scim_security_events USING btree (id)
+INDEX_DETAIL|17066|public.scim_tokens|ix_scim_tokens_tenant_active|16384|0|CREATE INDEX ix_scim_tokens_tenant_active ON public.scim_tokens USING btree (tenant_id) WHERE (revoked_at IS NULL)
+INDEX_DETAIL|17057|public.scim_tokens|scim_tokens_pkey|16384|0|CREATE UNIQUE INDEX scim_tokens_pkey ON public.scim_tokens USING btree (id)
+INDEX_DETAIL|17059|public.scim_tokens|uq_scim_tokens_token_hash|16384|1|CREATE UNIQUE INDEX uq_scim_tokens_token_hash ON public.scim_tokens USING btree (token_hash)
+INDEX_DETAIL|17067|public.scim_tokens|ix_scim_tokens_expires_at|8192|0|CREATE INDEX ix_scim_tokens_expires_at ON public.scim_tokens USING btree (expires_at) WHERE (expires_at IS NOT NULL)
+INDEX_DETAIL|18467|public.security_audit_chain_entries|security_audit_chain_entries_event_hash_key|21168128|2012|CREATE UNIQUE INDEX security_audit_chain_entries_event_hash_key ON public.security_audit_chain_entries USING btree (event_hash)
+INDEX_DETAIL|18463|public.security_audit_chain_entries|security_audit_chain_entries_pkey|9232384|1951211|CREATE UNIQUE INDEX security_audit_chain_entries_pkey ON public.security_audit_chain_entries USING btree (event_id)
+INDEX_DETAIL|18465|public.security_audit_chain_entries|security_audit_chain_entries_sequence_key|3678208|336487|CREATE UNIQUE INDEX security_audit_chain_entries_sequence_key ON public.security_audit_chain_entries USING btree (sequence)
+INDEX_DETAIL|17748|public.security_audit_chain_state|security_audit_chain_state_pkey|16384|192176|CREATE UNIQUE INDEX security_audit_chain_state_pkey ON public.security_audit_chain_state USING btree (singleton)
+INDEX_DETAIL|18695|public.security_audit_events|idx_authorization_decision_par|39944192|732001|CREATE UNIQUE INDEX idx_authorization_decision_par ON public.security_audit_events USING btree (authorization_tenant_id, authorization_par_uri) WHERE (((event_type)::text = 'authorization_decision_committed'::text) AND (authorization_par_uri IS NOT NULL))
+INDEX_DETAIL|17769|public.security_audit_events|security_audit_events_pkey|25190400|9512409|CREATE UNIQUE INDEX security_audit_events_pkey ON public.security_audit_events USING btree (event_id)
+INDEX_DETAIL|18694|public.security_audit_events|idx_authorization_decision_request|24182784|732035|CREATE UNIQUE INDEX idx_authorization_decision_request ON public.security_audit_events USING btree (authorization_tenant_id, authorization_request_id) WHERE ((event_type)::text = 'authorization_decision_committed'::text)
+INDEX_DETAIL|18697|public.security_audit_events|idx_authorization_decision_reclaim|8593408|3036|CREATE INDEX idx_authorization_decision_reclaim ON public.security_audit_events USING btree (business_retain_until, event_id) WHERE (((event_type)::text = 'authorization_decision_committed'::text) AND (exported_at IS NOT NULL))
+INDEX_DETAIL|18696|public.security_audit_events|idx_security_audit_events_pending_order|8257536|107038|CREATE INDEX idx_security_audit_events_pending_order ON public.security_audit_events USING btree (occurred_at, event_id) WHERE (exported_at IS NULL)
+INDEX_DETAIL|18380|public.tenant_directory_control_operations|tenant_directory_control_operations_pkey|8192|0|CREATE UNIQUE INDEX tenant_directory_control_operations_pkey ON public.tenant_directory_control_operations USING btree (operation_id)
+INDEX_DETAIL|17990|public.tenant_resource_bindings|ix_tenant_resource_bindings_tenant_kind|8192|0|CREATE INDEX ix_tenant_resource_bindings_tenant_kind ON public.tenant_resource_bindings USING btree (tenant_id, resource_kind, active, updated_at DESC)
+INDEX_DETAIL|17980|public.tenant_resource_bindings|tenant_resource_bindings_pkey|8192|0|CREATE UNIQUE INDEX tenant_resource_bindings_pkey ON public.tenant_resource_bindings USING btree (id)
+INDEX_DETAIL|18244|public.tenant_resource_bindings|uq_tenant_resource_binding_identity|8192|0|CREATE UNIQUE INDEX uq_tenant_resource_binding_identity ON public.tenant_resource_bindings USING btree (tenant_id, resource_kind, resource_id)
+INDEX_DETAIL|18211|public.tenant_resource_control_operations|tenant_resource_control_operations_pkey|8192|0|CREATE UNIQUE INDEX tenant_resource_control_operations_pkey ON public.tenant_resource_control_operations USING btree (operation_id)
+INDEX_DETAIL|17905|public.tenant_resource_states|tenant_resource_states_pkey|8192|0|CREATE UNIQUE INDEX tenant_resource_states_pkey ON public.tenant_resource_states USING btree (tenant_id)
+INDEX_DETAIL|18343|public.tenant_runtime_bindings|uq_tenant_runtime_binding_issuer|16384|0|CREATE UNIQUE INDEX uq_tenant_runtime_binding_issuer ON public.tenant_runtime_bindings USING btree (issuer)
+INDEX_DETAIL|18341|public.tenant_runtime_bindings|tenant_runtime_bindings_pkey|16384|2|CREATE UNIQUE INDEX tenant_runtime_bindings_pkey ON public.tenant_runtime_bindings USING btree (tenant_id)
+INDEX_DETAIL|18345|public.tenant_runtime_bindings|uq_tenant_runtime_binding_host|16384|0|CREATE UNIQUE INDEX uq_tenant_runtime_binding_host ON public.tenant_runtime_bindings USING btree (external_host)
+INDEX_DETAIL|18323|public.tenant_runtime_directory_state|tenant_runtime_directory_state_pkey|16384|197|CREATE UNIQUE INDEX tenant_runtime_directory_state_pkey ON public.tenant_runtime_directory_state USING btree (singleton)
+INDEX_DETAIL|18433|public.tenant_signing_keysets|tenant_signing_keysets_pkey|16384|3|CREATE UNIQUE INDEX tenant_signing_keysets_pkey ON public.tenant_signing_keysets USING btree (tenant_id)
+INDEX_DETAIL|16750|public.tenants|ux_tenants_slug_lower|16384|0|CREATE UNIQUE INDEX ux_tenants_slug_lower ON public.tenants USING btree (lower((slug)::text))
+INDEX_DETAIL|16702|public.tenants|tenants_pkey|16384|3|CREATE UNIQUE INDEX tenants_pkey ON public.tenants USING btree (id)
+INDEX_DETAIL|16571|public.user_client_grants|ix_user_client_grants_user_last_authorized|2564096|0|CREATE INDEX ix_user_client_grants_user_last_authorized ON public.user_client_grants USING btree (user_id, last_authorized_at DESC)
+INDEX_DETAIL|16570|public.user_client_grants|ix_user_client_grants_last_authorized_at|2203648|0|CREATE INDEX ix_user_client_grants_last_authorized_at ON public.user_client_grants USING btree (last_authorized_at)
+INDEX_DETAIL|16864|public.user_client_grants|ix_user_client_grants_tenant_id|163840|0|CREATE INDEX ix_user_client_grants_tenant_id ON public.user_client_grants USING btree (tenant_id)
+INDEX_DETAIL|16858|public.user_client_grants|uq_user_client_grants_tenant_user_client|155648|1464994|CREATE UNIQUE INDEX uq_user_client_grants_tenant_user_client ON public.user_client_grants USING btree (tenant_id, user_id, client_id)
+INDEX_DETAIL|16569|public.user_client_grants|ix_user_client_grants_user_id|139264|0|CREATE INDEX ix_user_client_grants_user_id ON public.user_client_grants USING btree (user_id)
+INDEX_DETAIL|16555|public.user_client_grants|user_client_grants_pkey|106496|0|CREATE UNIQUE INDEX user_client_grants_pkey ON public.user_client_grants USING btree (id)
+INDEX_DETAIL|18739|public.user_mfa_backup_codes|ix_user_mfa_backup_codes_tenant_user_active|8192|0|CREATE INDEX ix_user_mfa_backup_codes_tenant_user_active ON public.user_mfa_backup_codes USING btree (tenant_id, user_id)
+INDEX_DETAIL|16946|public.user_mfa_backup_codes|user_mfa_backup_codes_pkey|8192|0|CREATE UNIQUE INDEX user_mfa_backup_codes_pkey ON public.user_mfa_backup_codes USING btree (id)
+INDEX_DETAIL|16974|public.user_mfa_remembered_devices|ix_user_mfa_remembered_devices_tenant_user_active|8192|0|CREATE INDEX ix_user_mfa_remembered_devices_tenant_user_active ON public.user_mfa_remembered_devices USING btree (tenant_id, user_id, expires_at)
+INDEX_DETAIL|16973|public.user_mfa_remembered_devices|user_mfa_remembered_devices_pkey|8192|0|CREATE UNIQUE INDEX user_mfa_remembered_devices_pkey ON public.user_mfa_remembered_devices USING btree (tenant_id, token_hash)
+INDEX_DETAIL|18735|public.user_mfa_remembered_devices|ix_user_mfa_remembered_devices_expiry|8192|0|CREATE INDEX ix_user_mfa_remembered_devices_expiry ON public.user_mfa_remembered_devices USING btree (expires_at)
+INDEX_DETAIL|16996|public.user_passkey_credentials|user_passkey_credentials_pkey|8192|0|CREATE UNIQUE INDEX user_passkey_credentials_pkey ON public.user_passkey_credentials USING btree (id)
+INDEX_DETAIL|17004|public.user_passkey_credentials|ix_user_passkey_credentials_tenant_user|8192|0|CREATE INDEX ix_user_passkey_credentials_tenant_user ON public.user_passkey_credentials USING btree (tenant_id, user_id)
+INDEX_DETAIL|17003|public.user_passkey_credentials|ux_user_passkey_credentials_tenant_credential|8192|0|CREATE UNIQUE INDEX ux_user_passkey_credentials_tenant_credential ON public.user_passkey_credentials USING btree (tenant_id, credential_id)
+INDEX_DETAIL|16933|public.user_totp_credentials|ux_user_totp_credentials_tenant_user|8192|0|CREATE UNIQUE INDEX ux_user_totp_credentials_tenant_user ON public.user_totp_credentials USING btree (tenant_id, user_id)
+INDEX_DETAIL|16926|public.user_totp_credentials|user_totp_credentials_pkey|8192|0|CREATE UNIQUE INDEX user_totp_credentials_pkey ON public.user_totp_credentials USING btree (id)
+INDEX_DETAIL|16934|public.user_totp_credentials|ix_user_totp_credentials_user|8192|0|CREATE INDEX ix_user_totp_credentials_user ON public.user_totp_credentials USING btree (user_id)
+INDEX_DETAIL|16851|public.users|ux_users_tenant_email_lower|122880|994|CREATE UNIQUE INDEX ux_users_tenant_email_lower ON public.users USING btree (tenant_id, lower((email)::text))
+INDEX_DETAIL|16850|public.users|ux_users_tenant_email|122880|0|CREATE UNIQUE INDEX ux_users_tenant_email ON public.users USING btree (tenant_id, email)
+INDEX_DETAIL|16849|public.users|ux_users_tenant_username|98304|0|CREATE UNIQUE INDEX ux_users_tenant_username ON public.users USING btree (tenant_id, username)
+INDEX_DETAIL|18666|public.users|ix_users_tenant_created_at_id|73728|0|CREATE INDEX ix_users_tenant_created_at_id ON public.users USING btree (tenant_id, created_at, id)
+INDEX_DETAIL|16867|public.users|uq_users_id_tenant|65536|4159050|CREATE UNIQUE INDEX uq_users_id_tenant ON public.users USING btree (id, tenant_id)
+INDEX_DETAIL|16464|public.users|users_pkey|49152|0|CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)
+INDEX_DETAIL|16469|public.users|ix_users_created_at_desc|16384|0|CREATE INDEX ix_users_created_at_desc ON public.users USING btree (created_at DESC)
+INDEX_DETAIL|16861|public.users|ix_users_tenant_id|16384|237923|CREATE INDEX ix_users_tenant_id ON public.users USING btree (tenant_id)
+ROW_COUNTS|access_token_revocations|0
+ROW_COUNTS|oauth_refresh_spent_tokens|0
+ROW_COUNTS|oauth_refresh_contracts|992
+ROW_COUNTS|security_audit_chain_entries|0
+ROW_COUNTS|oauth_refresh_families|13319
+ROW_COUNTS|oauth_token_issuances|291048
+ROW_COUNTS|security_audit_events|75384
+REFRESH_MODEL|families|rows_total|13319
+REFRESH_MODEL|families|live|9920
+REFRESH_MODEL|families|live_user_bound|9920
+REFRESH_MODEL|families|machine|0
+REFRESH_MODEL|families|revoked|3399
+REFRESH_MODEL|families|compromised|0
+REFRESH_MODEL|families|max_active_per_scope|10
+REFRESH_MODEL|spent|rows_total|0
+REFRESH_MODEL|contracts|rows_total|992
+REFRESH_MODEL|contracts|referenced|992
+REFRESH_MODEL|families|inserted_cumulative|732993
+REFRESH_MODEL|families|deleted_cumulative|719674
+REFRESH_MODEL|spent|inserted_cumulative|0
+REFRESH_MODEL|spent|deleted_cumulative|0
+REFRESH_MODEL|spent|max_per_family|0
+REFRESH_MODEL|audit|capacity_retired_pending|0
+EXPIRED_BACKLOG|refresh_families_expired|0|-
+EXPIRED_BACKLOG|spent_proofs_due|0|-
+EXPIRED_BACKLOG|contracts_unreferenced|0|-
+EXPIRED_BACKLOG|issuances_due|24003|2026-10-10 05:17:43
+EXPIRED_BACKLOG|pending_events|0|-
+EXPIRED_BACKLOG|audit_batch_in_flight|false|-
+EXPIRED_BACKLOG|audit_batch_blocked|false|-
+EXPIRED_BACKLOG|revocations_due|0|-
+AUDIT|ledger|pending_export|0
+AUDIT|ledger|in_flight_batch_events|0
+AUDIT|ledger|batch_generation|30590
+AUDIT|ledger|batch_attempts|0
+AUDIT|ledger|events|75384
+AUDIT|ledger|exported_retained|75384
+AUDIT|ledger|chain_entries|0
+AUDIT|ledger|anchor_sequence|2187075
+AUDIT|ledger|chain_head|2187075
+AUDIT|ledger|oldest_pending_age_s|-
+WAL|stats|wal_records|68506683
+WAL|stats|wal_fpi|160430
+WAL|stats|wal_bytes|8522814269
+WAL|stats|wal_buffers_full|34
+WAL|stats|stats_reset|2026-10-10 05:01:49.663946
+WAL|position|lsn|2/4AF08A8
+WAL|position|sampled_at|2026-10-10 05:18:12.705969
+WAL|waldir|files|323
+WAL|waldir|bytes|5419040768
+WAL|waldir|newest|2026-10-10 05:18:12
+WAL|archiver|archived_count|0
+WAL|archiver|failed_count|0
+WAL|archiver|last_archived_wal|-
+WAL|archiver|stats_reset|2026-10-10 05:01:49.663946
+WAL|replication_slots|count|0
+WAL|replication_slots|retained_bytes|0
+WAL|replication_slots|names|-
+BGWRITER|bgwriter|buffers_clean|422660
+BGWRITER|bgwriter|maxwritten_clean|4114
+BGWRITER|bgwriter|buffers_alloc|2201129
+BGWRITER|bgwriter|stats_reset|2026-10-10 05:01:49.663946
+CHECKPOINTER|checkpointer|num_timed|3
+CHECKPOINTER|checkpointer|num_requested|1
+CHECKPOINTER|checkpointer|restartpoints_timed|0
+CHECKPOINTER|checkpointer|restartpoints_req|0
+CHECKPOINTER|checkpointer|restartpoints_done|0
+CHECKPOINTER|checkpointer|write_time|539484
+CHECKPOINTER|checkpointer|sync_time|442
+CHECKPOINTER|checkpointer|buffers_written|4349
+CHECKPOINTER|checkpointer|stats_reset|2026-10-10 05:01:49.663946
+CHECKPOINTER|checkpointer|num_done|2
+CHECKPOINTER|checkpointer|slru_written|238
+DB_TOTAL|db|db_bytes|662263487
+DB_TOTAL|db|temp_bytes|0
+DB_TOTAL|db|temp_files|0
+DB_TOTAL|db|xact_commit|8245728
+DB_TOTAL|db|xact_rollback|1
+DB_TOTAL|db|tup_returned|723993400
+DB_TOTAL|db|tup_fetched|497898822
+DB_TOTAL|db|tup_inserted|5852665
+DB_TOTAL|db|tup_updated|2250746
+DB_TOTAL|db|tup_deleted|5462769
+DB_TOTAL|db|deadlocks|0
+DB_TOTAL|db|blk_read_time|13940.075
+DB_TOTAL|db|blk_write_time|12169.22
+DB_TOTAL|db|stats_reset|
+DONE|complete|2026-10-10 05:18:12.721815

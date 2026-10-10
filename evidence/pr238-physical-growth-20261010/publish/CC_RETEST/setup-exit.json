@@ -1,0 +1,23 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-e",
+    "SIS_WORKSPACE=/src",
+    "-e",
+    "SIS_LOAD_BUDGET_S=2700",
+    "-e",
+    "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/CC_RETEST",
+    "-w",
+    "/src",
+    "nazoauth-long-controller-20261010",
+    "python",
+    "/src/evidence/pr238-physical-growth-20261010/CC_RETEST/point-observer-cycle.py",
+    "setup"
+  ],
+  "exit": 0,
+  "start": null,
+  "end": null,
+  "observed_stage_utc": "2026-10-10T06:57:43.746885+00:00",
+  "source": "Actual exec_command response captured exit 0 and setup stage output; wrapper start/end timestamps were not captured."
+}

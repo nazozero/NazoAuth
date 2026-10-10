@@ -1,0 +1,12 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-pr238-physical-auth-cap-20261010",
+    "sis-proc-pr238-physical-auth-cap-20261010",
+    "sis-sampler-pr238-physical-auth-cap-20261010"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

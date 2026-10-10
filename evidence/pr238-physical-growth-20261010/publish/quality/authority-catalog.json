@@ -1,0 +1,2 @@
+{"constraints" : [{"relation":"oauth_clients","conname":"oauth_clients_pkey","convalidated":true,"condeferrable":false,"definition":"PRIMARY KEY (id)"}, 
+ {"relation":"oauth_token_issuances","conname":"fk_oauth_token_issuances_client_tenant","convalidated":true,"condeferrable":false,"definition":"FOREIGN KEY (client_id, tenant_id) REFERENCES oauth_clients(id, tenant_id)"}], "index" : "CREATE UNIQUE INDEX oauth_token_issuances_single_use_key_idx ON public.oauth_token_issuances USING btree (client_id, single_use_key_blake3) WHERE (single_use_key_blake3 IS NOT NULL)"}

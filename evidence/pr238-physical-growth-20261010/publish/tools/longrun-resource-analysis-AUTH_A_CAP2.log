@@ -1,0 +1,1 @@
+{"key": "AUTH_A_CAP2", "wal": {"first": {"ts": 1791615080, "wal_bytes": 137178968}, "last": {"ts": 1791615259, "wal_bytes": 1643355798}, "delta_bytes": 1506176830}, "mature_valkey": [null, null, null], "mature_cpu_app": [null, null, null]}

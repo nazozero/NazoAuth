@@ -1,0 +1,431 @@
+{
+  "key": "CC_RETEST",
+  "load_start": 1791615511.556888,
+  "load_end": 1791616138.7541223,
+  "errors": [
+    {
+      "ts": 1791616371.6311996,
+      "error": "task command failed rc=2: psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.5432\" failed: FATAL:  the database system is shutting down\n"
+    },
+    {
+      "ts": 1791616381.5874164,
+      "error": "task command failed rc=1: Error response from daemon: No such container: pr238-physical-cc-retest-20261010-postgres-1\n"
+    }
+  ],
+  "windows": [
+    {
+      "offset_s": [
+        0,
+        360
+      ],
+      "samples": 36,
+      "db_mib_median": 160.322,
+      "retained_receipts": [
+        0,
+        0
+      ],
+      "eligible_receipts_max": 0,
+      "oldest_due_s_max": 0,
+      "pending_max": 4854,
+      "pending_age_s_max": 1.206531,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 59.711,
+          "index_bytes": 23.422
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.039
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 27.344,
+          "index_bytes": 34.914
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 0.68,
+          "index_bytes": 0.227
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 0.266,
+          "index_bytes": 0.445
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    },
+    {
+      "offset_s": [
+        360,
+        600
+      ],
+      "samples": 24,
+      "db_mib_median": 171.232,
+      "retained_receipts": [
+        0,
+        0
+      ],
+      "eligible_receipts_max": 0,
+      "oldest_due_s_max": 0,
+      "pending_max": 2708,
+      "pending_age_s_max": 0.667599,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 59.824,
+          "index_bytes": 24.562
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.039
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 26.512,
+          "index_bytes": 45.961
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 0.68,
+          "index_bytes": 0.227
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 0.266,
+          "index_bytes": 0.445
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    },
+    {
+      "offset_s": [
+        600,
+        900
+      ],
+      "samples": 26,
+      "db_mib_median": 85.576,
+      "retained_receipts": [
+        0,
+        0
+      ],
+      "eligible_receipts_max": 0,
+      "oldest_due_s_max": 0,
+      "pending_max": 329,
+      "pending_age_s_max": 0.073583,
+      "tables": {
+        "access_token_revocations": {
+          "table_bytes": 0.0,
+          "index_bytes": 0.023
+        },
+        "security_audit_events": {
+          "table_bytes": 0.023,
+          "index_bytes": 24.562
+        },
+        "oauth_token_issuances": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.039
+        },
+        "security_audit_chain_entries": {
+          "table_bytes": 0.023,
+          "index_bytes": 45.961
+        },
+        "oauth_refresh_contracts": {
+          "table_bytes": 0.68,
+          "index_bytes": 0.227
+        },
+        "oauth_refresh_families": {
+          "table_bytes": 0.266,
+          "index_bytes": 0.445
+        },
+        "oauth_refresh_spent_tokens": {
+          "table_bytes": 0.008,
+          "index_bytes": 0.023
+        }
+      }
+    }
+  ],
+  "last_physical": {
+    "offset_s": 841.3455631732941,
+    "relations": {
+      "oauth_token_issuances": {
+        "table_len": 0,
+        "tuple_count": 0,
+        "tuple_len": 0,
+        "tuple_percent": 0,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 0,
+        "free_percent": 0
+      },
+      "security_audit_events": {
+        "table_len": 0,
+        "tuple_count": 0,
+        "tuple_len": 0,
+        "tuple_percent": 0,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 0,
+        "free_percent": 0
+      },
+      "oauth_refresh_families": {
+        "table_len": 245760,
+        "tuple_count": 992,
+        "tuple_len": 230144,
+        "tuple_percent": 93.65,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 10928,
+        "free_percent": 4.45
+      },
+      "security_audit_chain_entries": {
+        "table_len": 0,
+        "tuple_count": 0,
+        "tuple_len": 0,
+        "tuple_percent": 0,
+        "dead_tuple_count": 0,
+        "dead_tuple_len": 0,
+        "dead_tuple_percent": 0,
+        "free_space": 0,
+        "free_percent": 0
+      }
+    },
+    "indexes": {
+      "security_audit_events_pkey": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 15171584,
+        "root_block_no": 295,
+        "internal_pages": 2,
+        "leaf_pages": 1,
+        "empty_pages": 0,
+        "deleted_pages": 1848,
+        "avg_leaf_density": 0,
+        "leaf_fragmentation": 0
+      },
+      "idx_authorization_decision_request": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "idx_authorization_decision_par": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "idx_security_audit_events_pending_order": {
+        "version": 4,
+        "tree_level": 2,
+        "index_size": 10510336,
+        "root_block_no": 412,
+        "internal_pages": 2,
+        "leaf_pages": 1,
+        "empty_pages": 0,
+        "deleted_pages": 1279,
+        "avg_leaf_density": 0,
+        "leaf_fragmentation": 0
+      },
+      "idx_authorization_decision_reclaim": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "oauth_token_issuances_pkey": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "oauth_token_issuances_tenant_jti_idx": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "oauth_token_issuances_retention_idx": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "ix_oauth_token_issuances_tenant_user": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "oauth_token_issuances_single_use_key_idx": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      },
+      "pk_oauth_refresh_families": {
+        "version": 4,
+        "tree_level": 1,
+        "index_size": 90112,
+        "root_block_no": 3,
+        "internal_pages": 1,
+        "leaf_pages": 9,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 59.97,
+        "leaf_fragmentation": 44.44
+      },
+      "ux_oauth_refresh_families_current_digest": {
+        "version": 4,
+        "tree_level": 1,
+        "index_size": 114688,
+        "root_block_no": 3,
+        "internal_pages": 1,
+        "leaf_pages": 12,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 69.72,
+        "leaf_fragmentation": 50
+      },
+      "ix_orf_scope_active": {
+        "version": 4,
+        "tree_level": 1,
+        "index_size": 114688,
+        "root_block_no": 3,
+        "internal_pages": 1,
+        "leaf_pages": 12,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 85.68,
+        "leaf_fragmentation": 0
+      },
+      "ix_orf_client_active": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 16384,
+        "root_block_no": 1,
+        "internal_pages": 0,
+        "leaf_pages": 1,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 84.35,
+        "leaf_fragmentation": 0
+      },
+      "ix_orf_expires": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 16384,
+        "root_block_no": 1,
+        "internal_pages": 0,
+        "leaf_pages": 1,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 92.35,
+        "leaf_fragmentation": 0
+      },
+      "idx_oauth_refresh_families_contract": {
+        "version": 4,
+        "tree_level": 1,
+        "index_size": 106496,
+        "root_block_no": 3,
+        "internal_pages": 1,
+        "leaf_pages": 11,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": 75.98,
+        "leaf_fragmentation": 54.55
+      },
+      "ix_orf_revoked_cleanup": {
+        "version": 4,
+        "tree_level": 0,
+        "index_size": 8192,
+        "root_block_no": 0,
+        "internal_pages": 0,
+        "leaf_pages": 0,
+        "empty_pages": 0,
+        "deleted_pages": 0,
+        "avg_leaf_density": "NaN",
+        "leaf_fragmentation": "NaN"
+      }
+    },
+    "options": [
+      {
+        "relname": "security_audit_events",
+        "reloptions": [
+          "autovacuum_analyze_scale_factor=0",
+          "autovacuum_analyze_threshold=500",
+          "autovacuum_vacuum_scale_factor=0",
+          "autovacuum_vacuum_threshold=2000",
+          "autovacuum_vacuum_cost_delay=0"
+        ]
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "reloptions": null
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "reloptions": null
+      }
+    ],
+    "vacuum_progress": []
+  }
+}
