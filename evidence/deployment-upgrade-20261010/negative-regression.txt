@@ -1,0 +1,15 @@
+running 1 test
+test legacy_chained_backlog_spans_batches_without_losing_evidence ... 
+thread 'legacy_chained_backlog_spans_batches_without_losing_evidence' (1967464) panicked at crates/persistence-postgres/tests/audit_chain_cutover.rs:644:18:
+legacy pending evidence must survive the batch protocol upgrade: DatabaseError(CheckViolation, "new row for relation \"security_audit_chain_state\" violates check constraint \"ck_security_audit_batch_shape\"")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    legacy_chained_backlog_spans_batches_without_losing_evidence
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.42s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_chain_cutover`

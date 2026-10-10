@@ -1,0 +1,20 @@
+running 2 tests
+test audit_cutover_preserves_history_and_moves_chain_authority_to_exporter ... ok
+test legacy_chained_backlog_spans_batches_without_losing_evidence ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
+
+running 5 tests
+test pending_set_upgrade_from_empty_state ... ok
+test pending_set_upgrade_from_inflight_batch ... ok
+test pending_set_upgrade_from_mixed_backlog ... ok
+test pending_set_upgrade_from_unchained_backlog ... ok
+test pending_set_upgrade_rolls_back_on_divergence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.66s
+
+running 1 test
+test released_receipts_preserve_fences_retention_and_cleanup_acl ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.79s
+
