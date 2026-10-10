@@ -4,7 +4,9 @@ Base main: `c9e9468f5ec5729acea6f1d53e3feb73e4774f34`.
 Final source: `bad5174d5f6609ef4d43aec54aacb1e3b8688cad`.
 Candidate binary SHA-256: `e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91`.
 This is an explicitly authorized repair-branch build, not a new signed release.
-Preflight is complete; production cutover and official OIDF execution are pending.
+Preflight is complete. Production cutover and official OIDF execution are blocked
+on recovery of the existing expired production controller key. The previous
+artifact is running again and public checks pass.
 No official Suite plan has been started at this checkpoint.
 
 ## Upgrade failures and repairs
@@ -95,6 +97,29 @@ rerun successfully on the CI-pinned independent PostgreSQL fixture without
 expanding production role privileges.
 
 Focused CODE and upgrade-data preservation: **PASS**. Full workspace CI is
-pending publication. Deployment: **PENDING** (authorized branch). Official OIDF: **PENDING**;
+pending publication. Deployment: **BLOCKED** (existing controller key expired). Official OIDF: **BLOCKED**;
 its configured full scope is 11 groups and 44 plans, with none executed yet.
 No performance conclusion is added by this migration repair.
+
+## Authorized deployment attempts
+
+The selected candidate is `v0.2.16+repair.bad5174d`, built from the final source
+above. First update exited 1 before the migration process started: candidate
+packaging incorrectly used the image configuration digest as the registry
+manifest digest. This was corrected without changing server code or image bytes;
+the digest-pinned image reports protocol 3 and release v0.2.16.
+
+Resuming the exact same operation then exited 1 at server controller admission.
+The sole active production controller slot expired on
+`2026-10-01T07:35:16.327567Z`. No accepted operator record or migration is
+reported by this attempt; the production migration maximum remains the released
+`20260909000100`. ctl conservatively stopped the writer on its unknown-outcome
+classification. After inspecting the real pre-admission rejection and unchanged
+schema, the unchanged runtime was restarted (exit 0). Doctor and public verify
+both exit 0; discovery is HTTP 200 with the expected issuer. Pending operation
+journals are preserved, not erased or replaced to manufacture success.
+
+The user has been asked for the private offline recovery-secret file path or
+to perform the formal controller recovery. No key expiry, registry authority,
+MFA, signature or replay check is bypassed. Official OIDF remains unexecuted
+(0/44 plans), rather than being reported as a suite failure or success.

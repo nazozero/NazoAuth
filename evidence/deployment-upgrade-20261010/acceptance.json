@@ -284,17 +284,20 @@
   "production": {
     "updated": false,
     "doctor_exit_code": 0,
-    "discovery_status": 200
+    "discovery_status": 200,
+    "verify_exit_code": 0,
+    "serving_previous_artifact": true,
+    "last_migration": "20260909000100"
   },
   "oidf": {
-    "status": "PENDING",
-    "reason": "final candidate packaging before authorized deployment",
+    "status": "BLOCKED",
+    "reason": "production controller key expired; valid controller recovery/binding required before signed migration and tenant lifecycle",
     "suite_origin": "https://www.certification.openid.net",
     "groups": 11,
     "plans": 44,
     "plans_started": 0
   },
-  "scope": "focused upgrade gates passed; full workspace CI pending; deployment and official full-matrix execution authorized and pending; no new performance claim",
+  "scope": "focused upgrade gates passed; deployment blocked on existing expired controller key, old service restored with doctor/verify/discovery passing; official OIDF not executed; full workspace CI pending; no new performance claim",
   "standard_image_build_inputs": {
     "command": [
       "podman",
@@ -340,5 +343,60 @@
     "fixture_payload_detail_bytes": 4096,
     "event_facts_and_ack_checkpoint_preserved": true
   },
-  "deployment_authorized": true
+  "deployment_authorized": true,
+  "candidate_artifact": {
+    "repository": "nazozero/NazoAuth",
+    "version": "v0.2.16+repair.bad5174d",
+    "oci_image": "localhost:5001/nazoauth-main-20261010",
+    "oci_pull_digest": "sha256:dc48d19e5bd53266fec26eed3a25bf1e1376f55421b6a6d8620fda3ed785b76d",
+    "oci_runtime_digest": "sha256:dc48d19e5bd53266fec26eed3a25bf1e1376f55421b6a6d8620fda3ed785b76d",
+    "host_binary_path": "/opt/nazoauth-main-target/release/nazoauth",
+    "host_binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91"
+  },
+  "deployment_attempts": [
+    {
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.bad5174d"
+      ],
+      "exit_code": 1,
+      "seconds": 1.228,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "failure": "candidate packaging used the image config digest in place of the OCI manifest digest; one-shot did not start"
+    },
+    {
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.bad5174d"
+      ],
+      "exit_code": 1,
+      "seconds": 1.245,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "resumed_after_metadata_correction": true,
+      "failure": "controller key admission rejected: the existing active slot expired on 2026-10-01T07:35:16.327567Z before migration admission",
+      "operation_id": "01a1265b-28ed-7372-be12-3d89dd9b1d24"
+    }
+  ],
+  "deployment_status": "BLOCKED",
+  "controller_recovery_needed": true,
+  "runtime_recovery": {
+    "command": [
+      "podman",
+      "start",
+      "nazoauth-01a05bdf1ab677338e56e11ce8da10fd"
+    ],
+    "exit_code": 0,
+    "reason": "operator admission rejected before migration; released schema maximum unchanged",
+    "authority": "real operator authorization rejection before migration, original migration maximum unchanged; unresolved operation evidence retained"
+  }
 }
