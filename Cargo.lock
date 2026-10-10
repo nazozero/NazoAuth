@@ -2121,7 +2121,7 @@ dependencies = [
  "rand 0.10.3",
  "rustc-hash",
  "sec1 0.8.1",
- "sfv",
+ "sfv 0.15.0",
  "sha2 0.11.0",
  "spki 0.8.0",
  "thiserror",
@@ -2872,7 +2872,7 @@ dependencies = [
  "p256 0.14.0",
  "proptest",
  "serde_json",
- "sfv",
+ "sfv 0.16.0",
  "sha2 0.11.0",
  "subtle",
  "thiserror",
@@ -3146,8 +3146,8 @@ dependencies = [
  "nazo-persistence",
  "nazo-resource-server",
  "nazo-runtime-modules",
- "passkey-auth",
  "nazo-scim-events",
+ "passkey-auth",
  "rand 0.10.3",
  "rcgen",
  "rustls",
@@ -4606,6 +4606,17 @@ name = "sfv"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "890ef0e5532daf21fdaa3dbaf991417187f3a87ab69231fe69be942495746480"
+dependencies = [
+ "base64 0.22.1",
+ "indexmap",
+ "ref-cast",
+]
+
+[[package]]
+name = "sfv"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "459c6f5820787bedb86fee2279ad39e89c31a3ede6354a0f6439a012467c5416"
 dependencies = [
  "base64 0.22.1",
  "indexmap",
