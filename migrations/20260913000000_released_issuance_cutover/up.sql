@@ -66,8 +66,13 @@ BEGIN
         ON public.oauth_token_issuances (tenant_id, access_token_jti);
     CREATE INDEX oauth_token_issuances_retention_idx
         ON public.oauth_token_issuances (retain_until, issuance_id);
-    CREATE INDEX IF NOT EXISTS ix_oauth_tokens_rotated_from_id
-        ON public.oauth_tokens (rotated_from_id) WHERE rotated_from_id IS NOT NULL;
+    -- A previously interrupted upgrade may already have replaced oauth_tokens
+    -- with refresh members. Its retired-table index is needed only if that
+    -- table still exists; never recreate retired storage on resume.
+    IF to_regclass('public.oauth_tokens') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS ix_oauth_tokens_rotated_from_id
+            ON public.oauth_tokens (rotated_from_id) WHERE rotated_from_id IS NOT NULL;
+    END IF;
 
     -- Changing OUT-column names changes the return type: replace the exact
     -- zero-argument function and preserve its owner and effective EXECUTE ACL.

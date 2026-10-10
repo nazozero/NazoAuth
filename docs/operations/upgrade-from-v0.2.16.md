@@ -22,7 +22,8 @@ closed without changing its data. Live encrypted legacy responses must finish
 their existing receipt window before conversion; do not delete or shorten that
 window to make upgrade pass. Expired response bodies and superseded request/
 response metadata are removed only by the guarded schema cutover. The cleanup
-function replacement preserves its owner, EXECUTE grants, and grant options.
+function replacement preserves its owner, EXECUTE grants, and grant options. If a prior failed upgrade already retired `oauth_tokens`,
+conversion does not recreate that table or its obsolete index.
 
 Stop the retired audit exporter before the batch protocol cutover. Its first
 bounded pending prefix becomes the initial batch; later chained events remain

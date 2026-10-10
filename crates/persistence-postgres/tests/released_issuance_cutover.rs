@@ -96,6 +96,15 @@ async fn released_receipts_preserve_fences_retention_and_cleanup_acl() {
     owner.batch_execute("DROP FUNCTION nazo_oauth_cleanup_expired_security_state(); CREATE FUNCTION nazo_oauth_cleanup_expired_security_state(BOOLEAN) RETURNS void LANGUAGE sql AS 'SELECT NULL::void'").await.unwrap();
     migrate(&mut owner).await.unwrap();
     assert!(sql_query("SELECT to_regprocedure('public.nazo_oauth_cleanup_expired_security_state()') IS NULL AND to_regprocedure('public.nazo_oauth_cleanup_expired_security_state(boolean)') IS NOT NULL AS value").get_result::<Flag>(&mut owner).await.unwrap().value);
+    // Resume a failed upgrade after refresh migration retired oauth_tokens.
+    // The released receipt table may still require conversion at that point.
+    owner.batch_execute("DROP TABLE oauth_token_issuances; DROP TABLE oauth_tokens; DROP FUNCTION nazo_oauth_cleanup_expired_security_state(BOOLEAN)").await.unwrap();
+    for sql in LEGACY {
+        owner.batch_execute(sql).await.unwrap();
+    }
+    owner.batch_execute("INSERT INTO oauth_token_issuances(issuance_id,tenant_id,client_id,user_id,grant_key_blake3,request_digest,access_token_jti,access_token_expires_at,expires_at) VALUES('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002',repeat('f',64),repeat('a',64),'resume-jti',CURRENT_TIMESTAMP+INTERVAL '2 hours',CURRENT_TIMESTAMP+INTERVAL '1 hour')").await.unwrap();
+    migrate(&mut owner).await.unwrap();
+    assert!(sql_query("SELECT to_regclass('public.oauth_tokens') IS NULL AND EXISTS(SELECT 1 FROM oauth_token_issuances WHERE access_token_jti='resume-jti' AND retain_until=access_token_expires_at) AS value").get_result::<Flag>(&mut owner).await.unwrap().value);
     drop(owner);
     admin
         .batch_execute(&format!("DROP DATABASE {database} WITH(FORCE)"))
