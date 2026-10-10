@@ -1,26 +1,28 @@
 # Main upgrade preflight, 2026-10-10
 
-Base main: `c9e9468f5ec5729acea6f1d53e3feb73e4774f34`. Final source: `651cc50ceece66004800c400867f41f43968dbbf`.
-Rust, SQL and dependencies are identical to the validated runtime source
-`b2de42abcde74f4ababeab3bdde91e79823ec1ab`; the later source change adds the
-manifest to the standard image build inputs.
-Candidate binary SHA-256: `fa57b2d3486889f2b21a5d5d7af9a854066350f8708b8baba1cb4a19caea1139`.
-This is a source build, not a new signed release. Production remains on the
-previous v0.2.16 artifact; deployment and official OIDF execution are **BLOCKED**
-until the repair is available on main (or the validated branch is explicitly
-selected for deployment). No official Suite plan has been started.
+Base main: `c9e9468f5ec5729acea6f1d53e3feb73e4774f34`.
+Final source: `bad5174d5f6609ef4d43aec54aacb1e3b8688cad`.
+Candidate binary SHA-256: `e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91`.
+This is an explicitly authorized repair-branch build, not a new signed release.
+Preflight is complete; production cutover and official OIDF execution are pending.
+No official Suite plan has been started at this checkpoint.
 
 ## Upgrade failures and repairs
 
 The original main migration attempted to import all 40,712 pending chained
 audit events as one batch, violating its 256-member constraint. A real
-PostgreSQL regression with 513 historical events failed with exit 101 before
-the fix and passed afterwards. The initial batch now imports only the first
-256 events. Remaining events retain their ids, timestamps, payloads and chain
-bytes and are delivered through the existing claimant in successive batches.
-Nothing is acknowledged by migration. The unreleased September 20 migration
-and its checksum are intentionally corrected: a later migration cannot repair
-an earlier migration that never finishes.
+PostgreSQL regression with 513 historical events failed with exit 101.
+A count-only bootstrap then failed a second regression: 256 legal 4KB events
+formed a 1,133,039-byte envelope despite the configured 131,072-byte bound.
+The retired per-event protocol had no committed batch membership. Migration
+now leaves the new lease empty and lets the existing claimant select under
+both count and actual serialized byte bounds. The final 513-event regression
+delivers 18 batches, at most 128,673 bytes each, with identical ids, timestamps,
+payloads and chain bytes; only full ACKs remove evidence and the checkpoint
+reaches 513. No event is acknowledged by migration. Modern committed batches
+retain their existing identity. The unreleased September 20 migration and its
+checksum are intentionally corrected: a later migration cannot repair an
+earlier migration that never finishes.
 
 Once that blocker was removed, the restored database failed in the September
 29 cleanup migration: the existing function had different OUT-column names.
@@ -48,8 +50,8 @@ second full OCI build or create a second Cargo target cache.
 ## Real restored-data rehearsal
 
 The original tested backup was restored anew, then the actual candidate
-`nazoauth migrate` applied the complete chain with exit 0 in 1.496 seconds.
-The final migration is `20261010000600`; the initial audit batch is 1–256.
+`nazoauth migrate` applied the complete chain with exit 0.
+The final migration is `20261010000600`; the audit lease remains empty until the first byte-bounded claim.
 The same binary also migrated a fresh isolated database successfully (exit 0).
 
 | Retained facts | Before | After | SHA-256 comparison |
@@ -93,6 +95,6 @@ rerun successfully on the CI-pinned independent PostgreSQL fixture without
 expanding production role privileges.
 
 Focused CODE and upgrade-data preservation: **PASS**. Full workspace CI is
-pending publication. Deployment: **BLOCKED**. Official OIDF: **BLOCKED**;
+pending publication. Deployment: **PENDING** (authorized branch). Official OIDF: **PENDING**;
 its configured full scope is 11 groups and 44 plans, with none executed yet.
 No performance conclusion is added by this migration repair.

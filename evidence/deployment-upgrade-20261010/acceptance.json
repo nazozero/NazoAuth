@@ -1,7 +1,7 @@
 {
   "base_sha": "c9e9468f5ec5729acea6f1d53e3feb73e4774f34",
-  "source_sha": "651cc50ceece66004800c400867f41f43968dbbf",
-  "binary_sha256": "fa57b2d3486889f2b21a5d5d7af9a854066350f8708b8baba1cb4a19caea1139",
+  "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+  "binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91",
   "negative_regression": {
     "command": [
       "cargo",
@@ -42,6 +42,39 @@
   ],
   "final_affected_gates": [
     {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 3.09,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "static",
+      "command": [
+        "python3",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 7.821,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "dependencies",
+      "command": [
+        "python3",
+        "scripts/check_persistence_dependency_graph.py"
+      ],
+      "exit_code": 0,
+      "seconds": 3.401,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
       "name": "final-pg-regressions",
       "command": [
         "cargo",
@@ -61,8 +94,29 @@
         "--nocapture"
       ],
       "exit_code": 0,
-      "seconds": 49.599,
-      "source_sha": "b2de42abcde74f4ababeab3bdde91e79823ec1ab"
+      "seconds": 151.847,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "migration-manifest",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "migrations",
+        "embedded_migration_manifest_tracks_all_files",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 27.425,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
     },
     {
       "name": "final-clippy",
@@ -87,8 +141,23 @@
         "warnings"
       ],
       "exit_code": 0,
-      "seconds": 0.822,
-      "source_sha": "b2de42abcde74f4ababeab3bdde91e79823ec1ab"
+      "seconds": 26.721,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "build-fixed",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth"
+      ],
+      "exit_code": 0,
+      "seconds": 217.266,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
     }
   ],
   "final_source_checks": [
@@ -169,13 +238,13 @@
       }
     },
     "identical": true,
-    "source_sha": "b2de42abcde74f4ababeab3bdde91e79823ec1ab",
-    "binary_sha256": "fa57b2d3486889f2b21a5d5d7af9a854066350f8708b8baba1cb4a19caea1139"
+    "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+    "binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91"
   },
   "final_migration_state": {
-    "batch_last": 256,
-    "batch_count": 256,
-    "batch_first": 1,
+    "batch_last": null,
+    "batch_count": null,
+    "batch_first": null,
     "last_migration": "20261010000600"
   },
   "fresh_database_migration": {
@@ -218,32 +287,14 @@
     "discovery_status": 200
   },
   "oidf": {
-    "status": "BLOCKED",
-    "reason": "fixed source not merged to main/deployed",
+    "status": "PENDING",
+    "reason": "final candidate packaging before authorized deployment",
     "suite_origin": "https://www.certification.openid.net",
     "groups": 11,
     "plans": 44,
     "plans_started": 0
   },
-  "scope": "focused upgrade gates; full workspace CI pending publication; no new performance claim",
-  "runtime_source_equivalent_to": "b2de42abcde74f4ababeab3bdde91e79823ec1ab",
-  "runtime_source_equivalence": {
-    "command": [
-      "git",
-      "diff",
-      "--exit-code",
-      "b2de42abcde74f4ababeab3bdde91e79823ec1ab",
-      "HEAD",
-      "--",
-      "crates",
-      "migrations",
-      "Cargo.toml",
-      "Cargo.lock",
-      "rust-toolchain.toml",
-      "tests/contracts"
-    ],
-    "exit_code": 0
-  },
+  "scope": "focused upgrade gates passed; full workspace CI pending; deployment and official full-matrix execution authorized and pending; no new performance claim",
   "standard_image_build_inputs": {
     "command": [
       "podman",
@@ -257,39 +308,37 @@
       "."
     ],
     "exit_code": 0,
-    "seconds": 37.886,
-    "copied_manifest_sha256": "72c71350d3cef33ab20dcb29576a4b64d75b76530159b17944cc636c360eb8ab",
+    "seconds": 7.978,
+    "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+    "copied_manifest_sha256": "322d6b68a56d2f7b87a3a6bf7eb1c39e36864f5cba688ad401b5f5b41bb019cf",
     "manifest_matches": true,
     "compile_target_created": false
   },
-  "final_packaging_source_checks": [
-    {
-      "command": [
-        "cargo",
-        "+1.99.0",
-        "build",
-        "--release",
-        "--locked",
-        "-p",
-        "nazoauth"
-      ],
-      "exit_code": 0
-    },
-    {
-      "command": [
-        "python3",
-        "scripts/verify_static_contracts.py",
-        "--check"
-      ],
-      "exit_code": 0
-    },
-    {
-      "command": [
-        "git",
-        "diff",
-        "--check"
-      ],
-      "exit_code": 0
-    }
-  ]
+  "wire_bound_regression": {
+    "before_source_sha": "186b046742a1a61133bc050865e4767f4ad6b60e",
+    "command": [
+      "cargo",
+      "+1.99.0",
+      "test",
+      "--release",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_chain_cutover",
+      "legacy_chained_backlog_spans_batches_without_losing_evidence",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "exit_code": 101,
+    "configured_max_bytes": 131072,
+    "before_batch_bytes": 1133039,
+    "after_batch_count": 18,
+    "after_max_batch_bytes": 128673,
+    "fixture_events": 513,
+    "fixture_payload_detail_bytes": 4096,
+    "event_facts_and_ack_checkpoint_preserved": true
+  },
+  "deployment_authorized": true
 }
