@@ -186,6 +186,14 @@ Targeted suites with their own entry points:
   including the retained physical marker and cross-endpoint rejection. These
   host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
   does not substitute for physical failover evidence.
+- `crates/persistence-postgres/tests/receipt_key_scope.rs` verifies the compact
+  one-use index against real PostgreSQL: populated upgrade/downgrade preserves
+  receipt facts, distinct clients retain independent keys, same-client reuse is
+  rejected, and the tenant composite foreign key rejects mismatched ownership.
+  The application and migration must advance together: old three-column conflict
+  targets fail closed after the index changes. No receipt TTL or tenant predicate
+  changes. The holder serialization tests additionally cover sparse and historical
+  explicit-null proof encodings through the same checked restoration boundary.
 - `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
   the bounded maintenance pass against the same isolated database, including
   multi-batch expiry of idle remembered devices, an independently locked row,

@@ -172,3 +172,75 @@ fn token_inspection_preserves_owned_audience_and_confirmation_shapes() {
         }
     }
 }
+
+#[test]
+fn authorization_code_holder_serialization_omits_absent_proofs() {
+    use super::{AuthorizationCodeClientAuthentication, AuthorizationCodeHolderEvidence};
+
+    for authentication in [
+        AuthorizationCodeClientAuthentication::Public,
+        AuthorizationCodeClientAuthentication::Authenticated,
+    ] {
+        for selected in 0_u8..16 {
+            let proof = |bit| (selected & bit != 0).then(|| format!("verified-proof-{bit}"));
+            let Some(holder) = AuthorizationCodeHolderEvidence::from_verified_requirements(
+                authentication,
+                proof(1),
+                proof(2),
+                proof(4),
+                proof(8),
+            ) else {
+                continue;
+            };
+            let compact = serde_json::to_value(&holder).unwrap();
+            assert!(
+                compact
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .all(|value| !value.is_null()),
+                "an absent proof must not occupy the durable receipt: {compact}"
+            );
+            assert_eq!(
+                AuthorizationCodeHolderEvidence::from_persisted(compact.clone()),
+                Some(holder.clone())
+            );
+            // Existing receipts contain explicit null members. Both encodings
+            // restore the same original requirements, never fresh possession.
+            let mut historical = compact;
+            for name in [
+                "pkce_s256",
+                "dpop_jkt",
+                "mtls_x5t_s256",
+                "client_attestation_jkt",
+            ] {
+                historical
+                    .as_object_mut()
+                    .unwrap()
+                    .entry(name)
+                    .or_insert(serde_json::Value::Null);
+            }
+            assert_eq!(
+                AuthorizationCodeHolderEvidence::from_persisted(historical),
+                Some(holder)
+            );
+        }
+    }
+}
+
+#[test]
+fn compact_code_holder_still_rejects_missing_authority_and_invalid_proofs() {
+    use super::AuthorizationCodeHolderEvidence;
+
+    for malformed in [
+        json!({"authenticated_client": true}),
+        json!({"version": 1}),
+        json!({"version": 2, "authenticated_client": true}),
+        json!({"version": 1, "authenticated_client": false}),
+        json!({"version": 1, "authenticated_client": true, "pkce_s256": ""}),
+        json!({"version": 1, "authenticated_client": true, "dpop_jkt": "dpop", "mtls_x5t_s256": "mtls"}),
+        json!({"version": 1, "authenticated_client": true, "unrecognized_proof": "proof"}),
+    ] {
+        assert!(AuthorizationCodeHolderEvidence::from_persisted(malformed).is_none());
+    }
+}

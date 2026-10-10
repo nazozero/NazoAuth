@@ -635,7 +635,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                          refresh_token_family_id, principal_epoch_bound, \
                                          receipt_contract_version, authorization_code_holder) \
                                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 2, $11) \
-                                     ON CONFLICT (tenant_id, client_id, single_use_key_blake3) \
+                                     ON CONFLICT (client_id, single_use_key_blake3) \
                                        WHERE single_use_key_blake3 IS NOT NULL \
                                      DO NOTHING \
                                      RETURNING (clock_timestamp() < $10) AS grant_valid",

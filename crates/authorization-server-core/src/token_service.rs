@@ -199,9 +199,13 @@ pub enum AuthorizationCodeClientAuthentication {
 pub struct AuthorizationCodeHolderEvidence {
     version: u8,
     authenticated_client: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pkce_s256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     dpop_jkt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     mtls_x5t_s256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     client_attestation_jkt: Option<String>,
 }
 

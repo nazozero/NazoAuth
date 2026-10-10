@@ -1166,6 +1166,22 @@ async fn authorization_code_identity_fences_concurrent_holders_and_refresh_famil
         .unwrap()
         .unwrap();
     assert_eq!(receipt.authorization_code_holder, winner);
+    let mut receipt_connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let null_members = sql_query(
+        "SELECT count(*) FROM oauth_token_issuances AS receipt \
+         CROSS JOIN LATERAL jsonb_each(receipt.authorization_code_holder) AS member \
+         WHERE receipt.tenant_id=$1 AND receipt.client_id=$2 AND member.value='null'::jsonb",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Uuid, _>(fixture.client_id)
+    .get_result::<CountRow>(&mut receipt_connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        null_members.count, 0,
+        "committed proof requirements must omit absent members"
+    );
+
     assert!(receipt.refresh_token_family_id.is_some());
     assert!(
         repository

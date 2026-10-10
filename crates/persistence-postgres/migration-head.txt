@@ -1,1 +1,1 @@
-20261010000500_compact_revocation_identity
+20261010000600_compact_single_use_key
