@@ -16,11 +16,11 @@ pins the sequence range, member content digest, generation, and lease. The
 server process does not run this exporter and does not receive its database
 role or sink secret.
 
-Upgrading from the retired per-event exporter protocol imports at most the
-first 256 chained, unacknowledged events into the initial batch lease. That
-protocol had no committed batch membership or batch digest. Later chained
-entries remain pending and the existing claimant delivers them in subsequent
-batches; the migration does not acknowledge, delete, rehash, or reorder events.
+Upgrading from the retired per-event exporter protocol retains chained,
+unacknowledged events without creating a batch lease: that protocol had no
+committed batch membership or digest. The existing claimant forms the first
+and subsequent batches under both configured count and wire-byte bounds.
+The migration does not acknowledge, delete, rehash, or reorder events.
 Already committed batches under the batch protocol keep their original bounds
 and content across upgrades.
 

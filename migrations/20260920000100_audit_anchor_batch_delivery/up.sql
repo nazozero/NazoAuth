@@ -9,8 +9,8 @@
 -- stale claim only loses its fencing generation.
 --
 -- Stop the old exporter before this schema cut. In-flight chained pending
--- events are wrapped into the initial batch lease; their content digest is
--- backfilled on the first re-claim.
+-- events retain their chain facts without a batch lease. The first normal
+-- claim selects a prefix using both the configured count and wire-byte bounds.
 
 CREATE TEMP TABLE nazo_audit_upgrade_grants ON COMMIT DROP AS
 SELECT role.rolname,
@@ -51,31 +51,10 @@ ALTER TABLE public.security_audit_chain_state
     ),
     ADD CONSTRAINT ck_security_audit_batch_attempts_non_negative CHECK (batch_attempts >= 0);
 
--- The retired per-event protocol has no committed batch membership. Import
--- only its earliest bounded prefix into the initial batch; all later chained
--- deliveries remain pending for subsequent claims. No event is acknowledged
--- or rewritten here. The digest is recomputed and stored on first re-claim.
-WITH pending_prefix AS (
-    SELECT chain.sequence
-    FROM public.security_audit_event_outbox AS outbox
-    JOIN public.security_audit_chain_entries AS chain ON chain.event_id = outbox.event_id
-    WHERE chain.sequence > COALESCE(
-        (SELECT state.anchor_sequence FROM public.security_audit_chain_state AS state
-         WHERE state.singleton), 0)
-    ORDER BY chain.sequence
-    LIMIT 256
-), chained AS (
-    SELECT MIN(sequence) AS first_sequence, MAX(sequence) AS last_sequence,
-           COUNT(*)::INTEGER AS event_count
-    FROM pending_prefix
-)
-UPDATE public.security_audit_chain_state AS state
-SET batch_first_sequence = chained.first_sequence,
-    batch_last_sequence = chained.last_sequence,
-    batch_event_count = chained.event_count,
-    batch_available_at = CURRENT_TIMESTAMP
-FROM chained
-WHERE state.singleton AND chained.event_count > 0;
+-- The retired per-event protocol has no committed batch membership. Leave
+-- the new lease empty: the existing claimant selects chained pending events
+-- and enforces both the configured count and serialized envelope bounds.
+-- No event, hash, acknowledgement or checkpoint is rewritten here.
 
 -- The outbox keeps only the pending event identity and its reader-visible
 -- occurred_at ordering/health projection. Scheduling state is batch-scoped.

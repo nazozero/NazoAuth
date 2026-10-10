@@ -278,9 +278,9 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     .await
     .expect("unrelated writer transactions must not share a chain lock")
     .unwrap();
-    // The cutover migration wraps already-chained-but-unacknowledged rows
-    // into the initial committed batch, so the historical event is exported
-    // first; the freshly committed events follow in the next batch.
+    // The claimant selects retained chained rows before assigning new chain
+    // entries, so the historical event is exported first; freshly committed
+    // events follow in the next batch.
     let mut delivered = Vec::new();
     loop {
         match claim_batch(&exporter).await {
@@ -628,6 +628,18 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
     let occurred_at = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
+    #[derive(QueryableByName)]
+    struct Canonical {
+        #[diesel(sql_type = Text)]
+        value: String,
+    }
+    let payload = json!({"detail": "x".repeat(4096)});
+    let canonical = sql_query("SELECT $1::jsonb::text AS value")
+        .bind::<diesel::sql_types::Jsonb, _>(&payload)
+        .get_result::<Canonical>(&mut owner)
+        .await
+        .unwrap()
+        .value;
     let mut previous_hash = vec![0_u8; 32];
     let mut expected = Vec::new();
     for sequence in 1..=513 {
@@ -639,14 +651,15 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
             "token_issued",
             "token_lifecycle",
             occurred_at,
-            b"{}",
+            canonical.as_bytes(),
         )
         .to_vec();
-        sql_query("SELECT * FROM public.nazo_append_security_audit_event($1, 'token_issued', 'token_lifecycle', '{}'::jsonb, $2, $3, $4)")
+        sql_query("SELECT * FROM public.nazo_append_security_audit_event($1, 'token_issued', 'token_lifecycle', $5, $2, $3, $4)")
             .bind::<SqlUuid, _>(id)
             .bind::<diesel::sql_types::Timestamptz, _>(occurred_at)
             .bind::<Binary, _>(&previous_hash)
             .bind::<Binary, _>(&hash)
+            .bind::<diesel::sql_types::Jsonb, _>(&payload)
             .execute(&mut owner).await.unwrap();
         expected.push((id, previous_hash.clone(), hash.clone()));
         previous_hash = hash;
@@ -660,8 +673,11 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
             .expect("legacy pending evidence must survive the batch protocol upgrade");
     }
     let batch_count = sql_query("SELECT batch_event_count::bigint AS value FROM public.security_audit_chain_state WHERE singleton")
-        .get_result::<Count>(&mut owner).await.unwrap().value;
-    assert_eq!(batch_count, 256);
+        .get_result::<MaybeBigInt>(&mut owner).await.unwrap().value;
+    assert_eq!(
+        batch_count, None,
+        "the retired per-event protocol has no committed batch"
+    );
     let remaining =
         sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox")
             .get_result::<Count>(&mut owner)
@@ -670,7 +686,7 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
             .value;
     assert_eq!(
         remaining, 513,
-        "forming the initial batch must not acknowledge any event"
+        "schema conversion must not acknowledge any event"
     );
     for migration in [DELIVERY_RETENTION, BOUNDED_CLAIM, PENDING_SET] {
         owner
@@ -683,8 +699,38 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
     audit_upgrade::upgrade_to_current_audit_schema(&mut owner).await;
     let repository = AuditLedgerRepository::new(create_pool(url.as_str(), 2).unwrap());
     let mut delivered = 0;
-    for (first, last) in [(1, 256), (257, 512), (513, 513)] {
-        let batch = claim_or_panic(&repository).await;
+    let mut batch_count = 0;
+    while delivered < expected.len() {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let batch = loop {
+            match repository
+                .claim_batch("cutover-test", 256, 131072, 60)
+                .await
+                .unwrap()
+            {
+                SecurityAuditBatchClaim::Claimed(batch) => break batch,
+                SecurityAuditBatchClaim::Busy if std::time::Instant::now() < deadline => {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                }
+                other => panic!("expected bounded legacy claim, got {other:?}"),
+            }
+        };
+        let bytes = nazo_persistence::audit_wire::security_audit_batch_body("cutover-test", &batch)
+            .unwrap()
+            .len();
+        eprintln!(
+            "legacy batch {}..{}: {} events, {bytes} bytes",
+            batch.first_sequence,
+            batch.last_sequence,
+            batch.event_count()
+        );
+        assert!(
+            bytes <= 131072,
+            "an unleased legacy backlog must respect the configured wire limit"
+        );
+        let first = delivered as i64 + 1;
+        let last = first + batch.event_count() - 1;
+        batch_count += 1;
         assert_eq!((batch.first_sequence, batch.last_sequence), (first, last));
         for event in &batch.deliveries {
             let (id, previous, hash) = &expected[delivered];
@@ -693,7 +739,7 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
             assert_eq!(event.previous_hash, *previous);
             assert_eq!(event.event_hash, *hash);
             assert_eq!(event.occurred_at, occurred_at);
-            assert_eq!(event.payload_canonical, "{}");
+            assert_eq!(event.payload_canonical, canonical);
             delivered += 1;
         }
         let before_ack =
@@ -709,6 +755,10 @@ async fn legacy_chained_backlog_spans_batches_without_losing_evidence() {
         );
         ack(&repository, &batch).await;
     }
+    assert!(
+        batch_count > 3,
+        "large legal events require byte-bounded batches"
+    );
     assert_eq!(delivered, expected.len());
     assert!(matches!(
         claim_batch(&repository).await,

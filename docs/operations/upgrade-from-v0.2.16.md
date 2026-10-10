@@ -25,9 +25,10 @@ response metadata are removed only by the guarded schema cutover. The cleanup
 function replacement preserves its owner, EXECUTE grants, and grant options. If a prior failed upgrade already retired `oauth_tokens`,
 conversion does not recreate that table or its obsolete index.
 
-Stop the retired audit exporter before the batch protocol cutover. Its first
-bounded pending prefix becomes the initial batch; later chained events remain
-pending for subsequent delivery. Existing batch-protocol leases retain their
+Stop the retired audit exporter before the batch protocol cutover. Its chained
+pending events retain their facts without an invented batch lease. The first
+normal claim enforces both configured count and wire-byte bounds; the remaining
+events stay pending for subsequent delivery. Existing batch-protocol leases retain their
 committed membership and digest. No pending audit event is acknowledged or
 deleted by this conversion. See [audit anchoring](../security/audit-anchor.md).
 
