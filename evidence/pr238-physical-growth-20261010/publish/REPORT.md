@@ -3,6 +3,14 @@
 Source candidate: `4ccd02de2767a7dd586f19ccb7cf502197e02aeb`.
 Baseline report head: `432d87e523106b476dc5249390c29f82cb2615b4` (production files equal `667060893661dae2c2e31289d5d86ca6474132c3`).
 
+## Current acceptance after retest (2026-10-10)
+
+**PERFORMANCE: PASS for the completed current-candidate retests at the original workload and gates.** AUTH_CAP passes 180 formal seconds at 800 ops/s and 992 VUs (P95/P99 20/38 ms); CC_RETEST passes 600 formal seconds at 4,000 ops/s and 992 VUs (10/26 ms). Both have zero drop, unexpected error and unfinished operation. CC_RETEST also shows pending returning to low hundreds while requests continue, with no rising minute-level P99.
+
+This is a candidate acceptance decision, distinct from immutable per-run measurements. AUTH_B30 and CC_B15 retain their measured FAIL verdicts below as historical anomalies, but those diagnostic windows no longer force the current candidate's scoped performance conclusion to FAIL after valid same-source retests. Shared resource contention and added observation cost limit causal attribution; shared CPU is not proven to be the sole cause. The authorization retest covers three minutes, not a repeated 30-minute window. No unmeasured path or unlimited-duration guarantee is implied.
+
+The raw run verdicts, thresholds, counters and failure evidence are unchanged. See [evidence retention policy](../../README.md) for the compacted diagnostic inventory and retrieval of original snapshots.
+
 ## Findings and changes
 
 Physical growth was not one phenomenon. The earlier authorization-code window included filling the valid receipt retention window, expired rows awaiting natural maintenance, MVCC dead tuples awaiting autovacuum, and allocated heap/index pages subsequently reused. Two byte costs were independently unnecessary and have been removed:
@@ -124,7 +132,7 @@ CPU uses owned service process jiffies, with explicit limitations for terminated
 
 ## Commands and integrity
 
-Actual command arrays, start/end times and exit codes are in commands.json and per-command exit JSON. Source candidate is the exact image source in build.json. This report commit adds evidence only. SHA256SUMS covers published files; historical reports remain unchanged.
+Actual command arrays, start/end times and exit codes are in commands.json and per-command exit JSON. Source candidate is the exact image source in build.json. This report commit adds evidence only. SHA256SUMS covers retained published files. This documentation revision updates current acceptance and compacts repeated affinity diagnostics; historical per-run verdicts and essential raw measurements remain unchanged.
 
 ## Final scoped conclusions
 
@@ -133,7 +141,7 @@ Actual command arrays, start/end times and exit codes are in commands.json and p
 | CODE | PASS | Candidate 4ccd02de: 202 unique targeted cases; format, touched-package Clippy, static/boundary checks and release build all exit 0. Negative behavior failures are real assertion failures. |
 | SECURITY | PASS for changed boundaries | Actual PostgreSQL tenant FK/global client identity, replay uniqueness, populated up/down migration, issuance atomicity and checked HTTP holder restoration remain enforced. |
 | RECOVERY | PASS for observed drain/reconciliation and targeted identity cases | All valid points finish with signed database/receiver/checkpoint agreement. The prior unchanged physical late-commit/cancellation/disconnect fault suite is referenced, not represented as newly rerun. |
-| PERFORMANCE | FAIL overall; valid normal authorization A/B and CC retest PASS | Both long diagnostic failures remain; no gate or workload was reduced. This revision does not establish all-path capacity or an unconditional performance guarantee. |
+| PERFORMANCE | PASS for completed current-candidate retests | AUTH_CAP: 180 seconds at 800/s; CC_RETEST: 600 seconds at 4,000/s; original gates and security configuration unchanged. Historical diagnostic FAILs remain as run-level evidence, not the current candidate verdict. No all-path or unlimited-duration claim. |
 | STORAGE | PASS for the identified redundant bytes and natural reclamation objective | Two unnecessary representation costs removed; final authorization receipt batch and decision batch naturally reach zero after retention and a full maintenance cycle. Real unACKed audit work and reusable physical allocation are explicitly separated. |
 
 The action was not to call every growing file necessary. The unnecessary holder members and redundant unique-index key were removed. Valid replay receipts, live grants and unACKed audit evidence retain their existing purpose. Expired records and ACKed transient evidence have measured natural deletion; retained empty pages are available for reuse, not an undiscovered live-row retention owner.
@@ -146,6 +154,6 @@ The action was not to call every growing file necessary. The unnecessary holder 
 - CC_RETEST physical database falls from **183,842,495** bytes at the last active sample to **89,732,799** bytes after natural drain/maintenance. Two timed PostgreSQL checkpoints complete. WAL directory allocation settles at **3,841,982,464** bytes through the final observations; that is recycled/reserved WAL disk, separate from **4,249,386,857** newly generated WAL bytes between formal collector samples. `max_wal_size` is a checkpoint target, not a hard disk cap. No replication slot/archive retention was present in this test configuration.
 - Mature CC Valkey memory is approximately **1,802,200 bytes** across all three late windows. It is neither the external multi-GB receiver journal nor PostgreSQL WAL.
 
-Remaining limits are concrete: original long-window capacity failures remain; only the scoped mechanisms and finite windows above are accepted. The test does not promise unlimited audit storage under indefinitely unavailable export, zero physical reserve after bursts, or all-path infinite-runtime flatness. No already-completed unaffected fault matrix or main benchmark was rerun.
+Acceptance scope is concrete: the completed current-candidate retests pass; original long-window failures remain historical observations. Only the scoped mechanisms and finite windows above are accepted. The test does not promise unlimited audit storage under indefinitely unavailable export, zero physical reserve after bursts, or all-path infinite-runtime flatness. No already-completed unaffected fault matrix or main benchmark was rerun.
 
 Read-only observer errors after database shutdown are retained in the execution/physical-analysis logs. They occur during owned fixture cleanup after terminal measurements and signed validation; task cleanup reports no remaining test containers. Optional forensic trace truncation is also retained separately from the formal aggregate verdict. Historical evidence is not overwritten.

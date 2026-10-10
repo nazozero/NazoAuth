@@ -36,8 +36,8 @@
     "sha256": "708ab3c62e3872e9910439626ff5d9afa43f0c2648e6b5f57f081b5b32437016"
   },
   "storage-series.csv": {
-    "bytes": 27750,
-    "sha256": "a6b4dfe93d42c6e8a341de6fd74b6e09860287514a1df1ad9934a879a91bdd27"
+    "bytes": 27477,
+    "sha256": "308b80ddfce7f06b6dc4950c8f818994ddd363da47a928353e1e95c99c3560ad"
   },
   "configurations.json": {
     "bytes": 37184,
@@ -163,13 +163,13 @@
     "bytes": 51206,
     "sha256": "8c035a57fee121e4fb3f24bb8511d009e9f3e8a4615c6c96f054a519c17d4841"
   },
-  "p06-A1/service-affinity.json": {
-    "bytes": 289909,
-    "sha256": "d2fbe1efcaf65b46e91b2d83aa7921547f0b1f625a6dc6abe432e86cfb4c4d48"
+  "p06-A1/service-affinity.summary.json": {
+    "bytes": 24507,
+    "sha256": "badf8d6218188009302a7d787ca5bee83704e16eeaceff3fce542ab361f8123a"
   },
-  "p06-A1/generator-affinity.json": {
-    "bytes": 143920,
-    "sha256": "e8cac041f680bff8a8e941f3a7c11c2f6c023f5468c75867008736b600594108"
+  "p06-A1/generator-affinity.summary.json": {
+    "bytes": 6558,
+    "sha256": "45e384b7bf7d7e9e5eb63e5b73a18bde2c9ff032797288724eb76a7d93798acb"
   },
   "p06-A1/capacity-cap-authorization-code.analyzer-stats.json": {
     "bytes": 552,
@@ -243,13 +243,13 @@
     "bytes": 51532,
     "sha256": "0fa8797317e3d2aadb84f0322a8ed6b7cafcf7bf40e2e2461e9bf850f9c27cd2"
   },
-  "p06-B1/service-affinity.json": {
-    "bytes": 291680,
-    "sha256": "f1b365e84f0562edbe7ba137482011753e06ab58b235d145ef0d49a11b374e99"
+  "p06-B1/service-affinity.summary.json": {
+    "bytes": 24506,
+    "sha256": "3bad831dd1c438846d022582f821059863ad9ab45f5942ef7348a9b46fa1432f"
   },
-  "p06-B1/generator-affinity.json": {
-    "bytes": 149860,
-    "sha256": "07e4296116c2794900ec8b5e63579aefc94c3f6e4de83b88422680f4971ab970"
+  "p06-B1/generator-affinity.summary.json": {
+    "bytes": 6471,
+    "sha256": "1657ba96d8b1cf06056d7557adc9d6d1c3238b83040be16d240eb6bdd4a7f4a4"
   },
   "p06-B1/capacity-cap-authorization-code.analyzer-stats.json": {
     "bytes": 550,
@@ -315,13 +315,13 @@
     "bytes": 51708,
     "sha256": "7807f066d7f81ae02fff63453dedd723f7cd96f82b58fb58e627a08c1690e8c6"
   },
-  "p10-A1/service-affinity.json": {
-    "bytes": 291082,
-    "sha256": "c0167e5680db41fca0395da5e0b2eaf66d6231069e91c7b6b5581d8ed302e7a9"
+  "p10-A1/service-affinity.summary.json": {
+    "bytes": 24510,
+    "sha256": "805f36e9c49a1f008d532d733579bd46c4205d502fb10d1e24f2a5593f17c0c1"
   },
-  "p10-A1/generator-affinity.json": {
-    "bytes": 155574,
-    "sha256": "976ec038d0c5e1a0f5ed7cd1ec649ee9e49668fe9dee5a172214bb87e7131c30"
+  "p10-A1/generator-affinity.summary.json": {
+    "bytes": 6609,
+    "sha256": "084058c2a76e7379c8044503174cbee86afa3f5ed7a63e1b486bbb9e0cd21c42"
   },
   "p10-A1/capacity-cap-revoke.analyzer-stats.json": {
     "bytes": 552,
@@ -387,13 +387,13 @@
     "bytes": 51574,
     "sha256": "608e51d8728de28747a92883987025062ec288c8a2c366a92bbe074400d19169"
   },
-  "p10-B1/service-affinity.json": {
-    "bytes": 290623,
-    "sha256": "3a210f07070d606722002afd64800646b7a06eb00c7fd1e7a2b3246f727756f8"
+  "p10-B1/service-affinity.summary.json": {
+    "bytes": 24544,
+    "sha256": "aeae27b0a64b45b699514bd3d0d70aebcd58a799ebe0fa3d43f6a229f27a744b"
   },
-  "p10-B1/generator-affinity.json": {
-    "bytes": 153263,
-    "sha256": "aa3b61bced74f968372b8feb540d47c795cb51f4012850bb509155a57dbc3360"
+  "p10-B1/generator-affinity.summary.json": {
+    "bytes": 6519,
+    "sha256": "64261cd5321754d107472249072df1219bf8b5ad3f0f812562e04555b706c388"
   },
   "p10-B1/capacity-cap-revoke.analyzer-stats.json": {
     "bytes": 554,
@@ -459,13 +459,13 @@
     "bytes": 78222,
     "sha256": "5c9fa9d8a83af09500739facb77245182fd4cdd852b841955ed452f92da947f8"
   },
-  "p03-A1/service-affinity.json": {
-    "bytes": 365652,
-    "sha256": "1f84aed39314549d0cab7a055a54013188acc0e713a96f93839b3cb6361cd650"
+  "p03-A1/service-affinity.summary.json": {
+    "bytes": 45146,
+    "sha256": "a87186f5e7518e4b76fe523cebc37204e99e821fd202906b86f0a262d172d464"
   },
-  "p03-A1/generator-affinity.json": {
-    "bytes": 994297,
-    "sha256": "cb0bf97a86e8a1563410193617b844ab47ab80b58e34694b74744187b9ceae1f"
+  "p03-A1/generator-affinity.summary.json": {
+    "bytes": 52890,
+    "sha256": "ac4d5d5a6c15debcbd736742ecc176171cdeb371a369191da63ef0fd288b99e2"
   },
   "p03-A1/capacity-cap-mixed.analyzer-stats.json": {
     "bytes": 551,
@@ -567,13 +567,13 @@
     "bytes": 56028,
     "sha256": "42c359113caa75a2708c8d58a404413833d71c41db9c7b8485858f8ec147902e"
   },
-  "p03-B1/service-affinity.json": {
-    "bytes": 320526,
-    "sha256": "d3fe67add324df6fea10b487852d3e9c0e75dc6c8614590edbd33a8795c7bdcb"
+  "p03-B1/service-affinity.summary.json": {
+    "bytes": 39615,
+    "sha256": "d6cf12dd9791d53646095e216b927696f39c1322e9c050610bd00dff52cdbce2"
   },
-  "p03-B1/generator-affinity.json": {
-    "bytes": 908805,
-    "sha256": "71a44a028727674f664beaed1172ebc661ae7d95ea9d3f00a0bfa25c603a821d"
+  "p03-B1/generator-affinity.summary.json": {
+    "bytes": 46722,
+    "sha256": "80a2d09df8a0e32b1dd110b44d2412d01aa733e935db7a17f8dd5641c6ff7e9b"
   },
   "p03-B1/capacity-cap-mixed.analyzer-stats.json": {
     "bytes": 552,
@@ -643,13 +643,13 @@
     "bytes": 38912,
     "sha256": "e5251f9dba482ee005f71845a85d47f245b7dbf8e736d0dd2714fc8885ba3de4"
   },
-  "p04-A1/service-affinity.json": {
-    "bytes": 523140,
-    "sha256": "5865201049a8e42695a10d3113dd7755506c9f1b2e6c6df5140ddd3e769edca7"
+  "p04-A1/service-affinity.summary.json": {
+    "bytes": 40041,
+    "sha256": "d379673df5e3949b8846e03b6f8f057043249691e47560bb9fc72f640909a23c"
   },
-  "p04-A1/generator-affinity.json": {
-    "bytes": 951409,
-    "sha256": "b7b3ada46b927b669bcc0bdfe56a0a08c8f109c96fad1232e39e8053ced88c38"
+  "p04-A1/generator-affinity.summary.json": {
+    "bytes": 46653,
+    "sha256": "b9d010611212a853554a3d8009be5e8396820da14b4fcb70a219deac3278970f"
   },
   "p04-A1/capacity-cap-mixed.analyzer-stats.json": {
     "bytes": 554,
@@ -719,13 +719,13 @@
     "bytes": 50952,
     "sha256": "78ce94e687d75447864b10448a9aeb54c0f60447805cc923fcc7cdb535709aa0"
   },
-  "p04-B1/service-affinity.json": {
-    "bytes": 520467,
-    "sha256": "6a7a43ceab60445a0ee35efa475137447a471faf318c0a0a1bc45b22df8d2bc2"
+  "p04-B1/service-affinity.summary.json": {
+    "bytes": 40046,
+    "sha256": "44a2aaaf497d06150734eb05eb3838d1385d8a156dbb30444ebdb57c24971601"
   },
-  "p04-B1/generator-affinity.json": {
-    "bytes": 948068,
-    "sha256": "3aa17fd355ab8a5baa6938afc496378a8b94b60966f84ec0867d270194df1f1f"
+  "p04-B1/generator-affinity.summary.json": {
+    "bytes": 47256,
+    "sha256": "1d2e9f46fef85ea0834b8ae1b1e807ef9148a44e5ccdac74bb73e415441d1159"
   },
   "p04-B1/capacity-cap-mixed.analyzer-stats.json": {
     "bytes": 555,
@@ -743,13 +743,13 @@
     "bytes": 1506,
     "sha256": "2da3a19583400493baa78e3e095c6fbf30f793b45195985b46705fa0b882891c"
   },
-  "sustained-B1/service-affinity.json": {
-    "bytes": 648966,
-    "sha256": "c3c31146b46f59465e77975ac68bc564fcf807d2dd7a725d47093bba56a856aa"
+  "sustained-B1/service-affinity.summary.json": {
+    "bytes": 54876,
+    "sha256": "53aa6d9862d5d46f261c43c7a8c752d75cc013d6179a1581f0e017541e11f2a9"
   },
-  "sustained-B1/generator-affinity.json": {
-    "bytes": 376643,
-    "sha256": "907593b01a60820de64e7f94578691dfee5db5a11aa1390daa183548dc9319f9"
+  "sustained-B1/generator-affinity.summary.json": {
+    "bytes": 15374,
+    "sha256": "0811fb6378b7aeb468caf4457d2973e3739edb768519d016eafe8961ed5a5791"
   },
   "sustained-B1/capacity-cap-revoke.analyzer-stats.json": {
     "bytes": 555,
@@ -832,8 +832,8 @@
     "sha256": "9db91e4a105c5b88fcd716870b357b890a3f4173d196bc8448fa4b2fb61d947c"
   },
   "fault-D1/storage-series.csv": {
-    "bytes": 6230,
-    "sha256": "bc7e32444f5db76bfe830cadf5f92410b48920e76c36310c583971748b7c9118"
+    "bytes": 6148,
+    "sha256": "b3cc11c3c0b1b9ce46dfdd7ba45d537beb0d616b5a94cd085efb82642c22065c"
   },
   "fault-D1/pgss-pre.json": {
     "bytes": 3751,

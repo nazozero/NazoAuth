@@ -1,0 +1,573 @@
+{
+  "base_commit": "28fd6a693b06485ea83570f6ae703af013e684e9",
+  "policy": "Keep raw performance/storage series, signed validation, commands/exits, provenance, regression/fault evidence, model ledgers and all failed/invalid verdicts. Remove only repetitive successful per-thread identity listings after verified compact aggregation. Original snapshots remain available in Git history; no history rewrite.",
+  "removed": [
+    {
+      "path": "evidence/model-consolidation-20261009/publish/MODEL02/results/multi/r230-model-model02-20261009/generator-affinity.json",
+      "sha256": "a79dc17f790624e032474c22fc8bf66756c8acf3ce2d8544dbf61c9b08caaa9d",
+      "bytes": 150780,
+      "replacement": "evidence/model-consolidation-20261009/publish/MODEL02/results/multi/r230-model-model02-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "920e5d324718dbf20c00925fbf50e0385795e6795e09157f7a4446007cad1533",
+      "replacement_bytes": 6717,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/model-consolidation-20261009/publish/MODEL10/results/multi/r230-model-model10-20261009/generator-affinity.json",
+      "sha256": "00812e024cf0799615fddc7261429d9c39cd95e146409e1154f6632cc7c7e82e",
+      "bytes": 149635,
+      "replacement": "evidence/model-consolidation-20261009/publish/MODEL10/results/multi/r230-model-model10-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "2a614b822466c363c54483e360139334e3ff0705106136b9a120caf5ea48eb87",
+      "replacement_bytes": 6716,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/A06R/results/multi/r230-bottleneck-a06r-20261009/generator-affinity.json",
+      "sha256": "cf5959fda833e0683e79e943f55734b04f98deae9dec57c5f63de69d131f5ed4",
+      "bytes": 140474,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/A06R/results/multi/r230-bottleneck-a06r-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "01ee07c1ba74cff5f5f04878c9ce9d1e8b7a9dfa2971ca9d4241a089a02018dd",
+      "replacement_bytes": 6663,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/B06/results/multi/r230-bottleneck-b06-20261009/generator-affinity.json",
+      "sha256": "0b4f60d2f72aa1c72293adb5d41fa2c48fcb7f9cb955cb7873927cd969dfa8e2",
+      "bytes": 150036,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/B06/results/multi/r230-bottleneck-b06-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "0fa6e94426bce488bc2f86fb231f4673622401c1d69d7aa7a2bbe53a0c31c48a",
+      "replacement_bytes": 6783,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/B06R/results/multi/r230-bottleneck-b06r-20261009/generator-affinity.json",
+      "sha256": "3dd816d2f5466015bc1d270d2c97c822303577ccd4b417e3e4de3be2a1eb12f9",
+      "bytes": 160903,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/B06R/results/multi/r230-bottleneck-b06r-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "3a2386252cce49ac178197e6554c17b2e318a904f12889ac456c2dfa4c1139ae",
+      "replacement_bytes": 7238,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/B10/results/multi/r230-bottleneck-b10-20261009/generator-affinity.json",
+      "sha256": "21e1dde99f6725942a075cf20caadf0c4edc133837d851413c26ef9c63d0b914",
+      "bytes": 159018,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/B10/results/multi/r230-bottleneck-b10-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "359e16ca7490fa31048007f58375803463a96f9e1318ec16fe39b493edb5b26f",
+      "replacement_bytes": 7162,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/D0/results/multi/r230-bottleneck-d0-20261009/generator-affinity.json",
+      "sha256": "732a29c13c0610e8ffbf65409e3cf065bcaf5cda9243eb5858e1119564d8da84",
+      "bytes": 152111,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/D0/results/multi/r230-bottleneck-d0-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "bed87098e86697bc0f3c238fc8fb58774bbe7da06bc7e52f8d71908ef90688b3",
+      "replacement_bytes": 6754,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/D1/results/multi/r230-bottleneck-d1-20261009/generator-affinity.json",
+      "sha256": "49d33f08adbc605f8e818a10fbbd5d644fe975021a74d4454912eb169b0f75ca",
+      "bytes": 147014,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/D1/results/multi/r230-bottleneck-d1-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "da99f8d0c4156eade5894de21c74f0358a533f299eff37ac11ffaab1b02b40f9",
+      "replacement_bytes": 6665,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/D2/results/multi/r230-bottleneck-d2-20261009/generator-affinity.json",
+      "sha256": "197382d49b5c6eac453d5fc40da52914ae12c39c8ac6ef569948be19efabb021",
+      "bytes": 147374,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/D2/results/multi/r230-bottleneck-d2-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "2e560cfbb76dbec30664d819bc86bb5b990391d2bff99e4fd8e4e49a1cda2645",
+      "replacement_bytes": 6660,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/Q32/results/multi/r230-bottleneck-q32-20261009/generator-affinity.json",
+      "sha256": "90d3e0b02cdc511b9794e1e1cd35099ca233201044fa53751dccef47c31c6481",
+      "bytes": 161542,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/Q32/results/multi/r230-bottleneck-q32-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "9f3f450bc74bb1f658aa80a532ac54dfa6152d57ded129607928944d8051afd8",
+      "replacement_bytes": 7261,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-bottleneck-20261009/publish/Q64/results/multi/r230-bottleneck-q64-20261009/generator-affinity.json",
+      "sha256": "9e0e86194963944871debf7cf3f5854415b95272b4857ab93e26785a95fe3e56",
+      "bytes": 151348,
+      "replacement": "evidence/pr230-bottleneck-20261009/publish/Q64/results/multi/r230-bottleneck-q64-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "f9338f5e5787064b4624fc60d82462720185283c5e99fcf5dd9280be9f51543c",
+      "replacement_bytes": 6684,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/A06/results/multi/pr230-perf-a06-20261009/generator-affinity.json",
+      "sha256": "be490ba86845f7e248ea67a0bcd419c9766e33b1704e2a5d8801be1679cca5b5",
+      "bytes": 143129,
+      "replacement": "evidence/pr230-performance-20261009/publish/A06/results/multi/pr230-perf-a06-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "7f7c682583f86a90d054c5b72a71d733b9475f2b2e8809ee8f0689a522c3ad17",
+      "replacement_bytes": 6660,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/A06R/results/multi/pr230-perf-a06r-20261009/generator-affinity.json",
+      "sha256": "91af79c0977b2107d7d3cedf093bc1db22d6e439c47b481fce962bb2dea4da9b",
+      "bytes": 145049,
+      "replacement": "evidence/pr230-performance-20261009/publish/A06R/results/multi/pr230-perf-a06r-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "1bce9a901ff71befacb1f900c990b3c6ed98c35c0859acb8769eccaa6b0c8111",
+      "replacement_bytes": 6619,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/A10/results/multi/pr230-perf-a10-20261009/generator-affinity.json",
+      "sha256": "96473628bcf0fe47d0a5856d229f294870bd63955d470f197afb2b65d1f645ea",
+      "bytes": 140435,
+      "replacement": "evidence/pr230-performance-20261009/publish/A10/results/multi/pr230-perf-a10-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "51864282638b814c663716a8422263820eaf5f828849e2f1383168551284ff96",
+      "replacement_bytes": 6651,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/B06/results/multi/pr230-perf-b06-20261009/generator-affinity.json",
+      "sha256": "6a7f128b55b08ea3b6090576772e5b6556d2045873e8559ce015da665fa06c8c",
+      "bytes": 145104,
+      "replacement": "evidence/pr230-performance-20261009/publish/B06/results/multi/pr230-perf-b06-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "874ab279fe6daaec27faee031b571f60e8418895af51043db515e7384982f10f",
+      "replacement_bytes": 6504,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/B10/results/multi/pr230-perf-b10-20261009/generator-affinity.json",
+      "sha256": "005a08863f47797bd0d4dfefab47bdee7c0d5ae0b5276cc90cc8719b320af8ae",
+      "bytes": 141826,
+      "replacement": "evidence/pr230-performance-20261009/publish/B10/results/multi/pr230-perf-b10-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "935f68c2f7ec6a17751e62452ebbf4bac5ddab5ab78fc47465e2b1d20523a2d3",
+      "replacement_bytes": 6661,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/D1/results/multi/pr230-perf-d1-20261009/generator-affinity.json",
+      "sha256": "5bfafb863131bf758e6f1a6bc86d76d757a226a4c8fdf5af435051cb7526f09f",
+      "bytes": 149187,
+      "replacement": "evidence/pr230-performance-20261009/publish/D1/results/multi/pr230-perf-d1-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "38e3d35feaba9f5b69efa980ba7eda7806fd1b70b9584034c8472625a27b056d",
+      "replacement_bytes": 6681,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/D2/results/multi/pr230-perf-d2-20261009/generator-affinity.json",
+      "sha256": "f55d1f3ed5226521d63450e1b5dc6776baac0ff9a1d85e5b8bc9f68b2a39ea9f",
+      "bytes": 140651,
+      "replacement": "evidence/pr230-performance-20261009/publish/D2/results/multi/pr230-perf-d2-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "a79826744b789d4d5b73d448e690230a3934209b77ecbccbf639d66d0562d3f3",
+      "replacement_bytes": 6640,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-20261009/publish/D3/results/multi/pr230-perf-d3-20261009/generator-affinity.json",
+      "sha256": "1191ebd5c9b5e53c2325b7c6cadeece9d44d3aa17dee448135bb6430def1118c",
+      "bytes": 138737,
+      "replacement": "evidence/pr230-performance-20261009/publish/D3/results/multi/pr230-perf-d3-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "30ce7359b91b263f87a59c3ca97acf6d745a8fb41d2e308ad1462dd522b7d388",
+      "replacement_bytes": 6212,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/AREAD/results/multi/r230-repair-aread-20261009/generator-affinity.json",
+      "sha256": "3336335044c664fd5c3efc81806d8c270be8fe30974485d6b2d417a37f926d8f",
+      "bytes": 149997,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/AREAD/results/multi/r230-repair-aread-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "ae3c85469a8893dc836ddf45ca0d619d01c651f8df31cb9fedafc66ddcc3aa38",
+      "replacement_bytes": 6698,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/BREAD/results/multi/r230-repair-bread-20261009/generator-affinity.json",
+      "sha256": "20f5b4362f024b812355da4e1be5b7fa10b824f3cab6bba377f6e06a80896bc9",
+      "bytes": 158856,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/BREAD/results/multi/r230-repair-bread-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "f7510440944cb79c452478172ce4f102270352069105282f25f0cb5af0bface4",
+      "replacement_bytes": 7082,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/BREAD10/results/multi/r230-repair-bread10-20261009/generator-affinity.json",
+      "sha256": "1b0c2c8805e48e792251a715c598a0989a0ffb22057c0a357c06db9039810965",
+      "bytes": 149839,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/BREAD10/results/multi/r230-repair-bread10-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "6e6811b9414b5ab438910a3bf7f47b065e8469e3ee2d92f4834b11e192a47647",
+      "replacement_bytes": 6735,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/BREAD2/results/multi/r230-repair-bread2-20261009/generator-affinity.json",
+      "sha256": "98d4224f7275f6f951812e3fcd96214a1c46d97f06fb7161d592ef245b0451de",
+      "bytes": 149060,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/BREAD2/results/multi/r230-repair-bread2-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "a41b564874e819baadfffaef897a83f887dc8b8b7c73053b5bf085bac00fa445",
+      "replacement_bytes": 6811,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/DREAD/results/multi/r230-repair-dread-20261009/generator-affinity.json",
+      "sha256": "f3e67db3e4cb6003b35d355a115fdb1ea6ae7154e15e6f44bea675633b0fa541",
+      "bytes": 144589,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/DREAD/results/multi/r230-repair-dread-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "b3c45a4f445d2142e5fe23899312091638815c952b23e47a2e92e51f9a7280b8",
+      "replacement_bytes": 6590,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/DREADA2/results/multi/r230-repair-dreada2-20261009/generator-affinity.json",
+      "sha256": "0187e27fe4080dc1a355cfa5ab0be965e9b82f14975fd3972a4609de38ee7f21",
+      "bytes": 150896,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/DREADA2/results/multi/r230-repair-dreada2-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "ec47a933e4ffb662ba9edafff42da7a5735a500617487f53ca955d00fd9934a4",
+      "replacement_bytes": 7021,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/DREADB/results/multi/r230-repair-dreadb-20261009/generator-affinity.json",
+      "sha256": "4fcaef4b33ea145650b68e656921cf80f698f5b98e8dc8a8483513b5fb9b2222",
+      "bytes": 148587,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/DREADB/results/multi/r230-repair-dreadb-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "97993784220e9de721fab766883fb4633c62c459748ab9bb19cb27694d2e5b0f",
+      "replacement_bytes": 6997,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/R02/results/multi/r230-repair-r02-20261009/generator-affinity.json",
+      "sha256": "4bd4fb5e02111206a91716e87b33a4c005e7ace17a13d7519a1d678d0da776f7",
+      "bytes": 139416,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/R02/results/multi/r230-repair-r02-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "c755a974e2a5f6664f674644d911997b8dbd9f3f28821f2272880adc76b9f5d6",
+      "replacement_bytes": 6250,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/R16/results/multi/r230-repair-r16-20261009/generator-affinity.json",
+      "sha256": "c3758f06d090bb9ef12d5b902510b996ba1bb08a9c08ec1a01fe543e8b79a968",
+      "bytes": 137821,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/R16/results/multi/r230-repair-r16-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "882347222f03b4e302e6ebe76f4fd39d5263ef4fc64102f3fdb410ad60d65e7d",
+      "replacement_bytes": 6352,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-performance-repair-20261009/publish/R16B/results/multi/r230-repair-r16b-20261009/generator-affinity.json",
+      "sha256": "28aa97625c8027e8201f12c5909d136be541121ecaed72f7df55ff8dc8052a9e",
+      "bytes": 138336,
+      "replacement": "evidence/pr230-performance-repair-20261009/publish/R16B/results/multi/r230-repair-r16b-20261009/generator-affinity.summary.json",
+      "replacement_sha256": "24efedbac222805835ad0647459bd3a4a72f4ba2ee7dc354879b4d7948d8da8f",
+      "replacement_bytes": 6219,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p03-A1/generator-affinity.json",
+      "sha256": "cb0bf97a86e8a1563410193617b844ab47ab80b58e34694b74744187b9ceae1f",
+      "bytes": 994297,
+      "replacement": "evidence/pr230-revision-20261008/publish/p03-A1/generator-affinity.summary.json",
+      "replacement_sha256": "ac4d5d5a6c15debcbd736742ecc176171cdeb371a369191da63ef0fd288b99e2",
+      "replacement_bytes": 52890,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p03-A1/service-affinity.json",
+      "sha256": "1f84aed39314549d0cab7a055a54013188acc0e713a96f93839b3cb6361cd650",
+      "bytes": 365652,
+      "replacement": "evidence/pr230-revision-20261008/publish/p03-A1/service-affinity.summary.json",
+      "replacement_sha256": "a87186f5e7518e4b76fe523cebc37204e99e821fd202906b86f0a262d172d464",
+      "replacement_bytes": 45146,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p03-B1/generator-affinity.json",
+      "sha256": "71a44a028727674f664beaed1172ebc661ae7d95ea9d3f00a0bfa25c603a821d",
+      "bytes": 908805,
+      "replacement": "evidence/pr230-revision-20261008/publish/p03-B1/generator-affinity.summary.json",
+      "replacement_sha256": "80a2d09df8a0e32b1dd110b44d2412d01aa733e935db7a17f8dd5641c6ff7e9b",
+      "replacement_bytes": 46722,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p03-B1/service-affinity.json",
+      "sha256": "d3fe67add324df6fea10b487852d3e9c0e75dc6c8614590edbd33a8795c7bdcb",
+      "bytes": 320526,
+      "replacement": "evidence/pr230-revision-20261008/publish/p03-B1/service-affinity.summary.json",
+      "replacement_sha256": "d6cf12dd9791d53646095e216b927696f39c1322e9c050610bd00dff52cdbce2",
+      "replacement_bytes": 39615,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p04-A1/generator-affinity.json",
+      "sha256": "b7b3ada46b927b669bcc0bdfe56a0a08c8f109c96fad1232e39e8053ced88c38",
+      "bytes": 951409,
+      "replacement": "evidence/pr230-revision-20261008/publish/p04-A1/generator-affinity.summary.json",
+      "replacement_sha256": "b9d010611212a853554a3d8009be5e8396820da14b4fcb70a219deac3278970f",
+      "replacement_bytes": 46653,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p04-A1/service-affinity.json",
+      "sha256": "5865201049a8e42695a10d3113dd7755506c9f1b2e6c6df5140ddd3e769edca7",
+      "bytes": 523140,
+      "replacement": "evidence/pr230-revision-20261008/publish/p04-A1/service-affinity.summary.json",
+      "replacement_sha256": "d379673df5e3949b8846e03b6f8f057043249691e47560bb9fc72f640909a23c",
+      "replacement_bytes": 40041,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p04-B1/generator-affinity.json",
+      "sha256": "3aa17fd355ab8a5baa6938afc496378a8b94b60966f84ec0867d270194df1f1f",
+      "bytes": 948068,
+      "replacement": "evidence/pr230-revision-20261008/publish/p04-B1/generator-affinity.summary.json",
+      "replacement_sha256": "1d2e9f46fef85ea0834b8ae1b1e807ef9148a44e5ccdac74bb73e415441d1159",
+      "replacement_bytes": 47256,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p04-B1/service-affinity.json",
+      "sha256": "6a7a43ceab60445a0ee35efa475137447a471faf318c0a0a1bc45b22df8d2bc2",
+      "bytes": 520467,
+      "replacement": "evidence/pr230-revision-20261008/publish/p04-B1/service-affinity.summary.json",
+      "replacement_sha256": "44a2aaaf497d06150734eb05eb3838d1385d8a156dbb30444ebdb57c24971601",
+      "replacement_bytes": 40046,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p06-A1/generator-affinity.json",
+      "sha256": "e8cac041f680bff8a8e941f3a7c11c2f6c023f5468c75867008736b600594108",
+      "bytes": 143920,
+      "replacement": "evidence/pr230-revision-20261008/publish/p06-A1/generator-affinity.summary.json",
+      "replacement_sha256": "45e384b7bf7d7e9e5eb63e5b73a18bde2c9ff032797288724eb76a7d93798acb",
+      "replacement_bytes": 6558,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p06-A1/service-affinity.json",
+      "sha256": "d2fbe1efcaf65b46e91b2d83aa7921547f0b1f625a6dc6abe432e86cfb4c4d48",
+      "bytes": 289909,
+      "replacement": "evidence/pr230-revision-20261008/publish/p06-A1/service-affinity.summary.json",
+      "replacement_sha256": "badf8d6218188009302a7d787ca5bee83704e16eeaceff3fce542ab361f8123a",
+      "replacement_bytes": 24507,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p06-B1/generator-affinity.json",
+      "sha256": "07e4296116c2794900ec8b5e63579aefc94c3f6e4de83b88422680f4971ab970",
+      "bytes": 149860,
+      "replacement": "evidence/pr230-revision-20261008/publish/p06-B1/generator-affinity.summary.json",
+      "replacement_sha256": "1657ba96d8b1cf06056d7557adc9d6d1c3238b83040be16d240eb6bdd4a7f4a4",
+      "replacement_bytes": 6471,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p06-B1/service-affinity.json",
+      "sha256": "f1b365e84f0562edbe7ba137482011753e06ab58b235d145ef0d49a11b374e99",
+      "bytes": 291680,
+      "replacement": "evidence/pr230-revision-20261008/publish/p06-B1/service-affinity.summary.json",
+      "replacement_sha256": "3bad831dd1c438846d022582f821059863ad9ab45f5942ef7348a9b46fa1432f",
+      "replacement_bytes": 24506,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p10-A1/generator-affinity.json",
+      "sha256": "976ec038d0c5e1a0f5ed7cd1ec649ee9e49668fe9dee5a172214bb87e7131c30",
+      "bytes": 155574,
+      "replacement": "evidence/pr230-revision-20261008/publish/p10-A1/generator-affinity.summary.json",
+      "replacement_sha256": "084058c2a76e7379c8044503174cbee86afa3f5ed7a63e1b486bbb9e0cd21c42",
+      "replacement_bytes": 6609,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p10-A1/service-affinity.json",
+      "sha256": "c0167e5680db41fca0395da5e0b2eaf66d6231069e91c7b6b5581d8ed302e7a9",
+      "bytes": 291082,
+      "replacement": "evidence/pr230-revision-20261008/publish/p10-A1/service-affinity.summary.json",
+      "replacement_sha256": "805f36e9c49a1f008d532d733579bd46c4205d502fb10d1e24f2a5593f17c0c1",
+      "replacement_bytes": 24510,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p10-B1/generator-affinity.json",
+      "sha256": "aa3b61bced74f968372b8feb540d47c795cb51f4012850bb509155a57dbc3360",
+      "bytes": 153263,
+      "replacement": "evidence/pr230-revision-20261008/publish/p10-B1/generator-affinity.summary.json",
+      "replacement_sha256": "64261cd5321754d107472249072df1219bf8b5ad3f0f812562e04555b706c388",
+      "replacement_bytes": 6519,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/p10-B1/service-affinity.json",
+      "sha256": "3a210f07070d606722002afd64800646b7a06eb00c7fd1e7a2b3246f727756f8",
+      "bytes": 290623,
+      "replacement": "evidence/pr230-revision-20261008/publish/p10-B1/service-affinity.summary.json",
+      "replacement_sha256": "aeae27b0a64b45b699514bd3d0d70aebcd58a799ebe0fa3d43f6a229f27a744b",
+      "replacement_bytes": 24544,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/sustained-B1/generator-affinity.json",
+      "sha256": "907593b01a60820de64e7f94578691dfee5db5a11aa1390daa183548dc9319f9",
+      "bytes": 376643,
+      "replacement": "evidence/pr230-revision-20261008/publish/sustained-B1/generator-affinity.summary.json",
+      "replacement_sha256": "0811fb6378b7aeb468caf4457d2973e3739edb768519d016eafe8961ed5a5791",
+      "replacement_bytes": 15374,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr230-revision-20261008/publish/sustained-B1/service-affinity.json",
+      "sha256": "c3c31146b46f59465e77975ac68bc564fcf807d2dd7a725d47093bba56a856aa",
+      "bytes": 648966,
+      "replacement": "evidence/pr230-revision-20261008/publish/sustained-B1/service-affinity.summary.json",
+      "replacement_sha256": "53aa6d9862d5d46f261c43c7a8c752d75cc013d6179a1581f0e017541e11f2a9",
+      "replacement_bytes": 54876,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP/raw/generator-affinity.json",
+      "sha256": "bf137aef1646aa4bdbf23673a95daaf6629c45ba9872f0cdb5dbe10e6b893ed3",
+      "bytes": 405414,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP/raw/generator-affinity.summary.json",
+      "replacement_sha256": "d43be50142d01f38570875137b0170300db24fc3ecdd34b974aa1a3839333b77",
+      "replacement_bytes": 16626,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP/raw/service-affinity.json",
+      "sha256": "b2549e657bd4eeee8dcb7f6c04b872902f63cc575116ac59763a0c2c65e33042",
+      "bytes": 691853,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP/raw/service-affinity.summary.json",
+      "replacement_sha256": "3704f5b082420f7e61e20c93bcbd8b64b0aa4bc11048337ee27390e01b540f1e",
+      "replacement_bytes": 59009,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP2/raw/generator-affinity.json",
+      "sha256": "7e81e2111fbbfdf9565cd01ad513f60ea3afc494454025886a0929c8f67cb21c",
+      "bytes": 389547,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP2/raw/generator-affinity.summary.json",
+      "replacement_sha256": "0ad28a610399e8fa6166a47d6224e98df8b1f151927845e3400eb71aedd5c117",
+      "replacement_bytes": 16163,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP2/raw/service-affinity.json",
+      "sha256": "6aaddc85f56cd407c275d9d04b54bb4bd73bd53d39a6cffecc959067211d83a2",
+      "bytes": 671197,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_A_CAP2/raw/service-affinity.summary.json",
+      "replacement_sha256": "5ae13697717354625b4470a85346aecc3ea45af765ad3ebb4955cf840b8ed940",
+      "replacement_bytes": 57668,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_B30/raw/generator-affinity.json",
+      "sha256": "1adce8b2500ebed139126cc044eca3fb2ba16fdc8ee79108520d6ef9d5d3d58f",
+      "bytes": 3580838,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_B30/raw/generator-affinity.summary.json",
+      "replacement_sha256": "ddbddef9ac711daf43e02b74d18ea2ee6a1560f12543756e0646752a41928b40",
+      "replacement_bytes": 140778,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_B30/raw/service-affinity.json",
+      "sha256": "8adcd300a0b6fcecbca30c93253f7118fb3af62b55aeec03fe936155e2bacb60",
+      "bytes": 5811870,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_B30/raw/service-affinity.summary.json",
+      "replacement_sha256": "f476e28a9da25975c82f342203d970e352acbdba5106b4b042e68e5e14556517",
+      "replacement_bytes": 489575,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_CAP/raw/generator-affinity.json",
+      "sha256": "9ffd3b9d7b223d24c1195c610ca91bdb37449852e144e211f505b1be1cac9a99",
+      "bytes": 381004,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_CAP/raw/generator-affinity.summary.json",
+      "replacement_sha256": "eb3fe0e380fbf88f5fa93048de0b31c56eb3883fd66b52c15b431878d1b26145",
+      "replacement_bytes": 16617,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_CAP/raw/service-affinity.json",
+      "sha256": "e0d02fa8f0b7d2bdc9233734bfd735d64eceb23a4894dbe8fe865f5b29d7a406",
+      "bytes": 686712,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_CAP/raw/service-affinity.summary.json",
+      "replacement_sha256": "087e9578567f471de854abd41fa516ac99888f696c9fbf2ded4d449b94bcc5f0",
+      "replacement_bytes": 58758,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_DIAG/raw/generator-affinity.json",
+      "sha256": "8c1bb44e9ed548848c359267c7e9afaacacbc8c3c55c95506856653c1023a7ec",
+      "bytes": 1822387,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_DIAG/raw/generator-affinity.summary.json",
+      "replacement_sha256": "cd9d9cac1be1c1ecb8f39a1ae12e29a9eab7c6cf88ebb6afa320423c8d960552",
+      "replacement_bytes": 73004,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/AUTH_DIAG/raw/service-affinity.json",
+      "sha256": "df5ecf4361591ba34e577b6922ee8ee724634cc46dfb21544418a96d4fe5e46d",
+      "bytes": 3005055,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/AUTH_DIAG/raw/service-affinity.summary.json",
+      "replacement_sha256": "a7e04b059f150cd506a657d9e3bf4648d0f40312b2bb242d2b5f86c8f60ae6dd",
+      "replacement_bytes": 254254,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/CC_B15/raw/generator-affinity.json",
+      "sha256": "86e1856a362588007adc7454999a8100c26a2b61c93d6557b0b0e48421dfee30",
+      "bytes": 1858717,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/CC_B15/raw/generator-affinity.summary.json",
+      "replacement_sha256": "059a5a3222f04e587faec617b20e4ca960495e67baab724dc972270136e56315",
+      "replacement_bytes": 72126,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/CC_B15/raw/service-affinity.json",
+      "sha256": "999e5ed826ca998983b924bd2009d4dbd9837120030c7738122e2734fac40e50",
+      "bytes": 2984928,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/CC_B15/raw/service-affinity.summary.json",
+      "replacement_sha256": "5d44429a52d0b8bee8e95af83d61915a2b754a20ff611c8d8320e0caa85264c8",
+      "replacement_bytes": 251255,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/CC_RETEST/raw/generator-affinity.json",
+      "sha256": "1a889fa49e9a69a16b6c891c581adf77eb55e3a7275f13732b7d8c1573c3a1f0",
+      "bytes": 1286639,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/CC_RETEST/raw/generator-affinity.summary.json",
+      "replacement_sha256": "8b514b0c82388a7fd6fed5cc598ff61b0888206e999694b83624ba325402efcb",
+      "replacement_bytes": 49803,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    },
+    {
+      "path": "evidence/pr238-physical-growth-20261010/publish/CC_RETEST/raw/service-affinity.json",
+      "sha256": "21e6ee89db1e8bc296016920a19c15a31e9c93e85bd8922aa4397dd57eb47d5b",
+      "bytes": 2048468,
+      "replacement": "evidence/pr238-physical-growth-20261010/publish/CC_RETEST/raw/service-affinity.summary.json",
+      "replacement_sha256": "f021507de6d0b66ec8db910a30633e77971226fa7fe6c55778a447954bd2f833",
+      "replacement_bytes": 174092,
+      "reason": "Repeated successful per-thread identity snapshots; retain affinity and collector evidence in compact summary."
+    }
+  ],
+  "removed_bytes": 38230263,
+  "replacement_bytes": 2477257,
+  "preexisting_inventory_mismatches_corrected": [
+    {
+      "manifest": "evidence/pr230-revision-20261008/publish/manifest.json",
+      "file": "evidence/pr230-revision-20261008/publish/storage-series.csv",
+      "stale_sha256": "a6b4dfe93d42c6e8a341de6fd74b6e09860287514a1df1ad9934a879a91bdd27",
+      "actual_sha256": "308b80ddfce7f06b6dc4950c8f818994ddd363da47a928353e1e95c99c3560ad",
+      "file_unchanged_from_base": true
+    },
+    {
+      "manifest": "evidence/pr230-revision-20261008/publish/manifest.json",
+      "file": "evidence/pr230-revision-20261008/publish/fault-D1/storage-series.csv",
+      "stale_sha256": "bc7e32444f5db76bfe830cadf5f92410b48920e76c36310c583971748b7c9118",
+      "actual_sha256": "b3cc11c3c0b1b9ce46dfdd7ba45d537beb0d616b5a94cd085efb82642c22065c",
+      "file_unchanged_from_base": true
+    }
+  ]
+}

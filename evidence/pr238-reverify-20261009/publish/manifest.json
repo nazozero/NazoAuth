@@ -101,7 +101,7 @@
   },
   {
     "file": "MIX300/storage-series.csv",
-    "sha256": "f39c05e84010ed6cbd57afbff00c79d520258ce78cd08df19890c5668cd90a32"
+    "sha256": "ade19e9c0c64f3c33936fdd4039c570b15a914b9946d0ee073cdabb1436bbb55"
   },
   {
     "file": "MIX300/storage-terminal.json",
@@ -221,7 +221,7 @@
   },
   {
     "file": "REV360/storage-series.csv",
-    "sha256": "22b72cfd372631714c94a63c154f084ca6ad7b9f2c3f8a41f1c87597dc38652c"
+    "sha256": "0935152d2e64c32ee43ab5d4981b30d4bc106976d2637ea23a2914c5280cf909"
   },
   {
     "file": "REV360/storage-terminal.json",
@@ -277,7 +277,7 @@
   },
   {
     "file": "ci.json",
-    "sha256": "76ccce053d5deaeaf652dda5a84f93e93b01f0473ee6dc4378d22b82174c63cd"
+    "sha256": "a72414e96f2c240cb032d307dc24024185d396a6b6c65541774ce2f10b4261e7"
   },
   {
     "file": "commands.jsonl",
@@ -417,7 +417,7 @@
   },
   {
     "file": "reproduction/reverify-analyze.py",
-    "sha256": "8487c5d231d99ff92460d99799c199f0a3e7ca9e2802bf1eb8fdc0b2b8322497"
+    "sha256": "0952d7d146f5142aaa56b53f321f2a81385997811238c57712fa4636dfd8ef91"
   },
   {
     "file": "reproduction/reverify-summary.py",
