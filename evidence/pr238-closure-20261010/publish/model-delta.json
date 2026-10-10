@@ -1,0 +1,1419 @@
+[
+  {
+    "id": "crates/persistence-postgres/src/repositories/audit_ledger.rs::SecurityAuditAnchorHealthRow",
+    "before": {
+      "id": "crates/persistence-postgres/src/repositories/audit_ledger.rs::SecurityAuditAnchorHealthRow",
+      "kind": "struct",
+      "line": 678,
+      "fields": [
+        {
+          "name": "head_sequence",
+          "type": "i64"
+        },
+        {
+          "name": "head_hash",
+          "type": "Vec<u8>"
+        },
+        {
+          "name": "pending_exists",
+          "type": "bool"
+        },
+        {
+          "name": "pending_estimate",
+          "type": "i64"
+        },
+        {
+          "name": "pending_orphan_exists",
+          "type": "bool"
+        },
+        {
+          "name": "oldest_pending_occurred_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "last_exported_sequence",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "last_exported_hash",
+          "type": "Option<Vec<u8>>"
+        },
+        {
+          "name": "last_exported_occurred_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "last_exported_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "deployment_id",
+          "type": "Option<String>"
+        },
+        {
+          "name": "observed_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "batch_first_sequence",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "batch_last_sequence",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "batch_event_count",
+          "type": "Option<i32>"
+        },
+        {
+          "name": "batch_generation",
+          "type": "i64"
+        },
+        {
+          "name": "batch_attempts",
+          "type": "i32"
+        },
+        {
+          "name": "batch_available_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "batch_locked_until",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "batch_last_error",
+          "type": "Option<String>"
+        },
+        {
+          "name": "batch_blocked_reason",
+          "type": "Option<String>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/persistence-postgres/src/repositories/audit_ledger.rs::SecurityAuditAnchorHealthRow",
+      "kind": "struct",
+      "line": 677,
+      "fields": [
+        {
+          "name": "head_sequence",
+          "type": "i64"
+        },
+        {
+          "name": "head_hash",
+          "type": "Vec<u8>"
+        },
+        {
+          "name": "pending_exists",
+          "type": "bool"
+        },
+        {
+          "name": "pending_estimate",
+          "type": "i64"
+        },
+        {
+          "name": "pending_orphan_exists",
+          "type": "bool"
+        },
+        {
+          "name": "oldest_pending_occurred_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "last_exported_sequence",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "last_exported_hash",
+          "type": "Option<Vec<u8>>"
+        },
+        {
+          "name": "last_exported_occurred_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "last_exported_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "deployment_id",
+          "type": "Option<String>"
+        },
+        {
+          "name": "observed_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "batch_blocked",
+          "type": "Option<bool>"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence/src/lib.rs::SecurityAuditBatchLease",
+    "before": {
+      "id": "crates/persistence/src/lib.rs::SecurityAuditBatchLease",
+      "kind": "struct",
+      "line": 92,
+      "fields": [
+        {
+          "name": "first_sequence",
+          "type": "i64"
+        },
+        {
+          "name": "last_sequence",
+          "type": "i64"
+        },
+        {
+          "name": "event_count",
+          "type": "i64"
+        },
+        {
+          "name": "generation",
+          "type": "i64"
+        },
+        {
+          "name": "attempts",
+          "type": "i32"
+        },
+        {
+          "name": "available_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "locked_until",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "last_error",
+          "type": "Option<String>"
+        },
+        {
+          "name": "blocked_reason",
+          "type": "Option<String>"
+        }
+      ]
+    },
+    "after": null
+  },
+  {
+    "id": "crates/nazoauth/src/adapters/audit_anchor/status.rs::AnchorCheckpoint",
+    "before": {
+      "id": "crates/nazoauth/src/adapters/audit_anchor/status.rs::AnchorCheckpoint",
+      "kind": "struct",
+      "line": 9,
+      "fields": [
+        {
+          "name": "sequence",
+          "type": "i64"
+        },
+        {
+          "name": "hash",
+          "type": "String"
+        },
+        {
+          "name": "occurred_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "anchored_at",
+          "type": "DateTime<Utc>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/nazoauth/src/adapters/audit_anchor/status.rs::AnchorCheckpoint",
+      "kind": "struct",
+      "line": 9,
+      "fields": [
+        {
+          "name": "sequence",
+          "type": "i64"
+        },
+        {
+          "name": "hash",
+          "type": "String"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/authorization-server-core/src/token.rs::RefreshToken",
+    "before": {
+      "id": "crates/authorization-server-core/src/token.rs::RefreshToken",
+      "kind": "struct",
+      "line": 97,
+      "fields": [
+        {
+          "name": "id_token_sid",
+          "type": "Option<String>"
+        },
+        {
+          "name": "id",
+          "type": "Uuid"
+        },
+        {
+          "name": "token_blake3",
+          "type": "[u8; 32]"
+        },
+        {
+          "name": "tenant_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "token_family_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "client_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "user_id",
+          "type": "Option<Uuid>"
+        },
+        {
+          "name": "contract_key",
+          "type": "[u8; 32]"
+        },
+        {
+          "name": "contract_audiences",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "scopes",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "audience",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "authorization_details",
+          "type": "Value"
+        },
+        {
+          "name": "issued_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "expires_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "revoked_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "subject",
+          "type": "String"
+        },
+        {
+          "name": "dpop_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "mtls_x5t_s256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "client_attestation_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "authentication_context",
+          "type": "RefreshTokenAuthenticationContext"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/authorization-server-core/src/token.rs::RefreshToken",
+      "kind": "struct",
+      "line": 97,
+      "fields": [
+        {
+          "name": "id_token_sid",
+          "type": "Option<String>"
+        },
+        {
+          "name": "id",
+          "type": "Uuid"
+        },
+        {
+          "name": "token_blake3",
+          "type": "[u8; 32]"
+        },
+        {
+          "name": "tenant_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "token_family_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "client_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "user_id",
+          "type": "Option<Uuid>"
+        },
+        {
+          "name": "contract_key",
+          "type": "[u8; 32]"
+        },
+        {
+          "name": "contract",
+          "type": "RefreshContract"
+        },
+        {
+          "name": "audience",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "issued_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "expires_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "revoked_at",
+          "type": "Option<DateTime<Utc>>"
+        },
+        {
+          "name": "dpop_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "mtls_x5t_s256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "client_attestation_jkt",
+          "type": "Option<String>"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::PreparedDynamicClientRegistration",
+    "before": {
+      "id": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::PreparedDynamicClientRegistration",
+      "kind": "struct",
+      "line": 148,
+      "fields": [
+        {
+          "name": "client_name",
+          "type": "String"
+        },
+        {
+          "name": "client_type",
+          "type": "String"
+        },
+        {
+          "name": "redirect_uris",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "post_logout_redirect_uris",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "scopes",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "allowed_audiences",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "grant_types",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "response_types",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "token_endpoint_auth_method",
+          "type": "String"
+        },
+        {
+          "name": "subject_type",
+          "type": "Option<String>"
+        },
+        {
+          "name": "sector_identifier_uri",
+          "type": "Option<String>"
+        },
+        {
+          "name": "require_dpop_bound_tokens",
+          "type": "bool"
+        },
+        {
+          "name": "require_mtls_bound_tokens",
+          "type": "bool"
+        },
+        {
+          "name": "backchannel_token_delivery_mode",
+          "type": "String"
+        },
+        {
+          "name": "backchannel_client_notification_endpoint",
+          "type": "Option<String>"
+        },
+        {
+          "name": "backchannel_authentication_request_signing_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "backchannel_logout_uri",
+          "type": "Option<String>"
+        },
+        {
+          "name": "backchannel_logout_session_required",
+          "type": "bool"
+        },
+        {
+          "name": "frontchannel_logout_uri",
+          "type": "Option<String>"
+        },
+        {
+          "name": "frontchannel_logout_session_required",
+          "type": "bool"
+        },
+        {
+          "name": "tls_client_auth_subject_dn",
+          "type": "Option<String>"
+        },
+        {
+          "name": "tls_client_auth_cert_sha256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "tls_client_auth_san_dns",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "tls_client_auth_san_uri",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "tls_client_auth_san_ip",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "tls_client_auth_san_email",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "jwks_uri",
+          "type": "Option<String>"
+        },
+        {
+          "name": "jwks",
+          "type": "Option<Value>"
+        },
+        {
+          "name": "request_uris",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "initiate_login_uri",
+          "type": "Option<String>"
+        },
+        {
+          "name": "presentation",
+          "type": "ClientPresentationMetadata"
+        },
+        {
+          "name": "id_token_signed_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "id_token_encrypted_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "id_token_encrypted_response_enc",
+          "type": "Option<String>"
+        },
+        {
+          "name": "request_object_signing_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "request_object_encryption_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "request_object_encryption_enc",
+          "type": "Option<String>"
+        },
+        {
+          "name": "token_endpoint_auth_signing_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "introspection_signed_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "introspection_encrypted_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "introspection_encrypted_response_enc",
+          "type": "Option<String>"
+        },
+        {
+          "name": "userinfo_signed_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "userinfo_encrypted_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "userinfo_encrypted_response_enc",
+          "type": "Option<String>"
+        },
+        {
+          "name": "authorization_signed_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "authorization_encrypted_response_alg",
+          "type": "Option<String>"
+        },
+        {
+          "name": "authorization_encrypted_response_enc",
+          "type": "Option<String>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::PreparedDynamicClientRegistration",
+      "kind": "struct",
+      "line": 150,
+      "fields": [
+        {
+          "name": "request",
+          "type": "CreateClientRequest"
+        },
+        {
+          "name": "response_types",
+          "type": "Vec<String>"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "before": {
+      "id": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+      "kind": "struct",
+      "line": 17,
+      "fields": [
+        {
+          "name": "issuances",
+          "type": "u64"
+        },
+        {
+          "name": "authorization_decisions",
+          "type": "u64"
+        },
+        {
+          "name": "refresh_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "spent_refresh_proofs",
+          "type": "u64"
+        },
+        {
+          "name": "refresh_contracts",
+          "type": "u64"
+        },
+        {
+          "name": "revocations",
+          "type": "u64"
+        },
+        {
+          "name": "scim_audit_events",
+          "type": "u64"
+        },
+        {
+          "name": "logout_deliveries",
+          "type": "u64"
+        },
+        {
+          "name": "scim_security_events",
+          "type": "u64"
+        },
+        {
+          "name": "presentations",
+          "type": "u64"
+        },
+        {
+          "name": "credential_offers",
+          "type": "u64"
+        },
+        {
+          "name": "credential_nonces",
+          "type": "u64"
+        },
+        {
+          "name": "credential_access_grants",
+          "type": "u64"
+        },
+        {
+          "name": "deferred_credentials",
+          "type": "u64"
+        },
+        {
+          "name": "credential_notifications",
+          "type": "u64"
+        },
+        {
+          "name": "credential_responses",
+          "type": "u64"
+        },
+        {
+          "name": "saturated",
+          "type": "bool"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+      "kind": "struct",
+      "line": 17,
+      "fields": [
+        {
+          "name": "issuances",
+          "type": "u64"
+        },
+        {
+          "name": "authorization_decisions",
+          "type": "u64"
+        },
+        {
+          "name": "refresh_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "spent_refresh_proofs",
+          "type": "u64"
+        },
+        {
+          "name": "refresh_contracts",
+          "type": "u64"
+        },
+        {
+          "name": "revocations",
+          "type": "u64"
+        },
+        {
+          "name": "scim_audit_events",
+          "type": "u64"
+        },
+        {
+          "name": "remembered_mfa_devices",
+          "type": "u64"
+        },
+        {
+          "name": "identity_approvals",
+          "type": "u64"
+        },
+        {
+          "name": "logout_deliveries",
+          "type": "u64"
+        },
+        {
+          "name": "scim_security_events",
+          "type": "u64"
+        },
+        {
+          "name": "presentations",
+          "type": "u64"
+        },
+        {
+          "name": "credential_offers",
+          "type": "u64"
+        },
+        {
+          "name": "credential_nonces",
+          "type": "u64"
+        },
+        {
+          "name": "credential_access_grants",
+          "type": "u64"
+        },
+        {
+          "name": "deferred_credentials",
+          "type": "u64"
+        },
+        {
+          "name": "credential_notifications",
+          "type": "u64"
+        },
+        {
+          "name": "credential_responses",
+          "type": "u64"
+        },
+        {
+          "name": "saturated",
+          "type": "bool"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence-postgres/src/repositories/admin_provision.rs::AdminProvisionReceiptRow",
+    "before": {
+      "id": "crates/persistence-postgres/src/repositories/admin_provision.rs::AdminProvisionReceiptRow",
+      "kind": "struct",
+      "line": 236,
+      "fields": [
+        {
+          "name": "operation_id",
+          "type": "String"
+        },
+        {
+          "name": "deployment_id",
+          "type": "String"
+        },
+        {
+          "name": "tenant_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "user_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime<Utc>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/persistence-postgres/src/repositories/admin_provision.rs::AdminProvisionReceiptRow",
+      "kind": "struct",
+      "line": 235,
+      "fields": [
+        {
+          "name": "operation_id",
+          "type": "String"
+        },
+        {
+          "name": "deployment_id",
+          "type": "String"
+        },
+        {
+          "name": "tenant_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "user_id",
+          "type": "Uuid"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence-postgres/src/repositories/access_token_revocation.rs::NewAccessTokenRevocation",
+    "before": {
+      "id": "crates/persistence-postgres/src/repositories/access_token_revocation.rs::NewAccessTokenRevocation",
+      "kind": "struct",
+      "line": 14,
+      "fields": [
+        {
+          "name": "id",
+          "type": "Uuid"
+        },
+        {
+          "name": "access_token_jti_blake3",
+          "type": "String"
+        },
+        {
+          "name": "client_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "tenant_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "revoked_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "expires_at",
+          "type": "DateTime<Utc>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/persistence-postgres/src/repositories/access_token_revocation.rs::NewAccessTokenRevocation",
+      "kind": "struct",
+      "line": 14,
+      "fields": [
+        {
+          "name": "access_token_jti_blake3",
+          "type": "String"
+        },
+        {
+          "name": "client_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "tenant_id",
+          "type": "Uuid"
+        },
+        {
+          "name": "revoked_at",
+          "type": "DateTime<Utc>"
+        },
+        {
+          "name": "expires_at",
+          "type": "DateTime<Utc>"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "before": {
+      "id": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+      "kind": "struct",
+      "line": 95,
+      "fields": [
+        {
+          "name": "deleted_issuances",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_access_token_revocations",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_scim_audit_events",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_backchannel_logout_deliveries",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_scim_security_events",
+          "type": "i32"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+      "kind": "struct",
+      "line": 95,
+      "fields": [
+        {
+          "name": "deleted_issuances",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_access_token_revocations",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_scim_audit_events",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_backchannel_logout_deliveries",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_scim_security_events",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_remembered_mfa_devices",
+          "type": "i32"
+        },
+        {
+          "name": "deleted_identity_approvals",
+          "type": "i32"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence/src/lib.rs::SecurityAuditAnchorHealth",
+    "before": {
+      "id": "crates/persistence/src/lib.rs::SecurityAuditAnchorHealth",
+      "kind": "struct",
+      "line": 69,
+      "fields": [
+        {
+          "name": "head_sequence",
+          "type": "i64"
+        },
+        {
+          "name": "head_hash",
+          "type": "Vec<u8>"
+        },
+        {
+          "name": "pending_exists",
+          "type": "bool"
+        },
+        {
+          "name": "pending_estimate",
+          "type": "i64"
+        },
+        {
+          "name": "pending_orphan_exists",
+          "type": "bool"
+        },
+        {
+          "name": "oldest_pending_occurred_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "last_exported_sequence",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "last_exported_hash",
+          "type": "Option<Vec<u8>>"
+        },
+        {
+          "name": "last_exported_occurred_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "last_exported_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "deployment_id",
+          "type": "Option<String>"
+        },
+        {
+          "name": "observed_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "batch",
+          "type": "Option<SecurityAuditBatchLease>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/persistence/src/lib.rs::SecurityAuditAnchorHealth",
+      "kind": "struct",
+      "line": 69,
+      "fields": [
+        {
+          "name": "head_sequence",
+          "type": "i64"
+        },
+        {
+          "name": "head_hash",
+          "type": "Vec<u8>"
+        },
+        {
+          "name": "pending_exists",
+          "type": "bool"
+        },
+        {
+          "name": "pending_estimate",
+          "type": "i64"
+        },
+        {
+          "name": "pending_orphan_exists",
+          "type": "bool"
+        },
+        {
+          "name": "oldest_pending_occurred_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "last_exported_sequence",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "last_exported_hash",
+          "type": "Option<Vec<u8>>"
+        },
+        {
+          "name": "last_exported_occurred_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "last_exported_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "deployment_id",
+          "type": "Option<String>"
+        },
+        {
+          "name": "observed_at",
+          "type": "Option<chrono::DateTime<chrono::Utc>>"
+        },
+        {
+          "name": "batch_blocked",
+          "type": "Option<bool>"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+    "before": {
+      "id": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+      "kind": "struct",
+      "line": 36,
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "Option<Uuid>"
+        },
+        {
+          "name": "prepared_subject",
+          "type": "Option<PreparedTokenSubject>"
+        },
+        {
+          "name": "subject",
+          "type": "String"
+        },
+        {
+          "name": "scopes",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "authorization_details",
+          "type": "Value"
+        },
+        {
+          "name": "audiences",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "nonce",
+          "type": "Option<String>"
+        },
+        {
+          "name": "auth_time",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "amr",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "oidc_sid",
+          "type": "Option<String>"
+        },
+        {
+          "name": "acr",
+          "type": "Option<String>"
+        },
+        {
+          "name": "userinfo_claim_requests",
+          "type": "nazo_auth::UserinfoClaimRequests"
+        },
+        {
+          "name": "id_token_claim_requests",
+          "type": "nazo_auth::IdTokenClaimRequests"
+        },
+        {
+          "name": "refresh_id_token_sid",
+          "type": "Option<Option<String>>"
+        },
+        {
+          "name": "include_refresh",
+          "type": "bool"
+        },
+        {
+          "name": "refresh_token_policy",
+          "type": "RefreshTokenPolicy"
+        },
+        {
+          "name": "dpop_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_token_dpop_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "mtls_x5t_s256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_token_mtls_x5t_s256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_token_client_attestation_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_authority",
+          "type": "Option<nazo_auth::RefreshTokenAuthority>"
+        },
+        {
+          "name": "native_sso_source",
+          "type": "Option<nazo_auth::NativeSsoSourceFence>"
+        },
+        {
+          "name": "refresh_grant_audiences",
+          "type": "Option<Vec<String>>"
+        },
+        {
+          "name": "authorization_code_hash",
+          "type": "Option<String>"
+        },
+        {
+          "name": "actor",
+          "type": "Option<Value>"
+        },
+        {
+          "name": "issued_token_type",
+          "type": "Option<String>"
+        },
+        {
+          "name": "native_sso",
+          "type": "Option<NativeSsoTokenBinding>"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/authorization-server/src/domain/oauth.rs::TokenIssue",
+      "kind": "struct",
+      "line": 36,
+      "fields": [
+        {
+          "name": "user_id",
+          "type": "Option<Uuid>"
+        },
+        {
+          "name": "prepared_subject",
+          "type": "Option<PreparedTokenSubject>"
+        },
+        {
+          "name": "subject",
+          "type": "String"
+        },
+        {
+          "name": "scopes",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "authorization_details",
+          "type": "Value"
+        },
+        {
+          "name": "audiences",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "nonce",
+          "type": "Option<String>"
+        },
+        {
+          "name": "auth_time",
+          "type": "Option<i64>"
+        },
+        {
+          "name": "amr",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "oidc_sid",
+          "type": "Option<String>"
+        },
+        {
+          "name": "acr",
+          "type": "Option<String>"
+        },
+        {
+          "name": "userinfo_claim_requests",
+          "type": "nazo_auth::UserinfoClaimRequests"
+        },
+        {
+          "name": "id_token_claim_requests",
+          "type": "nazo_auth::IdTokenClaimRequests"
+        },
+        {
+          "name": "include_refresh",
+          "type": "bool"
+        },
+        {
+          "name": "refresh_token_policy",
+          "type": "RefreshTokenPolicy"
+        },
+        {
+          "name": "dpop_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_token_dpop_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "mtls_x5t_s256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_token_mtls_x5t_s256",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_token_client_attestation_jkt",
+          "type": "Option<String>"
+        },
+        {
+          "name": "refresh_authority",
+          "type": "Option<nazo_auth::RefreshTokenAuthority>"
+        },
+        {
+          "name": "native_sso_source",
+          "type": "Option<nazo_auth::NativeSsoSourceFence>"
+        },
+        {
+          "name": "refresh_grant_audiences",
+          "type": "Option<Vec<String>>"
+        },
+        {
+          "name": "authorization_code_hash",
+          "type": "Option<String>"
+        },
+        {
+          "name": "actor",
+          "type": "Option<Value>"
+        },
+        {
+          "name": "issued_token_type",
+          "type": "Option<String>"
+        },
+        {
+          "name": "native_sso",
+          "type": "Option<NativeSsoTokenBinding>"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/authorization-server/src/contracts/token_client_auth.rs::ClientCertificateFacts",
+    "before": {
+      "id": "crates/authorization-server/src/contracts/token_client_auth.rs::ClientCertificateFacts",
+      "kind": "struct",
+      "line": 29,
+      "fields": [
+        {
+          "name": "thumbprint",
+          "type": "Option<String>"
+        },
+        {
+          "name": "subject_dn",
+          "type": "Option<String>"
+        },
+        {
+          "name": "san_dns",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "san_uri",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "san_ip",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "san_email",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "verified_certificate_expiry",
+          "type": "bool"
+        },
+        {
+          "name": "certificate_chain_der",
+          "type": "std::sync::Arc<Vec<Vec<u8>>>"
+        },
+        {
+          "name": "deployment_trusted_chain",
+          "type": "bool"
+        }
+      ]
+    },
+    "after": {
+      "id": "crates/authorization-server/src/contracts/token_client_auth.rs::ClientCertificateFacts",
+      "kind": "struct",
+      "line": 29,
+      "fields": [
+        {
+          "name": "thumbprint",
+          "type": "Option<String>"
+        },
+        {
+          "name": "subject_dn",
+          "type": "Option<String>"
+        },
+        {
+          "name": "san_dns",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "san_uri",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "san_ip",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "san_email",
+          "type": "Vec<String>"
+        },
+        {
+          "name": "certificate_chain_der",
+          "type": "std::sync::Arc<Vec<Vec<u8>>>"
+        },
+        {
+          "name": "deployment_trusted_chain",
+          "type": "bool"
+        }
+      ]
+    }
+  },
+  {
+    "id": "crates/persistence/src/maintenance.rs::CleanupScope",
+    "before": null,
+    "after": {
+      "id": "crates/persistence/src/maintenance.rs::CleanupScope",
+      "kind": "enum",
+      "line": 52,
+      "fields": [
+        {
+          "name": "ProtocolState",
+          "type": "variant"
+        },
+        {
+          "name": "IncludingHistory",
+          "type": "variant"
+        }
+      ]
+    }
+  }
+]

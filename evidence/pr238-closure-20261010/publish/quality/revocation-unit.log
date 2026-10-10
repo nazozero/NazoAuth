@@ -1,0 +1,15 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 16.90s
+     Running unittests src/lib.rs (target/debug/deps/nazo_postgres-d13d9a85d9dbf20f)
+
+running 7 tests
+test repositories::access_token_revocation::tests::deadline_adds_one_more_window_to_an_already_padded_input ... ok
+test repositories::access_token_revocation::tests::deadline_is_exp_plus_exactly_one_clock_skew_window ... ok
+test repositories::access_token_revocation::tests::deadline_rejects_an_unrepresentable_exp_instead_of_wrapping ... ok
+test repositories::access_token_revocation::tests::owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouched ... ok
+test repositories::access_token_revocation::tests::owner_batch_dedups_duplicate_keys_to_the_longest_deadline ... ok
+test repositories::access_token_revocation::tests::upsert_extends_only_forward_and_preserves_the_first_fact ... ok
+test repositories::access_token_revocation::tests::upsert_rejects_duplicate_authority_keys_inside_one_batch ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.19s
+

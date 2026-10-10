@@ -1,0 +1,26 @@
+{
+  "image": {
+    "before": "sha256:80ebcfdf2e97cb5c05bc4fc53845691e7eb8f8be7cf15e75916154728ecad82d",
+    "after": "sha256:a9dd3a8f1f5e6547f2a05ab4772d6f948aee2f1e086bc46e6ece62b6640bbc66"
+  },
+  "replicate": {
+    "before": 2,
+    "after": 5
+  },
+  "status": {
+    "before": "AUTHORIZED_SAME_CANDIDATE_REVERIFICATION",
+    "after": "ORIGINAL_300S_FAILURE_CLOSURE"
+  },
+  "expected_binary_sha256": {
+    "before": "54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b",
+    "after": "ad6222f6d89aaef738362e44acef452a4bc4fd7ec5c76f6d59bc6a91c3e89b6d"
+  },
+  "source_sha": {
+    "before": "e8242c44aab842e1828b471413905f74b4132325",
+    "after": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  "name": {
+    "before": "pr238-reverify-mix300-20261009",
+    "after": "pr238-closure-mix300-20261010"
+  }
+}

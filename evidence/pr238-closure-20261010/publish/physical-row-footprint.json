@@ -1,0 +1,324 @@
+{
+  "access_token_revocations": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 160.0,
+      "heap_bytes": 1703936,
+      "index_bytes": 2007040,
+      "total_bytes": 3710976,
+      "dropped_slots": 0,
+      "exit": 0,
+      "indexes": [
+        "CREATE UNIQUE INDEX access_token_revocations_pkey ON public.access_token_revocations USING btree (id)",
+        "CREATE INDEX ix_access_token_revocations_expires_at ON public.access_token_revocations USING btree (expires_at)",
+        "CREATE INDEX ix_access_token_revocations_tenant_id ON public.access_token_revocations USING btree (tenant_id)",
+        "CREATE UNIQUE INDEX ux_access_token_revocations_tenant_jti_blake3 ON public.access_token_revocations USING btree (tenant_id, access_token_jti_blake3)"
+      ],
+      "attributes": [
+        {
+          "num": 1,
+          "name": "id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": "uuidv7()"
+        },
+        {
+          "num": 2,
+          "name": "access_token_jti_blake3",
+          "dropped": false,
+          "type": "character varying(64)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 3,
+          "name": "client_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 4,
+          "name": "revoked_at",
+          "dropped": false,
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "num": 5,
+          "name": "expires_at",
+          "dropped": false,
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 6,
+          "name": "tenant_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": "'00000000-0000-0000-0000-000000000001'::uuid"
+        }
+      ]
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 144.0,
+      "heap_bytes": 1515520,
+      "index_bytes": 1671168,
+      "total_bytes": 3186688,
+      "dropped_slots": 1,
+      "exit": 0,
+      "indexes": [
+        "CREATE UNIQUE INDEX access_token_revocations_pkey ON public.access_token_revocations USING btree (tenant_id, access_token_jti_blake3)",
+        "CREATE INDEX ix_access_token_revocations_expires_at ON public.access_token_revocations USING btree (expires_at)",
+        "CREATE INDEX ix_access_token_revocations_tenant_id ON public.access_token_revocations USING btree (tenant_id)"
+      ],
+      "attributes": [
+        {
+          "num": 1,
+          "name": "........pg.dropped.1........",
+          "dropped": true,
+          "type": "-",
+          "notnull": false,
+          "default": null
+        },
+        {
+          "num": 2,
+          "name": "access_token_jti_blake3",
+          "dropped": false,
+          "type": "character varying(64)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 3,
+          "name": "client_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 4,
+          "name": "revoked_at",
+          "dropped": false,
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": "CURRENT_TIMESTAMP"
+        },
+        {
+          "num": 5,
+          "name": "expires_at",
+          "dropped": false,
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 6,
+          "name": "tenant_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": "'00000000-0000-0000-0000-000000000001'::uuid"
+        }
+      ]
+    }
+  },
+  "admin_provision_receipts": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 119.9997,
+      "heap_bytes": 1286144,
+      "index_bytes": 1196032,
+      "total_bytes": 2482176,
+      "dropped_slots": 0,
+      "exit": 0,
+      "indexes": [
+        "CREATE UNIQUE INDEX admin_provision_receipts_pkey ON public.admin_provision_receipts USING btree (operation_id)",
+        "CREATE UNIQUE INDEX uq_admin_provision_receipts_user ON public.admin_provision_receipts USING btree (user_id)"
+      ],
+      "attributes": [
+        {
+          "num": 1,
+          "name": "operation_id",
+          "dropped": false,
+          "type": "character varying(128)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 2,
+          "name": "deployment_id",
+          "dropped": false,
+          "type": "character varying(128)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 3,
+          "name": "tenant_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 4,
+          "name": "user_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 5,
+          "name": "created_at",
+          "dropped": false,
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      ]
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 111.9997,
+      "heap_bytes": 1196032,
+      "index_bytes": 1196032,
+      "total_bytes": 2392064,
+      "dropped_slots": 1,
+      "exit": 0,
+      "indexes": [
+        "CREATE UNIQUE INDEX admin_provision_receipts_pkey ON public.admin_provision_receipts USING btree (operation_id)",
+        "CREATE UNIQUE INDEX uq_admin_provision_receipts_user ON public.admin_provision_receipts USING btree (user_id)"
+      ],
+      "attributes": [
+        {
+          "num": 1,
+          "name": "operation_id",
+          "dropped": false,
+          "type": "character varying(128)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 2,
+          "name": "deployment_id",
+          "dropped": false,
+          "type": "character varying(128)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 3,
+          "name": "tenant_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 4,
+          "name": "user_id",
+          "dropped": false,
+          "type": "uuid",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 5,
+          "name": "........pg.dropped.5........",
+          "dropped": true,
+          "type": "-",
+          "notnull": false,
+          "default": null
+        }
+      ]
+    }
+  },
+  "controller_recovery_root_key_history": {
+    "before": {
+      "rows": 10000,
+      "avg_tuple_bytes": 87.9997,
+      "heap_bytes": 966656,
+      "index_bytes": 1040384,
+      "total_bytes": 2007040,
+      "dropped_slots": 0,
+      "exit": 0,
+      "indexes": [
+        "CREATE UNIQUE INDEX pk_controller_recovery_root_key_history ON public.controller_recovery_root_key_history USING btree (deployment_id, recovery_public_key)"
+      ],
+      "attributes": [
+        {
+          "num": 1,
+          "name": "deployment_id",
+          "dropped": false,
+          "type": "character varying(128)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 2,
+          "name": "recovery_public_key",
+          "dropped": false,
+          "type": "bytea",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 3,
+          "name": "first_seen_at",
+          "dropped": false,
+          "type": "timestamp with time zone",
+          "notnull": true,
+          "default": null
+        }
+      ]
+    },
+    "after": {
+      "rows": 10000,
+      "avg_tuple_bytes": 75.9997,
+      "heap_bytes": 884736,
+      "index_bytes": 1040384,
+      "total_bytes": 1925120,
+      "dropped_slots": 1,
+      "exit": 0,
+      "indexes": [
+        "CREATE UNIQUE INDEX pk_controller_recovery_root_key_history ON public.controller_recovery_root_key_history USING btree (deployment_id, recovery_public_key)"
+      ],
+      "attributes": [
+        {
+          "num": 1,
+          "name": "deployment_id",
+          "dropped": false,
+          "type": "character varying(128)",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 2,
+          "name": "recovery_public_key",
+          "dropped": false,
+          "type": "bytea",
+          "notnull": true,
+          "default": null
+        },
+        {
+          "num": 3,
+          "name": "........pg.dropped.3........",
+          "dropped": true,
+          "type": "-",
+          "notnull": false,
+          "default": null
+        }
+      ]
+    }
+  },
+  "method": "10000 new rows in transaction-local tables preserving actual pg_attribute order including dropped slots, defaults, nullability, types and index definitions. No vacuum or live-row deletion. Layout comparison, not immediate shrink of old heap tuples."
+}
