@@ -1,0 +1,47 @@
+{
+  "load": {
+    "formal_begun": 96000,
+    "formal_completed": 96000,
+    "final_unfinished": 0,
+    "max_second_end_inflight": 222,
+    "minutes": [
+      {
+        "minute": 0,
+        "second_end_inflight_min": 5,
+        "second_end_inflight_max": 13,
+        "last_second_end_inflight": 5
+      },
+      {
+        "minute": 1,
+        "second_end_inflight_min": 5,
+        "second_end_inflight_max": 59,
+        "last_second_end_inflight": 6
+      },
+      {
+        "minute": 2,
+        "second_end_inflight_min": 4,
+        "second_end_inflight_max": 162,
+        "last_second_end_inflight": 7
+      },
+      {
+        "minute": 3,
+        "second_end_inflight_min": 5,
+        "second_end_inflight_max": 222,
+        "last_second_end_inflight": 6
+      },
+      {
+        "minute": 4,
+        "second_end_inflight_min": 4,
+        "second_end_inflight_max": 13,
+        "last_second_end_inflight": 5
+      },
+      {
+        "minute": 5,
+        "second_end_inflight_min": 0,
+        "second_end_inflight_max": 0,
+        "last_second_end_inflight": 0
+      }
+    ],
+    "note": "Net cumulative formal begins minus ends at one-second aggregate boundaries. This is application-operation concurrency, not K6 allocated VUs. Subsecond peaks are not observed."
+  }
+}

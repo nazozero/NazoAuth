@@ -1,0 +1,83 @@
+{
+  "pr238-long-required10-20261010-nazoauth-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "exited",
+      "Running": false,
+      "ExitCode": 1,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T03:11:20.571717718Z",
+      "FinishedAt": "2026-10-10T03:11:21.433934099Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "AUDIT_ANCHOR_MODE": "required",
+      "DATABASE_MAX_CONNECTIONS": "32",
+      "RUST_LOG": "warn,nazoauth::jobs::security_state=info",
+      "AUDIT_ANCHOR_MAX_LAG_SECONDS": "10"
+    }
+  },
+  "pr238-long-required10-20261010-postgres-1": {
+    "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T03:11:07.216265909Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "pr238-long-required10-20261010-valkey-1": {
+    "image": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T03:11:07.214999957Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "pr238-long-required10-20261010-migrate-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T03:11:14.821050914Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  }
+}

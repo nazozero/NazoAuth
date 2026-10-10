@@ -1,0 +1,167 @@
+[
+  {
+    "key": "AUTH10",
+    "lines": 11,
+    "cycles": 11,
+    "cycle_elapsed_ms_max": 7684,
+    "stop_reasons": {
+      "\"drained\"": 11
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "AUTH1R2",
+    "lines": 5,
+    "cycles": 5,
+    "cycle_elapsed_ms_max": 2099,
+    "stop_reasons": {
+      "\"drained\"": 5
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "CC10",
+    "lines": 9,
+    "cycles": 9,
+    "cycle_elapsed_ms_max": 49,
+    "stop_reasons": {
+      "\"drained\"": 9
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "COLD10",
+    "lines": 7,
+    "cycles": 7,
+    "cycle_elapsed_ms_max": 140,
+    "stop_reasons": {
+      "\"drained\"": 7
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "FAPI10",
+    "lines": 7,
+    "cycles": 7,
+    "cycle_elapsed_ms_max": 2209,
+    "stop_reasons": {
+      "\"drained\"": 7
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "INTROSPECT10",
+    "lines": 12,
+    "cycles": 12,
+    "cycle_elapsed_ms_max": 90,
+    "stop_reasons": {
+      "\"drained\"": 12
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "MIX1R2",
+    "lines": 5,
+    "cycles": 5,
+    "cycle_elapsed_ms_max": 2216,
+    "stop_reasons": {
+      "\"drained\"": 5
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "MIX30",
+    "lines": 22,
+    "cycles": 22,
+    "cycle_elapsed_ms_max": 4682,
+    "stop_reasons": {
+      "\"drained\"": 22
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "MTLS10",
+    "lines": 12,
+    "cycles": 12,
+    "cycle_elapsed_ms_max": 45,
+    "stop_reasons": {
+      "\"drained\"": 12
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "NATIVE10",
+    "lines": 12,
+    "cycles": 12,
+    "cycle_elapsed_ms_max": 45,
+    "stop_reasons": {
+      "\"drained\"": 12
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "NATIVE6R2",
+    "lines": 5,
+    "cycles": 5,
+    "cycle_elapsed_ms_max": 1992,
+    "stop_reasons": {
+      "\"drained\"": 5
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "PAR10",
+    "lines": 12,
+    "cycles": 12,
+    "cycle_elapsed_ms_max": 96,
+    "stop_reasons": {
+      "\"drained\"": 12
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "REFRESH10",
+    "lines": 7,
+    "cycles": 7,
+    "cycle_elapsed_ms_max": 91,
+    "stop_reasons": {
+      "\"drained\"": 7
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "REQUIRED5R2",
+    "lines": 6,
+    "cycles": 6,
+    "cycle_elapsed_ms_max": 3537,
+    "stop_reasons": {
+      "\"drained\"": 6
+    },
+    "saturated": {},
+    "errors": []
+  },
+  {
+    "key": "REVOKE20",
+    "lines": 20,
+    "cycles": 20,
+    "cycle_elapsed_ms_max": 7444,
+    "stop_reasons": {
+      "\"drained\"": 20
+    },
+    "saturated": {},
+    "errors": []
+  }
+]

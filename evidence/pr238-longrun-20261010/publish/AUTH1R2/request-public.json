@@ -1,0 +1,45 @@
+{
+  "name": "pr238-long-auth1r2-20261010",
+  "scenario": "cap_authorization_code",
+  "source_sha": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "rate": 800,
+  "pre_vus": 992,
+  "max_vus": 992,
+  "user_count": 992,
+  "vector_count": 48000,
+  "profile": "capacity",
+  "executor": "constant-arrival-rate",
+  "gate": {
+    "measurement_drop_fraction_max": 0.001,
+    "p95_ms_max": 100,
+    "p99_ms_max": 250,
+    "successful_ops_fraction_min": 0.995,
+    "unexpected_max": 0
+  },
+  "duration": "75s",
+  "effective_seconds": 60,
+  "warmup_ms": 15000,
+  "app_cpus": [
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95
+  ],
+  "app_env_overrides": {
+    "DATABASE_MAX_CONNECTIONS": 32,
+    "AUDIT_ANCHOR_MODE": "disabled",
+    "RUST_LOG": "warn,nazoauth::jobs::security_state=info"
+  }
+}

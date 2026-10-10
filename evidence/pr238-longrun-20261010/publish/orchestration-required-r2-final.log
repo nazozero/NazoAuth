@@ -1,0 +1,19 @@
+{"key": "REQUIRED5R2", "action": "setup", "command": ["docker", "exec", "-e", "SIS_LOAD_BUDGET_S=720", "-e", "SIS_WORKSPACE=/src", "-e", "SIS_CNB_EVIDENCE=/src/evidence/pr238-longrun-20261010/REQUIRED5R2", "-w", "/src", "nazoauth-long-controller-20261010", "python", "/src/evidence/pr238-longrun-20261010/REQUIRED5R2/point-observer-cycle.py", "setup"], "exit": 0, "start": 1791607236.727199, "end": 1791607238.3441741, "persistent_orchestrator": true}
+Traceback (most recent call last):
+  File "/tmp/longrun-required-r2-execute.py", line 14, in <module>
+    with (D/(action+'.log')).open('w') as f:r=subprocess.run(cmd,stdout=f,stderr=subprocess.STDOUT,timeout=max(1,deadline-90-time.time()))
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 1207, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 2085, in _communicate
+    self.wait(timeout=self._remaining_time(endtime))
+  File "/usr/lib/python3.11/subprocess.py", line 1262, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/subprocess.py", line 1989, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['docker', 'exec', '-e', 'SIS_LOAD_BUDGET_S=720', '-e', 'SIS_WORKSPACE=/src', '-e', 'SIS_CNB_EVIDENCE=/src/evidence/pr238-longrun-20261010/REQUIRED5R2', '-w', '/src', 'nazoauth-long-controller-20261010', 'python', '/src/evidence/pr238-longrun-20261010/REQUIRED5R2/point-observer-cycle.py', 'REQUIRED5R2']' timed out after 359.65547206858173 seconds

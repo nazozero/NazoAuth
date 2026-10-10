@@ -1,0 +1,6 @@
+{
+  "key": "FAPI10",
+  "note": "Coincidence is not causation. PG collector is about 2 seconds; role/storage samples about 10 seconds. Highest drop seconds first; no external host load attribution.",
+  "spike_seconds": 0,
+  "evidence": []
+}

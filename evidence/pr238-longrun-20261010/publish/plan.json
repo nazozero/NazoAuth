@@ -1,0 +1,27 @@
+{
+  "created_at": 1791597285.4951675,
+  "task_started_at": "2026-10-10T01:48:08Z",
+  "deadline_epoch": 1791607688.0,
+  "source_sha": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "tested_source_parent": "667060893661dae2c2e31289d5d86ca6474132c3",
+  "formal_seconds": 8100,
+  "order": [
+    "MIX60",
+    "REVOKE20",
+    "INTROSPECT10",
+    "MTLS10",
+    "PAR10",
+    "NATIVE10",
+    "REQUIRED15"
+  ],
+  "sequential": true,
+  "fixed_workload": true,
+  "scope": "previous capacity business chains, grouped mixed paths; no claim that grouped sub-paths are tested at their standalone peak rate",
+  "criteria": {
+    "capacity": "original full-operation P95 100ms/P99 250ms, success >=99.5%, drop <=0.1%; original cold-login exception",
+    "stability": "report 60s/300s windows, early/middle/late mature-window latency, throughput/drop/inflight; distinguish isolated excursions from persistent growth; never infer plateau from final drain alone",
+    "backlog": "count and age of unexported committed audit records during load, recovery while arrival continues, final DB/receiver/signed checkpoint reconciliation",
+    "storage": "live/retained/eligible counts and oldest due age, real maintenance cycles, target cohort zero, physical high-water and TTL key populations separately",
+    "limits": "finite windows; legal retention longer than the run is expected growth, not proven plateau; unexercised product protocols are not asserted covered"
+  }
+}

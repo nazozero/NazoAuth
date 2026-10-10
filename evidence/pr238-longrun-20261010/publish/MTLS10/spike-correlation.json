@@ -1,0 +1,429 @@
+{
+  "key": "MTLS10",
+  "note": "Coincidence is not causation. PG collector is about 2 seconds; role/storage samples about 10 seconds. Highest drop seconds first; no external host load attribution.",
+  "spike_seconds": 3,
+  "evidence": [
+    {
+      "load": {
+        "ts": 1791599772,
+        "offset": 382.8069999217987,
+        "n": 2958,
+        "mean_ms": 145.7576064908722,
+        "max_ms": 452.0,
+        "drop": 803,
+        "vus": 987
+      },
+      "db": {
+        "ts": 1791599772,
+        "pg": {
+          "backends": 42,
+          "active": 33,
+          "idle_in_tx": 0
+        },
+        "xact": {
+          "oldest_xact_age_s": 0,
+          "xmin_lag_xids": -1,
+          "xacts_over_60s": 0,
+          "xacts_over_300s": 0
+        },
+        "checkpoints": {
+          "timed": 1,
+          "requested": 1,
+          "done": 0,
+          "write_time_ms": 12.0,
+          "sync_time_ms": 12.0,
+          "buffers_written": 4887
+        },
+        "runtime_role_activity": [
+          {
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalSync",
+            "backends": 1
+          },
+          {
+            "state": "active",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "backends": 30
+          },
+          {
+            "state": "active",
+            "wait_event_type": null,
+            "wait_event": null,
+            "backends": 1
+          }
+        ],
+        "pg_waits": {
+          "Activity": 6,
+          "LWLock": 31,
+          "Timeout": 1,
+          "IO": 1,
+          "Client": 1
+        }
+      },
+      "role_sample": {
+        "ts": 1791599769.640992,
+        "activity": [
+          {
+            "usename": "nazoauth_perf_exporter",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 1,
+            "oldest_xact_s": null
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 1,
+            "oldest_xact_s": 0.001896
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalSync",
+            "n": 1,
+            "oldest_xact_s": 0.00076
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "n": 2,
+            "oldest_xact_s": 0.000932
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": null,
+            "wait_event": null,
+            "n": 4,
+            "oldest_xact_s": 0.000494
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 24,
+            "oldest_xact_s": null
+          }
+        ]
+      },
+      "storage_sample": {
+        "ts": 1791599769.46475,
+        "pending": 130,
+        "oldest_pending_s": 0.028072,
+        "observer_elapsed_s": 0.18239717232063413
+      }
+    },
+    {
+      "load": {
+        "ts": 1791599803,
+        "offset": 413.8069999217987,
+        "n": 2890,
+        "mean_ms": 10.320415224913495,
+        "max_ms": 285.0,
+        "drop": 150,
+        "vus": 105
+      },
+      "db": {
+        "ts": 1791599802,
+        "pg": {
+          "backends": 42,
+          "active": 17,
+          "idle_in_tx": 0
+        },
+        "xact": {
+          "oldest_xact_age_s": 0,
+          "xmin_lag_xids": 20,
+          "xacts_over_60s": 0,
+          "xacts_over_300s": 0
+        },
+        "checkpoints": {
+          "timed": 1,
+          "requested": 1,
+          "done": 0,
+          "write_time_ms": 12.0,
+          "sync_time_ms": 12.0,
+          "buffers_written": 5193
+        },
+        "runtime_role_activity": [
+          {
+            "state": "active",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "backends": 13
+          },
+          {
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalSync",
+            "backends": 1
+          },
+          {
+            "state": "active",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "backends": 1
+          },
+          {
+            "state": "idle",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "backends": 11
+          },
+          {
+            "state": "idle",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "backends": 3
+          },
+          {
+            "state": "idle",
+            "wait_event_type": null,
+            "wait_event": null,
+            "backends": 3
+          }
+        ],
+        "pg_waits": {
+          "Activity": 7,
+          "LWLock": 5,
+          "Timeout": 1,
+          "IO": 1,
+          "Client": 26
+        }
+      },
+      "role_sample": {
+        "ts": 1791599799.58613,
+        "activity": [
+          {
+            "usename": "nazoauth_perf_exporter",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 1,
+            "oldest_xact_s": 0.000683
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 3,
+            "oldest_xact_s": 0.001672
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalSync",
+            "n": 1,
+            "oldest_xact_s": 0.001318
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalWrite",
+            "n": 1,
+            "oldest_xact_s": 0.001199
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "n": 2,
+            "oldest_xact_s": 0.001933
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": null,
+            "wait_event": null,
+            "n": 2,
+            "oldest_xact_s": 0.000452
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 21,
+            "oldest_xact_s": null
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": null,
+            "wait_event": null,
+            "n": 1,
+            "oldest_xact_s": null
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "idle in transaction",
+            "wait_event_type": null,
+            "wait_event": null,
+            "n": 1,
+            "oldest_xact_s": 0.000469
+          }
+        ]
+      },
+      "storage_sample": {
+        "ts": 1791599799.466399,
+        "pending": 110,
+        "oldest_pending_s": 0.019683,
+        "observer_elapsed_s": 0.12906616879627109
+      }
+    },
+    {
+      "load": {
+        "ts": 1791599748,
+        "offset": 358.8069999217987,
+        "n": 4050,
+        "mean_ms": 55.05456790123457,
+        "max_ms": 260.0,
+        "drop": 42,
+        "vus": 8
+      },
+      "db": {
+        "ts": 1791599748,
+        "pg": {
+          "backends": 42,
+          "active": 34,
+          "idle_in_tx": 0
+        },
+        "xact": {
+          "oldest_xact_age_s": 0,
+          "xmin_lag_xids": -1,
+          "xacts_over_60s": 0,
+          "xacts_over_300s": 0
+        },
+        "checkpoints": {
+          "timed": 1,
+          "requested": 1,
+          "done": 0,
+          "write_time_ms": 12.0,
+          "sync_time_ms": 12.0,
+          "buffers_written": 4676
+        },
+        "runtime_role_activity": [
+          {
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalInitSync",
+            "backends": 1
+          },
+          {
+            "state": "active",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "backends": 31
+          }
+        ],
+        "pg_waits": {
+          "Activity": 7,
+          "LWLock": 32,
+          "Timeout": 1,
+          "IO": 1
+        }
+      },
+      "role_sample": {
+        "ts": 1791599749.580113,
+        "activity": [
+          {
+            "usename": "nazoauth_perf_exporter",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 1,
+            "oldest_xact_s": null
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 1,
+            "oldest_xact_s": 0.00032
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "IO",
+            "wait_event": "WalSync",
+            "n": 1,
+            "oldest_xact_s": 0.002846
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": "LWLock",
+            "wait_event": "WALWrite",
+            "n": 17,
+            "oldest_xact_s": 0.004368
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "active",
+            "wait_event_type": null,
+            "wait_event": null,
+            "n": 3,
+            "oldest_xact_s": 0.000412
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": "Client",
+            "wait_event": "ClientRead",
+            "n": 9,
+            "oldest_xact_s": null
+          },
+          {
+            "usename": "nazoauth_perf_runtime",
+            "application_name": "",
+            "state": "idle",
+            "wait_event_type": null,
+            "wait_event": null,
+            "n": 1,
+            "oldest_xact_s": null
+          }
+        ]
+      },
+      "storage_sample": {
+        "ts": 1791599749.465993,
+        "pending": 5884,
+        "oldest_pending_s": 1.220168,
+        "observer_elapsed_s": 0.12533178785815835
+      }
+    }
+  ]
+}

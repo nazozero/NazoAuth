@@ -1,0 +1,9 @@
+{
+  "ts": 1791600415.93288,
+  "reason": "Original longrun-execute.py process absent after completed MTLS10; no PAR load or setup had begun. Cause/exit unavailable. Resume only unstarted remaining original phase, separate persistent stdout/stderr log. Existing tail and analysis watchers still running.",
+  "order": [
+    "PAR10",
+    "NATIVE10",
+    "REQUIRED15"
+  ]
+}

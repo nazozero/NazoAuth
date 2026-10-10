@@ -1,0 +1,67 @@
+{
+  "source_sha": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "isolated_network_none": true,
+  "scope": "Same preflight parser used by server and independent worker; not a Required HTTP load test; original failing server stderr was not retained.",
+  "runs": [
+    {
+      "command": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--cpuset-cpus",
+        "113",
+        "--label",
+        "diag.owner=pr238-long-config-probe",
+        "-e",
+        "AUDIT_ANCHOR_MODE=required",
+        "-e",
+        "AUDIT_ANCHOR_FRESHNESS_SECONDS=10",
+        "-e",
+        "AUDIT_ANCHOR_MAX_LAG_SECONDS=10",
+        "--entrypoint",
+        "nazoauth",
+        "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+        "audit-anchor-worker"
+      ],
+      "start": 1791603539.5584228,
+      "end": 1791603540.7979698,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: DEPLOYMENT_ID is required\n",
+      "identity_provided": false
+    },
+    {
+      "command": [
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--cpuset-cpus",
+        "113",
+        "--label",
+        "diag.owner=pr238-long-config-probe",
+        "-e",
+        "AUDIT_ANCHOR_MODE=required",
+        "-e",
+        "AUDIT_ANCHOR_FRESHNESS_SECONDS=10",
+        "-e",
+        "AUDIT_ANCHOR_MAX_LAG_SECONDS=10",
+        "-e",
+        "DEPLOYMENT_ID=pr238-config-probe",
+        "--entrypoint",
+        "nazoauth",
+        "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+        "audit-anchor-worker"
+      ],
+      "start": 1791603540.797979,
+      "end": 1791603542.146219,
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: AUDIT_ANCHOR_URL is required\n",
+      "identity_provided": true
+    }
+  ]
+}

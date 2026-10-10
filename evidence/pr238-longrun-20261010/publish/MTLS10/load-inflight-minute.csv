@@ -1,0 +1,12 @@
+minute,second_end_inflight_min,second_end_inflight_max,last_second_end_inflight
+0,7,67,67
+1,8,46,9
+2,7,109,11
+3,8,76,9
+4,8,27,14
+5,8,106,14
+6,7,972,13
+7,7,225,10
+8,8,70,10
+9,8,70,13
+10,0,0,0

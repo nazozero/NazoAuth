@@ -1,0 +1,4 @@
+offset_s,full_bucket,completed,begun,success,expected_rejection,other_outcomes,dropped_approx_boundary,success_ops_s,p50_interval_ms,p95_interval_ms,p99_interval_ms,mean_ms,max_ms,max_active_vus
+0,True,35711,35714,35711,0,0,0,595.1833333333333,"[5, 10]","[5, 10]","[10, 20]",5.377922768894738,70.0,12
+60,True,36000,36000,36000,0,0,0,600.0,"[5, 10]","[5, 10]","[10, 20]",5.3355,85.0,17
+120,False,9289,9286,9289,0,0,0,,"[2, 5]","[5, 10]","[10, 20]",4.841102379158144,38.0,20

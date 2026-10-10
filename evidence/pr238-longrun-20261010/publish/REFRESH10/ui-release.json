@@ -1,0 +1,12 @@
+{
+  "key": "REFRESH10",
+  "observed_at": 1791605647.622259,
+  "source": "User-selected CNB sidebar, browser accessibility/screenshot",
+  "cpu_percent_ignored": 0.0,
+  "load_1m": 70.95,
+  "load_5m": 75.94,
+  "load_15m": 82.49,
+  "displayed_cores": 64,
+  "phase": "pre-start",
+  "interpretation": "Per user instruction use 1-minute load and trend; ignore CPU percentage. Load is not a CPU utilization percentage. No host probing. Observation is not an exemption from gates."
+}

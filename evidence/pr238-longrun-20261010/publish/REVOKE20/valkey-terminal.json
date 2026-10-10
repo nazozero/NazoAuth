@@ -1,0 +1,57 @@
+{
+  "census_exact": {
+    "oauth:jar": 219098,
+    "oauth:rate": 2,
+    "oauth:session": 993,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 220094,
+    "evicted_keys": 0,
+    "expired_keys": 946262,
+    "keyspace_hits": 18650687,
+    "keyspace_misses": 2792,
+    "mem_fragmentation_ratio": 1.37,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 82397256,
+    "used_memory_rss": 115351552
+  },
+  "keys_seen": 220094,
+  "mem_bytes_sampled": {
+    "oauth:jar": 26240,
+    "oauth:rate": 512,
+    "oauth:session": 35840,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:jar": 80,
+    "oauth:rate": 2,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "pr238-long-revoke20-20261010",
+    "sample_per_cat": 80,
+    "sampled_at": 1791598560,
+    "scan_ms": 601,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:jar": 80,
+    "oauth:rate": 2,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 220094,
+  "ttl_buckets_sampled": {
+    "oauth:jar|0m+": 26,
+    "oauth:jar|1m+": 14,
+    "oauth:jar|2m+": 23,
+    "oauth:jar|3m+": 17,
+    "oauth:rate|0m+": 2,
+    "oauth:session|459m+": 80,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

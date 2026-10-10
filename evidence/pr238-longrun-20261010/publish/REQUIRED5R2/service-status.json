@@ -1,0 +1,126 @@
+{
+  "sis-rcv-pr238-long-required5r2-20261010": {
+    "image": "sha256:25fc3dbf717cab36b55d2f34d3593f7c55c3f54466b0007e56c594d8318f6b43",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:41:00.523693774Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "sis-worker-pr238-long-required5r2-20261010": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:41:02.627944467Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "AUDIT_ANCHOR_MODE": "optional",
+      "DEPLOYMENT_ID": "pr238-long-required5r2-20261010"
+    }
+  },
+  "pr238-long-required5r2-20261010-nazoauth-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:40:51.088304037Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "DEPLOYMENT_ID": "pr238-long-required5r2-20261010",
+      "RUST_LOG": "warn,nazoauth::jobs::security_state=info",
+      "AUDIT_ANCHOR_FRESHNESS_SECONDS": "10",
+      "AUDIT_ANCHOR_MAX_LAG_SECONDS": "10",
+      "AUDIT_ANCHOR_MODE": "required",
+      "DATABASE_MAX_CONNECTIONS": "32"
+    }
+  },
+  "pr238-long-required5r2-20261010-postgres-1": {
+    "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:40:39.025344978Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "pr238-long-required5r2-20261010-valkey-1": {
+    "image": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:40:39.022906481Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "pr238-long-required5r2-20261010-migrate-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:40:45.759440053Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  }
+}

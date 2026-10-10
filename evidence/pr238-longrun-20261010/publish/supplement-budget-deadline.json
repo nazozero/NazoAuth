@@ -1,0 +1,18 @@
+{
+  "ts": 1791605621.5605195,
+  "changes": [
+    {
+      "key": "NATIVE6R2",
+      "before": 300,
+      "after": 180
+    },
+    {
+      "key": "REQUIRED5R2",
+      "before": 300,
+      "after": 180
+    }
+  ],
+  "required_waiter_pid": 6682,
+  "required_wait_cutoff": 1791607268,
+  "reason": "Preserve all remaining business-chain tests and corrected-fixture validation while completing within hard three-hour deadline. Supplements are explicitly short validation, not long-run proof."
+}

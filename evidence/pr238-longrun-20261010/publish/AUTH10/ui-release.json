@@ -1,0 +1,12 @@
+{
+  "key": "AUTH10",
+  "observed_at": 1791603566.769385,
+  "source": "User-selected CNB sidebar, browser accessibility/screenshot",
+  "cpu_percent_ignored": 0.0,
+  "load_1m": 99.97,
+  "load_5m": 110.61,
+  "load_15m": 108.25,
+  "displayed_cores": 64,
+  "phase": "pre-start",
+  "interpretation": "Per user instruction use 1-minute load and trend; ignore CPU percentage. Load is not a CPU utilization percentage. No host probing. Observation is not an exemption from gates."
+}

@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-required10-20261010",
+  "key": "REQUIRED15",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.779,
+  "total_elapsed_s": 40.962,
+  "request_sha256_unchanged": true,
+  "verdict": "INVALID",
+  "error": "KeyError: 'target_decisions'",
+  "cleanup_error": null
+}

@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-required5r2-20261010",
+  "key": "REQUIRED5R2",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.705,
+  "total_elapsed_s": 371.186,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

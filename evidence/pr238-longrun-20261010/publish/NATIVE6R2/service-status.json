@@ -1,0 +1,122 @@
+{
+  "sis-rcv-pr238-long-native6r2-20261010": {
+    "image": "sha256:25fc3dbf717cab36b55d2f34d3593f7c55c3f54466b0007e56c594d8318f6b43",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:36:09.175615734Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "sis-worker-pr238-long-native6r2-20261010": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:36:11.125280472Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "AUDIT_ANCHOR_MODE": "optional"
+    }
+  },
+  "pr238-long-native6r2-20261010-nazoauth-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:36:00.011756737Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {
+      "RUST_LOG": "warn,nazoauth::jobs::security_state=info",
+      "AUDIT_ANCHOR_MODE": "disabled",
+      "DATABASE_MAX_CONNECTIONS": "32"
+    }
+  },
+  "pr238-long-native6r2-20261010-postgres-1": {
+    "image": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:35:47.698031409Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "pr238-long-native6r2-20261010-valkey-1": {
+    "image": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:35:47.701078204Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  },
+  "pr238-long-native6r2-20261010-migrate-1": {
+    "image": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "state": {
+      "Status": "running",
+      "Running": true,
+      "ExitCode": 0,
+      "OOMKilled": false,
+      "StartedAt": "2026-10-10T04:35:54.437013815Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "resources": {
+      "CpusetCpus": "",
+      "NanoCpus": 0,
+      "Memory": 0,
+      "MemorySwap": 0,
+      "PidsLimit": null
+    },
+    "public_env": {}
+  }
+}

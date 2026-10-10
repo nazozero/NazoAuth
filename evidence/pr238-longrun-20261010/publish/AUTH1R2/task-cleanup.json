@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-auth1r2-20261010",
+  "key": "AUTH1R2",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.587,
+  "total_elapsed_s": 282.797,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

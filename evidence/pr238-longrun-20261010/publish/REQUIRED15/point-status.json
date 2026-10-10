@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "error": "RuntimeError: app not ready after pinned exec start",
+  "elapsed_s": 18.9
+}

@@ -1,0 +1,22 @@
+{
+  "defined_at": 1791598679.176364,
+  "reason": "The first full 20-minute point includes about two minutes of real startup, audit reconciliation and evidence collection. Reserve this measured overhead for all twelve points and final reporting inside the original three-hour deadline. Only unstarted windows change; no partial or failed observation is shortened or discarded.",
+  "total_formal_seconds": 8400,
+  "changes": [
+    {
+      "internal_key": "REQUIRED15",
+      "name": "pr238-long-required10-20261010",
+      "previous_unstarted_window": 900,
+      "final_full_window": 600,
+      "request_sha256": "ff2fe38a35282deaf5e1dd1c1f76b7d61ef07de000b98118bf46e23c112614db"
+    },
+    {
+      "internal_key": "MIX30",
+      "name": "pr238-long-mix20-20261010",
+      "previous_unstarted_window": 1800,
+      "final_full_window": 1200,
+      "request_sha256": "e4fa01dd90940b8b5320830a9fcb587fe9ce54ff55fe962f6bc1d1da21d056ef"
+    }
+  ],
+  "all_original_rates_vus_gates_security_retention_unchanged": true
+}

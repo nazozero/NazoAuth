@@ -1,0 +1,172 @@
+{
+  "key": "NATIVE6R2",
+  "window_start": 1791607000.008,
+  "window_end": 1791607180.008,
+  "wal_sample_window": {
+    "first": {
+      "ts": 1791607001,
+      "wal_bytes": 51100315
+    },
+    "last": {
+      "ts": 1791607180,
+      "wal_bytes": 430564834
+    },
+    "delta_bytes": 379464519
+  },
+  "mature_thirds": [
+    {
+      "start": 1791607360.008,
+      "end": 1791607300.008,
+      "tables": {},
+      "valkey": {
+        "mem": null,
+        "keys": null,
+        "exp": null,
+        "cmd": null
+      },
+      "cpu": {
+        "app": null,
+        "postgres": null,
+        "valkey": null,
+        "audit-worker": null,
+        "audit-receiver": null
+      },
+      "old_transactions": {
+        "oldest_xact_age_s": 0,
+        "xacts_over_60s": 0,
+        "xacts_over_300s": 0
+      }
+    },
+    {
+      "start": 1791607300.008,
+      "end": 1791607240.008,
+      "tables": {},
+      "valkey": {
+        "mem": null,
+        "keys": null,
+        "exp": null,
+        "cmd": null
+      },
+      "cpu": {
+        "app": null,
+        "postgres": null,
+        "valkey": null,
+        "audit-worker": null,
+        "audit-receiver": null
+      },
+      "old_transactions": {
+        "oldest_xact_age_s": 0,
+        "xacts_over_60s": 0,
+        "xacts_over_300s": 0
+      }
+    },
+    {
+      "start": 1791607240.008,
+      "end": 1791607180.008,
+      "tables": {},
+      "valkey": {
+        "mem": null,
+        "keys": null,
+        "exp": null,
+        "cmd": null
+      },
+      "cpu": {
+        "app": null,
+        "postgres": null,
+        "valkey": null,
+        "audit-worker": null,
+        "audit-receiver": null
+      },
+      "old_transactions": {
+        "oldest_xact_age_s": 0,
+        "xacts_over_60s": 0,
+        "xacts_over_300s": 0
+      }
+    }
+  ],
+  "cpu_note": "Owned service process jiffy deltas / elapsed seconds; terminated PG backend jiffies are not retained, so negative deltas are omitted. Shared cgroup counters are deliberately not treated as per-service CPU. No host metrics were probed.",
+  "whole_window": {
+    "cpu": {
+      "app": {
+        "time_weighted_mean_cores": 0.6246694394288462,
+        "sample_summary": {
+          "first": 0.6203371041877963,
+          "last": 0.6254234332256424,
+          "median": 0.6250911985619203,
+          "max": 0.6372473232720948,
+          "min": 0.6091886520655897
+        }
+      },
+      "postgres": {
+        "time_weighted_mean_cores": 1.5153681604749187,
+        "sample_summary": {
+          "first": 1.4917197226803312,
+          "last": 1.2164032570852348,
+          "median": 1.3105109980798904,
+          "max": 2.510363927308386,
+          "min": 1.1973385581430132
+        }
+      },
+      "valkey": {
+        "time_weighted_mean_cores": 0.024684884279755452,
+        "sample_summary": {
+          "first": 0.021830044722151186,
+          "last": 0.023566680092560438,
+          "median": 0.023657930931558144,
+          "max": 0.03262120739840919,
+          "min": 0.021671311012829143
+        }
+      },
+      "audit-worker": {
+        "time_weighted_mean_cores": 0.03824738391851766,
+        "sample_summary": {
+          "first": 0.03638340787025198,
+          "last": 0.038069252457213015,
+          "median": 0.03638741538576743,
+          "max": 0.08398308411358964,
+          "min": 0.010912176484507145
+        }
+      },
+      "audit-receiver": {
+        "time_weighted_mean_cores": 0.023549947071490843,
+        "sample_summary": {
+          "first": 0.02001087432863859,
+          "last": 0.021753858546978862,
+          "median": 0.021794356143874295,
+          "max": 0.05112013815609805,
+          "min": 0.007274784323004765
+        }
+      }
+    },
+    "valkey": {
+      "mem": {
+        "first": 7303736,
+        "last": 55096248,
+        "median": 31124664.0,
+        "max": 55096248,
+        "min": 7303736
+      },
+      "keys": {
+        "first": 9547,
+        "last": 80980,
+        "median": 45259.0,
+        "max": 80980,
+        "min": 9547
+      },
+      "exp": {
+        "first": 0,
+        "last": 4,
+        "median": 2.0,
+        "max": 4,
+        "min": 0
+      },
+      "cmd": {
+        "first": 74433,
+        "last": 505946,
+        "median": 289877.0,
+        "max": 505946,
+        "min": 74433
+      }
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "load": {
+    "formal_begun": 2880004,
+    "formal_completed": 2880004,
+    "final_unfinished": 0,
+    "max_second_end_inflight": 170,
+    "minutes": [
+      {
+        "minute": 0,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 147,
+        "last_second_end_inflight": 11
+      },
+      {
+        "minute": 1,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 164,
+        "last_second_end_inflight": 85
+      },
+      {
+        "minute": 2,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 170,
+        "last_second_end_inflight": 12
+      },
+      {
+        "minute": 3,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 18,
+        "last_second_end_inflight": 8
+      },
+      {
+        "minute": 4,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 53,
+        "last_second_end_inflight": 9
+      },
+      {
+        "minute": 5,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 32,
+        "last_second_end_inflight": 9
+      },
+      {
+        "minute": 6,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 18,
+        "last_second_end_inflight": 10
+      },
+      {
+        "minute": 7,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 20,
+        "last_second_end_inflight": 12
+      },
+      {
+        "minute": 8,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 21,
+        "last_second_end_inflight": 9
+      },
+      {
+        "minute": 9,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 22,
+        "last_second_end_inflight": 9
+      },
+      {
+        "minute": 10,
+        "second_end_inflight_min": 0,
+        "second_end_inflight_max": 0,
+        "last_second_end_inflight": 0
+      }
+    ],
+    "note": "Net cumulative formal begins minus ends at one-second aggregate boundaries. This is application-operation concurrency, not K6 allocated VUs. Subsecond peaks are not observed."
+  }
+}

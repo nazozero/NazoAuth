@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-refresh10-20261010",
+  "key": "REFRESH10",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.516,
+  "total_elapsed_s": 411.765,
+  "request_sha256_unchanged": true,
+  "verdict": "FAIL",
+  "error": null,
+  "cleanup_error": null
+}

@@ -1,0 +1,8 @@
+{
+  "ts": 1791606606.6136105,
+  "old_stop_epoch": 1791607583,
+  "new_stop_epoch": 1791607643,
+  "hard_deadline_epoch": 1791607688,
+  "pid": 7500,
+  "reason": "Use remaining authorized test time; reserve 45 seconds for stopping owned containers before hard three-hour test deadline"
+}

@@ -1,0 +1,11 @@
+{
+  "ts": 1791606163.2013862,
+  "key": "REFRESH1R2",
+  "after": "REQUIRED5R2",
+  "formal_seconds": 60,
+  "only_if_full_window_plus_cleanup_fits": true,
+  "original_failure_retained": true,
+  "reason": "Refresh long point drop 0.1125% exceeds original 0.1%; two concentrated WAL-wait bursts. No confirmed code or host root cause.",
+  "natural_tail": "No added natural-tail waiting for this capacity-only repeat; REFRESH10 retains complete natural-cycle proof",
+  "updated_at": 1791606224.5097032
+}

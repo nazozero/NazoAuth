@@ -1,0 +1,8 @@
+{
+  "declared_at": 1791602846.7946353,
+  "key": "NATIVE6R2",
+  "formal_seconds": 360,
+  "after": "COLD10",
+  "only_if_full_window_and_cleanup_fit_before_deadline": true,
+  "reason": "Original Native point omitted required historical module fixture; preserve FAIL and obtain separate valid evidence without changing successful points or production source."
+}

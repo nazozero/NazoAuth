@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-mix1r2-20261010",
+  "key": "MIX1R2",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.551,
+  "total_elapsed_s": 280.281,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

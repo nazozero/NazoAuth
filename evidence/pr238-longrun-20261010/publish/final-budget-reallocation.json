@@ -1,0 +1,36 @@
+{
+  "ts": 1791603786.7758696,
+  "reason": "Preserve full completed/running windows, reduce only unstarted ordinary independent points from ten to seven minutes, and use the released twelve minutes to correct Native/Required fixtures and obtain actual valid load evidence before the hard three-hour deadline. Original rates, VUs, sidecars, TTLs and gates unchanged.",
+  "unchanged_running": [
+    "AUTH10"
+  ],
+  "changes": [
+    {
+      "key": "CC10",
+      "old_seconds": 600,
+      "new_seconds": 420,
+      "load_started": false
+    },
+    {
+      "key": "REFRESH10",
+      "old_seconds": 600,
+      "new_seconds": 420,
+      "load_started": false
+    },
+    {
+      "key": "FAPI10",
+      "old_seconds": 600,
+      "new_seconds": 420,
+      "load_started": false
+    },
+    {
+      "key": "COLD10",
+      "old_seconds": 600,
+      "new_seconds": 420,
+      "load_started": false
+    }
+  ],
+  "new_corrected_required_window_s": 300,
+  "native_corrected_window_s": 360,
+  "full_original_failed_windows_retained": true
+}

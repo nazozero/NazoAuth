@@ -1,0 +1,29 @@
+{
+  "ts": 1791597384.2278154,
+  "reason": "MIX60 was rejected before stack or load by the existing default SIS_LOAD_BUDGET_S=1800; no workload observed. Preserve INVALID. Set explicit authorized long-run budget and serialize after the original remaining points.",
+  "original_attempt": "MIX60",
+  "replacement": "MIX60R2",
+  "unchanged": [
+    "source",
+    "binary",
+    "rate",
+    "VUs",
+    "subjects",
+    "full duration",
+    "sidecars",
+    "gate",
+    "security settings"
+  ],
+  "new_environment": {
+    "SIS_LOAD_BUDGET_S": 4020
+  },
+  "effective_order": [
+    "REVOKE20",
+    "INTROSPECT10",
+    "MTLS10",
+    "PAR10",
+    "NATIVE10",
+    "REQUIRED15",
+    "MIX60R2"
+  ]
+}

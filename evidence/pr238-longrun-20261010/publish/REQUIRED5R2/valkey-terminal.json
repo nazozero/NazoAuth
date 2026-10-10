@@ -1,0 +1,79 @@
+{
+  "census_exact": {
+    "oauth:client_assertion": 20856,
+    "oauth:dpop": 40500,
+    "oauth:jar": 55952,
+    "oauth:rate": 6,
+    "oauth:session": 3153,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 120468,
+    "evicted_keys": 0,
+    "expired_keys": 15922,
+    "keyspace_hits": 1734169,
+    "keyspace_misses": 5032,
+    "mem_fragmentation_ratio": 1.37,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 44247000,
+    "used_memory_rss": 60731392
+  },
+  "keys_seen": 120468,
+  "mem_bytes_sampled": {
+    "oauth:client_assertion": 25600,
+    "oauth:dpop": 23936,
+    "oauth:jar": 26240,
+    "oauth:rate": 1536,
+    "oauth:session": 37600,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:client_assertion": 80,
+    "oauth:dpop": 80,
+    "oauth:jar": 80,
+    "oauth:rate": 6,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "pr238-long-required5r2-20261010",
+    "sample_per_cat": 80,
+    "sampled_at": 1791607558,
+    "scan_ms": 362,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:client_assertion": 80,
+    "oauth:dpop": 80,
+    "oauth:jar": 80,
+    "oauth:rate": 6,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 120468,
+  "ttl_buckets_sampled": {
+    "oauth:client_assertion|0m+": 24,
+    "oauth:client_assertion|1m+": 23,
+    "oauth:client_assertion|2m+": 13,
+    "oauth:client_assertion|3m+": 20,
+    "oauth:dpop|0m+": 3,
+    "oauth:dpop|1m+": 14,
+    "oauth:dpop|2m+": 15,
+    "oauth:dpop|3m+": 19,
+    "oauth:dpop|4m+": 23,
+    "oauth:dpop|5m+": 6,
+    "oauth:jar|0m+": 24,
+    "oauth:jar|1m+": 17,
+    "oauth:jar|2m+": 28,
+    "oauth:jar|3m+": 11,
+    "oauth:rate|0m+": 6,
+    "oauth:session|475m+": 34,
+    "oauth:session|476m+": 12,
+    "oauth:session|477m+": 10,
+    "oauth:session|478m+": 11,
+    "oauth:session|479m+": 13,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

@@ -1,0 +1,869 @@
+{
+  "key": "FAPI10",
+  "source": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "capacity_verdict": "PASS",
+  "lanes": {
+    "load": {
+      "rate": 320.0,
+      "latency_ms": {
+        "p50": 20.0,
+        "p95": 34.0,
+        "p99": 176.0
+      },
+      "measure": {
+        "window_start_s": 1791606114.962,
+        "window_end_s": 1791606414.962,
+        "measure_started_exact": 96000,
+        "measure_completed_exact": 96000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 96000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 96000
+        },
+        "measure_outcome_sum": 96000,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 96000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 320.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "window_seconds": 300.0,
+      "unexpected_errors": 0,
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 18887,
+          "begun": 18892,
+          "success": 18887,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 314.78333333333336,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 23.211203473288506,
+          "max_ms": 111.0,
+          "max_active_vus": 11
+        },
+        {
+          "offset_s": 60,
+          "full_bucket": true,
+          "completed": 19199,
+          "begun": 19200,
+          "success": 19199,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 319.98333333333335,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 23.651856867545185,
+          "max_ms": 471.0,
+          "max_active_vus": 115
+        },
+        {
+          "offset_s": 120,
+          "full_bucket": true,
+          "completed": 19199,
+          "begun": 19200,
+          "success": 19199,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 319.98333333333335,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 27.486692015209126,
+          "max_ms": 601.0,
+          "max_active_vus": 84
+        },
+        {
+          "offset_s": 180,
+          "full_bucket": true,
+          "completed": 19201,
+          "begun": 19200,
+          "success": 19201,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 320.01666666666665,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 29.642622780063537,
+          "max_ms": 801.0,
+          "max_active_vus": 91
+        },
+        {
+          "offset_s": 240,
+          "full_bucket": true,
+          "completed": 19201,
+          "begun": 19200,
+          "success": 19201,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 320.01666666666665,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 22.112962866517368,
+          "max_ms": 275.0,
+          "max_active_vus": 63
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": false,
+          "completed": 313,
+          "begun": 308,
+          "success": 313,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 28.003194888178914,
+          "max_ms": 118.0,
+          "max_active_vus": 6
+        }
+      ],
+      "five_minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 95687,
+          "begun": 95692,
+          "success": 95687,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 318.95666666666665,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 25.22764847889473,
+          "max_ms": 801.0,
+          "max_active_vus": 115
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": false,
+          "completed": 313,
+          "begun": 308,
+          "success": 313,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 28.003194888178914,
+          "max_ms": 118.0,
+          "max_active_vus": 6
+        }
+      ],
+      "all_complete_minute_mean_ms": {
+        "min": 22.112962866517368,
+        "median": 23.651856867545185,
+        "max": 29.642622780063537,
+        "first": 23.211203473288506,
+        "last": 22.112962866517368
+      },
+      "histogram_note": "Quantiles are bounds from full-operation histograms; completion-time buckets use floor(second), so edge buckets and drop attribution have at most one-second boundary ambiguity. Overall cohort counts remain exact."
+    }
+  },
+  "load_start": 1791606095.1621795,
+  "load_return": 1791606421.788988,
+  "natural_final": {
+    "ts": 1791606454.258708,
+    "locks": [
+      {
+        "n": 33,
+        "wait_event": "ClientRead",
+        "xact_age_s": null,
+        "wait_event_type": "Client"
+      }
+    ],
+    "anchor": 393280,
+    "tables": [
+      {
+        "relname": "access_token_revocations",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 0,
+        "autovacuum_count": 0
+      },
+      {
+        "relname": "security_audit_events",
+        "n_tup_del": 371870,
+        "n_tup_ins": 393280,
+        "n_dead_tup": 1024,
+        "index_bytes": 36421632,
+        "table_bytes": 40804352,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "n_tup_del": 0,
+        "n_tup_ins": 100800,
+        "n_dead_tup": 0,
+        "index_bytes": 27697152,
+        "table_bytes": 43655168,
+        "autovacuum_count": 5
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "n_tup_del": 393280,
+        "n_tup_ins": 393280,
+        "n_dead_tup": 0,
+        "index_bytes": 15745024,
+        "table_bytes": 24576,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "n_tup_del": 0,
+        "n_tup_ins": 1984,
+        "n_dead_tup": 0,
+        "index_bytes": 442368,
+        "table_bytes": 1433600,
+        "autovacuum_count": 1
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "n_tup_del": 90880,
+        "n_tup_ins": 101792,
+        "n_dead_tup": 512,
+        "index_bytes": 15941632,
+        "table_bytes": 6447104,
+        "autovacuum_count": 6
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 8192,
+        "autovacuum_count": 0
+      }
+    ],
+    "blocked": null,
+    "pending": 0,
+    "db_bytes": 205993663,
+    "family_live": 10912,
+    "observed_at": 1791606453.17783,
+    "revocations": {
+      "total": 0,
+      "eligible": 0,
+      "retained": 0
+    },
+    "decision_bytes": {
+      "count": 19362,
+      "row_bytes": 5421360,
+      "payload_bytes": 96810
+    },
+    "spent_eligible": 0,
+    "spent_retained": 0,
+    "contract_orphan": 0,
+    "family_eligible": 0,
+    "issuance_counts": {
+      "total": 100800,
+      "eligible": 0,
+      "retained": 100800,
+      "oldest_due_s": 0,
+      "oldest_created_retention_remaining_s": 5.750854
+    },
+    "pending_by_type": {},
+    "oldest_pending_s": 0,
+    "decision_eligible": 3133,
+    "decision_retained": 16229,
+    "decision_retention": {
+      "unexported": 0,
+      "exported_full": 0,
+      "exported_compact": 19362,
+      "last_remaining_s": 50.667054,
+      "last_business_retain_until": "2026-10-10T04:28:24.962822+00:00"
+    },
+    "family_oldest_due_s": 0,
+    "decision_oldest_due_s": 9.789114,
+    "target_decisions": {
+      "count": 0,
+      "eligible": 0,
+      "retained": 0,
+      "unexported": 0,
+      "last_business_retain_until": null,
+      "last_remaining_s": null
+    },
+    "full_cycle_after_target_deadline": true
+  },
+  "observed_cohort": {
+    "ts": 1791606215.22288,
+    "locks": [
+      {
+        "n": 32,
+        "wait_event": "ClientRead",
+        "xact_age_s": null,
+        "wait_event_type": "Client"
+      },
+      {
+        "n": 1,
+        "wait_event": null,
+        "xact_age_s": -0.033547,
+        "wait_event_type": null
+      }
+    ],
+    "anchor": 137581,
+    "tables": [
+      {
+        "relname": "access_token_revocations",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 0,
+        "autovacuum_count": 0
+      },
+      {
+        "relname": "security_audit_events",
+        "n_tup_del": 101974,
+        "n_tup_ins": 136925,
+        "n_dead_tup": 1326,
+        "index_bytes": 21225472,
+        "table_bytes": 29130752,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "n_tup_del": 0,
+        "n_tup_ins": 36713,
+        "n_dead_tup": 0,
+        "index_bytes": 10141696,
+        "table_bytes": 16097280,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "n_tup_del": 136438,
+        "n_tup_ins": 136458,
+        "n_dead_tup": 1293,
+        "index_bytes": 11517952,
+        "table_bytes": 7143424,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "n_tup_del": 0,
+        "n_tup_ins": 1984,
+        "n_dead_tup": 0,
+        "index_bytes": 442368,
+        "table_bytes": 1433600,
+        "autovacuum_count": 1
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "n_tup_del": 21006,
+        "n_tup_ins": 37705,
+        "n_dead_tup": 408,
+        "index_bytes": 14000128,
+        "table_bytes": 11173888,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 8192,
+        "autovacuum_count": 0
+      }
+    ],
+    "blocked": null,
+    "pending": 19,
+    "db_bytes": 139351743,
+    "family_live": 10912,
+    "observed_at": 1791606215.214751,
+    "revocations": {
+      "total": 0,
+      "eligible": 0,
+      "retained": 0
+    },
+    "decision_bytes": {
+      "count": 34754,
+      "row_bytes": 9735960,
+      "payload_bytes": 178663
+    },
+    "spent_eligible": 0,
+    "spent_retained": 0,
+    "contract_orphan": 0,
+    "family_eligible": 5954,
+    "issuance_counts": {
+      "total": 36880,
+      "eligible": 0,
+      "retained": 36880,
+      "oldest_due_s": 0,
+      "oldest_created_retention_remaining_s": 244.786565
+    },
+    "pending_by_type": {
+      "token_issued": 9,
+      "refresh_family_capacity_retired": 5,
+      "authorization_decision_committed": 5
+    },
+    "oldest_pending_s": 0.004782,
+    "decision_eligible": 5952,
+    "decision_retained": 28802,
+    "decision_retention": {
+      "unexported": 5,
+      "exported_full": 0,
+      "exported_compact": 34749,
+      "last_remaining_s": 89.953488,
+      "last_business_retain_until": "2026-10-10T04:25:05.219944+00:00"
+    },
+    "family_oldest_due_s": 18.592025,
+    "decision_oldest_due_s": 18.597031,
+    "target_decisions": {
+      "count": 34735,
+      "eligible": 5994,
+      "retained": 28741,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-10T04:25:05.159799+00:00",
+      "last_remaining_s": 89.800772
+    }
+  },
+  "observer_errors_during_load": [],
+  "observer_errors_after_load": [
+    {
+      "ts": 1791606475.1857958,
+      "error": "task command failed rc=1: Error response from daemon: No such container: pr238-long-fapi10-20261010-postgres-1\n"
+    }
+  ],
+  "storage_during_load": {
+    "pending": {
+      "min": 0,
+      "median": 27,
+      "max": 63,
+      "first": 0,
+      "last": 0
+    },
+    "oldest_pending_s": {
+      "min": 0,
+      "median": 0.012098,
+      "max": 0.044789,
+      "first": 0,
+      "last": 0
+    },
+    "db_bytes": {
+      "min": 12523199,
+      "median": 157554367,
+      "max": 213472959,
+      "first": 12523199,
+      "last": 213472959
+    },
+    "decision_eligible": {
+      "min": 0,
+      "median": 4540,
+      "max": 18752,
+      "first": 0,
+      "last": 10250
+    },
+    "decision_retained": {
+      "min": 0,
+      "median": 28802,
+      "max": 28803,
+      "first": 0,
+      "last": 28721
+    },
+    "decision_oldest_due_s": {
+      "min": 0,
+      "median": 14.183952,
+      "max": 58.599214,
+      "first": 0,
+      "last": 32.032846
+    },
+    "family_live": {
+      "min": 0,
+      "median": 10912,
+      "max": 10912,
+      "first": 0,
+      "last": 10912
+    },
+    "spent_retained": {
+      "min": 0,
+      "median": 0,
+      "max": 0,
+      "first": 0,
+      "last": 0
+    },
+    "issuance_total": {
+      "min": 0,
+      "median": 49680,
+      "max": 100800,
+      "first": 0,
+      "last": 100800
+    },
+    "issuance_eligible": {
+      "min": 0,
+      "median": 0,
+      "max": 0,
+      "first": 0,
+      "last": 0
+    },
+    "issuance_oldest_due_s": {
+      "min": 0,
+      "median": 0,
+      "max": 0,
+      "first": 0,
+      "last": 0
+    }
+  },
+  "storage_mature_thirds": [],
+  "storage_whole_thirds": [
+    {
+      "start": 1791606114.962,
+      "end": 1791606214.962,
+      "samples": 10,
+      "values": {
+        "pending": {
+          "min": 16,
+          "median": 29.5,
+          "max": 63,
+          "first": 16,
+          "last": 41
+        },
+        "oldest_pending_s": {
+          "min": 0.004934,
+          "median": 0.017577,
+          "max": 0.044789,
+          "first": 0.008257,
+          "last": 0.024102
+        },
+        "db_bytes": {
+          "min": 38074047,
+          "median": 87779007.0,
+          "max": 128341695,
+          "first": 38074047,
+          "last": 128341695
+        },
+        "decision_eligible": {
+          "min": 0,
+          "median": 0.0,
+          "max": 2751,
+          "first": 0,
+          "last": 2751
+        },
+        "decision_retained": {
+          "min": 4881,
+          "median": 19282.0,
+          "max": 28802,
+          "first": 4881,
+          "last": 28802
+        },
+        "decision_oldest_due_s": {
+          "min": 0,
+          "median": 0.0,
+          "max": 8.594785,
+          "first": 0,
+          "last": 8.594785
+        },
+        "family_live": {
+          "min": 5871,
+          "median": 10912.0,
+          "max": 10912,
+          "first": 5871,
+          "last": 10912
+        },
+        "spent_retained": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "issuance_total": {
+          "min": 4879,
+          "median": 19280.0,
+          "max": 33679,
+          "first": 4879,
+          "last": 33679
+        },
+        "issuance_eligible": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "issuance_oldest_due_s": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "start": 1791606214.962,
+      "end": 1791606314.962,
+      "samples": 10,
+      "values": {
+        "pending": {
+          "min": 13,
+          "median": 30.5,
+          "max": 57,
+          "first": 19,
+          "last": 33
+        },
+        "oldest_pending_s": {
+          "min": 0.000885,
+          "median": 0.012721,
+          "max": 0.036735,
+          "first": 0.004782,
+          "last": 0.016227
+        },
+        "db_bytes": {
+          "min": 139351743,
+          "median": 161806015.0,
+          "max": 181712575,
+          "first": 139351743,
+          "last": 181712575
+        },
+        "decision_eligible": {
+          "min": 2043,
+          "median": 10397.5,
+          "max": 18752,
+          "first": 5952,
+          "last": 14843
+        },
+        "decision_retained": {
+          "min": 28801,
+          "median": 28802.0,
+          "max": 28803,
+          "first": 28802,
+          "last": 28803
+        },
+        "decision_oldest_due_s": {
+          "min": 6.383331,
+          "median": 32.493518,
+          "max": 58.599214,
+          "first": 18.597031,
+          "last": 46.383171
+        },
+        "family_live": {
+          "min": 10912,
+          "median": 10912.0,
+          "max": 10912,
+          "first": 10912,
+          "last": 10912
+        },
+        "spent_retained": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "issuance_total": {
+          "min": 36880,
+          "median": 51280.0,
+          "max": 65680,
+          "first": 36880,
+          "last": 65680
+        },
+        "issuance_eligible": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "issuance_oldest_due_s": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "start": 1791606314.962,
+      "end": 1791606414.962,
+      "samples": 10,
+      "values": {
+        "pending": {
+          "min": 16,
+          "median": 25.0,
+          "max": 44,
+          "first": 32,
+          "last": 24
+        },
+        "oldest_pending_s": {
+          "min": 0.00506,
+          "median": 0.011172000000000001,
+          "max": 0.031663,
+          "first": 0.011235,
+          "last": 0.011109
+        },
+        "db_bytes": {
+          "min": 186136255,
+          "median": 203597503.0,
+          "max": 211261119,
+          "first": 186136255,
+          "last": 211261119
+        },
+        "decision_eligible": {
+          "min": 652,
+          "median": 7395.0,
+          "max": 18043,
+          "first": 18043,
+          "last": 7051
+        },
+        "decision_retained": {
+          "min": 28800,
+          "median": 28802.0,
+          "max": 28802,
+          "first": 28802,
+          "last": 28802
+        },
+        "decision_oldest_due_s": {
+          "min": 2.037054,
+          "median": 23.1066985,
+          "max": 56.383417,
+          "first": 56.383417,
+          "last": 22.03316
+        },
+        "family_live": {
+          "min": 10912,
+          "median": 10912.0,
+          "max": 10912,
+          "first": 10912,
+          "last": 10912
+        },
+        "spent_retained": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "issuance_total": {
+          "min": 68879,
+          "median": 83280.0,
+          "max": 97679,
+          "first": 68879,
+          "last": 97679
+        },
+        "issuance_eligible": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        },
+        "issuance_oldest_due_s": {
+          "min": 0,
+          "median": 0.0,
+          "max": 0,
+          "first": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "observer_peak_seconds": 0.2627970171160996
+}
