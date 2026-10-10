@@ -762,7 +762,7 @@ async fn issuance_cleanup_uses_expiry_as_an_index_bound() {
     }
     let body = sql_query(
         "SELECT prosrc AS body FROM pg_proc \
-         WHERE oid = 'nazo_oauth_cleanup_expired_security_state()'::regprocedure",
+         WHERE oid = 'nazo_oauth_cleanup_expired_security_state(boolean)'::regprocedure",
     )
     .get_result::<FunctionBody>(&mut connection)
     .await
@@ -1654,7 +1654,7 @@ async fn access_token_revocation_retention_backfill_extends_only_live_windows() 
         connection: &mut AsyncPgConnection,
         id: Uuid,
     ) -> chrono::DateTime<chrono::Utc> {
-        sql_query("SELECT expires_at FROM access_token_revocations WHERE id = $1")
+        sql_query("SELECT expires_at FROM access_token_revocations WHERE access_token_jti_blake3 = $1::uuid::text")
             .bind::<diesel::sql_types::Uuid, _>(id)
             .get_result::<ExpiryRow>(connection)
             .await
@@ -1715,15 +1715,15 @@ async fn access_token_revocation_retention_backfill_extends_only_live_windows() 
     let ancient = Uuid::now_v7();
     sql_query(
         "INSERT INTO access_token_revocations \
-             (id, access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
+             (access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
          VALUES \
-             ($1, 'backfill-eligible', $4, '00000000-0000-0000-0000-000000000001', \
+             ($1::uuid::text, $4, '00000000-0000-0000-0000-000000000001', \
               CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
               CURRENT_TIMESTAMP - INTERVAL '30 seconds'), \
-             ($2, 'backfill-stale', $4, '00000000-0000-0000-0000-000000000001', \
+             ($2::uuid::text, $4, '00000000-0000-0000-0000-000000000001', \
               CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
               CURRENT_TIMESTAMP - INTERVAL '90 seconds'), \
-             ($3, 'backfill-ancient', $4, '00000000-0000-0000-0000-000000000001', \
+             ($3::uuid::text, $4, '00000000-0000-0000-0000-000000000001', \
               CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
               CURRENT_TIMESTAMP - INTERVAL '2 hours')",
     )

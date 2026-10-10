@@ -1,0 +1,12 @@
+{
+  "key": "MIX30",
+  "observed_at": 1791602184.8785439,
+  "source": "User-selected CNB sidebar, browser accessibility/screenshot",
+  "cpu_percent_ignored": 0.0,
+  "load_1m": 120.44,
+  "load_5m": 105.18,
+  "load_15m": 92.5,
+  "displayed_cores": 64,
+  "phase": "pre-start",
+  "interpretation": "Per user instruction use 1-minute load and trend; ignore CPU percentage. Load is not a CPU utilization percentage. No host probing. Observation is not an exemption from gates."
+}

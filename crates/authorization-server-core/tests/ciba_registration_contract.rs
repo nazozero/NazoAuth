@@ -29,7 +29,7 @@ fn ciba_request(mode: &str) -> DynamicClientRegistrationRequest {
 fn poll_and_ping_are_the_only_registered_delivery_modes() {
     for mode in ["poll", "ping"] {
         let prepared = prepare_dynamic_client_registration(ciba_request(mode), POLICY).unwrap();
-        assert_eq!(prepared.backchannel_token_delivery_mode, mode);
+        assert_eq!(prepared.request.backchannel_token_delivery_mode, mode);
     }
     let error = prepare_dynamic_client_registration(ciba_request("push"), POLICY).unwrap_err();
     assert_eq!(error.error, "invalid_client_metadata");
@@ -69,10 +69,6 @@ fn omitted_and_false_ciba_user_code_metadata_have_the_same_public_value() {
         let mut request = ciba_request("poll");
         request.backchannel_user_code_parameter = value;
         let prepared = prepare_dynamic_client_registration(request, POLICY).unwrap();
-        assert!(
-            !prepared
-                .into_create_client_request()
-                .backchannel_user_code_parameter
-        );
+        assert!(!prepared.request.backchannel_user_code_parameter);
     }
 }

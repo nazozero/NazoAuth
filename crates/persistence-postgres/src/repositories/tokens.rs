@@ -418,7 +418,6 @@ impl TokenRepository {
             access_token
                 .zip(revocation_deadline)
                 .map(|(access_token, deadline)| NewAccessTokenRevocation {
-                    id: Uuid::now_v7(),
                     access_token_jti_blake3: blake3_hex(&access_token.jti),
                     client_id,
                     tenant_id,
@@ -668,7 +667,6 @@ fn token_from_current(
     family: RefreshFamilyRow,
     contract: RefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
-    let context = contract.authentication_context;
     Ok(RefreshToken {
         id_token_sid: family.current_id_token_sid,
         id: family.current_member_id,
@@ -678,20 +676,16 @@ fn token_from_current(
         client_id: family.client_id,
         user_id: family.user_id,
         contract_key: digest32(&family.contract_blake3)?,
-        contract_audiences: contract.audiences,
-        scopes: contract.scopes,
         audience: serde_json::from_value(family.current_audience).map_err(|_| {
             RepositoryError::Consistency("refresh audience must be a string array".into())
         })?,
-        authorization_details: contract.authorization_details,
         issued_at: family.current_issued_at,
         expires_at: family.current_expires_at,
         revoked_at: family.revoked_at,
-        subject: contract.subject,
         dpop_jkt: family.dpop_jkt,
         mtls_x5t_s256: family.mtls_x5t_s256,
         client_attestation_jkt: family.client_attestation_jkt,
-        authentication_context: context,
+        contract,
     })
 }
 
@@ -704,7 +698,6 @@ fn token_from_spent(
     family: RefreshFamilyRow,
     contract: RefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
-    let context = contract.authentication_context;
     Ok(RefreshToken {
         id_token_sid: family.current_id_token_sid,
         id: spent.member_id,
@@ -714,20 +707,16 @@ fn token_from_spent(
         client_id: family.client_id,
         user_id: family.user_id,
         contract_key: digest32(&family.contract_blake3)?,
-        contract_audiences: contract.audiences.clone(),
-        scopes: contract.scopes,
-        audience: contract.audiences,
-        authorization_details: contract.authorization_details,
+        audience: contract.audiences.clone(),
         // The member's own issuance time is not retained; `spent_at` is the
         // last instant the member was the family's current token.
         issued_at: spent.spent_at,
         expires_at: spent.expires_at,
         revoked_at: Some(spent.spent_at),
-        subject: contract.subject,
         dpop_jkt: family.dpop_jkt,
         mtls_x5t_s256: family.mtls_x5t_s256,
         client_attestation_jkt: family.client_attestation_jkt,
-        authentication_context: context,
+        contract,
     })
 }
 
@@ -1019,7 +1008,7 @@ fn prepare_refresh_subject(
         tenant_id: token.tenant_id,
         claims,
         user_epoch,
-        token_subject: token.subject.clone(),
+        token_subject: token.contract.subject.clone(),
         subject_bound,
     })
 }

@@ -1,0 +1,3652 @@
+diff --git a/crates/authorization-server-core/src/admin_clients/requests.rs b/crates/authorization-server-core/src/admin_clients/requests.rs
+index 62936573..45d6e6d5 100644
+--- a/crates/authorization-server-core/src/admin_clients/requests.rs
++++ b/crates/authorization-server-core/src/admin_clients/requests.rs
+@@ -3,7 +3,7 @@ use serde_json::Value;
+ 
+ use crate::{ClientPresentationMetadata, ClientSecurityPolicy};
+ 
+-#[derive(Clone, Debug, Deserialize, serde::Serialize)]
++#[derive(Clone, Debug, Deserialize, PartialEq, serde::Serialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct CreateClientRequest {
+     pub client_name: String,
+diff --git a/crates/authorization-server-core/src/dynamic_client_registration/policy.rs b/crates/authorization-server-core/src/dynamic_client_registration/policy.rs
+index de93c1b5..de684c46 100644
+--- a/crates/authorization-server-core/src/dynamic_client_registration/policy.rs
++++ b/crates/authorization-server-core/src/dynamic_client_registration/policy.rs
+@@ -293,63 +293,73 @@ pub fn prepare_dynamic_client_registration(
+         .filter(|value| !value.is_empty())
+         .unwrap_or_else(|| "Dynamic OAuth Client".to_owned());
+ 
++    // Preserve the dynamic-registration policy at the normalization boundary;
++    // later consumers use this same request rather than copying its metadata.
++    let allow_client_assertion_endpoint_audience = token_endpoint_auth_method == "private_key_jwt";
+     Ok(PreparedDynamicClientRegistration {
+-        client_name,
+-        client_type,
+-        redirect_uris: request.redirect_uris.unwrap_or_default(),
+-        post_logout_redirect_uris: request.post_logout_redirect_uris,
+-        scopes,
+-        allowed_audiences: vec![policy.default_audience.to_owned()],
+-        grant_types,
+         response_types,
+-        token_endpoint_auth_method,
+-        subject_type: request.subject_type,
+-        sector_identifier_uri: request.sector_identifier_uri,
+-        require_dpop_bound_tokens: request.dpop_bound_access_tokens,
+-        require_mtls_bound_tokens: request.tls_client_certificate_bound_access_tokens,
+-        backchannel_token_delivery_mode,
+-        backchannel_client_notification_endpoint,
+-        backchannel_authentication_request_signing_alg: request
+-            .backchannel_authentication_request_signing_alg,
+-        backchannel_logout_uri: request.backchannel_logout_uri,
+-        backchannel_logout_session_required: request
+-            .backchannel_logout_session_required
+-            .unwrap_or(false),
+-        frontchannel_logout_uri: request.frontchannel_logout_uri,
+-        frontchannel_logout_session_required: request
+-            .frontchannel_logout_session_required
+-            .unwrap_or(false),
+-        tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
+-        // RFC 8705 defines each PKI subject selector as a single string and
+-        // requires exactly one selector for tls_client_auth. The internal
+-        // client model stores selectors as vectors, but RFC 8705 dynamic
+-        // registration accepts exactly one value for each selector.
+-        tls_client_auth_cert_sha256: None,
+-        tls_client_auth_san_dns: request.tls_client_auth_san_dns.into_iter().collect(),
+-        tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
+-        tls_client_auth_san_ip: request.tls_client_auth_san_ip.into_iter().collect(),
+-        tls_client_auth_san_email: request.tls_client_auth_san_email.into_iter().collect(),
+-        jwks_uri,
+-        jwks: request.jwks,
+-        request_uris,
+-        initiate_login_uri,
+-        presentation,
+-        id_token_signed_response_alg: request.id_token_signed_response_alg,
+-        id_token_encrypted_response_alg: request.id_token_encrypted_response_alg,
+-        id_token_encrypted_response_enc: request.id_token_encrypted_response_enc,
+-        request_object_signing_alg: request.request_object_signing_alg,
+-        request_object_encryption_alg: request.request_object_encryption_alg,
+-        request_object_encryption_enc: request.request_object_encryption_enc,
+-        token_endpoint_auth_signing_alg: request.token_endpoint_auth_signing_alg,
+-        introspection_signed_response_alg: request.introspection_signed_response_alg,
+-        introspection_encrypted_response_alg: request.introspection_encrypted_response_alg,
+-        introspection_encrypted_response_enc: request.introspection_encrypted_response_enc,
+-        userinfo_signed_response_alg: request.userinfo_signed_response_alg,
+-        userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg,
+-        userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc,
+-        authorization_signed_response_alg: request.authorization_signed_response_alg,
+-        authorization_encrypted_response_alg: request.authorization_encrypted_response_alg,
+-        authorization_encrypted_response_enc: request.authorization_encrypted_response_enc,
++        request: crate::CreateClientRequest {
++            client_name,
++            client_type,
++            redirect_uris: request.redirect_uris.unwrap_or_default(),
++            post_logout_redirect_uris: request.post_logout_redirect_uris,
++            scopes,
++            allowed_audiences: vec![policy.default_audience.to_owned()],
++            grant_types,
++            token_endpoint_auth_method,
++            subject_type: request.subject_type,
++            sector_identifier_uri: request.sector_identifier_uri,
++            require_dpop_bound_tokens: request.dpop_bound_access_tokens,
++            require_mtls_bound_tokens: request.tls_client_certificate_bound_access_tokens,
++            backchannel_token_delivery_mode,
++            backchannel_client_notification_endpoint,
++            backchannel_authentication_request_signing_alg: request
++                .backchannel_authentication_request_signing_alg,
++            backchannel_logout_uri: request.backchannel_logout_uri,
++            backchannel_logout_session_required: request
++                .backchannel_logout_session_required
++                .unwrap_or(false),
++            frontchannel_logout_uri: request.frontchannel_logout_uri,
++            frontchannel_logout_session_required: request
++                .frontchannel_logout_session_required
++                .unwrap_or(false),
++            tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
++            // RFC 8705 defines each PKI subject selector as a single string and
++            // requires exactly one selector for tls_client_auth. The internal
++            // client model stores selectors as vectors, but RFC 8705 dynamic
++            // registration accepts exactly one value for each selector.
++            tls_client_auth_cert_sha256: None,
++            tls_client_auth_san_dns: request.tls_client_auth_san_dns.into_iter().collect(),
++            tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
++            tls_client_auth_san_ip: request.tls_client_auth_san_ip.into_iter().collect(),
++            tls_client_auth_san_email: request.tls_client_auth_san_email.into_iter().collect(),
++            jwks_uri,
++            jwks: request.jwks,
++            request_uris,
++            initiate_login_uri,
++            presentation,
++            id_token_signed_response_alg: request.id_token_signed_response_alg,
++            id_token_encrypted_response_alg: request.id_token_encrypted_response_alg,
++            id_token_encrypted_response_enc: request.id_token_encrypted_response_enc,
++            request_object_signing_alg: request.request_object_signing_alg,
++            request_object_encryption_alg: request.request_object_encryption_alg,
++            request_object_encryption_enc: request.request_object_encryption_enc,
++            token_endpoint_auth_signing_alg: request.token_endpoint_auth_signing_alg,
++            introspection_signed_response_alg: request.introspection_signed_response_alg,
++            introspection_encrypted_response_alg: request.introspection_encrypted_response_alg,
++            introspection_encrypted_response_enc: request.introspection_encrypted_response_enc,
++            userinfo_signed_response_alg: request.userinfo_signed_response_alg,
++            userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg,
++            userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc,
++            authorization_signed_response_alg: request.authorization_signed_response_alg,
++            authorization_encrypted_response_alg: request.authorization_encrypted_response_alg,
++            authorization_encrypted_response_enc: request.authorization_encrypted_response_enc,
++            allow_client_assertion_audience_array: false,
++            allow_client_assertion_endpoint_audience,
++            require_par_request_object: false,
++            backchannel_user_code_parameter: false,
++            security_policy: crate::ClientSecurityPolicy::default(),
++        },
+     })
+ }
+ pub(super) fn negotiate_metadata_choice(
+diff --git a/crates/authorization-server-core/src/dynamic_client_registration/request.rs b/crates/authorization-server-core/src/dynamic_client_registration/request.rs
+index b38220e7..bdd53f4c 100644
+--- a/crates/authorization-server-core/src/dynamic_client_registration/request.rs
++++ b/crates/authorization-server-core/src/dynamic_client_registration/request.rs
+@@ -3,7 +3,7 @@
+ use serde::Deserialize;
+ use serde_json::Value;
+ 
+-use crate::{ClientPresentationMetadata, ClientSecurityPolicy, CreateClientRequest};
++use crate::CreateClientRequest;
+ 
+ #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+ pub struct DynamicClientRegistrationRequest {
+@@ -144,117 +144,10 @@ pub struct DynamicClientRegistrationRequest {
+     #[serde(default)]
+     pub software_statement: Option<String>,
+ }
++/// Negotiated metadata ready for the shared client-creation validation path.
++/// Registration response choices are not a second client metadata model.
+ #[derive(Clone, Debug, PartialEq)]
+ pub struct PreparedDynamicClientRegistration {
+-    pub client_name: String,
+-    pub client_type: String,
+-    pub redirect_uris: Vec<String>,
+-    pub post_logout_redirect_uris: Vec<String>,
+-    pub scopes: Vec<String>,
+-    pub allowed_audiences: Vec<String>,
+-    pub grant_types: Vec<String>,
++    pub request: CreateClientRequest,
+     pub response_types: Vec<String>,
+-    pub token_endpoint_auth_method: String,
+-    pub subject_type: Option<String>,
+-    pub sector_identifier_uri: Option<String>,
+-    pub require_dpop_bound_tokens: bool,
+-    pub require_mtls_bound_tokens: bool,
+-    pub backchannel_token_delivery_mode: String,
+-    pub backchannel_client_notification_endpoint: Option<String>,
+-    pub backchannel_authentication_request_signing_alg: Option<String>,
+-    pub backchannel_logout_uri: Option<String>,
+-    pub backchannel_logout_session_required: bool,
+-    pub frontchannel_logout_uri: Option<String>,
+-    pub frontchannel_logout_session_required: bool,
+-    pub tls_client_auth_subject_dn: Option<String>,
+-    pub tls_client_auth_cert_sha256: Option<String>,
+-    pub tls_client_auth_san_dns: Vec<String>,
+-    pub tls_client_auth_san_uri: Vec<String>,
+-    pub tls_client_auth_san_ip: Vec<String>,
+-    pub tls_client_auth_san_email: Vec<String>,
+-    pub jwks_uri: Option<String>,
+-    pub jwks: Option<Value>,
+-    pub request_uris: Vec<String>,
+-    pub initiate_login_uri: Option<String>,
+-    pub presentation: ClientPresentationMetadata,
+-    pub id_token_signed_response_alg: Option<String>,
+-    pub id_token_encrypted_response_alg: Option<String>,
+-    pub id_token_encrypted_response_enc: Option<String>,
+-    pub request_object_signing_alg: Option<String>,
+-    pub request_object_encryption_alg: Option<String>,
+-    pub request_object_encryption_enc: Option<String>,
+-    pub token_endpoint_auth_signing_alg: Option<String>,
+-    pub introspection_signed_response_alg: Option<String>,
+-    pub introspection_encrypted_response_alg: Option<String>,
+-    pub introspection_encrypted_response_enc: Option<String>,
+-    pub userinfo_signed_response_alg: Option<String>,
+-    pub userinfo_encrypted_response_alg: Option<String>,
+-    pub userinfo_encrypted_response_enc: Option<String>,
+-    pub authorization_signed_response_alg: Option<String>,
+-    pub authorization_encrypted_response_alg: Option<String>,
+-    pub authorization_encrypted_response_enc: Option<String>,
+-}
+-impl PreparedDynamicClientRegistration {
+-    #[must_use]
+-    pub fn into_create_client_request(self) -> CreateClientRequest {
+-        // OIDC Core section 9 defines the token endpoint URL as the audience for
+-        // private_key_jwt client assertions. FAPI clients are provisioned through the
+-        // profile-aware admin paths, which keep this baseline OIDC policy disabled.
+-        let allow_client_assertion_endpoint_audience =
+-            self.token_endpoint_auth_method == "private_key_jwt";
+-        CreateClientRequest {
+-            client_name: self.client_name,
+-            client_type: self.client_type,
+-            redirect_uris: self.redirect_uris,
+-            post_logout_redirect_uris: self.post_logout_redirect_uris,
+-            scopes: self.scopes,
+-            allowed_audiences: self.allowed_audiences,
+-            grant_types: self.grant_types,
+-            token_endpoint_auth_method: self.token_endpoint_auth_method,
+-            subject_type: self.subject_type,
+-            sector_identifier_uri: self.sector_identifier_uri,
+-            require_dpop_bound_tokens: self.require_dpop_bound_tokens,
+-            require_mtls_bound_tokens: self.require_mtls_bound_tokens,
+-            allow_client_assertion_audience_array: false,
+-            allow_client_assertion_endpoint_audience,
+-            require_par_request_object: false,
+-            backchannel_token_delivery_mode: self.backchannel_token_delivery_mode,
+-            backchannel_client_notification_endpoint: self.backchannel_client_notification_endpoint,
+-            backchannel_authentication_request_signing_alg: self
+-                .backchannel_authentication_request_signing_alg,
+-            backchannel_user_code_parameter: false,
+-            backchannel_logout_uri: self.backchannel_logout_uri,
+-            backchannel_logout_session_required: self.backchannel_logout_session_required,
+-            frontchannel_logout_uri: self.frontchannel_logout_uri,
+-            frontchannel_logout_session_required: self.frontchannel_logout_session_required,
+-            tls_client_auth_subject_dn: self.tls_client_auth_subject_dn,
+-            tls_client_auth_cert_sha256: self.tls_client_auth_cert_sha256,
+-            tls_client_auth_san_dns: self.tls_client_auth_san_dns,
+-            tls_client_auth_san_uri: self.tls_client_auth_san_uri,
+-            tls_client_auth_san_ip: self.tls_client_auth_san_ip,
+-            tls_client_auth_san_email: self.tls_client_auth_san_email,
+-            jwks_uri: self.jwks_uri,
+-            jwks: self.jwks,
+-            request_uris: self.request_uris,
+-            initiate_login_uri: self.initiate_login_uri,
+-            presentation: self.presentation,
+-            id_token_signed_response_alg: self.id_token_signed_response_alg,
+-            id_token_encrypted_response_alg: self.id_token_encrypted_response_alg,
+-            id_token_encrypted_response_enc: self.id_token_encrypted_response_enc,
+-            request_object_signing_alg: self.request_object_signing_alg,
+-            request_object_encryption_alg: self.request_object_encryption_alg,
+-            request_object_encryption_enc: self.request_object_encryption_enc,
+-            token_endpoint_auth_signing_alg: self.token_endpoint_auth_signing_alg,
+-            introspection_signed_response_alg: self.introspection_signed_response_alg,
+-            introspection_encrypted_response_alg: self.introspection_encrypted_response_alg,
+-            introspection_encrypted_response_enc: self.introspection_encrypted_response_enc,
+-            userinfo_signed_response_alg: self.userinfo_signed_response_alg,
+-            userinfo_encrypted_response_alg: self.userinfo_encrypted_response_alg,
+-            userinfo_encrypted_response_enc: self.userinfo_encrypted_response_enc,
+-            authorization_signed_response_alg: self.authorization_signed_response_alg,
+-            authorization_encrypted_response_alg: self.authorization_encrypted_response_alg,
+-            authorization_encrypted_response_enc: self.authorization_encrypted_response_enc,
+-            security_policy: ClientSecurityPolicy::default(),
+-        }
+-    }
+ }
+diff --git a/crates/authorization-server-core/src/token.rs b/crates/authorization-server-core/src/token.rs
+index 1e4c23c5..d1204d85 100644
+--- a/crates/authorization-server-core/src/token.rs
++++ b/crates/authorization-server-core/src/token.rs
+@@ -107,19 +107,15 @@ pub struct RefreshToken {
+     /// Stable persisted reference. Legacy families may use the migration's
+     /// SQL content key; this value is not recomputed when rotating.
+     pub contract_key: [u8; 32],
+-    /// Original grant resources, independent of this member's current audience.
+-    pub contract_audiences: Vec<String>,
+-    pub scopes: Vec<String>,
++    /// Immutable grant facts, distinct from this presented generation.
++    pub contract: RefreshContract,
+     pub audience: Vec<String>,
+-    pub authorization_details: Value,
+     pub issued_at: DateTime<Utc>,
+     pub expires_at: DateTime<Utc>,
+     pub revoked_at: Option<DateTime<Utc>>,
+-    pub subject: String,
+     pub dpop_jkt: Option<String>,
+     pub mtls_x5t_s256: Option<String>,
+     pub client_attestation_jkt: Option<String>,
+-    pub authentication_context: RefreshTokenAuthenticationContext,
+ }
+ 
+ /// The source facts read before signing and revalidated at the durable commit.
+@@ -145,7 +141,6 @@ pub struct RefreshTokenAuthority {
+ impl RefreshToken {
+     #[must_use]
+     pub fn authority(&self) -> RefreshTokenAuthority {
+-        let authentication_context = self.authentication_context.clone();
+         RefreshTokenAuthority {
+             tenant_id: self.tenant_id,
+             client_id: self.client_id,
+@@ -154,13 +149,7 @@ impl RefreshToken {
+             member_id: self.id,
+             token_blake3: self.token_blake3,
+             contract_key: self.contract_key,
+-            contract: RefreshContract {
+-                subject: self.subject.clone(),
+-                scopes: self.scopes.clone(),
+-                audiences: self.contract_audiences.clone(),
+-                authorization_details: self.authorization_details.clone(),
+-                authentication_context,
+-            },
++            contract: self.contract.clone(),
+             current_audiences: self.audience.clone(),
+             id_token_sid: self.id_token_sid.clone(),
+             dpop_jkt: self.dpop_jkt.clone(),
+diff --git a/crates/authorization-server-core/src/token_service.rs b/crates/authorization-server-core/src/token_service.rs
+index b9872692..98015fcc 100644
+--- a/crates/authorization-server-core/src/token_service.rs
++++ b/crates/authorization-server-core/src/token_service.rs
+@@ -1067,11 +1067,11 @@ where
+             return Ok(TokenInspection::Inactive);
+         }
+         Ok(TokenInspection::ActiveRefresh {
+-            scope: token.scopes.join(" "),
++            scope: token.contract.scopes.join(" "),
+             client_id: resource_server.client_id.clone(),
+             expires_at: token.expires_at.timestamp(),
+             issued_at: token.issued_at.timestamp(),
+-            subject: token.subject,
++            subject: token.contract.subject,
+         })
+     }
+ 
+diff --git a/crates/authorization-server-core/tests/ciba_registration_contract.rs b/crates/authorization-server-core/tests/ciba_registration_contract.rs
+index c33a1ba2..43b0613e 100644
+--- a/crates/authorization-server-core/tests/ciba_registration_contract.rs
++++ b/crates/authorization-server-core/tests/ciba_registration_contract.rs
+@@ -29,7 +29,7 @@ fn ciba_request(mode: &str) -> DynamicClientRegistrationRequest {
+ fn poll_and_ping_are_the_only_registered_delivery_modes() {
+     for mode in ["poll", "ping"] {
+         let prepared = prepare_dynamic_client_registration(ciba_request(mode), POLICY).unwrap();
+-        assert_eq!(prepared.backchannel_token_delivery_mode, mode);
++        assert_eq!(prepared.request.backchannel_token_delivery_mode, mode);
+     }
+     let error = prepare_dynamic_client_registration(ciba_request("push"), POLICY).unwrap_err();
+     assert_eq!(error.error, "invalid_client_metadata");
+@@ -69,10 +69,6 @@ fn omitted_and_false_ciba_user_code_metadata_have_the_same_public_value() {
+         let mut request = ciba_request("poll");
+         request.backchannel_user_code_parameter = value;
+         let prepared = prepare_dynamic_client_registration(request, POLICY).unwrap();
+-        assert!(
+-            !prepared
+-                .into_create_client_request()
+-                .backchannel_user_code_parameter
+-        );
++        assert!(!prepared.request.backchannel_user_code_parameter);
+     }
+ }
+diff --git a/crates/authorization-server-core/tests/dynamic_registration_presentation.rs b/crates/authorization-server-core/tests/dynamic_registration_presentation.rs
+index 924beb4a..9b1dd347 100644
+--- a/crates/authorization-server-core/tests/dynamic_registration_presentation.rs
++++ b/crates/authorization-server-core/tests/dynamic_registration_presentation.rs
+@@ -26,15 +26,15 @@ fn dynamic_registration_preserves_https_presentation_metadata() {
+     .expect("HTTPS presentation metadata should be accepted");
+ 
+     assert_eq!(
+-        prepared.presentation.logo_uri.as_deref(),
++        prepared.request.presentation.logo_uri.as_deref(),
+         Some("https://client.example/logo.svg")
+     );
+     assert_eq!(
+-        prepared.presentation.policy_uri.as_deref(),
++        prepared.request.presentation.policy_uri.as_deref(),
+         Some("https://client.example/privacy")
+     );
+     assert_eq!(
+-        prepared.presentation.tos_uri.as_deref(),
++        prepared.request.presentation.tos_uri.as_deref(),
+         Some("https://client.example/terms")
+     );
+ }
+diff --git a/crates/authorization-server-core/tests/token_management.rs b/crates/authorization-server-core/tests/token_management.rs
+index 952a1cb8..a4d9d20d 100644
+--- a/crates/authorization-server-core/tests/token_management.rs
++++ b/crates/authorization-server-core/tests/token_management.rs
+@@ -491,29 +491,32 @@ fn ownership_refresh_introspection_preserves_scope_output() {
+             client_id: client.id,
+             user_id: None,
+             contract_key: [2; 32],
+-            contract_audiences: vec!["resource".into()],
+-            scopes: parsed.unwrap(),
+             audience: serde_json::from_value(serde_json::json!(["resource"])).unwrap(),
+-            authorization_details: serde_json::json!([]),
+             issued_at: now - chrono::Duration::minutes(1),
+             expires_at: now + chrono::Duration::hours(1),
+             revoked_at: None,
+-            subject: "subject".into(),
+             dpop_jkt: None,
+             mtls_x5t_s256: None,
+             client_attestation_jkt: None,
+-            authentication_context: RefreshTokenAuthenticationContext {
+-                version: 1,
+-                issuer: "https://issuer.example".into(),
+-                audience: client.client_id.clone(),
+-                auth_time: now.timestamp(),
+-                amr: vec!["pwd".into()],
+-                oidc_sid: None,
+ 
+-                acr: None,
++            contract: nazo_auth::RefreshContract {
++                audiences: vec!["resource".into()],
++                scopes: parsed.unwrap(),
++                authorization_details: serde_json::json!([]),
++                subject: "subject".into(),
++                authentication_context: RefreshTokenAuthenticationContext {
++                    version: 1,
++                    issuer: "https://issuer.example".into(),
++                    audience: client.client_id.clone(),
++                    auth_time: now.timestamp(),
++                    amr: vec!["pwd".into()],
++                    oidc_sid: None,
+ 
+-                userinfo_claim_requests: (Vec::new()).into(),
+-                id_token_claim_requests: (Vec::new()).into(),
++                    acr: None,
++
++                    userinfo_claim_requests: (Vec::new()).into(),
++                    id_token_claim_requests: (Vec::new()).into(),
++                },
+             },
+         };
+         let ports = Ports {
+diff --git a/crates/authorization-server-core/tests/unit/dynamic_client_registration.rs b/crates/authorization-server-core/tests/unit/dynamic_client_registration.rs
+index 97640b1e..6f1bf652 100644
+--- a/crates/authorization-server-core/tests/unit/dynamic_client_registration.rs
++++ b/crates/authorization-server-core/tests/unit/dynamic_client_registration.rs
+@@ -19,14 +19,14 @@ fn default_registration_contract_matches_oidc_code_client_behavior() {
+     let prepared =
+         prepare_dynamic_client_registration(DynamicClientRegistrationRequest::default(), POLICY)
+             .expect("default registration");
+-    assert_eq!(prepared.client_type, "confidential");
++    assert_eq!(prepared.request.client_type, "confidential");
+     assert_eq!(
+-        prepared.grant_types,
++        prepared.request.grant_types,
+         ["authorization_code", "refresh_token"]
+     );
+     assert_eq!(prepared.response_types, ["code"]);
+     assert_eq!(
+-        prepared.scopes,
++        prepared.request.scopes,
+         [
+             "openid",
+             "profile",
+@@ -36,8 +36,8 @@ fn default_registration_contract_matches_oidc_code_client_behavior() {
+             "offline_access"
+         ]
+     );
+-    assert!(!prepared.backchannel_logout_session_required);
+-    assert!(!prepared.frontchannel_logout_session_required);
++    assert!(!prepared.request.backchannel_logout_session_required);
++    assert!(!prepared.request.frontchannel_logout_session_required);
+ }
+ 
+ #[test]
+@@ -79,7 +79,7 @@ fn external_request_uri_registration_is_validated_and_preserved() {
+     )
+     .expect("registered HTTPS request_uri should be accepted");
+     assert_eq!(
+-        prepared.request_uris,
++        prepared.request.request_uris,
+         vec!["https://client.example/request.jwt"]
+     );
+ }
+@@ -95,7 +95,7 @@ fn third_party_initiated_login_uri_requires_https_and_is_preserved() {
+     )
+     .expect("HTTPS initiate_login_uri should be accepted");
+     assert_eq!(
+-        prepared.initiate_login_uri.as_deref(),
++        prepared.request.initiate_login_uri.as_deref(),
+         Some("https://client.example/login/initiate")
+     );
+ 
+@@ -222,7 +222,7 @@ fn public_and_confidential_code_clients_share_one_registration_path() {
+             POLICY,
+         )
+         .expect("registration")
+-        .into_create_client_request();
++        .request;
+         assert_eq!(prepared.client_type, expected_type);
+     }
+ }
+@@ -238,7 +238,7 @@ fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience()
+         POLICY,
+     )
+     .expect("private_key_jwt registration")
+-    .into_create_client_request();
++    .request;
+     assert!(private_key_jwt.allow_client_assertion_endpoint_audience);
+ 
+     let client_secret_basic = prepare_dynamic_client_registration(
+@@ -250,7 +250,7 @@ fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience()
+         POLICY,
+     )
+     .expect("client_secret_basic registration")
+-    .into_create_client_request();
++    .request;
+     assert!(!client_secret_basic.allow_client_assertion_endpoint_audience);
+ }
+ 
+@@ -323,72 +323,91 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
+         POLICY,
+     )
+     .expect("supported choices");
+-    assert_eq!(prepared.token_endpoint_auth_method, "private_key_jwt");
+-    assert_eq!(prepared.subject_type.as_deref(), Some("pairwise"));
+     assert_eq!(
+-        prepared.id_token_signed_response_alg.as_deref(),
++        prepared.request.token_endpoint_auth_method,
++        "private_key_jwt"
++    );
++    assert_eq!(prepared.request.subject_type.as_deref(), Some("pairwise"));
++    assert_eq!(
++        prepared.request.id_token_signed_response_alg.as_deref(),
+         Some("PS256")
+     );
+     assert_eq!(
+-        prepared.id_token_encrypted_response_alg.as_deref(),
++        prepared.request.id_token_encrypted_response_alg.as_deref(),
+         Some("RSA-OAEP-256")
+     );
+     assert_eq!(
+-        prepared.id_token_encrypted_response_enc.as_deref(),
++        prepared.request.id_token_encrypted_response_enc.as_deref(),
+         Some("A256GCM")
+     );
+     assert_eq!(
+-        prepared.request_object_signing_alg.as_deref(),
++        prepared.request.request_object_signing_alg.as_deref(),
+         Some("ES256")
+     );
+     assert_eq!(
+-        prepared.request_object_encryption_alg.as_deref(),
++        prepared.request.request_object_encryption_alg.as_deref(),
+         Some("RSA-OAEP-256")
+     );
+     assert_eq!(
+-        prepared.request_object_encryption_enc.as_deref(),
++        prepared.request.request_object_encryption_enc.as_deref(),
+         Some("A256GCM")
+     );
+     assert_eq!(
+-        prepared.token_endpoint_auth_signing_alg.as_deref(),
++        prepared.request.token_endpoint_auth_signing_alg.as_deref(),
+         Some("PS256")
+     );
+     assert_eq!(
+-        prepared.introspection_signed_response_alg.as_deref(),
++        prepared
++            .request
++            .introspection_signed_response_alg
++            .as_deref(),
+         Some("RS256")
+     );
+     assert_eq!(
+-        prepared.userinfo_signed_response_alg.as_deref(),
++        prepared.request.userinfo_signed_response_alg.as_deref(),
+         Some("ES256")
+     );
+     assert_eq!(
+-        prepared.userinfo_encrypted_response_alg.as_deref(),
++        prepared.request.userinfo_encrypted_response_alg.as_deref(),
+         Some("ECDH-ES+A256KW")
+     );
+     assert_eq!(
+-        prepared.userinfo_encrypted_response_enc.as_deref(),
++        prepared.request.userinfo_encrypted_response_enc.as_deref(),
+         Some("A256GCM")
+     );
+     assert_eq!(
+         prepared
++            .request
+             .backchannel_authentication_request_signing_alg
+             .as_deref(),
+         Some("PS256")
+     );
+     assert_eq!(
+-        prepared.authorization_signed_response_alg.as_deref(),
++        prepared
++            .request
++            .authorization_signed_response_alg
++            .as_deref(),
+         Some("EdDSA")
+     );
+     assert_eq!(
+-        prepared.authorization_encrypted_response_alg.as_deref(),
++        prepared
++            .request
++            .authorization_encrypted_response_alg
++            .as_deref(),
+         Some("ECDH-ES")
+     );
+     assert_eq!(
+-        prepared.authorization_encrypted_response_enc.as_deref(),
++        prepared
++            .request
++            .authorization_encrypted_response_enc
++            .as_deref(),
+         Some("A256GCM")
+     );
+     assert_eq!(
+-        prepared.introspection_encrypted_response_alg.as_deref(),
++        prepared
++            .request
++            .introspection_encrypted_response_alg
++            .as_deref(),
+         Some("ECDH-ES")
+     );
+ 
+@@ -408,7 +427,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
+         },
+     )
+     .expect("public is selected when pairwise subject state is unavailable");
+-    assert_eq!(public_only.subject_type.as_deref(), Some("public"));
++    assert_eq!(public_only.request.subject_type.as_deref(), Some("public"));
+ 
+     let error = prepare_dynamic_client_registration(
+         DynamicClientRegistrationRequest {
+diff --git a/crates/authorization-server-core/tests/unit/token.rs b/crates/authorization-server-core/tests/unit/token.rs
+index 8dddc083..59f1ba20 100644
+--- a/crates/authorization-server-core/tests/unit/token.rs
++++ b/crates/authorization-server-core/tests/unit/token.rs
+@@ -69,45 +69,49 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate()
+         client_id: uuid::Uuid::now_v7(),
+         user_id: Some(uuid::Uuid::now_v7()),
+         contract_key: [2; 32],
+-        contract_audiences: vec!["original-resource".to_owned()],
+-        scopes: serde_json::from_value(serde_json::json!(["openid", "offline_access"])).unwrap(),
+         audience: serde_json::from_value(serde_json::json!(["narrowed-resource"])).unwrap(),
+-        authorization_details: serde_json::json!([{"type": "account_information"}]),
+         issued_at: now,
+         expires_at: now + chrono::Duration::minutes(5),
+         revoked_at: None,
+-        subject: "pairwise-subject".to_owned(),
+         dpop_jkt: Some("source-jkt".to_owned()),
+         mtls_x5t_s256: None,
+         client_attestation_jkt: None,
+-        authentication_context: RefreshTokenAuthenticationContext {
+-            version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
+-            issuer: "https://issuer.example".to_owned(),
+-            audience: "client".to_owned(),
+-            auth_time: now.timestamp(),
+-            amr: vec!["pwd".to_owned()],
+-            oidc_sid: Some("oidc-sid".to_owned()),
+ 
+-            acr: Some("1".to_owned()),
++        contract: crate::RefreshContract {
++            audiences: vec!["original-resource".to_owned()],
++            scopes: serde_json::from_value(serde_json::json!(["openid", "offline_access"]))
++                .unwrap(),
++            authorization_details: serde_json::json!([{"type": "account_information"}]),
++            subject: "pairwise-subject".to_owned(),
++            authentication_context: RefreshTokenAuthenticationContext {
++                version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
++                issuer: "https://issuer.example".to_owned(),
++                audience: "client".to_owned(),
++                auth_time: now.timestamp(),
++                amr: vec!["pwd".to_owned()],
++                oidc_sid: Some("oidc-sid".to_owned()),
+ 
+-            userinfo_claim_requests: ((vec!["email".to_owned()])
+-                .into_iter()
+-                .map(crate::OidcClaimRequest::named)
+-                .collect::<Vec<_>>())
+-            .into(),
+-            id_token_claim_requests: ((vec!["email".to_owned()])
+-                .into_iter()
+-                .map(crate::OidcClaimRequest::named)
+-                .collect::<Vec<_>>())
+-            .into(),
++                acr: Some("1".to_owned()),
++
++                userinfo_claim_requests: ((vec!["email".to_owned()])
++                    .into_iter()
++                    .map(crate::OidcClaimRequest::named)
++                    .collect::<Vec<_>>())
++                .into(),
++                id_token_claim_requests: ((vec!["email".to_owned()])
++                    .into_iter()
++                    .map(crate::OidcClaimRequest::named)
++                    .collect::<Vec<_>>())
++                .into(),
++            },
+         },
+     };
+     let expected = RefreshContract {
+-        subject: token.subject.clone(),
+-        scopes: token.scopes.clone(),
+-        audiences: token.contract_audiences.clone(),
+-        authorization_details: token.authorization_details.clone(),
+-        authentication_context: token.authentication_context.clone(),
++        subject: token.contract.subject.clone(),
++        scopes: token.contract.scopes.clone(),
++        audiences: token.contract.audiences.clone(),
++        authorization_details: token.contract.authorization_details.clone(),
++        authentication_context: token.contract.authentication_context.clone(),
+     }
+     .clone();
+     let authority = token.authority();
+@@ -119,7 +123,7 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate()
+         authority.id_token_sid.as_deref(),
+         Some("current-id-token-sid")
+     );
+-    let wire = serde_json::to_value(&token.authentication_context).unwrap();
++    let wire = serde_json::to_value(&token.contract.authentication_context).unwrap();
+     assert!(wire.get("nonce").is_none());
+     assert!(wire.get("id_token_sid").is_none());
+     assert_eq!(token.id_token_sid.as_deref(), Some("current-id-token-sid"));
+diff --git a/crates/authorization-server/src/domain/dynamic_registration.rs b/crates/authorization-server/src/domain/dynamic_registration.rs
+index 960a3a16..9f25e7ff 100644
+--- a/crates/authorization-server/src/domain/dynamic_registration.rs
++++ b/crates/authorization-server/src/domain/dynamic_registration.rs
+@@ -388,16 +388,20 @@ impl DynamicRegistrationApplication {
+         registration_access_token: &str,
+         security_policy_override: Option<&nazo_auth::ClientSecurityPolicy>,
+     ) -> Result<PreparedClientRegistration, AdminClientError> {
+-        if let Some(uri) = registration.jwks_uri.as_deref() {
+-            registration.jwks = Some(self.security.remote_jwks.resolve(uri, None).await.map_err(
+-                |error| {
+-                    AdminClientError::InvalidRequest(format!(
+-                        "jwks_uri could not be resolved: {error}"
+-                    ))
+-                },
+-            )?);
++        if let Some(uri) = registration.request.jwks_uri.as_deref() {
++            registration.request.jwks = Some(
++                self.security
++                    .remote_jwks
++                    .resolve(uri, None)
++                    .await
++                    .map_err(|error| {
++                        AdminClientError::InvalidRequest(format!(
++                            "jwks_uri could not be resolved: {error}"
++                        ))
++                    })?,
++            );
+         }
+-        let mut request = registration.into_create_client_request();
++        let mut request = registration.request;
+         if let Some(security_policy) = security_policy_override {
+             request.security_policy = security_policy.clone();
+         }
+diff --git a/crates/authorization-server/src/token/refresh.rs b/crates/authorization-server/src/token/refresh.rs
+index daca9ed7..e2c977ed 100644
+--- a/crates/authorization-server/src/token/refresh.rs
++++ b/crates/authorization-server/src/token/refresh.rs
+@@ -184,7 +184,7 @@ pub async fn token_refresh_with_service(
+     // Keep the original token's authentication context independent from the
+     // optional lost-response successor replacement below.  Borrowing the
+     // context through `token` would prevent assigning the successor in place.
+-    let authentication_context = token.authentication_context.clone();
++    let authentication_context = token.contract.authentication_context.clone();
+     if !authentication_context.is_well_formed()
+         || token
+             .id_token_sid
+@@ -200,7 +200,7 @@ pub async fn token_refresh_with_service(
+             false,
+         ));
+     }
+-    let original_scopes = token.scopes.clone();
++    let original_scopes = token.contract.scopes.clone();
+     if client.client_type == "public"
+         && client.require_dpop_bound_tokens
+         && !client.require_mtls_bound_tokens
+@@ -286,7 +286,7 @@ pub async fn token_refresh_with_service(
+     }
+     let openid4vci_credential_authorization = issuance
+         .config
+-        .openid4vci_audience(&original_scopes, &token.authorization_details)
++        .openid4vci_audience(&original_scopes, &token.contract.authorization_details)
+         .is_some();
+     if !should_issue_refresh_token(
+         client,
+@@ -369,9 +369,9 @@ pub async fn token_refresh_with_service(
+             native_sso_source: None,
+             user_id: token.user_id,
+             prepared_subject,
+-            subject: token.subject,
++            subject: token.contract.subject,
+             scopes,
+-            authorization_details: token.authorization_details,
++            authorization_details: token.contract.authorization_details,
+             audiences,
+             // A refreshed ID Token omits the original nonce; the immutable
+             // source contract also strips this first-response-only value.
+diff --git a/crates/nazoauth/src/jobs/security_state.rs b/crates/nazoauth/src/jobs/security_state.rs
+index e7fe1c61..e8bed693 100644
+--- a/crates/nazoauth/src/jobs/security_state.rs
++++ b/crates/nazoauth/src/jobs/security_state.rs
+@@ -9,9 +9,10 @@
+ //! there is no fast retry loop and no leader election — PostgreSQL
+ //! `SKIP LOCKED` plus the shared refresh-family advisory lock coordinate
+ //! multiple server instances.
+-use nazo_persistence::SecurityStateMaintenancePort;
++use nazo_persistence::{CleanupScope, SecurityStateMaintenancePort};
+ use std::{sync::Arc, time::Duration as StdDuration};
+ 
++const HISTORY_INTERVAL: StdDuration = StdDuration::from_secs(60 * 60);
+ const MAINTENANCE_INTERVAL: StdDuration = StdDuration::from_secs(60);
+ /// Budget for scheduling successive batches. An in-flight bounded batch is
+ /// allowed to finish. A saturated cycle rests for its actual elapsed time,
+@@ -22,14 +23,20 @@ pub(crate) fn spawn_security_state_maintenance_worker(
+     maintenance: Arc<dyn SecurityStateMaintenancePort>,
+ ) -> tokio::task::JoinHandle<()> {
+     tokio::spawn(async move {
++        let mut history_due = tokio::time::Instant::now();
+         loop {
+             let cycle_started = tokio::time::Instant::now();
++            let scope = if cycle_started >= history_due {
++                CleanupScope::IncludingHistory
++            } else {
++                CleanupScope::ProtocolState
++            };
+             let mut batches = 0_u64;
+             let mut rows = 0_u64;
+             let mut issuances = 0_u64;
+             let (stop_reason, next_delay) = loop {
+                 let started = tokio::time::Instant::now();
+-                match maintenance.cleanup_batch().await {
++                match maintenance.cleanup_batch(scope).await {
+                     Ok(counts) => {
+                         batches += 1;
+                         rows += counts.authorization_decisions
+@@ -72,6 +79,9 @@ pub(crate) fn spawn_security_state_maintenance_worker(
+                             "security-state maintenance batch completed"
+                         );
+                         if !counts.saturated {
++                            if scope == CleanupScope::IncludingHistory {
++                                history_due = tokio::time::Instant::now() + HISTORY_INTERVAL;
++                            }
+                             break ("drained", MAINTENANCE_INTERVAL);
+                         }
+                         let elapsed = cycle_started.elapsed();
+@@ -91,6 +101,7 @@ pub(crate) fn spawn_security_state_maintenance_worker(
+             };
+             tracing::info!(
+                 stop_reason,
++                ?scope,
+                 batches,
+                 rows,
+                 issuances,
+diff --git a/crates/nazoauth/tests/unit/http/token/refresh.rs b/crates/nazoauth/tests/unit/http/token/refresh.rs
+index 890fedb7..16d9e30b 100644
+--- a/crates/nazoauth/tests/unit/http/token/refresh.rs
++++ b/crates/nazoauth/tests/unit/http/token/refresh.rs
+@@ -276,7 +276,7 @@ async fn insert_refresh_token_row(
+     predecessor: Option<SpentEdge>,
+     reuse_detected_at: Option<DateTime<Utc>>,
+ ) {
+-    let authentication_context = &token.authentication_context;
++    let authentication_context = &token.contract.authentication_context;
+     assert!(
+         authentication_context.is_well_formed(),
+         "refresh fixture authentication context must be a complete v1 value"
+@@ -286,10 +286,10 @@ async fn insert_refresh_token_row(
+         "refresh fixture must carry an explicit non-empty audience"
+     );
+     let persisted = nazo_auth::RefreshContract {
+-        subject: token.subject.clone(),
+-        scopes: token.scopes.clone(),
++        subject: token.contract.subject.clone(),
++        scopes: token.contract.scopes.clone(),
+         audiences: token.audience.clone(),
+-        authorization_details: token.authorization_details.clone(),
++        authorization_details: token.contract.authorization_details.clone(),
+         authentication_context: authentication_context.clone(),
+     }
+     .clone();
+@@ -701,18 +701,24 @@ fn token_row_with_refresh_context(
+         client_id,
+         user_id: Some(Uuid::now_v7()),
+         contract_key: [0; 32],
+-        contract_audiences: vec!["resource://default".to_owned()],
+-        scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
++        contract: nazo_auth::RefreshContract {
++            audiences: vec!["resource://default".to_owned()],
++            scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
++            authorization_details: json!([]),
++            subject: "subject-1".to_owned(),
++            authentication_context: refresh_authentication_context(
++                issuer,
++                client_audience,
++                issued_at,
++            ),
++        },
+         audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
+-        authorization_details: json!([]),
+         issued_at,
+         expires_at: issued_at + Duration::days(30),
+         revoked_at: None,
+-        subject: "subject-1".to_owned(),
+         dpop_jkt: Some("dpop-jkt".to_owned()),
+         mtls_x5t_s256: None,
+         client_attestation_jkt: None,
+-        authentication_context: refresh_authentication_context(issuer, client_audience, issued_at),
+     }
+ }
+ 
+@@ -870,8 +876,8 @@ async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_const
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.token_family_id = family_id;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    token.subject = client.client_id.clone();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+     token.dpop_jkt = None;
+     token.mtls_x5t_s256 = None;
+@@ -1098,8 +1104,9 @@ async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
+ 
+     let mut expired = token_row_for_client(&state, &client);
+     expired.client_id = client.id;
+-    expired.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    expired.subject = client.client_id.clone();
++    expired.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    expired.contract.subject = client.client_id.clone();
+     expired.user_id = None;
+     expired.issued_at = Utc::now() - Duration::minutes(5);
+     expired.expires_at = Utc::now() - Duration::seconds(5);
+@@ -1132,8 +1139,8 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
+     let mut reused = token_row_for_client(&state, &client);
+     reused.client_id = client.id;
+     reused.token_family_id = family_id;
+-    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    reused.subject = client.client_id.clone();
++    reused.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    reused.contract.subject = client.client_id.clone();
+     reused.user_id = None;
+     reused.dpop_jkt = None;
+     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
+@@ -1142,8 +1149,9 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
+     let mut active_sibling = token_row_for_client(&state, &client);
+     active_sibling.client_id = client.id;
+     active_sibling.token_family_id = family_id;
+-    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    active_sibling.subject = client.client_id.clone();
++    active_sibling.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    active_sibling.contract.subject = client.client_id.clone();
+     active_sibling.user_id = None;
+     active_sibling.dpop_jkt = None;
+     let active_raw = format!("refresh-token-active-sibling-{suffix}");
+@@ -1213,8 +1221,8 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
+     let mut reused = token_row_for_client(&state, &client);
+     reused.client_id = client.id;
+     reused.token_family_id = family_id;
+-    reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    reused.subject = client.client_id.clone();
++    reused.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    reused.contract.subject = client.client_id.clone();
+     reused.user_id = None;
+     reused.dpop_jkt = None;
+     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
+@@ -1222,8 +1230,9 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
+     let mut active_sibling = token_row_for_client(&state, &client);
+     active_sibling.client_id = client.id;
+     active_sibling.token_family_id = family_id;
+-    active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    active_sibling.subject = client.client_id.clone();
++    active_sibling.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    active_sibling.contract.subject = client.client_id.clone();
+     active_sibling.user_id = None;
+     active_sibling.dpop_jkt = None;
+     insert_refresh_token_row(
+@@ -1302,8 +1311,9 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
+     let mut revoked = token_row_for_client(&state, &client);
+     revoked.client_id = client.id;
+     revoked.token_family_id = family_id;
+-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    revoked.subject = client.client_id.clone();
++    revoked.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    revoked.contract.subject = client.client_id.clone();
+     revoked.user_id = None;
+     revoked.dpop_jkt = None;
+     revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
+@@ -1313,11 +1323,12 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
+     let mut successor = token_row_for_client(&state, &client);
+     successor.client_id = client.id;
+     successor.token_family_id = family_id;
+-    successor.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    successor.subject = client.client_id.clone();
++    successor.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    successor.contract.subject = client.client_id.clone();
+     successor.user_id = None;
+     successor.dpop_jkt = None;
+-    successor.authentication_context = revoked.authentication_context.clone();
++    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+     let successor_raw = format!("refresh-token-retry-successor-{suffix}");
+     insert_refresh_token_row(
+         &state,
+@@ -1375,8 +1386,9 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
+     let mut revoked = token_row_for_client(&state, &client);
+     revoked.client_id = client.id;
+     revoked.token_family_id = family_id;
+-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    revoked.subject = client.client_id.clone();
++    revoked.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    revoked.contract.subject = client.client_id.clone();
+     revoked.user_id = None;
+     revoked.dpop_jkt = None;
+     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
+@@ -1386,12 +1398,12 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
+     let mut successor = token_row_for_client(&state, &client);
+     successor.client_id = client.id;
+     successor.token_family_id = family_id;
+-    successor.scopes = revoked.scopes.clone();
+-    successor.subject = revoked.subject.clone();
++    successor.contract.scopes = revoked.contract.scopes.clone();
++    successor.contract.subject = revoked.contract.subject.clone();
+     successor.user_id = None;
+     successor.dpop_jkt = None;
+     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+-    successor.authentication_context = revoked.authentication_context.clone();
++    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+     let successor_raw = format!("refresh-token-mtls-retry-successor-{suffix}");
+     insert_refresh_token_row(
+         &state,
+@@ -1445,8 +1457,9 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
+ 
+     let mut original = token_row_for_client(&state, &client);
+     original.token_family_id = family_id;
+-    original.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    original.subject = client.client_id.clone();
++    original.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    original.contract.subject = client.client_id.clone();
+     original.user_id = None;
+     original.dpop_jkt = None;
+     original.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
+@@ -1454,12 +1467,12 @@ async fn refresh_snapshot_candidate_projection_error_preserves_holder_priority()
+     let original_raw = format!("refresh-candidate-original-{suffix}");
+     let mut child = token_row_for_client(&state, &client);
+     child.token_family_id = family_id;
+-    child.scopes = original.scopes.clone();
+-    child.subject = original.subject.clone();
++    child.contract.scopes = original.contract.scopes.clone();
++    child.contract.subject = original.contract.subject.clone();
+     child.user_id = None;
+     child.dpop_jkt = None;
+     child.mtls_x5t_s256 = original.mtls_x5t_s256.clone();
+-    child.authentication_context = original.authentication_context.clone();
++    child.contract.authentication_context = original.contract.authentication_context.clone();
+     let child_raw = format!("refresh-candidate-child-{suffix}");
+     insert_refresh_token_row(
+         &state,
+@@ -1598,8 +1611,8 @@ async fn sequential_unbound_replay_after_first_commit_fails_closed() {
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.token_family_id = family_id;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    token.subject = client.client_id.clone();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+     token.dpop_jkt = None;
+     insert_refresh_token_row(&state, &raw, &token, None, None).await;
+@@ -1664,7 +1677,7 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
+     revoked.expires_at = now + Duration::hours(1);
+     // The member rotated out at `now`, which is the spent proof's spent_at.
+     revoked.revoked_at = Some(now);
+-    revoked.authentication_context = refresh_authentication_context(
++    revoked.contract.authentication_context = refresh_authentication_context(
+         state.settings.endpoint.issuer.as_str(),
+         "refresh-fixed-window-client",
+         revoked.issued_at,
+@@ -1679,7 +1692,7 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
+     successor.dpop_jkt = revoked.dpop_jkt.clone();
+     successor.issued_at = now;
+     successor.expires_at = now + Duration::hours(1);
+-    successor.authentication_context = revoked.authentication_context.clone();
++    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+     insert_refresh_token_row(
+         &state,
+         &format!("refresh-lost-window-successor-{}", Uuid::now_v7()),
+@@ -1750,8 +1763,9 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
+         let mut revoked = token_row_for_client(&state, &client);
+         revoked.client_id = client.id;
+         revoked.token_family_id = family_id;
+-        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-        revoked.subject = client.client_id.clone();
++        revoked.contract.scopes =
++            serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++        revoked.contract.subject = client.client_id.clone();
+         revoked.user_id = None;
+         revoked.dpop_jkt = Some(format!("lost-shape-{shape}-dpop-jkt"));
+         revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
+@@ -1765,11 +1779,12 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
+             let mut successor = token_row_for_client(&state, &client);
+             successor.client_id = client.id;
+             successor.token_family_id = family_id;
+-            successor.scopes = revoked.scopes.clone();
+-            successor.subject = revoked.subject.clone();
++            successor.contract.scopes = revoked.contract.scopes.clone();
++            successor.contract.subject = revoked.contract.subject.clone();
+             successor.user_id = None;
+             successor.dpop_jkt = revoked.dpop_jkt.clone();
+-            successor.authentication_context = revoked.authentication_context.clone();
++            successor.contract.authentication_context =
++                revoked.contract.authentication_context.clone();
+             if shape == "expired" {
+                 successor.issued_at = Utc::now() - Duration::seconds(30);
+                 successor.expires_at = Utc::now() - Duration::seconds(1);
+@@ -1850,8 +1865,9 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
+     let mut revoked = token_row_for_client(&state, &client);
+     revoked.client_id = client.id;
+     revoked.token_family_id = family_id;
+-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    revoked.subject = client.client_id.clone();
++    revoked.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    revoked.contract.subject = client.client_id.clone();
+     revoked.user_id = None;
+     revoked.dpop_jkt = Some("expected-jkt".to_owned());
+     revoked.mtls_x5t_s256 = Some("expected-x5t".to_owned());
+@@ -1867,11 +1883,11 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
+     successor.client_id = client.id;
+     successor.token_family_id = family_id;
+     successor.user_id = None;
+-    successor.subject = revoked.subject.clone();
+-    successor.scopes = revoked.scopes.clone();
++    successor.contract.subject = revoked.contract.subject.clone();
++    successor.contract.scopes = revoked.contract.scopes.clone();
+     successor.dpop_jkt = revoked.dpop_jkt.clone();
+     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+-    successor.authentication_context = revoked.authentication_context.clone();
++    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+     insert_refresh_token_row(
+         &state,
+         &format!("refresh-lost-successor-{}", Uuid::now_v7()),
+@@ -1884,8 +1900,8 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
+     let mut wrong_family = token_row_for_client(&state, &client);
+     wrong_family.client_id = client.id;
+     wrong_family.user_id = None;
+-    wrong_family.subject = revoked.subject.clone();
+-    wrong_family.scopes = revoked.scopes.clone();
++    wrong_family.contract.subject = revoked.contract.subject.clone();
++    wrong_family.contract.scopes = revoked.contract.scopes.clone();
+     wrong_family.dpop_jkt = revoked.dpop_jkt.clone();
+     wrong_family.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+     let wrong_family_id = wrong_family.token_family_id;
+@@ -2047,8 +2063,9 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails()
+     let mut revoked = token_row_for_client(&state, &client);
+     revoked.client_id = client.id;
+     revoked.token_family_id = family_id;
+-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    revoked.subject = client.client_id.clone();
++    revoked.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    revoked.contract.subject = client.client_id.clone();
+     revoked.user_id = None;
+     revoked.dpop_jkt = None;
+     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
+@@ -2057,12 +2074,12 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails()
+     let mut successor = token_row_for_client(&state, &client);
+     successor.client_id = client.id;
+     successor.token_family_id = family_id;
+-    successor.scopes = revoked.scopes.clone();
+-    successor.subject = revoked.subject.clone();
++    successor.contract.scopes = revoked.contract.scopes.clone();
++    successor.contract.subject = revoked.contract.subject.clone();
+     successor.user_id = None;
+     successor.dpop_jkt = None;
+     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+-    successor.authentication_context = revoked.authentication_context.clone();
++    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+     insert_refresh_token_row(
+         &state,
+         "refresh-lost-insert-failure-successor",
+@@ -2146,8 +2163,9 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
+         let mut revoked = token_row_for_client(&state, &client);
+         revoked.client_id = client.id;
+         revoked.token_family_id = family_id;
+-        revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-        revoked.subject = client.client_id.clone();
++        revoked.contract.scopes =
++            serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++        revoked.contract.subject = client.client_id.clone();
+         revoked.user_id = None;
+         revoked.dpop_jkt = Some(format!("lost-{label}-dpop-jkt"));
+         revoked.revoked_at = Some(revoked_at);
+@@ -2158,11 +2176,11 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
+         let mut successor = token_row_for_client(&state, &client);
+         successor.client_id = client.id;
+         successor.token_family_id = family_id;
+-        successor.scopes = revoked.scopes.clone();
+-        successor.subject = revoked.subject.clone();
++        successor.contract.scopes = revoked.contract.scopes.clone();
++        successor.contract.subject = revoked.contract.subject.clone();
+         successor.user_id = None;
+         successor.dpop_jkt = revoked.dpop_jkt.clone();
+-        successor.authentication_context = revoked.authentication_context.clone();
++        successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+         insert_refresh_token_row(
+             &state,
+             &format!("refresh-lost-{label}-successor-{}", Uuid::now_v7()),
+@@ -2207,8 +2225,9 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
+     let mut revoked = token_row_for_client(&state, &client);
+     revoked.client_id = client.id;
+     revoked.token_family_id = family_id;
+-    revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    revoked.subject = client.client_id.clone();
++    revoked.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    revoked.contract.subject = client.client_id.clone();
+     revoked.user_id = None;
+     revoked.dpop_jkt = None;
+     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
+@@ -2218,12 +2237,12 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
+     let mut successor = token_row_for_client(&state, &client);
+     successor.client_id = client.id;
+     successor.token_family_id = family_id;
+-    successor.scopes = revoked.scopes.clone();
+-    successor.subject = revoked.subject.clone();
++    successor.contract.scopes = revoked.contract.scopes.clone();
++    successor.contract.subject = revoked.contract.subject.clone();
+     successor.user_id = None;
+     successor.dpop_jkt = None;
+     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+-    successor.authentication_context = revoked.authentication_context.clone();
++    successor.contract.authentication_context = revoked.contract.authentication_context.clone();
+     insert_refresh_token_row(
+         &state,
+         &format!("refresh-concurrent-lost-successor-{}", Uuid::now_v7()),
+@@ -2267,8 +2286,8 @@ async fn concurrent_refresh_replay_yields_one_success_and_one_invalid_grant() {
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.token_family_id = family_id;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+-    token.subject = client.client_id.clone();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+     token.dpop_jkt = None;
+     insert_refresh_token_row(&state, &raw, &token, None, None).await;
+@@ -2320,8 +2339,8 @@ async fn refresh_grant_rejects_tokens_for_inactive_users_without_openid_scope()
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.user_id = Some(user_id);
+-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+-    token.subject = user_id.to_string();
++    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
++    token.contract.subject = user_id.to_string();
+     token.dpop_jkt = None;
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+     let mut form = refresh_form_without_token();
+@@ -2356,8 +2375,8 @@ async fn refresh_grant_accepts_tokens_for_active_users_without_openid_scope() {
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.user_id = Some(user_id);
+-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+-    token.subject = user_id.to_string();
++    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
++    token.contract.subject = user_id.to_string();
+     token.dpop_jkt = None;
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+     let mut form = refresh_form_without_token();
+@@ -2395,8 +2414,8 @@ async fn refresh_grant_rejects_unbound_refresh_tokens_for_dpop_required_clients(
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.user_id = None;
+-    token.subject = client.client_id.clone();
+-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
++    token.contract.subject = client.client_id.clone();
++    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     token.dpop_jkt = None;
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+ 
+@@ -2433,8 +2452,8 @@ async fn refresh_grant_rejects_public_dpop_required_clients_with_unbound_refresh
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.user_id = None;
+-    token.subject = client.client_id.clone();
+-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
++    token.contract.subject = client.client_id.clone();
++    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     token.dpop_jkt = None;
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+ 
+@@ -2469,8 +2488,8 @@ async fn refresh_grant_rejects_dpop_bound_refresh_token_without_proof() {
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+     token.user_id = None;
+-    token.subject = client.client_id.clone();
+-    token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
++    token.contract.subject = client.client_id.clone();
++    token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     token.dpop_jkt = Some("stored-dpop-jkt".to_owned());
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+ 
+@@ -2503,9 +2522,9 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
+     insert_refresh_client(&state, &client).await;
+     let mut no_offline = token_row_for_client(&state, &client);
+     no_offline.client_id = client.id;
+-    no_offline.subject = client.client_id.clone();
++    no_offline.contract.subject = client.client_id.clone();
+     no_offline.user_id = None;
+-    no_offline.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
++    no_offline.contract.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
+     no_offline.dpop_jkt = None;
+     let no_offline_raw = "refresh-token-no-offline-access";
+     insert_refresh_token_row(&state, no_offline_raw, &no_offline, None, None).await;
+@@ -2519,9 +2538,10 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
+ 
+     let mut scope_token = token_row_for_client(&state, &client);
+     scope_token.client_id = client.id;
+-    scope_token.subject = client.client_id.clone();
++    scope_token.contract.subject = client.client_id.clone();
+     scope_token.user_id = None;
+-    scope_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    scope_token.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     scope_token.dpop_jkt = None;
+     let scope_raw = "refresh-token-invalid-scope";
+     insert_refresh_token_row(&state, scope_raw, &scope_token, None, None).await;
+@@ -2537,9 +2557,10 @@ async fn refresh_grant_rejects_missing_offline_access_scope_expansion_and_invali
+     let audience_raw = "refresh-token-invalid-audience";
+     let mut audience_token = token_row_for_client(&state, &client);
+     audience_token.client_id = client.id;
+-    audience_token.subject = client.client_id.clone();
++    audience_token.contract.subject = client.client_id.clone();
+     audience_token.user_id = None;
+-    audience_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    audience_token.contract.scopes =
++        serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     audience_token.dpop_jkt = None;
+     insert_refresh_token_row(&state, audience_raw, &audience_token, None, None).await;
+     let mut audience_form = refresh_form_without_token();
+@@ -2564,9 +2585,9 @@ async fn refresh_grant_rejects_mtls_bound_tokens_without_matching_verified_certi
+ 
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+-    token.subject = client.client_id.clone();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     token.dpop_jkt = None;
+     token.mtls_x5t_s256 = Some("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB".to_owned());
+ 
+@@ -2622,9 +2643,9 @@ async fn refresh_grant_requires_verified_certificate_when_client_policy_demands_
+     let raw_refresh_token = format!("refresh-policy-mtls-{}", Uuid::now_v7());
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+-    token.subject = client.client_id.clone();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     token.dpop_jkt = None;
+     token.mtls_x5t_s256 = None;
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+@@ -2657,9 +2678,9 @@ async fn refresh_grant_accepts_existing_mtls_bound_token_with_matching_certifica
+     let raw_refresh_token = format!("refresh-token-mtls-bound-{}", Uuid::now_v7());
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+-    token.subject = client.client_id.clone();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     token.dpop_jkt = None;
+     token.mtls_x5t_s256 = Some(thumbprint.to_owned());
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+@@ -2716,9 +2737,9 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
+     let raw_refresh_token = format!("refresh-policy-mtls-success-{}", Uuid::now_v7());
+     let mut token = token_row_for_client(&state, &client);
+     token.client_id = client.id;
+-    token.subject = client.client_id.clone();
++    token.contract.subject = client.client_id.clone();
+     token.user_id = None;
+-    token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
++    token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     token.dpop_jkt = None;
+     token.mtls_x5t_s256 = None;
+     insert_refresh_token_row(&state, &raw_refresh_token, &token, None, None).await;
+@@ -2907,21 +2928,22 @@ async fn ordinary_oidc_refresh_reuses_public_and_pairwise_preparation_and_keeps_
+         let raw = format!("oidc-prepared-{}", Uuid::now_v7());
+         let mut token = token_row_for_client(&state, &client);
+         token.user_id = Some(user);
+-        token.subject = if private {
++        token.contract.subject = if private {
+             format!("private-{}", Uuid::now_v7())
+         } else {
+             user.to_string()
+         };
+         token.dpop_jkt = None;
+         token.mtls_x5t_s256 = None;
+-        token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
++        token.contract.scopes =
++            serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+         if private {
+             let mut c = get_conn(&state.diesel_db).await.unwrap();
+             sql_query(
+                 "INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)",
+             )
+             .bind::<SqlUuid, _>(client.tenant_id)
+-            .bind::<diesel::sql_types::Text, _>(&token.subject)
++            .bind::<diesel::sql_types::Text, _>(&token.contract.subject)
+             .bind::<SqlUuid, _>(user)
+             .execute(&mut c)
+             .await
+@@ -2971,10 +2993,10 @@ async fn oidc_refresh_fixture(state: &TestInfrastructure) -> (ClientRow, TokenRo
+     insert_refresh_user(state, user, true).await;
+     let mut token = token_row_for_client(state, &client);
+     token.user_id = Some(user);
+-    token.subject = user.to_string();
++    token.contract.subject = user.to_string();
+     token.dpop_jkt = None;
+     token.mtls_x5t_s256 = None;
+-    token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
++    token.contract.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+     let raw = format!("oidc-refresh-review-{}", Uuid::now_v7());
+     insert_refresh_token_row(state, &raw, &token, None, None).await;
+     (client, token, raw)
+@@ -3062,13 +3084,13 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
+             "binding collision" => {
+                 let other = Uuid::now_v7();
+                 insert_refresh_user(state, other, true).await;
+-                token.subject = format!("oidc-collision-{}", Uuid::now_v7());
++                token.contract.subject = format!("oidc-collision-{}", Uuid::now_v7());
+                 let mut c = get_conn(&state.diesel_db).await.unwrap();
+                 sql_query(
+                     "INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id)VALUES($1,$2,$3)",
+                 )
+                 .bind::<SqlUuid, _>(client.tenant_id)
+-                .bind::<Text, _>(&token.subject)
++                .bind::<Text, _>(&token.contract.subject)
+                 .bind::<SqlUuid, _>(other)
+                 .execute(&mut c)
+                 .await
+diff --git a/crates/nazoauth/tests/unit/jobs/security_state.rs b/crates/nazoauth/tests/unit/jobs/security_state.rs
+index 5bb977d3..7284eb8f 100644
+--- a/crates/nazoauth/tests/unit/jobs/security_state.rs
++++ b/crates/nazoauth/tests/unit/jobs/security_state.rs
+@@ -36,7 +36,10 @@ impl Store {
+ }
+ 
+ impl SecurityStateMaintenancePort for Store {
+-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++    fn cleanup_batch(
++        &self,
++        _scope: CleanupScope,
++    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+         Box::pin(async move {
+             self.cleanup().await;
+             Ok(CleanupBatchResult::default())
+@@ -78,7 +81,10 @@ async fn failed_batch_does_not_stop_the_interval() {
+         calls: AtomicUsize,
+     }
+     impl SecurityStateMaintenancePort for Failing {
+-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++        fn cleanup_batch(
++            &self,
++            _scope: CleanupScope,
++        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+             Box::pin(async move {
+                 self.calls.fetch_add(1, Ordering::SeqCst);
+                 Err(RepositoryError::Unavailable)
+@@ -123,7 +129,10 @@ async fn saturated_batches_drain_immediately_until_unsaturated() {
+         rounds: usize,
+     }
+     impl SecurityStateMaintenancePort for Saturating {
+-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++        fn cleanup_batch(
++            &self,
++            _scope: CleanupScope,
++        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+             Box::pin(async move {
+                 let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+                 Ok(CleanupBatchResult {
+@@ -164,7 +173,10 @@ async fn saturated_batches_drain_immediately_until_unsaturated() {
+ async fn saturated_cycle_can_drain_more_than_512_batches() {
+     struct LargeBacklog(AtomicUsize);
+     impl SecurityStateMaintenancePort for LargeBacklog {
+-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++        fn cleanup_batch(
++            &self,
++            _scope: CleanupScope,
++        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+             Box::pin(async move {
+                 let call = self.0.fetch_add(1, Ordering::SeqCst) + 1;
+                 Ok(CleanupBatchResult {
+@@ -189,7 +201,10 @@ async fn saturated_cycle_can_drain_more_than_512_batches() {
+ async fn budget_exhaustion_rests_for_elapsed_work_before_resuming() {
+     struct TimedBacklog(AtomicUsize);
+     impl SecurityStateMaintenancePort for TimedBacklog {
+-        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++        fn cleanup_batch(
++            &self,
++            _scope: CleanupScope,
++        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+             Box::pin(async move {
+                 self.0.fetch_add(1, Ordering::SeqCst);
+                 // A single batch may cross the scheduling budget; it must
+@@ -218,3 +233,81 @@ async fn budget_exhaustion_rests_for_elapsed_work_before_resuming() {
+     handle.abort();
+     assert!(handle.await.unwrap_err().is_cancelled());
+ }
++
++#[tokio::test(start_paused = true)]
++async fn history_waits_an_hour_while_protocol_cleanup_continues() {
++    struct Recording(std::sync::Mutex<Vec<CleanupScope>>);
++    impl SecurityStateMaintenancePort for Recording {
++        fn cleanup_batch(
++            &self,
++            scope: CleanupScope,
++        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++            Box::pin(async move {
++                self.0.lock().unwrap().push(scope);
++                Ok(CleanupBatchResult::default())
++            })
++        }
++    }
++    let store = Arc::new(Recording(std::sync::Mutex::new(Vec::new())));
++    let handle = spawn_security_state_maintenance_worker(store.clone());
++    tokio::task::yield_now().await;
++    for _ in 0..59 {
++        tokio::time::advance(INTERVAL).await;
++        tokio::task::yield_now().await;
++    }
++    {
++        let calls = store.0.lock().unwrap();
++        assert_eq!(calls.len(), 60);
++        assert_eq!(calls[0], CleanupScope::IncludingHistory);
++        assert!(
++            calls[1..]
++                .iter()
++                .all(|scope| *scope == CleanupScope::ProtocolState)
++        );
++    }
++    tokio::time::advance(INTERVAL).await;
++    tokio::task::yield_now().await;
++    assert_eq!(store.0.lock().unwrap()[60], CleanupScope::IncludingHistory);
++    handle.abort();
++    assert!(handle.await.unwrap_err().is_cancelled());
++}
++
++#[tokio::test(start_paused = true)]
++async fn failed_history_remains_due_and_saturated_history_finishes_before_rest() {
++    struct Retrying(std::sync::Mutex<Vec<CleanupScope>>);
++    impl SecurityStateMaintenancePort for Retrying {
++        fn cleanup_batch(
++            &self,
++            scope: CleanupScope,
++        ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++            Box::pin(async move {
++                let mut calls = self.0.lock().unwrap();
++                calls.push(scope);
++                match calls.len() {
++                    1 => Err(RepositoryError::Unavailable),
++                    2 => Ok(CleanupBatchResult {
++                        saturated: true,
++                        ..Default::default()
++                    }),
++                    _ => Ok(CleanupBatchResult::default()),
++                }
++            })
++        }
++    }
++    let store = Arc::new(Retrying(std::sync::Mutex::new(Vec::new())));
++    let handle = spawn_security_state_maintenance_worker(store.clone());
++    tokio::task::yield_now().await;
++    tokio::time::advance(INTERVAL).await;
++    for _ in 0..4 {
++        tokio::task::yield_now().await;
++    }
++    assert_eq!(
++        *store.0.lock().unwrap(),
++        vec![CleanupScope::IncludingHistory; 3]
++    );
++    tokio::time::advance(INTERVAL).await;
++    tokio::task::yield_now().await;
++    assert_eq!(store.0.lock().unwrap()[3], CleanupScope::ProtocolState);
++    handle.abort();
++    assert!(handle.await.unwrap_err().is_cancelled());
++}
+diff --git a/crates/persistence-postgres/migration-head.txt b/crates/persistence-postgres/migration-head.txt
+index 9e6f7a27..c6c8b6b5 100644
+--- a/crates/persistence-postgres/migration-head.txt
++++ b/crates/persistence-postgres/migration-head.txt
+@@ -1 +1 @@
+-20261009000400_single_presentation_response_mode
++20261009000600_separate_audit_history_cleanup
+diff --git a/crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs b/crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs
+index 2b57260d..15c446ff 100644
+--- a/crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs
++++ b/crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs
+@@ -103,9 +103,12 @@ impl Openid4vciRepository {
+             // rechecks this predicate after a concurrent updater wins; only one
+             // caller can consume the offer. Use the database clock here because
+             // the offer may expire while password verification is queued.
++            // Consumed offers are never decoded again. Keep the compact replay
++            // identity and authorization-code metadata, not the redeemed secret.
+             let consumed = sql_query(
+                 "UPDATE openid4vci_offers \
+-                 SET consumed_at = GREATEST($3, clock_timestamp(), created_at) \
++                 SET consumed_at = GREATEST($3, clock_timestamp(), created_at), \
++                     grants_ciphertext = ''::bytea, tx_code_hash = NULL \
+                  WHERE tenant_id = $1 AND id = $2 AND consumed_at IS NULL \
+                    AND expires_at > GREATEST($3, clock_timestamp()) \
+                    AND pre_authorized_code_hash = $4 \
+diff --git a/crates/persistence-postgres/src/repositories/security_state.rs b/crates/persistence-postgres/src/repositories/security_state.rs
+index 10412887..2636ac69 100644
+--- a/crates/persistence-postgres/src/repositories/security_state.rs
++++ b/crates/persistence-postgres/src/repositories/security_state.rs
+@@ -157,8 +157,10 @@ impl SecurityStateMaintenanceRepository {
+     async fn generic_cleanup(
+         &self,
+         connection: &mut AsyncPgConnection,
++        scope: nazo_persistence::CleanupScope,
+     ) -> Result<GenericCleanupCounts, RepositoryError> {
+-        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
++        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state($1)")
++            .bind::<sql_types::Bool, _>(scope == nazo_persistence::CleanupScope::IncludingHistory)
+             .load::<GenericCleanupCounts>(connection)
+             .await
+             .and_then(single_cleanup_row)
+@@ -662,7 +664,10 @@ impl SecurityStateMaintenanceRepository {
+ }
+ 
+ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
+-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
++    fn cleanup_batch(
++        &self,
++        scope: nazo_persistence::CleanupScope,
++    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+         Box::pin(async move {
+             // One bounded batch owns one lease, while each category keeps its
+             // existing commit boundary. Requeueing between categories makes
+@@ -672,7 +677,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
+             let mut guard = DiscardOnDrop(Some(self.connection().await?));
+             let result = async {
+                 let connection = &mut **guard.connection();
+-                let generic = self.generic_cleanup(connection).await?;
++                let generic = self.generic_cleanup(connection, scope).await?;
+                 let authorization_decisions = self.decision_cleanup(connection).await?;
+                 let (expired_proofs, expired_saturated) =
+                     self.delete_expired_spent_proofs(connection).await?;
+diff --git a/crates/persistence-postgres/src/repositories/token_issuance.rs b/crates/persistence-postgres/src/repositories/token_issuance.rs
+index ee04b59b..82af2c04 100644
+--- a/crates/persistence-postgres/src/repositories/token_issuance.rs
++++ b/crates/persistence-postgres/src/repositories/token_issuance.rs
+@@ -782,6 +782,14 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
+                 .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
+                 .filter(oauth_token_issuances::client_id.eq(client_id))
+                 .filter(oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().to_vec()))
++                // Expiry closes replay authority even while physical
++                // reclamation has not visited this receipt. Keep the complete
++                // safety horizon, not merely the access-token expiration.
++                .filter(oauth_token_issuances::retain_until.gt(diesel::dsl::sql::<
++                    sql_types::Timestamptz,
++                >(
++                    "CURRENT_TIMESTAMP"
++                )))
+                 .select((
+                     oauth_token_issuances::access_token_jti,
+                     oauth_token_issuances::access_token_expires_at,
+diff --git a/crates/persistence-postgres/src/repositories/tokens.rs b/crates/persistence-postgres/src/repositories/tokens.rs
+index b9498ccb..b8b099d1 100644
+--- a/crates/persistence-postgres/src/repositories/tokens.rs
++++ b/crates/persistence-postgres/src/repositories/tokens.rs
+@@ -668,7 +668,6 @@ fn token_from_current(
+     family: RefreshFamilyRow,
+     contract: RefreshContract,
+ ) -> Result<RefreshToken, RepositoryError> {
+-    let context = contract.authentication_context;
+     Ok(RefreshToken {
+         id_token_sid: family.current_id_token_sid,
+         id: family.current_member_id,
+@@ -678,20 +677,16 @@ fn token_from_current(
+         client_id: family.client_id,
+         user_id: family.user_id,
+         contract_key: digest32(&family.contract_blake3)?,
+-        contract_audiences: contract.audiences,
+-        scopes: contract.scopes,
+         audience: serde_json::from_value(family.current_audience).map_err(|_| {
+             RepositoryError::Consistency("refresh audience must be a string array".into())
+         })?,
+-        authorization_details: contract.authorization_details,
+         issued_at: family.current_issued_at,
+         expires_at: family.current_expires_at,
+         revoked_at: family.revoked_at,
+-        subject: contract.subject,
+         dpop_jkt: family.dpop_jkt,
+         mtls_x5t_s256: family.mtls_x5t_s256,
+         client_attestation_jkt: family.client_attestation_jkt,
+-        authentication_context: context,
++        contract,
+     })
+ }
+ 
+@@ -704,7 +699,6 @@ fn token_from_spent(
+     family: RefreshFamilyRow,
+     contract: RefreshContract,
+ ) -> Result<RefreshToken, RepositoryError> {
+-    let context = contract.authentication_context;
+     Ok(RefreshToken {
+         id_token_sid: family.current_id_token_sid,
+         id: spent.member_id,
+@@ -714,20 +708,16 @@ fn token_from_spent(
+         client_id: family.client_id,
+         user_id: family.user_id,
+         contract_key: digest32(&family.contract_blake3)?,
+-        contract_audiences: contract.audiences.clone(),
+-        scopes: contract.scopes,
+-        audience: contract.audiences,
+-        authorization_details: contract.authorization_details,
++        audience: contract.audiences.clone(),
+         // The member's own issuance time is not retained; `spent_at` is the
+         // last instant the member was the family's current token.
+         issued_at: spent.spent_at,
+         expires_at: spent.expires_at,
+         revoked_at: Some(spent.spent_at),
+-        subject: contract.subject,
+         dpop_jkt: family.dpop_jkt,
+         mtls_x5t_s256: family.mtls_x5t_s256,
+         client_attestation_jkt: family.client_attestation_jkt,
+-        authentication_context: context,
++        contract,
+     })
+ }
+ 
+@@ -1019,7 +1009,7 @@ fn prepare_refresh_subject(
+         tenant_id: token.tenant_id,
+         claims,
+         user_epoch,
+-        token_subject: token.subject.clone(),
++        token_subject: token.contract.subject.clone(),
+         subject_bound,
+     })
+ }
+diff --git a/crates/persistence-postgres/tests/access_token_retention.rs b/crates/persistence-postgres/tests/access_token_retention.rs
+index 0fe29d4d..b486e6d2 100644
+--- a/crates/persistence-postgres/tests/access_token_retention.rs
++++ b/crates/persistence-postgres/tests/access_token_retention.rs
+@@ -424,7 +424,7 @@ async fn revoked_access_token_within_skew_survives_cleanup_until_its_padded_dead
+     // The real maintenance batch must not reclaim a row whose padded deadline
+     // is still open.
+     SecurityStateMaintenanceRepository::new(pool.clone())
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     let after = revocation_row(&mut connection, SYSTEM_TENANT, &jti)
+@@ -1148,7 +1148,7 @@ async fn maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes()
+     let expired_jtis = [passed_jti.clone(), bare_jti.clone()];
+     for round in 0..8 {
+         let result = maintenance
+-            .cleanup_batch()
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+             .await
+             .expect("cleanup batch should succeed");
+         assert!(result.revocations <= 256, "one batch stays bounded");
+diff --git a/crates/persistence-postgres/tests/audit_bounded_reads.rs b/crates/persistence-postgres/tests/audit_bounded_reads.rs
+index 5452c2d6..28eb00b7 100644
+--- a/crates/persistence-postgres/tests/audit_bounded_reads.rs
++++ b/crates/persistence-postgres/tests/audit_bounded_reads.rs
+@@ -62,6 +62,13 @@ async fn exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale(
+         .unwrap()
+         .identity;
+     connection.batch_execute("BEGIN").await.unwrap();
++    connection
++        .batch_execute(include_str!(
++            "../../../migrations/20261009000500_compact_exported_decision_payload/down.sql"
++        ))
++        .await
++        .unwrap();
++
+     connection
+         .batch_execute(include_str!(
+             "../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/down.sql"
+@@ -74,6 +81,12 @@ async fn exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale(
+         ))
+         .await
+         .unwrap();
++    connection
++        .batch_execute(include_str!(
++            "../../../migrations/20261009000500_compact_exported_decision_payload/up.sql"
++        ))
++        .await
++        .unwrap();
+     let after = sql_query(identity)
+         .get_result::<Identity>(&mut connection)
+         .await
+diff --git a/crates/persistence-postgres/tests/auth_repositories.rs b/crates/persistence-postgres/tests/auth_repositories.rs
+index ed2910e7..b3c836f9 100644
+--- a/crates/persistence-postgres/tests/auth_repositories.rs
++++ b/crates/persistence-postgres/tests/auth_repositories.rs
+@@ -1086,7 +1086,7 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
+         .await
+         .expect("refresh token should load with its authentication context")
+         .expect("the persisted refresh token should exist");
+-    assert_eq!(loaded.authentication_context, expected_context);
++    assert_eq!(loaded.contract.authentication_context, expected_context);
+ 
+     let mut connection = AsyncPgConnection::establish(&database_url)
+         .await
+@@ -1094,8 +1094,8 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
+     let invalid_contracts = [
+         json!("not-a-refresh-contract"),
+         json!({
+-            "subject": loaded.subject,
+-            "scopes": loaded.scopes,
++            "subject": loaded.contract.subject,
++            "scopes": loaded.contract.scopes,
+             "audiences": loaded.audience,
+             "authorization_details": [],
+             "authentication_context": {
+diff --git a/crates/persistence-postgres/tests/authorization_decisions.rs b/crates/persistence-postgres/tests/authorization_decisions.rs
+index f96ba281..0f59ceff 100644
+--- a/crates/persistence-postgres/tests/authorization_decisions.rs
++++ b/crates/persistence-postgres/tests/authorization_decisions.rs
+@@ -33,6 +33,11 @@ const ACK_CLOCK_UP: &str =
+ const ACK_CLOCK_DOWN: &str =
+     include_str!("../../../migrations/20261006000100_audit_ack_observation_clock/down.sql");
+ 
++const COMPACT_UP: &str =
++    include_str!("../../../migrations/20261009000500_compact_exported_decision_payload/up.sql");
++const COMPACT_DOWN: &str =
++    include_str!("../../../migrations/20261009000500_compact_exported_decision_payload/down.sql");
++
+ #[test]
+ fn decision_migration_has_independent_fences_and_safe_retention() {
+     for required in [
+@@ -274,6 +279,7 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
+         .batch_execute(STATEMENT_TIMEOUT_UP)
+         .await
+         .unwrap();
++    connection.batch_execute(COMPACT_UP).await.unwrap();
+     let configured_timeout = sql_query(
+         "SELECT COUNT(*)::bigint AS count FROM pg_proc \
+          WHERE oid = 'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)'::regprocedure \
+@@ -831,9 +837,6 @@ async fn verify_audit_lifetime(
+         .batch_execute("RESET nazo.audit_ack")
+         .await
+         .unwrap();
+-    acknowledge_all(&audit).await;
+-    assert_eq!(fact_count(connection, ordinary.event_id).await, 0);
+-    assert_eq!(fact_count(connection, retained.event_id).await, 1);
+     let safe_payload = sql_query(
+         "SELECT COUNT(*)::bigint AS count FROM public.security_audit_events \
+          WHERE event_id = $1 AND payload ? 'request_id_hash' \
+@@ -844,6 +847,9 @@ async fn verify_audit_lifetime(
+         safe_payload.count, 1,
+         "export payload contains hashes, never raw private preparation"
+     );
++    acknowledge_all(&audit).await;
++    assert_eq!(fact_count(connection, ordinary.event_id).await, 0);
++    assert_eq!(fact_count(connection, retained.event_id).await, 1);
+     assert_eq!(fact_count(connection, short.event_id).await, 1);
+     assert!(!audit.anchor_health().await.unwrap().pending_exists);
+     assert!(matches!(
+@@ -1291,6 +1297,8 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
+         .unwrap();
+     let identity = audit_ack_function_identity(&mut connection).await;
+ 
++    connection.batch_execute(COMPACT_DOWN).await.unwrap();
++
+     // The down definition is a negative control, not a second ACK implementation.
+     // It must reproduce the freshness invariant failure before the up definition passes.
+     for (definition, fixed) in [(ACK_CLOCK_DOWN, false), (ACK_CLOCK_UP, true)] {
+@@ -1509,3 +1517,132 @@ async fn decision_prepared_shape_preserves_distinct_facts_and_replay_fences() {
+         "one cached shape, four executions with distinct decision binds"
+     );
+ }
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn decision_ack_reclaims_payload_atomically_without_releasing_fences() {
++    let base_url = database_url().expect("payload reclamation requires real isolated PostgreSQL");
++    let name = format!("decision_payload_{}", Uuid::now_v7().simple());
++    let mut coordinator = AsyncPgConnection::establish(&base_url).await.unwrap();
++    coordinator
++        .batch_execute(&format!("CREATE DATABASE \"{name}\""))
++        .await
++        .unwrap();
++    let mut isolated = url::Url::parse(&base_url).unwrap();
++    isolated.set_path(&format!("/{name}"));
++    let url = isolated.to_string();
++    nazo_postgres::run_pending_migrations(&url).await.unwrap();
++    let pool = create_pool(url.clone(), 2).unwrap();
++    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
++    let actor = fixture(&mut connection).await;
++    let repository = AuthorizationFlowRepository::new(pool.clone(), actor.tenant_id);
++    let audit = AuditLedgerRepository::new(pool.clone());
++    let initial = audit.anchor_health().await.unwrap();
++    audit
++        .record_genesis("decision-test", &initial.head_hash)
++        .await
++        .unwrap();
++    let input = decision(&actor, Kind::Approve);
++    assert_eq!(
++        repository.commit_decision(input.clone()).await.unwrap(),
++        Outcome::Committed
++    );
++    let before = retained_decision_contents(&mut connection, input.event_id).await;
++    let SecurityAuditBatchClaim::Claimed(batch) = audit
++        .claim_batch("decision-test", 256, 1024 * 1024, 30)
++        .await
++        .unwrap()
++    else {
++        panic!("a committed decision must be exported before its payload is reclaimed");
++    };
++    assert_eq!(batch.event_count(), 1);
++    let ack = SecurityAuditBatchAck {
++        generation: batch.generation,
++        deployment_id: "decision-test".to_owned(),
++        first_sequence: batch.first_sequence,
++        last_sequence: batch.last_sequence,
++        event_count: batch.event_count(),
++        last_hash: batch.last_hash.clone(),
++        batch_digest: batch.digest,
++    };
++    let pending = audit_ack_contents(&mut connection).await;
++    let mut stale = ack.clone();
++    stale.generation += 1;
++    assert!(audit.ack_batch(stale).await.is_err());
++    assert_eq!(audit_ack_contents(&mut connection).await, pending);
++    // A real deferred trigger rejects the transaction after its ACK function
++    // has updated the event and checkpoint. No partial reclamation may escape.
++    connection
++        .batch_execute(
++            "CREATE FUNCTION public.reject_payload_ack() RETURNS trigger LANGUAGE plpgsql AS $$ \
++         BEGIN RAISE EXCEPTION 'injected late ACK failure'; END $$; \
++         CREATE CONSTRAINT TRIGGER reject_payload_ack AFTER UPDATE ON public.security_audit_events \
++         DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.reject_payload_ack()",
++        )
++        .await
++        .unwrap();
++    assert!(audit.ack_batch(ack.clone()).await.is_err());
++    assert_eq!(
++        audit_ack_contents(&mut connection).await,
++        pending,
++        "late ACK failure must preserve original payload, prefix and checkpoint"
++    );
++    connection.batch_execute("DROP TRIGGER reject_payload_ack ON public.security_audit_events; DROP FUNCTION public.reject_payload_ack()").await.unwrap();
++    audit.ack_batch(ack.clone()).await.unwrap();
++    let after = retained_decision_contents(&mut connection, input.event_id).await;
++    assert_eq!(
++        after.contents["payload"],
++        json!({}),
++        "delivered payload must no longer occupy the business fence row"
++    );
++    let mut expected = before.contents;
++    assert_ne!(
++        expected["payload"],
++        json!({}),
++        "the original export must contain real evidence"
++    );
++    expected["payload"] = json!({});
++    assert_eq!(
++        after.contents, expected,
++        "ACK preserves every non-delivery business field"
++    );
++    assert_eq!(cleanup(&mut connection).await, 0);
++    assert_eq!(
++        repository.commit_decision(input.clone()).await.unwrap(),
++        Outcome::Conflict
++    );
++    let mut same_par = input.clone();
++    same_par.event_id = Uuid::now_v7();
++    same_par.request_id = Uuid::now_v7().to_string();
++    assert_eq!(
++        repository.commit_decision(same_par).await.unwrap(),
++        Outcome::Conflict
++    );
++    let mut same_request = input;
++    same_request.event_id = Uuid::now_v7();
++    same_request.pushed_request_uri = Some(format!(
++        "urn:ietf:params:oauth:request_uri:{}",
++        Uuid::now_v7()
++    ));
++    assert_eq!(
++        repository.commit_decision(same_request).await.unwrap(),
++        Outcome::Conflict
++    );
++    assert!(audit.ack_batch(ack).await.is_err());
++    assert!(!audit.anchor_health().await.unwrap().pending_exists);
++    assert!(matches!(
++        audit
++            .claim_batch("decision-test", 256, 1024 * 1024, 30)
++            .await
++            .unwrap(),
++        SecurityAuditBatchClaim::Empty
++    ));
++    assert_eq!(grant_count(&mut connection, &actor).await, 1);
++    drop(repository);
++    drop(audit);
++    drop(connection);
++    drop(pool);
++    coordinator
++        .batch_execute(&format!("DROP DATABASE \"{name}\" WITH (FORCE)"))
++        .await
++        .unwrap();
++}
+diff --git a/crates/persistence-postgres/tests/migrations.rs b/crates/persistence-postgres/tests/migrations.rs
+index cecb59c7..4e98aa15 100644
+--- a/crates/persistence-postgres/tests/migrations.rs
++++ b/crates/persistence-postgres/tests/migrations.rs
+@@ -762,7 +762,7 @@ async fn issuance_cleanup_uses_expiry_as_an_index_bound() {
+     }
+     let body = sql_query(
+         "SELECT prosrc AS body FROM pg_proc \
+-         WHERE oid = 'nazo_oauth_cleanup_expired_security_state()'::regprocedure",
++         WHERE oid = 'nazo_oauth_cleanup_expired_security_state(boolean)'::regprocedure",
+     )
+     .get_result::<FunctionBody>(&mut connection)
+     .await
+diff --git a/crates/persistence-postgres/tests/openid4vc.rs b/crates/persistence-postgres/tests/openid4vc.rs
+index 1f6e9916..3e8d1e53 100644
+--- a/crates/persistence-postgres/tests/openid4vc.rs
++++ b/crates/persistence-postgres/tests/openid4vc.rs
+@@ -4816,6 +4816,16 @@ async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
+     let pool = create_pool(&database_url, 1).unwrap();
+     let (repository, verifier, offer, code_hash) =
+         paused_pre_authorized_offer(&pool, Ok(true)).await;
++    let mut connection = get_conn(&pool).await.unwrap();
++    let before = sql_query(
++        "SELECT pg_column_size(o)::bigint AS count FROM openid4vci_offers o WHERE id = $1",
++    )
++    .bind::<SqlUuid, _>(offer.id)
++    .get_result::<CountRow>(&mut connection)
++    .await
++    .unwrap()
++    .count;
++    drop(connection);
+     let mut attempts = Vec::new();
+     for client_id in ["wallet-a", "wallet-b"] {
+         let repository = repository.clone();
+@@ -4866,6 +4876,40 @@ async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
+         successes, 1,
+         "the conditional write must preserve single-use consumption"
+     );
++    let mut connection = get_conn(&pool).await.unwrap();
++    let compacted = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE id = $1 AND consumed_at IS NOT NULL AND octet_length(grants_ciphertext) = 0 AND tx_code_hash IS NULL AND expires_at = $2 AND pre_authorized_code_hash = $3")
++        .bind::<SqlUuid, _>(offer.id)
++        .bind::<diesel::sql_types::Timestamptz, _>(offer.expires_at)
++        .bind::<Text, _>(&code_hash)
++        .get_result::<CountRow>(&mut connection).await.unwrap().count;
++    let after = sql_query(
++        "SELECT pg_column_size(o)::bigint AS count FROM openid4vci_offers o WHERE id = $1",
++    )
++    .bind::<SqlUuid, _>(offer.id)
++    .get_result::<CountRow>(&mut connection)
++    .await
++    .unwrap()
++    .count;
++    drop(connection);
++    eprintln!("consumed_offer_logical_row_bytes before={before} after={after}");
++    assert_eq!(
++        compacted, 1,
++        "consumption must discard unread grants and verifier while preserving its replay fence and deadline"
++    );
++    assert!(after < before);
++    assert!(
++        repository
++            .consume_pre_authorized_offer(
++                offer.tenant_id,
++                &code_hash,
++                Some("2468"),
++                "wallet-c",
++                Utc::now()
++            )
++            .await
++            .unwrap()
++            .is_none()
++    );
+     delete_openid4vc_subject_and_client(&pool, offer.subject_id.unwrap(), None).await;
+ }
+ 
+diff --git a/crates/persistence-postgres/tests/query_counts.rs b/crates/persistence-postgres/tests/query_counts.rs
+index c91bd162..8e784a4d 100644
+--- a/crates/persistence-postgres/tests/query_counts.rs
++++ b/crates/persistence-postgres/tests/query_counts.rs
+@@ -1155,18 +1155,21 @@ async fn rf06_lost_response_successor_is_single_read() {
+         client_id: seed.client.id,
+         user_id: Some(seed.user_id),
+         contract_key: [0; 32],
+-        contract_audiences: vec!["resource://default".to_owned()],
+-        scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+         audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
+-        authorization_details: json!([]),
+         issued_at: revoked_at - Duration::minutes(5),
+         expires_at: revoked_at + Duration::hours(1),
+         revoked_at: Some(revoked_at),
+-        subject: seed.user_id.to_string(),
+         dpop_jkt: Some(dpop_jkt),
+         mtls_x5t_s256: None,
+         client_attestation_jkt: None,
+-        authentication_context: refresh_context(&seed.client.client_id),
++
++        contract: nazo_auth::RefreshContract {
++            audiences: vec!["resource://default".to_owned()],
++            scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
++            authorization_details: json!([]),
++            subject: seed.user_id.to_string(),
++            authentication_context: refresh_context(&seed.client.client_id),
++        },
+     };
+ 
+     let (result, delta) = measure(
+@@ -2136,7 +2139,11 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
+                 .unwrap();
+             assert!(original.prepared_subject.is_none());
+             repository
+-                .active_subject_claims(tenant_id, seed.user_id, &original.presented.subject)
++                .active_subject_claims(
++                    tenant_id,
++                    seed.user_id,
++                    &original.presented.contract.subject,
++                )
+                 .await
+                 .unwrap()
+                 .unwrap()
+@@ -2358,7 +2365,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
+         .await
+         .unwrap();
+     let late = repo
+-        .active_subject_claims(id, seed.user_id, &early.presented.subject)
++        .active_subject_claims(id, seed.user_id, &early.presented.contract.subject)
+         .await
+         .unwrap()
+         .unwrap();
+diff --git a/crates/persistence-postgres/tests/refresh_authority.rs b/crates/persistence-postgres/tests/refresh_authority.rs
+index 6e91106e..71653ad6 100644
+--- a/crates/persistence-postgres/tests/refresh_authority.rs
++++ b/crates/persistence-postgres/tests/refresh_authority.rs
+@@ -295,7 +295,7 @@ async fn rotation_narrows_and_reorders_current_audience_without_replacing_origin
+         );
+         source = lookup(&url, &raw).await;
+         assert_eq!(source.contract_key, original_key);
+-        assert_eq!(source.contract_audiences, vec![A, B]);
++        assert_eq!(source.contract.audiences, vec![A, B]);
+         assert_eq!(source.audience, audiences);
+         let after = state(&mut connection, source.token_family_id).await;
+         assert_eq!(after.contract, original.contract);
+@@ -1003,8 +1003,8 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
+         *blake3::hash(&serde_json::to_vec(&original_contract).unwrap()).as_bytes(),
+         "this source must use the genuine migration key, not a fabricated Rust key"
+     );
+-    assert_eq!(source.contract_audiences, vec![A, B]);
+-    let context_wire = serde_json::to_value(&source.authentication_context).unwrap();
++    assert_eq!(source.contract.audiences, vec![A, B]);
++    let context_wire = serde_json::to_value(&source.contract.authentication_context).unwrap();
+     assert!(context_wire.get("nonce").is_none());
+     assert!(context_wire.get("id_token_sid").is_none());
+     assert_eq!(source.id_token_sid, token.id_token_sid);
+@@ -1021,7 +1021,7 @@ async fn legacy_full_migration_sql_key_rotates_without_rekeying_its_original_con
+     let current = lookup(&url, &raw).await;
+     let after = state(&mut connection, source.token_family_id).await;
+     assert_eq!(current.contract_key, source.contract_key);
+-    assert_eq!(current.contract_audiences, vec![A, B]);
++    assert_eq!(current.contract.audiences, vec![A, B]);
+     assert_eq!(current.audience, [A]);
+     assert_eq!(after.contract, before.contract);
+     assert_eq!(
+@@ -1244,7 +1244,10 @@ async fn public_proof_cleanup_respects_original_expiry_without_ending_live_famil
+     // own proof after bounded batches rather than asserting global counters.
+     let tokens = TokenRepository::new(create_pool(&url, 1).unwrap());
+     for _ in 0..64 {
+-        maintenance.cleanup_batch().await.unwrap();
++        maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         if tokens
+             .by_raw_refresh_token(tenant(), &first_raw)
+             .await
+diff --git a/crates/persistence-postgres/tests/refresh_family_capacity.rs b/crates/persistence-postgres/tests/refresh_family_capacity.rs
+index 5738a70e..57aca920 100644
+--- a/crates/persistence-postgres/tests/refresh_family_capacity.rs
++++ b/crates/persistence-postgres/tests/refresh_family_capacity.rs
+@@ -1114,10 +1114,33 @@ async fn fresh_retired_contract_is_reclaimed_without_touching_live_references()
+     );
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+-    maintenance
+-        .cleanup_batch()
++    // The cursor scans at most 256 contracts, including live references, per
++    // batch. Other suites may leave more than one page before this fresh row.
++    let contract_count = sql_query("SELECT count(*)::bigint AS count FROM oauth_refresh_contracts")
++        .get_result::<CountRow>(&mut connection)
+         .await
+-        .expect("fresh-contract sweep should succeed");
++        .unwrap()
++        .count;
++    let max_batches = contract_count / 256 + 1;
++    for batch in 0..max_batches {
++        let result = maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .expect("fresh-contract sweep should succeed");
++        assert!(result.refresh_contracts <= 256);
++        assert!(
++            contract_exists(&mut connection, tenant_id, &live_digest).await,
++            "each bounded batch must preserve the referenced contract"
++        );
++        if !contract_exists(&mut connection, tenant_id, &orphan_digest).await {
++            eprintln!(
++                "fresh orphan reclaimed after {} batches over {} initial contracts",
++                batch + 1,
++                contract_count
++            );
++            break;
++        }
++    }
+     let retired_parent = sql_query(
+         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+          WHERE tenant_id = $1 AND token_family_id = $2",
+@@ -1153,7 +1176,7 @@ async fn fresh_retired_contract_is_reclaimed_without_touching_live_references()
+         .unwrap();
+     }
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("aged-contract sweep should succeed");
+     assert!(!contract_exists(&mut connection, tenant_id, &orphan_digest).await);
+diff --git a/crates/persistence-postgres/tests/security_state_commit_boundary.rs b/crates/persistence-postgres/tests/security_state_commit_boundary.rs
+index fa23700b..94af1c0f 100644
+--- a/crates/persistence-postgres/tests/security_state_commit_boundary.rs
++++ b/crates/persistence-postgres/tests/security_state_commit_boundary.rs
+@@ -127,7 +127,9 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
+             .await
+             .unwrap();
+         if fault == "raise" {
+-            let result = maintenance.cleanup_batch().await;
++            let result = maintenance
++                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                .await;
+             assert!(
+                 result.is_err(),
+                 "a result row is not a committed cleanup count"
+@@ -145,7 +147,11 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
+                 .await
+                 .unwrap();
+             let task_repository = maintenance.clone();
+-            let task = tokio::spawn(async move { task_repository.cleanup_batch().await });
++            let task = tokio::spawn(async move {
++                task_repository
++                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                    .await
++            });
+             wait_backend(&mut observer, pid, true).await;
+             assert!(
+                 !task.is_finished(),
+@@ -178,7 +184,10 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
+             .batch_execute("UPDATE cleanup_commit_fault SET mode = 'off'")
+             .await
+             .unwrap();
+-        let result = maintenance.cleanup_batch().await.unwrap();
++        let result = maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         if fault == "cancel" {
+             // Cancellation is not rollback. The old operation may have committed.
+             assert!(result.credential_nonces <= 1);
+diff --git a/crates/persistence-postgres/tests/security_state_maintenance.rs b/crates/persistence-postgres/tests/security_state_maintenance.rs
+index c98611c6..00ecf2ca 100644
+--- a/crates/persistence-postgres/tests/security_state_maintenance.rs
++++ b/crates/persistence-postgres/tests/security_state_maintenance.rs
+@@ -388,7 +388,7 @@ async fn expired_issuances_are_reclaimed_in_bounded_batches() {
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     for round in 0..8 {
+         let result = maintenance
+-            .cleanup_batch()
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+             .await
+             .expect("cleanup batch should succeed");
+         assert!(
+@@ -430,7 +430,7 @@ async fn natural_expiry_refresh_leaf_reclaimed_without_revocation() {
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert_eq!(
+@@ -472,7 +472,7 @@ async fn active_successor_blocks_ancestor_reclaim() {
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert_eq!(
+@@ -512,7 +512,7 @@ async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     let result = maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert!(
+@@ -588,7 +588,7 @@ async fn terminal_refresh_proofs_drain_with_one_global_budget_before_parent_dele
+     // Both sweeps must share one allowance: 20 expired and 600 live proofs.
+     for (round, expected_deleted) in [256_u64, 256, 108].into_iter().enumerate() {
+         let result = maintenance
+-            .cleanup_batch()
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+             .await
+             .expect("terminal-family cleanup should succeed");
+         assert_eq!(
+@@ -658,7 +658,7 @@ async fn live_public_family_keeps_more_than_sixty_four_unexpired_proofs() {
+     .expect("public proof history should insert");
+ 
+     SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap())
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("maintenance should leave live public proofs alone");
+     assert_eq!(
+@@ -726,7 +726,7 @@ async fn preserve_shared_family_lock_skips_terminal_cleanup() {
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     tokio::time::timeout(
+         std::time::Duration::from_secs(5),
+-        maintenance.cleanup_batch(),
++        maintenance.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
+     )
+     .await
+     .expect("exclusive try-lock must not wait for PreserveExisting")
+@@ -736,7 +736,7 @@ async fn preserve_shared_family_lock_skips_terminal_cleanup() {
+     preserve_existing.batch_execute("COMMIT").await.unwrap();
+ 
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("terminal family should drain after shared lock releases");
+     assert_eq!(family_row_count(&mut connection, family_id).await, 0);
+@@ -775,7 +775,7 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     let first = maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("first cleanup batch should succeed");
+     assert!(
+@@ -793,7 +793,7 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
+         "the live family row plus the undrained spent proofs remain"
+     );
+     let second = maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("second cleanup batch should succeed");
+     assert_eq!(
+@@ -841,7 +841,7 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed without waiting on the family lock");
+     assert_eq!(
+@@ -872,7 +872,7 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
+         .await
+         .expect("writer transaction should commit");
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert_eq!(
+@@ -927,8 +927,14 @@ async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+-        let first = maintenance.cleanup_batch().await.unwrap();
+-        let second = maintenance.cleanup_batch().await.unwrap();
++        let first = maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
++        let second = maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         (first, second)
+     })
+     .await
+@@ -938,7 +944,10 @@ async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate
+     assert_eq!(second.refresh_tokens, 44);
+     assert_eq!(family_row_count(&mut connection, locked_family).await, 1);
+     connection.batch_execute("COMMIT").await.unwrap();
+-    let final_batch = maintenance.cleanup_batch().await.unwrap();
++    let final_batch = maintenance
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++        .await
++        .unwrap();
+     assert_eq!(final_batch.refresh_tokens, 1);
+     assert_eq!(family_row_count(&mut connection, locked_family).await, 0);
+ }
+@@ -962,7 +971,10 @@ async fn concurrent_batches_do_not_deadlock_or_double_count() {
+     }
+     let first = SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     let second = SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+-    let (a, b) = tokio::join!(first.cleanup_batch(), second.cleanup_batch());
++    let (a, b) = tokio::join!(
++        first.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
++        second.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++    );
+     a.expect("first maintenance batch should succeed");
+     b.expect("second maintenance batch should succeed");
+     for family_id in families {
+@@ -1028,7 +1040,11 @@ async fn cancelled_batch_leaves_no_open_transaction_on_pooled_connection() {
+         if database_url.contains('?') { '&' } else { '?' }
+     );
+     let maintenance = SecurityStateMaintenanceRepository::new(create_pool(&tagged_url, 2).unwrap());
+-    let task = tokio::spawn(async move { maintenance.cleanup_batch().await });
++    let task = tokio::spawn(async move {
++        maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++    });
+ 
+     // Wait until the maintenance transaction is blocked on the gate.
+     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+@@ -1245,7 +1261,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
+     // The global sweep belongs to the maintenance worker alone.
+     let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+     let result = maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert!(result.presentations >= 1);
+@@ -1369,7 +1385,7 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     let result = maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert!(
+@@ -1672,7 +1688,7 @@ async fn reclaim_scopes_family_authority_to_tenant() {
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     maintenance
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+ 
+@@ -1797,12 +1813,19 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
+     .await
+     .expect("dead-family spent fixture should insert");
+ 
++    // Other categories may legitimately need more than this test's 64 batches.
++    // The refresh cohort must converge independently of their global signal.
++    let history_tag = Uuid::now_v7().to_string();
++    sql_query("INSERT INTO scim_audit_events (id, tenant_id, scim_token_id, event_type, scopes, created_at) SELECT md5($1 || '-' || g)::uuid, $2, NULL, 'scim_token_used', '[]'::jsonb, CURRENT_TIMESTAMP - INTERVAL '181 days' FROM generate_series(1, 17000) AS g")
++        .bind::<Text, _>(&history_tag)
++        .bind::<SqlUuid, _>(SYSTEM_TENANT)
++        .execute(&mut connection).await.unwrap();
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 4).unwrap());
+     let mut spent_total = 0_u64;
+     for round in 0..64_u32 {
+         let result = maintenance
+-            .cleanup_batch()
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+             .await
+             .expect("cleanup batch should succeed");
+         assert!(
+@@ -1814,10 +1837,22 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
+             "the family sweep is bounded per batch too"
+         );
+         spent_total += result.spent_refresh_proofs;
+-        if !result.saturated && result.spent_refresh_proofs == 0 && result.refresh_tokens == 0 {
++        assert!(result.scim_audit_events <= 256);
++        if spent_total == 11_000 && result.spent_refresh_proofs == 0 && result.refresh_tokens == 0 {
++            assert!(
++                result.saturated,
++                "unrelated history is still pending; this is not global drain"
++            );
++            eprintln!(
++                "refresh cohort drained after {} batches; 11000 proofs reclaimed while unrelated history remains",
++                round + 1
++            );
+             break;
+         }
+-        assert!(round < 63, "refresh-state reclaim must converge, not stall");
++        assert!(
++            round < 63,
++            "refresh-state reclaim must converge: proofs={spent_total}, last={result:?}"
++        );
+     }
+     assert_eq!(
+         spent_total, 11_000,
+@@ -1834,6 +1869,8 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
+         1,
+         "the live family keeps its row; all expired proofs are swept"
+     );
++    sql_query("DELETE FROM scim_audit_events WHERE id IN (SELECT md5($1 || '-' || g)::uuid FROM generate_series(1, 17000) AS g)")
++        .bind::<Text, _>(&history_tag).execute(&mut connection).await.unwrap();
+ }
+ 
+ /// A spent proof expires on its own `expires_at` — the sweep deletes expired
+@@ -1889,7 +1926,7 @@ async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive
+         create_pool(&database_url, 2).expect("pool should build"),
+     );
+     let batch = repository
+-        .cleanup_batch()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         .await
+         .expect("cleanup batch should succeed");
+     assert_eq!(
+@@ -2192,7 +2229,10 @@ async fn credential_state_cleanup_is_bounded_and_preserves_live_ownership() {
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+     for round in 0..8 {
+-        let result = maintenance.cleanup_batch().await.unwrap();
++        let result = maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         for count in [
+             result.credential_offers,
+             result.credential_nonces,
+@@ -2345,7 +2385,10 @@ async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
+     let second = SecurityStateMaintenanceRepository::new(pool.clone());
+     let (first_result, second_result) =
+         tokio::time::timeout(std::time::Duration::from_secs(5), async {
+-            tokio::join!(first.cleanup_batch(), second.cleanup_batch())
++            tokio::join!(
++                first.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory),
++                second.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            )
+         })
+         .await
+         .expect("both sweepers must skip the FK-locked parent without waiting for its writer");
+@@ -2373,7 +2416,10 @@ async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
+         "the unlocked expired control proves reclaim still makes progress"
+     );
+     writer.batch_execute("COMMIT").await.unwrap();
+-    first.cleanup_batch().await.unwrap();
++    first
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++        .await
++        .unwrap();
+     let retained_child = sql_query(
+         "SELECT COUNT(*)::bigint AS count \
+          FROM openid4vci_notifications AS child \
+@@ -2468,14 +2514,21 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap()
+         .unwrap();
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+-    let first = maintenance.cleanup_batch().await.unwrap();
++    let first = maintenance
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++        .await
++        .unwrap();
+     assert_eq!(first.refresh_contracts, 0);
+     assert!(
+         first.saturated,
+         "a referenced full page still advances the scan"
+     );
+     // A clone must continue the same scan, not restart at its referenced head.
+-    maintenance.clone().cleanup_batch().await.unwrap();
++    maintenance
++        .clone()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++        .await
++        .unwrap();
+     let orphan_count = sql_query(
+         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
+     )
+@@ -2501,7 +2554,10 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap()
+     .unwrap()
+     .contract_blake3;
+     for round in 0..8 {
+-        maintenance.cleanup_batch().await.unwrap();
++        maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         let count = sql_query(
+             "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
+         )
+@@ -2598,10 +2654,17 @@ async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
+     .unwrap();
+     let maintenance =
+         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+-    let first = maintenance.cleanup_batch().await.unwrap();
++    let first = maintenance
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++        .await
++        .unwrap();
+     assert_eq!(first.credential_access_grants, 0);
+     assert!(first.saturated);
+-    maintenance.clone().cleanup_batch().await.unwrap();
++    maintenance
++        .clone()
++        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++        .await
++        .unwrap();
+     let count = sql_query(
+         "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+     )
+@@ -2629,7 +2692,10 @@ async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
+     .unwrap()
+     .token_id;
+     for round in 0..8 {
+-        maintenance.cleanup_batch().await.unwrap();
++        maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         let count = sql_query(
+             "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+         )
+@@ -2755,7 +2821,10 @@ async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconn
+         writer.batch_execute("BEGIN").await.unwrap();
+         ensure_race_contract(&mut writer, &row).await;
+         for _ in 0..3 {
+-            maintenance.cleanup_batch().await.unwrap();
++            maintenance
++                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                .await
++                .unwrap();
+         }
+         assert_eq!(
+             race_contract_count(&mut observer, &row).await,
+@@ -2771,7 +2840,10 @@ async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconn
+         drop(writer);
+         wait_contract_backend(&mut observer, &name, false).await;
+         for _ in 0..4 {
+-            maintenance.cleanup_batch().await.unwrap();
++            maintenance
++                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                .await
++                .unwrap();
+         }
+         assert_eq!(
+             race_contract_count(&mut observer, &row).await,
+@@ -2780,7 +2852,10 @@ async fn contract_writer_key_share_survives_sweep_and_commit_rollback_or_disconn
+         if outcome == "commit" {
+             sql_query("DELETE FROM oauth_refresh_families WHERE token_family_id=($1->>'token_family_id')::uuid").bind::<sql_types::Jsonb,_>(&row.family).execute(&mut observer).await.unwrap();
+             for _ in 0..4 {
+-                maintenance.cleanup_batch().await.unwrap();
++                maintenance
++                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                    .await
++                    .unwrap();
+             }
+             assert_eq!(race_contract_count(&mut observer, &row).await, 0);
+         }
+@@ -2827,7 +2902,11 @@ async fn contract_cleaner_first_fences_writer_and_cancelled_sweeper_discards_con
+             .append_pair("application_name", &cleaner_name);
+         let pool = create_pool(url.as_str(), 1).unwrap();
+         let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+-        let cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
++        let cleanup = tokio::spawn(async move {
++            maintenance
++                .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                .await
++        });
+         wait_contract_backend(&mut observer, &cleaner_name, true).await;
+         let writer_name = format!("contract-writer-{suffix}");
+         let mut url = url::Url::parse(&database_url).unwrap();
+@@ -2925,7 +3004,10 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
+             0,
+             "uncommitted parent is invisible"
+         );
+-        maintenance.cleanup_batch().await.unwrap();
++        maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
+         insert_race_family(&mut writer, &row).await;
+         writer
+             .batch_execute(if commit { "COMMIT" } else { "ROLLBACK" })
+@@ -2937,7 +3019,10 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
+         );
+         if commit {
+             for _ in 0..3 {
+-                maintenance.cleanup_batch().await.unwrap();
++                maintenance
++                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                    .await
++                    .unwrap();
+             }
+             assert_eq!(
+                 race_contract_count(&mut observer, &row).await,
+@@ -2948,7 +3033,10 @@ async fn fresh_orphan_is_collectible_but_uncommitted_contract_and_family_are_ato
+             // No timestamp backdating or shortened security TTL: this parent
+             // was created moments ago and has no remaining owner.
+             for _ in 0..4 {
+-                maintenance.cleanup_batch().await.unwrap();
++                maintenance
++                    .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++                    .await
++                    .unwrap();
+             }
+             assert_eq!(
+                 race_contract_count(&mut observer, &row).await,
+@@ -2981,7 +3069,11 @@ async fn bounded_batch_finishes_before_a_queued_connection_borrower() {
+     let pool = create_pool(&database_url, 1).unwrap();
+     let held = get_conn(&pool).await.unwrap();
+     let maintenance = SecurityStateMaintenanceRepository::new(pool.clone());
+-    let mut cleanup = tokio::spawn(async move { maintenance.cleanup_batch().await });
++    let mut cleanup = tokio::spawn(async move {
++        maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++    });
+     tokio::time::timeout(std::time::Duration::from_secs(3), async {
+         while pool.status().waiting != 1 {
+             tokio::task::yield_now().await;
+@@ -3022,3 +3114,60 @@ async fn bounded_batch_finishes_before_a_queued_connection_borrower() {
+         .expect("maintenance task must finish")
+         .expect("maintenance database work must succeed");
+ }
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn protocol_cleanup_leaves_history_until_history_scope_and_preserves_retention() {
++    let database_url = database_url().expect("real PostgreSQL fixture required");
++    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
++    let (_fixture, mut connection) = fixture(&database_url).await;
++    let expired = Uuid::now_v7();
++    let retained = Uuid::now_v7();
++    sql_query("INSERT INTO scim_audit_events (id, tenant_id, scim_token_id, event_type, scopes, created_at) VALUES ($1, $2, NULL, 'scim_token_used', '[]'::jsonb, CURRENT_TIMESTAMP - INTERVAL '181 days'), ($3, $2, NULL, 'scim_token_used', '[]'::jsonb, CURRENT_TIMESTAMP - INTERVAL '179 days')")
++        .bind::<SqlUuid, _>(expired)
++        .bind::<SqlUuid, _>(SYSTEM_TENANT)
++        .bind::<SqlUuid, _>(retained)
++        .execute(&mut connection).await.unwrap();
++    let maintenance =
++        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
++    let result = maintenance
++        .cleanup_batch(nazo_persistence::CleanupScope::ProtocolState)
++        .await
++        .unwrap();
++    assert_eq!(result.scim_audit_events, 0);
++    let count = sql_query(
++        "SELECT COUNT(*)::bigint AS count FROM scim_audit_events WHERE id = $1 OR id = $2",
++    )
++    .bind::<SqlUuid, _>(expired)
++    .bind::<SqlUuid, _>(retained)
++    .get_result::<CountRow>(&mut connection)
++    .await
++    .unwrap()
++    .count;
++    assert_eq!(
++        count, 2,
++        "protocol-only cleanup must not remove even expired history"
++    );
++    for _ in 0..16 {
++        let result = maintenance
++            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
++            .await
++            .unwrap();
++        assert!(result.scim_audit_events <= 256);
++        if result.scim_audit_events < 256 {
++            break;
++        }
++    }
++    for (id, expected) in [(expired, 0), (retained, 1)] {
++        let count =
++            sql_query("SELECT COUNT(*)::bigint AS count FROM scim_audit_events WHERE id = $1")
++                .bind::<SqlUuid, _>(id)
++                .get_result::<CountRow>(&mut connection)
++                .await
++                .unwrap()
++                .count;
++        assert_eq!(
++            count, expected,
++            "history scope must keep the full 180 day retention"
++        );
++    }
++}
+diff --git a/crates/persistence-postgres/tests/support/mod.rs b/crates/persistence-postgres/tests/support/mod.rs
+index 38d7ced8..2a237419 100644
+--- a/crates/persistence-postgres/tests/support/mod.rs
++++ b/crates/persistence-postgres/tests/support/mod.rs
+@@ -5,7 +5,7 @@ use diesel_async::{
+     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
+ };
+ 
+-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 21] = [
++const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 23] = [
+     "20260805000100",
+     "20260905000100",
+     "20260909000100",
+@@ -29,8 +29,10 @@ const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 21] = [
+     "20261003000500",
+     "20261006000100",
+     "20261006000200",
++    "20261008000100",
++    "20261009000500",
+ ];
+-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 21] = [
++const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 23] = [
+     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
+     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
+     include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
+@@ -56,6 +58,10 @@ const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 21] = [
+     include_str!("../../../../migrations/20261003000500_audit_observation_freshness/up.sql"),
+     include_str!("../../../../migrations/20261006000100_audit_ack_observation_clock/up.sql"),
+     include_str!("../../../../migrations/20261006000200_audit_fresh_claim_finalization/up.sql"),
++    include_str!(
++        "../../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/up.sql"
++    ),
++    include_str!("../../../../migrations/20261009000500_compact_exported_decision_payload/up.sql"),
+ ];
+ 
+ pub fn schema_database_url(base: &str, schema: &str) -> String {
+diff --git a/crates/persistence-postgres/tests/token_issuance_atomicity.rs b/crates/persistence-postgres/tests/token_issuance_atomicity.rs
+index 7d223643..165e83ee 100644
+--- a/crates/persistence-postgres/tests/token_issuance_atomicity.rs
++++ b/crates/persistence-postgres/tests/token_issuance_atomicity.rs
+@@ -1070,7 +1070,7 @@ async fn native_source_cross_client_capacity_and_maintenance_complete_without_de
+         tokio::join!(
+             repo.commit_token_issuance(into_two.clone()),
+             repo.commit_token_issuance(into_one.clone()),
+-            maintenance.cleanup_batch()
++            maintenance.cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
+         )
+     })
+     .await
+@@ -1338,3 +1338,67 @@ async fn authorization_code_receipt_migration_preserves_legacy_and_rejects_old_w
+     assert!(legacy.authorization_code_holder.is_none());
+     connection.batch_execute("ROLLBACK").await.unwrap();
+ }
++
++#[tokio::test]
++async fn expired_redemption_receipt_is_invisible_before_physical_reclamation() {
++    let url = database_url().expect("receipt expiry validation requires real isolated PostgreSQL");
++    let fixture = fixture(&url).await;
++    let tenant_id = Uuid::from_u128(1);
++    let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
++    let grant_key = format!("receipt-expiry-{}", Uuid::now_v7());
++    let input = issuance(
++        &fixture,
++        tenant_id,
++        TokenIssuanceMode::SingleUse {
++            grant_key: grant_key.clone(),
++            grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(1),
++        },
++        None,
++    )
++    .await;
++    let id = input.issuance_id;
++    assert_eq!(
++        repository.commit_token_issuance(input).await.unwrap(),
++        CommitTokenIssuanceResult::Committed
++    );
++    assert!(
++        repository
++            .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
++            .await
++            .unwrap()
++            .is_some()
++    );
++    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
++    // Fixture clocks represent an expired token still inside its safety
++    // retention window. Access-token expiry alone cannot release the receipt.
++    sql_query("UPDATE oauth_token_issuances SET access_token_expires_at = clock_timestamp() - interval '1 second', retain_until = clock_timestamp() + interval '1 minute' WHERE issuance_id = $1")
++        .bind::<sql_types::Uuid, _>(id).execute(&mut connection).await.unwrap();
++    assert!(
++        repository
++            .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
++            .await
++            .unwrap()
++            .is_some()
++    );
++    sql_query("UPDATE oauth_token_issuances SET access_token_expires_at = clock_timestamp() - interval '2 minutes', retain_until = clock_timestamp() - interval '1 second' WHERE issuance_id = $1")
++        .bind::<sql_types::Uuid, _>(id).execute(&mut connection).await.unwrap();
++    assert!(
++        repository
++            .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
++            .await
++            .unwrap()
++            .is_none(),
++        "an expired receipt must not remain replay authority until the physical sweep"
++    );
++    let count = sql_query(
++        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
++    )
++    .bind::<sql_types::Uuid, _>(id)
++    .get_result::<CountRow>(&mut connection)
++    .await
++    .unwrap();
++    assert_eq!(
++        count.count, 1,
++        "reading expiry must not delete persistent rows"
++    );
++}
+diff --git a/crates/persistence-postgres/tests/unit/repositories/tokens.rs b/crates/persistence-postgres/tests/unit/repositories/tokens.rs
+index c8cd78a7..b942dc88 100644
+--- a/crates/persistence-postgres/tests/unit/repositories/tokens.rs
++++ b/crates/persistence-postgres/tests/unit/repositories/tokens.rs
+@@ -186,8 +186,8 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views()
+     let spent_contract = contract.clone();
+     let original_allocation = contract.audiences.as_ptr();
+     let current = token_from_current(family.clone(), contract).unwrap();
+-    assert_eq!(current.contract_audiences, ["resource://a", "resource://b"]);
+-    assert_eq!(current.contract_audiences.as_ptr(), original_allocation);
++    assert_eq!(current.contract.audiences, ["resource://a", "resource://b"]);
++    assert_eq!(current.contract.audiences.as_ptr(), original_allocation);
+     assert_eq!(current.audience, ["resource://a"]);
+     assert_eq!(current.id_token_sid.as_deref(), Some("generation-sid"));
+     let spent = SpentRefreshTokenRow {
+@@ -198,13 +198,13 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views()
+     };
+     let mut restored = token_from_spent(spent, family, spent_contract).unwrap();
+     assert_eq!(
+-        restored.contract_audiences,
++        restored.contract.audiences,
+         ["resource://a", "resource://b"]
+     );
+     assert_eq!(restored.audience, ["resource://a", "resource://b"]);
+     restored.audience[0] = "changed".into();
+     assert_eq!(
+-        restored.contract_audiences,
++        restored.contract.audiences,
+         ["resource://a", "resource://b"]
+     );
+     assert_eq!(restored.id_token_sid.as_deref(), Some("generation-sid"));
+diff --git a/crates/persistence/src/maintenance.rs b/crates/persistence/src/maintenance.rs
+index 056d12fd..b578c40d 100644
+--- a/crates/persistence/src/maintenance.rs
++++ b/crates/persistence/src/maintenance.rs
+@@ -43,11 +43,23 @@ pub struct CleanupBatchResult {
+     pub saturated: bool,
+ }
+ 
++/// Retention classes selected by the host's existing maintenance worker.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum CleanupScope {
++    /// Bounded protocol receipts and delivery/issuance state.
++    ProtocolState,
++    /// Protocol state plus long-retained audit history.
++    IncludingHistory,
++}
++
+ /// The single security-state maintenance boundary.
+ ///
+ /// Implementations must bound every category (no drain-until-empty loops) and
+ /// coordinate with writers through the existing refresh-family advisory key —
+ /// never by taking a second family lock or a global lock.
+ pub trait SecurityStateMaintenancePort: Send + Sync {
+-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult>;
++    fn cleanup_batch(
++        &self,
++        scope: CleanupScope,
++    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult>;
+ }
+diff --git a/crates/state-store-valkey/tests/authorization_contract.rs b/crates/state-store-valkey/tests/authorization_contract.rs
+index 7b94dfad..9bddcb81 100644
+--- a/crates/state-store-valkey/tests/authorization_contract.rs
++++ b/crates/state-store-valkey/tests/authorization_contract.rs
+@@ -1301,3 +1301,45 @@ async fn reauthentication_precision_is_versioned_and_legacy_nonce_is_consumed_fa
+     assert!(store.take_reauth_nonce(&nonce).await.is_err());
+     assert_eq!(store.take_reauth_nonce(&nonce).await.unwrap(), None);
+ }
++
++#[tokio::test]
++async fn abandoned_preparation_expires_without_an_application_cleanup_worker() {
++    let (store, inspector) = setup()
++        .await
++        .expect("TTL lifecycle validation requires a real isolated Valkey");
++    let request_id = uuid::Uuid::now_v7().to_string();
++    let consent = consent_payload(&request_id, uuid::Uuid::now_v7());
++    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
++    let live_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
++    assert_eq!(
++        store.store_consent(&request_id, &consent, 2).await.unwrap(),
++        AuthorizationPreparationWrite::Stored
++    );
++    assert_eq!(
++        store
++            .store_par(&request_uri, &par_payload(), 2)
++            .await
++            .unwrap(),
++        AuthorizationPreparationWrite::Stored
++    );
++    assert_eq!(
++        store
++            .store_par(&live_uri, &par_payload(), 30)
++            .await
++            .unwrap(),
++        AuthorizationPreparationWrite::Stored
++    );
++    let consent_key = nazo_valkey::test_support::consent_storage_key(&request_id);
++    let par_key = nazo_valkey::test_support::par_storage_key(&request_uri);
++    for key in [&consent_key, &par_key] {
++        assert!((1..=2_000).contains(&inspector.pttl::<i64, _>(key).await.unwrap()));
++    }
++    // No application host, PostgreSQL maintenance, delete, TTL rewrite or
++    // access to these abandoned records runs during their remaining lifetime.
++    tokio::time::sleep(Duration::from_millis(2_100)).await;
++    assert!(store.load_consent(&request_id).await.unwrap().is_none());
++    assert!(store.load_par(&request_uri).await.unwrap().is_none());
++    assert_eq!(inspector.pttl::<i64, _>(&consent_key).await.unwrap(), -2);
++    assert_eq!(inspector.pttl::<i64, _>(&par_key).await.unwrap(), -2);
++    assert!(store.load_par(&live_uri).await.unwrap().is_some());
++}
+diff --git a/docs/operations/ha-operations.md b/docs/operations/ha-operations.md
+index 10f101fa..44b4afb9 100644
+--- a/docs/operations/ha-operations.md
++++ b/docs/operations/ha-operations.md
+@@ -136,6 +136,9 @@ instances from double-processing the same rows.
+   retain at most 64. Family deletion cascades remaining proofs. The public
+   footprint depends on rotation rate × original token TTL plus cleanup lag;
+   the 60-second normal maintenance delay is not a deletion SLA.
++  Long-retained SCIM audit history is included initially and once per hour after
++  a drained history cycle; its 180-day retention is unchanged. Failed or
++  budget-limited cycles remain due. Protocol expiry is still checked at use.
+ - Before migration `20261001000500`, stop old token writers. The migration
+   revokes existing unbound public refresh families once, with transactional
+   audit evidence, because previously trimmed opaque history cannot be restored.
+diff --git a/docs/security/security-events.md b/docs/security/security-events.md
+index a19da6c0..c426defc 100644
+--- a/docs/security/security-events.md
++++ b/docs/security/security-events.md
+@@ -222,6 +222,13 @@ The event type is reserved: ordinary audit append cannot create a business
+ authority fact. Export and chain construction may happen later, but export
+ acknowledgement does not erase a still-needed business fence. The exporter
+ projects only audit-safe fact fields, not raw code or full code payload.
++After the validated batch ACK, the same transaction replaces the delivered
++payload with an empty object while retaining all business fields and independent
++request/PAR fences. Pending payloads and their chain bytes remain immutable.
++The externally acknowledged ledger retains the original audit evidence. A
++failed ACK leaves the original payload, prefix and checkpoint together; a
++compacted row cannot be exported again or reclaimed before business retention.
++Downgrading restores future ACK behavior but does not recreate delivered payload.
+ 
+ 
+ ### DCR and endpoint revocation transaction ownership
+diff --git a/tests/contracts/migrations.sha256 b/tests/contracts/migrations.sha256
+index 36eb87ea..d2634358 100644
+--- a/tests/contracts/migrations.sha256
++++ b/tests/contracts/migrations.sha256
+@@ -226,3 +226,7 @@ eff3fbbc7c83380d1599aebc827d49233ef8515303ac2ff5244d3f12241a8c18  migrations/202
+ b41227f642ac84616e42f456c9389a0383116a85171e6faf40fa3f9ff82cd701  migrations/20261009000300_compact_oidc_claim_selections/up.sql
+ 8d34ea61c6af316c2c8bfffed51808da825ea1eaa5e8893cfa167c386f2d5f6a  migrations/20261009000400_single_presentation_response_mode/down.sql
+ b44fb0e7811e322ef1864b807c1b3af253122558bd396bd67ffda4a1ba1713f7  migrations/20261009000400_single_presentation_response_mode/up.sql
++6dcafd23602bfc428238c60ba246041c942bb1358462f67941e6dd5b64892046  migrations/20261009000500_compact_exported_decision_payload/down.sql
++4ec9633ca1742797e8c52c9502920eae63eb41faa8f49f870e6321c2b37ec58a  migrations/20261009000500_compact_exported_decision_payload/up.sql
++3566ed069acb2cf415f47f447011f1a6d02e1858551231be9b8180fc59508153  migrations/20261009000600_separate_audit_history_cleanup/down.sql
++612f6435d70e955120cab1ad97309da1ca652eea998b56b5d63db572b313d8a2  migrations/20261009000600_separate_audit_history_cleanup/up.sql
+diff --git a/docs/project/state-model-review.md b/docs/project/state-model-review.md
+new file mode 100644
+index 00000000..4e0d7800
+--- /dev/null
++++ b/docs/project/state-model-review.md
+@@ -0,0 +1,57 @@
++# Storage placement and large model review
++
++This review separates a model's responsibility from its top-level field count. The inventory scans named production Rust structs with at least 20 direct fields (excluding tests and generated schema). It is a triage inventory, not a proof that every field of every smaller type or enum has been exhaustively audited. The storage catalogue is in [state-storage-lifecycle.md](state-storage-lifecycle.md).
++
++## Implemented corrections
++
++- `RefreshToken` now composes the existing `RefreshContract` instead of flattening its five original-grant fields into the current-token projection. Current audiences, generation SID and expiry remain separate. The database decoder retains the contract it decoded instead of destructuring and reconstructing it. No table split, SQL call, serialization change or new allocation is introduced by this grouping; field-count reduction is not claimed as a storage saving.
++- `PreparedDynamicClientRegistration` directly owns `CreateClientRequest` plus negotiated `response_types`. The 47-field carrier and its nearly one-to-one conversion are removed. Dynamic-registration-only defaults are set at negotiation. Wire registration metadata, unsupported-choice rejection, mTLS and CIBA checks, remote JWKS resolution and subsequent create validation remain in their existing boundaries.
++- A redeemed VCI offer clears the unread encrypted grant body and TX-code verifier in the same conditional consume update. It retains the consumption fact, original expiry, code digest and authorization metadata. A stale snapshot in a weaker store must not revive a one-use credential; no KV move is made without that guarantee.
++- Timestamp validity and physical retention are independent. Single-use receipts are filtered by their safety deadline at read. Exported decision payload is compacted only by the existing authenticated acknowledgement transaction; structured replay fences and business retention survive. SCIM history with 180-day retention is reclaimed hourly, while the existing bounded protocol-state worker retains its 60-second cadence.
++
++## Large models and decisions
++
++Counts below describe the pre-change direct fields, not bytes or database columns.
++
++| Model | Fields | Ownership and decision |
++|---|---:|---|
++| `DynamicClientRegistrationRequest` | 68 | Untrusted protocol input, including alternate negotiation choices. Keep the flat wire contract; choices and selected values must be checked for consistency, then discarded or normalized. Do not persist the raw request as another client. |
++| `PreparedDynamicClientRegistration` | 47 | Repeated normalized metadata carrier. Replace its field list with the existing create request and the separate response choices. |
++| `CreateClientRequest` / `PatchClientRequest` | 51 / 46 | Commands with distinct create/default and patch/absence semantics. Keep those distinct semantics; merging them would confuse absence with resetting a field. |
++| `ValidatedClientRegistration` | 51 | One normalized client registration. Presentation and security policy already have explicit owners. Endpoint-specific signing/encryption algorithms are independent protocol choices, not duplicate copies of one algorithm. No new tables or shared generic policy object solely to lower the count. |
++| `ClientMetadata` | 31 | Borrowed view shared by create/patch validation, not an independently stored authority. mTLS selection already has a focused validator. Splitting the borrow list has no proven storage benefit. |
++| `OAuthClientRecord` | 59 | Adapter-only SQL projection. It decodes into client registration plus tenant/runtime identity. Projection width does not require multiple queries or tables. Credentials are not added to the runtime metadata boundary. |
++| `RefreshToken` | 20 | Original grant and mutable current generation were flattened together. Compose `RefreshContract`; preserve original vs current audience, sender binding and SID distinctions. |
++| `TokenIssue` | 28 | Request-local candidate signing input plus its durable refresh source. The signed result and original authority are different responsibilities, checked by `refresh_issue_matches_source`. Keep that comparison: a narrower AT audience or stronger AT binding must not rewrite the original RT authority. No field is removed merely because its value often equals the source. This review does not claim this input is a fully unrepresentable-state API. |
++| `ConsentPayload` | 27 | One expiring consent continuation, with client policy snapshots and PAR linkage. Consent decision and authorization-code redemption are separate phases; code state must not retain all consent UI fields. Existing separate `CodePayload` is retained. |
++| `CodePayload` | 20 | One expiring redeemable grant, PKCE, sender and authentication constraints. KV owns the preparation/consumption lifecycle; a separate minimal durable receipt links the completed issuance for replay handling. |
++| `Claims` | 20 | Access-token wire claims. Issuer, tenant, user identity, external subject and revocation epochs have different consumers. Do not remove signed security context to reduce struct size. |
++| `TokenForm` | 21 | Untrusted input for multiple grant types. Normalize into the existing grant-specific admissions; it is not a database model. |
++| `AccountProfileView` | 26 | Stable browser response projection. Domain account/profile/address are already composed; changing JSON nesting would be an API change without changing stored state. |
++| `SubjectClaims` | 20 | Read-only OIDC claim selection input with an existing `PostalAddress`. It is not a second user-write authority. |
++| `PublicAccountRow` / `SubjectClaimsRow` | 33 / 31 | Adapter projections for different read consumers. Keep decoding boundaries and tenant predicates; do not introduce joins merely to make each Rust struct smaller. |
++| `UserInsert` | 25 | Adapter insert shape for account creation, not a universal mutable user aggregate. Domain identity/profile structures remain separate. |
++| `UserProfileFields` | 20 | Desired resource profile command; keep desired-state reconciliation distinct from the observed user projection and preserve address/verification semantics. No duplicate runtime cache is added. |
++| `SecurityAuditAnchorHealthRow` | 21 | One query projection of chain/checkpoint and in-flight lease. Domain already composes a separate `SecurityAuditBatchLease`. Splitting the query can lose the single-observation relationship and add round trips. |
++| `ProviderConfig` | 22 | Startup input only. It is immediately converted into typed OIDC/social provider variants; the broad optional configuration is not used during request execution. |
++| `CoreServices` / `IdentityServices` | 23 / 35 | Bootstrap dependency bundles, not persisted business records. Do not apply database normalization or TTL rules to service handles. |
++
++These decisions reject mechanical splitting, not future changes supported by a concrete independent lifecycle or invalid-state defect. In particular, the presence of many optional protocol fields is not evidence of unbounded persistent growth.
++
++## Storage and failure semantics
++
++The normal form is one authority per fact, not one database for every short-lived object. Independently expiring browser/protocol preparation already resides in Valkey. Request-local normalized values remain memory-only. Completed issuance, revocation, rotation ancestry, Required evidence and recoverable business results retain their required durable ownership.
++
++Offer consumption precedes grant issuance in separate commits; it was incorrectly described as one transaction in the earlier catalogue. Nevertheless, current access-grant identity is newly generated and does not durably fence an offer identity. Moving the offer alone to a store that can restore an earlier unconsumed value would permit another valid redemption. A short TTL does not solve that failure mode. Retaining its compact consumed state is the shorter correct change here.
++
++Required evidence is never replaced by Telemetry HTTP success. Acknowledgement compaction does not reduce safety TTLs or imply that physical PostgreSQL files shrink immediately. Logical retained rows, expired eligible backlog, dead tuples and reusable high-water allocation must be reported separately in performance evidence.
++
++## Normative references
++
++The specifications define protocol behavior rather than a required database product:
++
++- [RFC 7591 client metadata](https://www.rfc-editor.org/rfc/rfc7591.html#section-2) and [OIDC registration metadata](https://openid.net/specs/openid-connect-registration-1_0.html#ClientMetadata) explain why the external registration shape has many distinct fields.
++- [OAuth authorization-code reuse](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1.2), [refresh-token protection](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2), and [OpenID4VCI](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html) constrain consumption and replay semantics.
++- [Valkey replication](https://valkey.io/topics/replication/) does not promise strong consistency merely from acknowledgements to replicas. TTL is not a substitute for the acknowledged-write failure contract.
++
++Test commands and measured results belong to the accompanying acceptance evidence; this design document alone is not a performance or storage PASS.
+diff --git a/docs/project/state-storage-lifecycle.md b/docs/project/state-storage-lifecycle.md
+new file mode 100644
+index 00000000..070562ce
+--- /dev/null
++++ b/docs/project/state-storage-lifecycle.md
+@@ -0,0 +1,52 @@
++# State storage ownership and expiry
++
++Expiry is checked at use. Physical reclamation must not grant or revoke authority.
++
++This inventory classifies all 58 tables in the merged-source catalog and the active Valkey families. A retention deadline alone does not decide storage: atomic mutation and evidence ownership do. It does not authorize shortening retention or losing replay evidence.
++
++## PostgreSQL ownership
++
++|责任|模型|保留原因 / 回收边界|源码|
++|---|---|---|---|
++|身份与组织的权威事实|`tenants`, `realms`, `organizations`, `users`, `external_identity_links`, `oauth_subject_bindings`, `user_client_grants`, `oauth_clients`, `client_access_requests`|长期 PG；按业务变更或所有者删除，不因 TTL 自动丢失。|`crates/persistence-postgres/src/repositories/authorization.rs`|
++|长期凭据与管理授权|`user_totp_credentials`, `user_mfa_backup_codes`, `user_mfa_remembered_devices`, `user_passkey_credentials`, `scim_tokens`|PG；MFA 代际、防重放消费、凭据撤销及用户/租户关系。remembered expiry 在使用时校验，不能绕开凭据代际。|`crates/persistence-postgres/src/repositories/mfa.rs`|
++|控制与恢复工作流|`controller_registry_slots`, `controller_identity_approvals`, `controller_recovery_roots`, `controller_recovery_root_key_history`, `controller_recovery_challenges`, `admin_provision_receipts`, `recovery_invalidations`|PG；批准、已消费挑战、恢复结果与管理变更存在原子/重试契约。带期限不等于缓存。|`crates/persistence-postgres/src/repositories/recovery_root.rs`|
++|租户、配置、密钥与运行时事实|`tenant_directory_control_operations`, `tenant_resource_states`, `tenant_resource_control_operations`, `tenant_resource_bindings`, `tenant_runtime_bindings`, `tenant_runtime_directory_state`, `tenant_signing_keysets`, `runtime_module_desired_states`, `runtime_module_instance_states`, `runtime_module_state_events`|PG；版本、控制操作回执与签名密钥跨重启保留。失活/过期判定不由清理触发。|`crates/persistence-postgres/src/repositories/runtime_modules.rs`|
++|信任配置与凭据数据集|`openid4vc_trust_policies`, `openid4vc_trust_policy_clients`, `openid4vci_credential_datasets`, `openid4vci_credential_dataset_events`, `oauth_client_mtls_trust_anchor_events`, `oauth_client_mtls_trust_anchor_requests`|PG；配置/审批/事件是权威事实，依租户和版本约束。|`crates/persistence-postgres/src/repositories/openid4vc.rs`|
++|有限保留的事务安全凭据|`oauth_refresh_contracts`, `oauth_refresh_families`, `oauth_refresh_spent_tokens`, `oauth_token_issuances`, `access_token_revocations`|PG 例外；保留窗口可能短，但与原子发行、刷新、撤销、重放处理同事务。不是长期业务档案，也不是可丢缓存。不得迁移消费标记单独跨库提交。|`crates/persistence-postgres/src/repositories/token_issuance.rs`|
++|VCI offer 的单次消费|`openid4vci_offers`|30–600 秒的流程材料与消费事实；offer 消费和后续 grant 写入是两个提交，不是共同事务。当前保留 PG 的已确认消费，不直接迁移到可能恢复旧快照的 KV：grant 没有 offer 身份，旧值复活后没有另一条持久防线。消费时在原 UPDATE 内清空不再读取的 grants 密文和 TX-code verifier，保留原截止、消费事实及另一授权入口所需元数据。|`crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs`|
++|VCI 原子完成与可恢复签发|`openid4vci_nonces`, `openid4vci_access_grants`, `openid4vci_deferred_transactions`, `openid4vci_notifications`, `openid4vci_issuance_responses`|PG 有限保留工作流；nonce 最终消费与结果/通知创建确实共同提交，grant 所有权和撤销仍须校验。期限在读写时判断，子记录/所有权不能独立 TTL 删除。|`crates/persistence-postgres/src/repositories/openid4vc_issuance_store/`|
++|VP 创建幂等与结果|`openid4vp_transactions`|PG 有限保留工作流；保存操作签名请求的幂等身份、原始加密密钥和已完成结果。不是普通浏览器准备缓存；本轮保留既有跨重启可恢复契约，没有以 TTL 为由改成可能丢失的状态。|`crates/persistence-postgres/src/repositories/openid4vc_presentation.rs`|
++|安全审计与投递事实|`identity_security_events`, `scim_audit_events`, `scim_security_events`, `scim_security_event_receipts`, `backchannel_logout_deliveries`, `security_audit_events`, `security_audit_chain_entries`, `security_audit_chain_state`|PG；普通审计事件/链条目 ACK 后释放；decision 的审计载荷确认后压缩，消费凭据仍留到安全截止。SCIM 有独立保留/订阅回执，投递有重试/租约。checkpoint 不按业务 TTL 删除。|`crates/persistence-postgres/src/repositories/audit_ledger.rs`|
++|适配器版本元数据|`__diesel_schema_migrations`|PG；schema 版本，不是业务模型。|`migrations/`|
++
++## Valkey transient state
++
++These existing models remain Valkey-owned; no PostgreSQL copy or replacement namespace is introduced. TTL expiry is independent of the SQL maintenance worker.
++
++|模型|TTL/消费所有者|
++|---|---|
++|PAR、consent、authorization code、reauth nonce|`state-store-valkey/src/authorization.rs`；绝对业务期限与原始 TTL，原子版本比较/消费|
++|Device、CIBA、ping delivery|`device.rs` / `ciba.rs`；原始期限与原子状态转换。due sorted set 是投递索引，不能给整个集合套一个会删除所有主体的 TTL|
++|Session、Native SSO、client delivery|`session.rs` / `token_state.rs` / `delivery.rs`；原始期限、轮换/主体绑定|
++|邮箱验证码及冷却、Passkey ceremony、OIDC/social federation state|`authentication.rs`；一次消费、发送所有权和 TTL|
++|DPoP nonce/replay、JAR、JWT assertion、client attestation、CIBA request replay、HTTP/SAML signatures|`replay.rs`；原子 NX 与完整接收窗口。KV 也需要符合安全状态保留约束，不能视为任意可丢缓存|
++|Avatar upload stages|`avatar_upload_state.rs`；绝对到期与 generation fence|
++|Rate/login/MFA failure counters|`rate_limit.rs`；原子计数、固定窗口 TTL|
++|Tenant-directory snapshot|`tenant_directory.rs`；PG 权威的可重建版本化投影，不是按 TTL 消费的授权事实|
++
++## Models that must not become durable rows
++
++HTTP inputs/outputs, validation results, normalized requests, request-local principal snapshots, prepared signatures, connection leases and runtime service handles stay in request/process memory unless a specifically documented business fact is committed. Derived names, counts and validity booleans must not become another mutable authority beside their original facts.
++
++## Validation boundary
++
++Model placement is not changed merely to satisfy a storage label. The existing independently expiring request state is already in Valkey. PG short-window security receipts are explicitly separated from long-lived business facts; their physical reclamation policy must be reported separately, including retention cost. No new cache authority, cross-store transaction or recovery queue is introduced.
++
++## Physical reclamation cadence
++
++No worker writes an “expired” status to make a credential invalid. Every use must enforce its timestamp and security predicates even when the row still exists. The single maintenance worker selects `ProtocolState` on its normal 60-second interval and `IncludingHistory` initially and after an hour has elapsed since a completed history cycle. The latter additionally reclaims SCIM audit history only after its unchanged 180-day retention. Both retain the existing bounded batches, database cutoff, lock rules, cancellation behavior and catch-up budget. Failures or incomplete catch-up do not defer unfinished history for an hour.
++
++The earlier 10-second interval experiment is not used. Conversely, a one-hour interval is not applied to high-rate protocol receipts: it would increase their expired resident population without shortening any safety obligation. Required evidence is never discarded by a timer before acknowledgement. Optional/Disabled audit exports are not promised bounded disk use during an indefinite receiver outage.
++
++TTL moves physical expiry into Valkey; it does not remove the logical live-state cost or make asynchronous replication durable. Local memory is appropriate for request values and reconstructible projections, not a replacement for shared one-use or revocation authority. At rate λ and necessary retention T, approximately λ×T records can be legitimate live state. Expired eligible backlog, retained live records, dead tuples waiting for vacuum and reusable physical high-water space must be measured separately.
+diff --git a/migrations/20261009000500_compact_exported_decision_payload/down.sql b/migrations/20261009000500_compact_exported_decision_payload/down.sql
+new file mode 100644
+index 00000000..cd400145
+--- /dev/null
++++ b/migrations/20261009000500_compact_exported_decision_payload/down.sql
+@@ -0,0 +1,137 @@
++-- Restore future ACK behavior without inventing already delivered payload.
++-- Existing compact exported rows retain the same business fields and fences;
++-- their original audit evidence remains in the acknowledged external ledger.
++
++CREATE OR REPLACE FUNCTION public.nazo_reject_security_audit_event_mutation()
++RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
++BEGIN
++    IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'security_audit_events' THEN
++        IF current_setting('nazo.audit_ack', true) IS NOT DISTINCT FROM 'on'
++           AND OLD.event_type = 'authorization_decision_committed'
++           AND OLD.exported_at IS NULL AND NEW.exported_at IS NOT NULL
++           AND isfinite(NEW.exported_at)
++           AND (to_jsonb(OLD) - 'exported_at') = (to_jsonb(NEW) - 'exported_at')
++           AND convert_to(OLD.payload::TEXT, 'UTF8') = convert_to(NEW.payload::TEXT, 'UTF8') THEN
++            RETURN NEW;
++        END IF;
++    END IF;
++    IF TG_OP = 'DELETE' AND current_setting('nazo.audit_reclaim', true) IS NOT DISTINCT FROM 'on' THEN
++        IF TG_TABLE_NAME = 'security_audit_events' THEN
++            IF OLD.event_type = 'authorization_decision_committed'
++               AND (OLD.exported_at IS NULL OR OLD.business_retain_until > clock_timestamp()) THEN
++                RAISE EXCEPTION 'authorization decision still owns a live consumption fence';
++            END IF;
++        END IF;
++        RETURN OLD;
++    END IF;
++    RAISE EXCEPTION 'security audit ledger is append-only';
++END;
++$$;
++
++CREATE OR REPLACE FUNCTION public.nazo_ack_security_audit_batch(
++    p_generation BIGINT, p_first_sequence BIGINT, p_last_sequence BIGINT,
++    p_event_count INTEGER, p_last_hash BYTEA, p_batch_digest BYTEA,
++    p_deployment_id TEXT
++) RETURNS BOOLEAN
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
++DECLARE
++    v_anchor BIGINT;
++    v_members BIGINT;
++    v_deleted INTEGER;
++    v_retained INTEGER;
++    v_ids UUID[];
++    v_occurred_at TIMESTAMPTZ;
++    v_exported_at TIMESTAMPTZ;
++BEGIN
++    IF p_deployment_id IS NULL OR char_length(p_deployment_id) NOT BETWEEN 1 AND 255
++       OR p_event_count IS NULL OR p_event_count NOT BETWEEN 1 AND 256
++       OR p_last_hash IS NULL OR octet_length(p_last_hash) <> 32
++       OR p_batch_digest IS NULL OR octet_length(p_batch_digest) <> 32 THEN
++        RAISE EXCEPTION 'audit batch acknowledgement arguments are invalid';
++    END IF;
++    SELECT state.anchor_sequence INTO v_anchor
++    FROM public.security_audit_chain_state AS state
++    WHERE state.singleton AND state.batch_last_sequence IS NOT NULL
++      AND (state.anchor_deployment_id IS NULL OR state.anchor_deployment_id = p_deployment_id)
++      AND state.batch_generation = p_generation
++      AND state.batch_first_sequence = p_first_sequence
++      AND state.batch_last_sequence = p_last_sequence
++      AND state.batch_event_count = p_event_count
++      AND state.batch_digest = p_batch_digest
++    FOR UPDATE OF state;
++    IF NOT FOUND THEN RETURN FALSE; END IF;
++    IF p_first_sequence <> COALESCE(v_anchor, 0) + 1 THEN
++        RAISE EXCEPTION 'audit batch acknowledgement does not continue the anchor checkpoint';
++    END IF;
++    -- Start from the committed prefix, never the estimated pending set.
++    -- The extra member preserves rejection of an oversized prefix; the later
++    -- DELETE row-count check still rejects corruption beyond this bound.
++    WITH members AS MATERIALIZED (
++        SELECT chain.event_id FROM public.security_audit_chain_entries AS chain
++        WHERE chain.sequence > COALESCE(v_anchor, 0) AND chain.sequence <= p_last_sequence
++        ORDER BY chain.sequence LIMIT 257
++    )
++    SELECT COUNT(*), COALESCE(array_agg(event.event_id), '{}'::UUID[]) INTO v_members, v_ids
++    FROM members
++    CROSS JOIN LATERAL (
++        SELECT event.event_id, event.exported_at
++        FROM public.security_audit_events AS event
++        WHERE event.event_id = members.event_id LIMIT 1
++    ) AS event
++    WHERE event.exported_at IS NULL;
++    IF v_members <> p_event_count OR NOT EXISTS (
++        SELECT 1 FROM public.security_audit_chain_entries AS chain
++        WHERE chain.sequence = p_last_sequence AND chain.event_hash = p_last_hash
++    ) THEN
++        RAISE EXCEPTION 'audit batch members no longer form the committed prefix';
++    END IF;
++    SELECT event.occurred_at INTO v_occurred_at
++    FROM public.security_audit_chain_entries AS chain
++    JOIN public.security_audit_events AS event ON event.event_id = chain.event_id
++    WHERE chain.sequence = p_last_sequence;
++
++    -- Sample once after the head lock and complete batch validation. This is
++    -- the ACK operation time, shared by retained facts and both checkpoints.
++    v_exported_at := clock_timestamp();
++
++    -- Chain proof is delivery-only. Decision rows also own business fences;
++    -- retain them and mark export complete inside this same ACK transaction.
++    PERFORM set_config('nazo.audit_reclaim', 'on', true);
++    DELETE FROM public.security_audit_chain_entries AS chain
++    WHERE chain.sequence > COALESCE(v_anchor, 0) AND chain.sequence <= p_last_sequence;
++    GET DIAGNOSTICS v_deleted = ROW_COUNT;
++    IF v_deleted <> p_event_count THEN
++        RAISE EXCEPTION 'audit batch acknowledgement reclaimed an unexpected chain count';
++    END IF;
++    PERFORM set_config('nazo.audit_ack', 'on', true);
++    UPDATE public.security_audit_events AS event
++    SET exported_at = v_exported_at
++    WHERE event.event_id = ANY(v_ids)
++      AND event.event_type = 'authorization_decision_committed'
++      AND event.exported_at IS NULL;
++    GET DIAGNOSTICS v_retained = ROW_COUNT;
++    PERFORM set_config('nazo.audit_ack', 'off', true);
++    DELETE FROM public.security_audit_events AS event
++    WHERE event.event_id = ANY(v_ids)
++      AND event.event_type <> 'authorization_decision_committed';
++    GET DIAGNOSTICS v_deleted = ROW_COUNT;
++    IF v_deleted + v_retained <> p_event_count THEN
++        RAISE EXCEPTION 'audit batch acknowledgement reclaimed an unexpected event count';
++    END IF;
++    PERFORM set_config('nazo.audit_reclaim', 'off', true);
++
++    UPDATE public.security_audit_chain_state AS state
++    SET anchor_deployment_id = p_deployment_id,
++        anchor_sequence = p_last_sequence,
++        anchor_hash = p_last_hash,
++        anchor_occurred_at = v_occurred_at,
++        anchor_accepted_at = v_exported_at,
++        anchor_observed_at = v_exported_at,
++        batch_first_sequence = NULL, batch_last_sequence = NULL,
++        batch_event_count = NULL, batch_digest = NULL,
++        batch_attempts = 0, batch_available_at = NULL, batch_locked_until = NULL,
++        batch_last_error = NULL, batch_blocked_reason = NULL
++    WHERE state.singleton;
++    RETURN TRUE;
++END;
++$$;
+diff --git a/migrations/20261009000500_compact_exported_decision_payload/up.sql b/migrations/20261009000500_compact_exported_decision_payload/up.sql
+new file mode 100644
+index 00000000..1c9d4e5e
+--- /dev/null
++++ b/migrations/20261009000500_compact_exported_decision_payload/up.sql
+@@ -0,0 +1,141 @@
++-- Delivered audit bytes belong to the acknowledged external ledger.
++-- Keep the existing decision row as the sole request/PAR consumption fence.
++-- No new state, queue, index, privilege or request-path query is introduced.
++-- Existing exported rows naturally expire; do not rewrite them during migration.
++
++CREATE OR REPLACE FUNCTION public.nazo_reject_security_audit_event_mutation()
++RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
++BEGIN
++    IF TG_OP = 'UPDATE' AND TG_TABLE_NAME = 'security_audit_events' THEN
++        IF current_setting('nazo.audit_ack', true) IS NOT DISTINCT FROM 'on'
++           AND OLD.event_type = 'authorization_decision_committed'
++           AND OLD.exported_at IS NULL AND NEW.exported_at IS NOT NULL
++           AND isfinite(NEW.exported_at)
++           AND (to_jsonb(OLD) - ARRAY['exported_at', 'payload']) =
++               (to_jsonb(NEW) - ARRAY['exported_at', 'payload'])
++           AND NEW.payload = '{}'::JSONB THEN
++            RETURN NEW;
++        END IF;
++    END IF;
++    IF TG_OP = 'DELETE' AND current_setting('nazo.audit_reclaim', true) IS NOT DISTINCT FROM 'on' THEN
++        IF TG_TABLE_NAME = 'security_audit_events' THEN
++            IF OLD.event_type = 'authorization_decision_committed'
++               AND (OLD.exported_at IS NULL OR OLD.business_retain_until > clock_timestamp()) THEN
++                RAISE EXCEPTION 'authorization decision still owns a live consumption fence';
++            END IF;
++        END IF;
++        RETURN OLD;
++    END IF;
++    RAISE EXCEPTION 'security audit ledger is append-only';
++END;
++$$;
++
++CREATE OR REPLACE FUNCTION public.nazo_ack_security_audit_batch(
++    p_generation BIGINT, p_first_sequence BIGINT, p_last_sequence BIGINT,
++    p_event_count INTEGER, p_last_hash BYTEA, p_batch_digest BYTEA,
++    p_deployment_id TEXT
++) RETURNS BOOLEAN
++LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
++DECLARE
++    v_anchor BIGINT;
++    v_members BIGINT;
++    v_deleted INTEGER;
++    v_retained INTEGER;
++    v_ids UUID[];
++    v_occurred_at TIMESTAMPTZ;
++    v_exported_at TIMESTAMPTZ;
++BEGIN
++    IF p_deployment_id IS NULL OR char_length(p_deployment_id) NOT BETWEEN 1 AND 255
++       OR p_event_count IS NULL OR p_event_count NOT BETWEEN 1 AND 256
++       OR p_last_hash IS NULL OR octet_length(p_last_hash) <> 32
++       OR p_batch_digest IS NULL OR octet_length(p_batch_digest) <> 32 THEN
++        RAISE EXCEPTION 'audit batch acknowledgement arguments are invalid';
++    END IF;
++    SELECT state.anchor_sequence INTO v_anchor
++    FROM public.security_audit_chain_state AS state
++    WHERE state.singleton AND state.batch_last_sequence IS NOT NULL
++      AND (state.anchor_deployment_id IS NULL OR state.anchor_deployment_id = p_deployment_id)
++      AND state.batch_generation = p_generation
++      AND state.batch_first_sequence = p_first_sequence
++      AND state.batch_last_sequence = p_last_sequence
++      AND state.batch_event_count = p_event_count
++      AND state.batch_digest = p_batch_digest
++    FOR UPDATE OF state;
++    IF NOT FOUND THEN RETURN FALSE; END IF;
++    IF p_first_sequence <> COALESCE(v_anchor, 0) + 1 THEN
++        RAISE EXCEPTION 'audit batch acknowledgement does not continue the anchor checkpoint';
++    END IF;
++    -- Start from the committed prefix, never the estimated pending set.
++    -- The extra member preserves rejection of an oversized prefix; the later
++    -- DELETE row-count check still rejects corruption beyond this bound.
++    WITH members AS MATERIALIZED (
++        SELECT chain.event_id FROM public.security_audit_chain_entries AS chain
++        WHERE chain.sequence > COALESCE(v_anchor, 0) AND chain.sequence <= p_last_sequence
++        ORDER BY chain.sequence LIMIT 257
++    )
++    SELECT COUNT(*), COALESCE(array_agg(event.event_id), '{}'::UUID[]) INTO v_members, v_ids
++    FROM members
++    CROSS JOIN LATERAL (
++        SELECT event.event_id, event.exported_at
++        FROM public.security_audit_events AS event
++        WHERE event.event_id = members.event_id LIMIT 1
++    ) AS event
++    WHERE event.exported_at IS NULL;
++    IF v_members <> p_event_count OR NOT EXISTS (
++        SELECT 1 FROM public.security_audit_chain_entries AS chain
++        WHERE chain.sequence = p_last_sequence AND chain.event_hash = p_last_hash
++    ) THEN
++        RAISE EXCEPTION 'audit batch members no longer form the committed prefix';
++    END IF;
++    SELECT event.occurred_at INTO v_occurred_at
++    FROM public.security_audit_chain_entries AS chain
++    JOIN public.security_audit_events AS event ON event.event_id = chain.event_id
++    WHERE chain.sequence = p_last_sequence;
++
++    -- Sample once after the head lock and complete batch validation. This is
++    -- the ACK operation time, shared by retained facts and both checkpoints.
++    v_exported_at := clock_timestamp();
++
++    -- Chain proof is delivery-only. Decision rows also own business fences;
++    -- retain their immutable business fields, but release delivered payload
++    -- in this same validated ACK transaction. Failed/unknown commits never
++    -- become permission to release an unacknowledged payload.
++    PERFORM set_config('nazo.audit_reclaim', 'on', true);
++    DELETE FROM public.security_audit_chain_entries AS chain
++    WHERE chain.sequence > COALESCE(v_anchor, 0) AND chain.sequence <= p_last_sequence;
++    GET DIAGNOSTICS v_deleted = ROW_COUNT;
++    IF v_deleted <> p_event_count THEN
++        RAISE EXCEPTION 'audit batch acknowledgement reclaimed an unexpected chain count';
++    END IF;
++    PERFORM set_config('nazo.audit_ack', 'on', true);
++    UPDATE public.security_audit_events AS event
++    SET exported_at = v_exported_at, payload = '{}'::JSONB
++    WHERE event.event_id = ANY(v_ids)
++      AND event.event_type = 'authorization_decision_committed'
++      AND event.exported_at IS NULL;
++    GET DIAGNOSTICS v_retained = ROW_COUNT;
++    PERFORM set_config('nazo.audit_ack', 'off', true);
++    DELETE FROM public.security_audit_events AS event
++    WHERE event.event_id = ANY(v_ids)
++      AND event.event_type <> 'authorization_decision_committed';
++    GET DIAGNOSTICS v_deleted = ROW_COUNT;
++    IF v_deleted + v_retained <> p_event_count THEN
++        RAISE EXCEPTION 'audit batch acknowledgement reclaimed an unexpected event count';
++    END IF;
++    PERFORM set_config('nazo.audit_reclaim', 'off', true);
++
++    UPDATE public.security_audit_chain_state AS state
++    SET anchor_deployment_id = p_deployment_id,
++        anchor_sequence = p_last_sequence,
++        anchor_hash = p_last_hash,
++        anchor_occurred_at = v_occurred_at,
++        anchor_accepted_at = v_exported_at,
++        anchor_observed_at = v_exported_at,
++        batch_first_sequence = NULL, batch_last_sequence = NULL,
++        batch_event_count = NULL, batch_digest = NULL,
++        batch_attempts = 0, batch_available_at = NULL, batch_locked_until = NULL,
++        batch_last_error = NULL, batch_blocked_reason = NULL
++    WHERE state.singleton;
++    RETURN TRUE;
++END;
++$$;
+diff --git a/migrations/20261009000600_separate_audit_history_cleanup/down.sql b/migrations/20261009000600_separate_audit_history_cleanup/down.sql
+new file mode 100644
+index 00000000..6346a287
+--- /dev/null
++++ b/migrations/20261009000600_separate_audit_history_cleanup/down.sql
+@@ -0,0 +1,74 @@
++DROP FUNCTION nazo_oauth_cleanup_expired_security_state(BOOLEAN);
++
++-- Freeze one cutoff per bounded batch. A volatile per-row clock cannot be
++-- an index scan bound and scans retained rows after the expired prefix drains.
++-- Rows expiring during this call remain eligible for the next batch; no row
++-- is reclaimed earlier than its existing retention/acceptance boundary.
++CREATE OR REPLACE FUNCTION nazo_oauth_cleanup_expired_security_state()
++RETURNS TABLE (
++    deleted_issuances INTEGER,
++    deleted_access_token_revocations INTEGER,
++    deleted_scim_audit_events INTEGER,
++    deleted_backchannel_logout_deliveries INTEGER,
++    deleted_scim_security_events INTEGER
++)
++LANGUAGE plpgsql
++AS $$
++DECLARE
++    v_cutoff TIMESTAMPTZ := clock_timestamp();
++BEGIN
++    WITH due AS (
++        SELECT issuance_id FROM oauth_token_issuances
++        WHERE retain_until <= v_cutoff
++        ORDER BY retain_until, issuance_id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM oauth_token_issuances AS target
++    USING due WHERE target.issuance_id = due.issuance_id;
++    GET DIAGNOSTICS deleted_issuances = ROW_COUNT;
++
++    WITH due AS (
++        SELECT tenant_id, access_token_jti_blake3 FROM access_token_revocations
++        WHERE expires_at <= v_cutoff
++        ORDER BY expires_at, tenant_id, access_token_jti_blake3
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM access_token_revocations AS target
++    USING due
++    WHERE target.tenant_id = due.tenant_id
++      AND target.access_token_jti_blake3 = due.access_token_jti_blake3;
++    GET DIAGNOSTICS deleted_access_token_revocations = ROW_COUNT;
++
++    WITH due AS (
++        SELECT id FROM scim_audit_events
++        WHERE created_at < v_cutoff - INTERVAL '180 days'
++        ORDER BY created_at, id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM scim_audit_events AS target
++    USING due WHERE target.id = due.id;
++    GET DIAGNOSTICS deleted_scim_audit_events = ROW_COUNT;
++
++    WITH due AS (
++        SELECT id FROM backchannel_logout_deliveries
++        WHERE expires_at <= v_cutoff
++        ORDER BY expires_at, id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM backchannel_logout_deliveries AS target
++    USING due WHERE target.id = due.id;
++    GET DIAGNOSTICS deleted_backchannel_logout_deliveries = ROW_COUNT;
++
++    WITH due AS (
++        SELECT id FROM scim_security_events
++        WHERE expires_at <= v_cutoff
++        ORDER BY expires_at, id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM scim_security_events AS target
++    USING due WHERE target.id = due.id;
++    GET DIAGNOSTICS deleted_scim_security_events = ROW_COUNT;
++
++    RETURN NEXT;
++END;
++$$;
+diff --git a/migrations/20261009000600_separate_audit_history_cleanup/up.sql b/migrations/20261009000600_separate_audit_history_cleanup/up.sql
+new file mode 100644
+index 00000000..3164116c
+--- /dev/null
++++ b/migrations/20261009000600_separate_audit_history_cleanup/up.sql
+@@ -0,0 +1,77 @@
++DROP FUNCTION nazo_oauth_cleanup_expired_security_state();
++
++-- Freeze one cutoff per bounded batch. A volatile per-row clock cannot be
++-- an index scan bound and scans retained rows after the expired prefix drains.
++-- Rows expiring during this call remain eligible for the next batch; no row
++-- is reclaimed earlier than its existing retention/acceptance boundary.
++CREATE FUNCTION nazo_oauth_cleanup_expired_security_state(p_include_history BOOLEAN)
++RETURNS TABLE (
++    deleted_issuances INTEGER,
++    deleted_access_token_revocations INTEGER,
++    deleted_scim_audit_events INTEGER,
++    deleted_backchannel_logout_deliveries INTEGER,
++    deleted_scim_security_events INTEGER
++)
++LANGUAGE plpgsql
++AS $$
++DECLARE
++    v_cutoff TIMESTAMPTZ := clock_timestamp();
++BEGIN
++    WITH due AS (
++        SELECT issuance_id FROM oauth_token_issuances
++        WHERE retain_until <= v_cutoff
++        ORDER BY retain_until, issuance_id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM oauth_token_issuances AS target
++    USING due WHERE target.issuance_id = due.issuance_id;
++    GET DIAGNOSTICS deleted_issuances = ROW_COUNT;
++
++    WITH due AS (
++        SELECT tenant_id, access_token_jti_blake3 FROM access_token_revocations
++        WHERE expires_at <= v_cutoff
++        ORDER BY expires_at, tenant_id, access_token_jti_blake3
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM access_token_revocations AS target
++    USING due
++    WHERE target.tenant_id = due.tenant_id
++      AND target.access_token_jti_blake3 = due.access_token_jti_blake3;
++    GET DIAGNOSTICS deleted_access_token_revocations = ROW_COUNT;
++
++    deleted_scim_audit_events := 0;
++    IF p_include_history THEN
++        WITH due AS (
++            SELECT id FROM scim_audit_events
++            WHERE created_at < v_cutoff - INTERVAL '180 days'
++            ORDER BY created_at, id
++            LIMIT 256 FOR UPDATE SKIP LOCKED
++        )
++        DELETE FROM scim_audit_events AS target
++        USING due WHERE target.id = due.id;
++        GET DIAGNOSTICS deleted_scim_audit_events = ROW_COUNT;
++    END IF;
++
++    WITH due AS (
++        SELECT id FROM backchannel_logout_deliveries
++        WHERE expires_at <= v_cutoff
++        ORDER BY expires_at, id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM backchannel_logout_deliveries AS target
++    USING due WHERE target.id = due.id;
++    GET DIAGNOSTICS deleted_backchannel_logout_deliveries = ROW_COUNT;
++
++    WITH due AS (
++        SELECT id FROM scim_security_events
++        WHERE expires_at <= v_cutoff
++        ORDER BY expires_at, id
++        LIMIT 256 FOR UPDATE SKIP LOCKED
++    )
++    DELETE FROM scim_security_events AS target
++    USING due WHERE target.id = due.id;
++    GET DIAGNOSTICS deleted_scim_security_events = ROW_COUNT;
++
++    RETURN NEXT;
++END;
++$$;

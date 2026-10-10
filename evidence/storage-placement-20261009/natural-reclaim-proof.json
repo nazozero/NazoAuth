@@ -1,0 +1,303 @@
+[
+  {
+    "point": "REV360",
+    "target_at_load_return": {
+      "count": 100968,
+      "eligible": 20031,
+      "retained": 80937,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-09T14:01:37.357775+00:00",
+      "last_remaining_s": 84.274886
+    },
+    "target_final": {
+      "count": 0,
+      "eligible": 0,
+      "retained": 0,
+      "unexported": 0,
+      "last_business_retain_until": null,
+      "last_remaining_s": null
+    },
+    "last_deadline_s": 1791554497.357775,
+    "final_ts": 1791554548.996073,
+    "cycles": [
+      {
+        "end_s": 1791554000.156495,
+        "start_s": 1791554000.1064951,
+        "elapsed_s": 0.05,
+        "stop_reason": "drained",
+        "scope": "IncludingHistory",
+        "batches": 1,
+        "rows": 0
+      },
+      {
+        "end_s": 1791554065.100848,
+        "start_s": 1791554060.158848,
+        "elapsed_s": 4.942,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 127,
+        "rows": 32435
+      },
+      {
+        "end_s": 1791554135.436444,
+        "start_s": 1791554125.102444,
+        "elapsed_s": 10.334,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 264,
+        "rows": 80996
+      },
+      {
+        "end_s": 1791554205.521822,
+        "start_s": 1791554195.436822,
+        "elapsed_s": 10.085,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 264,
+        "rows": 135488
+      },
+      {
+        "end_s": 1791554277.529461,
+        "start_s": 1791554265.5234609,
+        "elapsed_s": 12.006,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 272,
+        "rows": 139154
+      },
+      {
+        "end_s": 1791554346.867957,
+        "start_s": 1791554337.529957,
+        "elapsed_s": 9.338,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 264,
+        "rows": 134237
+      },
+      {
+        "end_s": 1791554416.157274,
+        "start_s": 1791554406.869274,
+        "elapsed_s": 9.288,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 260,
+        "rows": 149249
+      },
+      {
+        "end_s": 1791554487.259907,
+        "start_s": 1791554476.158907,
+        "elapsed_s": 11.101,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 268,
+        "rows": 136464
+      }
+    ],
+    "complete_cycles_after_last_deadline": [],
+    "target_naturally_zero": true,
+    "complete_cycle_observed": false,
+    "followed_instance": {
+      "id": "55d3af0b31ee8f66a6d29551b9baaa6a68ee16309ec1848446f50e98e0d5d2ae",
+      "name": "nazo-model-storage-rev360-20261009-nazoauth-1",
+      "ts": 1791554016.124455
+    }
+  },
+  {
+    "point": "MIX300",
+    "target_at_load_return": {
+      "count": 26874,
+      "eligible": 12843,
+      "retained": 14031,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-09T14:11:39.900263+00:00",
+      "last_remaining_s": 79.610619
+    },
+    "target_final": {
+      "count": 72,
+      "eligible": 72,
+      "retained": 0,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-09T14:11:39.900263+00:00",
+      "last_remaining_s": -37.154082
+    },
+    "last_deadline_s": 1791555099.900263,
+    "final_ts": 1791555136.68087,
+    "cycles": [
+      {
+        "end_s": 1791554586.60301,
+        "start_s": 1791554586.5350099,
+        "elapsed_s": 0.068,
+        "stop_reason": "drained",
+        "scope": "IncludingHistory",
+        "batches": 1,
+        "rows": 0
+      },
+      {
+        "end_s": 1791554646.963561,
+        "start_s": 1791554646.6035612,
+        "elapsed_s": 0.36,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 9,
+        "rows": 2425
+      },
+      {
+        "end_s": 1791554711.625584,
+        "start_s": 1791554706.9645839,
+        "elapsed_s": 4.661,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 68,
+        "rows": 33611
+      },
+      {
+        "end_s": 1791554776.421241,
+        "start_s": 1791554771.6272411,
+        "elapsed_s": 4.794,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 73,
+        "rows": 52833
+      },
+      {
+        "end_s": 1791554841.854401,
+        "start_s": 1791554836.423401,
+        "elapsed_s": 5.431,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 73,
+        "rows": 52840
+      },
+      {
+        "end_s": 1791554907.789167,
+        "start_s": 1791554901.8561668,
+        "elapsed_s": 5.933,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 74,
+        "rows": 53613
+      },
+      {
+        "end_s": 1791554973.764474,
+        "start_s": 1791554967.790474,
+        "elapsed_s": 5.974,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 74,
+        "rows": 53742
+      },
+      {
+        "end_s": 1791555035.893718,
+        "start_s": 1791555033.765718,
+        "elapsed_s": 2.128,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 71,
+        "rows": 37494
+      },
+      {
+        "end_s": 1791555097.529718,
+        "start_s": 1791555095.8957179,
+        "elapsed_s": 1.634,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 70,
+        "rows": 26561
+      }
+    ],
+    "complete_cycles_after_last_deadline": [],
+    "target_naturally_zero": false,
+    "complete_cycle_observed": false,
+    "followed_instance": {
+      "id": "b955a17dca36c6da63976342f719655c82a0a1528e3cafd7ab1c9f4d3d0053a3",
+      "name": "nazo-model-storage-mix300-20261009-nazoauth-1",
+      "ts": 1791554602.564356
+    }
+  },
+  {
+    "point": "COHORT60",
+    "target_at_load_return": {
+      "count": 72000,
+      "eligible": 0,
+      "retained": 72000,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-09T14:16:20.619723+00:00",
+      "last_remaining_s": 86.722628
+    },
+    "target_final": {
+      "count": 0,
+      "eligible": 0,
+      "retained": 0,
+      "unexported": 0,
+      "last_business_retain_until": null,
+      "last_remaining_s": null
+    },
+    "last_deadline_s": 1791555380.619723,
+    "final_ts": 1791555453.703686,
+    "cycles": [
+      {
+        "end_s": 1791555187.62918,
+        "start_s": 1791555187.52918,
+        "elapsed_s": 0.1,
+        "stop_reason": "drained",
+        "scope": "IncludingHistory",
+        "batches": 1,
+        "rows": 0
+      },
+      {
+        "end_s": 1791555252.340181,
+        "start_s": 1791555247.630181,
+        "elapsed_s": 4.71,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 142,
+        "rows": 36300
+      },
+      {
+        "end_s": 1791555318.235922,
+        "start_s": 1791555312.341922,
+        "elapsed_s": 5.894,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 144,
+        "rows": 49683
+      },
+      {
+        "end_s": 1791555384.646453,
+        "start_s": 1791555378.237453,
+        "elapsed_s": 6.409,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 237,
+        "rows": 60089
+      },
+      {
+        "end_s": 1791555444.721343,
+        "start_s": 1791555444.6473432,
+        "elapsed_s": 0.074,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 4,
+        "rows": 0
+      }
+    ],
+    "complete_cycles_after_last_deadline": [
+      {
+        "end_s": 1791555444.721343,
+        "start_s": 1791555444.6473432,
+        "elapsed_s": 0.074,
+        "stop_reason": "drained",
+        "scope": "ProtocolState",
+        "batches": 4,
+        "rows": 0
+      }
+    ],
+    "target_naturally_zero": true,
+    "complete_cycle_observed": true,
+    "followed_instance": {
+      "id": "dede18b6c7077e8dbca1db82aa8c8587a9f31304d95364b5d62d095ba7063714",
+      "name": "nazo-model-cohort60-20261009-nazoauth-1",
+      "ts": 1791555201.9913497
+    }
+  }
+]

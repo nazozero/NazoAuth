@@ -1,0 +1,4616 @@
+{
+  "key": "MIX30",
+  "source": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "capacity_verdict": "FAIL",
+  "lanes": {
+    "load": {
+      "rate": 1599.981,
+      "latency_ms": {
+        "p50": 5.0,
+        "p95": 34.0,
+        "p99": 78.0
+      },
+      "measure": {
+        "window_start_s": 1791602291.019,
+        "window_end_s": 1791603491.019,
+        "measure_started_exact": 1920000,
+        "measure_completed_exact": 1920000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 1920000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 1919977,
+          "expected_rejection": 23
+        },
+        "measure_outcome_sum": 1920000,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 1920000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 1600.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "window_seconds": 1200.0,
+      "unexpected_errors": 0,
+      "subject_lifecycle": {
+        "initial_mint": 804,
+        "refresh_update": 302364,
+        "expired_reauth": 17
+      },
+      "minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 95963,
+          "begun": 95970,
+          "success": 95962,
+          "expected_rejection": 1,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.3666666666666,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.145285161989516,
+          "max_ms": 76.0,
+          "max_active_vus": 28
+        },
+        {
+          "offset_s": 60,
+          "full_bucket": true,
+          "completed": 95994,
+          "begun": 96000,
+          "success": 95993,
+          "expected_rejection": 1,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.8833333333334,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.42096381023814,
+          "max_ms": 201.0,
+          "max_active_vus": 27
+        },
+        {
+          "offset_s": 120,
+          "full_bucket": true,
+          "completed": 96006,
+          "begun": 96000,
+          "success": 96004,
+          "expected_rejection": 2,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0666666666666,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.187342457763057,
+          "max_ms": 75.0,
+          "max_active_vus": 16
+        },
+        {
+          "offset_s": 180,
+          "full_bucket": true,
+          "completed": 96000,
+          "begun": 96000,
+          "success": 96000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 6.842864583333333,
+          "max_ms": 334.0,
+          "max_active_vus": 301
+        },
+        {
+          "offset_s": 240,
+          "full_bucket": true,
+          "completed": 96001,
+          "begun": 96000,
+          "success": 96001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0166666666667,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.421599775002344,
+          "max_ms": 214.0,
+          "max_active_vus": 26
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 95971,
+          "begun": 95999,
+          "success": 95971,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.5166666666667,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 16.03428118910921,
+          "max_ms": 409.0,
+          "max_active_vus": 147
+        },
+        {
+          "offset_s": 360,
+          "full_bucket": true,
+          "completed": 96028,
+          "begun": 96001,
+          "success": 96028,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.4666666666667,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 12.47836047819386,
+          "max_ms": 387.0,
+          "max_active_vus": 194
+        },
+        {
+          "offset_s": 420,
+          "full_bucket": true,
+          "completed": 96001,
+          "begun": 95999,
+          "success": 96000,
+          "expected_rejection": 1,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.131290299059385,
+          "max_ms": 55.0,
+          "max_active_vus": 17
+        },
+        {
+          "offset_s": 480,
+          "full_bucket": true,
+          "completed": 96003,
+          "begun": 96001,
+          "success": 96000,
+          "expected_rejection": 3,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 4.897659448142246,
+          "max_ms": 52.0,
+          "max_active_vus": 23
+        },
+        {
+          "offset_s": 540,
+          "full_bucket": true,
+          "completed": 95964,
+          "begun": 95999,
+          "success": 95962,
+          "expected_rejection": 2,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.3666666666666,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 7.216393647617856,
+          "max_ms": 153.0,
+          "max_active_vus": 46
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 96015,
+          "begun": 96001,
+          "success": 96012,
+          "expected_rejection": 3,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.2,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 17.792646982242356,
+          "max_ms": 197.0,
+          "max_active_vus": 94
+        },
+        {
+          "offset_s": 660,
+          "full_bucket": true,
+          "completed": 95998,
+          "begun": 96000,
+          "success": 95997,
+          "expected_rejection": 1,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.95,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 18.83839246650972,
+          "max_ms": 341.0,
+          "max_active_vus": 165
+        },
+        {
+          "offset_s": 720,
+          "full_bucket": true,
+          "completed": 95999,
+          "begun": 96000,
+          "success": 95998,
+          "expected_rejection": 1,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.9666666666667,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 19.484817550182814,
+          "max_ms": 189.0,
+          "max_active_vus": 51
+        },
+        {
+          "offset_s": 780,
+          "full_bucket": true,
+          "completed": 96020,
+          "begun": 95999,
+          "success": 96018,
+          "expected_rejection": 2,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.3,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 11.12289106436159,
+          "max_ms": 225.0,
+          "max_active_vus": 72
+        },
+        {
+          "offset_s": 840,
+          "full_bucket": true,
+          "completed": 95976,
+          "begun": 96001,
+          "success": 95976,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.6,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 18.637107193465035,
+          "max_ms": 163.0,
+          "max_active_vus": 54
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 96023,
+          "begun": 95999,
+          "success": 96023,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.3833333333334,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.116097185049416,
+          "max_ms": 90.0,
+          "max_active_vus": 20
+        },
+        {
+          "offset_s": 960,
+          "full_bucket": true,
+          "completed": 96000,
+          "begun": 96001,
+          "success": 96000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 4.8302708333333335,
+          "max_ms": 66.0,
+          "max_active_vus": 23
+        },
+        {
+          "offset_s": 1020,
+          "full_bucket": true,
+          "completed": 95980,
+          "begun": 96000,
+          "success": 95978,
+          "expected_rejection": 2,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.6333333333334,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 10.890341737862055,
+          "max_ms": 150.0,
+          "max_active_vus": 50
+        },
+        {
+          "offset_s": 1080,
+          "full_bucket": true,
+          "completed": 96022,
+          "begun": 96000,
+          "success": 96021,
+          "expected_rejection": 2,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.35,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 12.294588740080398,
+          "max_ms": 145.0,
+          "max_active_vus": 56
+        },
+        {
+          "offset_s": 1140,
+          "full_bucket": true,
+          "completed": 96000,
+          "begun": 96000,
+          "success": 95997,
+          "expected_rejection": 2,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.95,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 4.9810625,
+          "max_ms": 76.0,
+          "max_active_vus": 25
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": false,
+          "completed": 36,
+          "begun": 30,
+          "success": 36,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 4.583333333333333,
+          "max_ms": 17.0,
+          "max_active_vus": 0
+        }
+      ],
+      "five_minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 479964,
+          "begun": 479970,
+          "success": 479960,
+          "expected_rejection": 4,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.8666666666666,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 5.60364318990591,
+          "max_ms": 334.0,
+          "max_active_vus": 301
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 479967,
+          "begun": 479999,
+          "success": 479961,
+          "expected_rejection": 6,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1599.87,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 9.151485414622256,
+          "max_ms": 409.0,
+          "max_active_vus": 194
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 480008,
+          "begun": 480001,
+          "success": 480001,
+          "expected_rejection": 7,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0033333333333,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 17.174853335777737,
+          "max_ms": 341.0,
+          "max_active_vus": 165
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 480025,
+          "begun": 480000,
+          "success": 480019,
+          "expected_rejection": 6,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 1600.0633333333333,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 7.622430081766574,
+          "max_ms": 150.0,
+          "max_active_vus": 56
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": false,
+          "completed": 36,
+          "begun": 30,
+          "success": 36,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            2,
+            5
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 4.583333333333333,
+          "max_ms": 17.0,
+          "max_active_vus": 0
+        }
+      ],
+      "all_complete_minute_mean_ms": {
+        "min": 4.8302708333333335,
+        "median": 7.029629115475595,
+        "max": 19.484817550182814,
+        "first": 5.145285161989516,
+        "last": 4.9810625
+      },
+      "histogram_note": "Quantiles are bounds from full-operation histograms; completion-time buckets use floor(second), so edge buckets and drop attribution have at most one-second boundary ambiguity. Overall cohort counts remain exact."
+    },
+    "argon2": {
+      "rate": 8.0,
+      "latency_ms": {
+        "p50": 161.0,
+        "p95": 286.0,
+        "p99": 358.0100000000002
+      },
+      "measure": {
+        "window_start_s": 1791602246.98,
+        "window_end_s": 1791603521.98,
+        "measure_started_exact": 10200,
+        "measure_completed_exact": 10200,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 10200,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 10200
+        },
+        "measure_outcome_sum": 10200,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 10200,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 8.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "window_seconds": 1275.0,
+      "unexpected_errors": 0,
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 471,
+          "begun": 473,
+          "success": 471,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 7.85,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 166.7324840764331,
+          "max_ms": 231.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 60,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 160.30208333333334,
+          "max_ms": 209.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 120,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 155.825,
+          "max_ms": 304.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 180,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 154.91666666666666,
+          "max_ms": 453.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 240,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 153.225,
+          "max_ms": 508.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 155.0625,
+          "max_ms": 199.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 360,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            500,
+            1000
+          ],
+          "mean_ms": 245.48333333333332,
+          "max_ms": 707.0,
+          "max_active_vus": 5
+        },
+        {
+          "offset_s": 420,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            500,
+            1000
+          ],
+          "mean_ms": 177.85208333333333,
+          "max_ms": 880.0,
+          "max_active_vus": 5
+        },
+        {
+          "offset_s": 480,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 158.94375,
+          "max_ms": 207.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 540,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 155.0875,
+          "max_ms": 177.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 194.14375,
+          "max_ms": 377.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 660,
+          "full_bucket": true,
+          "completed": 479,
+          "begun": 480,
+          "success": 479,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 7.983333333333333,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 242.37995824634655,
+          "max_ms": 441.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 720,
+          "full_bucket": true,
+          "completed": 481,
+          "begun": 480,
+          "success": 481,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.016666666666667,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 244.65280665280665,
+          "max_ms": 641.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 780,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 248.64375,
+          "max_ms": 467.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 840,
+          "full_bucket": true,
+          "completed": 479,
+          "begun": 480,
+          "success": 479,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 7.983333333333333,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 194.14405010438412,
+          "max_ms": 452.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 481,
+          "begun": 480,
+          "success": 481,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.016666666666667,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 234.65280665280665,
+          "max_ms": 432.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 960,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 154.33958333333334,
+          "max_ms": 187.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1020,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 154.04375,
+          "max_ms": 298.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1080,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 208.19791666666666,
+          "max_ms": 346.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 1140,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 178.78541666666666,
+          "max_ms": 353.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": true,
+          "completed": 480,
+          "begun": 480,
+          "success": 480,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 164.70833333333334,
+          "max_ms": 304.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 1260,
+          "full_bucket": false,
+          "completed": 129,
+          "begun": 127,
+          "success": 129,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 187.10077519379846,
+          "max_ms": 229.0,
+          "max_active_vus": 2
+        }
+      ],
+      "five_minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 2391,
+          "begun": 2393,
+          "success": 2391,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 7.97,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 158.168130489335,
+          "max_ms": 508.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 2400,
+          "begun": 2400,
+          "success": 2400,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.0,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 178.48583333333335,
+          "max_ms": 880.0,
+          "max_active_vus": 5
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 2399,
+          "begun": 2400,
+          "success": 2399,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 7.996666666666667,
+          "p50_interval_ms": [
+            200,
+            500
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 224.8065860775323,
+          "max_ms": 641.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 2401,
+          "begun": 2400,
+          "success": 2401,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 8.003333333333334,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 186.02415660141608,
+          "max_ms": 432.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": false,
+          "completed": 609,
+          "begun": 607,
+          "success": 609,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            100,
+            200
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 169.45155993431857,
+          "max_ms": 304.0,
+          "max_active_vus": 2
+        }
+      ],
+      "all_complete_minute_mean_ms": {
+        "min": 153.225,
+        "median": 166.7324840764331,
+        "max": 248.64375,
+        "first": 166.7324840764331,
+        "last": 164.70833333333334
+      },
+      "histogram_note": "Quantiles are bounds from full-operation histograms; completion-time buckets use floor(second), so edge buckets and drop attribution have at most one-second boundary ambiguity. Overall cohort counts remain exact."
+    },
+    "meta": {
+      "rate": 200.0,
+      "latency_ms": {
+        "p50": 1.0,
+        "p95": 4.0,
+        "p99": 7.0
+      },
+      "measure": {
+        "window_start_s": 1791602251.403,
+        "window_end_s": 1791603526.403,
+        "measure_started_exact": 255000,
+        "measure_completed_exact": 255000,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 255000,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 255000
+        },
+        "measure_outcome_sum": 255000,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 255000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 200.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "window_seconds": 1275.0,
+      "unexpected_errors": 0,
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 11920,
+          "begun": 11920,
+          "success": 11920,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 198.66666666666666,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6926174496644295,
+          "max_ms": 8.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 60,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6526666666666666,
+          "max_ms": 11.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 120,
+          "full_bucket": true,
+          "completed": 11999,
+          "begun": 12000,
+          "success": 11999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.98333333333332,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6248854071172598,
+          "max_ms": 15.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 180,
+          "full_bucket": true,
+          "completed": 12001,
+          "begun": 12000,
+          "success": 12001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.01666666666668,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6190317473543872,
+          "max_ms": 14.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 240,
+          "full_bucket": true,
+          "completed": 11999,
+          "begun": 11999,
+          "success": 11999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.98333333333332,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6248020668389033,
+          "max_ms": 8.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 12001,
+          "begun": 12001,
+          "success": 12001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.01666666666668,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6664444629614199,
+          "max_ms": 25.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 360,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 2.0454166666666667,
+          "max_ms": 47.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 420,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.7105833333333333,
+          "max_ms": 14.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 480,
+          "full_bucket": true,
+          "completed": 11999,
+          "begun": 12000,
+          "success": 11999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.98333333333332,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6756396366363864,
+          "max_ms": 9.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 540,
+          "full_bucket": true,
+          "completed": 12001,
+          "begun": 12000,
+          "success": 12001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.01666666666668,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6248645946171152,
+          "max_ms": 8.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 11999,
+          "begun": 12000,
+          "success": 11999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.98333333333332,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 1.4673722810234187,
+          "max_ms": 26.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 660,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 2.140416666666667,
+          "max_ms": 39.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 720,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 2.1060833333333333,
+          "max_ms": 29.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 780,
+          "full_bucket": true,
+          "completed": 12001,
+          "begun": 12000,
+          "success": 12001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.01666666666668,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 2.2939755020414965,
+          "max_ms": 46.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 840,
+          "full_bucket": true,
+          "completed": 11999,
+          "begun": 12000,
+          "success": 11999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.98333333333332,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            2,
+            5
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 1.1861821818484874,
+          "max_ms": 22.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 1.882,
+          "max_ms": 31.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 960,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.63225,
+          "max_ms": 8.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1020,
+          "full_bucket": true,
+          "completed": 12001,
+          "begun": 12000,
+          "success": 12001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.01666666666668,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6491959003416382,
+          "max_ms": 18.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 1080,
+          "full_bucket": true,
+          "completed": 11999,
+          "begun": 12000,
+          "success": 11999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.98333333333332,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 1.8856571380948413,
+          "max_ms": 26.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1140,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            2,
+            5
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 0.9538333333333333,
+          "max_ms": 30.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": true,
+          "completed": 12000,
+          "begun": 12000,
+          "success": 12000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.7473333333333333,
+          "max_ms": 18.0,
+          "max_active_vus": 0
+        },
+        {
+          "offset_s": 1260,
+          "full_bucket": false,
+          "completed": 3081,
+          "begun": 3080,
+          "success": 3081,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            2,
+            5
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 0.9126906848425835,
+          "max_ms": 9.0,
+          "max_active_vus": 0
+        }
+      ],
+      "five_minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 59919,
+          "begun": 59919,
+          "success": 59919,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.73,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.6427343580500342,
+          "max_ms": 15.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 60001,
+          "begun": 60001,
+          "success": 60001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.00333333333333,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            2,
+            5
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 0.9445842569290512,
+          "max_ms": 47.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 59999,
+          "begun": 60000,
+          "success": 59999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 199.99666666666667,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 1.838830647177453,
+          "max_ms": 46.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 60000,
+          "begun": 60000,
+          "success": 60000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 200.0,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            5,
+            10
+          ],
+          "mean_ms": 1.2005666666666666,
+          "max_ms": 31.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": false,
+          "completed": 15081,
+          "begun": 15080,
+          "success": 15081,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            1,
+            2
+          ],
+          "p95_interval_ms": [
+            1,
+            2
+          ],
+          "p99_interval_ms": [
+            2,
+            5
+          ],
+          "mean_ms": 0.7811153106557921,
+          "max_ms": 18.0,
+          "max_active_vus": 0
+        }
+      ],
+      "all_complete_minute_mean_ms": {
+        "min": 0.6190317473543872,
+        "median": 0.7105833333333333,
+        "max": 2.2939755020414965,
+        "first": 0.6926174496644295,
+        "last": 0.7473333333333333
+      },
+      "histogram_note": "Quantiles are bounds from full-operation histograms; completion-time buckets use floor(second), so edge buckets and drop attribution have at most one-second boundary ambiguity. Overall cohort counts remain exact."
+    },
+    "fapi": {
+      "rate": 30.0,
+      "latency_ms": {
+        "p50": 26.0,
+        "p95": 112.0,
+        "p99": 158.0
+      },
+      "measure": {
+        "window_start_s": 1791602254.368,
+        "window_end_s": 1791603529.368,
+        "measure_started_exact": 38250,
+        "measure_completed_exact": 38250,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 38250,
+        "measure_drop_fraction": 0.0,
+        "measure_outcomes": {
+          "success": 38250
+        },
+        "measure_outcome_sum": 38250,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 38250,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 30.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "window_seconds": 1275.0,
+      "unexpected_errors": 0,
+      "subject_lifecycle": {
+        "initial_mint": 0,
+        "refresh_update": 0,
+        "expired_reauth": 0
+      },
+      "minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 1789,
+          "begun": 1789,
+          "success": 1789,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 29.816666666666666,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 26.443264393515932,
+          "max_ms": 143.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 60,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 25.08111111111111,
+          "max_ms": 83.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 120,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 26.087222222222223,
+          "max_ms": 181.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 180,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 26.776666666666667,
+          "max_ms": 388.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 240,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 27.137777777777778,
+          "max_ms": 337.0,
+          "max_active_vus": 6
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 1799,
+          "begun": 1800,
+          "success": 1799,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 29.983333333333334,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 27.547526403557534,
+          "max_ms": 466.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 360,
+          "full_bucket": true,
+          "completed": 1801,
+          "begun": 1800,
+          "success": 1801,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.016666666666666,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            200,
+            500
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 87.3670183231538,
+          "max_ms": 436.0,
+          "max_active_vus": 9
+        },
+        {
+          "offset_s": 420,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 26.221666666666668,
+          "max_ms": 164.0,
+          "max_active_vus": 2
+        },
+        {
+          "offset_s": 480,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 25.276666666666667,
+          "max_ms": 72.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 540,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 24.511666666666667,
+          "max_ms": 58.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 1799,
+          "begun": 1800,
+          "success": 1799,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 29.983333333333334,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 56.97387437465258,
+          "max_ms": 246.0,
+          "max_active_vus": 5
+        },
+        {
+          "offset_s": 660,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 77.32277777777777,
+          "max_ms": 180.0,
+          "max_active_vus": 4
+        },
+        {
+          "offset_s": 720,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 81.81,
+          "max_ms": 380.0,
+          "max_active_vus": 8
+        },
+        {
+          "offset_s": 780,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 83.60333333333334,
+          "max_ms": 233.0,
+          "max_active_vus": 4
+        },
+        {
+          "offset_s": 840,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 43.87833333333333,
+          "max_ms": 172.0,
+          "max_active_vus": 4
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 62.63055555555555,
+          "max_ms": 236.0,
+          "max_active_vus": 4
+        },
+        {
+          "offset_s": 960,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 24.616666666666667,
+          "max_ms": 50.0,
+          "max_active_vus": 1
+        },
+        {
+          "offset_s": 1020,
+          "full_bucket": true,
+          "completed": 1801,
+          "begun": 1800,
+          "success": 1801,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.016666666666666,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 25.387007218212105,
+          "max_ms": 181.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 1080,
+          "full_bucket": true,
+          "completed": 1798,
+          "begun": 1800,
+          "success": 1798,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 29.966666666666665,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 70.57730812013348,
+          "max_ms": 200.0,
+          "max_active_vus": 4
+        },
+        {
+          "offset_s": 1140,
+          "full_bucket": true,
+          "completed": 1802,
+          "begun": 1800,
+          "success": 1802,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.033333333333335,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 32.10987791342952,
+          "max_ms": 173.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": true,
+          "completed": 1800,
+          "begun": 1800,
+          "success": 1800,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 27.44388888888889,
+          "max_ms": 109.0,
+          "max_active_vus": 3
+        },
+        {
+          "offset_s": 1260,
+          "full_bucket": false,
+          "completed": 461,
+          "begun": 461,
+          "success": 461,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 30.427331887201735,
+          "max_ms": 99.0,
+          "max_active_vus": 1
+        }
+      ],
+      "five_minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 8989,
+          "begun": 8989,
+          "success": 8989,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 29.963333333333335,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 26.305039492713316,
+          "max_ms": 388.0,
+          "max_active_vus": 6
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 9000,
+          "begun": 9000,
+          "success": 9000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.0,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            200,
+            500
+          ],
+          "mean_ms": 38.19155555555555,
+          "max_ms": 466.0,
+          "max_active_vus": 9
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 8999,
+          "begun": 9000,
+          "success": 8999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 29.996666666666666,
+          "p50_interval_ms": [
+            50,
+            100
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 68.71896877430825,
+          "max_ms": 380.0,
+          "max_active_vus": 8
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 9001,
+          "begun": 9000,
+          "success": 9001,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 30.003333333333334,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            100,
+            200
+          ],
+          "p99_interval_ms": [
+            100,
+            200
+          ],
+          "mean_ms": 43.05377180313298,
+          "max_ms": 236.0,
+          "max_active_vus": 4
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": false,
+          "completed": 2261,
+          "begun": 2261,
+          "success": 2261,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            20,
+            50
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 28.05218929677134,
+          "max_ms": 109.0,
+          "max_active_vus": 3
+        }
+      ],
+      "all_complete_minute_mean_ms": {
+        "min": 24.511666666666667,
+        "median": 27.44388888888889,
+        "max": 87.3670183231538,
+        "first": 26.443264393515932,
+        "last": 27.44388888888889
+      },
+      "histogram_note": "Quantiles are bounds from full-operation histograms; completion-time buckets use floor(second), so edge buckets and drop attribution have at most one-second boundary ambiguity. Overall cohort counts remain exact."
+    },
+    "refresh": {
+      "rate": 599.73,
+      "latency_ms": {
+        "p50": 6.0,
+        "p95": 27.0,
+        "p99": 41.0
+      },
+      "measure": {
+        "window_start_s": 1791602255.969,
+        "window_end_s": 1791603530.969,
+        "measure_started_exact": 764656,
+        "measure_completed_exact": 764656,
+        "measure_dropped_exact": 344,
+        "measure_scheduled_observed": 765000,
+        "measure_drop_fraction": 0.00045,
+        "measure_outcomes": {
+          "success": 764656
+        },
+        "measure_outcome_sum": 764656,
+        "drops_pre_window": 0,
+        "drops_post_window": 0,
+        "drops_pending_unclassified": 0,
+        "pending_drops_overflow": false,
+        "valid": true,
+        "problems": [],
+        "rational_planned_arrivals": 765000,
+        "schedule_delta_vs_rational": 0,
+        "observed_schedule_rate": 600.0,
+        "cohort_source": "k6_stream_exact",
+        "late_vu_fraction": 0.0
+      },
+      "window_seconds": 1275.0,
+      "unexpected_errors": 0,
+      "subject_lifecycle": {
+        "initial_mint": 64,
+        "refresh_update": 773657,
+        "expired_reauth": 0
+      },
+      "minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 35416,
+          "begun": 35419,
+          "success": 35416,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 590.2666666666667,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.150553422182065,
+          "max_ms": 99.0,
+          "max_active_vus": 9
+        },
+        {
+          "offset_s": 60,
+          "full_bucket": true,
+          "completed": 36000,
+          "begun": 36000,
+          "success": 36000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.0,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 5.911472222222222,
+          "max_ms": 57.0,
+          "max_active_vus": 6
+        },
+        {
+          "offset_s": 120,
+          "full_bucket": true,
+          "completed": 35999,
+          "begun": 36000,
+          "success": 35999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.9833333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.2771465874052055,
+          "max_ms": 68.0,
+          "max_active_vus": 12
+        },
+        {
+          "offset_s": 180,
+          "full_bucket": true,
+          "completed": 35909,
+          "begun": 35908,
+          "success": 35909,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 91,
+          "success_ops_s": 598.4833333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.560026734244897,
+          "max_ms": 200.0,
+          "max_active_vus": 59
+        },
+        {
+          "offset_s": 240,
+          "full_bucket": true,
+          "completed": 35850,
+          "begun": 35850,
+          "success": 35850,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 150,
+          "success_ops_s": 597.5,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.948117154811715,
+          "max_ms": 247.0,
+          "max_active_vus": 64
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 35969,
+          "begun": 35969,
+          "success": 35969,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 32,
+          "success_ops_s": 599.4833333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.921793766854791,
+          "max_ms": 185.0,
+          "max_active_vus": 25
+        },
+        {
+          "offset_s": 360,
+          "full_bucket": true,
+          "completed": 35948,
+          "begun": 35948,
+          "success": 35948,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 52,
+          "success_ops_s": 599.1333333333333,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            50,
+            100
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 21.030377211527764,
+          "max_ms": 167.0,
+          "max_active_vus": 56
+        },
+        {
+          "offset_s": 420,
+          "full_bucket": true,
+          "completed": 35999,
+          "begun": 35999,
+          "success": 35999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.9833333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.207783549543043,
+          "max_ms": 57.0,
+          "max_active_vus": 16
+        },
+        {
+          "offset_s": 480,
+          "full_bucket": true,
+          "completed": 35999,
+          "begun": 36000,
+          "success": 35999,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.9833333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 5.843745659601655,
+          "max_ms": 38.0,
+          "max_active_vus": 17
+        },
+        {
+          "offset_s": 540,
+          "full_bucket": true,
+          "completed": 36002,
+          "begun": 36001,
+          "success": 36002,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.0333333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 5.666629631687129,
+          "max_ms": 35.0,
+          "max_active_vus": 13
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 35998,
+          "begun": 36000,
+          "success": 35998,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.9666666666667,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 13.283960220012222,
+          "max_ms": 75.0,
+          "max_active_vus": 22
+        },
+        {
+          "offset_s": 660,
+          "full_bucket": true,
+          "completed": 35993,
+          "begun": 36000,
+          "success": 35993,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.8833333333333,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 17.284972077904037,
+          "max_ms": 69.0,
+          "max_active_vus": 22
+        },
+        {
+          "offset_s": 720,
+          "full_bucket": true,
+          "completed": 35984,
+          "begun": 35982,
+          "success": 35984,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 18,
+          "success_ops_s": 599.7333333333333,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 18.685693641618496,
+          "max_ms": 146.0,
+          "max_active_vus": 26
+        },
+        {
+          "offset_s": 780,
+          "full_bucket": true,
+          "completed": 36002,
+          "begun": 35999,
+          "success": 36002,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 1,
+          "success_ops_s": 600.0333333333333,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 18.539025609688352,
+          "max_ms": 132.0,
+          "max_active_vus": 27
+        },
+        {
+          "offset_s": 840,
+          "full_bucket": true,
+          "completed": 35998,
+          "begun": 35999,
+          "success": 35998,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.9666666666667,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 10.04511361742319,
+          "max_ms": 66.0,
+          "max_active_vus": 18
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 36006,
+          "begun": 36001,
+          "success": 36006,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.1,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 13.793284452591235,
+          "max_ms": 63.0,
+          "max_active_vus": 19
+        },
+        {
+          "offset_s": 960,
+          "full_bucket": true,
+          "completed": 35996,
+          "begun": 36000,
+          "success": 35996,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.9333333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            5,
+            10
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 5.679381042338037,
+          "max_ms": 30.0,
+          "max_active_vus": 8
+        },
+        {
+          "offset_s": 1020,
+          "full_bucket": true,
+          "completed": 36003,
+          "begun": 36000,
+          "success": 36003,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.05,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            10,
+            20
+          ],
+          "mean_ms": 5.850040274421576,
+          "max_ms": 56.0,
+          "max_active_vus": 12
+        },
+        {
+          "offset_s": 1080,
+          "full_bucket": true,
+          "completed": 35993,
+          "begun": 36000,
+          "success": 35993,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 599.8833333333333,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 15.984580335065152,
+          "max_ms": 63.0,
+          "max_active_vus": 19
+        },
+        {
+          "offset_s": 1140,
+          "full_bucket": true,
+          "completed": 36008,
+          "begun": 36000,
+          "success": 36008,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.1333333333333,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 7.141829593423684,
+          "max_ms": 65.0,
+          "max_active_vus": 15
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": true,
+          "completed": 36000,
+          "begun": 36000,
+          "success": 36000,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.0,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.44125,
+          "max_ms": 39.0,
+          "max_active_vus": 15
+        },
+        {
+          "offset_s": 1260,
+          "full_bucket": false,
+          "completed": 9584,
+          "begun": 9581,
+          "success": 9584,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 7.400459098497496,
+          "max_ms": 42.0,
+          "max_active_vus": 10
+        }
+      ],
+      "five_minute": [
+        {
+          "offset_s": 0,
+          "full_bucket": true,
+          "completed": 179174,
+          "begun": 179177,
+          "success": 179174,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 241,
+          "success_ops_s": 597.2466666666667,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.369596035139027,
+          "max_ms": 247.0,
+          "max_active_vus": 64
+        },
+        {
+          "offset_s": 300,
+          "full_bucket": true,
+          "completed": 179917,
+          "begun": 179917,
+          "success": 179917,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 84,
+          "success_ops_s": 599.7233333333334,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            50,
+            100
+          ],
+          "mean_ms": 9.131004852237421,
+          "max_ms": 185.0,
+          "max_active_vus": 56
+        },
+        {
+          "offset_s": 600,
+          "full_bucket": true,
+          "completed": 179975,
+          "begun": 179980,
+          "success": 179975,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 19,
+          "success_ops_s": 599.9166666666666,
+          "p50_interval_ms": [
+            10,
+            20
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 15.5675288234477,
+          "max_ms": 146.0,
+          "max_active_vus": 27
+        },
+        {
+          "offset_s": 900,
+          "full_bucket": true,
+          "completed": 180006,
+          "begun": 180001,
+          "success": 180006,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": 600.02,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            20,
+            50
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 9.689627012432918,
+          "max_ms": 65.0,
+          "max_active_vus": 19
+        },
+        {
+          "offset_s": 1200,
+          "full_bucket": false,
+          "completed": 45584,
+          "begun": 45581,
+          "success": 45584,
+          "expected_rejection": 0,
+          "other_outcomes": 0,
+          "dropped_approx_boundary": 0,
+          "success_ops_s": null,
+          "p50_interval_ms": [
+            5,
+            10
+          ],
+          "p95_interval_ms": [
+            10,
+            20
+          ],
+          "p99_interval_ms": [
+            20,
+            50
+          ],
+          "mean_ms": 6.642922955422955,
+          "max_ms": 42.0,
+          "max_active_vus": 15
+        }
+      ],
+      "all_complete_minute_mean_ms": {
+        "min": 5.666629631687129,
+        "median": 6.921793766854791,
+        "max": 21.030377211527764,
+        "first": 6.150553422182065,
+        "last": 6.44125
+      },
+      "histogram_note": "Quantiles are bounds from full-operation histograms; completion-time buckets use floor(second), so edge buckets and drop attribution have at most one-second boundary ambiguity. Overall cohort counts remain exact."
+    }
+  },
+  "load_start": 1791602224.947443,
+  "load_return": 1791603537.60171,
+  "natural_final": {
+    "ts": 1791603585.937176,
+    "locks": [
+      {
+        "n": 33,
+        "wait_event": "ClientRead",
+        "xact_age_s": null,
+        "wait_event_type": "Client"
+      }
+    ],
+    "anchor": 2989680,
+    "tables": [
+      {
+        "relname": "access_token_revocations",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 0,
+        "autovacuum_count": 0
+      },
+      {
+        "relname": "security_audit_events",
+        "n_tup_del": 2973645,
+        "n_tup_ins": 2989680,
+        "n_dead_tup": 0,
+        "index_bytes": 49184768,
+        "table_bytes": 60702720,
+        "autovacuum_count": 22
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "n_tup_del": 260842,
+        "n_tup_ins": 352003,
+        "n_dead_tup": 17312,
+        "index_bytes": 42459136,
+        "table_bytes": 54755328,
+        "autovacuum_count": 13
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "n_tup_del": 2989680,
+        "n_tup_ins": 2989680,
+        "n_dead_tup": 0,
+        "index_bytes": 30171136,
+        "table_bytes": 24576,
+        "autovacuum_count": 22
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "n_tup_del": 11241,
+        "n_tup_ins": 12337,
+        "n_dead_tup": 0,
+        "index_bytes": 606208,
+        "table_bytes": 1523712,
+        "autovacuum_count": 21
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "n_tup_del": 342712,
+        "n_tup_ins": 352995,
+        "n_dead_tup": 159,
+        "index_bytes": 32333824,
+        "table_bytes": 8970240,
+        "autovacuum_count": 22
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "n_tup_del": 1072229,
+        "n_tup_ins": 1086342,
+        "n_dead_tup": 159,
+        "index_bytes": 16957440,
+        "table_bytes": 10379264,
+        "autovacuum_count": 22
+      }
+    ],
+    "blocked": null,
+    "pending": 0,
+    "db_bytes": 324990655,
+    "family_live": 10240,
+    "observed_at": 1791603585.16738,
+    "revocations": {
+      "total": 0,
+      "eligible": 0,
+      "retained": 0
+    },
+    "decision_bytes": {
+      "count": 16035,
+      "row_bytes": 4489800,
+      "payload_bytes": 80175
+    },
+    "spent_eligible": 0,
+    "spent_retained": 14113,
+    "contract_orphan": 0,
+    "family_eligible": 43,
+    "issuance_counts": {
+      "total": 91161,
+      "eligible": 16120,
+      "retained": 75041,
+      "oldest_due_s": 57.846416,
+      "oldest_created_retention_remaining_s": -57.846416
+    },
+    "pending_by_type": {},
+    "oldest_pending_s": 0,
+    "decision_eligible": 14820,
+    "decision_retained": 1215,
+    "decision_retention": {
+      "unexported": 0,
+      "exported_full": 0,
+      "exported_compact": 16035,
+      "last_remaining_s": 33.288947,
+      "last_business_retain_until": "2026-10-10T03:40:19.342987+00:00"
+    },
+    "family_oldest_due_s": 57.896027,
+    "decision_oldest_due_s": 57.893756,
+    "target_decisions": {
+      "count": 0,
+      "eligible": 0,
+      "retained": 0,
+      "unexported": 0,
+      "last_business_retain_until": null,
+      "last_remaining_s": null
+    },
+    "full_cycle_after_target_deadline": true
+  },
+  "observed_cohort": {
+    "ts": 1791602345.103515,
+    "locks": [
+      {
+        "n": 23,
+        "wait_event": "ClientRead",
+        "xact_age_s": -0.151873,
+        "wait_event_type": "Client"
+      },
+      {
+        "n": 1,
+        "wait_event": "WalSync",
+        "xact_age_s": -0.150744,
+        "wait_event_type": "IO"
+      },
+      {
+        "n": 2,
+        "wait_event": "WALWrite",
+        "xact_age_s": -0.15185,
+        "wait_event_type": "LWLock"
+      },
+      {
+        "n": 7,
+        "wait_event": null,
+        "xact_age_s": -0.152335,
+        "wait_event_type": null
+      }
+    ],
+    "anchor": 254860,
+    "tables": [
+      {
+        "relname": "access_token_revocations",
+        "n_tup_del": 0,
+        "n_tup_ins": 0,
+        "n_dead_tup": 0,
+        "index_bytes": 24576,
+        "table_bytes": 0,
+        "autovacuum_count": 0
+      },
+      {
+        "relname": "security_audit_events",
+        "n_tup_del": 222388,
+        "n_tup_ins": 253269,
+        "n_dead_tup": 16861,
+        "index_bytes": 23207936,
+        "table_bytes": 48291840,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_token_issuances",
+        "n_tup_del": 0,
+        "n_tup_ins": 32014,
+        "n_dead_tup": 0,
+        "index_bytes": 9035776,
+        "table_bytes": 12828672,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "security_audit_chain_entries",
+        "n_tup_del": 253694,
+        "n_tup_ins": 253694,
+        "n_dead_tup": 16792,
+        "index_bytes": 21422080,
+        "table_bytes": 17399808,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_refresh_contracts",
+        "n_tup_del": 1650,
+        "n_tup_ins": 2914,
+        "n_dead_tup": 0,
+        "index_bytes": 581632,
+        "table_bytes": 1761280,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_refresh_families",
+        "n_tup_del": 16591,
+        "n_tup_ins": 33006,
+        "n_dead_tup": 7067,
+        "index_bytes": 22814720,
+        "table_bytes": 8486912,
+        "autovacuum_count": 2
+      },
+      {
+        "relname": "oauth_refresh_spent_tokens",
+        "n_tup_del": 70610,
+        "n_tup_ins": 89840,
+        "n_dead_tup": 4303,
+        "index_bytes": 10854400,
+        "table_bytes": 9854976,
+        "autovacuum_count": 2
+      }
+    ],
+    "blocked": null,
+    "pending": 98,
+    "db_bytes": 202815167,
+    "family_live": 10240,
+    "observed_at": 1791602345.002218,
+    "revocations": {
+      "total": 0,
+      "eligible": 0,
+      "retained": 0
+    },
+    "decision_bytes": {
+      "count": 31457,
+      "row_bytes": 8821320,
+      "payload_bytes": 170784
+    },
+    "spent_eligible": 5532,
+    "spent_retained": 13859,
+    "contract_orphan": 0,
+    "family_eligible": 6373,
+    "issuance_counts": {
+      "total": 32212,
+      "eligible": 0,
+      "retained": 32212,
+      "oldest_due_s": 0,
+      "oldest_created_retention_remaining_s": 245.995262
+    },
+    "pending_by_type": {
+      "token_issued": 73,
+      "login_success": 1,
+      "refresh_family_capacity_retired": 10,
+      "authorization_decision_committed": 14
+    },
+    "oldest_pending_s": 0.034333,
+    "decision_eligible": 6490,
+    "decision_retained": 24967,
+    "decision_retention": {
+      "unexported": 14,
+      "exported_full": 0,
+      "exported_compact": 31443,
+      "last_remaining_s": 89.826493,
+      "last_business_retain_until": "2026-10-10T03:20:35.008911+00:00"
+    },
+    "family_oldest_due_s": 23.205154,
+    "decision_oldest_due_s": 23.198327,
+    "target_decisions": {
+      "count": 31437,
+      "eligible": 6559,
+      "retained": 24878,
+      "unexported": 0,
+      "last_business_retain_until": "2026-10-10T03:20:34.941624+00:00",
+      "last_remaining_s": 89.64858
+    }
+  },
+  "observer_errors_during_load": [],
+  "observer_errors_after_load": [
+    {
+      "ts": 1791603605.2278955,
+      "error": "task command failed rc=2: psql: error: connection to server on socket \"/var/run/postgresql/.s.PGSQL.5432\" failed: FATAL:  the database system is shutting down\n"
+    }
+  ],
+  "storage_during_load": {
+    "pending": {
+      "min": 0,
+      "median": 77.0,
+      "max": 331,
+      "first": 0,
+      "last": 0
+    },
+    "oldest_pending_s": {
+      "min": 0,
+      "median": 0.023744,
+      "max": 0.128625,
+      "first": 0,
+      "last": 0
+    },
+    "db_bytes": {
+      "min": 12523199,
+      "median": 339191487.0,
+      "max": 350492351,
+      "first": 12523199,
+      "last": 342324927
+    },
+    "decision_eligible": {
+      "min": 0,
+      "median": 7477.0,
+      "max": 16653,
+      "first": 0,
+      "last": 2052
+    },
+    "decision_retained": {
+      "min": 0,
+      "median": 24997.0,
+      "max": 25236,
+      "first": 0,
+      "last": 13983
+    },
+    "decision_oldest_due_s": {
+      "min": 0,
+      "median": 26.9354145,
+      "max": 59.889494,
+      "first": 0,
+      "last": 7.169283
+    },
+    "family_live": {
+      "min": 0,
+      "median": 10240.0,
+      "max": 10240,
+      "first": 0,
+      "last": 10240
+    },
+    "spent_retained": {
+      "min": 0,
+      "median": 13959.0,
+      "max": 14259,
+      "first": 0,
+      "last": 14113
+    },
+    "issuance_total": {
+      "min": 0,
+      "median": 104626.0,
+      "max": 116473,
+      "first": 0,
+      "last": 91161
+    },
+    "issuance_eligible": {
+      "min": 0,
+      "median": 4762.5,
+      "max": 16785,
+      "first": 0,
+      "last": 2216
+    },
+    "issuance_oldest_due_s": {
+      "min": 0,
+      "median": 16.072532000000002,
+      "max": 59.117743,
+      "first": 0,
+      "last": 7.121943
+    }
+  },
+  "storage_mature_thirds": [
+    {
+      "start": 1791602651.019,
+      "end": 1791602931.019,
+      "samples": 28,
+      "values": {
+        "pending": {
+          "min": 34,
+          "median": 64.5,
+          "max": 146,
+          "first": 75,
+          "last": 34
+        },
+        "oldest_pending_s": {
+          "min": 0.007257,
+          "median": 0.019276,
+          "max": 0.052708,
+          "first": 0.026337,
+          "last": 0.010806
+        },
+        "db_bytes": {
+          "min": 302741183,
+          "median": 329688767.0,
+          "max": 345306815,
+          "first": 302741183,
+          "last": 345306815
+        },
+        "decision_eligible": {
+          "min": 58,
+          "median": 7875.0,
+          "max": 15855,
+          "first": 4659,
+          "last": 9104
+        },
+        "decision_retained": {
+          "min": 24810,
+          "median": 25026.0,
+          "max": 25160,
+          "first": 25057,
+          "last": 25046
+        },
+        "decision_oldest_due_s": {
+          "min": 0.217115,
+          "median": 28.588839,
+          "max": 56.969836,
+          "first": 16.911742,
+          "last": 32.664497
+        },
+        "family_live": {
+          "min": 10240,
+          "median": 10240.0,
+          "max": 10240,
+          "first": 10240,
+          "last": 10240
+        },
+        "spent_retained": {
+          "min": 13565,
+          "median": 13935.5,
+          "max": 14196,
+          "first": 13565,
+          "last": 13879
+        },
+        "issuance_total": {
+          "min": 100078,
+          "median": 107888.0,
+          "max": 115752,
+          "first": 104661,
+          "last": 108947
+        },
+        "issuance_eligible": {
+          "min": 278,
+          "median": 8093.0,
+          "max": 15919,
+          "first": 4755,
+          "last": 9145
+        },
+        "issuance_oldest_due_s": {
+          "min": 0.040644,
+          "median": 28.0338605,
+          "max": 56.03635,
+          "first": 16.012075,
+          "last": 32.038541
+        }
+      }
+    },
+    {
+      "start": 1791602931.019,
+      "end": 1791603211.019,
+      "samples": 28,
+      "values": {
+        "pending": {
+          "min": 23,
+          "median": 80.0,
+          "max": 195,
+          "first": 33,
+          "last": 140
+        },
+        "oldest_pending_s": {
+          "min": 0.003173,
+          "median": 0.0268205,
+          "max": 0.06183,
+          "first": 0.016296,
+          "last": 0.04599
+        },
+        "db_bytes": {
+          "min": 345495231,
+          "median": 348706495.0,
+          "max": 350082751,
+          "first": 345495231,
+          "last": 350082751
+        },
+        "decision_eligible": {
+          "min": 13,
+          "median": 8859.5,
+          "max": 16562,
+          "first": 11958,
+          "last": 15359
+        },
+        "decision_retained": {
+          "min": 24793,
+          "median": 25001.5,
+          "max": 25154,
+          "first": 24956,
+          "last": 25139
+        },
+        "decision_oldest_due_s": {
+          "min": 0.031035,
+          "median": 32.058983500000004,
+          "max": 59.889494,
+          "first": 42.706198,
+          "last": 55.729881
+        },
+        "family_live": {
+          "min": 10240,
+          "median": 10240.0,
+          "max": 10240,
+          "first": 10240,
+          "last": 10240
+        },
+        "spent_retained": {
+          "min": 13798,
+          "median": 13967.5,
+          "max": 14226,
+          "first": 13801,
+          "last": 14004
+        },
+        "issuance_total": {
+          "min": 99747,
+          "median": 108659.5,
+          "max": 116386,
+          "first": 111716,
+          "last": 115342
+        },
+        "issuance_eligible": {
+          "min": 61,
+          "median": 8990.0,
+          "max": 16662,
+          "first": 11920,
+          "last": 15665
+        },
+        "issuance_oldest_due_s": {
+          "min": 0.077981,
+          "median": 31.5787435,
+          "max": 59.081874,
+          "first": 42.080242,
+          "last": 55.115349
+        }
+      }
+    },
+    {
+      "start": 1791603211.019,
+      "end": 1791603491.019,
+      "samples": 28,
+      "values": {
+        "pending": {
+          "min": 48,
+          "median": 83.5,
+          "max": 176,
+          "first": 91,
+          "last": 82
+        },
+        "oldest_pending_s": {
+          "min": 0.005934,
+          "median": 0.0206075,
+          "max": 0.05494,
+          "first": 0.028113,
+          "last": 0.03119
+        },
+        "db_bytes": {
+          "min": 339162815,
+          "median": 349419199.0,
+          "max": 350492351,
+          "first": 350107327,
+          "last": 341948095
+        },
+        "decision_eligible": {
+          "min": 721,
+          "median": 6873.5,
+          "max": 16491,
+          "first": 721,
+          "last": 5485
+        },
+        "decision_retained": {
+          "min": 24908,
+          "median": 25018.0,
+          "max": 25133,
+          "first": 25038,
+          "last": 25018
+        },
+        "decision_oldest_due_s": {
+          "min": 2.601464,
+          "median": 24.549945,
+          "max": 59.486345,
+          "first": 2.601464,
+          "last": 19.526456
+        },
+        "family_live": {
+          "min": 10240,
+          "median": 10240.0,
+          "max": 10240,
+          "first": 10240,
+          "last": 10240
+        },
+        "spent_retained": {
+          "min": 13768,
+          "median": 14033.5,
+          "max": 14162,
+          "first": 14022,
+          "last": 14116
+        },
+        "issuance_total": {
+          "min": 100474,
+          "median": 106740.5,
+          "max": 116473,
+          "first": 100474,
+          "last": 105472
+        },
+        "issuance_eligible": {
+          "min": 851,
+          "median": 6967.5,
+          "max": 16637,
+          "first": 851,
+          "last": 5603
+        },
+        "issuance_oldest_due_s": {
+          "min": 2.110182,
+          "median": 24.114416499999997,
+          "max": 59.117743,
+          "first": 2.110182,
+          "last": 19.118419
+        }
+      }
+    }
+  ],
+  "storage_whole_thirds": [
+    {
+      "start": 1791602291.019,
+      "end": 1791602691.019,
+      "samples": 40,
+      "values": {
+        "pending": {
+          "min": 40,
+          "median": 89.0,
+          "max": 331,
+          "first": 68,
+          "last": 44
+        },
+        "oldest_pending_s": {
+          "min": 0.007257,
+          "median": 0.026298000000000002,
+          "max": 0.128625,
+          "first": 0.01596,
+          "last": 0.007257
+        },
+        "db_bytes": {
+          "min": 123492031,
+          "median": 259933887.0,
+          "max": 303511231,
+          "first": 123492031,
+          "last": 303511231
+        },
+        "decision_eligible": {
+          "min": 0,
+          "median": 7500.5,
+          "max": 15983,
+          "first": 0,
+          "last": 12933
+        },
+        "decision_retained": {
+          "min": 18321,
+          "median": 24993.5,
+          "max": 25236,
+          "first": 18321,
+          "last": 25120
+        },
+        "decision_oldest_due_s": {
+          "min": 0,
+          "median": 27.1198745,
+          "max": 57.327706,
+          "first": 0,
+          "last": 46.934052
+        },
+        "family_live": {
+          "min": 10228,
+          "median": 10240.0,
+          "max": 10240,
+          "first": 10228,
+          "last": 10240
+        },
+        "spent_retained": {
+          "min": 13565,
+          "median": 13850.5,
+          "max": 14259,
+          "first": 13735,
+          "last": 13838
+        },
+        "issuance_total": {
+          "min": 18320,
+          "median": 72544.5,
+          "max": 113000,
+          "first": 18320,
+          "last": 113000
+        },
+        "issuance_eligible": {
+          "min": 0,
+          "median": 0.0,
+          "max": 13183,
+          "first": 0,
+          "last": 13183
+        },
+        "issuance_oldest_due_s": {
+          "min": 0,
+          "median": 0.0,
+          "max": 46.034385,
+          "first": 0,
+          "last": 46.034385
+        }
+      }
+    },
+    {
+      "start": 1791602691.019,
+      "end": 1791603091.019,
+      "samples": 40,
+      "values": {
+        "pending": {
+          "min": 23,
+          "median": 71.0,
+          "max": 146,
+          "first": 46,
+          "last": 60
+        },
+        "oldest_pending_s": {
+          "min": 0.003173,
+          "median": 0.0202465,
+          "max": 0.052708,
+          "first": 0.011984,
+          "last": 0.02654
+        },
+        "db_bytes": {
+          "min": 307762879,
+          "median": 345298623.0,
+          "max": 348812991,
+          "first": 307762879,
+          "last": 347764415
+        },
+        "decision_eligible": {
+          "min": 13,
+          "median": 8030.0,
+          "max": 16237,
+          "first": 15743,
+          "last": 13
+        },
+        "decision_retained": {
+          "min": 24793,
+          "median": 24992.0,
+          "max": 25160,
+          "first": 25059,
+          "last": 24893
+        },
+        "decision_oldest_due_s": {
+          "min": 0.031035,
+          "median": 29.349255999999997,
+          "max": 58.444757,
+          "first": 56.931594,
+          "last": 0.031035
+        },
+        "family_live": {
+          "min": 10240,
+          "median": 10240.0,
+          "max": 10240,
+          "first": 10240,
+          "last": 10240
+        },
+        "spent_retained": {
+          "min": 13713,
+          "median": 13967.5,
+          "max": 14226,
+          "first": 14008,
+          "last": 14226
+        },
+        "issuance_total": {
+          "min": 99747,
+          "median": 108132.5,
+          "max": 116125,
+          "first": 115752,
+          "last": 99747
+        },
+        "issuance_eligible": {
+          "min": 61,
+          "median": 8337.0,
+          "max": 16467,
+          "first": 15908,
+          "last": 61
+        },
+        "issuance_oldest_due_s": {
+          "min": 0.040644,
+          "median": 29.077379,
+          "max": 58.077474,
+          "first": 56.031927,
+          "last": 0.077981
+        }
+      }
+    },
+    {
+      "start": 1791603091.019,
+      "end": 1791603491.019,
+      "samples": 40,
+      "values": {
+        "pending": {
+          "min": 45,
+          "median": 83.5,
+          "max": 195,
+          "first": 59,
+          "last": 82
+        },
+        "oldest_pending_s": {
+          "min": 0.005934,
+          "median": 0.022565500000000002,
+          "max": 0.06183,
+          "first": 0.016435,
+          "last": 0.03119
+        },
+        "db_bytes": {
+          "min": 339162815,
+          "median": 349456063.0,
+          "max": 350492351,
+          "first": 347829951,
+          "last": 341948095
+        },
+        "decision_eligible": {
+          "min": 721,
+          "median": 7742.0,
+          "max": 16562,
+          "first": 2703,
+          "last": 5485
+        },
+        "decision_retained": {
+          "min": 24851,
+          "median": 25013.5,
+          "max": 25154,
+          "first": 24851,
+          "last": 25018
+        },
+        "decision_oldest_due_s": {
+          "min": 2.601464,
+          "median": 27.9300385,
+          "max": 59.889494,
+          "first": 9.884452,
+          "last": 19.526456
+        },
+        "family_live": {
+          "min": 10240,
+          "median": 10240.0,
+          "max": 10240,
+          "first": 10240,
+          "last": 10240
+        },
+        "spent_retained": {
+          "min": 13768,
+          "median": 14013.0,
+          "max": 14170,
+          "first": 14170,
+          "last": 14116
+        },
+        "issuance_total": {
+          "min": 100474,
+          "median": 107580.0,
+          "max": 116473,
+          "first": 102381,
+          "last": 105472
+        },
+        "issuance_eligible": {
+          "min": 851,
+          "median": 7888.5,
+          "max": 16662,
+          "first": 2700,
+          "last": 5603
+        },
+        "issuance_oldest_due_s": {
+          "min": 2.110182,
+          "median": 27.596289,
+          "max": 59.117743,
+          "first": 9.076832,
+          "last": 19.118419
+        }
+      }
+    }
+  ],
+  "observer_peak_seconds": 0.7205245611257851
+}

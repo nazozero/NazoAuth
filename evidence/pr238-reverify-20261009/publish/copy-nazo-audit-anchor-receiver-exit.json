@@ -1,0 +1,1 @@
+{"command": ["docker", "cp", "nazoauth-perf-runner-20261009:/src/target/release/nazo-audit-anchor-receiver", "/workspace/evidence/pr238-reverify-20261009/nazo-audit-anchor-receiver"], "exit": 0, "seconds": 0.017073494847863913}

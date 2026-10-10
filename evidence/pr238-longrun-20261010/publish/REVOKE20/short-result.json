@@ -1,0 +1,261 @@
+{
+  "name": "pr238-long-revoke20-20261010",
+  "mode": "multi",
+  "scenario": "cap_revoke",
+  "rate": 960,
+  "window_seconds": 1200,
+  "app_cpus": 16,
+  "confirmation": false,
+  "point_path": "multi/pr238-long-revoke20-20261010/point.json",
+  "token_state": {
+    "collected": true,
+    "fresh_rows": 0,
+    "legacy_rows": 0,
+    "issuance_rows": 322119,
+    "issuance_inserts": 1165320,
+    "subject_bindings": 0,
+    "database_bytes": 702846655
+  },
+  "verdict": "PASS",
+  "metrics": {
+    "rps": 4795.513,
+    "p50": 2.238,
+    "p95": 6.524,
+    "p99": 11.701,
+    "dropped": 1081,
+    "drop_fraction": 0.0009267824701796381,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 959.1,
+    "successful_ops_s": 959.1,
+    "window_seconds": 1200.0,
+    "rate_basis": "scenario_window_stream",
+    "measurement_contract": "cap-scenario-window-v1",
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "capacity_gate_contract": "successful-ops-v1",
+    "measure": {
+      "window_start_s": 1791597348.533,
+      "window_end_s": 1791598548.533,
+      "measure_started_exact": 1150920,
+      "measure_completed_exact": 1150920,
+      "measure_dropped_exact": 1081,
+      "measure_scheduled_observed": 1152001,
+      "measure_drop_fraction": 0.000938,
+      "measure_outcomes": {
+        "success": 1150920
+      },
+      "measure_outcome_sum": 1150920,
+      "drops_pre_window": 0,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 1152000,
+      "schedule_delta_vs_rational": 1,
+      "observed_schedule_rate": 960.001,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "subject_lifecycle": {
+      "initial_mint": 992,
+      "refresh_update": 0,
+      "expired_reauth": 1164328
+    },
+    "gate_population": "measurement_cohort",
+    "gate_p95": 24.0,
+    "gate_p99": 38.0,
+    "prepare_failures": {
+      "prepare_failed": 0,
+      "prepare_local_failed": 0,
+      "prepare_sut_failed": 0
+    },
+    "forensic_diag": {
+      "status": "TRUNCATED",
+      "truncated": true,
+      "budget_exceeded_points": 29706848,
+      "overflow_dropped_points": 12316473,
+      "logical_bytes_cap": 536870912,
+      "file": "/src/evidence/pr238-longrun-20261010/REVOKE20/results/multi/pr238-long-revoke20-20261010/load/capacity-cap-revoke.diag.jsonl.gz"
+    },
+    "latency_gate": "complete_operation_100_250ms",
+    "rate_for_gate": 959.1,
+    "threshold_status_diagnostic": "target_miss",
+    "main_verdict": "PASS",
+    "complete_operation_latency_ms": {
+      "p50": 14.0,
+      "p95": 24.0,
+      "p99": 38.0
+    }
+  },
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "local_no_request_zero": true,
+    "expected_rejection_zero": true,
+    "collector_copy_complete": true
+  },
+  "maintenance": null,
+  "provenance_valid": true,
+  "token_state_verdict": "PASS",
+  "cost": {
+    "wal_windowed": {
+      "delta": 13132602129.771927,
+      "field": "wal_bytes",
+      "window_s": 1200.0,
+      "sample_span": [
+        1791597327,
+        1791598593
+      ]
+    },
+    "wal_per_success_bytes": 11410.526,
+    "wal_io_windowed": {
+      "writes": {
+        "delta": 1271221.598508358,
+        "field": "wal_io.writes",
+        "window_s": 1200.0,
+        "sample_span": [
+          1791597327,
+          1791598593
+        ]
+      },
+      "write_bytes": {
+        "delta": 29982361555.214844,
+        "field": "wal_io.write_bytes",
+        "window_s": 1200.0,
+        "sample_span": [
+          1791597327,
+          1791598593
+        ]
+      },
+      "write_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.write_time_ms",
+        "window_s": 1200.0,
+        "sample_span": [
+          1791597327,
+          1791598593
+        ]
+      },
+      "fsyncs": {
+        "delta": 1268839.8980083466,
+        "field": "wal_io.fsyncs",
+        "window_s": 1200.0,
+        "sample_span": [
+          1791597327,
+          1791598593
+        ]
+      },
+      "fsync_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.fsync_time_ms",
+        "window_s": 1200.0,
+        "sample_span": [
+          1791597327,
+          1791598593
+        ]
+      }
+    },
+    "wal_writes_per_op": 1.1045,
+    "wal_fsyncs_per_op": 1.1025,
+    "wait_per_acq_ms": null,
+    "acquire_per_op_windowed": null,
+    "oom_killed": false,
+    "restart_count": 0
+  },
+  "component_cpu_cores": {
+    "app": 2.34,
+    "postgres": 4.24
+  },
+  "audit": {
+    "point": "pr238-long-revoke20-20261010",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 3495960,
+    "accepted_events_delta": 3495960,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "d7243b7f0e1ffa866355814e7010b57b40f89b68d5932332e9fb9a5f0141687c",
+      "journal_bytes": 3514664732,
+      "batches": 58930,
+      "remote_path": "sis-rcv-pr238-long-revoke20-20261010:/data/journal.jsonl",
+      "events_in_range": 3495960,
+      "expected_in_range": 3495960,
+      "by_event_type": {
+        "authorization_decision_committed": 1165320,
+        "token_issued": 1165320,
+        "token_revoked": 1165320
+      },
+      "token_issued_in_range": 1165320,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 1165320,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "queue": {
+    "collected": false,
+    "status": "UNVERIFIED",
+    "contract": "blackbox-db-v1",
+    "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+    "enqueued": null,
+    "persisted": null,
+    "dropped": null,
+    "pending_in_process": null
+  },
+  "collection_contract": "blackbox-db-v1",
+  "unverified_internal_gates": {
+    "queue_dropped_zero": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "pending_zero_post_drain": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "enqueued_eq_persisted": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    }
+  },
+  "elapsed_s": 1317.4
+}

@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "--all-features", "-p", "nazoauth", "jobs::security_state::tests", "--", "--nocapture"], "exit": 0, "seconds": 83.66867869021371}

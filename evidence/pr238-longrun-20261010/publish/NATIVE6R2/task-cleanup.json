@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-native6r2-20261010",
+  "key": "NATIVE6R2",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.603,
+  "total_elapsed_s": 286.406,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

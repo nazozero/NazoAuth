@@ -1,0 +1,27 @@
+{
+  "defined_at": 1791597942.7362568,
+  "reason": "Full independent rates for every original business chain are required; a lower-rate mix share does not establish full-rate stability. All adjusted windows below were unstarted. Reallocate the unstarted 60-minute mixed window to 30 minutes and add original CC/refresh/FAPI/cold points; authorization is a 10-minute independent point.",
+  "unchanged_running_and_completed": [
+    "REVOKE20",
+    "INTROSPECT10",
+    "MTLS10",
+    "PAR10",
+    "NATIVE10",
+    "REQUIRED15"
+  ],
+  "superseded_unstarted": [
+    "MIX60R2",
+    "AUTH12"
+  ],
+  "tail_order": [
+    "MIX30",
+    "AUTH10",
+    "CC10",
+    "REFRESH10",
+    "FAPI10",
+    "COLD10"
+  ],
+  "total_formal_seconds": 9300,
+  "task_deadline": 1791607688.0,
+  "scope": "All original multi-CPU business scenarios at their original rates, plus metadata/UserInfo/token-exchange mixed coverage and Required mixed. Single-CPU variants are not separate reruns; non-matrix admin/device/VC protocols are not claimed covered."
+}

@@ -1,0 +1,1 @@
+{"key": "AUTH_DIAG", "capacity": "INVALID", "lanes": {"load": {"rate": 799.999, "latency_ms": {"p50": 25.0, "p95": 65.0, "p99": 95.0}, "unexpected_errors": 0}}, "pending": {"min": 0, "median": 94, "max": 18653, "first": 0, "last": 164}, "age": {"min": -0.001061, "median": 0.025695, "max": 7.75995, "first": 0, "last": 0.060359}, "natural_count": 0, "cycle": true}

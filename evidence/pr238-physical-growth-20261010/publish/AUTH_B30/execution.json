@@ -1,0 +1,21 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-e",
+    "SIS_WORKSPACE=/src",
+    "-e",
+    "SIS_LOAD_BUDGET_S=2700",
+    "-e",
+    "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_B30",
+    "-w",
+    "/src",
+    "nazoauth-long-controller-20261010",
+    "python",
+    "/src/evidence/pr238-physical-growth-20261010/AUTH_B30/point-observer-cycle.py",
+    "AUTH_B30"
+  ],
+  "exit": 2,
+  "start": 1791610255.7393827,
+  "end": 1791612625.7074468
+}

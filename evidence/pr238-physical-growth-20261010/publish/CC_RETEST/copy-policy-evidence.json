@@ -1,0 +1,1123 @@
+{
+  "source_sha": "4ccd02de2767a7dd586f19ccb7cf502197e02aeb",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791615509.4333944,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615509.4478981,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615515.1295033,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615515.199567,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615520.3873107,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615520.462383,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615525.6805758,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615525.7703333,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615530.9754977,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615531.056797,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615536.2922251,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615536.6054387,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615541.815507,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615541.8916483,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615547.1093614,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615547.1942008,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615552.422997,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615552.4972432,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615557.7200892,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615557.7935095,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615562.9982145,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615563.078382,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615568.2875881,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615568.3711247,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615573.6032453,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615573.6883385,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615578.885637,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615579.0525205,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615584.3792822,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615584.4880445,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615589.6803606,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615589.771002,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615594.9594333,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615595.0341153,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615600.2153208,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615600.2890437,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615605.4785297,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615605.549722,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615610.7336483,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615610.8158748,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615616.0289664,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615616.1069272,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615621.2915301,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615621.361656,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615626.5593214,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615626.636773,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615631.838246,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615631.918596,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615637.0939653,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615637.1619542,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615642.3441088,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615642.4145153,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615647.664688,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615647.7345781,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615652.9776325,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615653.0454597,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615658.2317924,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615658.302471,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615663.577127,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615663.664528,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615668.8601732,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615668.933486,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615674.1707711,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615674.2474222,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615679.4404957,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615679.5081923,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615684.7503867,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615684.8184242,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615690.113846,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615690.1896253,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615695.3721135,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615695.4485548,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615700.6289077,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615700.6978989,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615705.8960633,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615705.9636075,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615711.1586435,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615711.229027,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615716.435623,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615716.5052745,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615721.695488,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615721.773228,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615726.9802814,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615727.0594194,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615732.335142,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615732.4063215,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615737.5955005,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615737.6689677,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615742.9846275,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615743.0582957,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615748.2646165,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615748.4199169,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615753.6427624,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615753.8415542,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615759.0464265,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615759.1236498,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615764.382537,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615764.4613926,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615769.6759517,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615769.7472892,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615775.037372,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615775.1112607,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615780.3282335,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615780.4044871,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615785.601136,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615785.675143,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615790.8802114,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615790.9566152,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615796.1639695,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615796.2434044,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615801.4600449,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615801.5393593,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615806.8470626,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615806.919384,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615812.248089,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615812.3885126,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615817.5966394,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615817.7453206,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615823.0411453,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615823.1121264,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615828.4024906,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615828.4814491,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615833.7794378,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615833.8635485,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615839.0729537,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615839.153023,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615844.373127,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615844.5181916,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615849.7345715,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615849.8153522,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615855.0456188,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615855.1189878,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615860.3227003,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615860.4003532,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615865.622228,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615865.7050104,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615870.9889715,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615871.0603776,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615876.4681273,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615876.5456815,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615881.8856452,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615881.9705417,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615887.213061,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615887.30722,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615892.5268073,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615892.610385,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615897.8262348,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615897.9981644,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615903.211609,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615903.2897482,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615908.5022058,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615908.5780592,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615913.786959,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615913.8592207,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615919.0689635,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615919.151837,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615924.4607553,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615924.5386155,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615929.759037,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615929.837203,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615935.0660233,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615935.2302854,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615940.4561512,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615940.5376768,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615945.9380379,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615946.0349672,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615951.2591147,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615951.4653265,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615956.676985,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615956.7502012,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615961.9783857,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615962.0583334,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615967.279263,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615967.361245,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615972.743578,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615972.8253145,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615978.0517216,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615978.126161,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615983.3567083,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615983.4325116,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615988.647352,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615988.7265093,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615993.9383585,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615994.01382,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615999.2457025,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791615999.330552,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616004.5581546,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616004.6346893,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616009.8586519,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616009.9376497,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616015.1560564,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616015.2319317,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616020.4532964,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616020.5283678,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616025.840066,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616025.9200597,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616031.1462464,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616031.2289307,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616036.5081317,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616036.5813704,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616041.8222065,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616041.9052205,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616047.2871153,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616047.427813,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616052.6781862,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616052.7637436,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616058.0078652,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616058.0937345,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616063.3532946,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616063.4461963,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616068.771917,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616068.8555782,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616074.1849127,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616074.3666868,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616079.5925095,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616079.673468,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616085.0223815,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616085.0985954,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616090.465457,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616090.5722342,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616095.8059168,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616095.8913205,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616101.1389813,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616101.2245617,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616106.4633048,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616106.5464463,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616111.7878811,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616111.876114,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616117.1058269,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616117.1829276,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616122.4101584,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616122.4898183,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616127.796272,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616127.8751113,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616133.0878353,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616133.161318,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616138.3771842,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616138.3925848,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616138.4086392,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616138.425675,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616138.7499788,
+      "container": "sis-load-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616339.4005573,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616339.4160554,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616349.7847297,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616349.797607,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616360.2133763,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010"
+    },
+    {
+      "ts": 1791616360.2348936,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791615509.367685,
+      "ts_end": 1791615509.3904645,
+      "elapsed_ms": 22.7799,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791615509.3904917,
+      "ts_end": 1791615509.416609,
+      "elapsed_ms": 26.1186,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791615509.448203,
+      "ts_end": 1791615509.473441,
+      "elapsed_ms": 25.238,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791615509.473459,
+      "ts_end": 1791615509.495501,
+      "elapsed_ms": 22.0425,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791616138.4413235,
+      "ts_end": 1791616138.4848711,
+      "elapsed_ms": 43.548,
+      "container": "sis-load-pr238-physical-cc-retest-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "ee02a8367aa19ec41e1022e230dbb5688fe8b57e1f56de28fa477198711fccc7",
+        "owner": "pr238-physical-cc-retest-20261010",
+        "running": false,
+        "checked_at": 1791616138.4555352,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791616138.9793925,
+      "ts_end": 1791616139.00202,
+      "elapsed_ms": 22.6276,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791616139.0020368,
+      "ts_end": 1791616139.034402,
+      "elapsed_ms": 32.3652,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791616349.6712606,
+      "ts_end": 1791616349.7128851,
+      "elapsed_ms": 41.6247,
+      "container": "sis-sampler-pr238-physical-cc-retest-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "97d72328be7d0761cf54be94eb6af0171070e33cee3112674cb251a91a4c290a",
+        "owner": "pr238-physical-cc-retest-20261010",
+        "running": false,
+        "checked_at": 1791616349.68609,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791616360.0160458,
+      "ts_end": 1791616360.061474,
+      "elapsed_ms": 45.4283,
+      "container": "sis-proc-pr238-physical-cc-retest-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "eb898d3de763358c34c0576c535f0d0beb0413afe26595926ec6da6ef6ba9e24",
+        "owner": "pr238-physical-cc-retest-20261010",
+        "running": false,
+        "checked_at": 1791616360.032303,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr238-physical-cc-retest-20261010",
+    "sis-proc-pr238-physical-cc-retest-20261010",
+    "sis-sampler-pr238-physical-cc-retest-20261010"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-pr238-physical-cc-retest-20261010",
+      "sis-proc-pr238-physical-cc-retest-20261010",
+      "sis-sampler-pr238-physical-cc-retest-20261010"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

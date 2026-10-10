@@ -1,0 +1,771 @@
+{
+  "source_sha": "e8242c44aab842e1828b471413905f74b4132325",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791558867.472241,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558867.487206,
+      "container": "sis-proc-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558871.808626,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558871.8653524,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558877.0170162,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558877.0800636,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558882.2405264,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558882.299923,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558887.4642022,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558887.5258186,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558892.676055,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558892.7366517,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558897.891549,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558897.9525156,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558903.1160858,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558903.17609,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558908.3316581,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558908.3913336,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558913.58493,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558913.6472197,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558918.8012862,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558918.8644335,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558924.0337944,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558924.1625369,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558929.336321,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558929.3999352,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558934.5581584,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558934.621953,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558939.7810066,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558939.8406417,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558945.0034277,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558945.0645108,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558950.2206075,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558950.2815046,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558955.4429548,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558955.5033045,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558960.6638646,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558960.7266822,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558965.8872366,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558965.9490805,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558971.113413,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558971.1788886,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558976.3424108,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558976.4081867,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558981.5694432,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558981.6308646,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558986.7962341,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558986.8566966,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558992.0247698,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558992.0857604,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558997.2484207,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791558997.312775,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559002.532326,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559002.5987456,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559007.7713535,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559007.833305,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559012.997656,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559013.0593615,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559018.231984,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559018.3932877,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559023.5613906,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559023.6270983,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559028.7897372,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559028.85293,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559034.0229673,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559034.0854871,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559039.2505198,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559039.3136208,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559044.4825404,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559044.547485,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559049.7235072,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559049.7870038,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559054.9580672,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559055.0206385,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559060.188164,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559060.2514293,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559065.4243042,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559065.4893227,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559070.691273,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559070.7575016,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559075.9304159,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559075.9962382,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559081.1744316,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559081.2400272,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559086.5490537,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559086.6149986,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559091.8235254,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559091.9589565,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559097.1300766,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559097.1975276,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559102.3756237,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559102.440496,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559107.6167433,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559107.6862612,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559112.866922,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559112.9341254,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559118.116117,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559118.1883333,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559123.3585737,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559123.4240212,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559128.6139488,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559128.6814137,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559133.854182,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559133.9184124,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559139.1014857,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559139.215137,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559144.3951087,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559144.4600694,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559149.6535203,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559149.726183,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559154.9064844,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559154.9764652,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559160.1557438,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559160.2185938,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559165.404182,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559165.470737,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559170.649674,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559170.7163706,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559175.9082162,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559175.9800162,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559181.2675962,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559181.3364508,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559186.5206609,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559186.5933428,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559191.7667072,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559191.8355813,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559197.026065,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559197.0968978,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559202.2793412,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559202.3542156,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559207.553227,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559207.6204312,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559212.804495,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559212.8724728,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559218.05744,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559218.127146,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559223.3148165,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559223.4816275,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559228.670058,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559228.7382944,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559233.919398,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559233.9844308,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559239.1739342,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559239.24231,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559244.4846668,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559244.551352,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559249.7348006,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559249.8010051,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559254.9860487,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559254.9998846,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559255.015148,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559255.028398,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559255.311629,
+      "container": "sis-load-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559266.854459,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559266.8671389,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559277.1912832,
+      "container": "sis-proc-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559277.2042637,
+      "container": "sis-proc-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559288.9409552,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009"
+    },
+    {
+      "ts": 1791559288.9620116,
+      "container": "sis-proc-pr238-reverify-rev360-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791558867.418469,
+      "ts_end": 1791558867.4371445,
+      "elapsed_ms": 18.6766,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791558867.437166,
+      "ts_end": 1791558867.4578424,
+      "elapsed_ms": 20.6772,
+      "container": "sis-proc-pr238-reverify-rev360-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791558867.4874663,
+      "ts_end": 1791558867.5062664,
+      "elapsed_ms": 18.7999,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791558867.5062828,
+      "ts_end": 1791558867.524176,
+      "elapsed_ms": 17.8932,
+      "container": "sis-proc-pr238-reverify-rev360-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791559255.0427845,
+      "ts_end": 1791559255.0873754,
+      "elapsed_ms": 44.5909,
+      "container": "sis-load-pr238-reverify-rev360-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "36ee914c03c2714d6dcf5f561596bb1e5a60bbae02dadc80da00f5a2a294b31f",
+        "owner": "pr238-reverify-rev360-20261009",
+        "running": false,
+        "checked_at": 1791559255.0564399,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791559255.655777,
+      "ts_end": 1791559255.6755204,
+      "elapsed_ms": 19.7435,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791559255.6755373,
+      "ts_end": 1791559255.695807,
+      "elapsed_ms": 20.2699,
+      "container": "sis-proc-pr238-reverify-rev360-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791559277.105764,
+      "ts_end": 1791559277.1434608,
+      "elapsed_ms": 37.6969,
+      "container": "sis-sampler-pr238-reverify-rev360-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "bfd5bc7c3ccadb18d539ea8043290b2f4c6f790b3ccc1d1c016858bd2ee8f8ca",
+        "owner": "pr238-reverify-rev360-20261009",
+        "running": false,
+        "checked_at": 1791559277.119902,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791559287.3845353,
+      "ts_end": 1791559287.4208057,
+      "elapsed_ms": 36.2703,
+      "container": "sis-proc-pr238-reverify-rev360-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "653ef217c2a6ccb8b4c1dc6a8d5f696d2dd6cdfea796eaac3428ef2556aa2841",
+        "owner": "pr238-reverify-rev360-20261009",
+        "running": false,
+        "checked_at": 1791559287.4001908,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr238-reverify-rev360-20261009",
+    "sis-proc-pr238-reverify-rev360-20261009",
+    "sis-sampler-pr238-reverify-rev360-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-pr238-reverify-rev360-20261009",
+      "sis-proc-pr238-reverify-rev360-20261009",
+      "sis-sampler-pr238-reverify-rev360-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

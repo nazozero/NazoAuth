@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazo-postgres --test controller_registry --test controller_recovery -- --nocapture", "exit": 0, "seconds": 21.15722654433921}

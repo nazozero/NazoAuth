@@ -1,0 +1,81 @@
+{
+  "census_exact": {
+    "oauth:client_assertion": 20759,
+    "oauth:dpop": 46399,
+    "oauth:jar": 55909,
+    "oauth:rate": 6,
+    "oauth:session": 4113,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 127187,
+    "evicted_keys": 0,
+    "expired_keys": 72450,
+    "keyspace_hits": 2567751,
+    "keyspace_misses": 7174,
+    "mem_fragmentation_ratio": 1.5,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 46506304,
+    "used_memory_rss": 69914624
+  },
+  "keys_seen": 127187,
+  "mem_bytes_sampled": {
+    "oauth:client_assertion": 25600,
+    "oauth:dpop": 23680,
+    "oauth:jar": 26240,
+    "oauth:rate": 1536,
+    "oauth:session": 37824,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:client_assertion": 80,
+    "oauth:dpop": 80,
+    "oauth:jar": 80,
+    "oauth:rate": 6,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "pr238-mixed-retest-20261009",
+    "sample_per_cat": 80,
+    "sampled_at": 1791561279,
+    "scan_ms": 360,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:client_assertion": 80,
+    "oauth:dpop": 80,
+    "oauth:jar": 80,
+    "oauth:rate": 6,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 127187,
+  "ttl_buckets_sampled": {
+    "oauth:client_assertion|0m+": 22,
+    "oauth:client_assertion|1m+": 22,
+    "oauth:client_assertion|2m+": 17,
+    "oauth:client_assertion|3m+": 19,
+    "oauth:dpop|0m+": 16,
+    "oauth:dpop|1m+": 13,
+    "oauth:dpop|2m+": 16,
+    "oauth:dpop|3m+": 15,
+    "oauth:dpop|4m+": 16,
+    "oauth:dpop|5m+": 4,
+    "oauth:jar|0m+": 26,
+    "oauth:jar|1m+": 26,
+    "oauth:jar|2m+": 23,
+    "oauth:jar|3m+": 5,
+    "oauth:rate|0m+": 6,
+    "oauth:session|473m+": 29,
+    "oauth:session|474m+": 13,
+    "oauth:session|475m+": 9,
+    "oauth:session|476m+": 10,
+    "oauth:session|477m+": 7,
+    "oauth:session|478m+": 4,
+    "oauth:session|479m+": 8,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

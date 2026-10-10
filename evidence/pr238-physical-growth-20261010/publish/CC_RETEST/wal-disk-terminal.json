@@ -1,0 +1,49 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "pr238-physical-cc-retest-20261010-postgres-1",
+    "psql",
+    "-X",
+    "-A",
+    "-t",
+    "-U",
+    "postgres",
+    "-d",
+    "oauth",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "-c",
+    "SELECT json_build_object('ts',extract(epoch FROM clock_timestamp()),'database_bytes',pg_database_size(current_database()),'wal_disk_bytes',(SELECT sum(size) FROM pg_ls_waldir()),'replication_slots',(SELECT count(*) FROM pg_replication_slots),'checkpointer',(SELECT row_to_json(s) FROM pg_stat_checkpointer s),'settings',(SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN ('max_wal_size','min_wal_size','checkpoint_timeout','archive_mode','wal_keep_size')));"
+  ],
+  "exit": 0,
+  "start": 1791615645.2219603,
+  "end": 1791615645.272358,
+  "sample": {
+    "ts": 1791615645.268121,
+    "database_bytes": 166885055,
+    "wal_disk_bytes": 956301312,
+    "replication_slots": 0,
+    "checkpointer": {
+      "num_timed": 0,
+      "num_requested": 1,
+      "num_done": 0,
+      "restartpoints_timed": 0,
+      "restartpoints_req": 0,
+      "restartpoints_done": 0,
+      "write_time": 16,
+      "sync_time": 14,
+      "buffers_written": 943,
+      "slru_written": 3,
+      "stats_reset": "2026-10-10T06:57:57.11177+00:00"
+    },
+    "settings": {
+      "archive_mode": "off",
+      "checkpoint_timeout": "300",
+      "max_wal_size": "8192",
+      "min_wal_size": "80",
+      "wal_keep_size": "0"
+    }
+  },
+  "error": null
+}

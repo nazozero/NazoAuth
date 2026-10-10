@@ -1,0 +1,1864 @@
+{
+  "key": "REV360",
+  "merged_main": "4b4fdc33b6a570aa270b17f5785e1f3188f3fc84",
+  "request": {
+    "app_cpus": [
+      111,
+      112,
+      113,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      126
+    ],
+    "app_env_overrides": {
+      "DATABASE_MAX_CONNECTIONS": 32,
+      "AUDIT_ANCHOR_MODE": "disabled",
+      "RUST_LOG": "warn,nazoauth::jobs::security_state=info"
+    },
+    "audit_mode": "required",
+    "capture_audit_journal": true,
+    "collection_contract": "blackbox-db-v1",
+    "confirmation": false,
+    "durability": {
+      "postgres_fsync": "on",
+      "postgres_full_page_writes": "on",
+      "postgres_synchronous_commit": "on",
+      "valkey_appendonly": "no",
+      "valkey_save": ""
+    },
+    "duration": "375s",
+    "effective_seconds": 360,
+    "executor": "constant-arrival-rate",
+    "formal_preflight": true,
+    "fresh_state": true,
+    "gate": {
+      "measurement_drop_fraction_max": 0.001,
+      "p95_ms_max": 100,
+      "p99_ms_max": 250,
+      "successful_ops_fraction_min": 0.995,
+      "unexpected_max": 0
+    },
+    "grace_s": 120,
+    "helpers": {
+      "keyset": "sha256:2fd9f6f3b1a215a9bc3eb01fd32added19ce0db5fb4e00aa4e0736d6bcc1a1af",
+      "receiver": "sha256:6790f2f8ffd4163c4ddeae480b8286a0b03dfa059d50c88ae2d9f265aab4b8ab"
+    },
+    "infra_cpus": [
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174
+    ],
+    "infra_image_ids": {
+      "postgres": "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+      "valkey": "sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+    },
+    "infra_image_refs": {
+      "postgres": "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+      "valkey": "docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11"
+    },
+    "issuance_max_expired_age_seconds": 120,
+    "issuance_retention_seconds": 360,
+    "load_authorized": true,
+    "max_vus": 992,
+    "phase": "multi",
+    "phase_budget_seconds": 590,
+    "pool_connections": 32,
+    "postgres_cpus": [
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142
+    ],
+    "pre_vus": 992,
+    "profile": "capacity",
+    "rate": 960,
+    "scenario": "cap_revoke",
+    "state_wait_s": 120,
+    "stream_evidence": true,
+    "stream_workers": 3,
+    "user_count": 992,
+    "valkey_cpus": [
+      143
+    ],
+    "vector_count": 48000,
+    "warmup_ms": 15000,
+    "name": "nazo-backlog-rev360-20261009",
+    "arm": "B",
+    "replicate": 1,
+    "request_key": "REV360",
+    "source_sha": "b5b0f4246d8a443466a1c256429a76f88bf2c6e0",
+    "image": "sha256:71a060b637fc24eef6afe94f78a0bdf4254e0ab62f1d5acb39a64d12b1f872a2",
+    "runner_image": "sha256:a1f2c18f4da30da6bf2bdce7c001047b0e84c1d2e2903b39d6ee86ede35947c9",
+    "expected_binary_sha256": "98a0f8321801455b2234176bc9a0a918c4fc9e497120722861ce1d7ad2eb67f5",
+    "harness_file_sha256": {
+      "docker-compose.perf.yml": "8a75dec17323822fd10c12f7a86547b19ca43dbb589d01a64aacbc6ce05522cb",
+      "perf/README.md": "96f2d1bcdbfdefb74b62d788857d1f54f6a524e84333093f36346955b549e3ee",
+      "perf/aggregate.py": "8296c1a1ed78207b075e87fff7a6c81513665cd885e8c6ec383b92b4552d9306",
+      "perf/aggregate_ab.py": "727115727edf08a7090330a811b423c79ac7bb392f89b8bc9aa35a493e00ecad",
+      "perf/aggregate_wait.py": "09177a7f7d3e919a2d5353e735d6b1505eeae0bda9d8c6191ba834fcac583c24",
+      "perf/app_cpu_capacity_smoke.sh": "ca1c44af334a4f6dd6edc9cf8f5d501fb94134ec4b96bafc4f00e4430a22e9fa",
+      "perf/audit-anchor-receiver/.gitignore": "b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d",
+      "perf/audit-anchor-receiver/Cargo.lock": "8ba6420d673e450a9465d5154b0ab056249f7c59c3893cedaf2f09f6beba44af",
+      "perf/audit-anchor-receiver/Cargo.toml": "38f28323df718e2cdc57cc3df2ae7afaa66d35928f69f934baea00fed54c6f97",
+      "perf/audit-anchor-receiver/Containerfile": "6c67fc665defc701d63d8a161e16c43cd566316f57ff15f086504cb6f61c2839",
+      "perf/audit-anchor-receiver/src/main.rs": "2bbee926d986dfacaf3cf93ba34f226c71179c1eb6d1a10b839235d3ad9101d1",
+      "perf/audit-anchor-receiver/src/store.rs": "5f4ab9c92fc00f45a8961041ec63984946ed545b7876e1eb9d516f3be9f90878",
+      "perf/audit-anchor-receiver/src/wire.rs": "5fe052fecfc1c89f6085cfc4c29bb258b413f0041a6c60a704107123325f06f6",
+      "perf/bootstrap.sh": "5660d4ab86a7db0e9f66bfd581c10075178ce7b7537233e6445e9ce9081e06f1",
+      "perf/cap_ladder.sh": "7fb394ba0a88ad3b8edd59d88e6dee6f4388c519f9c694724316f1c46bd77ffa",
+      "perf/cap_point.py": "ab0ac111c10d54755661a469d549e1c2c156898731c23ce8e17fd02186a20daf",
+      "perf/capacity.py": "fe61ad4ea99cdb92688ac611c0353b35aff2c81e11aecf82cb90e2b6715000d2",
+      "perf/capacity_preview.py": "8040c7314c126dc5a83adc0caca60b3496d3b2afa28d297c13646849379ad7c0",
+      "perf/cg_sampler.sh": "a727b1e8d76070f3d79267bc75106f4718a0fb0c560088b29d02afe73aefdd81",
+      "perf/dev_capacity_matrix.sh": "121ea0e7b84299ecba5ddc9a8a0ce28bc8419153e396462c0bbd5fb0c20e91d7",
+      "perf/docs/blackbox-evidence-contract.md": "3fac272130903e304dcb9f4e19e5d0e37376f0b1d6ad748a0230e7030fd4a805",
+      "perf/env.yaml": "51b86db0dfbcef044524b5a2bcbc69784bd8fd694801c841e2681fb04b5f93c0",
+      "perf/extended_capacity_matrix.sh": "ff78cd74722c098f7181afffca7db5cb0b07e1b553629815307bfbdd16ffd143",
+      "perf/failprobe.py": "54e3f3daa325372d4a6723af2e73932b8a6efab585a38ff47523f64b9241a247",
+      "perf/finalize_capacity_reports.py": "7329327e16aff262b9480e95db3d932d41a46d24165aac024df703f48f72b38b",
+      "perf/k6/checkpoint_clock_test.js": "ddcc4afeb07460efa880a633febdcec02b36906cbfcaa898c39285f8b4f87c6f",
+      "perf/k6/measurement_clock.js": "80e178b3424159cbf7a1640ee6621a250204d9a31ab09bfe50d126d247dfefdc",
+      "perf/k6/oauth.js": "655cb225eb6647f4b574b8f5356deea1214d1d6750e92b9c58858ba888aac697",
+      "perf/k6/subject_state.js": "384ff18822c3cf9d948c33d92274fe25c87fc0369c60953d109cace0828c9725",
+      "perf/k6/subject_state_test.js": "9a922e9066365b4da8f9d253958e7ea013ddc1ef17816c0537d894ccb3b7292c",
+      "perf/keyset/Containerfile": "6fab87f7c4c4684897cee3fe1c23fe51780c48f24f6ef2435e4c30f997196136",
+      "perf/pgconn_sampler.sh": "3494077f752223062c5210a31e75efe30554e50f8d1808af97acb85404ac45e6",
+      "perf/results/README.md": "9e61810b0edecd3e0d5341dbf743e583a73906ef089b47c845507db6c4c5cf88",
+      "perf/results/data/capacity/current-capacity.json": "36961ea3274d2c55795c919b422fa1c41bb0747fcac32db08ad245fd6fbdadf2",
+      "perf/results/diagnostics/2026-09-28-ci-cost-60d.json": "2c1a9029aaf555dac33991622b27b7e74c53350510d82a84eb10c59d6ada4df5",
+      "perf/results/diagnostics/2026-09-28-ci-cost-d1e2.json": "0ae7452a8f0ddfe66005c01979a53c075e79af105d784a2f335ba10c7b50ae73",
+      "perf/results/diagnostics/2026-09-28-ci-cost-dd273.json": "ae449d59410167732f6bde017fd0e808976e50b2d3fb3500a381c861b059a748",
+      "perf/results/diagnostics/2026-09-28-ci-cost-ec638.json": "8e9e15209ae3f90e1ee5bc9e0c23ea3454eb5a30b742d7e5537da2d1af1ddec0",
+      "perf/results/diagnostics/2026-09-28-code-refresh-boundary-acceptance.json": "ce9effa00c0609a6661f3d0e2ee362603d649136fa7628b3479c0e64a9f45885",
+      "perf/results/diagnostics/2026-09-28-current-b-calibration.json": "3f582b3537be252c4c851a8148e8dabb554987763971f4495e5a7650115cd4e3",
+      "perf/results/diagnostics/2026-09-28-current-b-decoder-profile.json": "b096b6ebfbdef709b249f623db18de5f6e1d5fad13c3d205b2336a12ec9be2ae",
+      "perf/results/diagnostics/2026-09-28-current-b-reassessment.json": "49ffc63dc8ddb0c8c01f171c6f2de02730fd08e257a81d0a270ca7019d7afba4",
+      "perf/results/diagnostics/2026-09-28-current-b-selected.json": "962b721bb3f8722cd0b431ef5bb3b4cccab9ae708a75f793fd07874671806243",
+      "perf/results/diagnostics/2026-09-28-current-b-tester-diagnostics.json": "7fdcc5cc5cdee22e04858899cb709523d8eb71c3dc9a5ab8a9c2eed2040b6bc9",
+      "perf/results/diagnostics/2026-09-28-incremental-apparatus-controls.json": "94d24980ed71241f11a85c31e14bef2cd0b81397888051bef9253cc6d2cbff91",
+      "perf/results/diagnostics/2026-09-28-incremental-b-selected.json": "d540cbfaac91b723aab3f0fd958f9b6e143fe5222d434f500668ce17dfbf5bdd",
+      "perf/results/diagnostics/2026-09-28-incremental-code-cc-validation.json": "30055b378f3e34bd987787da7fb3bc62daff8b16799664e6bc092479693d9a25",
+      "perf/results/diagnostics/2026-09-28-incremental-evidence-archives.json": "91ae4fded5abb94e5a2a467bead90fdff856a1b0742720f713fccdc0aa7ed1dc",
+      "perf/results/diagnostics/2026-09-28-incremental-final-reassessment.json": "e1a8cf6927fe68426c73e3a7e22c0d394c3e14f4e6e72be4ce1f0aba3ee0c67a",
+      "perf/results/diagnostics/2026-09-28-incremental-mixed-cc-boundaries.json": "f81ceaee13befc271fb8bd61b5f54c8b59ae0b299236340c21fbda91d6416d4f",
+      "perf/results/diagnostics/2026-09-28-incremental-mixed-queue-burst.json": "37ebc1a7aaea7026c55780b150e54c516a5015b11096684bf007da00d0016d7d",
+      "perf/results/diagnostics/2026-09-28-incremental-reproduction-recipes.json": "aa9639563297d055999d053f119eb34ab8ef6fe462ccc274b270fe342d0b3e09",
+      "perf/results/diagnostics/2026-09-28-incremental-retained-archive.json": "43fe85f15a477091618f4eda99807b34841a8a31953a07ed91d43730525f886a",
+      "perf/results/diagnostics/2026-09-28-issuer-introspect-boundary-acceptance.json": "59fff535eb0e177253918bcf1c371773f7859223a6f61aa22a89387d7dd3cb4b",
+      "perf/results/diagnostics/2026-09-28-k6-output-profile.json": "4b27d1d3853aca445880a4a502cda92beb8e156c8ba95c4627a135033dfe1998",
+      "perf/results/diagnostics/2026-09-28-mixed-cold-boundary-acceptance.json": "ebb0dfca4aa05ad1363a38cea15a942b3e0a01b0df5c9e88609edb43aae3299b",
+      "perf/results/diagnostics/2026-09-28-mixed-duration-checkpoint.json": "b8e1855b5b6dc1433a367363d94d45e6eda735555b34a9516a5e1485f49aa511",
+      "perf/results/diagnostics/2026-09-28-mixed-incremental-acceptance.json": "3498da01e1387afb6a5b9a7e4f211e8f1e409656be52ef89db95811bc3d6aaa8",
+      "perf/results/diagnostics/2026-09-28-native-partition-probe.json": "4b24ab653ead31da6f127a891cfab4979ae0f08e798f42441bacf3123c665244",
+      "perf/results/diagnostics/2026-09-28-native-stdout-flush-proof.json": "357493bf9a605a54b7020bb5ca3b4b4b788edd09b99196ecdf7f9826b533bf83",
+      "perf/results/diagnostics/2026-09-28-retained-reassessment.json": "307abbde99eea50d55fd713b9c34029cabb82033d3b2817cf56f50ba291cd785",
+      "perf/results/diagnostics/2026-09-28-stream-consumer-calibration.json": "b8f94b8f8ab3af8d60b620a5e0f947270e7b8ae6a8f0704c1df99d945172a229",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_restart.jsonl": "f5db3641485d5d8687d9ce3b2d33a265446ded8968f7dd7170c01bb851eeb998",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_term.jsonl": "fa95fea899cba36bc3a4141eac719a9f1e49e4b553a6013dc94234865d9b5eaa",
+      "perf/results/diagnostics/failprobe-2026-09-16/cc_term2.jsonl": "a9db210102b3f19d386caf61e06a18048d426e114e14b23f7283fa32e1011b66",
+      "perf/results/diagnostics/failprobe-2026-09-16/ref_restart.jsonl": "91b91bc21575f4d528ac1ea7ec1eab89b1c1c417b2195f28b7a2aec232bb8766",
+      "perf/results/diagnostics/failprobe-2026-09-16/ref_term.jsonl": "ec646074bcd7065205c363278ab29f7f04b3be831bd0dbc9fe26f2ebf386db53",
+      "perf/results/diagnostics/pr222-2026-09-27/grant-sql-trace.json": "ed444df917dcb39afa196321af9911e594ef225a65cfe203e14c9a70c82200c0",
+      "perf/results/diagnostics/pr222-2026-09-27/grant-three-family-fixture.patch": "e9442b461dd736e66145b7fb3fecf8f018b7e5296d495f04e0cae8b149856f1a",
+      "perf/results/diagnostics/pr222-2026-09-27/sql-plans.json": "e9ccd3e59171ce03ec21f71eec1a7368301e8dfa9f2817669fde70c5d1108627",
+      "perf/results/diagnostics/pr222-2026-09-27/sql-probes.py": "762d2f3730879b41a2156f54c469a6845d93fefebc1853f489cbee6d05dd12f2",
+      "perf/results/diagnostics/pr222-2026-09-27/validation.json": "ede70292b54ba8c9b5c9506486c1e55926168d339425162482eb1a5944b65fbc",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/multi-mixed-abba.json": "3fbd7f91bd0b3cb331704e2e35d8053163826bf24db7681b084aab961587de06",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/resource-gate.json": "1e0e3d5f23e3c2c5e65ab6967de0616f147266e8f9bddd7c82dcd677fd0324c4",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/single-cc-abba.json": "5983a8dd3c3d7d4c62a12e23f908480428fdfef8282ab288905f533abedafa52",
+      "perf/results/diagnostics/pr222-acceptance-kmhxkb/steady-common.json": "cc1bed41c4456ac16a4ff2965e89fea81994cebcda47954e67bda6d65be87148",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/aggregate.json": "b7c89e23a79aff0ef05249a8a49ab72fb941cf8825b6decbe06ee7b1cbaf64f3",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/meta.txt": "99f1ffa4f7cac25fb210465eb3a2fb137503284877e473a84443fc6474fff1d0",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/cc-c32.json": "fb9360a4aa8754da9896cbc9ca36c1bef49466e5e6f6e89d3f21f565a224fd5d",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/cc-c8.json": "1a45113dfb5edb0fa9e9caa715e40544d6955d7d220b43ea50c8ba631c18f815",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/refresh-c32.json": "e28c3d2ef837dfc60cbbc65ef8ff2eec79617bef59bbbd05933cf95e1a70beba",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/points/refresh-c8.json": "0be8579400e128a7e779c60741bd7f96a5c1c18579f2b2101c0cebe76b8853da",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/cc-c32.summary.json": "c9a7fecf5ad8f6a68bf2f98cf7752da76fa627545121d4f3658c841fa717f301",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/cc-c8.summary.json": "4618f4f5515d79dfef4bc6a5e90f49d08f9c10c0e5a74d72655d0d2a9cd7957c",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/refresh-c32.summary.json": "1126724cdb30fcba56e3e1bbb216eeae5924b64ead5037b42e375eaf89e91d3f",
+      "perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/runs/refresh-c8.summary.json": "62722995621c7cc2a279a69f8fbea070f242386afa74ce46cf85ab5e3e16944d",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/aggregate.json": "e064b333245f3e1a2cdb5d5e534c0ba51cbeeb43b738300f4dd3f9cbc943c50e",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/meta.txt": "884bb61b929829b08d487e788e2d65a243b740efcd17093692671252946a02f1",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/cc-c32.json": "3a98cf12eb00ef33554a04f19a8fd678c3524db779bd5c044aab91d79bc4d1e0",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/cc-c8.json": "214f1be1212bea7f26143f15372f4e69b66071d4d2f175982b26db0ee8b320c1",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/refresh-c32.json": "a06e3af17a8c116387fdd3ac55b3146d6996906b52cc984fc1a19f01a2473642",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/points/refresh-c8.json": "9ca80e61577ddd97429a6bb8736fdf1e1e3c6eec78ed85e48ed8944a900bf124",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/cc-c32.summary.json": "147e88d9fc1108dccefb6af346f8232e1089dab2ca7fc16c576a780d3f83e5f5",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/cc-c8.summary.json": "f550b678d7f005e632c1a574df4e450ce87cdee50a9bdfd89441f890a59a7199",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/refresh-c32.summary.json": "8655124470d78d7651ebd78df22c73a74a26d1da279d34a5880e973488ebc618",
+      "perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/runs/refresh-c8.summary.json": "59f4a64da1dee0d5b3859953db01e22e34c6b1dc746086396efde7b2343dbb8c",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/aggregate.json": "12bb4fb47f91269bd201f1e2263f18ed45cef6ba0fbf47d3f52d4cd6d1b7c5e9",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/meta.txt": "0dffd0b03502aed7aca24bae209970d9b7703d59a28f32f02b52d912d5a0262f",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c16.json": "eb408d74b5689a0d510f4b9bda558a967c03b5dd4ba2f723a2046d7404f71106",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c32.json": "b51ce0c54a9d2797c195919fbe8eb5fc80012ebed827b68b0b812d35cf5780ca",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c64.json": "2fc22dc7d3e6f31c5afc0ba99f236dbb1ac7d31eb5887d213836be5a00e15c6f",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/cc-c8.json": "8049a2da2a6d0ef34d7816141da5680f93062c61b9e89a9b5d74c890c72c70a1",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c16.json": "24aa709e493b5111fcad0f65fbd0f9433fef97762d2ab815d1c8ec24da4f0d65",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c32.json": "3dc40e123c0dd5d2fde1741a2837c7ea84190b73c2940ea600825fe363e4542b",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c64.json": "424759092f82ad3d79fdd887ad644fe8993c5f2238e606b93f7ebb7e11be3d6e",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/points/refresh-c8.json": "8e7bed673c3f021e85c0da2e465c99e4b4be665bd418ba8cebf4f1cb165e66fd",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c16.summary.json": "5da652d91863f6c48ca0e3b1f53d00bed2694de21c819eae645f4243ea70fbd6",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c32.summary.json": "88ef908927b6535cc8d021453546d11e56bbc22a2c594a0f66be87c87153bd7c",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c64.summary.json": "26ec5274d0313f682a5f3e354c1b9f8efae880d6fb13f349847c0d5a0e3f90f8",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/cc-c8.summary.json": "c46bfdf1132da45010d4ba51fe92ed2c9f114478ccd47e3e952da6c2cde79ead",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c16.summary.json": "4b2e9d69dcffa81b6b6dd7f8c2ec686c58940cfddcc7be93166e7c1671a1aeb9",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c32.summary.json": "ea5a1b49adc9135779996c864cdc4e42322973361dd41012b00e64cbd46024c4",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c64.summary.json": "cacb565869f13bf014a2db1f911814491dabafc06683e85048499f6d9e736b86",
+      "perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/runs/refresh-c8.summary.json": "01ed21367f6a088318917ac14a8fa13cfe7563ce0e1fd00d6ba7786d511db356",
+      "perf/results/environments/2026-09-28-current-b.md": "591ba9cd1de88bb9482b5879f1c68670c629d2aebe15ea27f825eb64f7378865",
+      "perf/run_capacity.sh": "817f2aa3c865a0a3a528281ac4f6cf86b7e7ace42c173b2c5a7771a735a1b16f",
+      "perf/runner.py": "42f01fa27903d952a122357b49ceb07e15a270d445776252eb673b9ac8144e1f",
+      "perf/runner/Containerfile": "aa6e89c2b966a126ee19fdb3d25308e61d78164d3f4b80ee08a36b193386b4ed",
+      "perf/runner/k6-json-throughput.patch": "90d42e40eb7ea30f23327c7d7736ed638d39eb5752ef716a9de83f3eac57d768",
+      "perf/seed.py": "392676fca9d8cfd747f1989fe35ab8aa9f8ea8db0673bd6eae3a81a88ec19006",
+      "perf/single_instance_full_flow_max.sh": "edd3b15a292e81b3928d23d2b2a08fd4398b52dc6042518eab7ef7cac0854ba3",
+      "perf/tests/test_audit_pending_schema.py": "f0ca117f3fa4f09340c9bedca0fcf142ecedb60da1144c91a3ac885d50db745c",
+      "perf/tests/test_audit_reconciliation.py": "d7a1657944fe3703e283fd03644a6220afabcf5efb047234b117c205051a25ae",
+      "perf/tests/test_blackbox_contract.py": "468946b728e17696b80bd490aa67fd80ee8d4859e0956cbc336cccd262e7fc58",
+      "perf/tests/test_capacity_producer.py": "74b82c0472fd554b98ff046f0d4e3f923f47823b99998b37ce35aa0072447b1b",
+      "perf/tests/test_capacity_window.py": "23d7c73baba23388f36f98dd6b1f5b8c64204919c6fd47002f7969f9dac892fe",
+      "perf/tests/test_checkpoint_measurement.py": "7b72fd48aa4cbc2cfe5f72388d99ddf06b2f8bff18c21c95c1f3e23fec9d7af4",
+      "perf/tests/test_cnb_controller.py": "83bf719e5a058834d9a58bf5bcf7ee71b984b50a191b4eac08a9c7d16716284d",
+      "perf/tests/test_current_capacity.py": "4e3710d3bdb60ecbfe84486c7b43aa351b6de44e2e1b01f39f314f852bcf4e8a",
+      "perf/tests/test_evidence_contract.py": "64dcd7b1e82862a2d32353d40b199077913d27882fec797436ceb4e1057416ee",
+      "perf/tests/test_issuance_maintenance.py": "93885e1ef5b26f0923164603701ceb75503df7e6a7eba3074f3ef45068548923",
+      "perf/tests/test_pool_size_ab.py": "4c7ed7d0801348e3ae83931dde04a31e74f514082851958851dd45c887503dac",
+      "perf/tests/test_residency_analyze.py": "df97612b162ed12c8fddf2c22c02d4026e81ffbad5a74d0d5836a5bacd5b8592",
+      "perf/tests/test_runtime_cpu_probe.py": "0ec0bc0582315196f82e336737f4c6038ec895e979f0c0514193c7b70be5461f",
+      "perf/tests/test_seed_jwk.py": "92aae73579f2f47405b2017cd26f1bc10d2730e98893c42a88d35fc01e3a689f",
+      "perf/tests/test_service_affinity.py": "8d83af3a7885bda9888cea81def1f2dd26657ce7c06293435ace32d75bc27ecb",
+      "perf/tests/test_short_baseline.py": "3f710d8634d9394f58f7eb7d1605cbb4c9a971ca1ffaf50e31ffb7c64ec391a3",
+      "perf/tests/test_single_instance_scaling.py": "23e20854b9d15730a9c62c2287bb3a9b2c0bd673bb9add7f53934a2302fbd696",
+      "perf/tests/test_stability_analyze.py": "1f176586a69ea3b9aaed426145f7bb5e07c1dc9a24ec7b2e4aa778446e845209",
+      "perf/tests/test_stream_cohort.py": "7ff8d8c2d90850f5465b66d6dacfdb2fcab65e7957603fb8a60564c0c83af611",
+      "perf/tools/aggregate_points.py": "3916e1a1557bd07d5ca8c9143d265f05470192891c297a635295cf0f2835d1dd",
+      "perf/tools/argon2_ladder.sh": "974f6f49a7ed5067a4e0b346bb83aadd1a97f2ae4c090926303776fff11e3d68",
+      "perf/tools/audit_anchor_fault_regression.sh": "636b6a00b9e117c49d91048d7330bbeac84e7824f6e6e5ea983d7d68289cf068",
+      "perf/tools/blackbox_contract.py": "b2fbe9b6422bce73e136f483095a9147a2ed61c10906d75fcfba18a814ed7fe3",
+      "perf/tools/build_matrix.py": "654f31d7f8af91ddcb19bb45f2b3697717f999a2c58d04af24df1dbfeba8506a",
+      "perf/tools/canonical_schema.sql": "28d62b903d708260a10f329207e9462c3537cc6541c22c2b3ef4b461db404a26",
+      "perf/tools/cap_point.py": "4106d93ce87d5e86fb5fd39489a55ff0d1441c26fe3142e27875c1d3af14e452",
+      "perf/tools/capacity_search.py": "799ad49b4927b1cba0d2a9d137c0df34a39b00368fc1751a414bea514341a76f",
+      "perf/tools/checkpoint_analyze.py": "636b866900f4506d247df3d66d2cc8ef07d24ff1fd0817f7cc984e5850035988",
+      "perf/tools/checkpoint_observer.py": "5118f45b50f7e1d7210e1529c30d5cfe09bfb0b055756a04e940d2e905791474",
+      "perf/tools/cnb_controller.py": "61254f34822c6a92c0582c30d2e0385ce0783f6692def60c779cf64542e726a5",
+      "perf/tools/current_capacity.py": "100c9a6e11fafd15448edf4bd8907b271aaa07797c468f99d144908d9e97013e",
+      "perf/tools/ladder_points.sh": "4e92d32b707ca27e6ec8bfdad5fd86533559f0381e74f701ee4c3f85c612d93d",
+      "perf/tools/ledger.sql": "e5d98b8f6bf8b5a9acf3990f1a34b17b7d9a82de186b7a237b2fa6780246a724",
+      "perf/tools/ledger_check.py": "58c1c8a6ca39d53d2fe8042452df475b5a365a0b00618113ec51e4c5344ca256",
+      "perf/tools/measure_schedule.py": "8fb287b13b32ed43ac08a4ce123963af50e90bd61c1f6dad78352da4f9f6140c",
+      "perf/tools/perf_state_ready.py": "bd3eb234b5aa9d7f48f2894cace87e991a5f43b61e1d6d8f1b67d1fc7264c3c7",
+      "perf/tools/point_resources.py": "81e1b941dd8ad2bea2b74521f452445d00938a4980e27e06f1604726eb01cb5e",
+      "perf/tools/point_runner.py": "f4cedce157d2a4b52254ab5feffad358d890200c95951e66a4258b0141e756d9",
+      "perf/tools/pool_size_ab.py": "1796210c61684a084b3ce70651243edad400ffaf679d51b02edee5478fb76a14",
+      "perf/tools/proc_detail_sampler.py": "9ef9fb303087b7bff05b16ba57267ab0bd668e3f0dbbc35337837ad0482fe1ad",
+      "perf/tools/proc_sampler.sh": "fe51232158a08255778463be92c99ac6186cbb3bb86958f110588bacf83b71b6",
+      "perf/tools/recount_argon2.py": "918c0bb37780bc1c767dd5be61915db26844984acc167189a99b6bed29d0d5f1",
+      "perf/tools/residency_analyze.py": "05625cf294685aa619a3e20a30c4c509e44cfce245032967b2a73e6002cc5085",
+      "perf/tools/residency_observer.py": "a0f4fd577ae12d42070145aeca6e19f3f7dbd82ffc008176e87021dc35ae8ca0",
+      "perf/tools/run_composites.sh": "5cda4afc87b59864a7a7489fcbc80600a8233940c7632a60e7d882237030c62e",
+      "perf/tools/runtime_cpu_probe.py": "6159cc2d3d0b775eadd9adf2e330371d5f01463ebc3beb08e81ba00a2afbbe25",
+      "perf/tools/short_baseline.py": "680d68fbc0e22d7d674acd34785889e5a9e7feb47b1eef2d16800373aaeaa5aa",
+      "perf/tools/single_instance_scaling.py": "181b9ced8fa33a75c10af4bf241ab55d295b376cf6fef9d3f1447005ee9bc160",
+      "perf/tools/smoke_endpoints.py": "a5fa2ddabc35e9d9672b4abfc4914e37e44ec60cd26664df7474693eead14a6b",
+      "perf/tools/soak_run.sh": "dc0ae9245994a905c7cdde032a094a1edc5647e0ae669d108f443249b1ebaba6",
+      "perf/tools/soak_sampler.py": "649f7f51c752fa1328c4bb59c29fa5eaf1867c0f091985b39a9becd4736e7a89",
+      "perf/tools/stability_analyze.py": "4047a75165cd6fc0cc17da1ff46c4b46090d2748633b760493f2b01545e428ea",
+      "perf/tools/vkledger.py": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f",
+      "perf/wait_ab.sh": "04500c9c85b2aee6e8ec6ee187231116e8cc45c26677fac911e0eefefc829b92",
+      "perf/wait_matrix.sh": "e342fa2bf6bd2181cd5824bc6b623147f0e5756048a3a68ca076666993e00169",
+      "perf/wait_sampler.py": "842860236eabea159862fe3a773fd79376520001109af3a2871415f054aa8858"
+    },
+    "source_tree": "94b893f6a24d03be2a30e6a5bf80ed51cf036bfa",
+    "status": "AUTHORIZED_MERGED_MAIN_INVESTIGATION",
+    "schema_profile": "pr230-revision",
+    "harness_source_sha": "bbe4fb2d4078f859ffb690a83d7ac9a6f088d0ac",
+    "diagnostic_only": true
+  },
+  "verdict": "PASS",
+  "measure": {
+    "window_start_s": 1791536380.115,
+    "window_end_s": 1791536740.115,
+    "measure_started_exact": 345600,
+    "measure_completed_exact": 345600,
+    "measure_dropped_exact": 0,
+    "measure_scheduled_observed": 345600,
+    "measure_drop_fraction": 0.0,
+    "measure_outcomes": {
+      "success": 345600
+    },
+    "measure_outcome_sum": 345600,
+    "drops_pre_window": 0,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 0,
+    "pending_drops_overflow": false,
+    "valid": true,
+    "problems": [],
+    "rational_planned_arrivals": 345600,
+    "schedule_delta_vs_rational": 0,
+    "observed_schedule_rate": 960.0,
+    "cohort_source": "k6_stream_exact",
+    "late_vu_fraction": 0.0
+  },
+  "ops_s": 960.0,
+  "latency_ms": {
+    "p50": 13.0,
+    "p95": 25.0,
+    "p99": 45.0
+  },
+  "unexpected_errors": 0,
+  "expected_invalid_grant": 0,
+  "classified_errors": 0,
+  "sidecar_gates": null,
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "local_no_request_zero": true,
+    "expected_rejection_zero": true,
+    "collector_copy_complete": true
+  },
+  "audit": {
+    "point": "nazo-backlog-rev360-20261009",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 1080003,
+    "accepted_events_delta": 1080003,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "4a6c54b23cd061251c9762f2e49e91f5c12d00b16a39b7cd000577323b5e9681",
+      "journal_bytes": 1084392649,
+      "batches": 16631,
+      "remote_path": "sis-rcv-nazo-backlog-rev360-20261009:/data/journal.jsonl",
+      "events_in_range": 1080003,
+      "expected_in_range": 1080003,
+      "by_event_type": {
+        "authorization_decision_committed": 360001,
+        "token_issued": 360001,
+        "token_revoked": 360001
+      },
+      "token_issued_in_range": 360001,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 360001,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "maintenance": null,
+  "forensic_diag": {
+    "status": "TRUNCATED",
+    "truncated": true,
+    "budget_exceeded_points": 10047365,
+    "overflow_dropped_points": 2342589,
+    "logical_bytes_cap": 536870912,
+    "file": "/src/evidence/storage-backlog-investigation-20261009/REV360/results/multi/nazo-backlog-rev360-20261009/load/capacity-cap-revoke.diag.jsonl.gz"
+  },
+  "post_validation": null,
+  "wal_per_success": 11519.772,
+  "cpu_cores": {
+    "app": 2.48,
+    "postgres": 4.44
+  },
+  "latency_30s": [
+    {
+      "offset_s": 0,
+      "completed": 28678,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 81.0
+    },
+    {
+      "offset_s": 30,
+      "completed": 28801,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        50,
+        100
+      ],
+      "max_ms": 124.0
+    },
+    {
+      "offset_s": 60,
+      "completed": 28787,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 124.0
+    },
+    {
+      "offset_s": 90,
+      "completed": 28811,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 119.0
+    },
+    {
+      "offset_s": 120,
+      "completed": 28798,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        50,
+        100
+      ],
+      "max_ms": 158.0
+    },
+    {
+      "offset_s": 150,
+      "completed": 28799,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 68.0
+    },
+    {
+      "offset_s": 180,
+      "completed": 28802,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 107.0
+    },
+    {
+      "offset_s": 210,
+      "completed": 28800,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 110.0
+    },
+    {
+      "offset_s": 240,
+      "completed": 28803,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 114.0
+    },
+    {
+      "offset_s": 270,
+      "completed": 28800,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 87.0
+    },
+    {
+      "offset_s": 300,
+      "completed": 28801,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 72.0
+    },
+    {
+      "offset_s": 330,
+      "completed": 28796,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 79.0
+    },
+    {
+      "offset_s": 360,
+      "completed": 124,
+      "p95_interval_ms": [
+        20,
+        50
+      ],
+      "p99_interval_ms": [
+        20,
+        50
+      ],
+      "max_ms": 25.0
+    }
+  ],
+  "storage": [
+    {
+      "offset_s": 0.1,
+      "db_mib": 11.94,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 0,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 0,
+        "eligible": 0,
+        "retained": 0,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": null
+      }
+    },
+    {
+      "offset_s": 10.1,
+      "db_mib": 40.71,
+      "pending": 92,
+      "oldest_pending_s": 0.023369,
+      "decision_eligible": 0,
+      "decision_retained": 4492,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 4484,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 4488,
+        "eligible": 0,
+        "retained": 4488,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 355.209742
+      }
+    },
+    {
+      "offset_s": 20.1,
+      "db_mib": 84.97,
+      "pending": 48,
+      "oldest_pending_s": 0.005283,
+      "decision_eligible": 0,
+      "decision_retained": 14096,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 14088,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 14092,
+        "eligible": 0,
+        "retained": 14092,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 345.209767
+      }
+    },
+    {
+      "offset_s": 30.1,
+      "db_mib": 129.86,
+      "pending": 102,
+      "oldest_pending_s": 0.022418,
+      "decision_eligible": 0,
+      "decision_retained": 23700,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 23691,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 23696,
+        "eligible": 0,
+        "retained": 23696,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 335.204741
+      }
+    },
+    {
+      "offset_s": 40.1,
+      "db_mib": 175.99,
+      "pending": 114,
+      "oldest_pending_s": 0.030827,
+      "decision_eligible": 0,
+      "decision_retained": 33293,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 169,
+      "contract_orphan": 49,
+      "issuances": {
+        "total": 33287,
+        "eligible": 0,
+        "retained": 33287,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 325.210458
+      }
+    },
+    {
+      "offset_s": 50.3,
+      "db_mib": 222.32,
+      "pending": 83,
+      "oldest_pending_s": 0.019523,
+      "decision_eligible": 0,
+      "decision_retained": 43130,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 10008,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 43126,
+        "eligible": 0,
+        "retained": 43126,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 314.962724
+      }
+    },
+    {
+      "offset_s": 60.1,
+      "db_mib": 251.76,
+      "pending": 81,
+      "oldest_pending_s": 0.025262,
+      "decision_eligible": 0,
+      "decision_retained": 52488,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 19358,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 52479,
+        "eligible": 0,
+        "retained": 52479,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 305.212195
+      }
+    },
+    {
+      "offset_s": 70.1,
+      "db_mib": 260.95,
+      "pending": 77,
+      "oldest_pending_s": 0.015633,
+      "decision_eligible": 0,
+      "decision_retained": 62092,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 28972,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 62088,
+        "eligible": 0,
+        "retained": 62088,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 295.213372
+      }
+    },
+    {
+      "offset_s": 80.1,
+      "db_mib": 289.43,
+      "pending": 97,
+      "oldest_pending_s": 0.023592,
+      "decision_eligible": 0,
+      "decision_retained": 71694,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 38575,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 71691,
+        "eligible": 0,
+        "retained": 71691,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 285.210039
+      }
+    },
+    {
+      "offset_s": 90.1,
+      "db_mib": 321.36,
+      "pending": 106,
+      "oldest_pending_s": 0.025796,
+      "decision_eligible": 0,
+      "decision_retained": 81299,
+      "decision_oldest_due_s": 0,
+      "family_eligible": 48179,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 81297,
+        "eligible": 0,
+        "retained": 81297,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 275.204174
+      }
+    },
+    {
+      "offset_s": 100.2,
+      "db_mib": 360.64,
+      "pending": 84,
+      "oldest_pending_s": 0.034267,
+      "decision_eligible": 1293,
+      "decision_retained": 86394,
+      "decision_oldest_due_s": 1.346672,
+      "family_eligible": 54821,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 91010,
+        "eligible": 0,
+        "retained": 91010,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 265.069105
+      }
+    },
+    {
+      "offset_s": 110.1,
+      "db_mib": 400.05,
+      "pending": 160,
+      "oldest_pending_s": 0.038258,
+      "decision_eligible": 5715,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 5.95237,
+      "family_eligible": 5724,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 100494,
+        "eligible": 0,
+        "retained": 100494,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 255.204872
+      }
+    },
+    {
+      "offset_s": 120.2,
+      "db_mib": 428.08,
+      "pending": 139,
+      "oldest_pending_s": 0.034834,
+      "decision_eligible": 15425,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 16.067316,
+      "family_eligible": 15435,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 110206,
+        "eligible": 0,
+        "retained": 110206,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 245.089926
+      }
+    },
+    {
+      "offset_s": 130.1,
+      "db_mib": 435.6,
+      "pending": 74,
+      "oldest_pending_s": 0.01721,
+      "decision_eligible": 24915,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 25.951917,
+      "family_eligible": 24922,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 119693,
+        "eligible": 0,
+        "retained": 119693,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 235.205325
+      }
+    },
+    {
+      "offset_s": 140.1,
+      "db_mib": 445.19,
+      "pending": 49,
+      "oldest_pending_s": 0.004105,
+      "decision_eligible": 34509,
+      "decision_retained": 86412,
+      "decision_oldest_due_s": 35.947053,
+      "family_eligible": 34522,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 129293,
+        "eligible": 0,
+        "retained": 129293,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 225.210189
+      }
+    },
+    {
+      "offset_s": 150.1,
+      "db_mib": 474.65,
+      "pending": 47,
+      "oldest_pending_s": 0.00817,
+      "decision_eligible": 44114,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 45.951243,
+      "family_eligible": 44122,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 138893,
+        "eligible": 0,
+        "retained": 138893,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 215.205999
+      }
+    },
+    {
+      "offset_s": 160.1,
+      "db_mib": 506.1,
+      "pending": 155,
+      "oldest_pending_s": 0.045219,
+      "decision_eligible": 53713,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 55.950455,
+      "family_eligible": 53719,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 148491,
+        "eligible": 0,
+        "retained": 148491,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 205.206787
+      }
+    },
+    {
+      "offset_s": 170.1,
+      "db_mib": 538.01,
+      "pending": 83,
+      "oldest_pending_s": 0.017997,
+      "decision_eligible": 280,
+      "decision_retained": 86409,
+      "decision_oldest_due_s": 0.290651,
+      "family_eligible": 299,
+      "contract_orphan": 38,
+      "issuances": {
+        "total": 158096,
+        "eligible": 0,
+        "retained": 158096,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 195.205453
+      }
+    },
+    {
+      "offset_s": 180.1,
+      "db_mib": 560.04,
+      "pending": 62,
+      "oldest_pending_s": 0.011275,
+      "decision_eligible": 9879,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 10.290309,
+      "family_eligible": 9898,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 167694,
+        "eligible": 0,
+        "retained": 167694,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 185.205795
+      }
+    },
+    {
+      "offset_s": 190.1,
+      "db_mib": 568.33,
+      "pending": 77,
+      "oldest_pending_s": 0.015795,
+      "decision_eligible": 19476,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 20.287302,
+      "family_eligible": 19495,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 177291,
+        "eligible": 0,
+        "retained": 177291,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 175.208802
+      }
+    },
+    {
+      "offset_s": 200.1,
+      "db_mib": 575.12,
+      "pending": 59,
+      "oldest_pending_s": 0.0114,
+      "decision_eligible": 29079,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 30.289877,
+      "family_eligible": 29097,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 186893,
+        "eligible": 0,
+        "retained": 186893,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 165.206227
+      }
+    },
+    {
+      "offset_s": 210.1,
+      "db_mib": 581.58,
+      "pending": 55,
+      "oldest_pending_s": 0.008303,
+      "decision_eligible": 38687,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 40.298072,
+      "family_eligible": 38702,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 196502,
+        "eligible": 0,
+        "retained": 196502,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 155.198032
+      }
+    },
+    {
+      "offset_s": 220.1,
+      "db_mib": 588.16,
+      "pending": 92,
+      "oldest_pending_s": 0.032385,
+      "decision_eligible": 48276,
+      "decision_retained": 86401,
+      "decision_oldest_due_s": 50.287487,
+      "family_eligible": 48282,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 206080,
+        "eligible": 0,
+        "retained": 206080,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 145.208617
+      }
+    },
+    {
+      "offset_s": 230.1,
+      "db_mib": 595.76,
+      "pending": 84,
+      "oldest_pending_s": 0.024206,
+      "decision_eligible": 54295,
+      "decision_retained": 86405,
+      "decision_oldest_due_s": 56.557017,
+      "family_eligible": 54563,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 215690,
+        "eligible": 0,
+        "retained": 215690,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 135.205723
+      }
+    },
+    {
+      "offset_s": 240.1,
+      "db_mib": 604.15,
+      "pending": 74,
+      "oldest_pending_s": 0.036109,
+      "decision_eligible": 4155,
+      "decision_retained": 86404,
+      "decision_oldest_due_s": 4.326905,
+      "family_eligible": 4132,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 225265,
+        "eligible": 0,
+        "retained": 225265,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 125.208261
+      }
+    },
+    {
+      "offset_s": 250.1,
+      "db_mib": 608.96,
+      "pending": 40,
+      "oldest_pending_s": 0.017962,
+      "decision_eligible": 13755,
+      "decision_retained": 86394,
+      "decision_oldest_due_s": 14.327614,
+      "family_eligible": 13745,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 234880,
+        "eligible": 0,
+        "retained": 234880,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 115.207552
+      }
+    },
+    {
+      "offset_s": 260.1,
+      "db_mib": 617.12,
+      "pending": 143,
+      "oldest_pending_s": 0.038497,
+      "decision_eligible": 23357,
+      "decision_retained": 86409,
+      "decision_oldest_due_s": 24.329634,
+      "family_eligible": 23363,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 244495,
+        "eligible": 0,
+        "retained": 244495,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 105.205532
+      }
+    },
+    {
+      "offset_s": 270.1,
+      "db_mib": 625.3,
+      "pending": 113,
+      "oldest_pending_s": 0.036323,
+      "decision_eligible": 32959,
+      "decision_retained": 86403,
+      "decision_oldest_due_s": 34.330864,
+      "family_eligible": 32955,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 254089,
+        "eligible": 0,
+        "retained": 254089,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 95.204302
+      }
+    },
+    {
+      "offset_s": 280.1,
+      "db_mib": 633.74,
+      "pending": 138,
+      "oldest_pending_s": 0.038257,
+      "decision_eligible": 42557,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 44.329347,
+      "family_eligible": 42560,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 263693,
+        "eligible": 0,
+        "retained": 263693,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 85.205819
+      }
+    },
+    {
+      "offset_s": 290.2,
+      "db_mib": 642.59,
+      "pending": 106,
+      "oldest_pending_s": 0.017363,
+      "decision_eligible": 52161,
+      "decision_retained": 86407,
+      "decision_oldest_due_s": 54.332827,
+      "family_eligible": 52162,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 273297,
+        "eligible": 0,
+        "retained": 273297,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 75.202339
+      }
+    },
+    {
+      "offset_s": 300.2,
+      "db_mib": 652.44,
+      "pending": 71,
+      "oldest_pending_s": 0.016042,
+      "decision_eligible": 14165,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 14.754913,
+      "family_eligible": 14425,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 282916,
+        "eligible": 0,
+        "retained": 282916,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 65.180462
+      }
+    },
+    {
+      "offset_s": 310.1,
+      "db_mib": 658.75,
+      "pending": 77,
+      "oldest_pending_s": 0.016192,
+      "decision_eligible": 8201,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 8.541606,
+      "family_eligible": 8210,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 292498,
+        "eligible": 0,
+        "retained": 292498,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 55.202639
+      }
+    },
+    {
+      "offset_s": 320.1,
+      "db_mib": 664.91,
+      "pending": 88,
+      "oldest_pending_s": 0.021243,
+      "decision_eligible": 17796,
+      "decision_retained": 86409,
+      "decision_oldest_due_s": 18.538127,
+      "family_eligible": 17806,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 302092,
+        "eligible": 0,
+        "retained": 302092,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 45.206118
+      }
+    },
+    {
+      "offset_s": 330.1,
+      "db_mib": 671.65,
+      "pending": 93,
+      "oldest_pending_s": 0.020024,
+      "decision_eligible": 27396,
+      "decision_retained": 86408,
+      "decision_oldest_due_s": 28.536933,
+      "family_eligible": 27406,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 311693,
+        "eligible": 0,
+        "retained": 311693,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 35.207312
+      }
+    },
+    {
+      "offset_s": 340.1,
+      "db_mib": 689.74,
+      "pending": 119,
+      "oldest_pending_s": 0.032949,
+      "decision_eligible": 36991,
+      "decision_retained": 86412,
+      "decision_oldest_due_s": 38.537763,
+      "family_eligible": 37005,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 321292,
+        "eligible": 0,
+        "retained": 321292,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 25.206482
+      }
+    },
+    {
+      "offset_s": 350.2,
+      "db_mib": 721.01,
+      "pending": 110,
+      "oldest_pending_s": 0.026097,
+      "decision_eligible": 46597,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 48.538649,
+      "family_eligible": 46607,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 330896,
+        "eligible": 0,
+        "retained": 330896,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 15.205596
+      }
+    },
+    {
+      "offset_s": 360.1,
+      "db_mib": 741.69,
+      "pending": 100,
+      "oldest_pending_s": 0.027626,
+      "decision_eligible": 56199,
+      "decision_retained": 86404,
+      "decision_oldest_due_s": 58.540068,
+      "family_eligible": 56204,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 340491,
+        "eligible": 0,
+        "retained": 340491,
+        "oldest_due_s": 0,
+        "oldest_created_retention_remaining_s": 5.204177
+      }
+    },
+    {
+      "offset_s": 370.1,
+      "db_mib": 747.96,
+      "pending": 83,
+      "oldest_pending_s": 0.007006,
+      "decision_eligible": 2950,
+      "decision_retained": 86410,
+      "decision_oldest_due_s": 3.072686,
+      "family_eligible": 2959,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 348297,
+        "eligible": 2881,
+        "retained": 345416,
+        "oldest_due_s": 2.799367,
+        "oldest_created_retention_remaining_s": -2.799367
+      }
+    },
+    {
+      "offset_s": 380.2,
+      "db_mib": 754.53,
+      "pending": 177,
+      "oldest_pending_s": 0.05591,
+      "decision_eligible": 12582,
+      "decision_retained": 86403,
+      "decision_oldest_due_s": 13.10536,
+      "family_eligible": 12584,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 357923,
+        "eligible": 12480,
+        "retained": 345443,
+        "oldest_due_s": 12.832041,
+        "oldest_created_retention_remaining_s": -12.832041
+      }
+    },
+    {
+      "offset_s": 390.1,
+      "db_mib": 754.61,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 22142,
+      "decision_retained": 77114,
+      "decision_oldest_due_s": 23.063787,
+      "family_eligible": 12862,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 358198,
+        "eligible": 22078,
+        "retained": 336120,
+        "oldest_due_s": 22.790468,
+        "oldest_created_retention_remaining_s": -22.790468
+      }
+    },
+    {
+      "offset_s": 400.3,
+      "db_mib": 754.61,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 31881,
+      "decision_retained": 67375,
+      "decision_oldest_due_s": 33.209509,
+      "family_eligible": 12862,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 358198,
+        "eligible": 31680,
+        "retained": 326518,
+        "oldest_due_s": 32.93619,
+        "oldest_created_retention_remaining_s": -32.93619
+      }
+    },
+    {
+      "offset_s": 410.1,
+      "db_mib": 754.61,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 41343,
+      "decision_retained": 57913,
+      "decision_oldest_due_s": 43.065841,
+      "family_eligible": 12862,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 358198,
+        "eligible": 41281,
+        "retained": 316917,
+        "oldest_due_s": 42.792522,
+        "oldest_created_retention_remaining_s": -42.792522
+      }
+    },
+    {
+      "offset_s": 420.1,
+      "db_mib": 726.89,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 50943,
+      "decision_retained": 48313,
+      "decision_oldest_due_s": 53.065281,
+      "family_eligible": 12862,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 358198,
+        "eligible": 50881,
+        "retained": 307317,
+        "oldest_due_s": 52.791962,
+        "oldest_created_retention_remaining_s": -52.791962
+      }
+    },
+    {
+      "offset_s": 430.1,
+      "db_mib": 726.89,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 8319,
+      "decision_retained": 38713,
+      "decision_oldest_due_s": 8.666002,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 305718,
+        "eligible": 8000,
+        "retained": 297718,
+        "oldest_due_s": 8.792517,
+        "oldest_created_retention_remaining_s": -8.792517
+      }
+    },
+    {
+      "offset_s": 440.1,
+      "db_mib": 726.89,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 9117,
+      "decision_retained": 29112,
+      "decision_oldest_due_s": 9.495828,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 296757,
+        "eligible": 8640,
+        "retained": 288117,
+        "oldest_due_s": 8.792509,
+        "oldest_created_retention_remaining_s": -8.792509
+      }
+    },
+    {
+      "offset_s": 450.1,
+      "db_mib": 726.89,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 18718,
+      "decision_retained": 19511,
+      "decision_oldest_due_s": 19.497168,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 296757,
+        "eligible": 18241,
+        "retained": 278516,
+        "oldest_due_s": 18.793849,
+        "oldest_created_retention_remaining_s": -18.793849
+      }
+    },
+    {
+      "offset_s": 460.1,
+      "db_mib": 726.89,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 28319,
+      "decision_retained": 9910,
+      "decision_oldest_due_s": 29.498378,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 296757,
+        "eligible": 27836,
+        "retained": 268921,
+        "oldest_due_s": 28.795059,
+        "oldest_created_retention_remaining_s": -28.795059
+      }
+    },
+    {
+      "offset_s": 470.2,
+      "db_mib": 726.89,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 37922,
+      "decision_retained": 307,
+      "decision_oldest_due_s": 39.501633,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 296757,
+        "eligible": 37437,
+        "retained": 259320,
+        "oldest_due_s": 38.798314,
+        "oldest_created_retention_remaining_s": -38.798314
+      }
+    },
+    {
+      "offset_s": 477.8,
+      "db_mib": 713.75,
+      "pending": 0,
+      "oldest_pending_s": 0,
+      "decision_eligible": 38229,
+      "decision_retained": 0,
+      "decision_oldest_due_s": 47.165433,
+      "family_eligible": 0,
+      "contract_orphan": 0,
+      "issuances": {
+        "total": 296757,
+        "eligible": 45120,
+        "retained": 251637,
+        "oldest_due_s": 46.462114,
+        "oldest_created_retention_remaining_s": -46.462114
+      }
+    }
+  ],
+  "storage_errors": [],
+  "valkey": [
+    {
+      "offset_s": 1.4,
+      "keys": {
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 1,
+        "evicted_keys": 0,
+        "expired_keys": 0,
+        "keyspace_hits": 26,
+        "keyspace_misses": 50,
+        "mem_fragmentation_ratio": 8.47,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 1301256,
+        "used_memory_rss": 10874880
+      },
+      "sample_memory": {
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 61.6,
+      "keys": {
+        "oauth:auth_code": 3,
+        "oauth:consent": 5,
+        "oauth:jar": 53261,
+        "oauth:par": 4,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 54366,
+        "evicted_keys": 0,
+        "expired_keys": 0,
+        "keyspace_hits": 854989,
+        "keyspace_misses": 184,
+        "mem_fragmentation_ratio": 1.49,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 20929680,
+        "used_memory_rss": 31133696
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 122.0,
+      "keys": {
+        "oauth:auth_code": 4,
+        "oauth:consent": 1,
+        "oauth:jar": 111392,
+        "oauth:par": 3,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 112573,
+        "evicted_keys": 0,
+        "expired_keys": 2,
+        "keyspace_hits": 1786513,
+        "keyspace_misses": 315,
+        "mem_fragmentation_ratio": 1.25,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 41656136,
+        "used_memory_rss": 52027392
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 181.8,
+      "keys": {
+        "oauth:auth_code": 4,
+        "oauth:consent": 2,
+        "oauth:jar": 168720,
+        "oauth:par": 6,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 169991,
+        "evicted_keys": 0,
+        "expired_keys": 4,
+        "keyspace_hits": 2705352,
+        "keyspace_misses": 448,
+        "mem_fragmentation_ratio": 1.17,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 62486616,
+        "used_memory_rss": 73191424
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 242.6,
+      "keys": {
+        "oauth:auth_code": 4,
+        "oauth:consent": 1,
+        "oauth:jar": 226458,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 227785,
+        "evicted_keys": 0,
+        "expired_keys": 6,
+        "keyspace_hits": 3630348,
+        "keyspace_misses": 575,
+        "mem_fragmentation_ratio": 1.13,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 82685352,
+        "used_memory_rss": 93425664
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 302.8,
+      "keys": {
+        "oauth:auth_code": 4,
+        "oauth:consent": 2,
+        "oauth:jar": 229905,
+        "oauth:par": 5,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 231318,
+        "evicted_keys": 0,
+        "expired_keys": 54618,
+        "keyspace_hits": 4560842,
+        "keyspace_misses": 709,
+        "mem_fragmentation_ratio": 1.33,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 86152328,
+        "used_memory_rss": 115535872
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 362.5,
+      "keys": {
+        "oauth:auth_code": 1,
+        "oauth:consent": 2,
+        "oauth:jar": 229876,
+        "oauth:par": 4,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 231265,
+        "evicted_keys": 0,
+        "expired_keys": 112220,
+        "keyspace_hits": 5481825,
+        "keyspace_misses": 838,
+        "mem_fragmentation_ratio": 1.35,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 86116488,
+        "used_memory_rss": 116310016
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 422.2,
+      "keys": {
+        "oauth:jar": 190735,
+        "oauth:rate": 2,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 191728,
+        "evicted_keys": 0,
+        "expired_keys": 169281,
+        "keyspace_hits": 5762565,
+        "keyspace_misses": 960,
+        "mem_fragmentation_ratio": 1.58,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 72936936,
+        "used_memory_rss": 115318784
+      },
+      "sample_memory": {
+        "oauth:jar": 25584,
+        "oauth:rate": 512,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 78,
+        "oauth:rate": 2,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    },
+    {
+      "offset_s": 479.6,
+      "keys": {
+        "oauth:jar": 135471,
+        "oauth:session": 993,
+        "tenant-directory:snapshot": 1
+      },
+      "info": {
+        "aof_enabled": 0,
+        "dbsize": 136465,
+        "evicted_keys": 0,
+        "expired_keys": 224544,
+        "keyspace_hits": 5762784,
+        "keyspace_misses": 1075,
+        "mem_fragmentation_ratio": 1.73,
+        "rdb_bgsave_in_progress": 0,
+        "used_memory": 54705728,
+        "used_memory_rss": 98193408
+      },
+      "sample_memory": {
+        "oauth:jar": 26240,
+        "oauth:session": 35840,
+        "tenant-directory:snapshot": 544
+      },
+      "sample_n": {
+        "oauth:jar": 80,
+        "oauth:session": 80,
+        "tenant-directory:snapshot": 1
+      }
+    }
+  ],
+  "terminal_table_sizes": [
+    {
+      "relname": "security_audit_events",
+      "n_tup_del": 1041774,
+      "n_tup_ins": 1080003,
+      "n_dead_tup": 0,
+      "index_bytes": 102047744,
+      "table_bytes": 317497344,
+      "autovacuum_count": 8
+    },
+    {
+      "relname": "oauth_token_issuances",
+      "n_tup_del": 63244,
+      "n_tup_ins": 360001,
+      "n_dead_tup": 63244,
+      "index_bytes": 99164160,
+      "table_bytes": 140886016,
+      "autovacuum_count": 6
+    },
+    {
+      "relname": "security_audit_chain_entries",
+      "n_tup_del": 1080003,
+      "n_tup_ins": 1080003,
+      "n_dead_tup": 0,
+      "index_bytes": 24993792,
+      "table_bytes": 24576,
+      "autovacuum_count": 7
+    },
+    {
+      "relname": "oauth_refresh_contracts",
+      "n_tup_del": 6867,
+      "n_tup_ins": 7859,
+      "n_dead_tup": 0,
+      "index_bytes": 729088,
+      "table_bytes": 720896,
+      "autovacuum_count": 7
+    },
+    {
+      "relname": "oauth_refresh_families",
+      "n_tup_del": 360001,
+      "n_tup_ins": 360993,
+      "n_dead_tup": 0,
+      "index_bytes": 40779776,
+      "table_bytes": 286720,
+      "autovacuum_count": 8
+    },
+    {
+      "relname": "oauth_refresh_spent_tokens",
+      "n_tup_del": 0,
+      "n_tup_ins": 0,
+      "n_dead_tup": 0,
+      "index_bytes": 24576,
+      "table_bytes": 8192,
+      "autovacuum_count": 0
+    }
+  ],
+  "observer_peak_s": 0.5980806220322847,
+  "elapsed_s": 550.6,
+  "cleanup": null
+}

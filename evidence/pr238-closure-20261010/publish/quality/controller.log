@@ -1,0 +1,39 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 0.88s
+     Running tests/controller_recovery.rs (target/debug/deps/controller_recovery-2f0e0c81a61d56a7)
+
+running 13 tests
+test accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_root ... ok
+test challenges_are_refused_while_any_controller_is_admitted_and_single_pending ... ok
+test concurrent_rotations_cannot_install_one_recovery_key_twice ... ok
+test failed_rollback_does_not_reuse_a_connection_for_the_counter ... ok
+test generation_exhaustion_rolls_back_the_root_and_approval ... ok
+test history_failure_rolls_back_root_approval_and_pending_challenge ... ok
+test recovered_slots_count_toward_the_three_slot_bound ... ok
+test recovery_cannot_reinstall_a_historical_root_or_leave_a_slot ... ok
+test recovery_submission_waits_for_the_deployment_identity_lock ... ok
+test replay_expiry_and_wrong_signers_fail_closed_without_partial_state ... ok
+test root_enrollment_and_replacement_return_rows_in_six_data_queries ... ok
+test rotated_away_recovery_keys_can_never_be_installed_again ... ok
+test rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generation ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.86s
+
+     Running tests/controller_registry.rs (target/debug/deps/controller_registry-e6bb5d6e1cdb9f7c)
+
+running 12 tests
+test approvals_are_single_use_bound_to_action_hash_and_expire ... ok
+test atomic_first_bind_enrolls_root_and_refuses_a_second ... ok
+test concurrent_add_races_never_exceed_three_active_slots ... ok
+test concurrent_duplicate_kids_have_one_winner_for_insert_and_rotation ... ok
+test crud_negatives_are_typed_and_leave_no_partial_state ... ok
+test expiry_is_exactly_thirty_days_and_admission_fails_at_the_boundary ... ok
+test fourth_add_is_refused_in_transaction_with_non_secret_summaries ... ok
+test reclaimed_expired_approval_still_cannot_authorize_a_controller ... ok
+test revocation_is_terminal_and_rotation_cannot_resurrect ... ok
+test rotate_keeps_count_and_identity_while_replacing_material ... ok
+test slot_mutations_return_the_stored_rows_in_three_data_queries ... ok
+test unrelated_unique_constraints_are_transport_errors_and_roll_back ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.32s
+

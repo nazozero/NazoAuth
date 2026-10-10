@@ -1,0 +1,5 @@
+{
+  "ts": 1791614048.599765,
+  "change": "Add read-only WAL directory total and checkpoint counters to the existing single SQL observation; identical in both clean-capacity arms. No extra physical heap/index scans.",
+  "reason": "pg_database_size excludes WAL; cumulative WAL generation is not retained WAL disk occupancy."
+}

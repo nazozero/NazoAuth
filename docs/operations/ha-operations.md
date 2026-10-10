@@ -136,6 +136,9 @@ instances from double-processing the same rows.
   retain at most 64. Family deletion cascades remaining proofs. The public
   footprint depends on rotation rate × original token TTL plus cleanup lag;
   the 60-second normal maintenance delay is not a deletion SLA.
+  Long-retained SCIM audit history is included initially and once per hour after
+  a drained history cycle; its 180-day retention is unchanged. Failed or
+  budget-limited cycles remain due. Protocol expiry is still checked at use.
 - Before migration `20261001000500`, stop old token writers. The migration
   revokes existing unbound public refresh families once, with transactional
   audit evidence, because previously trimmed opaque history cannot be restored.

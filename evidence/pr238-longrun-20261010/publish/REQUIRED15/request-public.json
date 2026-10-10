@@ -1,0 +1,84 @@
+{
+  "name": "pr238-long-required10-20261010",
+  "scenario": "cap_mixed",
+  "source_sha": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "rate": 1600,
+  "pre_vus": 992,
+  "max_vus": 992,
+  "user_count": 992,
+  "vector_count": 49200,
+  "profile": "capacity",
+  "executor": "constant-arrival-rate",
+  "gate": {
+    "measurement_drop_fraction_max": 0.001,
+    "p95_ms_max": 100,
+    "p99_ms_max": 250,
+    "successful_ops_fraction_min": 0.995,
+    "unexpected_max": 0
+  },
+  "duration": "660s",
+  "effective_seconds": 600,
+  "warmup_ms": 60000,
+  "app_cpus": [
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95
+  ],
+  "sidecars": [
+    {
+      "duration": "690s",
+      "max_vus": 8,
+      "name": "argon2",
+      "pre_vus": 8,
+      "rate": 8,
+      "scenario": "oidc_cold_login_refresh",
+      "user_count": 8
+    },
+    {
+      "duration": "690s",
+      "max_vus": 16,
+      "name": "meta",
+      "pre_vus": 16,
+      "rate": 200,
+      "scenario": "metadata_jwks",
+      "user_count": 16
+    },
+    {
+      "duration": "690s",
+      "max_vus": 32,
+      "name": "fapi",
+      "pre_vus": 32,
+      "rate": 30,
+      "scenario": "fapi2_logged_in_high_security",
+      "user_count": 32
+    },
+    {
+      "duration": "690s",
+      "max_vus": 64,
+      "name": "refresh",
+      "pre_vus": 64,
+      "rate": 600,
+      "scenario": "cap_refresh_token",
+      "user_count": 64
+    }
+  ],
+  "app_env_overrides": {
+    "DATABASE_MAX_CONNECTIONS": 32,
+    "AUDIT_ANCHOR_MODE": "required",
+    "RUST_LOG": "warn,nazoauth::jobs::security_state=info",
+    "AUDIT_ANCHOR_MAX_LAG_SECONDS": 10
+  }
+}

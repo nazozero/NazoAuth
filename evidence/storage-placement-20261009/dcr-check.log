@@ -1,0 +1,345 @@
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+error[E0609]: no field `client_type` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:22:25
+   |
+22 |     assert_eq!(prepared.client_type, "confidential");
+   |                         ^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+22 |     assert_eq!(prepared.request.client_type, "confidential");
+   |                         ++++++++
+
+error[E0609]: no field `grant_types` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:24:18
+   |
+24 |         prepared.grant_types,
+   |                  ^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+24 |         prepared.request.grant_types,
+   |                  ++++++++
+
+error[E0609]: no field `scopes` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:29:18
+   |
+29 |         prepared.scopes,
+   |                  ^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+29 |         prepared.request.scopes,
+   |                  ++++++++
+
+error[E0609]: no field `backchannel_logout_session_required` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:39:23
+   |
+39 |     assert!(!prepared.backchannel_logout_session_required);
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+39 |     assert!(!prepared.request.backchannel_logout_session_required);
+   |                       ++++++++
+
+error[E0609]: no field `frontchannel_logout_session_required` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:40:23
+   |
+40 |     assert!(!prepared.frontchannel_logout_session_required);
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+40 |     assert!(!prepared.request.frontchannel_logout_session_required);
+   |                       ++++++++
+
+error[E0609]: no field `request_uris` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:82:18
+   |
+82 |         prepared.request_uris,
+   |                  ^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+82 |         prepared.request.request_uris,
+   |                  ++++++++
+
+error[E0609]: no field `initiate_login_uri` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:98:18
+   |
+98 |         prepared.initiate_login_uri.as_deref(),
+   |                  ^^^^^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+98 |         prepared.request.initiate_login_uri.as_deref(),
+   |                  ++++++++
+
+error[E0609]: no field `token_endpoint_auth_method` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:326:25
+    |
+326 |     assert_eq!(prepared.token_endpoint_auth_method, "private_key_jwt");
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+326 |     assert_eq!(prepared.request.token_endpoint_auth_method, "private_key_jwt");
+    |                         ++++++++
+
+error[E0609]: no field `subject_type` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:327:25
+    |
+327 |     assert_eq!(prepared.subject_type.as_deref(), Some("pairwise"));
+    |                         ^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+327 |     assert_eq!(prepared.request.subject_type.as_deref(), Some("pairwise"));
+    |                         ++++++++
+
+error[E0609]: no field `id_token_signed_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:329:18
+    |
+329 |         prepared.id_token_signed_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+329 |         prepared.request.id_token_signed_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `id_token_encrypted_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:333:18
+    |
+333 |         prepared.id_token_encrypted_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+333 |         prepared.request.id_token_encrypted_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `id_token_encrypted_response_enc` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:337:18
+    |
+337 |         prepared.id_token_encrypted_response_enc.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+337 |         prepared.request.id_token_encrypted_response_enc.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `request_object_signing_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:341:18
+    |
+341 |         prepared.request_object_signing_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+341 |         prepared.request.request_object_signing_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `request_object_encryption_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:345:18
+    |
+345 |         prepared.request_object_encryption_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+345 |         prepared.request.request_object_encryption_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `request_object_encryption_enc` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:349:18
+    |
+349 |         prepared.request_object_encryption_enc.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+349 |         prepared.request.request_object_encryption_enc.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `token_endpoint_auth_signing_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:353:18
+    |
+353 |         prepared.token_endpoint_auth_signing_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+353 |         prepared.request.token_endpoint_auth_signing_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `introspection_signed_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:357:18
+    |
+357 |         prepared.introspection_signed_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+357 |         prepared.request.introspection_signed_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `userinfo_signed_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:361:18
+    |
+361 |         prepared.userinfo_signed_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+361 |         prepared.request.userinfo_signed_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `userinfo_encrypted_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:365:18
+    |
+365 |         prepared.userinfo_encrypted_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+365 |         prepared.request.userinfo_encrypted_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `userinfo_encrypted_response_enc` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:369:18
+    |
+369 |         prepared.userinfo_encrypted_response_enc.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+369 |         prepared.request.userinfo_encrypted_response_enc.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `backchannel_authentication_request_signing_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:374:14
+    |
+374 |             .backchannel_authentication_request_signing_alg
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+374 |             .request.backchannel_authentication_request_signing_alg
+    |              ++++++++
+
+error[E0609]: no field `authorization_signed_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:379:18
+    |
+379 |         prepared.authorization_signed_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+379 |         prepared.request.authorization_signed_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `authorization_encrypted_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:383:18
+    |
+383 |         prepared.authorization_encrypted_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+383 |         prepared.request.authorization_encrypted_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `authorization_encrypted_response_enc` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:387:18
+    |
+387 |         prepared.authorization_encrypted_response_enc.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+387 |         prepared.request.authorization_encrypted_response_enc.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `introspection_encrypted_response_alg` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:391:18
+    |
+391 |         prepared.introspection_encrypted_response_alg.as_deref(),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+391 |         prepared.request.introspection_encrypted_response_alg.as_deref(),
+    |                  ++++++++
+
+error[E0609]: no field `subject_type` on type `PreparedDynamicClientRegistration`
+   --> crates/authorization-server-core/src/dynamic_client_registration/../../tests/unit/dynamic_client_registration.rs:411:28
+    |
+411 |     assert_eq!(public_only.subject_type.as_deref(), Some("public"));
+    |                            ^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+411 |     assert_eq!(public_only.request.subject_type.as_deref(), Some("public"));
+    |                            ++++++++
+
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+error[E0609]: no field `presentation` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/tests/dynamic_registration_presentation.rs:29:18
+   |
+29 |         prepared.presentation.logo_uri.as_deref(),
+   |                  ^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+29 |         prepared.request.presentation.logo_uri.as_deref(),
+   |                  ++++++++
+
+error[E0609]: no field `presentation` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/tests/dynamic_registration_presentation.rs:33:18
+   |
+33 |         prepared.presentation.policy_uri.as_deref(),
+   |                  ^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+33 |         prepared.request.presentation.policy_uri.as_deref(),
+   |                  ++++++++
+
+error[E0609]: no field `presentation` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/tests/dynamic_registration_presentation.rs:37:18
+   |
+37 |         prepared.presentation.tos_uri.as_deref(),
+   |                  ^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+37 |         prepared.request.presentation.tos_uri.as_deref(),
+   |                  ++++++++
+
+For more information about this error, try `rustc --explain E0609`.
+error[E0609]: no field `backchannel_token_delivery_mode` on type `PreparedDynamicClientRegistration`
+  --> crates/authorization-server-core/tests/ciba_registration_contract.rs:32:29
+   |
+32 |         assert_eq!(prepared.backchannel_token_delivery_mode, mode);
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+32 |         assert_eq!(prepared.request.backchannel_token_delivery_mode, mode);
+   |                             ++++++++
+
+error: could not compile `nazo-auth` (test "dynamic_registration_presentation") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `nazo-auth` (test "ciba_registration_contract") due to 1 previous error
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+error: could not compile `nazo-auth` (lib test) due to 26 previous errors
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)

@@ -1,0 +1,1 @@
+{"key": "AUTH_CAP", "capacity": "PASS", "lanes": {"load": {"rate": 800.0, "latency_ms": {"p50": 11.0, "p95": 20.0, "p99": 38.0}, "unexpected_errors": 0}}, "pending": {"min": 0, "median": 73, "max": 3046, "first": 0, "last": 3046}, "age": {"min": 0, "median": 0.021307, "max": 1.432368, "first": 0, "last": 1.432368}, "natural_count": 0, "cycle": true}

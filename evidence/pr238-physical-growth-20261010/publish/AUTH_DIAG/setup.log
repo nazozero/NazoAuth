@@ -1,0 +1,2 @@
+968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b  /src/evidence/pr238-physical-growth-20261010/AUTH_DIAG/bin/pinset
+{"utc": "2026-10-10T05:00:34.228875+00:00", "stage": "task-environment-setup", "pinset_sha256": "968d889d93503c5447b5f81f5d55809b70ef8cf089ce7b5f6d1bc5c56243c01b", "isolated_pinset_output": "pinned_tasks=1 failed_procs=0", "scripts_volume": "pr238-physical-auth-diag-20261010-scripts", "pinbin_volume": "pr238-physical-auth-diag-20261010-pinbin", "tls_volume": "pr238-physical-auth-diag-20261010-audit-tls"}

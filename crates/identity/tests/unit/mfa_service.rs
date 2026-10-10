@@ -25,7 +25,6 @@ impl MfaRepositoryPort for ConfirmRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
         _secret: String,
-        _label: String,
     ) -> RepositoryFuture<'_, ()> {
         unreachable!()
     }

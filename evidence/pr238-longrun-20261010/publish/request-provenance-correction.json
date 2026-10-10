@@ -1,0 +1,36 @@
+{
+  "ts": 1791603057.3263547,
+  "reason": "Unused historical canonical hash was copied with legacy templates. Explicitly label as historical; the harness binds the actual current request bytes via manifest SHA-256. No workload changes. Already executed evidence is immutable and its actual manifest hashes remain authoritative.",
+  "changes": [
+    {
+      "key": "AUTH10",
+      "historical_hash": "3236ae10d0f6d4827cc0cdf9e6b58ae014d27fd9b24cecc30fe199d9c9e4adfa",
+      "actual_request_sha256": "aead901bbc12dba8c6606e897852e30a27190fc9b09800809d4d4633bc88e9b6"
+    },
+    {
+      "key": "CC10",
+      "historical_hash": "3236ae10d0f6d4827cc0cdf9e6b58ae014d27fd9b24cecc30fe199d9c9e4adfa",
+      "actual_request_sha256": "964dee7b9f2345e24813ead37fca4db794f5537d05d08b782ee6d730517a33a0"
+    },
+    {
+      "key": "REFRESH10",
+      "historical_hash": "3236ae10d0f6d4827cc0cdf9e6b58ae014d27fd9b24cecc30fe199d9c9e4adfa",
+      "actual_request_sha256": "57c841a5a685d63a4be1afaa109d2cd7b681287d1231c3bc232c3864ace05920"
+    },
+    {
+      "key": "FAPI10",
+      "historical_hash": "3236ae10d0f6d4827cc0cdf9e6b58ae014d27fd9b24cecc30fe199d9c9e4adfa",
+      "actual_request_sha256": "dbe761fbeb1583b88076524e639f3c045de7e98d70b1d5a8dcf296ed62eb2bde"
+    },
+    {
+      "key": "COLD10",
+      "historical_hash": "3236ae10d0f6d4827cc0cdf9e6b58ae014d27fd9b24cecc30fe199d9c9e4adfa",
+      "actual_request_sha256": "08ab245f3a5299456063b833c800bfcd98c758d9ef5d7e6056c2793630770350"
+    },
+    {
+      "key": "NATIVE6R2",
+      "historical_hash": "7fba602bf1572d67473709dacb7ba3be3b0921694b74f9caac67b0a40aac5d6d",
+      "actual_request_sha256": "0a976761ef891999c48a58b4bc2288f0511808e5652bd5cb784df542ebc74f89"
+    }
+  ]
+}

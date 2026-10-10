@@ -1,0 +1,43 @@
+    Checking nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+    Checking nazo-key-management v0.2.16 (/src/crates/key-management)
+    Checking nazo-persistence v0.2.16 (/src/crates/persistence)
+    Checking nazo-valkey v0.2.16 (/src/crates/state-store-valkey)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Checking nazo-http-actix v0.2.16 (/src/crates/http-actix)
+    Checking nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+error[E0609]: no field `contract_audiences` on type `nazo_auth::RefreshToken`
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:189:24
+    |
+189 |     assert_eq!(current.contract_audiences, ["resource://a", "resource://b"]);
+    |                        ^^^^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id_token_sid`, `id`, `token_blake3`, `tenant_id`, `token_family_id` ... and 11 others
+
+error[E0609]: no field `contract_audiences` on type `nazo_auth::RefreshToken`
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:190:24
+    |
+190 |     assert_eq!(current.contract_audiences.as_ptr(), original_allocation);
+    |                        ^^^^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id_token_sid`, `id`, `token_blake3`, `tenant_id`, `token_family_id` ... and 11 others
+
+error[E0609]: no field `contract_audiences` on type `nazo_auth::RefreshToken`
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:201:18
+    |
+201 |         restored.contract_audiences,
+    |                  ^^^^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id_token_sid`, `id`, `token_blake3`, `tenant_id`, `token_family_id` ... and 11 others
+
+error[E0609]: no field `contract_audiences` on type `nazo_auth::RefreshToken`
+   --> crates/persistence-postgres/src/repositories/../../tests/unit/repositories/tokens.rs:207:18
+    |
+207 |         restored.contract_audiences,
+    |                  ^^^^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: available fields are: `id_token_sid`, `id`, `token_blake3`, `tenant_id`, `token_family_id` ... and 11 others
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `nazo-postgres` (lib test) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

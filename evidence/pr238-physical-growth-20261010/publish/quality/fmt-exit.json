@@ -1,0 +1,13 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "nazoauth-long-builder-20261010",
+    "cargo",
+    "fmt",
+    "--check"
+  ],
+  "exit": 0,
+  "start": 1791609613.2090812,
+  "end": 1791609615.9254992
+}

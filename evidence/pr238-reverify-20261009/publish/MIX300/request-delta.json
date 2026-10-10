@@ -1,0 +1,44 @@
+{
+  "source_modified": {
+    "before": true,
+    "after": false
+  },
+  "replicate": {
+    "before": 1,
+    "after": 2
+  },
+  "source_sha": {
+    "before": "4b4fdc33b6a570aa270b17f5785e1f3188f3fc84",
+    "after": "e8242c44aab842e1828b471413905f74b4132325"
+  },
+  "runner_image": {
+    "before": "sha256:a1f2c18f4da30da6bf2bdce7c001047b0e84c1d2e2903b39d6ee86ede35947c9",
+    "after": "sha256:f25de2323ea071dcb0a6ca55d8215a879541588b069a59cb25fbfffc3311b1b2"
+  },
+  "image": {
+    "before": "sha256:be666c071fe0433e86ea142458338111c3b12212cc07ecb92800992e82cc1251",
+    "after": "sha256:80ebcfdf2e97cb5c05bc4fc53845691e7eb8f8be7cf15e75916154728ecad82d"
+  },
+  "name": {
+    "before": "nazo-model-storage-mix300-20261009",
+    "after": "pr238-reverify-mix300-20261009"
+  },
+  "source_patch_sha256": {
+    "before": "8057cd5e01e3f6a45ee7fdb239a77090ac73bcb98722d0d6ddf776bb7a59c744",
+    "after": null
+  },
+  "status": {
+    "before": "AUTHORIZED_FINAL_MODEL_STORAGE_VALIDATION",
+    "after": "AUTHORIZED_SAME_CANDIDATE_REVERIFICATION"
+  },
+  "helpers": {
+    "before": {
+      "keyset": "sha256:2fd9f6f3b1a215a9bc3eb01fd32added19ce0db5fb4e00aa4e0736d6bcc1a1af",
+      "receiver": "sha256:6790f2f8ffd4163c4ddeae480b8286a0b03dfa059d50c88ae2d9f265aab4b8ab"
+    },
+    "after": {
+      "keyset": "sha256:a7abf7f55519fe2474bcf04c72d10bbe8ce065bd67329455e0be0275dadf83ee",
+      "receiver": "sha256:818338b1cdb264a49d7df19b2c55b72df4b54264b50fcf44e7ddfe358bc4b210"
+    }
+  }
+}

@@ -73,8 +73,8 @@ struct CountRow {
 
 #[derive(QueryableByName)]
 struct RevocationRow {
-    #[diesel(sql_type = SqlUuid)]
-    id: Uuid,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    access_token_jti_blake3: String,
     #[diesel(sql_type = SqlUuid)]
     client_id: Uuid,
     #[diesel(sql_type = SqlUuid)]
@@ -347,7 +347,7 @@ async fn revocation_row(
     jti: &str,
 ) -> Option<RevocationRow> {
     sql_query(
-        "SELECT id, client_id, tenant_id, revoked_at, expires_at \
+        "SELECT access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at \
          FROM access_token_revocations \
          WHERE tenant_id = $1 AND access_token_jti_blake3 = $2",
     )
@@ -424,13 +424,16 @@ async fn revoked_access_token_within_skew_survives_cleanup_until_its_padded_dead
     // The real maintenance batch must not reclaim a row whose padded deadline
     // is still open.
     SecurityStateMaintenanceRepository::new(pool.clone())
-        .cleanup_batch()
+        .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
         .await
         .expect("cleanup batch should succeed");
     let after = revocation_row(&mut connection, SYSTEM_TENANT, &jti)
         .await
         .expect("an open deadline must survive cleanup");
-    assert_eq!(after.id, stored.id);
+    assert_eq!(
+        after.access_token_jti_blake3,
+        stored.access_token_jti_blake3
+    );
     assert_eq!(after.expires_at, stored.expires_at);
     assert!(
         tokens
@@ -713,7 +716,7 @@ async fn owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window() 
 }
 
 /// RV-05 — writer ordering matrix. Whichever writer runs second can only
-/// extend the stored deadline; the fact's id, client, tenant, and first
+/// extend the stored deadline; the fact's tenant/JTI identity, client, and first
 /// `revoked_at` are never rewritten.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn revocation_deadline_is_monotonic_across_writer_orderings() {
@@ -774,7 +777,10 @@ async fn revocation_deadline_is_monotonic_across_writer_orderings() {
         long_exp + window,
         "the later writer may only extend the deadline"
     );
-    assert_eq!(stored.id, first.id, "the fact id is stable");
+    assert_eq!(
+        stored.access_token_jti_blake3, first.access_token_jti_blake3,
+        "the tenant/JTI authority identity is stable"
+    );
     assert_eq!(
         stored.client_id, fixture.client_id,
         "the batch writer's client must not rewrite recorded ownership"
@@ -830,7 +836,10 @@ async fn revocation_deadline_is_monotonic_across_writer_orderings() {
         long_exp + window,
         "a shorter later deadline must not shrink the stored window"
     );
-    assert_eq!(stored.id, first.id);
+    assert_eq!(
+        stored.access_token_jti_blake3,
+        first.access_token_jti_blake3
+    );
     assert_eq!(stored.client_id, batch_client_b.client_id);
     assert_eq!(stored.revoked_at, first.revoked_at);
 
@@ -863,7 +872,10 @@ async fn revocation_deadline_is_monotonic_across_writer_orderings() {
         .await
         .expect("the fact should remain");
     assert_eq!(stored.expires_at, long_exp + window);
-    assert_eq!(stored.id, first.id);
+    assert_eq!(
+        stored.access_token_jti_blake3,
+        first.access_token_jti_blake3
+    );
     assert_eq!(stored.revoked_at, first.revoked_at);
 
     // Longer deadline then shorter deadline — the stored window never shrinks.
@@ -891,7 +903,10 @@ async fn revocation_deadline_is_monotonic_across_writer_orderings() {
         .await
         .expect("the fact should remain");
     assert_eq!(stored.expires_at, long_exp + window);
-    assert_eq!(stored.id, first.id);
+    assert_eq!(
+        stored.access_token_jti_blake3,
+        first.access_token_jti_blake3
+    );
     assert_eq!(stored.revoked_at, first.revoked_at);
 
     // Shorter deadline then longer deadline — the window extends forward.
@@ -1126,13 +1141,13 @@ async fn maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes()
     let open_jti = format!("rv07-open-{tag}");
     sql_query(
         "INSERT INTO access_token_revocations \
-             (id, access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
+             (access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
          VALUES \
-             (gen_random_uuid(), $2, $1, $3, CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
+             ($2, $1, $3, CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
               CURRENT_TIMESTAMP - INTERVAL '5 seconds'), \
-             (gen_random_uuid(), $4, $1, $3, CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
+             ($4, $1, $3, CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
               CURRENT_TIMESTAMP - INTERVAL '90 seconds'), \
-             (gen_random_uuid(), $5, $1, $3, CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
+             ($5, $1, $3, CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
               CURRENT_TIMESTAMP + INTERVAL '1 hour')",
     )
     .bind::<SqlUuid, _>(fixture.client_id)
@@ -1148,7 +1163,7 @@ async fn maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes()
     let expired_jtis = [passed_jti.clone(), bare_jti.clone()];
     for round in 0..8 {
         let result = maintenance
-            .cleanup_batch()
+            .cleanup_batch(nazo_persistence::CleanupScope::IncludingHistory)
             .await
             .expect("cleanup batch should succeed");
         assert!(result.revocations <= 256, "one batch stays bounded");

@@ -1,0 +1,137 @@
+{
+  "load": {
+    "formal_begun": 1150920,
+    "formal_completed": 1150920,
+    "final_unfinished": 0,
+    "max_second_end_inflight": 992,
+    "minutes": [
+      {
+        "minute": 0,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 48,
+        "last_second_end_inflight": 10
+      },
+      {
+        "minute": 1,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 992,
+        "last_second_end_inflight": 14
+      },
+      {
+        "minute": 2,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 38,
+        "last_second_end_inflight": 9
+      },
+      {
+        "minute": 3,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 49,
+        "last_second_end_inflight": 13
+      },
+      {
+        "minute": 4,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 63,
+        "last_second_end_inflight": 18
+      },
+      {
+        "minute": 5,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 37,
+        "last_second_end_inflight": 15
+      },
+      {
+        "minute": 6,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 336,
+        "last_second_end_inflight": 21
+      },
+      {
+        "minute": 7,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 24,
+        "last_second_end_inflight": 13
+      },
+      {
+        "minute": 8,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 30,
+        "last_second_end_inflight": 12
+      },
+      {
+        "minute": 9,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 26,
+        "last_second_end_inflight": 12
+      },
+      {
+        "minute": 10,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 48,
+        "last_second_end_inflight": 11
+      },
+      {
+        "minute": 11,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 44,
+        "last_second_end_inflight": 13
+      },
+      {
+        "minute": 12,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 23,
+        "last_second_end_inflight": 17
+      },
+      {
+        "minute": 13,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 51,
+        "last_second_end_inflight": 14
+      },
+      {
+        "minute": 14,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 36,
+        "last_second_end_inflight": 12
+      },
+      {
+        "minute": 15,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 48,
+        "last_second_end_inflight": 11
+      },
+      {
+        "minute": 16,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 26,
+        "last_second_end_inflight": 16
+      },
+      {
+        "minute": 17,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 42,
+        "last_second_end_inflight": 11
+      },
+      {
+        "minute": 18,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 25,
+        "last_second_end_inflight": 13
+      },
+      {
+        "minute": 19,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 28,
+        "last_second_end_inflight": 14
+      },
+      {
+        "minute": 20,
+        "second_end_inflight_min": 0,
+        "second_end_inflight_max": 0,
+        "last_second_end_inflight": 0
+      }
+    ],
+    "note": "Net cumulative formal begins minus ends at one-second aggregate boundaries. This is application-operation concurrency, not K6 allocated VUs. Subsecond peaks are not observed."
+  }
+}

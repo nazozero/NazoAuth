@@ -1,0 +1,26 @@
+{
+  "image": {
+    "before": "sha256:80ebcfdf2e97cb5c05bc4fc53845691e7eb8f8be7cf15e75916154728ecad82d",
+    "after": "sha256:131800b80155cb0cbf8c02eef98941b49ef57607282d0e98742c4a16962fe25b"
+  },
+  "status": {
+    "before": "AUTHORIZED_SAME_CANDIDATE_REVERIFICATION",
+    "after": "PREDECLARED_A2_B2_ORIGINAL_GATE"
+  },
+  "name": {
+    "before": "pr238-reverify-mix300-20261009",
+    "after": "pr238-closure-confirm-b2-20261010"
+  },
+  "source_sha": {
+    "before": "e8242c44aab842e1828b471413905f74b4132325",
+    "after": "667060893661dae2c2e31289d5d86ca6474132c3"
+  },
+  "expected_binary_sha256": {
+    "before": "54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b",
+    "after": "35f0cb47b9776883f64d5ce4c52e286661ae4e4a8c16ecad99b75452302c7dd5"
+  },
+  "replicate": {
+    "before": 2,
+    "after": 8
+  }
+}

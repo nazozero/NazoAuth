@@ -1,0 +1,6 @@
+{
+  "ts": 1791607715.019189,
+  "key": "AUTH1R2",
+  "observation_at": 1791605005.6259785,
+  "correction": "phase was labeled in-flight but this was a pre-start observation; load-boundary.json is authoritative; 69.50 UI value was observed at 04:02:55Z and recorded about 10 seconds later"
+}

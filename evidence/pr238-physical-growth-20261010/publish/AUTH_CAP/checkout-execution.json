@@ -1,0 +1,37 @@
+{
+  "original_branch": "verify/longrun-20261010",
+  "original_head": "4ccd02de2767a7dd586f19ccb7cf502197e02aeb",
+  "records": [
+    {
+      "command": [
+        "docker",
+        "exec",
+        "-e",
+        "SIS_WORKSPACE=/src",
+        "-e",
+        "SIS_LOAD_BUDGET_S=2700",
+        "-e",
+        "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_CAP",
+        "-w",
+        "/src",
+        "nazoauth-long-controller-20261010",
+        "python",
+        "/src/evidence/pr238-physical-growth-20261010/AUTH_CAP/point-observer-cycle.py",
+        "setup"
+      ],
+      "exit": 0,
+      "start": 1791614441.866934,
+      "end": 1791614443.6064417
+    },
+    {
+      "command": [
+        "python3",
+        "/tmp/physical-growth-execute.py",
+        "AUTH_CAP"
+      ],
+      "exit": 0,
+      "start": 1791614443.6069434,
+      "end": 1791614919.9065711
+    }
+  ]
+}

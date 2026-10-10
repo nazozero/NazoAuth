@@ -1,0 +1,20 @@
+{
+  "user_totp_credentials": {
+    "rows": 7,
+    "actual_avg": 211.0,
+    "like_avg": 169.85714285714286,
+    "dropped_slots": 4
+  },
+  "user_mfa_backup_codes": {
+    "rows": 40,
+    "actual_avg": 171.5,
+    "like_avg": 167.0,
+    "dropped_slots": 2
+  },
+  "user_mfa_remembered_devices": {
+    "rows": 8,
+    "actual_avg": 152.0,
+    "like_avg": 152.0,
+    "dropped_slots": 3
+  }
+}

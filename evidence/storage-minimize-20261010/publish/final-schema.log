@@ -1,0 +1,14 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 0.79s
+     Running tests/schema_cleanup.rs (target/debug/deps/schema_cleanup-2564af5714e756e5)
+
+running 6 tests
+test backup_verifier_compaction_preserves_live_credentials_and_never_revives_spent_codes ... ok
+test cleanup_refuses_directory_constraint_drift_and_external_dependencies ... ok
+test cleanup_refuses_legacy_information_without_partial_ddl_or_data_loss ... ok
+test constant_and_empty_state_cleanup_round_trips_without_losing_rows ... ok
+test remembered_device_compaction_roundtrip_preserves_security_facts ... ok
+test retained_composite_fks_reject_cross_tenant_children_and_parent_mutations ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+

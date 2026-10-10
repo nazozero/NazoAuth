@@ -1,0 +1,31 @@
+   Compiling nazo-identity v0.2.16 (/src/crates/identity)
+   Compiling nazo-auth v0.2.16 (/src/crates/authorization-server-core)
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-key-management v0.2.16 (/src/crates/key-management)
+   Compiling nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+    Finished `test` profile [unoptimized] target(s) in 9.65s
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server-031f8727fab3cdf7)
+
+running 19 tests
+test security::mtls::tests::administrator_thumbprint_pin_can_only_narrow_registered_subject_match ... ok
+test security::mtls::tests::certificate_der_identity_extracts_full_subject_dn_names ... ok
+test security::mtls::tests::certificate_der_identity_extracts_san_values_and_escapes_subject_dn ... ok
+test security::mtls::tests::certificate_der_identity_rejects_future_and_expired_certificates ... ok
+test security::mtls::tests::certificate_der_identity_rejects_trailing_data ... ok
+test security::mtls::tests::client_certificate_matches_registered_san_dns ... ok
+test security::mtls::tests::client_certificate_matches_registered_san_uri_ip_and_email ... ok
+test security::mtls::tests::client_certificate_matches_registered_subject_dn ... ok
+test security::mtls::tests::client_certificate_rejects_legacy_rows_with_multiple_rfc8705_selectors ... ok
+test security::mtls::tests::client_certificate_rejects_unregistered_subject_and_san ... ok
+test security::mtls::tests::mtls_ipaddress_parser_rejects_invalid_san_lengths ... ok
+test security::mtls::tests::normalizes_colon_hex_sha256_to_x5t_s256 ... ok
+test security::mtls::tests::pki_certificate_requires_the_selected_trust_anchor_and_valid_chain ... ok
+test security::mtls::tests::rejects_invalid_sha256_thumbprints ... ok
+test security::mtls::tests::self_signed_client_certificate_ignores_non_leaf_x5c_entries ... ok
+test security::mtls::tests::self_signed_client_certificate_matches_registered_x5c ... ok
+test security::mtls::tests::self_signed_client_certificate_rejects_expired_x5c ... ok
+test security::mtls::tests::self_signed_client_certificate_rejects_subject_dn_and_thumbprint_shortcuts ... ok
+test security::mtls::tests::self_signed_client_certificate_rotation_accepts_only_registered_x5c_set ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.03s
+

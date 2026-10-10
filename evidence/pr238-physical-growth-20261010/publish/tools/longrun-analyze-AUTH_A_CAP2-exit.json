@@ -1,0 +1,10 @@
+{
+  "command": [
+    "python3",
+    "/workspace/evidence/pr238-physical-growth-20261010/tools/analyze.py",
+    "AUTH_A_CAP2"
+  ],
+  "exit": 0,
+  "start": 1791615497.8427474,
+  "end": 1791615497.873425
+}

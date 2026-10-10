@@ -1,0 +1,14 @@
+{
+  "task_started_utc": "2026-10-10T01:48:08+00:00",
+  "elapsed_minutes": 178.69389021794,
+  "deadline_utc": "2026-10-10T04:48:08+00:00",
+  "additional_conditional_points_not_run": [
+    "REFRESH1R2"
+  ],
+  "last_verified_test_terminal_utc": "2026-10-10T04:46:49.633413+00:00",
+  "all_workload_and_cleanup_evidence_within_three_hours": true,
+  "exit_status_gaps": [
+    "REQUIRED5R2"
+  ],
+  "last_terminal_time_source": "Required task-cleanup.json filesystem mtime; independent guard at 04:47:23 UTC observed no owned test containers; actual docker exec exit code unavailable"
+}

@@ -1,0 +1,14 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+error[E0425]: cannot find type `Timestamptz` in this scope
+    --> crates/persistence-postgres/tests/openid4vc.rs:4877:17
+     |
+4877 |         .bind::<Timestamptz, _>(offer.expires_at)
+     |                 ^^^^^^^^^^^ not found in this scope
+     |
+help: you might be missing a type parameter
+     |
+4809 | async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer<Timestamptz>() {
+     |                                                                            +++++++++++++
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `nazo-postgres` (test "openid4vc") due to 1 previous error

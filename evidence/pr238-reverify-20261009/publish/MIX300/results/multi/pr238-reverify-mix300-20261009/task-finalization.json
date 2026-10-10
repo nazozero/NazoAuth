@@ -1,0 +1,16 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-pr238-reverify-mix300-20261009",
+    "sis-proc-pr238-reverify-mix300-20261009",
+    "sis-sampler-pr238-reverify-mix300-20261009",
+    "sis-side-argon2-pr238-reverify-mix300-20261009",
+    "sis-side-fapi-pr238-reverify-mix300-20261009",
+    "sis-side-meta-pr238-reverify-mix300-20261009",
+    "sis-side-refresh-pr238-reverify-mix300-20261009"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

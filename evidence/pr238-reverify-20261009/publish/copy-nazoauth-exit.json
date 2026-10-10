@@ -1,0 +1,1 @@
+{"command": ["docker", "cp", "nazoauth-perf-runner-20261009:/src/target/release/nazoauth", "/workspace/evidence/pr238-reverify-20261009/nazoauth"], "exit": 0, "seconds": 0.031846626196056604}

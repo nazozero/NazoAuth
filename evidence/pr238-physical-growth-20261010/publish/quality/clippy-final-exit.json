@@ -1,0 +1,24 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-e",
+    "CARGO_BUILD_JOBS=4",
+    "nazoauth-long-builder-20261010",
+    "cargo",
+    "clippy",
+    "--locked",
+    "-p",
+    "nazo-auth",
+    "-p",
+    "nazo-postgres",
+    "--all-targets",
+    "--all-features",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "exit": 0,
+  "start": 1791609616.5241685,
+  "end": 1791609623.9569468
+}

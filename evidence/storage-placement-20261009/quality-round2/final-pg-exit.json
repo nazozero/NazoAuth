@@ -1,0 +1,1 @@
+{"command": ["cargo", "test", "--locked", "--all-features", "-p", "nazo-postgres", "--test", "security_state_maintenance", "--test", "security_state_commit_boundary", "--test", "migrations", "--test", "openid4vc", "--", "--nocapture"], "exit": 0, "seconds": 95.98629443766549}

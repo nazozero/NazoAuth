@@ -1,0 +1,197 @@
+{
+  "load": {
+    "formal_begun": 1438893,
+    "formal_completed": 1438893,
+    "final_unfinished": 0,
+    "max_second_end_inflight": 992,
+    "minutes": [
+      {
+        "minute": 0,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 72,
+        "last_second_end_inflight": 30
+      },
+      {
+        "minute": 1,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 909,
+        "last_second_end_inflight": 30
+      },
+      {
+        "minute": 2,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 95,
+        "last_second_end_inflight": 22
+      },
+      {
+        "minute": 3,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 255,
+        "last_second_end_inflight": 35
+      },
+      {
+        "minute": 4,
+        "second_end_inflight_min": 34,
+        "second_end_inflight_max": 142,
+        "last_second_end_inflight": 57
+      },
+      {
+        "minute": 5,
+        "second_end_inflight_min": 25,
+        "second_end_inflight_max": 142,
+        "last_second_end_inflight": 62
+      },
+      {
+        "minute": 6,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 127,
+        "last_second_end_inflight": 46
+      },
+      {
+        "minute": 7,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 191,
+        "last_second_end_inflight": 142
+      },
+      {
+        "minute": 8,
+        "second_end_inflight_min": 10,
+        "second_end_inflight_max": 172,
+        "last_second_end_inflight": 15
+      },
+      {
+        "minute": 9,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 163,
+        "last_second_end_inflight": 114
+      },
+      {
+        "minute": 10,
+        "second_end_inflight_min": 15,
+        "second_end_inflight_max": 280,
+        "last_second_end_inflight": 57
+      },
+      {
+        "minute": 11,
+        "second_end_inflight_min": 17,
+        "second_end_inflight_max": 286,
+        "last_second_end_inflight": 127
+      },
+      {
+        "minute": 12,
+        "second_end_inflight_min": 44,
+        "second_end_inflight_max": 473,
+        "last_second_end_inflight": 135
+      },
+      {
+        "minute": 13,
+        "second_end_inflight_min": 15,
+        "second_end_inflight_max": 460,
+        "last_second_end_inflight": 87
+      },
+      {
+        "minute": 14,
+        "second_end_inflight_min": 12,
+        "second_end_inflight_max": 747,
+        "last_second_end_inflight": 128
+      },
+      {
+        "minute": 15,
+        "second_end_inflight_min": 38,
+        "second_end_inflight_max": 231,
+        "last_second_end_inflight": 134
+      },
+      {
+        "minute": 16,
+        "second_end_inflight_min": 26,
+        "second_end_inflight_max": 177,
+        "last_second_end_inflight": 153
+      },
+      {
+        "minute": 17,
+        "second_end_inflight_min": 11,
+        "second_end_inflight_max": 587,
+        "last_second_end_inflight": 193
+      },
+      {
+        "minute": 18,
+        "second_end_inflight_min": 9,
+        "second_end_inflight_max": 301,
+        "last_second_end_inflight": 134
+      },
+      {
+        "minute": 19,
+        "second_end_inflight_min": 18,
+        "second_end_inflight_max": 657,
+        "last_second_end_inflight": 171
+      },
+      {
+        "minute": 20,
+        "second_end_inflight_min": 36,
+        "second_end_inflight_max": 258,
+        "last_second_end_inflight": 108
+      },
+      {
+        "minute": 21,
+        "second_end_inflight_min": 8,
+        "second_end_inflight_max": 189,
+        "last_second_end_inflight": 174
+      },
+      {
+        "minute": 22,
+        "second_end_inflight_min": 39,
+        "second_end_inflight_max": 293,
+        "last_second_end_inflight": 173
+      },
+      {
+        "minute": 23,
+        "second_end_inflight_min": 34,
+        "second_end_inflight_max": 314,
+        "last_second_end_inflight": 132
+      },
+      {
+        "minute": 24,
+        "second_end_inflight_min": 17,
+        "second_end_inflight_max": 473,
+        "last_second_end_inflight": 74
+      },
+      {
+        "minute": 25,
+        "second_end_inflight_min": 29,
+        "second_end_inflight_max": 425,
+        "last_second_end_inflight": 106
+      },
+      {
+        "minute": 26,
+        "second_end_inflight_min": 24,
+        "second_end_inflight_max": 253,
+        "last_second_end_inflight": 132
+      },
+      {
+        "minute": 27,
+        "second_end_inflight_min": 52,
+        "second_end_inflight_max": 201,
+        "last_second_end_inflight": 143
+      },
+      {
+        "minute": 28,
+        "second_end_inflight_min": 59,
+        "second_end_inflight_max": 992,
+        "last_second_end_inflight": 210
+      },
+      {
+        "minute": 29,
+        "second_end_inflight_min": 16,
+        "second_end_inflight_max": 521,
+        "last_second_end_inflight": 129
+      },
+      {
+        "minute": 30,
+        "second_end_inflight_min": 0,
+        "second_end_inflight_max": 0,
+        "last_second_end_inflight": 0
+      }
+    ],
+    "note": "Net cumulative formal begins minus ends at one-second aggregate boundaries. This is application-operation concurrency, not K6 allocated VUs. Subsecond peaks are not observed."
+  }
+}

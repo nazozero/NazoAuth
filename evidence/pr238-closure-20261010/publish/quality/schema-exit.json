@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazo-postgres --test schema_cleanup -- --nocapture", "exit": 0, "seconds": 1.3770192917436361}

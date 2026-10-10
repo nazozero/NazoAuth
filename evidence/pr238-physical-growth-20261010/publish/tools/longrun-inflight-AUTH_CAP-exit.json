@@ -1,0 +1,10 @@
+{
+  "command": [
+    "python3",
+    "/workspace/evidence/pr238-physical-growth-20261010/tools/inflight.py",
+    "AUTH_CAP"
+  ],
+  "exit": 0,
+  "start": 1791615002.030668,
+  "end": 1791615002.0487664
+}

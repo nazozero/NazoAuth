@@ -1,0 +1,50 @@
+{
+  "census_exact": {
+    "oauth:jar": 72000,
+    "oauth:session": 993,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 72994,
+    "evicted_keys": 0,
+    "expired_keys": 4,
+    "keyspace_hits": 1153871,
+    "keyspace_misses": 510,
+    "mem_fragmentation_ratio": 1.38,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 27866272,
+    "used_memory_rss": 38539264
+  },
+  "keys_seen": 72994,
+  "mem_bytes_sampled": {
+    "oauth:jar": 26240,
+    "oauth:session": 35840,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:jar": 80,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "nazo-model-cohort60-20261009",
+    "sample_per_cat": 80,
+    "sampled_at": 1791555425,
+    "scan_ms": 265,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:jar": 80,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 72994,
+  "ttl_buckets_sampled": {
+    "oauth:jar|0m+": 33,
+    "oauth:jar|1m+": 47,
+    "oauth:session|476m+": 80,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

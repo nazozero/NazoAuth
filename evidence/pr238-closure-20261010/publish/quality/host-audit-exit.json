@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazoauth --lib adapters::audit -- --nocapture", "exit": 0, "seconds": 68.11448512924835}

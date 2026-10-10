@@ -1,0 +1,4 @@
+minute,second_end_inflight_min,second_end_inflight_max,last_second_end_inflight
+0,1,2,1
+1,1,2,1
+2,0,1,0

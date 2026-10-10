@@ -26,15 +26,15 @@ fn dynamic_registration_preserves_https_presentation_metadata() {
     .expect("HTTPS presentation metadata should be accepted");
 
     assert_eq!(
-        prepared.presentation.logo_uri.as_deref(),
+        prepared.request.presentation.logo_uri.as_deref(),
         Some("https://client.example/logo.svg")
     );
     assert_eq!(
-        prepared.presentation.policy_uri.as_deref(),
+        prepared.request.presentation.policy_uri.as_deref(),
         Some("https://client.example/privacy")
     );
     assert_eq!(
-        prepared.presentation.tos_uri.as_deref(),
+        prepared.request.presentation.tos_uri.as_deref(),
         Some("https://client.example/terms")
     );
 }

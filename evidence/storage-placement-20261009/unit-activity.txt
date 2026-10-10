@@ -1,0 +1,1 @@
+[(13708, '', 'active', None, None, Decimal('182.805461'), [], 'SELECT')]

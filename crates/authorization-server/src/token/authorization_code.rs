@@ -325,7 +325,6 @@ pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -
         acr: input.payload.acr,
         userinfo_claim_requests: input.payload.userinfo_claim_requests,
         id_token_claim_requests: input.payload.id_token_claim_requests,
-        refresh_id_token_sid: None,
         include_refresh: true,
         refresh_token_policy: RefreshTokenPolicy::IssueNew,
         dpop_jkt: input.dpop_jkt,

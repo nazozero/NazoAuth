@@ -1,0 +1,12 @@
+{
+  "defined_at": 1791593170.5093474,
+  "reason": "B1 FAPI P95 109ms fails original 100ms gate; metadata latency rose and recovered in matching time buckets, without app single-thread saturation. One predeclared full-window A2/B2 control; retain all results, no threshold or workload change.",
+  "order": [
+    "control-A2",
+    "confirm-B2"
+  ],
+  "key": "MIX300",
+  "repeat_count_each": 1,
+  "source_A": "088afcd5d9b22dd915438d19fbea85c3add71ecd",
+  "source_B": "667060893661dae2c2e31289d5d86ca6474132c3"
+}

@@ -9,9 +9,10 @@
 //! there is no fast retry loop and no leader election — PostgreSQL
 //! `SKIP LOCKED` plus the shared refresh-family advisory lock coordinate
 //! multiple server instances.
-use nazo_persistence::SecurityStateMaintenancePort;
+use nazo_persistence::{CleanupScope, SecurityStateMaintenancePort};
 use std::{sync::Arc, time::Duration as StdDuration};
 
+const HISTORY_INTERVAL: StdDuration = StdDuration::from_secs(60 * 60);
 const MAINTENANCE_INTERVAL: StdDuration = StdDuration::from_secs(60);
 /// Budget for scheduling successive batches. An in-flight bounded batch is
 /// allowed to finish. A saturated cycle rests for its actual elapsed time,
@@ -22,14 +23,20 @@ pub(crate) fn spawn_security_state_maintenance_worker(
     maintenance: Arc<dyn SecurityStateMaintenancePort>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let mut history_due = tokio::time::Instant::now();
         loop {
             let cycle_started = tokio::time::Instant::now();
+            let scope = if cycle_started >= history_due {
+                CleanupScope::IncludingHistory
+            } else {
+                CleanupScope::ProtocolState
+            };
             let mut batches = 0_u64;
             let mut rows = 0_u64;
             let mut issuances = 0_u64;
             let (stop_reason, next_delay) = loop {
                 let started = tokio::time::Instant::now();
-                match maintenance.cleanup_batch().await {
+                match maintenance.cleanup_batch(scope).await {
                     Ok(counts) => {
                         batches += 1;
                         rows += counts.authorization_decisions
@@ -38,6 +45,8 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             + counts.spent_refresh_proofs
                             + counts.refresh_contracts
                             + counts.revocations
+                            + counts.remembered_mfa_devices
+                            + counts.identity_approvals
                             + counts.scim_audit_events
                             + counts.logout_deliveries
                             + counts.scim_security_events
@@ -57,6 +66,8 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             refresh_contracts = counts.refresh_contracts,
                             revocations = counts.revocations,
                             scim_audit_events = counts.scim_audit_events,
+                            remembered_mfa_devices = counts.remembered_mfa_devices,
+                            identity_approvals = counts.identity_approvals,
                             logout_deliveries = counts.logout_deliveries,
                             scim_security_events = counts.scim_security_events,
                             presentations = counts.presentations,
@@ -72,6 +83,9 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             "security-state maintenance batch completed"
                         );
                         if !counts.saturated {
+                            if scope == CleanupScope::IncludingHistory {
+                                history_due = tokio::time::Instant::now() + HISTORY_INTERVAL;
+                            }
                             break ("drained", MAINTENANCE_INTERVAL);
                         }
                         let elapsed = cycle_started.elapsed();
@@ -91,6 +105,7 @@ pub(crate) fn spawn_security_state_maintenance_worker(
             };
             tracing::info!(
                 stop_reason,
+                ?scope,
                 batches,
                 rows,
                 issuances,

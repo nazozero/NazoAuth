@@ -1,0 +1,155 @@
+[
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test audit_ledger -- --nocapture",
+    "exit": 0,
+    "seconds": 221.4597080857493,
+    "name": "audit-ledger",
+    "passed": 20,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings",
+    "exit": 0,
+    "seconds": 36.508508959785104,
+    "name": "clippy",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test controller_registry --test controller_recovery -- --nocapture",
+    "exit": 0,
+    "seconds": 21.15722654433921,
+    "name": "controller",
+    "passed": 25,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "python3 scripts/check_crypto_boundary.py",
+    "exit": 0,
+    "seconds": 0.7907321825623512,
+    "name": "crypto-boundary",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazoauth --lib par_fapi2_rejects_shared_secret_client_auth_after_authentication -- --ignored --nocapture",
+    "exit": 0,
+    "seconds": 0.6921712257899344,
+    "name": "fapi-explicit",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo fmt --check",
+    "exit": 0,
+    "seconds": 2.323917569126934,
+    "name": "fmt",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo fmt",
+    "exit": 0,
+    "seconds": 2.346538405865431,
+    "name": "format",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazoauth --lib adapters::audit -- --nocapture",
+    "exit": 0,
+    "seconds": 68.11448512924835,
+    "name": "host-audit",
+    "passed": 99,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables",
+    "exit": 0,
+    "seconds": 28.72839503036812,
+    "name": "migration",
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-oauth-server --lib security::mtls -- --nocapture",
+    "exit": 0,
+    "seconds": 9.760614111088216,
+    "name": "mtls",
+    "passed": 19,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "python3 scripts/check_persistence_dependency_graph.py",
+    "exit": 0,
+    "seconds": 2.2266115001402795,
+    "name": "persistence-boundary",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo build --release --locked -p nazoauth --bin nazoauth",
+    "exit": 0,
+    "seconds": 122.23237061640248,
+    "name": "release",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test access_token_retention -- --nocapture",
+    "exit": 0,
+    "seconds": 2.8912398479878902,
+    "name": "revocation",
+    "passed": 6,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --lib repositories::access_token_revocation -- --nocapture",
+    "exit": 0,
+    "seconds": 17.18736286414787,
+    "name": "revocation-unit",
+    "passed": 7,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test schema_cleanup -- --nocapture",
+    "exit": 0,
+    "seconds": 1.3770192917436361,
+    "name": "schema",
+    "passed": 8,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "python3 scripts/verify_static_contracts.py --check",
+    "exit": 0,
+    "seconds": 5.137176602613181,
+    "name": "static",
+    "passed": 0,
+    "failed": 0,
+    "ignored": 0
+  },
+  {
+    "command": "cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture",
+    "exit": 0,
+    "seconds": 938.4605570603162,
+    "name": "workspace",
+    "passed": 3717,
+    "failed": 0,
+    "ignored": 4
+  }
+]

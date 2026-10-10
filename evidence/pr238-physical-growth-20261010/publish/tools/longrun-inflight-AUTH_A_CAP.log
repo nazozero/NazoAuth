@@ -1,0 +1,1 @@
+{"key": "AUTH_A_CAP", "load": {"formal_begun": 140743, "formal_completed": 140743, "final_unfinished": 0, "max_second_end_inflight": 992, "note": "Net cumulative formal begins minus ends at one-second aggregate boundaries. This is application-operation concurrency, not K6 allocated VUs. Subsecond peaks are not observed."}}

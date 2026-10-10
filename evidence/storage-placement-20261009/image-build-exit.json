@@ -1,0 +1,1 @@
+{"exit": 0, "seconds": 4.011663786135614, "command": ["docker", "build", "-t", "nazoauth-model-storage:20261009", "-"]}

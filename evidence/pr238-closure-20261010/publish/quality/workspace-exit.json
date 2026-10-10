@@ -1,0 +1,1 @@
+{"command": "cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture", "exit": 0, "seconds": 938.4605570603162}

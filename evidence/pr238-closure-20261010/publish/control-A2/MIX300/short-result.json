@@ -1,0 +1,573 @@
+{
+  "name": "pr238-closure-control-a2-20261010",
+  "mode": "multi",
+  "scenario": "cap_mixed",
+  "rate": 1600,
+  "window_seconds": 300,
+  "app_cpus": 16,
+  "confirmation": false,
+  "point_path": "multi/pr238-closure-control-a2-20261010/point.json",
+  "token_state": {
+    "collected": true,
+    "fresh_rows": 0,
+    "legacy_rows": 0,
+    "issuance_rows": 90803,
+    "issuance_inserts": 102021,
+    "subject_bindings": 0,
+    "database_bytes": 260232895
+  },
+  "verdict": "PASS",
+  "metrics": {
+    "rps": 2328.304,
+    "p50": 1.984,
+    "p95": 6.534,
+    "p99": 16.447,
+    "dropped": 0,
+    "drop_fraction": 0.0,
+    "error_rate": 6e-06,
+    "status": "passed",
+    "measured_ops_s": 1600.003,
+    "successful_ops_s": 1599.99,
+    "window_seconds": 300.0,
+    "rate_basis": "scenario_window_stream",
+    "measurement_contract": "cap-scenario-window-v1",
+    "classified_errors": 5,
+    "expected_invalid_grant": 5,
+    "unexpected_errors": 0,
+    "capacity_gate_contract": "successful-ops-v1",
+    "measure": {
+      "window_start_s": 1791593501.515,
+      "window_end_s": 1791593801.515,
+      "measure_started_exact": 480001,
+      "measure_completed_exact": 480001,
+      "measure_dropped_exact": 0,
+      "measure_scheduled_observed": 480001,
+      "measure_drop_fraction": 0.0,
+      "measure_outcomes": {
+        "success": 479997,
+        "expected_rejection": 4
+      },
+      "measure_outcome_sum": 480001,
+      "drops_pre_window": 0,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 480000,
+      "schedule_delta_vs_rational": 1,
+      "observed_schedule_rate": 1600.003,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "subject_lifecycle": {
+      "initial_mint": 803,
+      "refresh_update": 85934,
+      "expired_reauth": 3
+    },
+    "gate_population": "measurement_cohort",
+    "gate_p95": 12.0,
+    "gate_p99": 24.0,
+    "prepare_failures": {
+      "prepare_failed": 0,
+      "prepare_local_failed": 0,
+      "prepare_sut_failed": 0
+    },
+    "forensic_diag": {
+      "status": "TRUNCATED",
+      "truncated": true,
+      "budget_exceeded_points": 9111923,
+      "overflow_dropped_points": 1503281,
+      "logical_bytes_cap": 536870912,
+      "file": "/src/evidence/pr238-closure-20261010/control-A2/MIX300/results/multi/pr238-closure-control-a2-20261010/load/capacity-cap-mixed.diag.jsonl.gz"
+    },
+    "latency_gate": "complete_operation_100_250ms",
+    "rate_for_gate": 1599.99,
+    "threshold_status_diagnostic": "passed",
+    "main_verdict": "PASS",
+    "complete_operation_latency_ms": {
+      "p50": 3.0,
+      "p95": 12.0,
+      "p99": 24.0
+    },
+    "all_load_common_window": {
+      "seconds": 300.0,
+      "method": "contract",
+      "start_ms": 1791593501515,
+      "end_ms": 1791593801515
+    },
+    "sidecar_gates": {
+      "argon2": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 48.0,
+          "p50": 3.34,
+          "p95": 124.191,
+          "p99": 133.481,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 8.0,
+          "successful_ops_s": 8.0,
+          "window_seconds": 375.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791593457.84,
+            "window_end_s": 1791593832.84,
+            "measure_started_exact": 3000,
+            "measure_completed_exact": 3000,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 3000,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 3000
+            },
+            "measure_outcome_sum": 3000,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 3000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 8.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 159.0,
+          "gate_p99": 183.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 62168,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr238-closure-20261010/control-A2/MIX300/results/multi/pr238-closure-control-a2-20261010/argon2/capacity-oidc-cold-login-refresh.diag.jsonl.gz"
+          },
+          "latency_gate": "existing_cold_login_k6_guardrails",
+          "rate_for_gate": 8.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 138.0,
+            "p95": 159.0,
+            "p99": 183.0
+          }
+        }
+      },
+      "meta": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 400.0,
+          "p50": 0.15,
+          "p95": 0.295,
+          "p99": 0.679,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 200.0,
+          "successful_ops_s": 200.0,
+          "window_seconds": 375.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791593459.708,
+            "window_end_s": 1791593834.708,
+            "measure_started_exact": 75000,
+            "measure_completed_exact": 75000,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 75000,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 75000
+            },
+            "measure_outcome_sum": 75000,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 75000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 200.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 1.0,
+          "gate_p99": 1.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 1611461,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr238-closure-20261010/control-A2/MIX300/results/multi/pr238-closure-control-a2-20261010/meta/capacity-metadata-jwks.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 200.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 1.0,
+            "p95": 1.0,
+            "p99": 1.0
+          }
+        }
+      },
+      "fapi": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 150.0,
+          "p50": 2.361,
+          "p95": 6.905,
+          "p99": 13.523,
+          "dropped": 0,
+          "drop_fraction": 0.0,
+          "error_rate": 0.0,
+          "status": "passed",
+          "measured_ops_s": 30.0,
+          "successful_ops_s": 30.0,
+          "window_seconds": 375.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791593461.98,
+            "window_end_s": 1791593836.98,
+            "measure_started_exact": 11250,
+            "measure_completed_exact": 11250,
+            "measure_dropped_exact": 0,
+            "measure_scheduled_observed": 11250,
+            "measure_drop_fraction": 0.0,
+            "measure_outcomes": {
+              "success": 11250
+            },
+            "measure_outcome_sum": 11250,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 11250,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 30.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 0,
+            "refresh_update": 0,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 31.0,
+          "gate_p99": 53.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 330059,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr238-closure-20261010/control-A2/MIX300/results/multi/pr238-closure-control-a2-20261010/fapi/capacity-fapi2-logged-in-high-security.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 30.0,
+          "threshold_status_diagnostic": "passed",
+          "complete_operation_latency_ms": {
+            "p50": 20.0,
+            "p95": 31.0,
+            "p99": 53.0
+          }
+        }
+      },
+      "refresh": {
+        "verdict": "PASS",
+        "metrics": {
+          "rps": 600.112,
+          "p50": 3.994,
+          "p95": 8.15,
+          "p99": 20.224,
+          "dropped": 211,
+          "drop_fraction": 0.0009017094017094017,
+          "error_rate": 0.0,
+          "status": "target_miss",
+          "measured_ops_s": 599.437,
+          "successful_ops_s": 599.437,
+          "window_seconds": 375.0,
+          "rate_basis": "scenario_window_stream",
+          "measurement_contract": "cap-scenario-window-v1",
+          "classified_errors": 0,
+          "expected_invalid_grant": 0,
+          "unexpected_errors": 0,
+          "capacity_gate_contract": "successful-ops-v1",
+          "measure": {
+            "window_start_s": 1791593464.449,
+            "window_end_s": 1791593839.449,
+            "measure_started_exact": 224789,
+            "measure_completed_exact": 224789,
+            "measure_dropped_exact": 211,
+            "measure_scheduled_observed": 225000,
+            "measure_drop_fraction": 0.000938,
+            "measure_outcomes": {
+              "success": 224789
+            },
+            "measure_outcome_sum": 224789,
+            "drops_pre_window": 0,
+            "drops_post_window": 0,
+            "drops_pending_unclassified": 0,
+            "pending_drops_overflow": false,
+            "valid": true,
+            "problems": [],
+            "rational_planned_arrivals": 225000,
+            "schedule_delta_vs_rational": 0,
+            "observed_schedule_rate": 600.0,
+            "cohort_source": "k6_stream_exact",
+            "late_vu_fraction": 0.0
+          },
+          "subject_lifecycle": {
+            "initial_mint": 64,
+            "refresh_update": 233789,
+            "expired_reauth": 0
+          },
+          "gate_population": "measurement_cohort",
+          "gate_p95": 8.0,
+          "gate_p99": 21.0,
+          "prepare_failures": {
+            "prepare_failed": 0,
+            "prepare_local_failed": 0,
+            "prepare_sut_failed": 0
+          },
+          "forensic_diag": {
+            "status": "COMPLETE",
+            "truncated": false,
+            "budget_exceeded_points": 4229113,
+            "overflow_dropped_points": 0,
+            "logical_bytes_cap": 536870912,
+            "file": "/src/evidence/pr238-closure-20261010/control-A2/MIX300/results/multi/pr238-closure-control-a2-20261010/refresh/capacity-cap-refresh-token.diag.jsonl.gz"
+          },
+          "latency_gate": "complete_operation_100_250ms",
+          "rate_for_gate": 599.437,
+          "threshold_status_diagnostic": "target_miss",
+          "complete_operation_latency_ms": {
+            "p50": 4.0,
+            "p95": 8.0,
+            "p99": 21.0
+          }
+        }
+      }
+    }
+  },
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "active_per_scope_le_10": true,
+    "spent_per_family_le_64": true,
+    "expired_backlog_zero": true,
+    "sidecars_complete": true,
+    "collector_copy_complete": true
+  },
+  "maintenance": null,
+  "provenance_valid": true,
+  "token_state_verdict": "PASS",
+  "cost": {
+    "wal_windowed": {
+      "delta": 2146561888.712494,
+      "field": "wal_bytes",
+      "window_s": 300.0,
+      "sample_span": [
+        1791593431,
+        1791593864
+      ]
+    },
+    "wal_per_success_bytes": 4472.032,
+    "wal_io_windowed": {
+      "writes": {
+        "delta": 386198.1124465863,
+        "field": "wal_io.writes",
+        "window_s": 300.0,
+        "sample_span": [
+          1791593431,
+          1791593864
+        ]
+      },
+      "write_bytes": {
+        "delta": 7521030982.583008,
+        "field": "wal_io.write_bytes",
+        "window_s": 300.0,
+        "sample_span": [
+          1791593431,
+          1791593864
+        ]
+      },
+      "write_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.write_time_ms",
+        "window_s": 300.0,
+        "sample_span": [
+          1791593431,
+          1791593864
+        ]
+      },
+      "fsyncs": {
+        "delta": 385809.1224466562,
+        "field": "wal_io.fsyncs",
+        "window_s": 300.0,
+        "sample_span": [
+          1791593431,
+          1791593864
+        ]
+      },
+      "fsync_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.fsync_time_ms",
+        "window_s": 300.0,
+        "sample_span": [
+          1791593431,
+          1791593864
+        ]
+      }
+    },
+    "wal_writes_per_op": 0.8046,
+    "wal_fsyncs_per_op": 0.8038,
+    "wait_per_acq_ms": null,
+    "acquire_per_op_windowed": null,
+    "oom_killed": false,
+    "restart_count": 0
+  },
+  "component_cpu_cores": {
+    "app": 3.3,
+    "postgres": 3.76
+  },
+  "audit": {
+    "point": "pr238-closure-control-a2-20261010",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 864497,
+    "accepted_events_delta": 864497,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "3296633c128c10c3d093943d5bb78eeb24e5953444e1b42555bae98ac5b3d70f",
+      "journal_bytes": 847820209,
+      "batches": 27790,
+      "remote_path": "sis-rcv-pr238-closure-control-a2-20261010:/data/journal.jsonl",
+      "events_in_range": 864497,
+      "expected_in_range": 864497,
+      "by_event_type": {
+        "token_issued": 666582,
+        "authorization_decision_committed": 102021,
+        "login_success": 3121,
+        "refresh_family_capacity_retired": 92773
+      },
+      "token_issued_in_range": 666582,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 666582,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "queue": {
+    "collected": false,
+    "status": "UNVERIFIED",
+    "contract": "blackbox-db-v1",
+    "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+    "enqueued": null,
+    "persisted": null,
+    "dropped": null,
+    "pending_in_process": null
+  },
+  "collection_contract": "blackbox-db-v1",
+  "unverified_internal_gates": {
+    "queue_dropped_zero": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "pending_zero_post_drain": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "enqueued_eq_persisted": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    }
+  },
+  "elapsed_s": 488.9
+}

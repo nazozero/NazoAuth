@@ -68,7 +68,7 @@ impl SecurityAuditLedger for RecoveryLedger {
                 last_exported_at: Some(Utc::now()),
                 deployment_id: Some("recovery-test".to_owned()),
                 observed_at: Some(Utc::now()),
-                batch: None,
+                batch_blocked: None,
             })
         })
     }

@@ -19,14 +19,14 @@ fn default_registration_contract_matches_oidc_code_client_behavior() {
     let prepared =
         prepare_dynamic_client_registration(DynamicClientRegistrationRequest::default(), POLICY)
             .expect("default registration");
-    assert_eq!(prepared.client_type, "confidential");
+    assert_eq!(prepared.request.client_type, "confidential");
     assert_eq!(
-        prepared.grant_types,
+        prepared.request.grant_types,
         ["authorization_code", "refresh_token"]
     );
     assert_eq!(prepared.response_types, ["code"]);
     assert_eq!(
-        prepared.scopes,
+        prepared.request.scopes,
         [
             "openid",
             "profile",
@@ -36,8 +36,8 @@ fn default_registration_contract_matches_oidc_code_client_behavior() {
             "offline_access"
         ]
     );
-    assert!(!prepared.backchannel_logout_session_required);
-    assert!(!prepared.frontchannel_logout_session_required);
+    assert!(!prepared.request.backchannel_logout_session_required);
+    assert!(!prepared.request.frontchannel_logout_session_required);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn external_request_uri_registration_is_validated_and_preserved() {
     )
     .expect("registered HTTPS request_uri should be accepted");
     assert_eq!(
-        prepared.request_uris,
+        prepared.request.request_uris,
         vec!["https://client.example/request.jwt"]
     );
 }
@@ -95,7 +95,7 @@ fn third_party_initiated_login_uri_requires_https_and_is_preserved() {
     )
     .expect("HTTPS initiate_login_uri should be accepted");
     assert_eq!(
-        prepared.initiate_login_uri.as_deref(),
+        prepared.request.initiate_login_uri.as_deref(),
         Some("https://client.example/login/initiate")
     );
 
@@ -222,7 +222,7 @@ fn public_and_confidential_code_clients_share_one_registration_path() {
             POLICY,
         )
         .expect("registration")
-        .into_create_client_request();
+        .request;
         assert_eq!(prepared.client_type, expected_type);
     }
 }
@@ -238,7 +238,7 @@ fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience() 
         POLICY,
     )
     .expect("private_key_jwt registration")
-    .into_create_client_request();
+    .request;
     assert!(private_key_jwt.allow_client_assertion_endpoint_audience);
 
     let client_secret_basic = prepare_dynamic_client_registration(
@@ -250,7 +250,7 @@ fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience() 
         POLICY,
     )
     .expect("client_secret_basic registration")
-    .into_create_client_request();
+    .request;
     assert!(!client_secret_basic.allow_client_assertion_endpoint_audience);
 }
 
@@ -323,72 +323,91 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
         POLICY,
     )
     .expect("supported choices");
-    assert_eq!(prepared.token_endpoint_auth_method, "private_key_jwt");
-    assert_eq!(prepared.subject_type.as_deref(), Some("pairwise"));
     assert_eq!(
-        prepared.id_token_signed_response_alg.as_deref(),
+        prepared.request.token_endpoint_auth_method,
+        "private_key_jwt"
+    );
+    assert_eq!(prepared.request.subject_type.as_deref(), Some("pairwise"));
+    assert_eq!(
+        prepared.request.id_token_signed_response_alg.as_deref(),
         Some("PS256")
     );
     assert_eq!(
-        prepared.id_token_encrypted_response_alg.as_deref(),
+        prepared.request.id_token_encrypted_response_alg.as_deref(),
         Some("RSA-OAEP-256")
     );
     assert_eq!(
-        prepared.id_token_encrypted_response_enc.as_deref(),
+        prepared.request.id_token_encrypted_response_enc.as_deref(),
         Some("A256GCM")
     );
     assert_eq!(
-        prepared.request_object_signing_alg.as_deref(),
+        prepared.request.request_object_signing_alg.as_deref(),
         Some("ES256")
     );
     assert_eq!(
-        prepared.request_object_encryption_alg.as_deref(),
+        prepared.request.request_object_encryption_alg.as_deref(),
         Some("RSA-OAEP-256")
     );
     assert_eq!(
-        prepared.request_object_encryption_enc.as_deref(),
+        prepared.request.request_object_encryption_enc.as_deref(),
         Some("A256GCM")
     );
     assert_eq!(
-        prepared.token_endpoint_auth_signing_alg.as_deref(),
+        prepared.request.token_endpoint_auth_signing_alg.as_deref(),
         Some("PS256")
     );
     assert_eq!(
-        prepared.introspection_signed_response_alg.as_deref(),
+        prepared
+            .request
+            .introspection_signed_response_alg
+            .as_deref(),
         Some("RS256")
     );
     assert_eq!(
-        prepared.userinfo_signed_response_alg.as_deref(),
+        prepared.request.userinfo_signed_response_alg.as_deref(),
         Some("ES256")
     );
     assert_eq!(
-        prepared.userinfo_encrypted_response_alg.as_deref(),
+        prepared.request.userinfo_encrypted_response_alg.as_deref(),
         Some("ECDH-ES+A256KW")
     );
     assert_eq!(
-        prepared.userinfo_encrypted_response_enc.as_deref(),
+        prepared.request.userinfo_encrypted_response_enc.as_deref(),
         Some("A256GCM")
     );
     assert_eq!(
         prepared
+            .request
             .backchannel_authentication_request_signing_alg
             .as_deref(),
         Some("PS256")
     );
     assert_eq!(
-        prepared.authorization_signed_response_alg.as_deref(),
+        prepared
+            .request
+            .authorization_signed_response_alg
+            .as_deref(),
         Some("EdDSA")
     );
     assert_eq!(
-        prepared.authorization_encrypted_response_alg.as_deref(),
+        prepared
+            .request
+            .authorization_encrypted_response_alg
+            .as_deref(),
         Some("ECDH-ES")
     );
     assert_eq!(
-        prepared.authorization_encrypted_response_enc.as_deref(),
+        prepared
+            .request
+            .authorization_encrypted_response_enc
+            .as_deref(),
         Some("A256GCM")
     );
     assert_eq!(
-        prepared.introspection_encrypted_response_alg.as_deref(),
+        prepared
+            .request
+            .introspection_encrypted_response_alg
+            .as_deref(),
         Some("ECDH-ES")
     );
 
@@ -408,7 +427,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
         },
     )
     .expect("public is selected when pairwise subject state is unavailable");
-    assert_eq!(public_only.subject_type.as_deref(), Some("public"));
+    assert_eq!(public_only.request.subject_type.as_deref(), Some("public"));
 
     let error = prepare_dynamic_client_registration(
         DynamicClientRegistrationRequest {

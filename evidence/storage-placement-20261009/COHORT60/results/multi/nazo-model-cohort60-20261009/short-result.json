@@ -1,0 +1,261 @@
+{
+  "name": "nazo-model-cohort60-20261009",
+  "mode": "multi",
+  "scenario": "cap_revoke",
+  "rate": 960,
+  "window_seconds": 60,
+  "app_cpus": 16,
+  "confirmation": false,
+  "point_path": "multi/nazo-model-cohort60-20261009/point.json",
+  "token_state": {
+    "collected": true,
+    "fresh_rows": 0,
+    "legacy_rows": 0,
+    "issuance_rows": 72000,
+    "issuance_inserts": 72000,
+    "subject_bindings": 0,
+    "database_bytes": 153654975
+  },
+  "verdict": "FAIL",
+  "metrics": {
+    "rps": 4798.45,
+    "p50": 6.456,
+    "p95": 28.976,
+    "p99": 53.658,
+    "dropped": 0,
+    "drop_fraction": 0.0,
+    "error_rate": 0.0,
+    "status": "passed",
+    "measured_ops_s": 960.017,
+    "successful_ops_s": 960.017,
+    "window_seconds": 60.0,
+    "rate_basis": "scenario_window_stream",
+    "measurement_contract": "cap-scenario-window-v1",
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "capacity_gate_contract": "successful-ops-v1",
+    "measure": {
+      "window_start_s": 1791555230.616,
+      "window_end_s": 1791555290.616,
+      "measure_started_exact": 57601,
+      "measure_completed_exact": 57601,
+      "measure_dropped_exact": 0,
+      "measure_scheduled_observed": 57601,
+      "measure_drop_fraction": 0.0,
+      "measure_outcomes": {
+        "success": 57601
+      },
+      "measure_outcome_sum": 57601,
+      "drops_pre_window": 0,
+      "drops_post_window": 0,
+      "drops_pending_unclassified": 0,
+      "pending_drops_overflow": false,
+      "valid": true,
+      "problems": [],
+      "rational_planned_arrivals": 57600,
+      "schedule_delta_vs_rational": 1,
+      "observed_schedule_rate": 960.017,
+      "cohort_source": "k6_stream_exact",
+      "late_vu_fraction": 0.0
+    },
+    "subject_lifecycle": {
+      "initial_mint": 992,
+      "refresh_update": 0,
+      "expired_reauth": 71008
+    },
+    "gate_population": "measurement_cohort",
+    "gate_p95": 135.0,
+    "gate_p99": 236.0,
+    "prepare_failures": {
+      "prepare_failed": 0,
+      "prepare_local_failed": 0,
+      "prepare_sut_failed": 0
+    },
+    "forensic_diag": {
+      "status": "COMPLETE",
+      "truncated": false,
+      "budget_exceeded_points": 2046399,
+      "overflow_dropped_points": 0,
+      "logical_bytes_cap": 536870912,
+      "file": "/src/evidence/storage-placement-20261009/COHORT60/results/multi/nazo-model-cohort60-20261009/load/capacity-cap-revoke.diag.jsonl.gz"
+    },
+    "latency_gate": "complete_operation_100_250ms",
+    "rate_for_gate": 960.017,
+    "threshold_status_diagnostic": "passed",
+    "main_verdict": "FAIL",
+    "complete_operation_latency_ms": {
+      "p50": 37.0,
+      "p95": 135.0,
+      "p99": 236.0
+    }
+  },
+  "health": {
+    "app_affinity_verified": true,
+    "postgres_affinity_verified": true,
+    "valkey_affinity_verified": true,
+    "service_affinity_verified": true,
+    "generator_affinity_verified": true,
+    "point_completed": true,
+    "unexpected_zero": true,
+    "preparation_valid": true,
+    "prepare_sut_zero": true,
+    "oom_none": true,
+    "no_restarts": true,
+    "queue_full_zero": true,
+    "dropped_required_zero": true,
+    "db_outbox_drained": true,
+    "audit_reconciled": true,
+    "journal_contiguous": true,
+    "local_no_request_zero": true,
+    "expected_rejection_zero": true,
+    "collector_copy_complete": true
+  },
+  "maintenance": null,
+  "provenance_valid": true,
+  "token_state_verdict": "PASS",
+  "cost": {
+    "wal_windowed": {
+      "delta": 601538079.7048998,
+      "field": "wal_bytes",
+      "window_s": 60.0,
+      "sample_span": [
+        1791555205,
+        1791555439
+      ]
+    },
+    "wal_per_success_bytes": 10443.188,
+    "wal_io_windowed": {
+      "writes": {
+        "delta": 62569.960059165955,
+        "field": "wal_io.writes",
+        "window_s": 60.0,
+        "sample_span": [
+          1791555205,
+          1791555439
+        ]
+      },
+      "write_bytes": {
+        "delta": 1731164932.1767578,
+        "field": "wal_io.write_bytes",
+        "window_s": 60.0,
+        "sample_span": [
+          1791555205,
+          1791555439
+        ]
+      },
+      "write_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.write_time_ms",
+        "window_s": 60.0,
+        "sample_span": [
+          1791555205,
+          1791555439
+        ]
+      },
+      "fsyncs": {
+        "delta": 62460.19205904007,
+        "field": "wal_io.fsyncs",
+        "window_s": 60.0,
+        "sample_span": [
+          1791555205,
+          1791555439
+        ]
+      },
+      "fsync_time_ms": {
+        "delta": 0.0,
+        "field": "wal_io.fsync_time_ms",
+        "window_s": 60.0,
+        "sample_span": [
+          1791555205,
+          1791555439
+        ]
+      }
+    },
+    "wal_writes_per_op": 1.0863,
+    "wal_fsyncs_per_op": 1.0844,
+    "wait_per_acq_ms": null,
+    "acquire_per_op_windowed": null,
+    "oom_killed": false,
+    "restart_count": 0
+  },
+  "component_cpu_cores": {
+    "app": 4.66,
+    "postgres": 7.52
+  },
+  "audit": {
+    "point": "nazo-model-cohort60-20261009",
+    "checks": {
+      "collected": true,
+      "fault_none": true,
+      "pending_zero": true,
+      "db_head_eq_anchor_seq": true,
+      "db_head_eq_anchor_hash": true,
+      "rcv_seq_eq_anchor": true,
+      "rcv_hash_eq_anchor": true,
+      "deployment_match": true,
+      "checkpoint_progress_valid": true,
+      "accepted_events_delta_eq": true,
+      "journal_collected": true,
+      "journal_clean": true,
+      "journal_range_eq_delta": true
+    },
+    "verdict": "PASS",
+    "checkpoint_advanced": true,
+    "empty_prefix_allowed": false,
+    "delta_events": 216000,
+    "accepted_events_delta": 216000,
+    "journal": {
+      "collected": true,
+      "journal_sha256": "aea571a081846ff55d83db41ea5e65e0280e2ad124e987af85382941e4af4861",
+      "journal_bytes": 216315611,
+      "batches": 2123,
+      "remote_path": "sis-rcv-nazo-model-cohort60-20261009:/data/journal.jsonl",
+      "events_in_range": 216000,
+      "expected_in_range": 216000,
+      "by_event_type": {
+        "authorization_decision_committed": 72000,
+        "token_issued": 72000,
+        "token_revoked": 72000
+      },
+      "token_issued_in_range": 72000,
+      "malformed_lines": 0,
+      "foreign_deployment_batches": 0,
+      "sequence_gaps": 0,
+      "duplicate_sequences": 0,
+      "range_contiguous": true
+    },
+    "token_issued_delta": 72000,
+    "expected_issuances": null,
+    "token_issued_scope": "reported_only_no_clean_denominator"
+  },
+  "queue": {
+    "collected": false,
+    "status": "UNVERIFIED",
+    "contract": "blackbox-db-v1",
+    "reason": "blackbox and database evidence cannot establish in-process best-effort queue state",
+    "enqueued": null,
+    "persisted": null,
+    "dropped": null,
+    "pending_in_process": null
+  },
+  "collection_contract": "blackbox-db-v1",
+  "unverified_internal_gates": {
+    "queue_dropped_zero": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "pending_zero_post_drain": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    },
+    "enqueued_eq_persisted": {
+      "status": "UNVERIFIED",
+      "value": null,
+      "reason": "in-process best-effort queue collection removed"
+    }
+  },
+  "elapsed_s": 280.3
+}

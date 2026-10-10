@@ -478,12 +478,11 @@ async fn seed_access_revocation(
 ) {
     sql_query(
         "INSERT INTO access_token_revocations (\
-            id, access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at\
+            access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at\
          ) VALUES (\
-            $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour'\
+            $1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour'\
          )",
     )
-    .bind::<sql_types::Uuid, _>(Uuid::now_v7())
     .bind::<sql_types::Text, _>(blake3_hex(jti))
     .bind::<sql_types::Uuid, _>(seed.client.id)
     .bind::<sql_types::Uuid, _>(tenant.tenant_id.as_uuid())
@@ -1155,18 +1154,21 @@ async fn rf06_lost_response_successor_is_single_read() {
         client_id: seed.client.id,
         user_id: Some(seed.user_id),
         contract_key: [0; 32],
-        contract_audiences: vec!["resource://default".to_owned()],
-        scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
         audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
-        authorization_details: json!([]),
         issued_at: revoked_at - Duration::minutes(5),
         expires_at: revoked_at + Duration::hours(1),
         revoked_at: Some(revoked_at),
-        subject: seed.user_id.to_string(),
         dpop_jkt: Some(dpop_jkt),
         mtls_x5t_s256: None,
         client_attestation_jkt: None,
-        authentication_context: refresh_context(&seed.client.client_id),
+
+        contract: nazo_auth::RefreshContract {
+            audiences: vec!["resource://default".to_owned()],
+            scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+            authorization_details: json!([]),
+            subject: seed.user_id.to_string(),
+            authentication_context: refresh_context(&seed.client.client_id),
+        },
     };
 
     let (result, delta) = measure(
@@ -2136,7 +2138,11 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
                 .unwrap();
             assert!(original.prepared_subject.is_none());
             repository
-                .active_subject_claims(tenant_id, seed.user_id, &original.presented.subject)
+                .active_subject_claims(
+                    tenant_id,
+                    seed.user_id,
+                    &original.presented.contract.subject,
+                )
                 .await
                 .unwrap()
                 .unwrap()
@@ -2358,7 +2364,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
         .await
         .unwrap();
     let late = repo
-        .active_subject_claims(id, seed.user_id, &early.presented.subject)
+        .active_subject_claims(id, seed.user_id, &early.presented.contract.subject)
         .await
         .unwrap()
         .unwrap();

@@ -1,0 +1,120 @@
+   Compiling nazo-persistence v0.2.16 (/src/crates/persistence)
+   Compiling nazo-oauth-server v0.2.16 (/src/crates/authorization-server)
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+   Compiling nazo-http-actix v0.2.16 (/src/crates/http-actix)
+   Compiling nazo-oauth-server-valkey v0.2.16 (/src/crates/authorization-server-valkey)
+   Compiling nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+   Compiling nazoauth v0.2.16 (/src/crates/nazoauth)
+    Finished `test` profile [unoptimized] target(s) in 1m 01s
+     Running unittests src/lib.rs (target/debug/deps/nazoauth-21d781af2e3bd205)
+
+running 99 tests
+test adapters::audit::recovery_tests::a_required_waiter_cannot_be_expired_even_for_a_telemetry_event_name ... ok
+test adapters::audit::recovery_tests::all_expired_unattempted_telemetry_can_leave_memory_without_a_healthy_database ... ok
+test adapters::audit::recovery_tests::an_attempted_batch_keeps_its_exact_identity_after_it_ages_and_returns_an_error ... ok
+test adapters::audit::recovery_tests::fresh_unattempted_telemetry_is_rejected_while_export_is_unhealthy ... ok
+test adapters::audit::recovery_tests::old_telemetry_backlog_cannot_re_poison_required_admission_after_recovery ... ok
+test adapters::audit::recovery_tests::required_class_and_unknown_names_are_never_expired_on_the_telemetry_channel ... ok
+test adapters::audit::recovery_tests::telemetry_expiry_uses_required_lag_boundary_and_preserves_unknown_clock_state ... ok
+test adapters::audit::recovery_tests::telemetry_that_ages_during_the_health_query_is_checked_before_first_append ... ok
+test adapters::audit::tests::administrative_mutation_events_are_registered_required_evidence ... ok
+test adapters::audit::tests::audit_event_definitions_include_administrative_user_lifecycle ... ok
+test adapters::audit::tests::audit_event_definitions_include_authorization_decision_intent ... ok
+test adapters::audit::tests::audit_event_definitions_include_ciba_authorization_lifecycle ... ok
+test adapters::audit::tests::audit_event_definitions_include_device_authorization_lifecycle ... ok
+test adapters::audit::tests::audit_event_definitions_include_dynamic_client_lifecycle ... ok
+test adapters::audit::tests::audit_event_definitions_include_external_identity_lifecycle ... ok
+test adapters::audit::tests::audit_event_definitions_include_mfa_step_up ... ok
+test adapters::audit::tests::audit_event_definitions_include_token_issuance_intent ... ok
+test adapters::audit::tests::audit_event_definitions_include_trust_and_credential_control_planes ... ok
+test adapters::audit::tests::audit_event_definitions_pin_required_and_telemetry_classes ... ok
+test adapters::audit::tests::audit_event_names_are_allowlisted_and_siem_ready ... ok
+test adapters::audit::tests::audit_fields_can_remove_sensitive_material ... ok
+test adapters::audit::tests::audit_payload_cannot_override_the_resolved_request_tenant ... ok
+test adapters::audit::tests::audit_schema_version_is_stable_for_collectors ... ok
+test adapters::audit::tests::explicitly_bound_audit_captures_tenant_without_request_scope ... ok
+test adapters::audit::tests::explicitly_bound_audit_does_not_use_the_request_tenant ... ok
+test adapters::audit::tests::high_impact_state_changes_have_durable_audit_boundaries ... ok
+test adapters::audit::tests::interleaved_requests_capture_their_own_tenant_before_audit_queueing ... ok
+test adapters::audit::tests::prepare_event_normalizes_security_payload_and_rejects_unknown_or_oversized_events ... ok
+test adapters::audit::tests::prepare_event_redacts_every_known_credential_from_intent_and_outcome_payloads ... ok
+test adapters::audit::tests::queue_persistence::burst_events_persist_in_bounded_batches ... ok
+test adapters::audit::tests::queue_persistence::failed_batch_is_retried_whole_and_blocks_later_batches ... ok
+test adapters::audit::tests::queue_persistence::full_or_closed_batch_flushes_without_waiting_for_the_window ... ok
+test adapters::audit::tests::queue_persistence::full_telemetry_queue_keeps_accepted_events_and_rejects_excess ... ok
+test adapters::audit::tests::queue_persistence::optional_and_disabled_telemetry_keep_their_existing_no_health_gate_policy ... ok
+test adapters::audit::tests::queue_persistence::required_batch_failure_is_returned_without_retry_and_later_calls_can_commit ... ok
+test adapters::audit::tests::queue_persistence::required_records_fail_closed_on_full_closed_or_stopped_channel ... ok
+test adapters::audit::tests::queue_persistence::required_records_start_immediately_but_wait_for_batch_commit ... ok
+test adapters::audit::tests::queue_persistence::unhealthy_export_discards_unattempted_telemetry_without_blocking_the_required_worker ... unavailable: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery
+stale: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery
+lag: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery
+blocked: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery
+deployment: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery
+checkpoint: unattempted Telemetry discarded, Required worker independent, fresh event persisted after recovery
+ok
+test adapters::audit::tests::queue_persistence::worker_coalesces_arrivals_without_extending_the_first_event_deadline ... ok
+test adapters::audit::tests::queue_persistence::worker_persists_a_single_event_after_bounded_coalescing ... ok
+test adapters::audit::tests::queue_persistence::worker_retries_failed_append_then_preserves_order ... ok
+test adapters::audit::tests::refresh_family_security_revocation_is_registered_required_evidence ... ok
+test adapters::audit::tests::transactional_readiness::port_default_transactional_ready_delegates_to_ensure_storage ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_on_anchor_checkpoint_mismatch ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_on_anchor_health_unavailable ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_on_anchor_identity_mismatch ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_on_blocked_anchor_batch ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_on_excessive_pending_lag ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_on_stale_anchor_health ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_fails_closed_without_a_durable_repository ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_keeps_the_dynamic_anchor_gate_in_required_mode ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_skips_the_static_writer_probe_in_disabled_mode ... ok
+test adapters::audit::tests::transactional_readiness::transactional_ready_skips_the_static_writer_probe_in_optional_mode ... ok
+test adapters::audit_anchor::tests::anchor_push_error_codes_cover_transport_serialization_http_and_receipt_classes ... ok
+test adapters::audit_anchor::tests::batch_envelope_is_stable_and_binds_the_committed_range ... ok
+test adapters::audit_anchor::tests::batch_transport_classifies_http_statuses_disconnects_and_2xx_without_receipt ... ok
+test adapters::audit_anchor::tests::batch_transport_sends_stable_body_signature_and_protocol_headers ... ok
+test adapters::audit_anchor::tests::checkpoint_signature_is_deterministic_and_url_safe ... ok
+test adapters::audit_anchor::tests::consecutive_real_receipts_ack_without_redundant_observations_and_restart_revalidates ... 5 signed HTTP receipts: ACK calls=5, observe calls=1; restart: observe +1, ACK +0
+ok
+test adapters::audit_anchor::tests::genesis_body_is_stable_and_has_explicit_kind ... ok
+test adapters::audit_anchor::tests::health_time_helpers_reject_future_timestamps_and_bound_durations ... ok
+test adapters::audit_anchor::tests::historical_large_batch_retry_preserves_bytes_digest_range_and_membership ... ok
+test adapters::audit_anchor::tests::iteration_observes_missing_stale_future_and_foreign_bindings_before_every_claim_kind ... ok
+test adapters::audit_anchor::tests::local_checkpoint_identity_requires_complete_committed_timestamps ... ok
+test adapters::audit_anchor::tests::mode_helpers_and_deployment_id_boundaries_are_explicit ... ok
+test adapters::audit_anchor::tests::mode_parser_and_preflight_configuration_reject_invalid_values ... ok
+test adapters::audit_anchor::tests::oversized_receipts_are_bounded_and_never_acknowledged_for_batch_or_genesis ... ok
+test adapters::audit_anchor::tests::preflight_accepts_shared_health_and_rejects_stale_or_unanchored_state ... ok
+test adapters::audit_anchor::tests::preflight_mode_controls_the_shared_database_gate ... ok
+test adapters::audit_anchor::tests::preflight_source_uses_safe_defaults_and_requires_identity_when_enabled ... ok
+test adapters::audit_anchor::tests::receipt_verification_requires_signature_schema_and_binding ... ok
+test adapters::audit_anchor::tests::repeated_genesis_calls_emit_stable_body_signature_and_idempotency_key ... ok
+test adapters::audit_anchor::tests::repository_adapter_forwards_invalid_pool_calls_without_panicking ... ok
+test adapters::audit_anchor::tests::required_ten_second_freshness_stays_ready_across_five_second_idle_pg_polls ... ok
+test adapters::audit_anchor::tests::retry_backoff_is_bounded ... ok
+test adapters::audit_anchor::tests::retry_delay_and_batch_lag_are_monotonic_and_bounded ... ok
+test adapters::audit_anchor::tests::signed_receipt_valid_json_whitespace_at_cap_succeeds_and_cap_plus_one_never_acks ... ok
+test adapters::audit_anchor::tests::worker_configuration_rejects_non_https_and_weak_secret ... ok
+test adapters::audit_anchor::tests::worker_configuration_validates_each_boundary_without_combining_errors ... ok
+test adapters::audit_anchor::tests::worker_iteration_acknowledges_duplicate_receipt_after_response_loss ... ok
+test adapters::audit_anchor::tests::worker_iteration_anchors_genesis_before_polling_empty_outbox ... ok
+test adapters::audit_anchor::tests::worker_iteration_blocks_permanent_rejection_and_reschedules_transient ... ok
+test adapters::audit_anchor::tests::worker_iteration_pushes_batch_and_acknowledges_it ... ok
+test adapters::audit_anchor::tests::worker_iteration_reports_blocked_claims_and_recovers ... ok
+test adapters::audit_anchor::tests::worker_iteration_reschedules_ack_failure ... ok
+test adapters::audit_anchor::tests::worker_iteration_reschedules_http_failures ... ok
+test adapters::audit_anchor::tests::worker_iteration_reschedules_invalid_receipts_without_acknowledging ... ok
+test adapters::audit_anchor::tests::worker_iteration_retries_database_observation_and_genesis_failures ... ok
+test adapters::audit_anchor::tests::worker_iteration_retries_failed_genesis_without_claiming_deliveries ... ok
+test adapters::audit_anchor::tests::worker_iteration_retries_genesis_rejection_and_bad_receipts ... ok
+test adapters::audit_anchor::tests::worker_iteration_retries_health_and_claim_failures ... ok
+test adapters::audit_anchor::tests::worker_iteration_reuses_current_genesis_and_tolerates_health_publish_failure ... ok
+test adapters::audit_anchor::tests::worker_iteration_tolerates_lease_release_failure ... ok
+test adapters::audit_anchor::tests::worker_outer_rejects_invalid_config_before_repository_preflight ... ok
+test adapters::audit_anchor::tests::worker_outer_rejects_repository_preflight_failure ... ok
+test adapters::audit_anchor::tests::worker_source_loads_sidecar_only_values_and_rejects_invalid_inputs ... ok
+test adapters::audit_anchor::worker::tests::missing_expired_or_future_observation_requires_a_write ... ok
+test adapters::audit_anchor::worker::tests::recent_committed_observation_avoids_another_write ... ok
+test adapters::audit_anchor::worker::tests::zero_observation_interval_never_suppresses_a_heartbeat ... ok
+
+test result: ok. 99 passed; 0 failed; 0 ignored; 0 measured; 1367 filtered out; finished in 6.43s
+

@@ -1,0 +1,1555 @@
+{
+  "source_sha": "4ccd02de2767a7dd586f19ccb7cf502197e02aeb",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791612777.8151872,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612777.847158,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612783.3566303,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612783.4432192,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612788.727262,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612788.8345652,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612794.0321202,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612794.1136148,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612799.3813567,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612799.540701,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612804.8219461,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612804.9123313,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612810.1990411,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612810.2852373,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612815.713123,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612815.8253744,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612821.042887,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612821.1301324,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612826.4255514,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612826.4971359,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612831.7107704,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612831.7822359,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612836.9785795,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612837.0532053,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612842.2784338,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612842.3648303,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612847.6596413,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612847.735588,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612853.0238557,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612853.108806,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612858.3203754,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612858.4051902,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612863.6084912,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612863.6807632,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612868.9191778,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612869.0118966,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612874.225875,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612874.3156345,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612879.5273752,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612879.6118112,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612884.8515048,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612884.9286213,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612890.1595426,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612890.2476609,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612895.4641838,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612895.5648093,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612900.786206,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612900.8763585,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612906.086436,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612906.201803,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612911.4276004,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612911.508657,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612916.7254045,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612916.7987723,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612922.0381844,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612922.1441996,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612927.4104033,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612927.5583253,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612932.9190943,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612933.05795,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612938.2779782,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612938.366553,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612944.1639137,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612944.4922245,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612949.7154953,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612949.8049335,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612955.0131721,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612955.0893762,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612960.3528485,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612960.441435,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612965.7299104,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612965.817629,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612971.0974364,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612971.1798584,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612976.377756,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612976.450705,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612981.7400858,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612981.8436003,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612987.0946238,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612987.1855628,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612992.4173684,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612992.5021508,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612997.7533953,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791612997.8520374,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613003.065826,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613003.1508684,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613008.4270184,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613008.587317,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613013.8319998,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613013.9193797,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613019.1529849,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613019.2319815,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613024.4692862,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613024.5556817,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613029.7932332,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613029.8929803,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613035.1550863,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613035.2396202,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613040.5344048,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613040.6259615,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613045.8503277,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613045.9293184,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613051.149412,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613051.2353876,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613056.454212,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613056.5769079,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613061.8614025,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613061.9416249,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613067.1814866,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613067.282845,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613072.5415435,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613072.6323783,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613077.9027522,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613077.9923055,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613083.3141332,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613083.4078355,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613088.6485002,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613088.7314386,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613093.9785428,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613094.0922391,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613099.3824792,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613099.46022,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613104.7365701,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613104.8336053,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613110.0770357,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613110.1910782,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613115.4359868,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613115.5248637,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613120.7938447,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613120.9098642,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613126.1825213,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613126.2881234,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613131.5232031,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613131.6196442,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613136.9109294,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613137.0066073,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613142.375068,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613142.4751801,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613147.7299356,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613147.8502538,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613153.2172554,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613153.3099945,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613158.5644367,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613158.7452009,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613163.9916382,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613164.0802596,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613169.3281672,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613169.429477,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613174.7289608,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613174.833145,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613180.0953941,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613180.1995986,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613185.4970942,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613185.5954978,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613190.8900948,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613190.995503,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613196.2637625,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613196.4195611,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613201.777679,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613201.867925,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613207.1953585,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613207.2847,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613212.5790792,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613212.7021782,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613218.001175,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613218.0857697,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613223.3419907,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613223.4361088,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613228.727159,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613228.8913066,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613234.1864758,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613234.2767425,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613239.53258,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613239.6696784,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613244.9257581,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613245.0190952,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613250.3359165,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613250.432224,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613255.7571285,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613255.8497162,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613261.1312993,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613261.2284968,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613266.5314007,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613266.6847286,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613271.9694092,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613272.0679526,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613277.3720865,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613277.5217679,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613282.8468804,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613282.9704564,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613288.2452114,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613288.3449895,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613293.677173,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613293.8001103,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613299.1129243,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613299.2066743,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613304.5316708,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613304.6416724,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613309.8961608,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613309.9838457,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613315.284076,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613315.3998175,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613320.690342,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613320.8293905,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613326.140473,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613326.2828784,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613331.582431,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613331.7325091,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613337.0187106,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613337.1110516,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613342.4716184,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613342.6181555,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613347.9419358,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613348.0409756,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613353.33873,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613353.4323697,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613358.7151468,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613358.8182325,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613364.1295178,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613364.2260222,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613369.5294812,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613369.6317563,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613374.8920279,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613374.97841,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613380.3388155,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613380.4256136,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613385.727656,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613385.8380604,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613391.111671,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613391.2569683,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613396.5930493,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613396.7013075,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613401.9865832,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613402.0837135,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613407.3816257,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613407.481225,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613412.8109496,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613412.9194503,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613418.2144315,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613418.3322988,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613423.621142,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613423.7524428,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613429.0561762,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613429.1588726,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613434.4325368,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613434.5280678,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613439.816486,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613439.957634,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613445.2415843,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613445.3389182,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613450.6524272,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613450.7466996,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613456.156233,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613456.2491426,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613461.5741668,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613461.6695862,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613466.9389725,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613467.0368607,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613472.3256867,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613472.422173,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613477.7165904,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613477.883116,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613483.201697,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613483.2996368,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613488.708089,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613488.8124423,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613494.138731,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613494.244993,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613499.5523689,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613499.652359,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613505.0189674,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613505.115266,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613510.4455318,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613510.532712,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613515.8406765,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613516.0117238,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613521.3247693,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613521.4216201,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613526.7208083,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613526.8282888,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613532.1205866,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613532.2222838,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613537.5349386,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613537.6782656,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613543.0650692,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613543.1850836,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613548.4897563,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613548.5848844,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613553.895301,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613554.021461,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613559.3026867,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613559.4054766,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613564.7419863,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613564.8551786,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613570.6553454,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613570.8788915,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613576.23045,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613576.3198886,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613581.6376173,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613581.8271558,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613587.1423512,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613587.2392442,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613592.5941136,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613592.755913,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613598.043773,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613598.1544874,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613603.4954066,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613603.5872283,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613608.916699,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613609.0286949,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613614.3579702,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613614.4583113,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613619.7510939,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613619.8619874,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613625.2513983,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613625.3428843,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613630.750411,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613630.8629944,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613636.2316318,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613636.3365493,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613641.6896944,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613641.812112,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613647.2933605,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613647.4002986,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613652.7235484,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613652.834978,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613658.2035344,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613658.295014,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613663.6101313,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613663.7168903,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613669.0213277,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613669.1258698,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613674.4370337,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613674.549458,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613679.8700871,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613679.9722147,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613685.2962801,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613685.4078166,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613690.8353465,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613690.9676633,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613696.2583053,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613696.3909833,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613701.710085,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613701.8221438,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613707.1339877,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613707.1503026,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613707.1701875,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613707.2116692,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613707.6899936,
+      "container": "sis-load-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613933.6973283,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613933.7142458,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613944.1433003,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613944.1593475,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613954.7351797,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010"
+    },
+    {
+      "ts": 1791613954.7726042,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791612777.7065,
+      "ts_end": 1791612777.7538035,
+      "elapsed_ms": 47.3047,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791612777.753835,
+      "ts_end": 1791612777.7908618,
+      "elapsed_ms": 37.0284,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791612777.8474872,
+      "ts_end": 1791612777.8720345,
+      "elapsed_ms": 24.5477,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791612777.8720546,
+      "ts_end": 1791612777.900495,
+      "elapsed_ms": 28.4411,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791613707.2287548,
+      "ts_end": 1791613707.2868133,
+      "elapsed_ms": 58.0586,
+      "container": "sis-load-pr238-physical-cc-b15-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "d01ca86b689fa3b9e9d568558ac74338ca769c004dab26fcf46433dd879e4868",
+        "owner": "pr238-physical-cc-b15-20261010",
+        "running": false,
+        "checked_at": 1791613707.2439463,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791613723.736025,
+      "ts_end": 1791613723.770277,
+      "elapsed_ms": 34.2525,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791613723.7703047,
+      "ts_end": 1791613723.8016043,
+      "elapsed_ms": 31.2999,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791613944.0254326,
+      "ts_end": 1791613944.0757494,
+      "elapsed_ms": 50.317,
+      "container": "sis-sampler-pr238-physical-cc-b15-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "cdea21e6fdfad9ba347de913fc6e2aa15429cc50650b463d919b3368cd5b08ef",
+        "owner": "pr238-physical-cc-b15-20261010",
+        "running": false,
+        "checked_at": 1791613944.0444937,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791613954.4391298,
+      "ts_end": 1791613954.4998605,
+      "elapsed_ms": 60.7306,
+      "container": "sis-proc-pr238-physical-cc-b15-20261010",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "5049544fa3916c518f55530424c70d25bceba86ad74bf2847acb033043a1ce06",
+        "owner": "pr238-physical-cc-b15-20261010",
+        "running": false,
+        "checked_at": 1791613954.4594436,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr238-physical-cc-b15-20261010",
+    "sis-proc-pr238-physical-cc-b15-20261010",
+    "sis-sampler-pr238-physical-cc-b15-20261010"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-pr238-physical-cc-b15-20261010",
+      "sis-proc-pr238-physical-cc-b15-20261010",
+      "sis-sampler-pr238-physical-cc-b15-20261010"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

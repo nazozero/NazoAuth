@@ -1,0 +1,18 @@
+{
+  "ts": 1791600488.117429,
+  "reason": "Redirect future orchestrator and analysis output to persistent files. Tail was waiting, with no active load. No measured window repeated.",
+  "processes": [
+    {
+      "old_pid": 1763,
+      "new_pid": 2481,
+      "old": "longrun-tail.py",
+      "new": "longrun-resume-tail.py"
+    },
+    {
+      "old_pid": 1778,
+      "new_pid": 2482,
+      "old": "longrun-analysis-watch.py",
+      "new": "longrun-analysis-watch.py"
+    }
+  ]
+}

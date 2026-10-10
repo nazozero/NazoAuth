@@ -1,0 +1,16 @@
+{
+  "errors": [],
+  "stopped": [],
+  "terminal_captured": [
+    "sis-load-pr238-natural-mix60-20261010",
+    "sis-proc-pr238-natural-mix60-20261010",
+    "sis-sampler-pr238-natural-mix60-20261010",
+    "sis-side-argon2-pr238-natural-mix60-20261010",
+    "sis-side-fapi-pr238-natural-mix60-20261010",
+    "sis-side-meta-pr238-natural-mix60-20261010",
+    "sis-side-refresh-pr238-natural-mix60-20261010"
+  ],
+  "partial_captured": [],
+  "copy_failures": [],
+  "budget_seconds": 35
+}

@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazo-oauth-server --lib security::mtls -- --nocapture", "exit": 0, "seconds": 9.760614111088216}

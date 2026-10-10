@@ -1,0 +1,21 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized] target(s) in 1.59s
+     Running tests/security_state_maintenance.rs (target/debug/deps/security_state_maintenance-4aa53c5266a7a328)
+
+running 1 test
+test expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain ... 
+thread 'expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain' (21100) panicked at crates/persistence-postgres/tests/security_state_maintenance.rs:3265:5:
+assertion `left == right` failed: expired approval bodies have no remaining authorization use
+  left: 262
+ right: 6
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `-p nazo-postgres --test security_state_maintenance`

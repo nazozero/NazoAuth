@@ -1,0 +1,24 @@
+{
+  "command": [
+    "git",
+    "diff",
+    "--exit-code",
+    "6714d3187c528ac2b9aac5c67729b1653b67a427",
+    "432d87e523106b476dc5249390c29f82cb2615b4",
+    "--",
+    "crates",
+    "migrations",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "Containerfile",
+    ".env.yaml.example",
+    "perf"
+  ],
+  "exit": 0,
+  "start": 1791614666.28563,
+  "end": 1791614666.287372,
+  "image_build_source": "6714d3187c528ac2b9aac5c67729b1653b67a427",
+  "pre_revision_report_head": "432d87e523106b476dc5249390c29f82cb2615b4",
+  "meaning": "Application inputs and performance harness byte-identical; use the actual image source SHA rather than bypassing provenance checks."
+}

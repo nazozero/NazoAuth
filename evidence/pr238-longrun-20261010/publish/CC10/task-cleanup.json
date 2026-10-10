@@ -1,0 +1,11 @@
+{
+  "label": "pr238-long-cc10-20261010",
+  "key": "CC10",
+  "containers_remaining": [],
+  "cleanup_elapsed_s": 21.545,
+  "total_elapsed_s": 537.37,
+  "request_sha256_unchanged": true,
+  "verdict": "PASS",
+  "error": null,
+  "cleanup_error": null
+}

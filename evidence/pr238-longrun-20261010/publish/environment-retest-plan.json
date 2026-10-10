@@ -1,0 +1,28 @@
+{
+  "ts": 1791604955.9778132,
+  "user_requested": true,
+  "new_points": [
+    "AUTH1R2",
+    "MIX1R2"
+  ],
+  "formal_seconds": 60,
+  "reason": "Repeat anomalies after observing lower steadier one-minute UI load; preserve prior failures; short retest is not long-run stability proof",
+  "unstarted_window_changes": [
+    {
+      "key": "REFRESH10",
+      "before_s": 420,
+      "after_s": 300
+    },
+    {
+      "key": "FAPI10",
+      "before_s": 420,
+      "after_s": 300
+    },
+    {
+      "key": "COLD10",
+      "before_s": 420,
+      "after_s": 300
+    }
+  ],
+  "gates_rates_vus_ttls_unchanged": true
+}

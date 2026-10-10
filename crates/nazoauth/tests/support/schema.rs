@@ -91,11 +91,8 @@ diesel::table! {
         user_id -> Uuid,
         secret_ciphertext -> Binary,
         secret_key_id -> Varchar,
-        label -> Varchar,
         confirmed_at -> Nullable<Timestamptz>,
         last_used_step -> Nullable<Int8>,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
     }
 }
 
@@ -105,19 +102,15 @@ diesel::table! {
         tenant_id -> Uuid,
         user_id -> Uuid,
         code_hash -> Varchar,
-        used_at -> Nullable<Timestamptz>,
-        created_at -> Timestamptz,
     }
 }
 
 diesel::table! {
-    user_mfa_remembered_devices (id) {
-        id -> Uuid,
+    user_mfa_remembered_devices (tenant_id, token_hash) {
         tenant_id -> Uuid,
         user_id -> Uuid,
         token_hash -> Varchar,
         user_agent_hash -> Nullable<Varchar>,
-        created_at -> Timestamptz,
         expires_at -> Timestamptz,
     }
 }
@@ -205,8 +198,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    access_token_revocations (id) {
-        id -> Uuid,
+    access_token_revocations (tenant_id, access_token_jti_blake3) {
         access_token_jti_blake3 -> Varchar,
         client_id -> Uuid,
         tenant_id -> Uuid,

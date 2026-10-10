@@ -1,0 +1,600 @@
+{
+  "validated_at": 1791607715.0529437,
+  "formal_accounting": "PASS",
+  "serial_load_intervals": "PASS",
+  "all_finished_loads_before_three_hour_deadline": true,
+  "production_source_unchanged": true,
+  "unfinished_points": [],
+  "intervals": [
+    {
+      "key": "REVOKE20",
+      "start": 1791597329.1571696,
+      "end": 1791598558.0606833
+    },
+    {
+      "key": "INTROSPECT10",
+      "start": 1791598662.4737027,
+      "end": 1791599288.0235481
+    },
+    {
+      "key": "MTLS10",
+      "start": 1791599369.393971,
+      "end": 1791599997.3084104
+    },
+    {
+      "key": "PAR10",
+      "start": 1791600472.626616,
+      "end": 1791601098.4822419
+    },
+    {
+      "key": "NATIVE10",
+      "start": 1791601187.4560847,
+      "end": 1791601812.6226556
+    },
+    {
+      "key": "MIX30",
+      "start": 1791602224.947443,
+      "end": 1791603537.60171
+    },
+    {
+      "key": "AUTH10",
+      "start": 1791603684.786862,
+      "end": 1791604314.5870707
+    },
+    {
+      "key": "CC10",
+      "start": 1791604408.6338058,
+      "end": 1791604854.0617242
+    },
+    {
+      "key": "AUTH1R2",
+      "start": 1791605052.6006198,
+      "end": 1791605135.567768
+    },
+    {
+      "key": "MIX1R2",
+      "start": 1791605384.9458952,
+      "end": 1791605548.1325562
+    },
+    {
+      "key": "REFRESH10",
+      "start": 1791605678.7167451,
+      "end": 1791606004.6666343
+    },
+    {
+      "key": "FAPI10",
+      "start": 1791606095.1621795,
+      "end": 1791606421.788988
+    },
+    {
+      "key": "COLD10",
+      "start": 1791606543.4257016,
+      "end": 1791606869.0689447
+    },
+    {
+      "key": "NATIVE6R2",
+      "start": 1791606980.3096533,
+      "end": 1791607184.5666542
+    },
+    {
+      "key": "REQUIRED5R2",
+      "start": 1791607271.5361848,
+      "end": 1791607556.7199385
+    }
+  ],
+  "points": [
+    {
+      "key": "REVOKE20",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 1150920,
+          "completed": 1150920,
+          "outcomes": {
+            "success": 1150920
+          },
+          "drop": 1081
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "INTROSPECT10",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 4800001,
+          "completed": 4800001,
+          "outcomes": {
+            "success": 4800001
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "MTLS10",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 2399005,
+          "completed": 2399005,
+          "outcomes": {
+            "success": 2399005
+          },
+          "drop": 995
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": null,
+        "cohort_not_applicable": true
+      }
+    },
+    {
+      "key": "PAR10",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 2880004,
+          "completed": 2880004,
+          "outcomes": {
+            "success": 2880004
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": null,
+        "cohort_not_applicable": true
+      }
+    },
+    {
+      "key": "NATIVE10",
+      "capacity": "FAIL",
+      "formal_lanes": {
+        "load": {
+          "started": 240000,
+          "completed": 240000,
+          "outcomes": {
+            "prepare_sut_failed": 240000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": null,
+        "cohort_not_applicable": true
+      }
+    },
+    {
+      "key": "REQUIRED15",
+      "capacity": "INVALID",
+      "formal_lanes": {}
+    },
+    {
+      "key": "MIX30",
+      "capacity": "FAIL",
+      "formal_lanes": {
+        "load": {
+          "started": 1920000,
+          "completed": 1920000,
+          "outcomes": {
+            "success": 1919977,
+            "expected_rejection": 23
+          },
+          "drop": 0
+        },
+        "argon2": {
+          "started": 10200,
+          "completed": 10200,
+          "outcomes": {
+            "success": 10200
+          },
+          "drop": 0
+        },
+        "meta": {
+          "started": 255000,
+          "completed": 255000,
+          "outcomes": {
+            "success": 255000
+          },
+          "drop": 0
+        },
+        "fapi": {
+          "started": 38250,
+          "completed": 38250,
+          "outcomes": {
+            "success": 38250
+          },
+          "drop": 0
+        },
+        "refresh": {
+          "started": 764656,
+          "completed": 764656,
+          "outcomes": {
+            "success": 764656
+          },
+          "drop": 344
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "AUTH10",
+      "capacity": "FAIL",
+      "formal_lanes": {
+        "load": {
+          "started": 480000,
+          "completed": 480000,
+          "outcomes": {
+            "success": 480000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "CC10",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 1680000,
+          "completed": 1680000,
+          "outcomes": {
+            "success": 1680000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": null,
+        "cohort_not_applicable": true
+      }
+    },
+    {
+      "key": "REFRESH10",
+      "capacity": "FAIL",
+      "formal_lanes": {
+        "load": {
+          "started": 599326,
+          "completed": 599326,
+          "outcomes": {
+            "success": 599326
+          },
+          "drop": 675
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "FAPI10",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 96000,
+          "completed": 96000,
+          "outcomes": {
+            "success": 96000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "COLD10",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 4800,
+          "completed": 4800,
+          "outcomes": {
+            "success": 4800
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "NATIVE6R2",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 72000,
+          "completed": 72000,
+          "outcomes": {
+            "success": 72000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "REQUIRED5R2",
+      "capacity": "FAIL",
+      "formal_lanes": {
+        "load": {
+          "started": 288000,
+          "completed": 288000,
+          "outcomes": {
+            "success": 287999,
+            "expected_rejection": 1
+          },
+          "drop": 0
+        },
+        "argon2": {
+          "started": 2040,
+          "completed": 2040,
+          "outcomes": {
+            "success": 2040
+          },
+          "drop": 0
+        },
+        "meta": {
+          "started": 51000,
+          "completed": 51000,
+          "outcomes": {
+            "success": 51000
+          },
+          "drop": 0
+        },
+        "fapi": {
+          "started": 7650,
+          "completed": 7650,
+          "outcomes": {
+            "success": 7650
+          },
+          "drop": 0
+        },
+        "refresh": {
+          "started": 152721,
+          "completed": 152721,
+          "outcomes": {
+            "success": 152721
+          },
+          "drop": 279
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "AUTH1R2",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 48000,
+          "completed": 48000,
+          "outcomes": {
+            "success": 48000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "MIX1R2",
+      "capacity": "PASS",
+      "formal_lanes": {
+        "load": {
+          "started": 96000,
+          "completed": 96000,
+          "outcomes": {
+            "success": 95999,
+            "expected_rejection": 1
+          },
+          "drop": 0
+        },
+        "argon2": {
+          "started": 1080,
+          "completed": 1080,
+          "outcomes": {
+            "success": 1080
+          },
+          "drop": 0
+        },
+        "meta": {
+          "started": 27000,
+          "completed": 27000,
+          "outcomes": {
+            "success": 27000
+          },
+          "drop": 0
+        },
+        "fapi": {
+          "started": 4050,
+          "completed": 4050,
+          "outcomes": {
+            "success": 4050
+          },
+          "drop": 0
+        },
+        "refresh": {
+          "started": 81000,
+          "completed": 81000,
+          "outcomes": {
+            "success": 81000
+          },
+          "drop": 0
+        }
+      },
+      "natural": {
+        "pending": 0,
+        "target_decisions": {
+          "count": 0,
+          "eligible": 0,
+          "retained": 0,
+          "unexported": 0,
+          "last_business_retain_until": null,
+          "last_remaining_s": null
+        },
+        "full_cycle_after_target_deadline": true,
+        "cohort_not_applicable": null
+      }
+    },
+    {
+      "key": "REFRESH1R2",
+      "state": "BLOCKED"
+    }
+  ]
+}

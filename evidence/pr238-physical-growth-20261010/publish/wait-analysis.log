@@ -1,0 +1,71 @@
+AUTH_DIAG queue {'collected': False, 'status': 'UNVERIFIED', 'contract': 'blackbox-db-v1', 'reason': 'blackbox and database evidence cannot establish in-process best-effort queue state', 'enqueued': None, 'persisted': None, 'dropped': None, 'pending_in_process': None} cost {'wal_windowed': {'delta': 8379004112.403364, 'field': 'wal_bytes', 'window_s': 900.0, 'sample_span': [1791608543, 1791609503]}, 'wal_per_success_bytes': 11637.522, 'wal_io_windowed': {'writes': {'delta': 673078.4860640367, 'field': 'wal_io.writes', 'window_s': 900.0, 'sample_span': [1791608543, 1791609503]}, 'write_bytes': {'delta': 19339787184.205402, 'field': 'wal_io.write_bytes', 'window_s': 900.0, 'sample_span': [1791608543, 1791609503]}, 'write_time_ms': {'delta': 0.0, 'field': 'wal_io.write_time_ms', 'window_s': 900.0, 'sample_span': [1791608543, 1791609503]}, 'fsyncs': {'delta': 671562.3730638424, 'field': 'wal_io.fsyncs', 'window_s': 900.0, 'sample_span': [1791608543, 1791609503]}, 'fsync_time_ms': {'delta': 0.0, 'field': 'wal_io.fsync_time_ms', 'window_s': 900.0, 'sample_span': [1791608543, 1791609503]}}, 'wal_writes_per_op': 0.9348, 'wal_fsyncs_per_op': 0.9327, 'wait_per_acq_ms': None, 'acquire_per_op_windowed': None, 'oom_killed': False, 'restart_count': 0}
+cpu {'app': 1.763, 'postgres': 4.058, 'valkey': 0.183, 'audit-worker': 0.076, 'audit-receiver': 0.05}
+window 0 600 samples 60
+('nazoauth_perf_runtime', '', 'idle', 'Client', 'ClientRead') mean_sessions 23.52 max_xact_s 0
+('nazoauth_perf_runtime', '', 'active', 'LWLock', 'WALWrite') mean_sessions 2.58 max_xact_s 0.032682
+('nazoauth_perf_runtime', '', 'active', None, None) mean_sessions 2.58 max_xact_s 0.010598
+('nazoauth_perf_runtime', '', 'idle', None, None) mean_sessions 0.9 max_xact_s 0
+('nazoauth_perf_runtime', '', 'idle in transaction', 'Client', 'ClientRead') mean_sessions 0.75 max_xact_s 0.01072
+('nazoauth_perf_runtime', '', 'active', 'Client', 'ClientRead') mean_sessions 0.68 max_xact_s 0.004474
+('nazoauth_perf_runtime', '', 'active', 'IO', 'WalSync') mean_sessions 0.65 max_xact_s 0.024179
+('nazoauth_perf_exporter', '', 'idle', 'Client', 'ClientRead') mean_sessions 0.45 max_xact_s 0
+('nazoauth_perf_exporter', '', 'active', None, None) mean_sessions 0.43 max_xact_s 0.024798
+('nazoauth_perf_runtime', '', 'idle in transaction', None, None) mean_sessions 0.27 max_xact_s 0.006564
+('nazoauth_perf_exporter', '', 'active', 'LWLock', 'WALWrite') mean_sessions 0.07 max_xact_s 0.01387
+('postgres', '', 'active', None, None) mean_sessions 0.03 max_xact_s 0.042295
+window 600 1200 samples 30
+('nazoauth_perf_runtime', '', 'idle', 'Client', 'ClientRead') mean_sessions 22.47 max_xact_s 0
+('nazoauth_perf_runtime', '', 'active', 'LWLock', 'WALWrite') mean_sessions 3.53 max_xact_s 0.048151
+('nazoauth_perf_runtime', '', 'active', None, None) mean_sessions 2.8 max_xact_s 0.012338
+('nazoauth_perf_runtime', '', 'active', 'IO', 'WalSync') mean_sessions 0.77 max_xact_s 0.041136
+('nazoauth_perf_runtime', '', 'idle in transaction', 'Client', 'ClientRead') mean_sessions 0.77 max_xact_s 0.00915
+('nazoauth_perf_runtime', '', 'idle', None, None) mean_sessions 0.73 max_xact_s 0
+('nazoauth_perf_runtime', '', 'active', 'Client', 'ClientRead') mean_sessions 0.7 max_xact_s 0.004688
+('nazoauth_perf_exporter', '', 'idle', 'Client', 'ClientRead') mean_sessions 0.47 max_xact_s 0
+('nazoauth_perf_exporter', '', 'active', None, None) mean_sessions 0.37 max_xact_s 0.119034
+('nazoauth_perf_runtime', '', 'idle in transaction', None, None) mean_sessions 0.17 max_xact_s 0.005087
+(None, '', 'active', None, None) mean_sessions 0.07 max_xact_s 5.380605
+('nazoauth_perf_exporter', '', 'active', 'Client', 'ClientRead') mean_sessions 0.07 max_xact_s 0.014089
+process fields {'kind': 'str', 'run_id': 'str', 'script_sha256': 'str', 'clk_tck': 'int', 'targets': ['app', 'postgres', 'valkey', 'audit-receiver', 'audit-worker']}
+AUTH_B30 queue {'collected': False, 'status': 'UNVERIFIED', 'contract': 'blackbox-db-v1', 'reason': 'blackbox and database evidence cannot establish in-process best-effort queue state', 'enqueued': None, 'persisted': None, 'dropped': None, 'pending_in_process': None} cost {'wal_windowed': {'delta': 16731689768.593233, 'field': 'wal_bytes', 'window_s': 1800.0, 'sample_span': [1791610290, 1791612589]}, 'wal_per_success_bytes': 11628.168, 'wal_io_windowed': {'writes': {'delta': 862298.6050093174, 'field': 'wal_io.writes', 'window_s': 1800.0, 'sample_span': [1791610290, 1791612589]}, 'write_bytes': {'delta': 29404151931.38086, 'field': 'wal_io.write_bytes', 'window_s': 1800.0, 'sample_span': [1791610290, 1791612589]}, 'write_time_ms': {'delta': 0.0, 'field': 'wal_io.write_time_ms', 'window_s': 1800.0, 'sample_span': [1791610290, 1791612589]}, 'fsyncs': {'delta': 859267.8750092983, 'field': 'wal_io.fsyncs', 'window_s': 1800.0, 'sample_span': [1791610290, 1791612589]}, 'fsync_time_ms': {'delta': 0.0, 'field': 'wal_io.fsync_time_ms', 'window_s': 1800.0, 'sample_span': [1791610290, 1791612589]}}, 'wal_writes_per_op': 0.5993, 'wal_fsyncs_per_op': 0.5972, 'wait_per_acq_ms': None, 'acquire_per_op_windowed': None, 'oom_killed': False, 'restart_count': 0}
+cpu {'app': 1.749, 'postgres': 4.046, 'valkey': 0.122, 'audit-worker': 0.064, 'audit-receiver': 0.04}
+window 0 600 samples 59
+('nazoauth_perf_runtime', '', 'idle', 'Client', 'ClientRead') mean_sessions 19.78 max_xact_s 0
+('nazoauth_perf_runtime', '', 'active', 'LWLock', 'WALWrite') mean_sessions 3.86 max_xact_s 0.040575
+('nazoauth_perf_runtime', '', 'active', None, None) mean_sessions 3.03 max_xact_s 0.025247
+('nazoauth_perf_runtime', '', 'idle in transaction', 'Client', 'ClientRead') mean_sessions 2.47 max_xact_s 0.034024
+('nazoauth_perf_runtime', '', 'active', 'IO', 'WalSync') mean_sessions 0.73 max_xact_s 0.02183
+('nazoauth_perf_runtime', '', 'idle', None, None) mean_sessions 0.73 max_xact_s 0
+('nazoauth_perf_runtime', '', 'active', 'Client', 'ClientRead') mean_sessions 0.71 max_xact_s 0.018475
+('nazoauth_perf_runtime', '', 'idle in transaction', None, None) mean_sessions 0.42 max_xact_s 0.007335
+('nazoauth_perf_exporter', '', 'idle', 'Client', 'ClientRead') mean_sessions 0.42 max_xact_s 0
+('nazoauth_perf_exporter', '', 'active', None, None) mean_sessions 0.41 max_xact_s 0.108169
+('postgres', '', 'active', None, None) mean_sessions 0.05 max_xact_s 0.034206
+('nazoauth_perf_exporter', '', 'active', 'LWLock', 'WALWrite') mean_sessions 0.05 max_xact_s 0.016787
+window 600 1200 samples 60
+('nazoauth_perf_runtime', '', 'idle', 'Client', 'ClientRead') mean_sessions 16.67 max_xact_s 0
+('nazoauth_perf_runtime', '', 'active', 'LWLock', 'WALWrite') mean_sessions 5.13 max_xact_s 0.064219
+('nazoauth_perf_runtime', '', 'idle in transaction', 'Client', 'ClientRead') mean_sessions 4.22 max_xact_s 0.068829
+('nazoauth_perf_runtime', '', 'active', None, None) mean_sessions 3.03 max_xact_s 0.084584
+('nazoauth_perf_runtime', '', 'active', 'Client', 'ClientRead') mean_sessions 0.92 max_xact_s 0.021503
+('nazoauth_perf_runtime', '', 'active', 'IO', 'WalSync') mean_sessions 0.73 max_xact_s 0.031668
+('nazoauth_perf_runtime', '', 'idle', None, None) mean_sessions 0.63 max_xact_s 0
+('nazoauth_perf_exporter', '', 'active', None, None) mean_sessions 0.47 max_xact_s 0.031753
+('nazoauth_perf_runtime', '', 'idle in transaction', None, None) mean_sessions 0.38 max_xact_s 0.064421
+('nazoauth_perf_exporter', '', 'idle', 'Client', 'ClientRead') mean_sessions 0.33 max_xact_s 0
+('postgres', '', 'active', None, None) mean_sessions 0.13 max_xact_s 0.261187
+(None, '', 'active', 'Timeout', 'VacuumDelay') mean_sessions 0.1 max_xact_s 3.78998
+window 1200 1800 samples 60
+('nazoauth_perf_runtime', '', 'idle', 'Client', 'ClientRead') mean_sessions 18.2 max_xact_s 0
+('nazoauth_perf_runtime', '', 'idle in transaction', 'Client', 'ClientRead') mean_sessions 4.53 max_xact_s 0.045612
+('nazoauth_perf_runtime', '', 'active', 'LWLock', 'WALWrite') mean_sessions 4.23 max_xact_s 0.064895
+('nazoauth_perf_runtime', '', 'active', None, None) mean_sessions 2.38 max_xact_s 0.045502
+('nazoauth_perf_runtime', '', 'active', 'IO', 'WalSync') mean_sessions 0.83 max_xact_s 0.04362
+('nazoauth_perf_runtime', '', 'active', 'Client', 'ClientRead') mean_sessions 0.77 max_xact_s 0.029113
+('nazoauth_perf_runtime', '', 'idle', None, None) mean_sessions 0.57 max_xact_s 0
+('nazoauth_perf_exporter', '', 'active', None, None) mean_sessions 0.53 max_xact_s 0.032197
+('nazoauth_perf_runtime', '', 'idle in transaction', None, None) mean_sessions 0.28 max_xact_s 0.010924
+('nazoauth_perf_exporter', '', 'idle', 'Client', 'ClientRead') mean_sessions 0.18 max_xact_s 0
+('nazoauth_perf_exporter', '', 'active', 'LWLock', 'WALWrite') mean_sessions 0.12 max_xact_s 0.065815
+('nazoauth_perf_exporter', '', 'idle in transaction', 'Client', 'ClientRead') mean_sessions 0.1 max_xact_s 0.048769
+process fields {'kind': 'str', 'run_id': 'str', 'script_sha256': 'str', 'clk_tck': 'int', 'targets': ['app', 'postgres', 'valkey', 'audit-receiver', 'audit-worker']}

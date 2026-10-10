@@ -1,0 +1,28 @@
+{
+  "ts": 1791606957.9447162,
+  "before": [
+    {
+      "module_id": "native_sso",
+      "desired_mode": "disabled",
+      "revision": 1
+    },
+    {
+      "module_id": "token_exchange",
+      "desired_mode": "enabled",
+      "revision": 1
+    }
+  ],
+  "after": [
+    {
+      "module_id": "native_sso",
+      "desired_mode": "enabled",
+      "revision": 2
+    },
+    {
+      "module_id": "token_exchange",
+      "desired_mode": "enabled",
+      "revision": 1
+    }
+  ],
+  "application_started": false
+}

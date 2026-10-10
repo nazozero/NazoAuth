@@ -1,0 +1,2091 @@
+{
+  "source_sha": "e8242c44aab842e1828b471413905f74b4132325",
+  "policy": "inspect never copies output; required readiness and instance-ID terminal capture",
+  "skipped_inspects": [
+    {
+      "ts": 1791560868.986082,
+      "container": "sis-sampler-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560868.999918,
+      "container": "sis-proc-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560883.7750587,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560883.837155,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560883.8994517,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560884.109031,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560884.176099,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560884.2417696,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560889.4045587,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560889.4705,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560889.5403392,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560889.607897,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560889.676693,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560889.753421,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560894.9124608,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560895.0051193,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560895.08706,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560895.2439835,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560895.3084416,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560895.3915641,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560900.5614352,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560900.6307428,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560900.698928,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560900.7650433,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560900.8292189,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560900.896464,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560906.0576684,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560906.1239047,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560906.244735,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560906.3686566,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560906.488583,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560906.595724,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560911.8294184,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560911.892512,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560911.9600327,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560912.0238938,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560912.0915513,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560912.1642497,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560917.3320882,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560917.4001968,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560917.5616074,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560917.6286058,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560917.69739,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560917.7645802,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560923.2087655,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560923.2792203,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560923.3476286,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560923.4129648,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560923.478938,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560923.5474946,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560928.7086563,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560928.7791867,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560928.8466368,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560928.9131026,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560928.9821708,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560929.0501592,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560934.2151592,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560934.2882426,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560934.35873,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560934.4270027,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560934.4942617,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560934.564903,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560939.824723,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560939.8930604,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560939.962685,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560940.0351095,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560940.1053991,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560940.1757798,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560945.3525727,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560945.4919536,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560945.6675239,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560945.7345743,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560945.806374,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560945.8773966,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560951.0447693,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560951.1120834,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560951.1847005,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560951.2565603,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560951.337069,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560951.4140062,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560956.5787477,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560956.6562297,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560956.730346,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560956.9181828,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560956.9887722,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560957.058621,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560962.3458276,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560962.4235942,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560962.4929993,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560962.5628288,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560962.6324906,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560962.7018704,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560967.8691556,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560967.9396613,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560968.0863717,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560968.1586425,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560968.2307339,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560968.3036091,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560973.5007834,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560973.5748272,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560973.6444952,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560973.7364619,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560973.8241951,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560973.8965256,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560979.0689096,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560979.140124,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560979.2089686,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560979.2823966,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560979.3537374,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560979.4301827,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560984.6373577,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560984.7079449,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560984.7786627,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560984.8746276,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560984.9504654,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560985.0237114,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560990.3329704,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560990.4053843,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560990.5112116,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560990.5918088,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560990.6652238,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560990.745319,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560996.1630228,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560996.2370632,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560996.3106663,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560996.385768,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560996.4625247,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791560996.54912,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561001.7302585,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561001.8500478,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561001.925807,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561001.998077,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561002.0692947,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561002.1444237,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561007.3418145,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561007.415959,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561007.4939713,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561007.5740228,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561007.6524403,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561007.7270188,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561012.9013538,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561012.9758496,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561013.0504944,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561013.1254292,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561013.2962391,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561013.3693998,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561018.5662246,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561018.7771533,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561018.864531,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561018.9434652,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561019.0263948,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561019.1079879,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561024.3772807,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561024.459968,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561024.5483842,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561024.63675,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561024.7244487,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561024.8065562,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561030.0705993,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561030.154835,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561030.2407053,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561030.382535,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561030.533878,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561030.6225114,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561035.8235881,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561035.9109035,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561036.0030313,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561036.2616663,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561036.4306076,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561036.5212288,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561041.7911375,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561041.8735468,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561041.952206,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561042.0340972,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561042.1191697,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561042.2026255,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561047.4018261,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561047.485335,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561047.5724428,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561047.6652887,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561047.7595685,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561047.8451018,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561053.024582,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561053.1171145,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561053.247069,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561053.363653,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561053.52317,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561053.6209567,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561058.829504,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561058.9107146,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561058.9911523,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561059.07212,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561059.1542797,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561059.2365932,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561064.563452,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561064.6770144,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561064.7914476,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561064.8794854,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561064.9658978,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561065.106154,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561070.3845596,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561070.4646635,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561070.54779,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561070.6305385,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561070.711715,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561070.799572,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561075.972234,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561076.0508451,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561076.1620038,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561076.2734237,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561076.3560655,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561076.4368684,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561081.6115,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561081.6928284,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561081.7778337,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561081.8627238,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561081.942124,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561082.0208259,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561087.1976528,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561087.2798383,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561087.3575025,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561087.4405708,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561087.5304792,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561087.6109903,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561092.8707085,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561092.9581573,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561093.0403128,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561093.1275475,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561093.2124825,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561093.2986405,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561098.4879854,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561098.5710638,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561098.655741,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561098.7398598,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561098.8252792,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561098.9176476,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561104.0885696,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561104.1681967,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561104.251612,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561104.330256,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561104.412409,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561104.4919732,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561109.7626648,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561109.8582351,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561109.9433162,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561110.0252552,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561110.116201,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561110.2707922,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561115.452409,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561115.5338335,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561115.6178873,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561115.7021742,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561115.785529,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561115.8684797,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561121.0524073,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561121.1352847,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561121.2175705,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561121.3017669,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561121.4227846,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561121.5080621,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561126.700426,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561126.7895856,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561126.8800442,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561126.9682374,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561127.056316,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561127.1421988,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561132.3292854,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561132.4208422,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561132.510357,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561132.698054,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561132.842732,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561132.9430351,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561138.1605122,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561138.2518287,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561138.370298,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561138.5419118,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561138.639259,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561138.732556,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561143.960119,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561144.0662594,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561144.1572914,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561144.2550693,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561144.347233,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561144.4391258,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561149.639211,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561149.7343934,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561149.8281803,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561149.9269843,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561150.0284417,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561150.1462033,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561155.4551523,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561155.560161,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561155.6618924,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561155.7687893,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561155.890623,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561156.0093582,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561161.2229235,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561161.315958,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561161.4132636,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561161.5143964,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561161.6535623,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561161.7633758,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561166.9728296,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561167.0753527,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561167.1729321,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561167.2676895,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561167.3662126,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561167.4562662,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561172.6510606,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561172.7412283,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561172.8327816,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561172.9304535,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561173.0226994,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561173.1180935,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561178.318308,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561178.4100597,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561178.5010316,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561178.6584036,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561178.7551281,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561178.8581178,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561184.1112468,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561184.2140994,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561184.3785346,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561184.469103,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561184.6426837,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561184.7328022,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561189.9220293,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561190.0137854,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561190.1052606,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561190.198208,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561190.2999876,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561190.3904643,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561195.5897138,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561195.693897,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561195.7841997,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561195.8781762,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561195.974931,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561196.0703707,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561201.2796974,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561201.3714895,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561201.4676728,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561201.5624561,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561201.6675272,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561201.7969608,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561207.207141,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561207.3106098,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561207.4106398,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561207.5343611,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561207.637766,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561207.7441618,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561212.952668,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561213.0651448,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561213.1545818,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561213.255876,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561213.362679,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561213.452821,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561218.649207,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561218.7450888,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561218.8363583,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561218.92978,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561219.023729,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561219.1250029,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561224.3368132,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561224.429061,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561224.5230205,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561224.6192296,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561224.709566,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561224.805412,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561229.9984584,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561230.0887232,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561230.1765668,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561230.269076,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561230.3657906,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561230.4586053,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561235.643401,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561235.7366612,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561235.8296921,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561235.9267707,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561236.0265298,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561236.1267538,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.4621353,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.4801142,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.6348696,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.7290843,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.82529,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.9199953,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.9366627,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561241.9534137,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561242.247334,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561242.2644129,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561242.3646755,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561242.4623551,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561242.5591204,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561242.6528866,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561247.8500652,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561247.8656263,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561247.9977405,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561248.0945797,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561248.186938,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561248.2828836,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561253.500614,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561253.5147486,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561253.6129165,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561253.7082582,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561253.8094537,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561253.9138336,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561259.109778,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561259.124951,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561259.21862,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561259.3130658,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561259.414301,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561259.512568,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561264.713347,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561264.727427,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561264.822463,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561264.9148722,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561265.0121276,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561265.1085272,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.3044987,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.3193002,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.4202676,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.5161707,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.6137545,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.7509618,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.7659543,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.8425314,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561270.8581462,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561271.1955192,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561271.2196264,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561271.235208,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561271.3308756,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561271.427208,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561271.5305998,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.7230232,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.7437563,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.7583404,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.774188,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.7885196,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.801536,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.8150635,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.8936746,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561276.9088268,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.1291099,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.149163,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.1692777,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.1847832,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.1987376,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.2130992,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.2274125,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.2968795,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.312205,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.5507503,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.5728168,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.5939333,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.614867,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.627993,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.6424155,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.6565092,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.7273505,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.7413547,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.970697,
+      "container": "sis-load-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561277.9924605,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561278.0143883,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561278.0362253,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561278.0564797,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561288.2693973,
+      "container": "sis-sampler-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561288.2838287,
+      "container": "sis-sampler-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561298.6489036,
+      "container": "sis-proc-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561298.6638038,
+      "container": "sis-proc-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561310.075358,
+      "container": "sis-sampler-pr238-mixed-retest-20261009"
+    },
+    {
+      "ts": 1791561310.0967271,
+      "container": "sis-proc-pr238-mixed-retest-20261009"
+    }
+  ],
+  "copies": [
+    {
+      "ts_start": 1791560868.9346037,
+      "ts_end": 1791560868.9533117,
+      "elapsed_ms": 18.7092,
+      "container": "sis-sampler-pr238-mixed-retest-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791560868.9533327,
+      "ts_end": 1791560868.9719162,
+      "elapsed_ms": 18.5844,
+      "container": "sis-proc-pr238-mixed-retest-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791560869.0002513,
+      "ts_end": 1791560869.020232,
+      "elapsed_ms": 19.9801,
+      "container": "sis-sampler-pr238-mixed-retest-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791560869.0202477,
+      "ts_end": 1791560869.038783,
+      "elapsed_ms": 18.5355,
+      "container": "sis-proc-pr238-mixed-retest-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791561241.9688876,
+      "ts_end": 1791561242.0155275,
+      "elapsed_ms": 46.6401,
+      "container": "sis-load-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "c1117f397198b149d9a1a058efe141c168eb9bd12cb4f33499e86ac66e3b2f98",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561241.9840655,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791561270.781177,
+      "ts_end": 1791561270.8248162,
+      "elapsed_ms": 43.6391,
+      "container": "sis-side-argon2-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "852e36e6b22e135efc494b4ffc7705a6dcb28d63254ed55a5c1a1656cbfa46e8",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561270.797801,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791561276.8296192,
+      "ts_end": 1791561276.877539,
+      "elapsed_ms": 47.9196,
+      "container": "sis-side-meta-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "5604dfc39acc403dd22315c602cdf495f4b07323728b84477be08f3f9bb3bf8c",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561276.8440921,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791561277.2417321,
+      "ts_end": 1791561277.2820506,
+      "elapsed_ms": 40.3182,
+      "container": "sis-side-fapi-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "3cdbf2b6adab14a9b1a5d6814868cb8f865b8f0d4ef295b641417088e63be9af",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561277.2561777,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791561277.6702874,
+      "ts_end": 1791561277.7124264,
+      "elapsed_ms": 42.1395,
+      "container": "sis-side-refresh-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "35ad73dca4790275e4466fa9354f16dffb8abb5d5ff009d0615d41f17187b72f",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561277.683338,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791561278.4843469,
+      "ts_end": 1791561278.5067604,
+      "elapsed_ms": 22.4135,
+      "container": "sis-sampler-pr238-mixed-retest-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791561278.5067778,
+      "ts_end": 1791561278.52998,
+      "elapsed_ms": 23.2023,
+      "container": "sis-proc-pr238-mixed-retest-20261009",
+      "requested_terminal": false,
+      "terminal": false,
+      "copy_succeeded": true,
+      "termination_proof": null
+    },
+    {
+      "ts_start": 1791561298.558044,
+      "ts_end": 1791561298.599484,
+      "elapsed_ms": 41.4402,
+      "container": "sis-sampler-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "0b91eefcf71fcc369ed288df5c44452758352aac691a22bd70be3023d4ef9ffc",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561298.5738478,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    },
+    {
+      "ts_start": 1791561308.8995624,
+      "ts_end": 1791561308.9433768,
+      "elapsed_ms": 43.8148,
+      "container": "sis-proc-pr238-mixed-retest-20261009",
+      "requested_terminal": true,
+      "terminal": true,
+      "copy_succeeded": true,
+      "termination_proof": {
+        "container_id": "ce176ef0ca711eabcf6e7c0fad59e7fd9b6b81893419b084b6dce4932768487a",
+        "owner": "pr238-mixed-retest-20261009",
+        "running": false,
+        "checked_at": 1791561308.9162216,
+        "basis": "owned exact-ID Docker inspect before copy"
+      }
+    }
+  ],
+  "required_copy_failures": [],
+  "termination_errors": [],
+  "terminal_captured": [
+    "sis-load-pr238-mixed-retest-20261009",
+    "sis-proc-pr238-mixed-retest-20261009",
+    "sis-sampler-pr238-mixed-retest-20261009",
+    "sis-side-argon2-pr238-mixed-retest-20261009",
+    "sis-side-fapi-pr238-mixed-retest-20261009",
+    "sis-side-meta-pr238-mixed-retest-20261009",
+    "sis-side-refresh-pr238-mixed-retest-20261009"
+  ],
+  "finalization": {
+    "errors": [],
+    "stopped": [],
+    "terminal_captured": [
+      "sis-load-pr238-mixed-retest-20261009",
+      "sis-proc-pr238-mixed-retest-20261009",
+      "sis-sampler-pr238-mixed-retest-20261009",
+      "sis-side-argon2-pr238-mixed-retest-20261009",
+      "sis-side-fapi-pr238-mixed-retest-20261009",
+      "sis-side-meta-pr238-mixed-retest-20261009",
+      "sis-side-refresh-pr238-mixed-retest-20261009"
+    ],
+    "partial_captured": [],
+    "copy_failures": [],
+    "budget_seconds": 35
+  }
+}

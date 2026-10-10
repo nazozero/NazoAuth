@@ -1,0 +1,4 @@
+BEGIN; CREATE TEMP TABLE measured_remembered (LIKE user_mfa_remembered_devices INCLUDING ALL);
+INSERT INTO measured_remembered(tenant_id,user_id,token_hash,user_agent_hash,expires_at)
+SELECT '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',md5(i::text)||md5('token-'||i::text),repeat('a',64),'2026-11-10T00:00:00Z' FROM generate_series(1,10000) i;
+SELECT json_build_object('rows',count(*),'avg_tuple_bytes',avg(pg_column_size(d)),'heap_bytes',pg_table_size('measured_remembered'),'index_bytes',pg_indexes_size('measured_remembered'),'total_bytes',pg_total_relation_size('measured_remembered')) FROM measured_remembered d; ROLLBACK;

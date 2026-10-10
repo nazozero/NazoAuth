@@ -95,7 +95,6 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
             match deduplicated.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(NewAccessTokenRevocation {
-                        id: Uuid::now_v7(),
                         access_token_jti_blake3: jti_digest,
                         client_id: row.client_id,
                         tenant_id,
@@ -636,7 +635,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                          refresh_token_family_id, principal_epoch_bound, \
                                          receipt_contract_version, authorization_code_holder) \
                                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 2, $11) \
-                                     ON CONFLICT (tenant_id, client_id, single_use_key_blake3) \
+                                     ON CONFLICT (client_id, single_use_key_blake3) \
                                        WHERE single_use_key_blake3 IS NOT NULL \
                                      DO NOTHING \
                                      RETURNING (clock_timestamp() < $10) AS grant_valid",
@@ -782,6 +781,14 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
                 .filter(oauth_token_issuances::client_id.eq(client_id))
                 .filter(oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().to_vec()))
+                // Expiry closes replay authority even while physical
+                // reclamation has not visited this receipt. Keep the complete
+                // safety horizon, not merely the access-token expiration.
+                .filter(oauth_token_issuances::retain_until.gt(diesel::dsl::sql::<
+                    sql_types::Timestamptz,
+                >(
+                    "CURRENT_TIMESTAMP"
+                )))
                 .select((
                     oauth_token_issuances::access_token_jti,
                     oauth_token_issuances::access_token_expires_at,

@@ -1,0 +1,1 @@
+{"key": "AUTH_A_CAP2", "capacity": "PASS", "lanes": {"load": {"rate": 800.0, "latency_ms": {"p50": 12.0, "p95": 24.0, "p99": 56.01000000000931}, "unexpected_errors": 0}}, "pending": {"min": 0, "median": 68, "max": 153, "first": 0, "last": 0}, "age": {"min": 0, "median": 0.017579, "max": 0.054238, "first": 0, "last": 0}, "natural_count": 0, "cycle": true}

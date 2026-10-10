@@ -1,0 +1,1 @@
+{"command": "cargo test --locked --all-features -p nazo-postgres --lib repositories::access_token_revocation -- --nocapture", "exit": 0, "seconds": 17.18736286414787}

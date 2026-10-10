@@ -1,0 +1,10 @@
+{
+  "ts": 1791607548.5861204,
+  "id_matches_log_follower": true,
+  "public_env": {
+    "AUDIT_ANCHOR_MODE": "required",
+    "AUDIT_ANCHOR_FRESHNESS_SECONDS": "10",
+    "AUDIT_ANCHOR_MAX_LAG_SECONDS": "10",
+    "DEPLOYMENT_ID": "pr238-long-required5r2-20261010"
+  }
+}

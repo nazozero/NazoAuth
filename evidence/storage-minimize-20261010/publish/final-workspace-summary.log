@@ -1,0 +1,669 @@
+     Running unittests src/lib.rs (target/debug/deps/nazo_auth-05e05a8957989458)
+running 178 tests
+test token::tests::refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate ... ok
+test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/admin_client_types.rs (target/debug/deps/admin_client_types-6ba5864cac80431f)
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/authorization_details.rs (target/debug/deps/authorization_details-5fb4cf891b7e151a)
+running 5 tests
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/authorization_pkce_policy.rs (target/debug/deps/authorization_pkce_policy-6125c76784aca871)
+running 5 tests
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/ciba_decision_preparation.rs (target/debug/deps/ciba_decision_preparation-4e94909125242fbf)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/ciba_ping_creation.rs (target/debug/deps/ciba_ping_creation-4c1a3501ffbfb2eb)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/ciba_ping_delivery_policy.rs (target/debug/deps/ciba_ping_delivery_policy-08fd4175cc3f1029)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/ciba_registration_contract.rs (target/debug/deps/ciba_registration_contract-4863f192d314d0a6)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/ciba_state_version.rs (target/debug/deps/ciba_state_version-7967eea815ecb5ce)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/claim_selection.rs (target/debug/deps/claim_selection-6c0dbb7a909d1b15)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/claims_contract.rs (target/debug/deps/claims_contract-0d642b708de9f49f)
+running 11 tests
+test id_token_claims_include_independent_sid_and_protect_reserved_claims ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/claims_edge_cases.rs (target/debug/deps/claims_edge_cases-5b3ec923858e6c84)
+running 35 tests
+test backchannel_logout_token_claims_full_with_sub_and_sid ... ok
+test backchannel_logout_token_claims_omits_both_sub_and_sid_when_not_provided ... ok
+test backchannel_logout_token_claims_omits_sid_when_not_provided ... ok
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/client_assertion_core.rs (target/debug/deps/client_assertion_core-d25b5881bf1c2c31)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-4d5332fcabd0fae5)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/device.rs (target/debug/deps/device-0e3466729148b46a)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/dynamic_registration_presentation.rs (target/debug/deps/dynamic_registration_presentation-f945f64cf1612b59)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/logout_registration_defaults.rs (target/debug/deps/logout_registration_defaults-f41512d29057ed75)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/logout_service.rs (target/debug/deps/logout_service-939d7113c02398e2)
+running 9 tests
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/metadata.rs (target/debug/deps/metadata-35271eef199aaf5a)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/pkce_model.rs (target/debug/deps/pkce_model-1bf65567b2628b48)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/protocol_policy.rs (target/debug/deps/protocol_policy-32fcd9a5ddc1ab5f)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/signing.rs (target/debug/deps/signing-18ae9743712ef103)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/token_management.rs (target/debug/deps/token_management-6cdbdf3e874852fa)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/uri_policy.rs (target/debug/deps/uri_policy-1e265b70df3385d8)
+running 10 tests
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+     Running unittests src/lib.rs (target/debug/deps/nazo_crypto-dea5774eb69ecb84)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/contract.rs (target/debug/deps/contract-c835f40b5de5ec6d)
+running 19 tests
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.73s
+     Running unittests src/lib.rs (target/debug/deps/nazo_digital_credentials-e1b359793591e314)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/domain_contract.rs (target/debug/deps/domain_contract-f1562f36604d30e1)
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/issuer_trust_policy.rs (target/debug/deps/issuer_trust_policy-d8ba0fe4411b3117)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/jwe_contract.rs (target/debug/deps/jwe_contract-a4d3bc841a383c32)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/revocation_snapshot.rs (target/debug/deps/revocation_snapshot-42ad514e222a877c)
+running 17 tests
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running unittests src/lib.rs (target/debug/deps/nazo_http_actix-a4b10c66f329561b)
+running 119 tests
+test profile_account::tests::pending_mfa_me_returns_cookie_csrf_token_and_reduced_profile ... ok
+test runtime_modules::tests::patch_checks_csrf_before_session_and_recent_mfa_policy ... ok
+test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/authorization_decision_transport.rs (target/debug/deps/authorization_decision_transport-b48b282f8c67f4d9)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/client_ip.rs (target/debug/deps/client_ip-b985dcea1a7e347e)
+running 9 tests
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/forbidden_dependencies.rs (target/debug/deps/forbidden_dependencies-a4abc51e53eea412)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/form_post_response.rs (target/debug/deps/form_post_response-834c78e768f15566)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/mfa_profile_transport.rs (target/debug/deps/mfa_profile_transport-9c98960ad95be406)
+running 5 tests
+test disabling_only_clears_remembered_device_cookie_when_state_changed ... ok
+test missing_mfa_challenge_does_not_clear_an_authenticated_session ... ok
+test static_mfa_routes_lock_methods_cors_security_headers_and_no_store ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/oidc_logout_transport.rs (target/debug/deps/oidc_logout_transport-c7899fa8cf18481b)
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/presenter_contract.rs (target/debug/deps/presenter_contract-244ee2e93b0cf942)
+running 11 tests
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+     Running tests/scim_transport.rs (target/debug/deps/scim_transport-b5f5647ab0c9ea83)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.52s
+     Running tests/token_client_auth_transport.rs (target/debug/deps/token_client_auth_transport-88c09e3ed487c9f8)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/userinfo_transport.rs (target/debug/deps/userinfo_transport-119a2af54f6e0629)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_http_signatures-114f3c6c23919f8e)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+     Running tests/crate_identity.rs (target/debug/deps/crate_identity-56890302704067db)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/request.rs (target/debug/deps/request-642c8bece63ae600)
+running 22 tests
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+     Running tests/response.rs (target/debug/deps/response-86cf1d0777ddb89f)
+running 24 tests
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/verify_request.rs (target/debug/deps/verify_request-ffa51d701246a872)
+running 46 tests
+test result: ok. 46 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/nazo_identity-ae08a9c53a706d02)
+running 52 tests
+test mfa_service::tests::disable_reuses_verified_generation_without_consuming_another_factor ... ok
+test mfa_service::tests::failed_or_replayed_confirmation_cannot_return_backup_code_secrets ... ok
+test mfa_service::tests::required_confirmation_has_no_bare_repository_fallback_or_backup_code_disclosure ... ok
+test session::tests::mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_dependency_failures ... ok
+test session::tests::mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_state ... ok
+test session::tests::recent_interactive_mfa_has_one_strict_time_and_factor_policy ... ok
+test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+     Running tests/access_request_validation.rs (target/debug/deps/access_request_validation-6ff09ddb1c96372e)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/admin_policy.rs (target/debug/deps/admin_policy-95920492b3b04de1)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/authentication_method_authority.rs (target/debug/deps/authentication_method_authority-949030141f6525d9)
+running 3 tests
+test real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid ... ok
+test totp_credentials_do_not_expose_seeds_in_debug_output ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-26ef1c6445b81703)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/model.rs (target/debug/deps/model-d7a22b0e3a593e09)
+running 5 tests
+test session_metadata_has_one_amr_source_and_rejects_invalid_time_or_sid ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/password_authentication.rs (target/debug/deps/password_authentication-6a9c219079c5613e)
+running 2 tests
+test pending_mfa_login_uses_a_short_session_ttl ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/policy.rs (target/debug/deps/policy-0a840967d692cbd2)
+running 15 tests
+test backup_code_normalization_preserves_strict_display_contract ... ok
+test generated_backup_code_uses_two_fixed_width_numeric_chunks ... ok
+test generated_totp_secret_is_base32_without_padding ... ok
+test mfa_policy_preserves_totp_and_backup_code_contracts ... ok
+test totp_verification_rejects_replay_and_keeps_one_step_skew ... ok
+test totp_verifier_rejects_malformed_code_or_secret_without_fallback ... ok
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/port_arc_dispatch.rs (target/debug/deps/port_arc_dispatch-d4ab76654b2e204f)
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/repository_ports.rs (target/debug/deps/repository_ports-d6880d98b7f79f64)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/scim_core.rs (target/debug/deps/scim_core-6eef9c9d047238d5)
+running 10 tests
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/scim_service.rs (target/debug/deps/scim_service-2d9c3f1ceb12bc01)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_key_management-df22889049bcd268)
+running 88 tests
+test token::tests::decode_rejects_a_header_algorithm_outside_the_keys_prepared_algorithm ... ok
+test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.04s
+     Running tests/mtls_trust.rs (target/debug/deps/mtls_trust-18f379f41fdf974f)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server-1fed0f0a5b9156a6)
+running 371 tests
+test sessions::tests::invalid_authentication_metadata_is_cleared_before_pending_mfa_is_considered ... ok
+test sessions::tests::recent_admin_mfa_requires_a_fresh_interactive_factor ... ok
+test sessions::tests::session_payload_preserves_pending_mfa_as_metadata_not_validity ... ok
+test sessions::tests::session_payload_requires_authentication_metadata_and_oidc_sid ... ok
+test sessions::tests::session_payload_requires_non_blank_oidc_sid_after_trimming ... ok
+test token::authorization_code::pkce_tests::authorization_code_audiences_reject_token_request_resource_outside_authorization ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_context_normalizes_nonce_and_keeps_generation_sid_separate ... ok
+test token::issue::refresh_persistence::tests::ownership_refresh_rejects_blank_generation_sid_after_lifecycle_separation ... ok
+test token::issue::refresh_persistence::tests::refresh_id_token_sid_contract_distinguishes_presence_and_original_omission ... ok
+test token::issue::refresh_persistence::tests::refresh_without_id_token_preserves_the_original_sid_contract ... ok
+test token::issue::tests::id_token_sid_is_included_for_session_bound_logout_clients ... ok
+test token::issue::tests::id_token_sid_is_not_enabled_for_all_clients_by_logout_feature_flags ... ok
+test token::issue::tests::id_token_sid_is_omitted_unless_explicitly_requested ... ok
+test token::issue::tests::id_token_sid_request_object_also_allows_session_sid ... ok
+test result: ok. 371 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 27.47s
+     Running tests/application_boundaries.rs (target/debug/deps/application_boundaries-94d0d4bd6ed3be15)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+     Running tests/authorization_application.rs (target/debug/deps/authorization_application-75465d00c528bbd2)
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.46s
+     Running tests/client_delivery_secret.rs (target/debug/deps/client_delivery_secret-9399d4704de4bb42)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/credential_execution_boundaries.rs (target/debug/deps/credential_execution_boundaries-a3e9d96ae3aab799)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+     Running tests/cross_device_application.rs (target/debug/deps/cross_device_application-9928ee35892066c7)
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.82s
+     Running tests/delivery_batches.rs (target/debug/deps/delivery_batches-fef60ace1614d9a8)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/dynamic_registration_application.rs (target/debug/deps/dynamic_registration_application-a4caca71f3531da7)
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/host_replacement_contract.rs (target/debug/deps/host_replacement_contract-9eeac14acf95e289)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+     Running tests/security_facts.rs (target/debug/deps/security_facts-4f6f5f754545e4a6)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/token_outcome.rs (target/debug/deps/token_outcome-bb7c51ccda1c9554)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server_object_store-2df145f6377b0d27)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/s3.rs (target/debug/deps/s3-1b393da7091df8d6)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/s3_minio.rs (target/debug/deps/s3_minio-a8de74aac267a453)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+     Running tests/s3_read_final.rs (target/debug/deps/s3_read_final-16912910ed9a4029)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+     Running tests/s3_read_staged.rs (target/debug/deps/s3_read_staged-22d6da1243ea9d80)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+     Running tests/s3_tls.rs (target/debug/deps/s3_tls-bc995673d08322b6)
+running 2 tests
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server_postgres-8e22704a5b3aa12f)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_oauth_server_valkey-daf926df3fcd2477)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vc_http_actix-ca0a30f6fcf36893)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/transport_contract.rs (target/debug/deps/transport_contract-e3d138ec28ac3630)
+running 18 tests
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vci-83f536dd98aba24b)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/protocol_contract.rs (target/debug/deps/protocol_contract-8f28337982b67c0b)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/service_contract.rs (target/debug/deps/service_contract-5b78ef1c4383c305)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/state_machine_contract.rs (target/debug/deps/state_machine_contract-6cc301904eaa38c1)
+running 10 tests
+test nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effects ... ok
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_openid4vp-5374bb9de30e9e96)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/protocol_contract.rs (target/debug/deps/protocol_contract-548a47e85f495d52)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/service_contract.rs (target/debug/deps/service_contract-33e67a8d49975a2f)
+running 9 tests
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_operator_protocol-f95f7ecbcb297ca5)
+running 47 tests
+test result: ok. 47 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+     Running unittests src/lib.rs (target/debug/deps/nazo_persistence-c510169dd12d46c1)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/nazo_postgres-12fd93b2229eef66)
+running 78 tests
+test repositories::access_token_revocation::tests::upsert_rejects_duplicate_authority_keys_inside_one_batch ... ok
+test repositories::mfa::tests::backup_hash_count_and_error_mappings_are_fail_closed ... ok
+test repositories::mfa::tests::enrollment_unique_violation_is_a_typed_conflict ... ok
+test repositories::mfa::tests::mfa_repository_key_requirement_precedes_database_access ... ok
+test repositories::mfa::tests::totp_envelope_authenticates_secret_and_identity_binding ... ok
+test repositories::mfa::tests::totp_secret_validation_rejects_malformed_rows_and_uses_previous_keys ... ok
+test repositories::tokens::tests::new_family_requires_current_encoding_and_nonblank_generation_sid ... ok
+test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.54s
+     Running tests/access_requests.rs (target/debug/deps/access_requests-1f8f5c118a7ec4d7)
+running 15 tests
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.59s
+     Running tests/access_token_retention.rs (target/debug/deps/access_token_retention-0849578b1bbbee51)
+running 6 tests
+test owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.44s
+     Running tests/admin_provision.rs (target/debug/deps/admin_provision-5ed5b2e3fae3b199)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.14s
+     Running tests/audit_bounded_reads.rs (target/debug/deps/audit_bounded_reads-a4f7c7e8bcc08a03)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+     Running tests/audit_chain_cutover.rs (target/debug/deps/audit_chain_cutover-0c61e694b1416e7c)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s
+     Running tests/audit_commit_boundary.rs (target/debug/deps/audit_commit_boundary-461b1d02a584f282)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.91s
+     Running tests/audit_ledger.rs (target/debug/deps/audit_ledger-7cc2a1241f4588fe)
+running 19 tests
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 190.28s
+     Running tests/audit_pending_upgrade.rs (target/debug/deps/audit_pending_upgrade-433147bcc5364cc6)
+running 5 tests
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.92s
+     Running tests/audit_preflight_roles.rs (target/debug/deps/audit_preflight_roles-b8d25b052cab9c52)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.40s
+     Running tests/auth_repositories.rs (target/debug/deps/auth_repositories-0f6f6a068cd03d9d)
+running 40 tests
+test result: ok. 40 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.12s
+     Running tests/authorization_decisions.rs (target/debug/deps/authorization_decisions-c9af4465c1ad41c6)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.41s
+     Running tests/compact_claim_contract.rs (target/debug/deps/compact_claim_contract-4f7a53a282bea65f)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+     Running tests/control_plane_required.rs (target/debug/deps/control_plane_required-5ae428d1783162ad)
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.44s
+     Running tests/controller_recovery.rs (target/debug/deps/controller_recovery-7ce215f056ca8a2a)
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.76s
+     Running tests/controller_registry.rs (target/debug/deps/controller_registry-c4b788bca93960f7)
+running 12 tests
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.54s
+     Running tests/directory_control.rs (target/debug/deps/directory_control-ff62fad48f9311c8)
+running 5 tests
+test stale_revisions_are_rejected_without_ledger_side_effects ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.97s
+     Running tests/hotpath_statement_cache.rs (target/debug/deps/hotpath_statement_cache-579d5abcc9474ed4)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+     Running tests/identity_repositories.rs (target/debug/deps/identity_repositories-ca8bc8bb17f71b3a)
+running 62 tests
+test backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batches ... ok
+test backup_code_is_consumed_once_atomically ... ok
+test backup_verifier_consumption_rolls_back_with_its_audit_failure ... ok
+test concurrent_totp_enrollment_confirmation_has_one_audited_winner ... ok
+test failed_totp_enrollment_confirmation_is_durably_audited_without_state_change ... ok
+test mfa_backup_code_bounds_and_enrollment_conflict_are_explicit ... ok
+test mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_device ... ok
+test mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe ... ok
+test mfa_generation::mfa_clear_committed_unknown_retry_cannot_clear_formal_g2 ... ok
+test mfa_generation::mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_field ... ok
+test mfa_generation::mfa_clear_generation_lock_orders_formal_g2_install_after_commit ... ok
+test mfa_generation::mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes ... ok
+test mfa_generation::mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_code_disclosure ... ok
+test mfa_generation::mfa_disable_required_ledger_failure_rolls_back_current_generation_and_dependents ... ok
+test mfa_generation::mfa_regeneration_required_ledger_and_inactive_actor_preserve_exact_old_backups ... ok
+test mfa_generation::mfa_verified_g1_disable_preserves_fully_installed_g2_after_barrier ... ok
+test mfa_generation_fences_late_remember_and_regeneration_after_clear_and_reenrollment ... ok
+test mfa_two_consumed_backup_proofs_regenerate_serially_without_generation_lock_cycle ... ok
+test server_mfa_verification_does_not_query_migrated_tables_directly ... ok
+test totp_enrollment_orders_cross_store_changes_for_safe_recovery ... ok
+test totp_last_step_compare_and_set_has_one_concurrent_winner ... ok
+test totp_verification_classification_and_audit_are_atomic_and_replay_safe ... ok
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.75s
+     Running tests/mfa_key_ring.rs (target/debug/deps/mfa_key_ring-90e5a0fdc2d8daec)
+running 1 test
+test totp_key_ring_requires_distinct_non_empty_versioned_keys ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/migrations.rs (target/debug/deps/migrations-1c82217404698115)
+running 28 tests
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s
+     Running tests/mtls_trust.rs (target/debug/deps/mtls_trust-842c727656412703)
+running 5 tests
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.83s
+     Running tests/oauth_client_dcr.rs (target/debug/deps/oauth_client_dcr-5428921e83074f1f)
+running 16 tests
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.63s
+     Running tests/oidc_logout.rs (target/debug/deps/oidc_logout-11b5789c4a123b58)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+     Running tests/openid4vc.rs (target/debug/deps/openid4vc-f340bf14f1b002db)
+running 37 tests
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.04s
+     Running tests/pool_async_contract.rs (target/debug/deps/pool_async_contract-76f46863f0472038)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+     Running tests/pool_runtime_owner.rs (target/debug/deps/pool_runtime_owner-4fda61ff2dec0e83)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/presentation_mode_migration.rs (target/debug/deps/presentation_mode_migration-f1f545d0c79dd4f1)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/query_counts.rs (target/debug/deps/query_counts-0a5773cb6b04a580)
+running 22 tests
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.00s
+     Running tests/read_connection_ownership.rs (target/debug/deps/read_connection_ownership-61417041f7578eb1)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+     Running tests/recovery_invalidation.rs (target/debug/deps/recovery_invalidation-ca77f4821633d6fe)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.27s
+     Running tests/refresh_authority.rs (target/debug/deps/refresh_authority-9765e062874397b5)
+running 19 tests
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.54s
+     Running tests/refresh_family_capacity.rs (target/debug/deps/refresh_family_capacity-8c2a9fdb609e4579)
+running 10 tests
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.52s
+     Running tests/runtime_modules.rs (target/debug/deps/runtime_modules-2ddf4467691d1c75)
+running 10 tests
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.34s
+     Running tests/schema_cleanup.rs (target/debug/deps/schema_cleanup-8bc940d84c423803)
+running 6 tests
+test backup_verifier_compaction_preserves_live_credentials_and_never_revives_spent_codes ... ok
+test remembered_device_compaction_roundtrip_preserves_security_facts ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+     Running tests/scim_pagination.rs (target/debug/deps/scim_pagination-c2b28e5fec49929c)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+     Running tests/scim_security_events.rs (target/debug/deps/scim_security_events-c733632d14cc4e0f)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+     Running tests/security_state_commit_boundary.rs (target/debug/deps/security_state_commit_boundary-433f711dac24d74d)
+running 1 test
+test cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded ... raise: no premature cleanup success, backend retired, recovery committed
+cancel: no premature cleanup success, backend retired, recovery committed
+disconnect: no premature cleanup success, backend retired, recovery committed
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.69s
+     Running tests/security_state_maintenance.rs (target/debug/deps/security_state_maintenance-0205294ab3d98a35)
+running 30 tests
+test expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain ... ok
+test expired_remembered_devices_are_reclaimed_without_user_activity ... ok
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.51s
+     Running tests/signing_keys.rs (target/debug/deps/signing_keys-34921645a6ced2b0)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
+     Running tests/tenancy.rs (target/debug/deps/tenancy-afa87fc4ff90f6f8)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+     Running tests/tenant_directory.rs (target/debug/deps/tenant_directory-30ebd49ef72ca210)
+running 8 tests
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.20s
+     Running tests/tenant_resource_control.rs (target/debug/deps/tenant_resource_control-fcda30f6adf10a85)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.91s
+     Running tests/tenant_resources.rs (target/debug/deps/tenant_resources-7589bbd84414afa0)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+     Running tests/token_issuance_atomicity.rs (target/debug/deps/token_issuance_atomicity-9b7de672a1c6c1ab)
+running 16 tests
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.90s
+     Running tests/token_issuance_fresh.rs (target/debug/deps/token_issuance_fresh-68e8e2173f4298a0)
+running 14 tests
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.09s
+     Running unittests src/lib.rs (target/debug/deps/nazo_resource_server-d8649f00d0716ffc)
+running 122 tests
+test result: ok. 122 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.77s
+     Running tests/dependency_boundary.rs (target/debug/deps/dependency_boundary-2ab441663b1c524d)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running unittests src/lib.rs (target/debug/deps/nazo_runtime_modules-d5a51e218403c9f3)
+running 31 tests
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/disable_policies.rs (target/debug/deps/disable_policies-e02c49cc514177ca)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/lease.rs (target/debug/deps/lease-d9b49d9d92facf97)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/revision_races.rs (target/debug/deps/revision_races-9518675b794d6045)
+running 15 tests
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/state_machine.rs (target/debug/deps/state_machine-c3a0af4f253cea1d)
+running 18 tests
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_scim_events-7bc5e2827ee4ff8a)
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/domain_contract.rs (target/debug/deps/domain_contract-196f69c7306e66e6)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/nazo_valkey-ea037355e96364b0)
+running 21 tests
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/authorization_contract.rs (target/debug/deps/authorization_contract-f4e4889478fd5658)
+running 20 tests
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.25s
+     Running tests/avatar_upload_state_contract.rs (target/debug/deps/avatar_upload_state_contract-76c043b13feac032)
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/ciba_device_contract.rs (target/debug/deps/ciba_device_contract-759a68c481faa012)
+running 15 tests
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/delivery_contract.rs (target/debug/deps/delivery_contract-00b376421a18d0bc)
+running 6 tests
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/federation_binding.rs (target/debug/deps/federation_binding-921b78d18351fa81)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/remaining_contract.rs (target/debug/deps/remaining_contract-677da00fd12bcc8b)
+running 16 tests
+test mfa_failure_budget_is_session_bound_and_clears_after_success ... ok
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.44s
+     Running tests/replay_contract.rs (target/debug/deps/replay_contract-e2f1345e07d1f070)
+running 14 tests
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.90s
+     Running tests/replay_window.rs (target/debug/deps/replay_window-fe901ccd60e3362e)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/session_contract.rs (target/debug/deps/session_contract-cc0c83c706a623fe)
+running 5 tests
+test session_load_rejects_a_record_without_current_mfa_state ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/tenant_directory_cache_contract.rs (target/debug/deps/tenant_directory_cache_contract-7ac8487be653e382)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/tenant_namespace_contract.rs (target/debug/deps/tenant_namespace_contract-f71d74778d85b0a0)
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/nazoauth-a33c06370f5b4efd)
+running 1465 tests
+test adapters::audit::tests::audit_event_definitions_include_mfa_step_up ... ok
+test adapters::audit_anchor::tests::worker_source_loads_sidecar_only_values_and_rejects_invalid_inputs ... ok
+test adapters::avatar_files::tests::restart_reads_legacy_active_and_matching_backup_without_using_version_text_as_a_path ... ok
+test adapters::security::tests::mfa_secret_hasher_preserves_candidate_order_and_rejects_wrong_secret ... ok
+test bootstrap::tests::openid4vci_dataset_route_is_nested_inside_the_admin_scope ... ok
+test domain::passkey::login_tests::passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remembered_device ... ok
+test domain::passkey::login_tests::passkey_login_finish_skips_pending_mfa_for_remembered_device ... ok
+test http::admin::openid4vc::tests::admin_dataset_mutations_fail_closed_on_csrf_and_recent_mfa ... ok
+test http::profile::tests::mfa_required::mfa_confirm_committed_unknown_http_withholds_backup_codes_and_new_cookies ... ok
+test http::profile::tests::mfa_required::mfa_regenerate_committed_unknown_http_withholds_backup_codes_and_new_cookies ... ok
+test http::token::authorization_code_tests::issuance::authorization_code_token_issue_preserves_independent_oidc_sid ... ok
+test http::token::dispatch::tests::grant_routing::token_endpoint_rejects_legacy_audience_parameter_outside_token_exchange ... ok
+test http::token::dispatch::tests::token_management::inactive_token_management_requesters_are_rejected_before_keys_or_token_side_effects ... ok
+test http::token::refresh_tests::refresh_grant_rejects_unbound_active_successor_inside_lost_response_window ... ok
+test http::token::refresh_tests::refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_window ... ok
+test operator_task::control_journal::tests::accept_persists_the_authorization_snapshot_before_any_side_effect ... ok
+test operator_task::control_journal::tests::after_accept_crash_executes_the_side_effect_exactly_once ... ok
+test operator_task::control_journal::tests::after_side_effect_crash_never_duplicates_the_mutation_and_recovers_the_result ... ok
+test operator_task::control_journal::tests::before_side_effect_crash_fails_closed_for_owners_without_idempotent_resume ... ok
+test settings::tests::pending_mfa_session_ttl_must_be_shorter_than_full_session_ttl ... ok
+test result: ok. 1462 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 220.61s
+     Running tests/avatar_object_store_provider.rs (target/debug/deps/avatar_object_store_provider-9352114db7a99bc8)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+     Running tests/avatar_shared_storage.rs (target/debug/deps/avatar_shared_storage-f26a90f7b4726e2f)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+     Running tests/operator_task_process.rs (target/debug/deps/operator_task_process-bdcf398953741e61)
+running 4 tests
+test killed_before_side_effect_resumes_without_duplicating_the_mutation ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.80s
+     Running tests/tenant_directory_control_process.rs (target/debug/deps/tenant_directory_control_process-1a564ed5d9debeec)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+     Running tests/tenant_directory_convergence.rs (target/debug/deps/tenant_directory_convergence-c46e835127b98d8a)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 37.71s
+     Running tests/token_hotpath_perf.rs (target/debug/deps/token_hotpath_perf-fa13f9ca091f0d3e)
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/token_issuance_simplification.rs (target/debug/deps/token_issuance_simplification-3fd25f3930b52e43)
+running 3 tests
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.62s
+   Doc-tests nazo_auth
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_crypto
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_digital_credentials
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_http_actix
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_http_signatures
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_identity
+running 4 tests
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+   Doc-tests nazo_key_management
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_oauth_server
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_oauth_server_object_store
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_oauth_server_postgres
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_oauth_server_valkey
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_openid4vc_http_actix
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_openid4vci
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_openid4vp
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_operator_protocol
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_persistence
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_postgres
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+   Doc-tests nazo_resource_server
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_runtime_modules
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_scim_events
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazo_valkey
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests nazoauth
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

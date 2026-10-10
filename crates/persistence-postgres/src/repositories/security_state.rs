@@ -103,6 +103,10 @@ struct GenericCleanupCounts {
     deleted_backchannel_logout_deliveries: i32,
     #[diesel(sql_type = sql_types::Integer)]
     deleted_scim_security_events: i32,
+    #[diesel(sql_type = sql_types::Integer)]
+    deleted_remembered_mfa_devices: i32,
+    #[diesel(sql_type = sql_types::Integer)]
+    deleted_identity_approvals: i32,
 }
 
 #[derive(QueryableByName)]
@@ -157,8 +161,10 @@ impl SecurityStateMaintenanceRepository {
     async fn generic_cleanup(
         &self,
         connection: &mut AsyncPgConnection,
+        scope: nazo_persistence::CleanupScope,
     ) -> Result<GenericCleanupCounts, RepositoryError> {
-        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
+        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state($1)")
+            .bind::<sql_types::Bool, _>(scope == nazo_persistence::CleanupScope::IncludingHistory)
             .load::<GenericCleanupCounts>(connection)
             .await
             .and_then(single_cleanup_row)
@@ -662,7 +668,10 @@ impl SecurityStateMaintenanceRepository {
 }
 
 impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
-    fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+    fn cleanup_batch(
+        &self,
+        scope: nazo_persistence::CleanupScope,
+    ) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
             // One bounded batch owns one lease, while each category keeps its
             // existing commit boundary. Requeueing between categories makes
@@ -672,7 +681,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             let mut guard = DiscardOnDrop(Some(self.connection().await?));
             let result = async {
                 let connection = &mut **guard.connection();
-                let generic = self.generic_cleanup(connection).await?;
+                let generic = self.generic_cleanup(connection, scope).await?;
                 let authorization_decisions = self.decision_cleanup(connection).await?;
                 let (expired_proofs, expired_saturated) =
                     self.delete_expired_spent_proofs(connection).await?;
@@ -695,6 +704,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     || i64::from(generic.deleted_backchannel_logout_deliveries)
                         >= CLEANUP_BATCH_LIMIT
                     || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_remembered_mfa_devices) >= CLEANUP_BATCH_LIMIT
+                    || i64::from(generic.deleted_identity_approvals) >= CLEANUP_BATCH_LIMIT
                     || presentations >= CLEANUP_BATCH_LIMIT as u64
                     || credentials.saturated;
                 Ok(CleanupBatchResult {
@@ -705,6 +716,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     refresh_contracts,
                     revocations: generic.deleted_access_token_revocations.max(0) as u64,
                     scim_audit_events: generic.deleted_scim_audit_events.max(0) as u64,
+                    remembered_mfa_devices: generic.deleted_remembered_mfa_devices.max(0) as u64,
+                    identity_approvals: generic.deleted_identity_approvals.max(0) as u64,
                     logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
                     scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
                     presentations,

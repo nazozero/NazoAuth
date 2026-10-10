@@ -1,0 +1,1437 @@
+    Checking nazo-oauth-server-postgres v0.2.16 (/src/crates/authorization-server-postgres)
+    Checking nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Checking nazoauth v0.2.16 (/src/crates/nazoauth)
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/persistence-postgres/tests/refresh_authority.rs:1007:53
+     |
+1007 |     let context_wire = serde_json::to_value(&source.authentication_context).unwrap();
+     |                                                     ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1007 |     let context_wire = serde_json::to_value(&source.contract.authentication_context).unwrap();
+     |                                                     +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/persistence-postgres/tests/query_counts.rs:2142:85
+     |
+2142 |                 .active_subject_claims(tenant_id, seed.user_id, &original.presented.subject)
+     |                                                                                     ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2142 |                 .active_subject_claims(tenant_id, seed.user_id, &original.presented.contract.subject)
+     |                                                                                     +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/persistence-postgres/tests/query_counts.rs:2364:67
+     |
+2364 |         .active_subject_claims(id, seed.user_id, &early.presented.subject)
+     |                                                                   ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2364 |         .active_subject_claims(id, seed.user_id, &early.presented.contract.subject)
+     |                                                                   +++++++++
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `nazo-postgres` (test "refresh_authority") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/persistence-postgres/tests/auth_repositories.rs:1089:23
+     |
+1089 |     assert_eq!(loaded.authentication_context, expected_context);
+     |                       ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1089 |     assert_eq!(loaded.contract.authentication_context, expected_context);
+     |                       +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/persistence-postgres/tests/auth_repositories.rs:1097:31
+     |
+1097 |             "subject": loaded.subject,
+     |                               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1097 |             "subject": loaded.contract.subject,
+     |                               +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/persistence-postgres/tests/auth_repositories.rs:1098:30
+     |
+1098 |             "scopes": loaded.scopes,
+     |                              ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1098 |             "scopes": loaded.contract.scopes,
+     |                              +++++++++
+
+error: could not compile `nazo-postgres` (test "query_counts") due to 2 previous errors
+error: could not compile `nazo-postgres` (test "auth_repositories") due to 3 previous errors
+error[E0609]: no field `authentication_context` on type `&nazo_auth::RefreshToken`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:279:41
+    |
+279 |     let authentication_context = &token.authentication_context;
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+279 |     let authentication_context = &token.contract.authentication_context;
+    |                                         +++++++++
+
+error[E0609]: no field `subject` on type `&nazo_auth::RefreshToken`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:289:24
+    |
+289 |         subject: token.subject.clone(),
+    |                        ^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+289 |         subject: token.contract.subject.clone(),
+    |                        +++++++++
+
+error[E0609]: no field `scopes` on type `&nazo_auth::RefreshToken`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:290:23
+    |
+290 |         scopes: token.scopes.clone(),
+    |                       ^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+290 |         scopes: token.contract.scopes.clone(),
+    |                       +++++++++
+
+error[E0609]: no field `authorization_details` on type `&nazo_auth::RefreshToken`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:292:38
+    |
+292 |         authorization_details: token.authorization_details.clone(),
+    |                                      ^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+292 |         authorization_details: token.contract.authorization_details.clone(),
+    |                                      +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2974:11
+     |
+2974 |     token.subject = user.to_string();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2974 |     token.contract.subject = user.to_string();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2977:11
+     |
+2977 |     token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2977 |     token.contract.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0560]: struct `nazo_auth::RefreshToken` has no field named `contract_audiences`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:704:9
+    |
+704 |         contract_audiences: vec!["resource://default".to_owned()],
+    |         ^^^^^^^^^^^^^^^^^^ `nazo_auth::RefreshToken` does not have this field
+    |
+    = note: available fields are: `contract`
+
+error[E0560]: struct `nazo_auth::RefreshToken` has no field named `scopes`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:705:9
+    |
+705 |         scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
+    |         ^^^^^^ `nazo_auth::RefreshToken` does not have this field
+    |
+    = note: available fields are: `contract`
+
+error[E0560]: struct `nazo_auth::RefreshToken` has no field named `authorization_details`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:707:9
+    |
+707 |         authorization_details: json!([]),
+    |         ^^^^^^^^^^^^^^^^^^^^^ `nazo_auth::RefreshToken` does not have this field
+    |
+    = note: available fields are: `contract`
+
+error[E0560]: struct `nazo_auth::RefreshToken` has no field named `subject`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:711:9
+    |
+711 |         subject: "subject-1".to_owned(),
+    |         ^^^^^^^ `nazo_auth::RefreshToken` does not have this field
+    |
+    = note: available fields are: `contract`
+
+error[E0560]: struct `nazo_auth::RefreshToken` has no field named `authentication_context`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:715:9
+    |
+715 |         authentication_context: refresh_authentication_context(issuer, client_audience, issued_at),
+    |         ^^^^^^^^^^^^^^^^^^^^^^ `nazo_auth::RefreshToken` does not have this field
+    |
+    = note: available fields are: `contract`
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:873:11
+    |
+873 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    |           ^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+873 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+    |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+   --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:874:11
+    |
+874 |     token.subject = client.client_id.clone();
+    |           ^^^^^^^ unknown field
+    |
+help: one of the expressions' fields has a field of the same name
+    |
+874 |     token.contract.subject = client.client_id.clone();
+    |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1101:13
+     |
+1101 |     expired.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1101 |     expired.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1102:13
+     |
+1102 |     expired.subject = client.client_id.clone();
+     |             ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1102 |     expired.contract.subject = client.client_id.clone();
+     |             +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1135:12
+     |
+1135 |     reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |            ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1135 |     reused.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |            +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1136:12
+     |
+1136 |     reused.subject = client.client_id.clone();
+     |            ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1136 |     reused.contract.subject = client.client_id.clone();
+     |            +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1145:20
+     |
+1145 |     active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                    ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1145 |     active_sibling.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                    +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1146:20
+     |
+1146 |     active_sibling.subject = client.client_id.clone();
+     |                    ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1146 |     active_sibling.contract.subject = client.client_id.clone();
+     |                    +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1216:12
+     |
+1216 |     reused.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |            ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1216 |     reused.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |            +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1217:12
+     |
+1217 |     reused.subject = client.client_id.clone();
+     |            ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1217 |     reused.contract.subject = client.client_id.clone();
+     |            +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1225:20
+     |
+1225 |     active_sibling.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                    ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1225 |     active_sibling.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                    +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1226:20
+     |
+1226 |     active_sibling.subject = client.client_id.clone();
+     |                    ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1226 |     active_sibling.contract.subject = client.client_id.clone();
+     |                    +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1305:13
+     |
+1305 |     revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1305 |     revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1306:13
+     |
+1306 |     revoked.subject = client.client_id.clone();
+     |             ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1306 |     revoked.contract.subject = client.client_id.clone();
+     |             +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1316:15
+     |
+1316 |     successor.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |               ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1316 |     successor.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |               +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1317:15
+     |
+1317 |     successor.subject = client.client_id.clone();
+     |               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1317 |     successor.contract.subject = client.client_id.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1320:15
+     |
+1320 |     successor.authentication_context = revoked.authentication_context.clone();
+     |               ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1320 |     successor.contract.authentication_context = revoked.authentication_context.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1320:48
+     |
+1320 |     successor.authentication_context = revoked.authentication_context.clone();
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1320 |     successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1378:13
+     |
+1378 |     revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1378 |     revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1379:13
+     |
+1379 |     revoked.subject = client.client_id.clone();
+     |             ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1379 |     revoked.contract.subject = client.client_id.clone();
+     |             +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1389:15
+     |
+1389 |     successor.scopes = revoked.scopes.clone();
+     |               ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1389 |     successor.contract.scopes = revoked.scopes.clone();
+     |               +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1389:32
+     |
+1389 |     successor.scopes = revoked.scopes.clone();
+     |                                ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1389 |     successor.scopes = revoked.contract.scopes.clone();
+     |                                +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1390:15
+     |
+1390 |     successor.subject = revoked.subject.clone();
+     |               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1390 |     successor.contract.subject = revoked.subject.clone();
+     |               +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1390:33
+     |
+1390 |     successor.subject = revoked.subject.clone();
+     |                                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1390 |     successor.subject = revoked.contract.subject.clone();
+     |                                 +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1394:15
+     |
+1394 |     successor.authentication_context = revoked.authentication_context.clone();
+     |               ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1394 |     successor.contract.authentication_context = revoked.authentication_context.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1394:48
+     |
+1394 |     successor.authentication_context = revoked.authentication_context.clone();
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1394 |     successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1448:14
+     |
+1448 |     original.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |              ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1448 |     original.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |              +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1449:14
+     |
+1449 |     original.subject = client.client_id.clone();
+     |              ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1449 |     original.contract.subject = client.client_id.clone();
+     |              +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1457:11
+     |
+1457 |     child.scopes = original.scopes.clone();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1457 |     child.contract.scopes = original.scopes.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1457:29
+     |
+1457 |     child.scopes = original.scopes.clone();
+     |                             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1457 |     child.scopes = original.contract.scopes.clone();
+     |                             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1458:11
+     |
+1458 |     child.subject = original.subject.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1458 |     child.contract.subject = original.subject.clone();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1458:30
+     |
+1458 |     child.subject = original.subject.clone();
+     |                              ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1458 |     child.subject = original.contract.subject.clone();
+     |                              +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1462:11
+     |
+1462 |     child.authentication_context = original.authentication_context.clone();
+     |           ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1462 |     child.contract.authentication_context = original.authentication_context.clone();
+     |           +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1462:45
+     |
+1462 |     child.authentication_context = original.authentication_context.clone();
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1462 |     child.authentication_context = original.contract.authentication_context.clone();
+     |                                             +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1601:11
+     |
+1601 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1601 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1602:11
+     |
+1602 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1602 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1667:13
+     |
+1667 |     revoked.authentication_context = refresh_authentication_context(
+     |             ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1667 |     revoked.contract.authentication_context = refresh_authentication_context(
+     |             +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1682:15
+     |
+1682 |     successor.authentication_context = revoked.authentication_context.clone();
+     |               ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1682 |     successor.contract.authentication_context = revoked.authentication_context.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1682:48
+     |
+1682 |     successor.authentication_context = revoked.authentication_context.clone();
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1682 |     successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1753:17
+     |
+1753 |         revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                 ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1753 |         revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                 +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1754:17
+     |
+1754 |         revoked.subject = client.client_id.clone();
+     |                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1754 |         revoked.contract.subject = client.client_id.clone();
+     |                 +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1768:23
+     |
+1768 |             successor.scopes = revoked.scopes.clone();
+     |                       ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1768 |             successor.contract.scopes = revoked.scopes.clone();
+     |                       +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1768:40
+     |
+1768 |             successor.scopes = revoked.scopes.clone();
+     |                                        ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1768 |             successor.scopes = revoked.contract.scopes.clone();
+     |                                        +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1769:23
+     |
+1769 |             successor.subject = revoked.subject.clone();
+     |                       ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1769 |             successor.contract.subject = revoked.subject.clone();
+     |                       +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1769:41
+     |
+1769 |             successor.subject = revoked.subject.clone();
+     |                                         ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1769 |             successor.subject = revoked.contract.subject.clone();
+     |                                         +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1772:23
+     |
+1772 |             successor.authentication_context = revoked.authentication_context.clone();
+     |                       ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1772 |             successor.contract.authentication_context = revoked.authentication_context.clone();
+     |                       +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1772:56
+     |
+1772 |             successor.authentication_context = revoked.authentication_context.clone();
+     |                                                        ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1772 |             successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                        +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1853:13
+     |
+1853 |     revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1853 |     revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1854:13
+     |
+1854 |     revoked.subject = client.client_id.clone();
+     |             ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1854 |     revoked.contract.subject = client.client_id.clone();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1870:15
+     |
+1870 |     successor.subject = revoked.subject.clone();
+     |               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1870 |     successor.contract.subject = revoked.subject.clone();
+     |               +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1870:33
+     |
+1870 |     successor.subject = revoked.subject.clone();
+     |                                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1870 |     successor.subject = revoked.contract.subject.clone();
+     |                                 +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1871:15
+     |
+1871 |     successor.scopes = revoked.scopes.clone();
+     |               ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1871 |     successor.contract.scopes = revoked.scopes.clone();
+     |               +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1871:32
+     |
+1871 |     successor.scopes = revoked.scopes.clone();
+     |                                ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1871 |     successor.scopes = revoked.contract.scopes.clone();
+     |                                +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1874:15
+     |
+1874 |     successor.authentication_context = revoked.authentication_context.clone();
+     |               ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1874 |     successor.contract.authentication_context = revoked.authentication_context.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1874:48
+     |
+1874 |     successor.authentication_context = revoked.authentication_context.clone();
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1874 |     successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1887:18
+     |
+1887 |     wrong_family.subject = revoked.subject.clone();
+     |                  ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1887 |     wrong_family.contract.subject = revoked.subject.clone();
+     |                  +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1887:36
+     |
+1887 |     wrong_family.subject = revoked.subject.clone();
+     |                                    ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1887 |     wrong_family.subject = revoked.contract.subject.clone();
+     |                                    +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1888:18
+     |
+1888 |     wrong_family.scopes = revoked.scopes.clone();
+     |                  ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1888 |     wrong_family.contract.scopes = revoked.scopes.clone();
+     |                  +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:1888:35
+     |
+1888 |     wrong_family.scopes = revoked.scopes.clone();
+     |                                   ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+1888 |     wrong_family.scopes = revoked.contract.scopes.clone();
+     |                                   +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2050:13
+     |
+2050 |     revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2050 |     revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2051:13
+     |
+2051 |     revoked.subject = client.client_id.clone();
+     |             ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2051 |     revoked.contract.subject = client.client_id.clone();
+     |             +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2060:15
+     |
+2060 |     successor.scopes = revoked.scopes.clone();
+     |               ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2060 |     successor.contract.scopes = revoked.scopes.clone();
+     |               +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2060:32
+     |
+2060 |     successor.scopes = revoked.scopes.clone();
+     |                                ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2060 |     successor.scopes = revoked.contract.scopes.clone();
+     |                                +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2061:15
+     |
+2061 |     successor.subject = revoked.subject.clone();
+     |               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2061 |     successor.contract.subject = revoked.subject.clone();
+     |               +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2061:33
+     |
+2061 |     successor.subject = revoked.subject.clone();
+     |                                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2061 |     successor.subject = revoked.contract.subject.clone();
+     |                                 +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2065:15
+     |
+2065 |     successor.authentication_context = revoked.authentication_context.clone();
+     |               ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2065 |     successor.contract.authentication_context = revoked.authentication_context.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2065:48
+     |
+2065 |     successor.authentication_context = revoked.authentication_context.clone();
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2065 |     successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2149:17
+     |
+2149 |         revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                 ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2149 |         revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                 +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2150:17
+     |
+2150 |         revoked.subject = client.client_id.clone();
+     |                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2150 |         revoked.contract.subject = client.client_id.clone();
+     |                 +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2161:19
+     |
+2161 |         successor.scopes = revoked.scopes.clone();
+     |                   ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2161 |         successor.contract.scopes = revoked.scopes.clone();
+     |                   +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2161:36
+     |
+2161 |         successor.scopes = revoked.scopes.clone();
+     |                                    ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2161 |         successor.scopes = revoked.contract.scopes.clone();
+     |                                    +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2162:19
+     |
+2162 |         successor.subject = revoked.subject.clone();
+     |                   ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2162 |         successor.contract.subject = revoked.subject.clone();
+     |                   +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2162:37
+     |
+2162 |         successor.subject = revoked.subject.clone();
+     |                                     ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2162 |         successor.subject = revoked.contract.subject.clone();
+     |                                     +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2165:19
+     |
+2165 |         successor.authentication_context = revoked.authentication_context.clone();
+     |                   ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2165 |         successor.contract.authentication_context = revoked.authentication_context.clone();
+     |                   +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2165:52
+     |
+2165 |         successor.authentication_context = revoked.authentication_context.clone();
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2165 |         successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                    +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2210:13
+     |
+2210 |     revoked.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2210 |     revoked.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |             +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2211:13
+     |
+2211 |     revoked.subject = client.client_id.clone();
+     |             ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2211 |     revoked.contract.subject = client.client_id.clone();
+     |             +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2221:15
+     |
+2221 |     successor.scopes = revoked.scopes.clone();
+     |               ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2221 |     successor.contract.scopes = revoked.scopes.clone();
+     |               +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2221:32
+     |
+2221 |     successor.scopes = revoked.scopes.clone();
+     |                                ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2221 |     successor.scopes = revoked.contract.scopes.clone();
+     |                                +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2222:15
+     |
+2222 |     successor.subject = revoked.subject.clone();
+     |               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2222 |     successor.contract.subject = revoked.subject.clone();
+     |               +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2222:33
+     |
+2222 |     successor.subject = revoked.subject.clone();
+     |                                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2222 |     successor.subject = revoked.contract.subject.clone();
+     |                                 +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2226:15
+     |
+2226 |     successor.authentication_context = revoked.authentication_context.clone();
+     |               ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2226 |     successor.contract.authentication_context = revoked.authentication_context.clone();
+     |               +++++++++
+
+error[E0609]: no field `authentication_context` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2226:48
+     |
+2226 |     successor.authentication_context = revoked.authentication_context.clone();
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2226 |     successor.authentication_context = revoked.contract.authentication_context.clone();
+     |                                                +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2270:11
+     |
+2270 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2270 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2271:11
+     |
+2271 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2271 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2323:11
+     |
+2323 |     token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2323 |     token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2324:11
+     |
+2324 |     token.subject = user_id.to_string();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2324 |     token.contract.subject = user_id.to_string();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2359:11
+     |
+2359 |     token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2359 |     token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2360:11
+     |
+2360 |     token.subject = user_id.to_string();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2360 |     token.contract.subject = user_id.to_string();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2398:11
+     |
+2398 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2398 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2399:11
+     |
+2399 |     token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2399 |     token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2436:11
+     |
+2436 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2436 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2437:11
+     |
+2437 |     token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2437 |     token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2472:11
+     |
+2472 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2472 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2473:11
+     |
+2473 |     token.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2473 |     token.contract.scopes = serde_json::from_value(json!(["offline_access", "api"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2506:16
+     |
+2506 |     no_offline.subject = client.client_id.clone();
+     |                ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2506 |     no_offline.contract.subject = client.client_id.clone();
+     |                +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2508:16
+     |
+2508 |     no_offline.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
+     |                ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2508 |     no_offline.contract.scopes = serde_json::from_value(json!(["accounts"])).unwrap();
+     |                +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2522:17
+     |
+2522 |     scope_token.subject = client.client_id.clone();
+     |                 ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2522 |     scope_token.contract.subject = client.client_id.clone();
+     |                 +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2524:17
+     |
+2524 |     scope_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                 ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2524 |     scope_token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                 +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2540:20
+     |
+2540 |     audience_token.subject = client.client_id.clone();
+     |                    ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2540 |     audience_token.contract.subject = client.client_id.clone();
+     |                    +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2542:20
+     |
+2542 |     audience_token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                    ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2542 |     audience_token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |                    +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2567:11
+     |
+2567 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2567 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2569:11
+     |
+2569 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2569 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2625:11
+     |
+2625 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2625 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2627:11
+     |
+2627 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2627 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2660:11
+     |
+2660 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2660 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2662:11
+     |
+2662 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2662 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2719:11
+     |
+2719 |     token.subject = client.client_id.clone();
+     |           ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2719 |     token.contract.subject = client.client_id.clone();
+     |           +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2721:11
+     |
+2721 |     token.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2721 |     token.contract.scopes = serde_json::from_value(json!(["accounts", "offline_access"])).unwrap();
+     |           +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2910:15
+     |
+2910 |         token.subject = if private {
+     |               ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2910 |         token.contract.subject = if private {
+     |               +++++++++
+
+error[E0609]: no field `scopes` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2917:15
+     |
+2917 |         token.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+     |               ^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2917 |         token.contract.scopes = serde_json::from_value(json!(["openid", "offline_access"])).unwrap();
+     |               +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:2924:56
+     |
+2924 |             .bind::<diesel::sql_types::Text, _>(&token.subject)
+     |                                                        ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+2924 |             .bind::<diesel::sql_types::Text, _>(&token.contract.subject)
+     |                                                        +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:3065:23
+     |
+3065 |                 token.subject = format!("oidc-collision-{}", Uuid::now_v7());
+     |                       ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+3065 |                 token.contract.subject = format!("oidc-collision-{}", Uuid::now_v7());
+     |                       +++++++++
+
+error[E0609]: no field `subject` on type `nazo_auth::RefreshToken`
+    --> crates/nazoauth/src/http/../../tests/unit/http/token/refresh.rs:3071:41
+     |
+3071 |                 .bind::<Text, _>(&token.subject)
+     |                                         ^^^^^^^ unknown field
+     |
+help: one of the expressions' fields has a field of the same name
+     |
+3071 |                 .bind::<Text, _>(&token.contract.subject)
+     |                                         +++++++++
+
+Some errors have detailed explanations: E0560, E0609.
+For more information about an error, try `rustc --explain E0560`.
+error: could not compile `nazoauth` (lib test) due to 125 previous errors

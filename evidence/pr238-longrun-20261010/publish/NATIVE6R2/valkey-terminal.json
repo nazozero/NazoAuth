@@ -1,0 +1,62 @@
+{
+  "census_exact": {
+    "oauth:jar": 992,
+    "oauth:native_sso": 78993,
+    "oauth:rate": 1,
+    "oauth:session": 993,
+    "tenant-directory:snapshot": 1
+  },
+  "done": true,
+  "info": {
+    "aof_enabled": 0,
+    "dbsize": 80980,
+    "evicted_keys": 0,
+    "expired_keys": 4,
+    "keyspace_hits": 250068,
+    "keyspace_misses": 455,
+    "mem_fragmentation_ratio": 1.2,
+    "rdb_bgsave_in_progress": 0,
+    "used_memory": 55114504,
+    "used_memory_rss": 66088960
+  },
+  "keys_seen": 80980,
+  "mem_bytes_sampled": {
+    "oauth:jar": 26240,
+    "oauth:native_sso": 51200,
+    "oauth:rate": 256,
+    "oauth:session": 35840,
+    "tenant-directory:snapshot": 544
+  },
+  "mem_sample_n": {
+    "oauth:jar": 80,
+    "oauth:native_sso": 80,
+    "oauth:rate": 1,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "meta": {
+    "run_id": "pr238-long-native6r2-20261010",
+    "sample_per_cat": 80,
+    "sampled_at": 1791607185,
+    "scan_ms": 229,
+    "script_sha256": "2f4e9d7215fe55fe09b248e2abe6d3f2cdf0ce82e1a4d83c0c00e2ae563b969f"
+  },
+  "sampled_per_cat": {
+    "oauth:jar": 80,
+    "oauth:native_sso": 80,
+    "oauth:rate": 1,
+    "oauth:session": 80,
+    "tenant-directory:snapshot": 1
+  },
+  "total_keys": 80980,
+  "ttl_buckets_sampled": {
+    "oauth:jar|0m+": 80,
+    "oauth:native_sso|43196m+": 10,
+    "oauth:native_sso|43197m+": 25,
+    "oauth:native_sso|43198m+": 23,
+    "oauth:native_sso|43199m+": 22,
+    "oauth:rate|0m+": 1,
+    "oauth:session|476m+": 80,
+    "tenant-directory:snapshot|no_ttl": 1
+  }
+}

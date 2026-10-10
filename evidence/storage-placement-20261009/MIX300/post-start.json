@@ -1,0 +1,12 @@
+{
+  "ts": 1791555020.4694877,
+  "budget_s": 65.7124195639044,
+  "audit": {
+    "pending": 0,
+    "last_sequence": 864221,
+    "anchor_sequence": 864221,
+    "drained": true,
+    "total": 26874,
+    "exported_retained": 26874
+  }
+}

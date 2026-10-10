@@ -1,0 +1,150 @@
+{
+  "storage-backlog-investigation-20261009": {
+    "snapshots": 48,
+    "runtime_connection_samples": [
+      {
+        "state": "idle",
+        "wait_type": "Client",
+        "wait": "ClientRead",
+        "n": 1139
+      },
+      {
+        "state": "active",
+        "wait_type": "LWLock",
+        "wait": "WALWrite",
+        "n": 135
+      },
+      {
+        "state": "active",
+        "wait_type": null,
+        "wait": null,
+        "n": 120
+      },
+      {
+        "state": "active",
+        "wait_type": "IO",
+        "wait": "WalSync",
+        "n": 39
+      },
+      {
+        "state": "active",
+        "wait_type": "Client",
+        "wait": "ClientRead",
+        "n": 35
+      },
+      {
+        "state": "idle",
+        "wait_type": null,
+        "wait": null,
+        "n": 34
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": null,
+        "wait": null,
+        "n": 9
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": "Client",
+        "wait": "ClientRead",
+        "n": 7
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": "LWLock",
+        "wait": "WALWrite",
+        "n": 3
+      },
+      {
+        "state": "active",
+        "wait_type": "LWLock",
+        "wait": "BufferContent",
+        "n": 1
+      }
+    ]
+  },
+  "storage-placement-20261009": {
+    "snapshots": 48,
+    "runtime_connection_samples": [
+      {
+        "state": "idle",
+        "wait_type": "Client",
+        "wait": "ClientRead",
+        "n": 842
+      },
+      {
+        "state": "active",
+        "wait_type": "LWLock",
+        "wait": "WALWrite",
+        "n": 264
+      },
+      {
+        "state": "active",
+        "wait_type": null,
+        "wait": null,
+        "n": 127
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": "Client",
+        "wait": "ClientRead",
+        "n": 109
+      },
+      {
+        "state": "active",
+        "wait_type": "Client",
+        "wait": "ClientRead",
+        "n": 63
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": null,
+        "wait": null,
+        "n": 35
+      },
+      {
+        "state": "active",
+        "wait_type": "IO",
+        "wait": "WalSync",
+        "n": 34
+      },
+      {
+        "state": "idle",
+        "wait_type": null,
+        "wait": null,
+        "n": 34
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": "LWLock",
+        "wait": "WALWrite",
+        "n": 6
+      },
+      {
+        "state": "active",
+        "wait_type": "IO",
+        "wait": "DataFileWrite",
+        "n": 4
+      },
+      {
+        "state": "active",
+        "wait_type": "IO",
+        "wait": "DataFileExtend",
+        "n": 1
+      },
+      {
+        "state": "idle in transaction",
+        "wait_type": "IO",
+        "wait": "WalSync",
+        "n": 1
+      },
+      {
+        "state": "active",
+        "wait_type": "IO",
+        "wait": "WalWrite",
+        "n": 1
+      }
+    ]
+  }
+}

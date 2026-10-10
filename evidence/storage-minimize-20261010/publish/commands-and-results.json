@@ -1,0 +1,449 @@
+[
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test controller_registry reclaimed_expired_approval_still_cannot_authorize_a_controller -- --exact --nocapture",
+    "exit": 0,
+    "seconds": 2.1952756699174643,
+    "evidence_path": "approval-reject-exit.json",
+    "log_sha256": "a116ae310ba6793a42ea742b66f743ee47995c62396edd05ffdf73f2fe4eb9d2",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings",
+    "exit": 0,
+    "seconds": 86.23933634720743,
+    "evidence_path": "clippy-exit.json",
+    "log_sha256": "0ceecf36dfd11a2cd0187245189c60540bc983417270400e265ffbd0763358e3",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_commit_boundary -- --nocapture",
+    "exit": 0,
+    "seconds": 3.884344761725515,
+    "evidence_path": "commit-boundary-exit.json",
+    "log_sha256": "31229af6178376458a994ac6945aba4d92a9c18b1978260b2aa484d28c68593b",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test controller_registry -- --nocapture",
+    "exit": 0,
+    "seconds": 8.547720255795866,
+    "evidence_path": "controller-exit.json",
+    "log_sha256": "e4be49995b683bca90813b76afd7eb511adf1d5663105ebb620f3462cc321836",
+    "totals": {
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "python3 scripts/check_crypto_boundary.py",
+    "exit": 0,
+    "seconds": 0.8113901508040726,
+    "evidence_path": "crypto-boundary-exit.json",
+    "log_sha256": "1f33e7862f460f65566fd4122e0d8bdc552b5902383e1eeeb9dee4797847134c",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "python3 -m unittest discover -s scripts -p test_crypto_boundary.py",
+    "exit": 0,
+    "seconds": 0.25482337223365903,
+    "evidence_path": "crypto-tests-exit.json",
+    "log_sha256": "258ca2656d3bb61818d28395e1bd96037373d704ee841619a0198a96d12c7d46",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_commit_boundary -- --nocapture",
+    "exit": 0,
+    "seconds": 3.4845026340335608,
+    "evidence_path": "final-commit-boundary-exit.json",
+    "log_sha256": "ac7968a16b7ff0d09a33314fa392a27d99ec8f633b5bf0ff26f1111055945e95",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance -- --nocapture",
+    "exit": 0,
+    "seconds": 9.088344336021692,
+    "evidence_path": "final-maintenance-exit.json",
+    "log_sha256": "512390d3a3cc98cd8d0a6a13cfeb4e5f8e5734ae11d7f072a88ae14f381f37fc",
+    "totals": {
+      "passed": 30,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables",
+    "exit": 0,
+    "seconds": 25.399210455827415,
+    "evidence_path": "final-migration-exit.json",
+    "log_sha256": "b975d4539de2383ec23698e658449b177520e03f5975e6319dbe6f691c310404",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo fmt --check",
+    "exit": 0,
+    "seconds": 2.6512593626976013,
+    "evidence_path": "fmt-exit.json",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazoauth --lib http::token::issue -- --nocapture",
+    "exit": 0,
+    "seconds": 141.09822083404288,
+    "evidence_path": "host-issue-exit.json",
+    "log_sha256": "f8b7e960bb2993b0495db5032d9e01f6e3de15daab228f038f1898239ee89377",
+    "totals": {
+      "passed": 52,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test identity_repositories -- --nocapture",
+    "exit": 0,
+    "seconds": 9.208138731773943,
+    "evidence_path": "identity-exit.json",
+    "log_sha256": "a45f1cfc28329d41bdc377014d9328f9972f11f6753ae55ea79df5b918838bbf",
+    "totals": {
+      "passed": 61,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance -- --nocapture",
+    "exit": 0,
+    "seconds": 8.816272184252739,
+    "evidence_path": "maintenance-exit.json",
+    "log_sha256": "dcb7aa68db6f2f7c9abc1fc732a4f2b8b94efe9df8337dbc2bb00fd4a7566ec5",
+    "totals": {
+      "passed": 29,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables",
+    "exit": 0,
+    "seconds": 24.648440190125257,
+    "evidence_path": "migration-exit.json",
+    "log_sha256": "56819b452394db300a20d16e7775d9b472158d39788b5a7afd9db10bab89f954",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain -- --exact --nocapture",
+    "exit": 101,
+    "seconds": 1.8777198609896004,
+    "evidence_path": "negative-approvals-exit.json",
+    "log_sha256": "358613cdabb5b6e0339e0981cd736f481d565a4e73e7d2ca7d760e209794d2fb",
+    "totals": {
+      "passed": 0,
+      "failed": 1,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test identity_repositories backup_code_is_consumed_once_atomically -- --exact --nocapture",
+    "source": "e91884919cccc085e1e3c9623327fc5167e27d5d plus verifier reclamation assertion",
+    "exit": 101,
+    "seconds": 4.3478976069018245,
+    "evidence_path": "negative-backup-exit.json",
+    "log_sha256": "0dbf67ee5d4f38f047c32ad1012dc446c509802f9cb2a9a126fb85a3cd257567",
+    "totals": {
+      "passed": 0,
+      "failed": 1,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "exit": 101,
+    "seconds": 90.41623667813838,
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance expired_remembered_devices_are_reclaimed_without_user_activity -- --exact --nocapture",
+    "source": "c733618056235dd7fadbbbc76a6a719844465b00 plus new test only",
+    "evidence_path": "negative-mfa-exit.json",
+    "log_sha256": "e557e8bc3b0232f9d08bc9f645450772a19a83790fb3ea69eb68f460fc7aca76",
+    "totals": {
+      "passed": 0,
+      "failed": 1,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "python3 scripts/check_perf_results_layout.py",
+    "exit": 0,
+    "seconds": 0.07990857167169452,
+    "evidence_path": "perf-layout-exit.json",
+    "log_sha256": "2c806217252d4609aa27e2874206a6d5d25af63c3e2729dc6db7c80304e8094a",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "python3 scripts/check_persistence_dependency_graph.py",
+    "exit": 0,
+    "seconds": 2.8723830631934106,
+    "evidence_path": "persistence-boundary-exit.json",
+    "log_sha256": "bfc5b1d04fb5024b9eade675d150ec56da271e3176d13491faa0105160753336",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance expired_identity_approvals_are_reclaimed_but_live_single_use_fences_remain -- --exact --nocapture",
+    "exit": 0,
+    "seconds": 1.7081772121600807,
+    "evidence_path": "positive-approvals-exit.json",
+    "log_sha256": "b3db07d22bcfbdf842b5832e27aacf6681c3d316ebca89d2f96c9bf6154ef9d4",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test security_state_maintenance expired_remembered_devices_are_reclaimed_without_user_activity -- --exact --nocapture",
+    "exit": 0,
+    "seconds": 1.6727160490117967,
+    "evidence_path": "positive-mfa-exit.json",
+    "log_sha256": "bf74c3abfb189371ff44fa01a9f91a8cfa0b37d7ed1e642efed6fb2c00509997",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo build --release --locked -p nazoauth --bin nazoauth",
+    "exit": 0,
+    "seconds": 153.14959846716374,
+    "evidence_path": "release-exit.json",
+    "log_sha256": "a964f2e137c66df1ffacd02c44547909f011f648721cf9fc30b185a172e2cf9f",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test schema_cleanup -- --nocapture",
+    "exit": 0,
+    "seconds": 1.1069223191589117,
+    "evidence_path": "schema-cleanup-exit.json",
+    "log_sha256": "9d82da8d3dd67d7f6ec60d5413658547219b7743aa4476c2ecba08682165a9ea",
+    "totals": {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-oauth-server --lib token::issue -- --nocapture",
+    "exit": 0,
+    "seconds": 14.383059102110565,
+    "evidence_path": "sid-exit.json",
+    "log_sha256": "634718dfd5efc1bd5d4abac7181dd01f5e57b6898fa914fd187e29ac0742032d",
+    "totals": {
+      "passed": 28,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "python3 scripts/verify_static_contracts.py --check",
+    "exit": 0,
+    "seconds": 5.1500390050932765,
+    "evidence_path": "static-exit.json",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "python scripts/verify_static_contracts.py --check",
+    "exit": 127,
+    "seconds": 0.05918517895042896,
+    "evidence_path": "static-python-unavailable-exit.json",
+    "log_sha256": "bfd9822f224a143d6746644c2d970392dd4356f64761479e5d439c05b7e2e9ec",
+    "totals": null,
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture",
+    "exit": 0,
+    "seconds": 1062.5754161491059,
+    "evidence_path": "workspace-exit.json",
+    "log_sha256": "34b26980f4d4c26f92f7a7a42c5c18ae1687f3a8a1303a4b65d3a0be2d1d0d1e",
+    "totals": {
+      "passed": 3711,
+      "failed": 0,
+      "ignored": 4
+    },
+    "source_note": "Earlier stage or explicitly identified negative control; see report. Not substituted for final-source gates."
+  },
+  {
+    "command": "cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings",
+    "exit": 0,
+    "seconds": 38.989064761437476,
+    "evidence_path": "round2/clippy-exit.json",
+    "log_sha256": "8d1f89872c13238d99c2f17f59d5d87248aa44935fa7de47adeb7eaf623d4a40",
+    "totals": null,
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "python3 scripts/check_crypto_boundary.py",
+    "exit": 0,
+    "seconds": 0.7910151178948581,
+    "evidence_path": "round2/crypto-boundary-exit.json",
+    "log_sha256": "1f33e7862f460f65566fd4122e0d8bdc552b5902383e1eeeb9dee4797847134c",
+    "totals": null,
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo fmt --check",
+    "exit": 0,
+    "seconds": 2.292472740635276,
+    "evidence_path": "round2/fmt-exit.json",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "totals": null,
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazoauth --lib http::profile::mfa -- --nocapture",
+    "exit": 0,
+    "seconds": 73.72012291569263,
+    "evidence_path": "round2/host-mfa-exit.json",
+    "log_sha256": "7316f9d04157526902359be6f3a99e45054bb55295ae59627a56386de61cd67f",
+    "totals": {
+      "passed": 0,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd",
+    "coverage_status": "INVALID: filter executed zero tests; use actual final workspace MFA cases."
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test identity_repositories -- --nocapture",
+    "exit": 0,
+    "seconds": 10.262311907950789,
+    "evidence_path": "round2/mfa-exit.json",
+    "log_sha256": "614933340e3f7fe847fb73f2650e35a55d322b334ad22d7b55b1637f584caecb",
+    "totals": {
+      "passed": 62,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables",
+    "exit": 0,
+    "seconds": 25.264705072622746,
+    "evidence_path": "round2/migration-exit.json",
+    "log_sha256": "01ef043cf2a36894a00ad817b27cf61ab97f79fb63a9e3e0fcad17e776494054",
+    "totals": {
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables",
+    "exit": 101,
+    "seconds": 22.309283786918968,
+    "evidence_path": "round2/migration-schema-declaration-error-migration-exit.json",
+    "log_sha256": "1fbbc101b1461cf8697e6b53bd1f710774876e72e0fad2734db2a2e6738b05e0",
+    "totals": null,
+    "source_note": "Intermediate uncommitted schema declaration before final source",
+    "coverage_status": "INVALID: intermediate compilation error, corrected before final-source suite."
+  },
+  {
+    "command": "python3 scripts/check_persistence_dependency_graph.py",
+    "exit": 0,
+    "seconds": 2.2891417806968093,
+    "evidence_path": "round2/persistence-boundary-exit.json",
+    "log_sha256": "bfc5b1d04fb5024b9eade675d150ec56da271e3176d13491faa0105160753336",
+    "totals": null,
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo build --release --locked -p nazoauth --bin nazoauth",
+    "exit": 0,
+    "seconds": 143.49404393602163,
+    "evidence_path": "round2/release-exit.json",
+    "log_sha256": "901064282ef4b905e0344c6ec4e5e7a22a6ee91f18e79f853fb814d05fa6b3ec",
+    "totals": null,
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo test --locked --all-features -p nazo-postgres --test schema_cleanup -- --nocapture",
+    "exit": 0,
+    "seconds": 1.461232088971883,
+    "evidence_path": "round2/schema-exit.json",
+    "log_sha256": "c0e36131bd1de78abfbe341f162b5dc1c06293b4b4fcfe0dfa9610a5cf56770f",
+    "totals": {
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0
+    },
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "python3 scripts/verify_static_contracts.py --check",
+    "exit": 0,
+    "seconds": 5.146914721932262,
+    "evidence_path": "round2/static-exit.json",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "totals": null,
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  },
+  {
+    "command": "cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture",
+    "exit": 0,
+    "seconds": 967.4350789417513,
+    "evidence_path": "round2/workspace-exit.json",
+    "log_sha256": "c4af1816e19fa0001210f0018e3f065d83092e3c987526fd00854f0ee30c35a6",
+    "totals": {
+      "passed": 3713,
+      "failed": 0,
+      "ignored": 4
+    },
+    "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd"
+  }
+]

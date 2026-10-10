@@ -1,0 +1,8 @@
+final-fmt 0
+final-static 0
+final-boundary 0
+final-pg 0
+final-clippy 0
+final-workspace 0
+final-release 0
+{'base_sha': '4b4fdc33b6a570aa270b17f5785e1f3188f3fc84', 'source_patch_sha256': '8057cd5e01e3f6a45ee7fdb239a77090ac73bcb98722d0d6ddf776bb7a59c744', 'source_modified': True, 'sha256': '54751a8fe9a7edc5cbac9d4826f8367d8a1a91d5044104b778f138de4e242a4b'}

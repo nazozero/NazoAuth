@@ -1,0 +1,6724 @@
+[
+  {
+    "model": "crates/authorization-server/src/authorization/request/response.rs::AuthorizationResponseProtection",
+    "field": {
+      "name": "encryption_alg",
+      "type": "Option<&'a str>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/authorization/request/response.rs",
+        206,
+        "pub(super) encryption_alg: Option<&'a str>,"
+      ],
+      [
+        "crates/authorization-server/src/authorization/request/response.rs",
+        215,
+        "encryption_alg: client.authorization_encrypted_response_alg.as_deref(),"
+      ],
+      [
+        "crates/authorization-server/src/authorization/request/response.rs",
+        254,
+        "protection.encryption_alg,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/authorization/request/response.rs::AuthorizationResponseProtection",
+    "field": {
+      "name": "encryption_enc",
+      "type": "Option<&'a str>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/authorization/request/response.rs",
+        207,
+        "pub(super) encryption_enc: Option<&'a str>,"
+      ],
+      [
+        "crates/authorization-server/src/authorization/request/response.rs",
+        216,
+        "encryption_enc: client.authorization_encrypted_response_enc.as_deref(),"
+      ],
+      [
+        "crates/authorization-server/src/authorization/request/response.rs",
+        255,
+        "protection.encryption_enc,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/ciba.rs::BackchannelAuthenticationForm",
+    "field": {
+      "name": "authentication_parameters_present",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/contracts/ciba.rs",
+        9,
+        "pub authentication_parameters_present: bool,"
+      ],
+      [
+        "crates/authorization-server/src/contracts/ciba.rs",
+        26,
+        "self.authentication_parameters_present"
+      ],
+      [
+        "crates/nazoauth/src/http/token/ciba/request.rs",
+        55,
+        "form.authentication_parameters_present = true;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/device.rs::DeviceAuthorizationResponse",
+    "field": {
+      "name": "verification_uri",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/contracts/device.rs",
+        54,
+        "pub verification_uri: String,"
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        190,
+        "let verification_uri = device_verification_uri(config);"
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        194,
+        "\"{verification_uri}?user_code={}\","
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        198,
+        "verification_uri,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/device.rs::DeviceAuthorizationResponse",
+    "field": {
+      "name": "verification_uri_complete",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/contracts/device.rs",
+        55,
+        "pub verification_uri_complete: String,"
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        193,
+        "verification_uri_complete: format!("
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/dynamic_client_registration.rs::DynamicRegistrationSecurityServices",
+    "field": {
+      "name": "secret_digester",
+      "type": "Arc<dyn ClientSecretDigesterPort>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/dynamic_registration.rs",
+        376,
+        "let candidate = self.security.secret_digester.client_secret_digest("
+      ],
+      [
+        "crates/authorization-server/src/contracts/dynamic_client_registration.rs",
+        43,
+        "pub(crate) secret_digester: Arc<dyn ClientSecretDigesterPort>,"
+      ],
+      [
+        "crates/authorization-server/src/contracts/dynamic_client_registration.rs",
+        51,
+        "secret_digester: Arc<dyn ClientSecretDigesterPort>,"
+      ],
+      [
+        "crates/authorization-server/src/contracts/dynamic_client_registration.rs",
+        57,
+        "secret_digester,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/metadata.rs::MetadataSnapshot",
+    "field": {
+      "name": "active_modules",
+      "type": "Arc<ActiveModuleSnapshot>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/metadata.rs",
+        55,
+        "active_modules: self.snapshots.load_full(),"
+      ],
+      [
+        "crates/authorization-server/src/contracts/metadata.rs",
+        24,
+        "pub active_modules: Arc<ActiveModuleSnapshot>,"
+      ],
+      [
+        "crates/http-actix/src/metadata.rs",
+        46,
+        "&snapshot.active_modules,"
+      ],
+      [
+        "crates/http-actix/src/metadata.rs",
+        57,
+        "&snapshot.active_modules,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/metadata.rs::MetadataSnapshot",
+    "field": {
+      "name": "active_signing_algorithms",
+      "type": "Vec<&'static str>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/metadata.rs",
+        56,
+        "active_signing_algorithms: signing_algorithm_name(keys.active_alg)"
+      ],
+      [
+        "crates/authorization-server/src/contracts/metadata.rs",
+        25,
+        "pub active_signing_algorithms: Vec<&'static str>,"
+      ],
+      [
+        "crates/http-actix/src/metadata.rs",
+        41,
+        "active: &snapshot.active_signing_algorithms,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/mfa_profile.rs::MfaChallengeSuccess",
+    "field": {
+      "name": "remembered_device_token",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/mfa_profile.rs",
+        319,
+        "let remembered_device_token = if command.remember_device {"
+      ],
+      [
+        "crates/authorization-server/src/domain/mfa_profile.rs",
+        347,
+        "remembered_device_token,"
+      ],
+      [
+        "crates/authorization-server/src/contracts/mfa_profile.rs",
+        75,
+        "pub remembered_device_token: Option<String>,"
+      ],
+      [
+        "crates/http-actix/src/mfa_profile.rs",
+        206,
+        "if let Some(token) = success.remembered_device_token {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/scim.rs::ScimAuthorizedRequest",
+    "field": {
+      "name": "event_receiver",
+      "type": "Option<EventReceiver>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/scim.rs",
+        200,
+        "event_receiver: match (credential.token_id, credential.event_audience) {"
+      ],
+      [
+        "crates/authorization-server/src/contracts/scim.rs",
+        23,
+        "pub event_receiver: Option<EventReceiver>,"
+      ],
+      [
+        "crates/http-actix/src/scim.rs",
+        115,
+        "let Some(receiver) = authorized.event_receiver.as_ref() else {"
+      ],
+      [
+        "crates/http-actix/src/scim.rs",
+        163,
+        "match fresh.event_receiver.as_ref() {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/token_client_auth.rs::ClientCertificateFacts",
+    "field": {
+      "name": "deployment_trusted_chain",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/contracts/token_client_auth.rs",
+        43,
+        "pub deployment_trusted_chain: bool,"
+      ],
+      [
+        "crates/authorization-server/src/token/client_auth.rs",
+        272,
+        "&& !certificate.deployment_trusted_chain"
+      ],
+      [
+        "crates/nazoauth/src/http/mtls.rs",
+        53,
+        "identity.deployment_trusted_chain = deployment_verifier.is_some_and(|verifier| {"
+      ],
+      [
+        "crates/nazoauth/src/http/mtls.rs",
+        148,
+        "certificate.deployment_trusted_chain = req"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/token_endpoint.rs::ClientAttestationFacts",
+    "field": {
+      "name": "strict_pair",
+      "type": "Result<Option<(&'a str, &'a str)>, ()>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/contracts/token_endpoint.rs",
+        6,
+        "pub strict_pair: Result<Option<(&'a str, &'a str)>, ()>,"
+      ],
+      [
+        "crates/authorization-server/src/token/dispatch/mod.rs",
+        111,
+        "!matches!(facts.client_attestation.strict_pair, Ok(None));"
+      ],
+      [
+        "crates/authorization-server/src/token/dispatch/mod.rs",
+        158,
+        "let attestation_headers = match facts.client_attestation.strict_pair {"
+      ],
+      [
+        "crates/nazoauth/src/http/token/dispatch/mod.rs",
+        26,
+        "strict_pair: crate::http::client_attestation::client_attestation_headers(headers),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/contracts/token_forms.rs::TokenForm",
+    "field": {
+      "name": "has_audience_param",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/contracts/token_endpoint.rs",
+        27,
+        "if parsed.form.has_audience_param"
+      ],
+      [
+        "crates/authorization-server/src/contracts/token_forms.rs",
+        22,
+        "pub has_audience_param: bool,"
+      ],
+      [
+        "crates/http-actix/src/token_forms.rs",
+        98,
+        "has_audience_param: false,"
+      ],
+      [
+        "crates/http-actix/src/token_forms.rs",
+        195,
+        "form.has_audience_param = true;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/domain/dynamic_registration.rs::DynamicRegistrationConfig",
+    "field": {
+      "name": "rate_limit_max_requests",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/dynamic_registration.rs",
+        35,
+        "pub rate_limit_max_requests: u64,"
+      ],
+      [
+        "crates/authorization-server/src/domain/dynamic_registration.rs",
+        508,
+        "max_requests: config.rate_limit_max_requests,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        339,
+        "rate_limit_max_requests: settings.identity.rate_limit.token_management_max_requests,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/domain/openid4vc/credential_crypto.rs::Openid4vcCredentialCrypto",
+    "field": {
+      "name": "issuer_trust_policy",
+      "type": "VcIssuerTrustPolicy"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc/credential_crypto.rs",
+        20,
+        "issuer_trust_policy: VcIssuerTrustPolicy,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc/credential_crypto/certificates.rs",
+        72,
+        "issuer_trust_policy: VcIssuerTrustPolicy,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc/credential_crypto/certificates.rs",
+        83,
+        "issuer_trust_policy,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc/credential_crypto/sd_jwt.rs",
+        125,
+        ".issuer_trust_policy"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs::ServerCredentialIssuerOperations",
+    "field": {
+      "name": "tx_code_hasher",
+      "type": "Arc<dyn SecretHashPort>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        179,
+        "tx_code_hasher: Arc<dyn SecretHashPort>,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        202,
+        "tx_code_hasher: Arc<dyn SecretHashPort>,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        227,
+        "tx_code_hasher,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        358,
+        "self.tx_code_hasher"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs::ServerCredentialIssuerOperations",
+    "field": {
+      "name": "deferred_configurations",
+      "type": "Arc<BTreeSet<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs",
+        77,
+        "let disposition = if self.deferred_configurations.contains(&configuration_id) {"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        184,
+        "deferred_configurations: Arc<BTreeSet<String>>,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        207,
+        "deferred_configurations: BTreeSet<String>,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        235,
+        "deferred_configurations: Arc::new(deferred_configurations),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/domain/resource_server.rs::ServerFapiResourceAuthorizer",
+    "field": {
+      "name": "service_cache",
+      "type": "Arc<Mutex<Option<CachedResourceAuthorizationService>>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/resource_server.rs",
+        77,
+        "service_cache: Arc<Mutex<Option<CachedResourceAuthorizationService>>>,"
+      ],
+      [
+        "crates/authorization-server/src/domain/resource_server.rs",
+        92,
+        "service_cache: Arc::new(Mutex::new(None)),"
+      ],
+      [
+        "crates/authorization-server/src/domain/resource_server.rs",
+        100,
+        "let mut cache = self.service_cache.lock().map_err(|_| {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/domain/scim.rs::AuthorizedCredential",
+    "field": {
+      "name": "cursor_actor",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/scim.rs",
+        76,
+        "cursor_actor: format!(\"database:{}\", credential.id),"
+      ],
+      [
+        "crates/authorization-server/src/domain/scim.rs",
+        198,
+        "actor: credential.cursor_actor,"
+      ],
+      [
+        "crates/authorization-server/src/domain/scim.rs",
+        235,
+        "cursor_actor: String,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/ports/transient_state.rs::ServerStateBackendBindings",
+    "field": {
+      "name": "tenant_state",
+      "type": "Arc<dyn TenantTransientStateFactory>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/ports/transient_state.rs",
+        179,
+        "tenant_state: Arc<dyn TenantTransientStateFactory>,"
+      ],
+      [
+        "crates/authorization-server/src/ports/transient_state.rs",
+        186,
+        "tenant_state: Arc<dyn TenantTransientStateFactory>,"
+      ],
+      [
+        "crates/authorization-server/src/ports/transient_state.rs",
+        190,
+        "tenant_state,"
+      ],
+      [
+        "crates/authorization-server/src/ports/transient_state.rs",
+        199,
+        "self.tenant_state.for_tenant(tenant_id)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/token/authorization_code.rs::FreshCodeHolderFacts",
+    "field": {
+      "name": "certificate_thumbprint",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/token/authorization_code.rs",
+        166,
+        "certificate_thumbprint: Option<String>,"
+      ],
+      [
+        "crates/authorization-server/src/token/authorization_code.rs",
+        193,
+        ".and(self.certificate_thumbprint.clone()),"
+      ],
+      [
+        "crates/authorization-server/src/token/authorization_code.rs",
+        506,
+        "certificate_thumbprint: facts"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/token/ciba/state.rs::CibaConfig",
+    "field": {
+      "name": "auth_req_id_ttl_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/token/ciba/state.rs",
+        33,
+        "pub auth_req_id_ttl_seconds: u64,"
+      ],
+      [
+        "crates/authorization-server/src/token/ciba/backchannel.rs",
+        257,
+        ".unwrap_or(config.auth_req_id_ttl_seconds)"
+      ],
+      [
+        "crates/authorization-server/src/token/ciba/backchannel.rs",
+        258,
+        ".min(config.auth_req_id_ttl_seconds);"
+      ],
+      [
+        "crates/nazoauth/src/http/token/ciba/state.rs",
+        12,
+        "auth_req_id_ttl_seconds: settings.ciba.ciba_auth_req_id_ttl_seconds,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/token/ciba/state.rs::CibaConfig",
+    "field": {
+      "name": "ciba_fapi_profile",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/token/ciba/policy.rs",
+        34,
+        "if !config.ciba_fapi_profile {"
+      ],
+      [
+        "crates/authorization-server/src/token/ciba/policy.rs",
+        179,
+        "if (client.require_par_request_object || config.ciba_fapi_profile) && form.request.is_none() {"
+      ],
+      [
+        "crates/authorization-server/src/token/ciba/state.rs",
+        35,
+        "pub ciba_fapi_profile: bool,"
+      ],
+      [
+        "crates/nazoauth/src/http/token/ciba/state.rs",
+        14,
+        "ciba_fapi_profile: settings.protocol.ciba_security_profile.requires_fapi_ciba(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/token/ciba/state.rs::CibaConfig",
+    "field": {
+      "name": "ciba_fapi2_hardening",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/token/ciba/policy.rs",
+        56,
+        "let sender_constraint_valid = if config.ciba_fapi2_hardening {"
+      ],
+      [
+        "crates/authorization-server/src/token/ciba/policy.rs",
+        69,
+        "if config.ciba_fapi2_hardening"
+      ],
+      [
+        "crates/authorization-server/src/token/ciba/state.rs",
+        36,
+        "pub ciba_fapi2_hardening: bool,"
+      ],
+      [
+        "crates/nazoauth/src/http/token/ciba/state.rs",
+        15,
+        "ciba_fapi2_hardening: settings"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/token/issue/refresh_persistence.rs::PendingRefreshToken",
+    "field": {
+      "name": "rotated_from",
+      "type": "Option<Uuid>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/token/issue_grant.rs",
+        558,
+        "if will_issue_refresh && let Some((family, rotated_from, lost_response_retry)) = refresh_family"
+      ],
+      [
+        "crates/authorization-server/src/token/issue_grant.rs",
+        564,
+        "rotated_from,"
+      ],
+      [
+        "crates/authorization-server/src/token/issue/refresh_persistence.rs",
+        12,
+        "pub(super) rotated_from: Option<Uuid>,"
+      ],
+      [
+        "crates/authorization-server/src/token/issue/refresh_persistence.rs",
+        131,
+        "rotated_from_id: refresh.rotated_from,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server/src/token/issue.rs::TokenIssuanceConfig",
+    "field": {
+      "name": "openid4vci_credential_scopes",
+      "type": "Box<[String]>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/token/issue.rs",
+        38,
+        "pub openid4vci_credential_scopes: Box<[String]>,"
+      ],
+      [
+        "crates/authorization-server/src/token/issue.rs",
+        72,
+        "self.openid4vci_credential_scopes"
+      ],
+      [
+        "crates/nazoauth/src/http/token/issue.rs",
+        12,
+        "openid4vci_credential_scopes: settings"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/admin_clients/validation.rs::ClientMtlsMetadata",
+    "field": {
+      "name": "cert_sha256",
+      "type": "Option<&'a str>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/admin_clients/validation.rs",
+        79,
+        "cert_sha256: Option<&'a str>,"
+      ],
+      [
+        "crates/authorization-server-core/src/admin_clients/validation.rs",
+        133,
+        "cert_sha256: request.tls_client_auth_cert_sha256.as_deref(),"
+      ],
+      [
+        "crates/authorization-server-core/src/admin_clients/validation.rs",
+        188,
+        "cert_sha256: client.tls_client_auth_cert_sha256.as_deref(),"
+      ],
+      [
+        "crates/authorization-server-core/src/admin_clients/validation.rs",
+        585,
+        ".cert_sha256"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/authorization_request.rs::RequestObjectPolicy",
+    "field": {
+      "name": "jti_policy",
+      "type": "RequestObjectJtiPolicy"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        68,
+        "pub jti_policy: RequestObjectJtiPolicy,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        421,
+        "None if policy.jti_policy == RequestObjectJtiPolicy::RequiredForSignedJar => false,"
+      ],
+      [
+        "crates/authorization-server/src/authorization/jar.rs",
+        110,
+        "jti_policy: match context.config.request_object_jti_policy {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/authorization_request.rs::RawParAdmissionPolicy",
+    "field": {
+      "name": "client_authentication_method",
+      "type": "&'a str"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        507,
+        "pub client_authentication_method: &'a str,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        574,
+        "policy.client_authentication_method,"
+      ],
+      [
+        "crates/authorization-server/src/authorization/par.rs",
+        367,
+        "client_authentication_method: &client.token_endpoint_auth_method,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/authorization_request.rs::RawParAdmissionPolicy",
+    "field": {
+      "name": "require_request_object",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        510,
+        "pub require_request_object: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        583,
+        "if policy.require_request_object && !parameters.contains_key(\"request\") {"
+      ],
+      [
+        "crates/authorization-server/src/authorization/par.rs",
+        370,
+        "require_request_object: client.require_par_request_object"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/authorization_request.rs::ExpandedParAdmissionPolicy",
+    "field": {
+      "name": "fapi2_requires_explicit_redirect_uri",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        523,
+        "pub fapi2_requires_explicit_redirect_uri: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_request.rs",
+        598,
+        "if policy.fapi2_requires_explicit_redirect_uri && !parameters.contains_key(\"redirect_uri\") {"
+      ],
+      [
+        "crates/authorization-server/src/authorization/par.rs",
+        426,
+        "fapi2_requires_explicit_redirect_uri: fapi2_security,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/authorization_service.rs::ConsentAdmissionPreview",
+    "field": {
+      "name": "consent_version",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/authorization_service.rs",
+        146,
+        "consent_version: String,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_service.rs",
+        822,
+        "version: consent_version,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_service.rs",
+        887,
+        "consent_version,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_service.rs",
+        913,
+        ".discard_decision_material(request_id, &preview.consent_version, pushed_request)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/claim_selection.rs::LegacyUserinfoSelection",
+    "field": {
+      "name": "userinfo_claims",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/claim_selection.rs",
+        19,
+        "userinfo_claims: Vec<String>,"
+      ],
+      [
+        "crates/authorization-server-core/src/claim_selection.rs",
+        27,
+        "legacy.userinfo_claims,"
+      ],
+      [
+        "crates/nazoauth/src/http/authorization/consent.rs",
+        22,
+        "\"userinfo_claims\": payload.userinfo_claim_requests.names(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/client_registration.rs::ClientSecurityPolicy",
+    "field": {
+      "name": "require_signed_authorization_request",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/client_registration.rs",
+        24,
+        "pub require_signed_authorization_request: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/client_registration.rs",
+        46,
+        "require_signed_authorization_request: false,"
+      ],
+      [
+        "crates/authorization-server-core/src/admin_clients/policy.rs",
+        66,
+        "if policy.require_signed_authorization_request"
+      ],
+      [
+        "crates/authorization-server/src/authorization/config.rs",
+        30,
+        "|| client.require_signed_authorization_request"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/client_registration.rs::ClientSecurityPolicy",
+    "field": {
+      "name": "require_signed_authorization_response",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/client_registration.rs",
+        26,
+        "pub require_signed_authorization_response: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/client_registration.rs",
+        47,
+        "require_signed_authorization_response: false,"
+      ],
+      [
+        "crates/authorization-server/src/authorization/config.rs",
+        38,
+        "|| client.require_signed_authorization_response"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/client_registration.rs::ClientSecurityPolicy",
+    "field": {
+      "name": "require_signed_introspection_response",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/client_registration.rs",
+        28,
+        "pub require_signed_introspection_response: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/client_registration.rs",
+        48,
+        "require_signed_introspection_response: false,"
+      ],
+      [
+        "crates/authorization-server/src/domain/token_management.rs",
+        262,
+        "|| client.security_policy.require_signed_introspection_response;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/device.rs::DeviceAuthorizationRequestPolicy",
+    "field": {
+      "name": "requested_resources",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/device.rs",
+        76,
+        "pub requested_resources: Vec<String>,"
+      ],
+      [
+        "crates/authorization-server-core/src/device.rs",
+        108,
+        "let resource_indicators = if input.requested_resources.is_empty() {"
+      ],
+      [
+        "crates/authorization-server-core/src/device.rs",
+        111,
+        "input.requested_resources"
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        431,
+        "requested_resources: form.resources.clone(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/device.rs::DeviceAuthorizationRequestPolicy",
+    "field": {
+      "name": "allowed_resources",
+      "type": "&'a [String]"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/device.rs",
+        77,
+        "pub allowed_resources: &'a [String],"
+      ],
+      [
+        "crates/authorization-server-core/src/device.rs",
+        116,
+        ".all(|resource| input.allowed_resources.contains(resource))"
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        432,
+        "allowed_resources: &client.allowed_audiences,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/device.rs::DeviceAuthorizationRequestPolicy",
+    "field": {
+      "name": "default_resource",
+      "type": "&'a str"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/device.rs",
+        78,
+        "pub default_resource: &'a str,"
+      ],
+      [
+        "crates/authorization-server-core/src/device.rs",
+        109,
+        "vec![input.default_resource.to_owned()]"
+      ],
+      [
+        "crates/authorization-server/src/token/device.rs",
+        433,
+        "default_resource: &config.default_audience,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dpop.rs::DpopReplayAudit",
+    "field": {
+      "name": "jti_hash",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dpop.rs",
+        45,
+        "pub jti_hash: String,"
+      ],
+      [
+        "crates/authorization-server-core/src/dpop.rs",
+        351,
+        "jti_hash: blake3::hash(claims.jti.as_bytes()).to_hex().to_string(),"
+      ],
+      [
+        "crates/authorization-server/src/security/client_assertion.rs",
+        85,
+        "\"jti_hash\","
+      ],
+      [
+        "crates/authorization-server/src/security/dpop.rs",
+        46,
+        "(\"jti_hash\".to_owned(), json!(event.jti_hash)),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dpop.rs::DpopHeader",
+    "field": {
+      "name": "critical_extension_present",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dpop.rs",
+        129,
+        "critical_extension_present: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/dpop.rs",
+        321,
+        "if header.critical_extension_present {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/policy.rs::DynamicRegistrationPolicy",
+    "field": {
+      "name": "pairwise_subject_supported",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        16,
+        "pub pairwise_subject_supported: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        26,
+        "let subject_types = if policy.pairwise_subject_supported {"
+      ],
+      [
+        "crates/authorization-server/src/domain/dynamic_registration.rs",
+        300,
+        "pairwise_subject_supported: self.config.pairwise_subject_secret.is_some(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "application_type",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        231,
+        ".application_type"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        236,
+        "\"application_type must be web or native.\","
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        17,
+        "pub application_type: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "subject_types_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        34,
+        "request.subject_types_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        29,
+        "pub subject_types_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        194,
+        "\"subject_types_supported\": subject_types_supported(input),"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        346,
+        "fn subject_types_supported(input: AuthorizationServerMetadataInput<'_>) -> Vec<&'static str> {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "backchannel_authentication_request_signing_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        95,
+        "request.backchannel_authentication_request_signing_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        45,
+        "pub backchannel_authentication_request_signing_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        277,
+        "metadata[\"backchannel_authentication_request_signing_alg_values_supported\"] ="
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "dpop_bound_access_tokens",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        312,
+        "require_dpop_bound_tokens: request.dpop_bound_access_tokens,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        53,
+        "pub dpop_bound_access_tokens: bool,"
+      ],
+      [
+        "crates/http-actix/src/dynamic_client_registration/response.rs",
+        74,
+        "\"dpop_bound_access_tokens\": client.require_dpop_bound_tokens,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "id_token_encryption_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        59,
+        "request.id_token_encryption_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        77,
+        "pub id_token_encryption_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        224,
+        "\"id_token_encryption_alg_values_supported\","
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "id_token_encryption_enc_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        65,
+        "request.id_token_encryption_enc_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        81,
+        "pub id_token_encryption_enc_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        228,
+        "\"id_token_encryption_enc_values_supported\","
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "request_object_encryption_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        77,
+        "request.request_object_encryption_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        89,
+        "pub request_object_encryption_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        284,
+        "metadata[\"request_object_encryption_alg_values_supported\"] = json!([\"RSA-OAEP-256\"]);"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "request_object_encryption_enc_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        83,
+        "request.request_object_encryption_enc_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        93,
+        "pub request_object_encryption_enc_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        285,
+        "metadata[\"request_object_encryption_enc_values_supported\"] = json!([\"A256GCM\"]);"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "userinfo_signing_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        101,
+        "request.userinfo_signing_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        101,
+        "pub userinfo_signing_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        196,
+        "\"userinfo_signing_alg_values_supported\": response_signing_algs,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "userinfo_encryption_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        107,
+        "request.userinfo_encryption_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        105,
+        "pub userinfo_encryption_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        197,
+        "\"userinfo_encryption_alg_values_supported\": SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "userinfo_encryption_enc_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        113,
+        "request.userinfo_encryption_enc_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        109,
+        "pub userinfo_encryption_enc_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        198,
+        "\"userinfo_encryption_enc_values_supported\": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "authorization_signing_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        119,
+        "request.authorization_signing_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        113,
+        "pub authorization_signing_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        199,
+        "\"authorization_signing_alg_values_supported\": response_signing_algs,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "authorization_encryption_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        125,
+        "request.authorization_encryption_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        117,
+        "pub authorization_encryption_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        200,
+        "\"authorization_encryption_alg_values_supported\": SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "authorization_encryption_enc_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        131,
+        "request.authorization_encryption_enc_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        121,
+        "pub authorization_encryption_enc_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        201,
+        "\"authorization_encryption_enc_values_supported\": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "introspection_encryption_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        137,
+        "request.introspection_encryption_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        125,
+        "pub introspection_encryption_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        236,
+        "\"introspection_encryption_alg_values_supported\","
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "introspection_encryption_enc_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        143,
+        "request.introspection_encryption_enc_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        129,
+        "pub introspection_encryption_enc_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        240,
+        "\"introspection_encryption_enc_values_supported\","
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "introspection_signing_alg_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        149,
+        "request.introspection_signing_alg_values_supported,"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        133,
+        "pub introspection_signing_alg_values_supported: Option<Vec<String>>,"
+      ],
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        232,
+        "\"introspection_signing_alg_values_supported\","
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/dynamic_client_registration/request.rs::DynamicClientRegistrationRequest",
+    "field": {
+      "name": "software_statement",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        152,
+        "if request.software_statement.is_some() {"
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/policy.rs",
+        155,
+        "\"software_statement is not supported by this registration endpoint.\","
+      ],
+      [
+        "crates/authorization-server-core/src/dynamic_client_registration/request.rs",
+        145,
+        "pub software_statement: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/logout_service.rs::RpLogoutRequest",
+    "field": {
+      "name": "id_token_hint_present",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/logout_service.rs",
+        30,
+        "pub id_token_hint_present: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/logout_service.rs",
+        177,
+        "if input.request.id_token_hint_present && input.id_token_hint.is_none() {"
+      ],
+      [
+        "crates/authorization-server/src/domain/oidc_logout.rs",
+        176,
+        "id_token_hint_present: command.request.id_token_hint.is_some(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/logout_service.rs::LogoutInput",
+    "field": {
+      "name": "frontchannel_enabled",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/logout_service.rs",
+        102,
+        "pub frontchannel_enabled: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/logout_service.rs",
+        245,
+        "input.frontchannel_enabled,"
+      ],
+      [
+        "crates/authorization-server/src/domain/oidc_logout.rs",
+        190,
+        "frontchannel_enabled: self.permits_existing_frontchannel_transaction(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/token_endpoint.rs::TokenClientAuthenticationContext",
+    "field": {
+      "name": "has_any_client_auth_material",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/token_endpoint.rs",
+        164,
+        "pub has_any_client_auth_material: bool,"
+      ],
+      [
+        "crates/authorization-server-core/src/token_endpoint.rs",
+        180,
+        "has_any_client_auth_material: presentation.http_basic"
+      ],
+      [
+        "crates/authorization-server/src/token/dispatch/mod.rs",
+        116,
+        ".has_any_client_auth_material"
+      ],
+      [
+        "crates/authorization-server/src/token/dispatch/mod.rs",
+        182,
+        "let has_client_auth_material = client_auth_context.has_any_client_auth_material;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/token_endpoint.rs::TokenClientPolicy",
+    "field": {
+      "name": "enabled_grants",
+      "type": "&'a [String]"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/token_endpoint.rs",
+        191,
+        "pub enabled_grants: &'a [String],"
+      ],
+      [
+        "crates/authorization-server-core/src/token_endpoint.rs",
+        213,
+        ".enabled_grants"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/token_service.rs::NativeSsoSourceFence",
+    "field": {
+      "name": "device_secret_expires_at",
+      "type": "DateTime<Utc>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/token_service.rs",
+        144,
+        "pub device_secret_expires_at: DateTime<Utc>,"
+      ],
+      [
+        "crates/authorization-server/src/token/native_sso.rs",
+        413,
+        "device_secret_expires_at: secret.expires_at,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/token_issuance.rs",
+        333,
+        "&& source.device_secret_expires_at > now"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/token_issuance.rs",
+        365,
+        "&& source.device_secret_expires_at > now"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-core/src/transaction.rs::CodePayload",
+    "field": {
+      "name": "redemption_contract_version",
+      "type": "u8"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/transaction.rs",
+        78,
+        "pub redemption_contract_version: u8,"
+      ],
+      [
+        "crates/authorization-server-core/src/authorization_service.rs",
+        216,
+        "redemption_contract_version: crate::AUTHORIZATION_CODE_REDEMPTION_VERSION,"
+      ],
+      [
+        "crates/authorization-server/src/token/authorization_code.rs",
+        781,
+        "if payload.redemption_contract_version != nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/authorization-server-object-store/src/s3.rs::S3AvatarObjectStoreConfig",
+    "field": {
+      "name": "access_key",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/launchers/object_store.rs",
+        99,
+        "access_key: source.required_string(\"AVATAR_S3_ACCESS_KEY\")?,"
+      ],
+      [
+        "crates/authorization-server-object-store/src/s3.rs",
+        35,
+        "pub access_key: String,"
+      ],
+      [
+        "crates/authorization-server-object-store/src/s3.rs",
+        74,
+        "config.access_key,"
+      ],
+      [
+        "crates/authorization-server-object-store/src/s3.rs",
+        490,
+        "|| self.access_key.trim().is_empty()"
+      ]
+    ]
+  },
+  {
+    "model": "crates/crypto/src/key_wrap.rs::RsaPublicKey",
+    "field": {
+      "name": "public_exponent",
+      "type": "UintRef<'a>"
+    },
+    "refs": [
+      [
+        "crates/crypto/src/key_wrap.rs",
+        23,
+        "public_exponent: UintRef<'a>,"
+      ],
+      [
+        "crates/crypto/src/key_wrap.rs",
+        29,
+        "public_exponent: UintRef::new(e).map_err(|_| CryptoError::InvalidKey)?,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/dcql.rs::ClaimsQuery",
+    "field": {
+      "name": "intent_to_retain",
+      "type": "Option<bool>"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        24,
+        "pub intent_to_retain: Option<bool>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/dcql.rs::TrustedAuthority",
+    "field": {
+      "name": "authority_type",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        30,
+        "pub authority_type: String,"
+      ],
+      [
+        "crates/openid4vp/src/service.rs",
+        346,
+        ".any(|authority| match authority.authority_type.as_str() {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/dcql.rs::CredentialQuery",
+    "field": {
+      "name": "trusted_authorities",
+      "type": "Option<Vec<TrustedAuthority>>"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        47,
+        "pub trusted_authorities: Option<Vec<TrustedAuthority>>,"
+      ],
+      [
+        "crates/openid4vp/src/service.rs",
+        341,
+        ".trusted_authorities"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/dcql.rs::CredentialQuery",
+    "field": {
+      "name": "require_cryptographic_holder_binding",
+      "type": "Option<bool>"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        49,
+        "pub require_cryptographic_holder_binding: Option<bool>,"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        164,
+        "query.require_cryptographic_holder_binding == Some(false)"
+      ],
+      [
+        "crates/openid4vp/src/service.rs",
+        313,
+        "if query.require_cryptographic_holder_binding.unwrap_or(true) && credential.holder_key.is_none()"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/dcql.rs::DcqlQuery",
+    "field": {
+      "name": "credential_sets",
+      "type": "Option<Vec<CredentialSetQuery>>"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        73,
+        "pub credential_sets: Option<Vec<CredentialSetQuery>>,"
+      ],
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        81,
+        "if self.credential_sets.as_ref().is_some_and(Vec::is_empty) {"
+      ],
+      [
+        "crates/digital-credentials/src/dcql.rs",
+        148,
+        "if let Some(sets) = &self.credential_sets {"
+      ],
+      [
+        "crates/openid4vp/src/service.rs",
+        207,
+        "if let Some(sets) = &transaction.request.dcql_query.credential_sets {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/jose.rs::CompactJwe",
+    "field": {
+      "name": "initialization_vector",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/jose.rs",
+        68,
+        "pub initialization_vector: String,"
+      ],
+      [
+        "crates/digital-credentials/src/jose.rs",
+        89,
+        "initialization_vector: parts[2].to_owned(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/jose.rs::CompactJwe",
+    "field": {
+      "name": "authentication_tag",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/jose.rs",
+        70,
+        "pub authentication_tag: String,"
+      ],
+      [
+        "crates/digital-credentials/src/jose.rs",
+        91,
+        "authentication_tag: parts[4].to_owned(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/trust.rs::IndexedCertificateStatuses",
+    "field": {
+      "name": "by_issuer",
+      "type": "BTreeMap<String, CertificateRevocationStatus>"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/trust.rs",
+        180,
+        "by_issuer: BTreeMap<String, CertificateRevocationStatus>,"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        193,
+        "by_issuer: BTreeMap::new(),"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        200,
+        ".by_issuer"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        229,
+        "Some(issuer) => status.by_issuer.get(issuer).copied(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/trust.rs::VcIssuerTrustPolicy",
+    "field": {
+      "name": "allowed_issuers",
+      "type": "Option<BTreeSet<String>>"
+    },
+    "refs": [
+      [
+        "crates/digital-credentials/src/trust.rs",
+        457,
+        "allowed_issuers: Option<BTreeSet<String>>,"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        472,
+        "allowed_issuers: None,"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        488,
+        "allowed_issuers: Some(issuers.into_iter().map(Into::into).collect()),"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        506,
+        ".allowed_issuers"
+      ]
+    ]
+  },
+  {
+    "model": "crates/digital-credentials/src/trust.rs::VerifiedCredential",
+    "field": {
+      "name": "issuer_chain_authority_key_identifiers",
+      "type": "Vec<Vec<u8>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc/credential_crypto/mdoc.rs",
+        250,
+        "issuer_chain_authority_key_identifiers:"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc/credential_crypto/sd_jwt.rs",
+        258,
+        "issuer_chain_authority_key_identifiers:"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        544,
+        "pub issuer_chain_authority_key_identifiers: Vec<Vec<u8>>,"
+      ],
+      [
+        "crates/digital-credentials/src/trust.rs",
+        556,
+        "self.issuer_chain_authority_key_identifiers"
+      ]
+    ]
+  },
+  {
+    "model": "crates/http-actix/src/fapi_resource.rs::FapiResourceEndpoint",
+    "field": {
+      "name": "signature_max_age_seconds",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/fapi_resource.rs",
+        41,
+        "signature_max_age_seconds: i64,"
+      ],
+      [
+        "crates/http-actix/src/fapi_resource.rs",
+        51,
+        "signature_max_age_seconds: i64,"
+      ],
+      [
+        "crates/http-actix/src/fapi_resource.rs",
+        59,
+        "signature_max_age_seconds,"
+      ],
+      [
+        "crates/http-actix/src/fapi_resource.rs",
+        109,
+        "Some(original) => match original.parse(endpoint.signature_max_age_seconds) {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/http-actix/src/runtime_modules.rs::RuntimeModulePatch",
+    "field": {
+      "name": "cascade",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/runtime_modules.rs",
+        72,
+        "cascade: bool,"
+      ],
+      [
+        "crates/http-actix/src/runtime_modules.rs",
+        252,
+        "if payload.cascade {"
+      ],
+      [
+        "crates/http-actix/src/runtime_modules.rs",
+        253,
+        "return Err(\"cascade is not supported; change dependent modules explicitly.\");"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        372,
+        "// whether each parent may now be deleted without a cascade."
+      ]
+    ]
+  },
+  {
+    "model": "crates/http-actix/src/scim.rs::ScimEndpoint",
+    "field": {
+      "name": "passwords",
+      "type": "Arc<dyn ScimBootstrapPasswordProvider>"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/scim.rs",
+        40,
+        "passwords: Arc<dyn ScimBootstrapPasswordProvider>,"
+      ],
+      [
+        "crates/http-actix/src/scim.rs",
+        50,
+        "passwords: Arc<dyn ScimBootstrapPasswordProvider>,"
+      ],
+      [
+        "crates/http-actix/src/scim.rs",
+        57,
+        "passwords,"
+      ],
+      [
+        "crates/http-actix/src/scim.rs",
+        330,
+        "let password_hash = match endpoint.passwords.password_hash().await {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/http-actix/src/session.rs::SessionLogoutEndpoint",
+    "field": {
+      "name": "on_delete_error",
+      "type": "fn(&nazo_identity::ports::RepositoryError)"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/session.rs",
+        100,
+        "on_delete_error: fn(&nazo_identity::ports::RepositoryError),"
+      ],
+      [
+        "crates/http-actix/src/session.rs",
+        108,
+        "on_delete_error: fn(&nazo_identity::ports::RepositoryError),"
+      ],
+      [
+        "crates/http-actix/src/session.rs",
+        113,
+        "on_delete_error,"
+      ],
+      [
+        "crates/http-actix/src/session.rs",
+        125,
+        "(endpoint.on_delete_error)(&error);"
+      ]
+    ]
+  },
+  {
+    "model": "crates/http-signatures/src/response.rs::ResponsePolicy",
+    "field": {
+      "name": "covered_request_headers",
+      "type": "&'a [&'a str]"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/fapi_resource.rs",
+        555,
+        "covered_request_headers: &[],"
+      ],
+      [
+        "crates/http-signatures/src/response.rs",
+        37,
+        "pub covered_request_headers: &'a [&'a str],"
+      ],
+      [
+        "crates/http-signatures/src/response.rs",
+        265,
+        "policy.covered_request_headers,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/http-signatures/src/verify.rs::VerificationPolicy",
+    "field": {
+      "name": "future_skew_seconds",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/fapi_resource.rs",
+        472,
+        "future_skew_seconds: FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS,"
+      ],
+      [
+        "crates/http-signatures/src/verify.rs",
+        18,
+        "pub future_skew_seconds: i64,"
+      ],
+      [
+        "crates/http-signatures/src/verify.rs",
+        284,
+        "|| policy.future_skew_seconds < 0"
+      ],
+      [
+        "crates/http-signatures/src/verify.rs",
+        286,
+        "|| created > policy.now.saturating_add(policy.future_skew_seconds)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/identity/src/authentication.rs::AuthenticationServiceConfig",
+    "field": {
+      "name": "failure_window_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/identity/src/authentication.rs",
+        18,
+        "pub failure_window_seconds: u64,"
+      ],
+      [
+        "crates/identity/src/authentication.rs",
+        171,
+        "retry_after_seconds: self.config.failure_window_seconds,"
+      ],
+      [
+        "crates/identity/src/authentication.rs",
+        201,
+        "self.config.failure_window_seconds,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        359,
+        "failure_window_seconds: identity_settings.rate_limit.login_failure_window_seconds,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/identity/src/authentication.rs::AuthenticationServiceConfig",
+    "field": {
+      "name": "failure_ip_email_max_attempts",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/identity/src/authentication.rs",
+        19,
+        "pub failure_ip_email_max_attempts: u64,"
+      ],
+      [
+        "crates/identity/src/authentication.rs",
+        169,
+        "if failure_count >= self.config.failure_ip_email_max_attempts {"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        360,
+        "failure_ip_email_max_attempts: identity_settings"
+      ]
+    ]
+  },
+  {
+    "model": "crates/identity/src/avatar.rs::AvatarDirectUploadService",
+    "field": {
+      "name": "claim_lease_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/identity/src/avatar.rs",
+        144,
+        "claim_lease_seconds: u64,"
+      ],
+      [
+        "crates/identity/src/avatar.rs",
+        155,
+        "claim_lease_seconds: u64,"
+      ],
+      [
+        "crates/identity/src/avatar.rs",
+        164,
+        "claim_lease_seconds,"
+      ],
+      [
+        "crates/identity/src/avatar.rs",
+        237,
+        "i64::try_from(self.claim_lease_seconds)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/identity/src/federation.rs::FederationServiceConfig",
+    "field": {
+      "name": "saml_replay_ttl_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/identity/src/federation.rs",
+        140,
+        "pub saml_replay_ttl_seconds: u64,"
+      ],
+      [
+        "crates/identity/src/federation.rs",
+        331,
+        ".clamp(1, self.config.saml_replay_ttl_seconds as i64) as u64;"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        434,
+        "saml_replay_ttl_seconds: SAML_REPLAY_TTL_SECONDS,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/identity/src/profile.rs::AccountProfileView",
+    "field": {
+      "name": "authorized_app_count",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/identity/src/profile.rs",
+        105,
+        "pub authorized_app_count: i64,"
+      ],
+      [
+        "crates/identity/src/profile.rs",
+        140,
+        "authorized_app_count: overview.authorized_application_count,"
+      ],
+      [
+        "crates/nazoauth/src/http/views.rs",
+        39,
+        "\"authorized_app_count\": count"
+      ]
+    ]
+  },
+  {
+    "model": "crates/identity/src/registration.rs::RegistrationServiceConfig",
+    "field": {
+      "name": "delivery_enabled",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/identity/src/registration.rs",
+        14,
+        "pub delivery_enabled: bool,"
+      ],
+      [
+        "crates/identity/src/registration.rs",
+        145,
+        "if !self.config.delivery_enabled {"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        306,
+        "delivery_enabled: email_delivery_configured(&startup.settings),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/key-management/src/model.rs::VerificationKey",
+    "field": {
+      "name": "signing_purposes",
+      "type": "BTreeSet<SigningPurpose>"
+    },
+    "refs": [
+      [
+        "crates/key-management/src/model.rs",
+        184,
+        "pub(crate) signing_purposes: BTreeSet<SigningPurpose>,"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        191,
+        "self.signing_purposes.contains(&purpose)"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        1395,
+        "signing_purposes: if key.managed.state == KeyState::Active {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/key-management/src/model.rs::KeyGeneration",
+    "field": {
+      "name": "openid4vc_revocation",
+      "type": "Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>"
+    },
+    "refs": [
+      [
+        "crates/key-management/src/model.rs",
+        416,
+        "openid4vc_revocation:"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        825,
+        "self.inner.generation.load().openid4vc_revocation.clone()"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        1296,
+        "let openid4vc_revocation = openid4vc_public"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        1310,
+        "openid4vc_revocation,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/key-management/src/model.rs::HttpSigningLease",
+    "field": {
+      "name": "http_algorithm",
+      "type": "&'static str"
+    },
+    "refs": [
+      [
+        "crates/key-management/src/model.rs",
+        438,
+        "http_algorithm: &'static str,"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        449,
+        "self.http_algorithm"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        1137,
+        "let http_algorithm = match selected.algorithm {"
+      ],
+      [
+        "crates/key-management/src/model.rs",
+        1146,
+        "http_algorithm,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/key-management/src/token.rs::IntrospectionResponseClaims",
+    "field": {
+      "name": "token_introspection",
+      "type": "&'a Value"
+    },
+    "refs": [
+      [
+        "crates/key-management/src/token.rs",
+        18,
+        "token_introspection: &'a Value,"
+      ],
+      [
+        "crates/key-management/src/token.rs",
+        203,
+        "token_introspection: input.body,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/audit_anchor/config.rs::AuditAnchorWorkerConfig",
+    "field": {
+      "name": "receipt_verify_key",
+      "type": "VerifyingKey"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/transport.rs",
+        148,
+        "match verify_receipt(response_body, &config.receipt_verify_key, expectation) {"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/config.rs",
+        71,
+        "pub(crate) receipt_verify_key: VerifyingKey,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/config.rs",
+        151,
+        "receipt_verify_key: parse_receipt_verify_key("
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/audit_anchor/config.rs::AuditAnchorWorkerConfig",
+    "field": {
+      "name": "ca_bundle_pem",
+      "type": "Option<Vec<u8>>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/worker.rs",
+        43,
+        "if let Some(pem) = &config.ca_bundle_pem {"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/config.rs",
+        74,
+        "pub(crate) ca_bundle_pem: Option<Vec<u8>>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/config.rs",
+        154,
+        "ca_bundle_pem: {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/audit_anchor/protocol.rs::AnchorReceipt",
+    "field": {
+      "name": "received_at",
+      "type": "DateTime<Utc>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/protocol.rs",
+        43,
+        "pub(super) received_at: DateTime<Utc>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/protocol.rs",
+        64,
+        "received_at: DateTime<Utc>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/protocol.rs",
+        168,
+        "received_at: receipt.received_at,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/audit_anchor/protocol.rs::ReceiptSigningView",
+    "field": {
+      "name": "received_at",
+      "type": "DateTime<Utc>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/protocol.rs",
+        43,
+        "pub(super) received_at: DateTime<Utc>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/protocol.rs",
+        64,
+        "received_at: DateTime<Utc>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/audit_anchor/protocol.rs",
+        168,
+        "received_at: receipt.received_at,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/avatar_files.rs::LocalAvatarMutation",
+    "field": {
+      "name": "candidate_version",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        35,
+        "candidate_version: Option<String>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        72,
+        "candidate_version: Option<String>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        78,
+        "candidate_version,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        332,
+        "if let Some(candidate) = mutation.candidate_version.as_deref() {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/avatar_files.rs::LocalAvatarMutation",
+    "field": {
+      "name": "previous_version",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        36,
+        "previous_version: Option<String>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        73,
+        "previous_version: Option<&str>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        79,
+        "previous_version: previous_version.map(str::to_owned),"
+      ],
+      [
+        "crates/nazoauth/src/adapters/avatar_files.rs",
+        320,
+        "if let Some(previous) = mutation.previous_version.as_deref() {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/remote_client_documents.rs::RemoteClientDocumentResolver",
+    "field": {
+      "name": "fetch_slots",
+      "type": "Arc<Semaphore>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        26,
+        "fetch_slots: Arc<Semaphore>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        56,
+        "fetch_slots: Arc::new(Semaphore::new(REMOTE_FETCH_CONCURRENCY)),"
+      ],
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        150,
+        ".fetch_slots"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/adapters/remote_client_documents.rs::RemoteClientDocumentResolver",
+    "field": {
+      "name": "root_certificates",
+      "type": "Arc<Vec<reqwest::Certificate>>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        27,
+        "root_certificates: Arc<Vec<reqwest::Certificate>>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        37,
+        "root_certificates: Vec<reqwest::Certificate>,"
+      ],
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        57,
+        "root_certificates: Arc::new(root_certificates),"
+      ],
+      [
+        "crates/nazoauth/src/adapters/remote_client_documents.rs",
+        170,
+        "for certificate in self.root_certificates.iter() {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/configuration.rs::StartupConfiguration",
+    "field": {
+      "name": "readiness_dependencies",
+      "type": "web::Data<crate::http::well_known::ReadinessDependencies>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/configuration.rs",
+        16,
+        "pub(super) readiness_dependencies: web::Data<crate::http::well_known::ReadinessDependencies>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        103,
+        "insert(&mut extensions, startup.readiness_dependencies.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/tenant_runtime.rs",
+        331,
+        "let readiness_dependencies ="
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/tenant_runtime.rs",
+        364,
+        "readiness_dependencies,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "metadata_handles",
+      "type": "web::Data<nazo_http_actix::MetadataHandles>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        113,
+        "insert(&mut extensions, core.metadata_handles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        23,
+        "pub(super) metadata_handles: web::Data<nazo_http_actix::MetadataHandles>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        61,
+        "let metadata_handles = web::Data::new(nazo_http_actix::MetadataHandles::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        275,
+        "metadata_handles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "resource_server_http_data",
+      "type": "web::Data<nazo_http_actix::FapiResourceEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        130,
+        "insert(&mut extensions, core.resource_server_http_data.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        24,
+        "pub(super) resource_server_http_data: web::Data<nazo_http_actix::FapiResourceEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        74,
+        "let resource_server_http_data = {"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        276,
+        "resource_server_http_data,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "dynamic_registration_handles",
+      "type": "web::Data<nazo_http_actix::DynamicRegistrationEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        157,
+        "insert(&mut extensions, core.dynamic_registration_handles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        25,
+        "pub(super) dynamic_registration_handles:"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        118,
+        "let dynamic_registration_handles ="
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        277,
+        "dynamic_registration_handles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "admin_client_config",
+      "type": "web::Data<AdminClientConfig>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        144,
+        "insert(&mut extensions, core.admin_client_config.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        27,
+        "pub(super) admin_client_config: web::Data<AdminClientConfig>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        126,
+        "let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&startup.settings));"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        278,
+        "admin_client_config,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "admin_client_service",
+      "type": "web::Data<ServerAdminClientService>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        143,
+        "insert(&mut extensions, core.admin_client_service.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        28,
+        "pub(super) admin_client_service: web::Data<ServerAdminClientService>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        127,
+        "let admin_client_service = web::Data::new(ServerAdminClientService::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        279,
+        "admin_client_service,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "scim_endpoint",
+      "type": "web::Data<nazo_http_actix::ScimEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        158,
+        "insert(&mut extensions, core.scim_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        29,
+        "pub(super) scim_endpoint: web::Data<nazo_http_actix::ScimEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        144,
+        "let scim_endpoint = web::Data::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        280,
+        "scim_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "ciba_application",
+      "type": "web::Data<nazo_oauth_server::token::ciba::CibaApplication>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        105,
+        "insert(&mut extensions, core.ciba_application.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        32,
+        "pub(super) ciba_application: web::Data<nazo_oauth_server::token::ciba::CibaApplication>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        181,
+        "let ciba_application = web::Data::new(nazo_oauth_server::token::ciba::CibaApplication::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        283,
+        "ciba_application,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "token_management_endpoint",
+      "type": "web::Data<nazo_http_actix::TokenManagementEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        160,
+        "insert(&mut extensions, core.token_management_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        40,
+        "pub(super) token_management_endpoint: web::Data<nazo_http_actix::TokenManagementEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        219,
+        "let token_management_endpoint = web::Data::new(nazo_http_actix::TokenManagementEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        291,
+        "token_management_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs::CoreServices",
+    "field": {
+      "name": "token_endpoint_handles",
+      "type": "web::Data<TokenEndpointHandles>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        104,
+        "insert(&mut extensions, core.token_endpoint_handles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        46,
+        "pub(super) token_endpoint_handles: web::Data<TokenEndpointHandles>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        256,
+        "let token_endpoint_handles = web::Data::new(TokenEndpointHandles::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies.rs",
+        297,
+        "token_endpoint_handles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "profile_logout_endpoint",
+      "type": "web::Data<SessionLogoutEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        121,
+        "insert(&mut extensions, identity.profile_logout_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        15,
+        "pub(super) profile_logout_endpoint: web::Data<SessionLogoutEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        80,
+        "let profile_logout_endpoint = web::Data::new(SessionLogoutEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        448,
+        "profile_logout_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "runtime_module_admin_endpoint",
+      "type": "web::Data<RuntimeModuleAdminEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        92,
+        "identity.runtime_module_admin_endpoint.clone(),"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        16,
+        "pub(super) runtime_module_admin_endpoint: web::Data<RuntimeModuleAdminEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        85,
+        "let runtime_module_admin_endpoint = web::Data::new(RuntimeModuleAdminEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        449,
+        "runtime_module_admin_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "admin_federation",
+      "type": "web::Data<AdminFederationConfig>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        115,
+        "insert(&mut extensions, identity.admin_federation.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        19,
+        "pub(super) admin_federation: web::Data<AdminFederationConfig>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        133,
+        "let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&startup.settings));"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        452,
+        "admin_federation,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "session_profiles",
+      "type": "web::Data<SessionProfileHandles>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        116,
+        "insert(&mut extensions, identity.session_profiles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        20,
+        "pub(super) session_profiles: web::Data<SessionProfileHandles>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        134,
+        "let session_profiles = web::Data::new(SessionProfileHandles::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        453,
+        "session_profiles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "session_management_endpoint",
+      "type": "web::Data<SessionManagementEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        119,
+        "identity.session_management_endpoint.clone(),"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        21,
+        "pub(super) session_management_endpoint: web::Data<SessionManagementEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        138,
+        "let session_management_endpoint = web::Data::new(SessionManagementEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        454,
+        "session_management_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "device_decision_handles",
+      "type": "web::Data<DeviceDecisionHandles>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        109,
+        "insert(&mut extensions, identity.device_decision_handles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        22,
+        "pub(super) device_decision_handles: web::Data<DeviceDecisionHandles>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        287,
+        "let device_decision_handles = web::Data::new(DeviceDecisionHandles::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        455,
+        "device_decision_handles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "authorization_decision_endpoint",
+      "type": "web::Data<AuthorizationDecisionEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        96,
+        "identity.authorization_decision_endpoint.clone(),"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        23,
+        "pub(super) authorization_decision_endpoint: web::Data<AuthorizationDecisionEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        263,
+        "let authorization_decision_endpoint = web::Data::new(AuthorizationDecisionEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        456,
+        "authorization_decision_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "csrf_http_config",
+      "type": "web::Data<CsrfHttpConfig>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        124,
+        "insert(&mut extensions, identity.csrf_http_config.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        25,
+        "pub(super) csrf_http_config: web::Data<CsrfHttpConfig>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        173,
+        "let csrf_http_config = web::Data::new(CsrfHttpConfig::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        458,
+        "csrf_http_config,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "profile_account_endpoint",
+      "type": "web::Data<ProfileAccountEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        122,
+        "insert(&mut extensions, identity.profile_account_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        26,
+        "pub(super) profile_account_endpoint: web::Data<ProfileAccountEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        183,
+        "let profile_account_endpoint = web::Data::new(ProfileAccountEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        459,
+        "profile_account_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "account_profiles",
+      "type": "web::Data<AccountProfileService>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        126,
+        "insert(&mut extensions, identity.account_profiles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        27,
+        "pub(super) account_profiles: web::Data<AccountProfileService>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        190,
+        "let account_profiles = web::Data::new(account_profile_service);"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        460,
+        "account_profiles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "avatar_profiles",
+      "type": "web::Data<AvatarProfileService>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        127,
+        "insert(&mut extensions, identity.avatar_profiles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        28,
+        "pub(super) avatar_profiles: web::Data<AvatarProfileService>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        191,
+        "let avatar_profiles = web::Data::new(match &startup.avatar_storage {"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        461,
+        "avatar_profiles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "profile_access_requests",
+      "type": "web::Data<ClientAccessProfileService>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        128,
+        "insert(&mut extensions, identity.profile_access_requests.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        29,
+        "pub(super) profile_access_requests: web::Data<ClientAccessProfileService>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        218,
+        "let profile_access_requests = web::Data::new(ClientAccessProfileService::from_port("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        462,
+        "profile_access_requests,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "profile_federation",
+      "type": "web::Data<FederationProfileService>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        129,
+        "insert(&mut extensions, identity.profile_federation.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        30,
+        "pub(super) profile_federation: web::Data<FederationProfileService>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        223,
+        "let profile_federation = web::Data::new(FederationProfileService::from_port("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        463,
+        "profile_federation,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "admin_user_registration",
+      "type": "web::Data<dyn nazo_identity::ports::RegistrationAccountRepositoryPort>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        132,
+        "insert(&mut extensions, identity.admin_user_registration.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        32,
+        "pub(super) admin_user_registration:"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        228,
+        "let admin_user_registration: web::Data<"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        465,
+        "admin_user_registration,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "admin_access_delivery",
+      "type": "web::Data<dyn nazo_identity::ports::DeliveryStorePort>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        138,
+        "insert(&mut extensions, identity.admin_access_delivery.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        40,
+        "pub(super) admin_access_delivery: web::Data<dyn nazo_identity::ports::DeliveryStorePort>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        250,
+        "let admin_access_delivery: web::Data<dyn nazo_identity::ports::DeliveryStorePort> ="
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        471,
+        "admin_access_delivery,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "admin_access_request_config",
+      "type": "web::Data<AdminAccessRequestConfig>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        141,
+        "identity.admin_access_request_config.clone(),"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        41,
+        "pub(super) admin_access_request_config: web::Data<AdminAccessRequestConfig>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        254,
+        "let admin_access_request_config = web::Data::new(AdminAccessRequestConfig::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        472,
+        "admin_access_request_config,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "mfa_profiles",
+      "type": "web::Data<MfaProfileEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        125,
+        "insert(&mut extensions, identity.mfa_profiles.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        43,
+        "pub(super) mfa_profiles: web::Data<MfaProfileEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        320,
+        "let mfa_profiles = web::Data::new(MfaProfileEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        474,
+        "mfa_profiles,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "auth_request_limiter",
+      "type": "web::Data<AuthRequestLimiter>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        146,
+        "insert(&mut extensions, identity.auth_request_limiter.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        44,
+        "pub(super) auth_request_limiter: web::Data<AuthRequestLimiter>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        277,
+        "let auth_request_limiter = web::Data::new(AuthRequestLimiter::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        475,
+        "auth_request_limiter,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "local_registration_endpoint",
+      "type": "web::Data<LocalRegistrationEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        150,
+        "identity.local_registration_endpoint.clone(),"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        46,
+        "pub(super) local_registration_endpoint: web::Data<LocalRegistrationEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        343,
+        "let local_registration_endpoint = web::Data::new(LocalRegistrationEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        477,
+        "local_registration_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "password_login_endpoint",
+      "type": "web::Data<PasswordLoginEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        152,
+        "insert(&mut extensions, identity.password_login_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        47,
+        "pub(super) password_login_endpoint: web::Data<PasswordLoginEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        367,
+        "let password_login_endpoint = web::Data::new(PasswordLoginEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        478,
+        "password_login_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "passkey_login_endpoint",
+      "type": "web::Data<PasskeyLoginEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        153,
+        "insert(&mut extensions, identity.passkey_login_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        48,
+        "pub(super) passkey_login_endpoint: web::Data<PasskeyLoginEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        405,
+        "let passkey_login_endpoint = web::Data::new(PasskeyLoginEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        479,
+        "passkey_login_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "passkey_profile_endpoint",
+      "type": "web::Data<PasskeyProfileEndpoint>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        154,
+        "insert(&mut extensions, identity.passkey_profile_endpoint.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        49,
+        "pub(super) passkey_profile_endpoint: web::Data<PasskeyProfileEndpoint>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        417,
+        "let passkey_profile_endpoint = web::Data::new(PasskeyProfileEndpoint::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        480,
+        "passkey_profile_endpoint,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/startup/services/identity.rs::IdentityServices",
+    "field": {
+      "name": "federation_http_config",
+      "type": "web::Data<FederationHttpConfig>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services.rs",
+        156,
+        "insert(&mut extensions, identity.federation_http_config.clone());"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        51,
+        "pub(super) federation_http_config: web::Data<FederationHttpConfig>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        438,
+        "let federation_http_config = web::Data::new(FederationHttpConfig::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        482,
+        "federation_http_config,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/transport.rs::DirectTlsListeners",
+    "field": {
+      "name": "reload_interval",
+      "type": "Duration"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/transport.rs",
+        35,
+        "pub(super) reload_interval: Duration,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/transport.rs",
+        291,
+        "reload_interval: Duration::from_secs(reload_interval_seconds),"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/factory.rs",
+        239,
+        "let reload_interval = listeners.reload_interval;"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/factory.rs",
+        243,
+        "let reloader = crate::bootstrap::spawn_direct_tls_reloader(snapshots, reload_interval);"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/transport.rs::DirectTlsGeneration",
+    "field": {
+      "name": "server_key",
+      "type": "Arc<CertifiedKey>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/transport.rs",
+        110,
+        "server_key: Arc<CertifiedKey>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/transport.rs",
+        200,
+        "Some(Arc::clone(&self.current.load().server_key))"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/transport.rs",
+        372,
+        "let server_key = Arc::new("
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/transport.rs",
+        383,
+        "server_key,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/ui_release.rs::GithubRelease",
+    "field": {
+      "name": "tag_name",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/ui_release.rs",
+        27,
+        "tag_name: String,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/ui_release.rs",
+        82,
+        "if self.draft || self.prerelease || !semantic_tag(&self.tag_name) {"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/ui_release.rs",
+        102,
+        "version: self.tag_name,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/bootstrap/ui_release.rs::GithubRelease",
+    "field": {
+      "name": "prerelease",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/ui_release.rs",
+        29,
+        "prerelease: bool,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/ui_release.rs",
+        82,
+        "if self.draft || self.prerelease || !semantic_tag(&self.tag_name) {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/http/admin/access_requests.rs::AdminAccessRequestConfig",
+    "field": {
+      "name": "delivery_ttl_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/http/admin/access_requests.rs",
+        32,
+        "delivery_ttl_seconds: u64,"
+      ],
+      [
+        "crates/nazoauth/src/http/admin/access_requests.rs",
+        36,
+        "pub(crate) fn new(client_secret_pepper: &str, delivery_ttl_seconds: u64) -> Self {"
+      ],
+      [
+        "crates/nazoauth/src/http/admin/access_requests.rs",
+        39,
+        "delivery_ttl_seconds,"
+      ],
+      [
+        "crates/nazoauth/src/http/admin/access_requests.rs",
+        225,
+        "let Some(expires_at) = i64::try_from(config.delivery_ttl_seconds)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/http/auth/csrf.rs::CsrfHttpConfig",
+    "field": {
+      "name": "cookie_name",
+      "type": "Box<str>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/http/auth/csrf.rs",
+        14,
+        "cookie_name: Box<str>,"
+      ],
+      [
+        "crates/nazoauth/src/http/auth/csrf.rs",
+        21,
+        "cookie_name: impl Into<Box<str>>,"
+      ],
+      [
+        "crates/nazoauth/src/http/auth/csrf.rs",
+        26,
+        "cookie_name: cookie_name.into(),"
+      ],
+      [
+        "crates/nazoauth/src/http/auth/csrf.rs",
+        51,
+        "&config.cookie_name,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/http/auth/federation/oidc.rs::OidcIdTokenClaims",
+    "field": {
+      "name": "azp",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/claims.rs",
+        225,
+        "| \"azp\""
+      ],
+      [
+        "crates/nazoauth/src/http/auth/federation/oidc.rs",
+        25,
+        "pub(super) azp: Option<String>,"
+      ],
+      [
+        "crates/nazoauth/src/http/auth/federation/oidc.rs",
+        134,
+        "|| (audience_count > 1 && claims.azp.as_deref() != Some(&provider.client_id))"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/http/auth/federation.rs::FederationProviderView",
+    "field": {
+      "name": "start_url",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/http/auth/federation.rs",
+        125,
+        "start_url: String,"
+      ],
+      [
+        "crates/nazoauth/src/http/auth/federation.rs",
+        633,
+        "start_url: format!(\"/auth/federation/{}/start\", provider.provider_id),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/keyctl/openid4vc_material.rs::MdocCertificateProfile",
+    "field": {
+      "name": "crl_distribution_uri",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        37,
+        "crl_distribution_uri: String,"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        179,
+        "crl_distribution_uri: format!(\"{issuer_contact_uri}/.well-known/mdoc\"),"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        221,
+        "if *uri == format!(\"{}/{}.crl\", profile.crl_distribution_uri, sha256_hex(ca.as_ref()))"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        339,
+        "profile.crl_distribution_uri,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/keyctl/openid4vc_material.rs::Openid4vcCertificateBundle",
+    "field": {
+      "name": "mdoc_material",
+      "type": "Option<MdocCertificateMaterial>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        42,
+        "mdoc_material: Option<MdocCertificateMaterial>,"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        361,
+        "mdoc_material: mdoc_profile.map(|_| MdocCertificateMaterial {"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        558,
+        "if let Some(material) = bundle.mdoc_material {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/keyctl/openid4vc_material.rs::MdocCertificateMaterial",
+    "field": {
+      "name": "issuer_material_pem",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        48,
+        "issuer_material_pem: String,"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        366,
+        "issuer_material_pem: format!(\"{ca_key_pem}{leaf_pem}{ca_pem}\"),"
+      ],
+      [
+        "crates/nazoauth/src/keyctl/openid4vc_material.rs",
+        559,
+        "iacas.insert(sha256_hex(&material.ca_der), material.issuer_material_pem);"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/operator_task/control_journal.rs::OperationJournalRecord",
+    "field": {
+      "name": "recovery_coverage_version",
+      "type": "Option<u8>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        222,
+        "recovery_coverage_version: Option<u8>,"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        342,
+        "match (covered_recovery, record.recovery_coverage_version) {"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        543,
+        "recovery_coverage_version: None,"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        669,
+        "record.recovery_coverage_version = if result.outcome == ControlOutcome::Succeeded"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/operator_task/control_journal.rs::CleanupBudget",
+    "field": {
+      "name": "max_entries",
+      "type": "usize"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        697,
+        "max_entries: usize,"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        702,
+        "max_entries: 64,"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        793,
+        "while batch.checked < budget.max_entries && started.elapsed() < budget.max_elapsed {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/operator_task/control_journal.rs::CleanupBudget",
+    "field": {
+      "name": "max_elapsed",
+      "type": "Duration"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        698,
+        "max_elapsed: Duration,"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        703,
+        "max_elapsed: Duration::from_millis(25),"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        793,
+        "while batch.checked < budget.max_entries && started.elapsed() < budget.max_elapsed {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/operator_task/control_journal.rs::CleanupBatch",
+    "field": {
+      "name": "finished",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        36,
+        "//! have started or finished without a durable result; `completed` carries"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        715,
+        "finished: bool,"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        795,
+        "batch.finished = true;"
+      ],
+      [
+        "crates/nazoauth/src/operator_task/control_journal.rs",
+        843,
+        "if batch.finished {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings/rate_limit.rs::RateLimitSettings",
+    "field": {
+      "name": "token_max_requests",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/http/token/issue.rs",
+        28,
+        "token_rate_limit_max_requests: settings.identity.rate_limit.token_max_requests,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        15,
+        "pub(crate) token_max_requests: u64,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        31,
+        "token_max_requests: config.parse("
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        52,
+        "|| settings.token_max_requests == 0"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings/rate_limit.rs::RateLimitSettings",
+    "field": {
+      "name": "login_failure_window_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        359,
+        "failure_window_seconds: identity_settings.rate_limit.login_failure_window_seconds,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        17,
+        "pub(crate) login_failure_window_seconds: u64,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        39,
+        "login_failure_window_seconds: config.parse(\"LOGIN_FAILURE_WINDOW_SECONDS\", 900)?,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        46,
+        "|| settings.login_failure_window_seconds == 0"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings/rate_limit.rs::RateLimitSettings",
+    "field": {
+      "name": "login_failure_ip_email_max_attempts",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        362,
+        ".login_failure_ip_email_max_attempts,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        18,
+        "pub(crate) login_failure_ip_email_max_attempts: u64,"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        40,
+        "login_failure_ip_email_max_attempts: config"
+      ],
+      [
+        "crates/nazoauth/src/settings/rate_limit.rs",
+        54,
+        "|| settings.login_failure_ip_email_max_attempts == 0"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::StorageSettings",
+    "field": {
+      "name": "avatar_max_bytes",
+      "type": "usize"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        159,
+        "pub(crate) avatar_max_bytes: usize,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        202,
+        "settings.storage.avatar_max_bytes,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        211,
+        "settings.storage.avatar_max_bytes,"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        639,
+        "avatar_max_bytes: config.parse(\"AVATAR_MAX_BYTES\", 2_097_152)?,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::StorageSettings",
+    "field": {
+      "name": "client_delivery_ttl_seconds",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        160,
+        "pub(crate) client_delivery_ttl_seconds: u64,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/identity.rs",
+        256,
+        "storage.client_delivery_ttl_seconds,"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        640,
+        "client_delivery_ttl_seconds: positive_u64("
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::KeyManagementSettings",
+    "field": {
+      "name": "signing_external_command",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        177,
+        "pub(crate) signing_external_command: Vec<String>,"
+      ],
+      [
+        "crates/nazoauth/src/settings.rs",
+        231,
+        "if self.keys.signing_external_command.is_empty() {"
+      ],
+      [
+        "crates/nazoauth/src/settings.rs",
+        236,
+        "self.keys.signing_external_command.clone(),"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        658,
+        "signing_external_command: parse_signing_external_command("
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::KeyManagementSettings",
+    "field": {
+      "name": "signing_external_timeout_ms",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        178,
+        "pub(crate) signing_external_timeout_ms: u64,"
+      ],
+      [
+        "crates/nazoauth/src/settings.rs",
+        237,
+        "std::time::Duration::from_millis(self.keys.signing_external_timeout_ms),"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        661,
+        "signing_external_timeout_ms: config.parse(\"SIGNING_EXTERNAL_TIMEOUT_MS\", 2_000)?,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::KeyManagementSettings",
+    "field": {
+      "name": "signing_key_rotation_interval_seconds",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        179,
+        "pub(crate) signing_key_rotation_interval_seconds: i64,"
+      ],
+      [
+        "crates/nazoauth/src/settings.rs",
+        245,
+        "self.keys.signing_key_rotation_interval_seconds,"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        662,
+        "signing_key_rotation_interval_seconds: task_key_settings"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::KeyManagementSettings",
+    "field": {
+      "name": "signing_key_prepublish_seconds",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        180,
+        "pub(crate) signing_key_prepublish_seconds: i64,"
+      ],
+      [
+        "crates/nazoauth/src/settings.rs",
+        247,
+        "prepublish_window: chrono::Duration::seconds(self.keys.signing_key_prepublish_seconds),"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        665,
+        "signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::ModuleSettings",
+    "field": {
+      "name": "register_openid4vp_routes",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        192,
+        "pub(crate) register_openid4vp_routes: bool,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/routes.rs",
+        538,
+        "if settings.modules.register_openid4vp_routes {"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        338,
+        "let register_openid4vp_routes ="
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        671,
+        "register_openid4vp_routes,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::ModuleSettings",
+    "field": {
+      "name": "remote_client_document_private_origins",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        194,
+        "pub(crate) remote_client_document_private_origins: Vec<String>,"
+      ],
+      [
+        "crates/nazoauth/src/tenant_resource_preparation.rs",
+        152,
+        "RemoteClientDocumentResolver::new(&settings.modules.remote_client_document_private_origins)"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/tenant_runtime.rs",
+        339,
+        "&settings.modules.remote_client_document_private_origins,"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        673,
+        "remote_client_document_private_origins: config"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::ModuleSettings",
+    "field": {
+      "name": "backchannel_logout_private_origins",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        195,
+        "pub(crate) backchannel_logout_private_origins: Vec<String>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/background.rs",
+        44,
+        "&settings.modules.backchannel_logout_private_origins,"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        684,
+        "backchannel_logout_private_origins: config"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::CibaSettings",
+    "field": {
+      "name": "ciba_notification_private_origins",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        208,
+        "pub(crate) ciba_notification_private_origins: Vec<String>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/background.rs",
+        32,
+        "&settings.ciba.ciba_notification_private_origins,"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        306,
+        "let ciba_notification_private_origins = config"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        703,
+        "ciba_notification_private_origins,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::Openid4vcSettings",
+    "field": {
+      "name": "issuer_management_token",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        220,
+        "pub(crate) issuer_management_token: Option<String>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies/openid4vc.rs",
+        124,
+        ".issuer_management_token"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        712,
+        "issuer_management_token: openid4vci_issuer_management_token,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/nazoauth/src/settings.rs::Openid4vcSettings",
+    "field": {
+      "name": "verifier_management_token",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/settings.rs",
+        222,
+        "pub(crate) verifier_management_token: Option<String>,"
+      ],
+      [
+        "crates/nazoauth/src/bootstrap/startup/services/dependencies/openid4vc.rs",
+        165,
+        ".verifier_management_token"
+      ],
+      [
+        "crates/nazoauth/src/settings/config_loader.rs",
+        714,
+        "verifier_management_token: openid4vp_verifier_management_token,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/application.rs::CredentialRequestContext",
+    "field": {
+      "name": "access_token_scheme",
+      "type": "AccessTokenScheme"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        379,
+        "context.access_token_scheme,"
+      ],
+      [
+        "crates/openid4vc-http-actix/src/vci.rs",
+        219,
+        "let (access_token_scheme, bearer_token) = request"
+      ],
+      [
+        "crates/openid4vc-http-actix/src/vci.rs",
+        259,
+        "access_token_scheme,"
+      ],
+      [
+        "crates/openid4vci/src/application.rs",
+        22,
+        "pub access_token_scheme: AccessTokenScheme,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/application.rs::CreateCredentialOfferResponse",
+    "field": {
+      "name": "credential_offer_uri",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        385,
+        "let credential_offer_uri = format!(\"{}/openid4vci/offers/{id}\", self.issuer);"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        388,
+        "credential_offer_uri,"
+      ],
+      [
+        "crates/openid4vci/src/application.rs",
+        132,
+        "pub credential_offer_uri: String,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::Logo",
+    "field": {
+      "name": "alt_text",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/openid4vci/src/metadata.rs",
+        15,
+        "pub alt_text: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialDisplay",
+    "field": {
+      "name": "logo",
+      "type": "Option<Logo>"
+    },
+    "refs": [
+      [
+        "crates/openid4vci/src/metadata.rs",
+        25,
+        "pub logo: Option<Logo>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialDisplay",
+    "field": {
+      "name": "background_color",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/openid4vci/src/metadata.rs",
+        29,
+        "pub background_color: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialDisplay",
+    "field": {
+      "name": "background_image",
+      "type": "Option<Logo>"
+    },
+    "refs": [
+      [
+        "crates/openid4vci/src/metadata.rs",
+        31,
+        "pub background_image: Option<Logo>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialDisplay",
+    "field": {
+      "name": "text_color",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/openid4vci/src/metadata.rs",
+        33,
+        "pub text_color: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::ProofTypeMetadata",
+    "field": {
+      "name": "key_attestations_required",
+      "type": "Option<BTreeMap<String, Vec<String>>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc/proof_validator.rs",
+        182,
+        "if metadata.key_attestations_required.is_some() && key_attestation.is_none() {"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc/proof_validator.rs",
+        281,
+        "if let Some(required) = &metadata.key_attestations_required {"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        50,
+        "pub key_attestations_required: Option<BTreeMap<String, Vec<String>>>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialConfiguration",
+    "field": {
+      "name": "credential_metadata",
+      "type": "Option<CredentialMetadata>"
+    },
+    "refs": [
+      [
+        "crates/openid4vci/src/metadata.rs",
+        69,
+        "pub credential_metadata: Option<CredentialMetadata>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        83,
+        "size += usize::from(self.credential_metadata.is_some());"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        126,
+        "if let Some(metadata) = &self.credential_metadata {"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        127,
+        "map.serialize_entry(\"credential_metadata\", metadata)?;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::EncryptionMetadata",
+    "field": {
+      "name": "alg_values_supported",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        273,
+        "alg_values_supported: vec![\"ECDH-ES\".to_owned()],"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        186,
+        "pub alg_values_supported: Vec<String>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        270,
+        "if encryption.alg_values_supported != [\"ECDH-ES\"]"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::EncryptionMetadata",
+    "field": {
+      "name": "encryption_required",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        269,
+        "encryption_required: false,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        276,
+        "encryption_required: false,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        190,
+        "pub encryption_required: bool,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        201,
+        "pub encryption_required: bool,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialRequestEncryptionMetadata",
+    "field": {
+      "name": "encryption_required",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        269,
+        "encryption_required: false,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        276,
+        "encryption_required: false,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        190,
+        "pub encryption_required: bool,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        201,
+        "pub encryption_required: bool,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "authorization_servers",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server-core/src/metadata/document.rs",
+        322,
+        "\"authorization_servers\": [input.issuer],"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        257,
+        "authorization_servers: vec![self.issuer.clone()],"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        214,
+        "pub authorization_servers: Vec<String>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        249,
+        ".authorization_servers"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "credential_endpoint",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        258,
+        "credential_endpoint: format!(\"{}/openid4vci/credential\", self.issuer),"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        215,
+        "pub credential_endpoint: String,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        251,
+        ".chain(std::iter::once(&self.credential_endpoint))"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "nonce_endpoint",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        259,
+        "nonce_endpoint: Some(format!(\"{}/openid4vci/nonce\", self.issuer)),"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        217,
+        "pub nonce_endpoint: Option<String>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        252,
+        ".chain(self.nonce_endpoint.iter())"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "deferred_credential_endpoint",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        260,
+        "deferred_credential_endpoint: Some(format!("
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        219,
+        "pub deferred_credential_endpoint: Option<String>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        253,
+        ".chain(self.deferred_credential_endpoint.iter())"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "notification_endpoint",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        264,
+        "notification_endpoint: Some(format!(\"{}/openid4vci/notification\", self.issuer)),"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        221,
+        "pub notification_endpoint: Option<String>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        254,
+        ".chain(self.notification_endpoint.iter())"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "credential_request_encryption",
+      "type": "Option<CredentialRequestEncryptionMetadata>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        265,
+        "credential_request_encryption: Some(CredentialRequestEncryptionMetadata {"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        223,
+        "pub credential_request_encryption: Option<CredentialRequestEncryptionMetadata>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        280,
+        "if let Some(encryption) = self.credential_request_encryption.as_ref()"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "batch_credential_issuance",
+      "type": "Option<BatchCredentialIssuance>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        278,
+        "batch_credential_issuance: Some(BatchCredentialIssuance { batch_size: 10 }),"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        227,
+        "pub batch_credential_issuance: Option<BatchCredentialIssuance>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        290,
+        ".batch_credential_issuance"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "credential_configurations_supported",
+      "type": "BTreeMap<String, CredentialConfiguration>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        280,
+        "credential_configurations_supported: self.configurations.as_ref().clone(),"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        230,
+        "pub credential_configurations_supported: BTreeMap<String, CredentialConfiguration>,"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        244,
+        "|| self.credential_configurations_supported.is_empty()"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        295,
+        "for configuration in self.credential_configurations_supported.values() {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/metadata.rs::CredentialIssuerMetadata",
+    "field": {
+      "name": "signed_metadata",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        281,
+        "signed_metadata: None,"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs",
+        560,
+        "metadata.signed_metadata = Some("
+      ],
+      [
+        "crates/openid4vc-http-actix/src/vci.rs",
+        98,
+        "Ok(metadata) if accepts_signed_metadata(&request) => match metadata.signed_metadata {"
+      ],
+      [
+        "crates/openid4vci/src/metadata.rs",
+        232,
+        "pub signed_metadata: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/model.rs::NotificationRequest",
+    "field": {
+      "name": "event_description",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/issuance.rs",
+        374,
+        "description: request.event_description,"
+      ],
+      [
+        "crates/openid4vci/src/model.rs",
+        76,
+        "pub event_description: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/offer.rs::TxCodeDescription",
+    "field": {
+      "name": "input_mode",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        333,
+        "input_mode: Some("
+      ],
+      [
+        "crates/openid4vci/src/offer.rs",
+        11,
+        "pub input_mode: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/offer.rs::AuthorizationCodeGrant",
+    "field": {
+      "name": "authorization_server",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        326,
+        "authorization_server: Some(self.issuer.clone()),"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        344,
+        "authorization_server: Some(self.issuer.clone()),"
+      ],
+      [
+        "crates/openid4vci/src/offer.rs",
+        24,
+        "pub authorization_server: Option<String>,"
+      ],
+      [
+        "crates/openid4vci/src/offer.rs",
+        35,
+        "pub authorization_server: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vci/src/offer.rs::PreAuthorizedCodeGrant",
+    "field": {
+      "name": "authorization_server",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        326,
+        "authorization_server: Some(self.issuer.clone()),"
+      ],
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vci/offers.rs",
+        344,
+        "authorization_server: Some(self.issuer.clone()),"
+      ],
+      [
+        "crates/openid4vci/src/offer.rs",
+        24,
+        "pub authorization_server: Option<String>,"
+      ],
+      [
+        "crates/openid4vci/src/offer.rs",
+        35,
+        "pub authorization_server: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/application.rs::CreatePresentationResponse",
+    "field": {
+      "name": "authorization_url",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vp.rs",
+        110,
+        "authorization_url: url.into(),"
+      ],
+      [
+        "crates/openid4vp/src/application.rs",
+        60,
+        "pub authorization_url: String,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::ClientMetadata",
+    "field": {
+      "name": "vp_formats_supported",
+      "type": "Value"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vp.rs",
+        530,
+        "vp_formats_supported: json!({\"dc+sd-jwt\":{\"sd-jwt_alg_values\":[\"ES256\"],\"kb-jwt_alg_values\":[\"ES256\"]},\"mso_mdoc\":{\"issuerauth_alg_values\":[-7],\"deviceauth_alg_values\":[-7]}}),"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        104,
+        "pub vp_formats_supported: Value,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::ClientMetadata",
+    "field": {
+      "name": "encrypted_response_enc_values_supported",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vp.rs",
+        532,
+        "encrypted_response_enc_values_supported: response_key"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        108,
+        "pub encrypted_response_enc_values_supported: Option<Vec<String>>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::VerifierInfo",
+    "field": {
+      "name": "credential_ids",
+      "type": "Option<Vec<String>>"
+    },
+    "refs": [
+      [
+        "crates/openid4vp/src/model.rs",
+        117,
+        "pub credential_ids: Option<Vec<String>>,"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        125,
+        "pub credential_ids: Vec<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::TransactionData",
+    "field": {
+      "name": "transaction_type",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/openid4vp/src/model.rs",
+        124,
+        "pub transaction_type: String,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::TransactionData",
+    "field": {
+      "name": "credential_ids",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/openid4vp/src/model.rs",
+        117,
+        "pub credential_ids: Option<Vec<String>>,"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        125,
+        "pub credential_ids: Vec<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::TransactionData",
+    "field": {
+      "name": "transaction_data_hashes_alg",
+      "type": "Vec<String>"
+    },
+    "refs": [
+      [
+        "crates/openid4vp/src/model.rs",
+        126,
+        "pub transaction_data_hashes_alg: Vec<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::AuthorizationRequest",
+    "field": {
+      "name": "client_metadata",
+      "type": "Option<ClientMetadata>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vp.rs",
+        529,
+        "client_metadata: Some(ClientMetadata {"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        141,
+        "pub client_metadata: Option<ClientMetadata>,"
+      ],
+      [
+        "crates/openid4vp/src/service.rs",
+        255,
+        ".client_metadata"
+      ]
+    ]
+  },
+  {
+    "model": "crates/openid4vp/src/model.rs::AuthorizationRequest",
+    "field": {
+      "name": "verifier_info",
+      "type": "Option<Vec<VerifierInfo>>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vp.rs",
+        536,
+        "verifier_info: None,"
+      ],
+      [
+        "crates/openid4vp/src/model.rs",
+        143,
+        "pub verifier_info: Option<Vec<VerifierInfo>>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/operator-protocol/src/wire.rs::DiscoveryResponse",
+    "field": {
+      "name": "instance_public_key",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/control_discovery.rs",
+        147,
+        "instance_public_key: self.identity.public_key.clone(),"
+      ],
+      [
+        "crates/operator-protocol/src/wire.rs",
+        85,
+        "pub instance_public_key: String,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/operator-protocol/src/wire.rs::Openid4vcTrustPolicy",
+    "field": {
+      "name": "credential_trust_anchor_pem",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/openid4vc_endpoints/openid4vp.rs",
+        256,
+        "parse_scoped_credential_trust_anchors(&policy.material.credential_trust_anchor_pem).map_err("
+      ],
+      [
+        "crates/operator-protocol/src/verification.rs",
+        243,
+        "&policy.credential_trust_anchor_pem,"
+      ],
+      [
+        "crates/operator-protocol/src/wire.rs",
+        137,
+        "pub credential_trust_anchor_pem: String,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/lib.rs::SecurityAuditAnchorHealth",
+    "field": {
+      "name": "pending_estimate",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        96,
+        "pending_exists, pending_estimate, pending_orphan_exists, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        685,
+        "pending_estimate: i64,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        712,
+        "pending_estimate: row.pending_estimate,"
+      ],
+      [
+        "crates/persistence/src/lib.rs",
+        75,
+        "pub pending_estimate: i64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "identity_approvals",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        49,
+        "+ counts.identity_approvals"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        70,
+        "identity_approvals = counts.identity_approvals,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        720,
+        "identity_approvals: generic.deleted_identity_approvals.max(0) as u64,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        32,
+        "pub identity_approvals: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "credential_offers",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        54,
+        "+ counts.credential_offers"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        74,
+        "credential_offers = counts.credential_offers,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        724,
+        "credential_offers: credentials.offers,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        36,
+        "pub credential_offers: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "credential_nonces",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        55,
+        "+ counts.credential_nonces"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        75,
+        "credential_nonces = counts.credential_nonces,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        725,
+        "credential_nonces: credentials.nonces,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        37,
+        "pub credential_nonces: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "credential_access_grants",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        56,
+        "+ counts.credential_access_grants"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        76,
+        "credential_access_grants = counts.credential_access_grants,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        726,
+        "credential_access_grants: credentials.grants,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        39,
+        "pub credential_access_grants: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "deferred_credentials",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        57,
+        "+ counts.deferred_credentials"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        77,
+        "deferred_credentials = counts.deferred_credentials,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        727,
+        "deferred_credentials: credentials.deferred,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        40,
+        "pub deferred_credentials: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "credential_notifications",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        58,
+        "+ counts.credential_notifications"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        78,
+        "credential_notifications = counts.credential_notifications,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        728,
+        "credential_notifications: credentials.notifications,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        41,
+        "pub credential_notifications: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/maintenance.rs::CleanupBatchResult",
+    "field": {
+      "name": "credential_responses",
+      "type": "u64"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        59,
+        "+ counts.credential_responses;"
+      ],
+      [
+        "crates/nazoauth/src/jobs/security_state.rs",
+        79,
+        "credential_responses = counts.credential_responses,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        729,
+        "credential_responses: credentials.responses,"
+      ],
+      [
+        "crates/persistence/src/maintenance.rs",
+        42,
+        "pub credential_responses: u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence/src/tenant_resources.rs::ManifestResource",
+    "field": {
+      "name": "payload_base64url",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/persistence/src/tenant_resources.rs",
+        155,
+        "payload_base64url: String,"
+      ],
+      [
+        "crates/persistence/src/tenant_resources.rs",
+        229,
+        ".decode(&resource.payload_base64url)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/pool.rs::RuntimeRoleStatus",
+    "field": {
+      "name": "acceptable",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/pool.rs",
+        102,
+        "acceptable: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/pool.rs",
+        248,
+        ") AS acceptable\","
+      ],
+      [
+        "crates/persistence-postgres/src/pool.rs",
+        254,
+        "if !status.acceptable {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/token_issuance.rs",
+        51,
+        "// clock skew) so the revocation fact outlives every still-acceptable"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "anchor_sequence",
+      "type": "Option<i64>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        98,
+        "anchor_sequence AS last_exported_sequence, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        250,
+        "\"SELECT last_sequence, last_hash, anchor_sequence, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        398,
+        "if first_sequence != head.anchor_sequence.unwrap_or_default() + 1 {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        645,
+        "anchor_sequence: Option<i64>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "batch_first_sequence",
+      "type": "Option<i64>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        251,
+        "batch_first_sequence, batch_last_sequence, batch_event_count, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        395,
+        "let first_sequence = head.batch_first_sequence.unwrap_or_default();"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        647,
+        "batch_first_sequence: Option<i64>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "batch_event_count",
+      "type": "Option<i32>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        251,
+        "batch_first_sequence, batch_last_sequence, batch_event_count, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        397,
+        "let expected_count = head.batch_event_count.unwrap_or_default() as usize;"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        651,
+        "batch_event_count: Option<i32>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "batch_attempts",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        252,
+        "batch_digest, batch_attempts, batch_available_at, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        482,
+        "attempts: head.batch_attempts,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        655,
+        "batch_attempts: i32,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "batch_available_at",
+      "type": "Option<DateTime<Utc>>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        252,
+        "batch_digest, batch_attempts, batch_available_at, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        384,
+        "|| head.batch_available_at.is_some_and(|at| at > now)"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        657,
+        "batch_available_at: Option<DateTime<Utc>>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "batch_locked_until",
+      "type": "Option<DateTime<Utc>>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        253,
+        "batch_locked_until, batch_blocked_reason \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        383,
+        "if head.batch_locked_until.is_some_and(|until| until > now)"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        659,
+        "batch_locked_until: Option<DateTime<Utc>>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditChainHeadRow",
+    "field": {
+      "name": "batch_blocked_reason",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        105,
+        "ELSE batch_blocked_reason IS NOT NULL END AS batch_blocked \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        253,
+        "batch_locked_until, batch_blocked_reason \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        379,
+        "if let Some(reason) = head.batch_blocked_reason.clone() {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        661,
+        "batch_blocked_reason: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::AuditPrivilegePreflightRow",
+    "field": {
+      "name": "policy_satisfied",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        82,
+        "if !privileges.policy_satisfied {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        673,
+        "policy_satisfied: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        867,
+        "\"SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight(\","
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/audit_ledger.rs::SecurityAuditAnchorHealthRow",
+    "field": {
+      "name": "pending_estimate",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        96,
+        "pending_exists, pending_estimate, pending_orphan_exists, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        685,
+        "pending_estimate: i64,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/audit_ledger.rs",
+        712,
+        "pending_estimate: row.pending_estimate,"
+      ],
+      [
+        "crates/persistence/src/lib.rs",
+        75,
+        "pub pending_estimate: i64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/controller_registry/approvals.rs::IssuedApprovalRow",
+    "field": {
+      "name": "expires_at_matches",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/controller_registry/approvals.rs",
+        126,
+        "expires_at_matches: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/controller_registry/approvals.rs",
+        281,
+        "expires_at = $7 AS expires_at_matches\","
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/controller_registry/approvals.rs",
+        301,
+        "|| row.token_hash != token_hash || !row.expires_at_matches {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs::DatasetWrite",
+    "field": {
+      "name": "replace_existing",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        43,
+        "replace_existing: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        70,
+        "replace_existing: true,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        116,
+        "let statement = if write.replace_existing {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs::ManagedDatasetMutationRow",
+    "field": {
+      "name": "expected_effects",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        338,
+        "SELECT (SELECT COUNT(*) FROM permitted) AS expected_effects,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        422,
+        "SELECT (SELECT COUNT(*) FROM target) AS expected_effects,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        459,
+        "expected_effects: i64,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        505,
+        "self.expected_effects,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs::ManagedDatasetMutationRow",
+    "field": {
+      "name": "effect_count",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        339,
+        "(SELECT COUNT(*) FROM upserted) AS effect_count,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        423,
+        "(SELECT COUNT(*) FROM deleted) AS effect_count,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        461,
+        "effect_count: i64,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        506,
+        "self.effect_count,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs::ManagedDatasetMutationRow",
+    "field": {
+      "name": "source_event_count",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        340,
+        "(SELECT COUNT(*) FROM recorded) AS source_event_count,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        424,
+        "(SELECT COUNT(*) FROM recorded) AS source_event_count,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        463,
+        "source_event_count: i64,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_dataset.rs",
+        507,
+        "self.source_event_count,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/mod.rs::DeferredLockedProjectionRow",
+    "field": {
+      "name": "observed_claim_id",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/deferred.rs",
+        356,
+        "claim_id AS observed_claim_id, claim_expires_at AS observed_claim_expires_at \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/deferred.rs",
+        402,
+        "if row.observed_claim_id.is_some() {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/mod.rs",
+        332,
+        "pub(super) observed_claim_id: Option<String>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/mod.rs::DeferredLockedProjectionRow",
+    "field": {
+      "name": "observed_claim_expires_at",
+      "type": "Option<DateTime<Utc>>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/deferred.rs",
+        356,
+        "claim_id AS observed_claim_id, claim_expires_at AS observed_claim_expires_at \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/deferred.rs",
+        403,
+        "let expires_at = row.observed_claim_expires_at.ok_or_else(|| {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/openid4vc_issuance_store/mod.rs",
+        334,
+        "pub(super) observed_claim_expires_at: Option<DateTime<Utc>>,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::SecurityStateMaintenanceRepository",
+    "field": {
+      "name": "contract_cursor",
+      "type": "Arc<tokio::sync::Mutex<Option<ContractSweepCursor>>>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        47,
+        "contract_cursor: Arc<tokio::sync::Mutex<Option<ContractSweepCursor>>>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        156,
+        "contract_cursor: Arc::new(tokio::sync::Mutex::new(None)),"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        411,
+        "let mut cursor = self.contract_cursor.lock().await;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::SecurityStateMaintenanceRepository",
+    "field": {
+      "name": "grant_cursor",
+      "type": "Arc<tokio::sync::Mutex<Option<GrantSweepCursor>>>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        48,
+        "grant_cursor: Arc<tokio::sync::Mutex<Option<GrantSweepCursor>>>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        157,
+        "grant_cursor: Arc::new(tokio::sync::Mutex::new(None)),"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        515,
+        "let mut cursor = self.grant_cursor.lock().await;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_issuances",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        97,
+        "deleted_issuances: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        701,
+        "|| i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        713,
+        "issuances: generic.deleted_issuances.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_access_token_revocations",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        99,
+        "deleted_access_token_revocations: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        702,
+        "|| i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        717,
+        "revocations: generic.deleted_access_token_revocations.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_scim_audit_events",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        101,
+        "deleted_scim_audit_events: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        703,
+        "|| i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        718,
+        "scim_audit_events: generic.deleted_scim_audit_events.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_backchannel_logout_deliveries",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        103,
+        "deleted_backchannel_logout_deliveries: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        704,
+        "|| i64::from(generic.deleted_backchannel_logout_deliveries)"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        721,
+        "logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_scim_security_events",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        105,
+        "deleted_scim_security_events: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        706,
+        "|| i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        722,
+        "scim_security_events: generic.deleted_scim_security_events.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_remembered_mfa_devices",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        107,
+        "deleted_remembered_mfa_devices: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        707,
+        "|| i64::from(generic.deleted_remembered_mfa_devices) >= CLEANUP_BATCH_LIMIT"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        719,
+        "remembered_mfa_devices: generic.deleted_remembered_mfa_devices.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::GenericCleanupCounts",
+    "field": {
+      "name": "deleted_identity_approvals",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        109,
+        "deleted_identity_approvals: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        708,
+        "|| i64::from(generic.deleted_identity_approvals) >= CLEANUP_BATCH_LIMIT"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        720,
+        "identity_approvals: generic.deleted_identity_approvals.max(0) as u64,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::PresentationCleanupCount",
+    "field": {
+      "name": "deleted_transactions",
+      "type": "i32"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        121,
+        "deleted_transactions: i32,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        192,
+        "\"SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions\","
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        198,
+        "debug_assert!((0..=CLEANUP_BATCH_LIMIT as i32).contains(&count.deleted_transactions));"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        199,
+        "Ok(count.deleted_transactions.max(0) as u64)"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/security_state.rs::CredentialExpiryCounts",
+    "field": {
+      "name": "grants_due",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        137,
+        "grants_due: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        559,
+        "WHERE expires_at <= CURRENT_TIMESTAMP - make_interval(secs => $2)) AS grants_due\","
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/security_state.rs",
+        584,
+        "if !expired.grants_due {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tenancy.rs::ActiveTenantBoundaryRow",
+    "field": {
+      "name": "tenant_status",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        33,
+        "tenant_status: Option<String>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        110,
+        "t.status AS tenant_status,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1018,
+        "if row.tenant_status.as_deref() != Some(\"active\") {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tenancy.rs::ActiveTenantBoundaryRow",
+    "field": {
+      "name": "realm_tenant_id",
+      "type": "Option<Uuid>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        37,
+        "realm_tenant_id: Option<Uuid>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        112,
+        "r.tenant_id AS realm_tenant_id,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1010,
+        "if row.realm_id != Some(expected_realm_id) || row.realm_tenant_id.is_none() {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1034,
+        "if row.realm_tenant_id != Some(expected_tenant_id) {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tenancy.rs::ActiveTenantBoundaryRow",
+    "field": {
+      "name": "realm_status",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        39,
+        "realm_status: Option<String>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        113,
+        "r.status AS realm_status,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1023,
+        "if row.realm_status.as_deref() != Some(\"active\") {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tenancy.rs::ActiveTenantBoundaryRow",
+    "field": {
+      "name": "organization_tenant_id",
+      "type": "Option<Uuid>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        43,
+        "organization_tenant_id: Option<Uuid>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        115,
+        "o.tenant_id AS organization_tenant_id,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1013,
+        "if row.organization_id != Some(expected_organization_id) || row.organization_tenant_id.is_none()"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1039,
+        "if row.organization_tenant_id != Some(expected_tenant_id) {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tenancy.rs::ActiveTenantBoundaryRow",
+    "field": {
+      "name": "organization_status",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        45,
+        "organization_status: Option<String>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        116,
+        "o.status AS organization_status"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenancy.rs",
+        1028,
+        "if row.organization_status.as_deref() != Some(\"active\") {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tenant_resources.rs::Openid4vcTrustPolicyReadRow",
+    "field": {
+      "name": "has_binding",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tenant_resources.rs",
+        189,
+        "has_binding: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenant_resources.rs",
+        702,
+        "AND any_binding.oauth_client_id = client.id) AS has_binding, \\"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tenant_resources.rs",
+        731,
+        "if !row.has_binding {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/token_issuance.rs::SingleUseInsertRow",
+    "field": {
+      "name": "grant_valid",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/token_issuance.rs",
+        527,
+        "grant_valid: bool,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/token_issuance.rs",
+        641,
+        "RETURNING (clock_timestamp() < $10) AS grant_valid\","
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/token_issuance.rs",
+        668,
+        "Some(row) if !row.grant_valid => {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tokens/create_family.rs::Outcome",
+    "field": {
+      "name": "retired_source",
+      "type": "Option<Value>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        16,
+        "retired_source: Option<Value>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        41,
+        "\"conflict\" if row.retired_source.is_none() => {"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        46,
+        ".retired_source"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        80,
+        "out.push_sql(\"SELECT outcome, retired_source FROM public.nazo_create_refresh_family(\");"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tokens/create_family.rs::CreateFamily",
+    "field": {
+      "name": "native_source",
+      "type": "Option<Uuid>"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        9,
+        "native_source: Option<&nazo_auth::NativeSsoSourceFence>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        24,
+        "native_source: native_source.map(|source| source.family_id),"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        62,
+        "native_source: Option<Uuid>,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        119,
+        "out.push_bind_param::<sql_types::Nullable<sql_types::Uuid>, _>(&self.native_source)?;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tokens/create_family.rs::CreateFamily",
+    "field": {
+      "name": "scope_lock",
+      "type": "i64"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        25,
+        "scope_lock: refresh_grant_scope_lock_key(token.tenant_id, token.user_id, token.client_id),"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        63,
+        "scope_lock: i64,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        113,
+        "out.push_bind_param::<sql_types::BigInt, _>(&self.scope_lock)?;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/persistence-postgres/src/repositories/tokens.rs::PreparedRefreshContract",
+    "field": {
+      "name": "contract_value",
+      "type": "Value"
+    },
+    "refs": [
+      [
+        "crates/persistence-postgres/src/repositories/tokens.rs",
+        637,
+        "contract_value: Value,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens.rs",
+        647,
+        "let (contract_blake3, contract_value) = persisted_contract(contract)?;"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens.rs",
+        650,
+        "contract_value,"
+      ],
+      [
+        "crates/persistence-postgres/src/repositories/tokens/create_family.rs",
+        91,
+        "out.push_bind_param::<sql_types::Jsonb, _>(&self.contract.contract_value)?;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/resource-server/src/dpop.rs::DpopProofVerifier",
+    "field": {
+      "name": "max_replay_cache_entries",
+      "type": "usize"
+    },
+    "refs": [
+      [
+        "crates/resource-server/src/dpop.rs",
+        21,
+        "max_replay_cache_entries: usize,"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        91,
+        "max_replay_cache_entries: usize,"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        95,
+        "max_replay_cache_entries: max_replay_cache_entries.max(1),"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        246,
+        "if cache.keys.len() >= self.max_replay_cache_entries {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/resource-server/src/dpop.rs::DpopProofVerifier",
+    "field": {
+      "name": "replay_cache",
+      "type": "Arc<Mutex<DpopReplayCache>>"
+    },
+    "refs": [
+      [
+        "crates/resource-server/src/dpop.rs",
+        22,
+        "replay_cache: Arc<Mutex<DpopReplayCache>>,"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        96,
+        "replay_cache: Arc::new(Mutex::new(DpopReplayCache::default())),"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        227,
+        ".replay_cache"
+      ]
+    ]
+  },
+  {
+    "model": "crates/resource-server/src/dpop.rs::DpopReplayCache",
+    "field": {
+      "name": "expirations",
+      "type": "BTreeMap<i64, Vec<Arc<str>>>"
+    },
+    "refs": [
+      [
+        "crates/resource-server/src/dpop.rs",
+        28,
+        "expirations: BTreeMap<i64, Vec<Arc<str>>>,"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        233,
+        ".expirations"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        237,
+        "if let Some((_, keys)) = cache.expirations.pop_first() {"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        252,
+        ".expirations"
+      ]
+    ]
+  },
+  {
+    "model": "crates/resource-server/src/dpop.rs::DpopProofVerifierConfig",
+    "field": {
+      "name": "required_nonce",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/authorization-server/src/domain/resource_server.rs",
+        143,
+        "required_nonce: None,"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        36,
+        "pub required_nonce: Option<String>,"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        211,
+        "if let Some(expected) = self.config.required_nonce.as_deref()"
+      ],
+      [
+        "crates/resource-server/src/dpop.rs",
+        302,
+        "required_nonce: None,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/resource-server/src/lib.rs::AccessTokenClaims",
+    "field": {
+      "name": "_issued_at",
+      "type": "serde_json::Number"
+    },
+    "refs": [
+      [
+        "crates/resource-server/src/lib.rs",
+        172,
+        "_issued_at: serde_json::Number,"
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/catalog.rs::CatalogDurations",
+    "field": {
+      "name": "presentation_transaction",
+      "type": "Duration"
+    },
+    "refs": [
+      [
+        "crates/nazoauth/src/runtime_modules.rs",
+        378,
+        "presentation_transaction: Duration::from_secs("
+      ],
+      [
+        "crates/runtime-capabilities/src/catalog.rs",
+        13,
+        "pub presentation_transaction: Duration,"
+      ],
+      [
+        "crates/runtime-capabilities/src/catalog.rs",
+        58,
+        "drain(durations.presentation_transaction),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/lease.rs::LeaseState",
+    "field": {
+      "name": "closed_through",
+      "type": "BTreeMap<ModuleId, ModuleRevision>"
+    },
+    "refs": [
+      [
+        "crates/runtime-capabilities/src/lease.rs",
+        14,
+        "closed_through: BTreeMap<ModuleId, ModuleRevision>,"
+      ],
+      [
+        "crates/runtime-capabilities/src/lease.rs",
+        35,
+        ".closed_through"
+      ],
+      [
+        "crates/runtime-capabilities/src/lease.rs",
+        53,
+        ".closed_through"
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/management.rs::RuntimeModuleView",
+    "field": {
+      "name": "resolved_enabled",
+      "type": "bool"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/runtime_modules.rs",
+        288,
+        "\"resolved_enabled\": module.resolved_enabled,"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        13,
+        "pub resolved_enabled: bool,"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        204,
+        "resolved_enabled: self"
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/management.rs::RuntimeModuleView",
+    "field": {
+      "name": "allowed_actions",
+      "type": "Vec<DesiredMode>"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/runtime_modules.rs",
+        295,
+        "\"allowed_actions\": module.allowed_actions.iter().copied().map(action_name).collect::<Vec<_>>(),"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        20,
+        "pub allowed_actions: Vec<DesiredMode>,"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        213,
+        "allowed_actions: self.allowed_actions(module_id, desired_state, snapshot),"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        228,
+        "fn allowed_actions("
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/management.rs::RuntimeModuleView",
+    "field": {
+      "name": "failure_code",
+      "type": "Option<String>"
+    },
+    "refs": [
+      [
+        "crates/http-actix/src/runtime_modules.rs",
+        298,
+        "\"failure_code\": module.failure_code,"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        23,
+        "pub failure_code: Option<String>,"
+      ],
+      [
+        "crates/runtime-capabilities/src/management.rs",
+        219,
+        "failure_code: if !self.catalog.is_available(module_id) {"
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/registry.rs::RuntimeModuleRegistry",
+    "field": {
+      "name": "desired_policy_lock",
+      "type": "futures_util::lock::Mutex<()>"
+    },
+    "refs": [
+      [
+        "crates/runtime-capabilities/src/registry.rs",
+        31,
+        "desired_policy_lock: futures_util::lock::Mutex<()>,"
+      ],
+      [
+        "crates/runtime-capabilities/src/registry.rs",
+        61,
+        "desired_policy_lock: futures_util::lock::Mutex::new(()),"
+      ],
+      [
+        "crates/runtime-capabilities/src/registry/desired.rs",
+        24,
+        "let _policy_guard = self.desired_policy_lock.lock().await;"
+      ]
+    ]
+  },
+  {
+    "model": "crates/runtime-capabilities/src/registry.rs::RuntimeModuleRegistry",
+    "field": {
+      "name": "transition_locks",
+      "type": "BTreeMap<ModuleId, Arc<futures_util::lock::Mutex<()>>>"
+    },
+    "refs": [
+      [
+        "crates/runtime-capabilities/src/registry.rs",
+        32,
+        "transition_locks: BTreeMap<ModuleId, Arc<futures_util::lock::Mutex<()>>>,"
+      ],
+      [
+        "crates/runtime-capabilities/src/registry.rs",
+        62,
+        "transition_locks: ModuleId::ALL"
+      ],
+      [
+        "crates/runtime-capabilities/src/registry/reconcile.rs",
+        112,
+        ".transition_locks"
+      ]
+    ]
+  },
+  {
+    "model": "crates/scim-events/src/lib.rs::SecurityEventClaims",
+    "field": {
+      "name": "txn",
+      "type": "String"
+    },
+    "refs": [
+      [
+        "crates/scim-events/src/lib.rs",
+        208,
+        "pub txn: String,"
+      ],
+      [
+        "crates/scim-events/src/lib.rs",
+        221,
+        "txn: event.transaction_id.to_string(),"
+      ]
+    ]
+  },
+  {
+    "model": "crates/scim-events/src/lib.rs::SecurityEventClaims",
+    "field": {
+      "name": "sub_id",
+      "type": "ScimSubjectIdentifier"
+    },
+    "refs": [
+      [
+        "crates/scim-events/src/lib.rs",
+        210,
+        "pub sub_id: ScimSubjectIdentifier,"
+      ],
+      [
+        "crates/scim-events/src/lib.rs",
+        223,
+        "sub_id: ScimSubjectIdentifier {"
+      ]
+    ]
+  }
+]

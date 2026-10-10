@@ -157,8 +157,8 @@ fn id_token_session_sid<'a>(
     issue: &'a TokenIssue,
     frontchannel_logout: bool,
 ) -> Option<&'a str> {
-    if let Some(contract) = issue.refresh_id_token_sid.as_ref() {
-        return contract.as_deref();
+    if let Some(source) = issue.refresh_authority.as_ref() {
+        return source.id_token_sid.as_deref();
     }
     if let Some(native_sso) = issue.native_sso.as_ref() {
         return Some(native_sso.sid.as_str());
@@ -179,9 +179,9 @@ fn persisted_id_token_sid<'a>(
 ) -> Option<&'a str> {
     issued_id_token_sid.or_else(|| {
         issue
-            .refresh_id_token_sid
+            .refresh_authority
             .as_ref()
-            .and_then(|contract| contract.as_deref())
+            .and_then(|source| source.id_token_sid.as_deref())
     })
 }
 

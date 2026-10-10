@@ -1,0 +1,20 @@
+{
+  "source_sha": "088afcd5d9b22dd915438d19fbea85c3add71ecd",
+  "command": [
+    "docker",
+    "exec",
+    "-i",
+    "nazo-storage-pg-20261010",
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "oauth_final",
+    "-At",
+    "-v",
+    "ON_ERROR_STOP=1"
+  ],
+  "sql": "SELECT json_build_object('id',table_name,'fields',json_agg(json_build_object('name',column_name,'type',udt_name) ORDER BY ordinal_position)) FROM information_schema.columns WHERE table_schema='public' AND table_name<>'__diesel_schema_migrations' GROUP BY table_name ORDER BY table_name;",
+  "exit": 0,
+  "tables": 57
+}

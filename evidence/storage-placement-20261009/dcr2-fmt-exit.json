@@ -1,0 +1,1 @@
+{"command": ["cargo", "fmt", "--all"], "exit": 0, "seconds": 3.79205055302009}

@@ -1,0 +1,809 @@
+[
+  {
+    "key": "AUTH_DIAG",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_DIAG",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_DIAG/point-observer-cycle.py",
+      "AUTH_DIAG"
+    ],
+    "exit": 2,
+    "start": 1791608508.303308,
+    "end": 1791609539.1925411
+  },
+  {
+    "key": "AUTH_B",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_B",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_B/point-observer-cycle.py",
+      "AUTH_B"
+    ],
+    "exit": 2,
+    "start": 1791610186.1048408,
+    "end": 1791610186.5167065
+  },
+  {
+    "key": "AUTH_B30",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_B30",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_B30/point-observer-cycle.py",
+      "AUTH_B30"
+    ],
+    "exit": 2,
+    "start": 1791610255.7393827,
+    "end": 1791612625.7074468
+  },
+  {
+    "key": "CC_B15",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/CC_B15",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/CC_B15/point-observer-cycle.py",
+      "CC_B15"
+    ],
+    "exit": 2,
+    "start": 1791612739.358995,
+    "end": 1791613977.330613
+  },
+  {
+    "key": "CC_B15/wal-disk-terminal.json",
+    "command": [
+      "docker",
+      "exec",
+      "pr238-physical-cc-b15-20261010-postgres-1",
+      "psql",
+      "-X",
+      "-A",
+      "-t",
+      "-U",
+      "postgres",
+      "-d",
+      "oauth",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      "SELECT json_build_object('ts',extract(epoch FROM clock_timestamp()),'database_bytes',pg_database_size(current_database()),'wal_disk_bytes',(SELECT sum(size) FROM pg_ls_waldir()),'replication_slots',(SELECT count(*) FROM pg_replication_slots),'checkpointer',(SELECT row_to_json(s) FROM pg_stat_checkpointer s),'settings',(SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN ('max_wal_size','min_wal_size','checkpoint_timeout','archive_mode','wal_keep_size')));"
+    ],
+    "exit": 1,
+    "start": 1791614019.557959,
+    "end": 1791614019.568377,
+    "sample": null,
+    "error": "Error response from daemon: No such container: pr238-physical-cc-b15-20261010-postgres-1\n"
+  },
+  {
+    "key": "AUTH_A_CAP",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP/point-observer-cycle.py",
+      "AUTH_A_CAP"
+    ],
+    "exit": 2,
+    "start": 1791614050.919986,
+    "end": 1791614398.6711593
+  },
+  {
+    "key": "AUTH_A_CAP/checkout",
+    "command": [
+      "git",
+      "switch",
+      "--detach",
+      "432d87e523106b476dc5249390c29f82cb2615b4"
+    ],
+    "exit": 0,
+    "start": 1791614048.8575974,
+    "end": 1791614048.8762665
+  },
+  {
+    "key": "AUTH_A_CAP/checkout",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP/point-observer-cycle.py",
+      "setup"
+    ],
+    "exit": 0,
+    "start": 1791614048.8784332,
+    "end": 1791614050.8992434
+  },
+  {
+    "key": "AUTH_A_CAP/checkout",
+    "command": [
+      "python3",
+      "/tmp/physical-growth-execute.py",
+      "AUTH_A_CAP"
+    ],
+    "exit": 2,
+    "start": 1791614050.900191,
+    "end": 1791614398.6778336
+  },
+  {
+    "key": "AUTH_A_CAP/checkout",
+    "command": [
+      "git",
+      "switch",
+      "verify/longrun-20261010"
+    ],
+    "exit": 0,
+    "start": 1791614398.6782925,
+    "end": 1791614398.9880018
+  },
+  {
+    "key": "AUTH_A_CAP/wal-disk-terminal.json",
+    "command": [
+      "docker",
+      "exec",
+      "pr238-physical-auth-a-cap-20261010-postgres-1",
+      "psql",
+      "-X",
+      "-A",
+      "-t",
+      "-U",
+      "postgres",
+      "-d",
+      "oauth",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      "SELECT json_build_object('ts',extract(epoch FROM clock_timestamp()),'database_bytes',pg_database_size(current_database()),'wal_disk_bytes',(SELECT sum(size) FROM pg_ls_waldir()),'replication_slots',(SELECT count(*) FROM pg_replication_slots),'checkpointer',(SELECT row_to_json(s) FROM pg_stat_checkpointer s),'settings',(SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN ('max_wal_size','min_wal_size','checkpoint_timeout','archive_mode','wal_keep_size')));"
+    ],
+    "exit": 0,
+    "start": 1791614383.982735,
+    "end": 1791614384.066276,
+    "sample": {
+      "ts": 1791614384.049671,
+      "database_bytes": 415987391,
+      "wal_disk_bytes": 1711276032,
+      "replication_slots": 0,
+      "checkpointer": {
+        "num_timed": 0,
+        "num_requested": 1,
+        "num_done": 0,
+        "restartpoints_timed": 0,
+        "restartpoints_req": 0,
+        "restartpoints_done": 0,
+        "write_time": 13,
+        "sync_time": 9,
+        "buffers_written": 943,
+        "slru_written": 3,
+        "stats_reset": "2026-10-10T06:34:56.405022+00:00"
+      },
+      "settings": {
+        "archive_mode": "off",
+        "checkpoint_timeout": "300",
+        "max_wal_size": "8192",
+        "min_wal_size": "80",
+        "wal_keep_size": "0"
+      }
+    },
+    "error": null
+  },
+  {
+    "key": "AUTH_CAP",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_CAP",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_CAP/point-observer-cycle.py",
+      "AUTH_CAP"
+    ],
+    "exit": 0,
+    "start": 1791614443.6329396,
+    "end": 1791614919.9017677
+  },
+  {
+    "key": "AUTH_CAP/checkout",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_CAP",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_CAP/point-observer-cycle.py",
+      "setup"
+    ],
+    "exit": 0,
+    "start": 1791614441.866934,
+    "end": 1791614443.6064417
+  },
+  {
+    "key": "AUTH_CAP/checkout",
+    "command": [
+      "python3",
+      "/tmp/physical-growth-execute.py",
+      "AUTH_CAP"
+    ],
+    "exit": 0,
+    "start": 1791614443.6069434,
+    "end": 1791614919.9065711
+  },
+  {
+    "key": "AUTH_CAP/wal-disk-terminal.json",
+    "command": [
+      "docker",
+      "exec",
+      "pr238-physical-auth-cap-20261010-postgres-1",
+      "psql",
+      "-X",
+      "-A",
+      "-t",
+      "-U",
+      "postgres",
+      "-d",
+      "oauth",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      "SELECT json_build_object('ts',extract(epoch FROM clock_timestamp()),'database_bytes',pg_database_size(current_database()),'wal_disk_bytes',(SELECT sum(size) FROM pg_ls_waldir()),'replication_slots',(SELECT count(*) FROM pg_replication_slots),'checkpointer',(SELECT row_to_json(s) FROM pg_stat_checkpointer s),'settings',(SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN ('max_wal_size','min_wal_size','checkpoint_timeout','archive_mode','wal_keep_size')));"
+    ],
+    "exit": 0,
+    "start": 1791614850.7512248,
+    "end": 1791614850.8503876,
+    "sample": {
+      "ts": 1791614850.8442,
+      "database_bytes": 363263679,
+      "wal_disk_bytes": 1577058304,
+      "replication_slots": 0,
+      "checkpointer": {
+        "num_timed": 0,
+        "num_requested": 1,
+        "num_done": 0,
+        "restartpoints_timed": 0,
+        "restartpoints_req": 0,
+        "restartpoints_done": 0,
+        "write_time": 12,
+        "sync_time": 11,
+        "buffers_written": 943,
+        "slru_written": 3,
+        "stats_reset": "2026-10-10T06:43:49.035+00:00"
+      },
+      "settings": {
+        "archive_mode": "off",
+        "checkpoint_timeout": "300",
+        "max_wal_size": "8192",
+        "min_wal_size": "80",
+        "wal_keep_size": "0"
+      }
+    },
+    "error": null
+  },
+  {
+    "key": "AUTH_A_CAP2",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2/point-observer-cycle.py",
+      "AUTH_A_CAP2"
+    ],
+    "exit": 0,
+    "start": 1791614988.9392548,
+    "end": 1791615329.632618
+  },
+  {
+    "key": "AUTH_A_CAP2/checkout",
+    "command": [
+      "git",
+      "switch",
+      "--detach",
+      "6714d3187c528ac2b9aac5c67729b1653b67a427"
+    ],
+    "exit": 0,
+    "start": 1791614987.122918,
+    "end": 1791614987.1591785
+  },
+  {
+    "key": "AUTH_A_CAP2/checkout",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/AUTH_A_CAP2/point-observer-cycle.py",
+      "setup"
+    ],
+    "exit": 0,
+    "start": 1791614987.16023,
+    "end": 1791614988.9193804
+  },
+  {
+    "key": "AUTH_A_CAP2/checkout",
+    "command": [
+      "python3",
+      "/tmp/physical-growth-execute.py",
+      "AUTH_A_CAP2"
+    ],
+    "exit": 0,
+    "start": 1791614988.9213166,
+    "end": 1791615329.6392424
+  },
+  {
+    "key": "AUTH_A_CAP2/checkout",
+    "command": [
+      "git",
+      "switch",
+      "verify/longrun-20261010"
+    ],
+    "exit": 0,
+    "start": 1791615329.639626,
+    "end": 1791615330.0414007
+  },
+  {
+    "key": "CC_RETEST",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/CC_RETEST",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/CC_RETEST/point-observer-cycle.py",
+      "CC_RETEST"
+    ],
+    "exit": 0,
+    "start": 1791615475.728899,
+    "end": 1791616382.345011
+  },
+  {
+    "key": "CC_RETEST/wal-disk-terminal.json",
+    "command": [
+      "docker",
+      "exec",
+      "pr238-physical-cc-retest-20261010-postgres-1",
+      "psql",
+      "-X",
+      "-A",
+      "-t",
+      "-U",
+      "postgres",
+      "-d",
+      "oauth",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      "SELECT json_build_object('ts',extract(epoch FROM clock_timestamp()),'database_bytes',pg_database_size(current_database()),'wal_disk_bytes',(SELECT sum(size) FROM pg_ls_waldir()),'replication_slots',(SELECT count(*) FROM pg_replication_slots),'checkpointer',(SELECT row_to_json(s) FROM pg_stat_checkpointer s),'settings',(SELECT json_object_agg(name,setting) FROM pg_settings WHERE name IN ('max_wal_size','min_wal_size','checkpoint_timeout','archive_mode','wal_keep_size')));"
+    ],
+    "exit": 0,
+    "start": 1791615645.2219603,
+    "end": 1791615645.272358,
+    "sample": {
+      "ts": 1791615645.268121,
+      "database_bytes": 166885055,
+      "wal_disk_bytes": 956301312,
+      "replication_slots": 0,
+      "checkpointer": {
+        "num_timed": 0,
+        "num_requested": 1,
+        "num_done": 0,
+        "restartpoints_timed": 0,
+        "restartpoints_req": 0,
+        "restartpoints_done": 0,
+        "write_time": 16,
+        "sync_time": 14,
+        "buffers_written": 943,
+        "slru_written": 3,
+        "stats_reset": "2026-10-10T06:57:57.11177+00:00"
+      },
+      "settings": {
+        "archive_mode": "off",
+        "checkpoint_timeout": "300",
+        "max_wal_size": "8192",
+        "min_wal_size": "80",
+        "wal_keep_size": "0"
+      }
+    },
+    "error": null
+  },
+  {
+    "key": "CC_RETEST/setup-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "SIS_WORKSPACE=/src",
+      "-e",
+      "SIS_LOAD_BUDGET_S=2700",
+      "-e",
+      "SIS_CNB_EVIDENCE=/src/evidence/pr238-physical-growth-20261010/CC_RETEST",
+      "-w",
+      "/src",
+      "nazoauth-long-controller-20261010",
+      "python",
+      "/src/evidence/pr238-physical-growth-20261010/CC_RETEST/point-observer-cycle.py",
+      "setup"
+    ],
+    "exit": 0,
+    "start": null,
+    "end": null,
+    "observed_stage_utc": "2026-10-10T06:57:43.746885+00:00",
+    "source": "Actual exec_command response captured exit 0 and setup stage output; wrapper start/end timestamps were not captured."
+  },
+  {
+    "key": "quality/holder-negative-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "CARGO_BUILD_JOBS=2",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "nazo-auth",
+      "--lib",
+      "authorization_code_holder_serialization_omits_absent_proofs"
+    ],
+    "exit": 101,
+    "start": 1791608721.428739,
+    "end": 1791608799.4493494
+  },
+  {
+    "key": "quality/holder-positive-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "CARGO_BUILD_JOBS=2",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "nazo-auth",
+      "--lib"
+    ],
+    "exit": 0,
+    "start": 1791608834.013117,
+    "end": 1791608835.9856026
+  },
+  {
+    "key": "quality/clippy-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "CARGO_BUILD_JOBS=2",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "clippy",
+      "--locked",
+      "-p",
+      "nazo-auth",
+      "-p",
+      "nazo-postgres",
+      "--all-targets",
+      "--all-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "start": 1791608990.7949073,
+    "end": 1791609141.8207605
+  },
+  {
+    "key": "quality/issuance-atomicity-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "--env-file",
+      "/tmp/physical-quality.env",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "token_issuance_atomicity"
+    ],
+    "exit": 0,
+    "start": 1791609158.2459524,
+    "end": 1791609283.2172158
+  },
+  {
+    "key": "quality/key-negative-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "--env-file",
+      "/tmp/physical-quality.env",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "receipt_key_scope"
+    ],
+    "exit": 101,
+    "start": 1791609428.3223865,
+    "end": 1791609429.8510096
+  },
+  {
+    "key": "quality/key-positive-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "--env-file",
+      "/tmp/physical-quality.env",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "receipt_key_scope"
+    ],
+    "exit": 0,
+    "start": 1791609508.9508057,
+    "end": 1791609540.2494392
+  },
+  {
+    "key": "quality/issuance-final-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "--env-file",
+      "/tmp/physical-quality.env",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "token_issuance_atomicity"
+    ],
+    "exit": 0,
+    "start": 1791609580.2275896,
+    "end": 1791609589.1244285
+  },
+  {
+    "key": "quality/static-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-long-builder-20261010",
+      "python3",
+      "scripts/verify_static_contracts.py",
+      "--check"
+    ],
+    "exit": 1,
+    "start": 1791609613.221912,
+    "end": 1791609613.5461793
+  },
+  {
+    "key": "quality/persistence-boundary-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-long-builder-20261010",
+      "python3",
+      "scripts/check_persistence_dependency_graph.py"
+    ],
+    "exit": 0,
+    "start": 1791609613.1860564,
+    "end": 1791609615.8827326
+  },
+  {
+    "key": "quality/fmt-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "fmt",
+      "--check"
+    ],
+    "exit": 0,
+    "start": 1791609613.2090812,
+    "end": 1791609615.9254992
+  },
+  {
+    "key": "quality/clippy-final-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "CARGO_BUILD_JOBS=4",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "clippy",
+      "--locked",
+      "-p",
+      "nazo-auth",
+      "-p",
+      "nazo-postgres",
+      "--all-targets",
+      "--all-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "start": 1791609616.5241685,
+    "end": 1791609623.9569468
+  },
+  {
+    "key": "quality/static-final-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "nazoauth-long-builder-20261010",
+      "python3",
+      "scripts/verify_static_contracts.py",
+      "--check"
+    ],
+    "exit": 0,
+    "start": 1791609665.6548257,
+    "end": 1791609671.5311148
+  },
+  {
+    "key": "quality/holder-http-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "--env-file",
+      "/tmp/physical-quality.env",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "test",
+      "--locked",
+      "--all-features",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "authorization_code_tests::identity"
+    ],
+    "exit": 0,
+    "start": 1791609689.7985828,
+    "end": 1791609854.4234197
+  },
+  {
+    "key": "quality/release-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "-e",
+      "CARGO_BUILD_JOBS=4",
+      "nazoauth-long-builder-20261010",
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--bin",
+      "nazoauth"
+    ],
+    "exit": 0,
+    "start": 1791609922.0067933,
+    "end": 1791610068.6567636
+  },
+  {
+    "key": "quality/index-key-probe-final-exit.json",
+    "command": [
+      "docker",
+      "exec",
+      "pr238-physical-quality-20261010-pg",
+      "psql",
+      "-X",
+      "-U",
+      "postgres",
+      "-d",
+      "oauth",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-f",
+      "/tmp/physical-index-probe.sql"
+    ],
+    "exit": 0,
+    "start": 1791616410.1017594,
+    "end": 1791616411.0441995
+  }
+]

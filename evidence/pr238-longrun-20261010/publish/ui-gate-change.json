@@ -1,0 +1,51 @@
+{
+  "ts": 1791599433.7537456,
+  "reason": "User requested reading CNB sidebar CPU before each next point. Only unstarted task wrappers changed; current MTLS window untouched. No production change, no rate/gate/TTL change.",
+  "changes": [
+    {
+      "key": "PAR10",
+      "before_sha256": "5425c7ec48e82e6db0fb7c4bbd411a34b67e6d27ecc744a495b9134cc72dca4f",
+      "after_sha256": "d5475cd03ef1fb4681fb2160db4a019fe244d5e8e3c0fd6b6a99550048d779b3"
+    },
+    {
+      "key": "NATIVE10",
+      "before_sha256": "e1ef78116f91e4c2d002edae1fd9dae73d930ad6bc521dfa44c36d800b582db5",
+      "after_sha256": "90e6961a2a6bf2a7143cb41a4f25529b2dcf435a35d83f3594b3bcd252bc8490"
+    },
+    {
+      "key": "REQUIRED15",
+      "before_sha256": "5a480f0ba75b2d4d72e211c61ba5bf585e9bd1e480269a3278a427194faf87e8",
+      "after_sha256": "a135c01a42fb94c021045fe5bd40a1a416fbb7bdbf3e3681705518c02eb8ebc2"
+    },
+    {
+      "key": "MIX30",
+      "before_sha256": "fc3d497eeb6aae85cb9556fdd28bae832572d7ebefa67a61a42ebe26acf13b18",
+      "after_sha256": "b0b06d11afe84aa4673f679419202ba0a3fea2cc1f37e315ed2339f33ea2ca08"
+    },
+    {
+      "key": "AUTH10",
+      "before_sha256": "b608caaa939556de3f3532c7aa866bbc2ccb518eac2ca12fc699c5fbea360acc",
+      "after_sha256": "ef4cef12ba77084c1d52f3a1e3aaebaa21c302d92a07d219c75020f23b375ee6"
+    },
+    {
+      "key": "CC10",
+      "before_sha256": "007fb24aec432e5eec8c5c658cd688c24adbcaaf642eb2436af95ecf11c08c41",
+      "after_sha256": "a52dcadac1cb4188f9dc89c82761107766e738f9937f7c9e908150dbba3881f6"
+    },
+    {
+      "key": "REFRESH10",
+      "before_sha256": "ecb47137f4e2acd01eda74d5148000e25700effc3644ee59e2cbecae77e712d2",
+      "after_sha256": "1ef3a76e948b0dd63bf36aa1f39de6037d5e77617c132c3253b41efd916bc1f9"
+    },
+    {
+      "key": "FAPI10",
+      "before_sha256": "79dab66ab15440958581f04a5fd8052b253915ae5733b5f6722b118435b291a9",
+      "after_sha256": "5f65157ed45d9061a7354e68a0b865c6e15dec3a803962ef312d83eed7779d3f"
+    },
+    {
+      "key": "COLD10",
+      "before_sha256": "13577ed2e28dc8ee41959d70f1dd5312d3be07659f25e368a39d1db996abf47e",
+      "after_sha256": "43f69a3354b2a5d34ddd1e6d54f6f6977dc1541e05d70d73f63d18e961b39bb8"
+    }
+  ]
+}

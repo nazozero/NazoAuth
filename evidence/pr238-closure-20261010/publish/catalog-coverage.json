@@ -1,0 +1,22 @@
+{
+  "source_sha": "667060893661dae2c2e31289d5d86ca6474132c3",
+  "command": [
+    "docker",
+    "exec",
+    "-i",
+    "nazo-storage-pg-20261010",
+    "psql",
+    "-X",
+    "-qAt",
+    "-U",
+    "postgres",
+    "-d",
+    "oauth_final",
+    "-v",
+    "ON_ERROR_STOP=1"
+  ],
+  "exit": 0,
+  "table_count": 58,
+  "column_count": 598,
+  "unclassified_tables": []
+}

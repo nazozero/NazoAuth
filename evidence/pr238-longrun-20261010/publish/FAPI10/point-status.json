@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "elapsed_s": 392.5,
+  "audit": {
+    "deployment": "01a1240b-2c71-7387-9219-e9ee66bb88c7",
+    "receiver": "sis-rcv-pr238-long-fapi10-20261010",
+    "worker": "sis-worker-pr238-long-fapi10-20261010"
+  },
+  "binary_provenance": {
+    "container_id": "6a29f553728d4c67436e804aa35ab6c8b37e1fc50e9eb22132ba7451de604a55",
+    "expected_binary_sha256": "35f0cb47b9776883f64d5ce4c52e286661ae4e4a8c16ecad99b75452302c7dd5",
+    "host_pid": 2321326,
+    "image_binary_sha256": "35f0cb47b9776883f64d5ce4c52e286661ae4e4a8c16ecad99b75452302c7dd5",
+    "image_id": "sha256:485bb03770e347dcc3ba026e37606b75788c750bfe7fd0c811b1f93a02eeb9c1",
+    "ok": true,
+    "pid1_eq_expected": true,
+    "pid1_eq_image": true,
+    "running_pid1_binary_sha256": "35f0cb47b9776883f64d5ce4c52e286661ae4e4a8c16ecad99b75452302c7dd5"
+  }
+}

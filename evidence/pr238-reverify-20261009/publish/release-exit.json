@@ -1,0 +1,1 @@
+{"command": ["docker", "exec", "-e", "CARGO_TARGET_DIR=/src/target", "nazoauth-perf-runner-20261009", "cargo", "build", "--release", "--locked", "-p", "nazoauth"], "exit": 0, "seconds": 249.66061952291057}

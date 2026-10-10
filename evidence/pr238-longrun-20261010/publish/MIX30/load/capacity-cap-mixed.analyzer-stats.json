@@ -1,0 +1,24 @@
+{
+  "points": 43493502,
+  "parse_errors": 0,
+  "reader_error": null,
+  "bins": 1261,
+  "first_ts": 1791602231.030261,
+  "last_ts": 1791603491.031573,
+  "first_utc": "2026-10-10T03:17:11.030261+00:00",
+  "last_utc": "2026-10-10T03:38:11.031573+00:00",
+  "vus_seen": 0,
+  "lag_max_s": 0.42,
+  "lag_over_5s": 0,
+  "diag_budget_exceeded": 29551866,
+  "diag_overflow": true,
+  "diag_overflow_dropped": 11688494,
+  "max_diag_bytes": 536870912,
+  "stream_workers": 3,
+  "shard_points": [
+    19568281,
+    13600764,
+    10324457
+  ],
+  "max_diag_bytes_per_shard": 178956970
+}

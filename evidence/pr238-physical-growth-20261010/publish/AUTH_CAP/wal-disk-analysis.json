@@ -1,0 +1,43 @@
+{
+  "key": "AUTH_CAP",
+  "samples": 25,
+  "first": {
+    "ts": 1791614661.878048,
+    "offset_s": 0.05367922782897949,
+    "wal_disk_bytes": 33554432,
+    "db_bytes": 12506815,
+    "pending": 0,
+    "checkpoint_num_done": 0,
+    "checkpoint_num_timed": 0,
+    "checkpoint_sync_time": 11,
+    "checkpoint_write_time": 12,
+    "checkpoint_stats_reset": "2026-10-10T06:43:49.035+00:00",
+    "checkpoint_slru_written": 3,
+    "checkpoint_num_requested": 1,
+    "checkpoint_buffers_written": 943,
+    "checkpoint_restartpoints_req": 0,
+    "checkpoint_restartpoints_done": 0,
+    "checkpoint_restartpoints_timed": 0
+  },
+  "last": {
+    "ts": 1791614901.887558,
+    "offset_s": 240.06318926811218,
+    "wal_disk_bytes": 1677721600,
+    "db_bytes": 342521535,
+    "pending": 0,
+    "checkpoint_num_done": 0,
+    "checkpoint_num_timed": 0,
+    "checkpoint_sync_time": 11,
+    "checkpoint_write_time": 12,
+    "checkpoint_stats_reset": "2026-10-10T06:43:49.035+00:00",
+    "checkpoint_slru_written": 3,
+    "checkpoint_num_requested": 1,
+    "checkpoint_buffers_written": 943,
+    "checkpoint_restartpoints_req": 0,
+    "checkpoint_restartpoints_done": 0,
+    "checkpoint_restartpoints_timed": 0
+  },
+  "min_bytes": 33554432,
+  "max_bytes": 1677721600,
+  "limitations": "pg_ls_waldir allocation, not cumulative WAL generation. No manual checkpoint/vacuum. Short capacity windows may end before a scheduled checkpoint. settings and terminal probes are separate actual observations."
+}

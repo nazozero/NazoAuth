@@ -72,11 +72,7 @@ pub(super) fn validate_health(
             "audit anchor has undeliverable ledger rows below the checkpoint; operator reconciliation required"
         );
     }
-    if status
-        .batch
-        .as_ref()
-        .is_some_and(|batch| batch.blocked_reason.is_some())
-    {
+    if status.batch_blocked == Some(true) {
         anyhow::bail!("audit batch is blocked on a permanent receiver rejection");
     }
     if sequence > status.head_sequence

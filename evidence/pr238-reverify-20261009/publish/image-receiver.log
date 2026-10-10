@@ -1,0 +1,28 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load remote build context
+#1 DONE 0.0s
+
+#2 copy /context /
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/nazoauth-reverify-runtime:20261009
+#3 DONE 0.0s
+
+#4 [1/2] FROM docker.io/library/nazoauth-reverify-runtime:20261009@sha256:c3fb9037d89cb4ca08452d5d448d9d761587c6a7779fb6d23a508920bb567229
+#4 resolve docker.io/library/nazoauth-reverify-runtime:20261009@sha256:c3fb9037d89cb4ca08452d5d448d9d761587c6a7779fb6d23a508920bb567229 0.0s done
+#4 CACHED
+
+#5 [2/2] COPY --chmod=0755 receiver /usr/local/bin/nazo-audit-anchor-receiver
+#5 DONE 0.1s
+
+#6 exporting to image
+#6 exporting layers
+#6 exporting layers 0.2s done
+#6 exporting manifest sha256:5c9c4a9331992127a1780c30ecb0d6eef830e9a8d90d123aa35b4ea95358e1be done
+#6 exporting config sha256:4d0d8e19ffca611845b55464c6910db8a88355ea44ed841094ba2c38ff5037a3 0.0s done
+#6 exporting attestation manifest sha256:70390a54fbb6a5d3b174b45f0ac2fbd75a8c7e7f84a748f185f59a55dfd643c6 0.0s done
+#6 exporting manifest list sha256:818338b1cdb264a49d7df19b2c55b72df4b54264b50fcf44e7ddfe358bc4b210 0.0s done
+#6 naming to docker.io/library/nazoauth-reverify-receiver:20261009 done
+#6 unpacking to docker.io/library/nazoauth-reverify-receiver:20261009 0.0s done
+#6 DONE 0.3s

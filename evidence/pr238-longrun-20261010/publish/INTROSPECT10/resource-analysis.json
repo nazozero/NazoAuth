@@ -1,0 +1,1408 @@
+{
+  "key": "INTROSPECT10",
+  "window_start": 1791598681.987,
+  "window_end": 1791599281.987,
+  "wal_sample_window": {
+    "first": {
+      "ts": 1791598683,
+      "wal_bytes": 31437803
+    },
+    "last": {
+      "ts": 1791599280,
+      "wal_bytes": 54786844
+    },
+    "delta_bytes": 23349041
+  },
+  "mature_thirds": [
+    {
+      "start": 1791599041.987,
+      "end": 1791599121.987,
+      "tables": {
+        "access_token_revocations": {
+          "total": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576,
+            "max": 24576,
+            "min": 24576
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576,
+            "max": 24576,
+            "min": 24576
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "ins": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_contracts": {
+          "total": {
+            "first": 1941504,
+            "last": 1941504,
+            "median": 1941504,
+            "max": 1941504,
+            "min": 1941504
+          },
+          "heap": {
+            "first": 1474560,
+            "last": 1474560,
+            "median": 1474560,
+            "max": 1474560,
+            "min": 1474560
+          },
+          "idx": {
+            "first": 425984,
+            "last": 425984,
+            "median": 425984,
+            "max": 425984,
+            "min": 425984
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 1,
+            "last": 1,
+            "median": 1,
+            "max": 1,
+            "min": 1
+          },
+          "ins": {
+            "first": 1984,
+            "last": 1984,
+            "median": 1984,
+            "max": 1984,
+            "min": 1984
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_families": {
+          "total": {
+            "first": 2195456,
+            "last": 2195456,
+            "median": 2195456,
+            "max": 2195456,
+            "min": 2195456
+          },
+          "heap": {
+            "first": 802816,
+            "last": 802816,
+            "median": 802816,
+            "max": 802816,
+            "min": 802816
+          },
+          "idx": {
+            "first": 1351680,
+            "last": 1351680,
+            "median": 1351680,
+            "max": 1351680,
+            "min": 1351680
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 1,
+            "last": 1,
+            "median": 1,
+            "max": 1,
+            "min": 1
+          },
+          "ins": {
+            "first": 2976,
+            "last": 2976,
+            "median": 2976,
+            "max": 2976,
+            "min": 2976
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_spent_tokens": {
+          "total": {
+            "first": 32768,
+            "last": 32768,
+            "median": 32768,
+            "max": 32768,
+            "min": 32768
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576,
+            "max": 24576,
+            "min": 24576
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "ins": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_token_issuances": {
+          "total": {
+            "first": 1744896,
+            "last": 1744896,
+            "median": 1744896,
+            "max": 1744896,
+            "min": 1744896
+          },
+          "heap": {
+            "first": 1064960,
+            "last": 1064960,
+            "median": 1064960,
+            "max": 1064960,
+            "min": 1064960
+          },
+          "idx": {
+            "first": 638976,
+            "last": 638976,
+            "median": 638976,
+            "max": 638976,
+            "min": 638976
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 992,
+            "min": 0
+          },
+          "autovac": {
+            "first": 1,
+            "last": 2,
+            "median": 1,
+            "max": 2,
+            "min": 1
+          },
+          "ins": {
+            "first": 1984,
+            "last": 1984,
+            "median": 1984,
+            "max": 1984,
+            "min": 1984
+          },
+          "del": {
+            "first": 0,
+            "last": 992,
+            "median": 992,
+            "max": 992,
+            "min": 0
+          }
+        },
+        "security_audit_chain_entries": {
+          "total": {
+            "first": 614400,
+            "last": 614400,
+            "median": 614400,
+            "max": 614400,
+            "min": 614400
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 589824,
+            "last": 589824,
+            "median": 589824,
+            "max": 589824,
+            "min": 589824
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 3968,
+            "last": 3968,
+            "median": 3968,
+            "max": 3968,
+            "min": 3968
+          },
+          "del": {
+            "first": 3968,
+            "last": 3968,
+            "median": 3968,
+            "max": 3968,
+            "min": 3968
+          }
+        },
+        "security_audit_events": {
+          "total": {
+            "first": 3588096,
+            "last": 3588096,
+            "median": 3588096,
+            "max": 3588096,
+            "min": 3588096
+          },
+          "heap": {
+            "first": 2351104,
+            "last": 2351104,
+            "median": 2351104,
+            "max": 2351104,
+            "min": 2351104
+          },
+          "idx": {
+            "first": 1196032,
+            "last": 1196032,
+            "median": 1196032,
+            "max": 1196032,
+            "min": 1196032
+          },
+          "dead": {
+            "first": 992,
+            "last": 992,
+            "median": 992,
+            "max": 992,
+            "min": 992
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 3968,
+            "last": 3968,
+            "median": 3968,
+            "max": 3968,
+            "min": 3968
+          },
+          "del": {
+            "first": 3968,
+            "last": 3968,
+            "median": 3968,
+            "max": 3968,
+            "min": 3968
+          }
+        }
+      },
+      "valkey": {
+        "mem": {
+          "first": 2249656,
+          "last": 2248632,
+          "median": 2249656,
+          "max": 2251704,
+          "min": 2248632
+        },
+        "keys": {
+          "first": 1987,
+          "last": 1987,
+          "median": 1987,
+          "max": 1987,
+          "min": 1987
+        },
+        "exp": {
+          "first": 1000,
+          "last": 1001,
+          "median": 1000,
+          "max": 1001,
+          "min": 1000
+        },
+        "cmd": {
+          "first": 12082897,
+          "last": 14555334,
+          "median": 13320017,
+          "max": 14555334,
+          "min": 12082897
+        }
+      },
+      "cpu": {
+        "app": {
+          "first": 1.4784437954537997,
+          "last": 1.3988982217057235,
+          "median": 1.4658649207097059,
+          "max": 1.50796041876745,
+          "min": 1.3988982217057235
+        },
+        "postgres": {
+          "first": 1.3404072740109385,
+          "last": 1.3182958913897729,
+          "median": 1.3165658621321894,
+          "max": 1.3607589036733416,
+          "min": 1.275276445060775
+        },
+        "valkey": {
+          "first": 0.13077144136692084,
+          "last": 0.13612838008916134,
+          "median": 0.13397704384971465,
+          "max": 0.14003375086588488,
+          "min": 0.12876323328840966
+        },
+        "audit-worker": {
+          "first": 0.0,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.0018207856837058264,
+          "min": 0.0
+        },
+        "audit-receiver": {
+          "first": 0.0,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.005405329753410336,
+          "min": 0.0
+        }
+      },
+      "old_transactions": {
+        "oldest_xact_age_s": 0,
+        "xacts_over_60s": 0,
+        "xacts_over_300s": 0
+      }
+    },
+    {
+      "start": 1791599121.987,
+      "end": 1791599201.987,
+      "tables": {
+        "access_token_revocations": {
+          "total": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576.0,
+            "max": 24576,
+            "min": 24576
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576.0,
+            "max": 24576,
+            "min": 24576
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "ins": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_contracts": {
+          "total": {
+            "first": 1941504,
+            "last": 1941504,
+            "median": 1941504.0,
+            "max": 1941504,
+            "min": 1941504
+          },
+          "heap": {
+            "first": 1474560,
+            "last": 1474560,
+            "median": 1474560.0,
+            "max": 1474560,
+            "min": 1474560
+          },
+          "idx": {
+            "first": 425984,
+            "last": 425984,
+            "median": 425984.0,
+            "max": 425984,
+            "min": 425984
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 1,
+            "last": 1,
+            "median": 1.0,
+            "max": 1,
+            "min": 1
+          },
+          "ins": {
+            "first": 1984,
+            "last": 1984,
+            "median": 1984.0,
+            "max": 1984,
+            "min": 1984
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_families": {
+          "total": {
+            "first": 2195456,
+            "last": 2768896,
+            "median": 2768896.0,
+            "max": 2768896,
+            "min": 2195456
+          },
+          "heap": {
+            "first": 802816,
+            "last": 1163264,
+            "median": 1163264.0,
+            "max": 1163264,
+            "min": 802816
+          },
+          "idx": {
+            "first": 1351680,
+            "last": 1564672,
+            "median": 1564672.0,
+            "max": 1564672,
+            "min": 1351680
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 1,
+            "last": 1,
+            "median": 1.0,
+            "max": 1,
+            "min": 1
+          },
+          "ins": {
+            "first": 2976,
+            "last": 3968,
+            "median": 3968.0,
+            "max": 3968,
+            "min": 2976
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_spent_tokens": {
+          "total": {
+            "first": 32768,
+            "last": 32768,
+            "median": 32768.0,
+            "max": 32768,
+            "min": 32768
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576.0,
+            "max": 24576,
+            "min": 24576
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "ins": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_token_issuances": {
+          "total": {
+            "first": 1744896,
+            "last": 1916928,
+            "median": 1916928.0,
+            "max": 1916928,
+            "min": 1744896
+          },
+          "heap": {
+            "first": 1064960,
+            "last": 1064960,
+            "median": 1064960.0,
+            "max": 1064960,
+            "min": 1064960
+          },
+          "idx": {
+            "first": 638976,
+            "last": 811008,
+            "median": 811008.0,
+            "max": 811008,
+            "min": 638976
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0.0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2.0,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 1984,
+            "last": 2976,
+            "median": 2976.0,
+            "max": 2976,
+            "min": 1984
+          },
+          "del": {
+            "first": 992,
+            "last": 992,
+            "median": 992.0,
+            "max": 992,
+            "min": 992
+          }
+        },
+        "security_audit_chain_entries": {
+          "total": {
+            "first": 614400,
+            "last": 917504,
+            "median": 917504.0,
+            "max": 917504,
+            "min": 614400
+          },
+          "heap": {
+            "first": 0,
+            "last": 253952,
+            "median": 253952.0,
+            "max": 253952,
+            "min": 0
+          },
+          "idx": {
+            "first": 589824,
+            "last": 630784,
+            "median": 630784.0,
+            "max": 630784,
+            "min": 589824
+          },
+          "dead": {
+            "first": 0,
+            "last": 1984,
+            "median": 1984.0,
+            "max": 1984,
+            "min": 0
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2.0,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 3968,
+            "last": 5952,
+            "median": 5952.0,
+            "max": 5952,
+            "min": 3968
+          },
+          "del": {
+            "first": 3968,
+            "last": 5952,
+            "median": 5952.0,
+            "max": 5952,
+            "min": 3968
+          }
+        },
+        "security_audit_events": {
+          "total": {
+            "first": 3588096,
+            "last": 3932160,
+            "median": 3932160.0,
+            "max": 3932160,
+            "min": 3588096
+          },
+          "heap": {
+            "first": 2351104,
+            "last": 2351104,
+            "median": 2351104.0,
+            "max": 2351104,
+            "min": 2351104
+          },
+          "idx": {
+            "first": 1196032,
+            "last": 1540096,
+            "median": 1540096.0,
+            "max": 1540096,
+            "min": 1196032
+          },
+          "dead": {
+            "first": 992,
+            "last": 2976,
+            "median": 2976.0,
+            "max": 2976,
+            "min": 992
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2.0,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 3968,
+            "last": 5952,
+            "median": 5952.0,
+            "max": 5952,
+            "min": 3968
+          },
+          "del": {
+            "first": 3968,
+            "last": 4960,
+            "median": 4960.0,
+            "max": 4960,
+            "min": 3968
+          }
+        }
+      },
+      "valkey": {
+        "mem": {
+          "first": 2249656,
+          "last": 2248312,
+          "median": 2249336.0,
+          "max": 2256504,
+          "min": 2248312
+        },
+        "keys": {
+          "first": 1987,
+          "last": 1988,
+          "median": 1988.0,
+          "max": 1988,
+          "min": 1987
+        },
+        "exp": {
+          "first": 1001,
+          "last": 1994,
+          "median": 1994.0,
+          "max": 1994,
+          "min": 1001
+        },
+        "cmd": {
+          "first": 14620261,
+          "last": 17186448,
+          "median": 15918619.5,
+          "max": 17186448,
+          "min": 14620261
+        }
+      },
+      "cpu": {
+        "app": {
+          "first": 1.4044262109271781,
+          "last": 1.4558108270338603,
+          "median": 1.445086176808297,
+          "max": 1.8819102840731672,
+          "min": 1.4044262109271781
+        },
+        "postgres": {
+          "first": 1.3082574910574876,
+          "last": 1.3375261973373591,
+          "median": 1.3469548088971617,
+          "max": 2.114648947224245,
+          "min": 1.2800562902598498
+        },
+        "valkey": {
+          "first": 0.13245880283938502,
+          "last": 0.13284273796683974,
+          "median": 0.13455593033057445,
+          "max": 0.1690991849457049,
+          "min": 0.12745937456356968
+        },
+        "audit-worker": {
+          "first": 0.0,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.005454812417603383,
+          "min": 0.0
+        },
+        "audit-receiver": {
+          "first": 0.0,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.005454812417603383,
+          "min": 0.0
+        }
+      },
+      "old_transactions": {
+        "oldest_xact_age_s": 0,
+        "xacts_over_60s": 0,
+        "xacts_over_300s": 0
+      }
+    },
+    {
+      "start": 1791599201.987,
+      "end": 1791599281.987,
+      "tables": {
+        "access_token_revocations": {
+          "total": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576,
+            "max": 24576,
+            "min": 24576
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576,
+            "max": 24576,
+            "min": 24576
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "ins": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_contracts": {
+          "total": {
+            "first": 1941504,
+            "last": 1941504,
+            "median": 1941504,
+            "max": 1941504,
+            "min": 1941504
+          },
+          "heap": {
+            "first": 1474560,
+            "last": 1474560,
+            "median": 1474560,
+            "max": 1474560,
+            "min": 1474560
+          },
+          "idx": {
+            "first": 425984,
+            "last": 425984,
+            "median": 425984,
+            "max": 425984,
+            "min": 425984
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 1,
+            "last": 1,
+            "median": 1,
+            "max": 1,
+            "min": 1
+          },
+          "ins": {
+            "first": 1984,
+            "last": 1984,
+            "median": 1984,
+            "max": 1984,
+            "min": 1984
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_families": {
+          "total": {
+            "first": 2768896,
+            "last": 2768896,
+            "median": 2768896,
+            "max": 2768896,
+            "min": 2768896
+          },
+          "heap": {
+            "first": 1163264,
+            "last": 1163264,
+            "median": 1163264,
+            "max": 1163264,
+            "min": 1163264
+          },
+          "idx": {
+            "first": 1564672,
+            "last": 1564672,
+            "median": 1564672,
+            "max": 1564672,
+            "min": 1564672
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 3968,
+            "last": 3968,
+            "median": 3968,
+            "max": 3968,
+            "min": 3968
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_refresh_spent_tokens": {
+          "total": {
+            "first": 32768,
+            "last": 32768,
+            "median": 32768,
+            "max": 32768,
+            "min": 32768
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 24576,
+            "last": 24576,
+            "median": 24576,
+            "max": 24576,
+            "min": 24576
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "ins": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "del": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          }
+        },
+        "oauth_token_issuances": {
+          "total": {
+            "first": 1916928,
+            "last": 1916928,
+            "median": 1916928,
+            "max": 1916928,
+            "min": 1916928
+          },
+          "heap": {
+            "first": 1064960,
+            "last": 1064960,
+            "median": 1064960,
+            "max": 1064960,
+            "min": 1064960
+          },
+          "idx": {
+            "first": 811008,
+            "last": 811008,
+            "median": 811008,
+            "max": 811008,
+            "min": 811008
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 2,
+            "last": 2,
+            "median": 2,
+            "max": 2,
+            "min": 2
+          },
+          "ins": {
+            "first": 2976,
+            "last": 2976,
+            "median": 2976,
+            "max": 2976,
+            "min": 2976
+          },
+          "del": {
+            "first": 992,
+            "last": 992,
+            "median": 992,
+            "max": 992,
+            "min": 992
+          }
+        },
+        "security_audit_chain_entries": {
+          "total": {
+            "first": 679936,
+            "last": 679936,
+            "median": 679936,
+            "max": 679936,
+            "min": 679936
+          },
+          "heap": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "idx": {
+            "first": 655360,
+            "last": 655360,
+            "median": 655360,
+            "max": 655360,
+            "min": 655360
+          },
+          "dead": {
+            "first": 0,
+            "last": 0,
+            "median": 0,
+            "max": 0,
+            "min": 0
+          },
+          "autovac": {
+            "first": 3,
+            "last": 3,
+            "median": 3,
+            "max": 3,
+            "min": 3
+          },
+          "ins": {
+            "first": 5952,
+            "last": 5952,
+            "median": 5952,
+            "max": 5952,
+            "min": 5952
+          },
+          "del": {
+            "first": 5952,
+            "last": 5952,
+            "median": 5952,
+            "max": 5952,
+            "min": 5952
+          }
+        },
+        "security_audit_events": {
+          "total": {
+            "first": 3981312,
+            "last": 3981312,
+            "median": 3981312,
+            "max": 3981312,
+            "min": 3981312
+          },
+          "heap": {
+            "first": 2351104,
+            "last": 2351104,
+            "median": 2351104,
+            "max": 2351104,
+            "min": 2351104
+          },
+          "idx": {
+            "first": 1589248,
+            "last": 1589248,
+            "median": 1589248,
+            "max": 1589248,
+            "min": 1589248
+          },
+          "dead": {
+            "first": 0,
+            "last": 992,
+            "median": 0,
+            "max": 992,
+            "min": 0
+          },
+          "autovac": {
+            "first": 3,
+            "last": 3,
+            "median": 3,
+            "max": 3,
+            "min": 3
+          },
+          "ins": {
+            "first": 5952,
+            "last": 5952,
+            "median": 5952,
+            "max": 5952,
+            "min": 5952
+          },
+          "del": {
+            "first": 4960,
+            "last": 5952,
+            "median": 4960,
+            "max": 5952,
+            "min": 4960
+          }
+        }
+      },
+      "valkey": {
+        "mem": {
+          "first": 2249336,
+          "last": 2248056,
+          "median": 2249080,
+          "max": 2251128,
+          "min": 2248056
+        },
+        "keys": {
+          "first": 1988,
+          "last": 1987,
+          "median": 1987,
+          "max": 1988,
+          "min": 1987
+        },
+        "exp": {
+          "first": 1994,
+          "last": 1997,
+          "median": 1996,
+          "max": 1997,
+          "min": 1994
+        },
+        "cmd": {
+          "first": 17251758,
+          "last": 19725762,
+          "median": 18487806,
+          "max": 19725762,
+          "min": 17251758
+        }
+      },
+      "cpu": {
+        "app": {
+          "first": 1.4548377690443741,
+          "last": 1.4394252413833335,
+          "median": 1.4506679255310226,
+          "max": 1.7705746863358744,
+          "min": 1.4021352307520407
+        },
+        "postgres": {
+          "first": 1.3695791965442674,
+          "last": 1.3631883433529426,
+          "median": 1.3614295536793954,
+          "max": 1.8674029894948676,
+          "min": 1.3120455044199562
+        },
+        "valkey": {
+          "first": 0.13060887702144008,
+          "last": 0.13976764638905004,
+          "median": 0.1353831132233275,
+          "max": 0.14678409960655361,
+          "min": 0.12733979013227623
+        },
+        "audit-worker": {
+          "first": 0.0018140121808533345,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.007276559436130071,
+          "min": 0.0
+        },
+        "audit-receiver": {
+          "first": 0.0,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.0,
+          "min": 0.0
+        }
+      },
+      "old_transactions": {
+        "oldest_xact_age_s": 0,
+        "xacts_over_60s": 0,
+        "xacts_over_300s": 0
+      }
+    }
+  ],
+  "cpu_note": "Owned service process jiffy deltas / elapsed seconds; terminated PG backend jiffies are not retained, so negative deltas are omitted. Shared cgroup counters are deliberately not treated as per-service CPU. No host metrics were probed.",
+  "whole_window": {
+    "cpu": {
+      "app": {
+        "time_weighted_mean_cores": 1.43125730136768,
+        "sample_summary": {
+          "first": 1.3375862723482939,
+          "last": 1.4394252413833335,
+          "median": 1.4254527492116071,
+          "max": 1.8819102840731672,
+          "min": 1.2782017098519516
+        }
+      },
+      "postgres": {
+        "time_weighted_mean_cores": 1.3616743701980227,
+        "sample_summary": {
+          "first": 1.2457190833133835,
+          "last": 1.3631883433529426,
+          "median": 1.3180043199613212,
+          "max": 2.114648947224245,
+          "min": 1.2220070701607608
+        }
+      },
+      "valkey": {
+        "time_weighted_mean_cores": 0.138746384818398,
+        "sample_summary": {
+          "first": 0.15249953379795106,
+          "last": 0.13976764638905004,
+          "median": 0.1358190215218874,
+          "max": 0.1690991849457049,
+          "min": 0.12375984250321348
+        }
+      },
+      "audit-worker": {
+        "time_weighted_mean_cores": 0.0005697373679242595,
+        "sample_summary": {
+          "first": 0.0018373437806982057,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.007276559436130071,
+          "min": 0.0
+        }
+      },
+      "audit-receiver": {
+        "time_weighted_mean_cores": 0.00017095264395124108,
+        "sample_summary": {
+          "first": 0.0,
+          "last": 0.0,
+          "median": 0.0,
+          "max": 0.005454812417603383,
+          "min": 0.0
+        }
+      }
+    },
+    "valkey": {
+      "mem": {
+        "first": 2254584,
+        "last": 2248056,
+        "median": 2251128,
+        "max": 2259128,
+        "min": 2248056
+      },
+      "keys": {
+        "first": 1988,
+        "last": 1987,
+        "median": 1987,
+        "max": 1988,
+        "min": 1985
+      },
+      "exp": {
+        "first": 0,
+        "last": 1997,
+        "median": 999,
+        "max": 1997,
+        "min": 0
+      },
+      "cmd": {
+        "first": 547711,
+        "last": 19725762,
+        "median": 10131575,
+        "max": 19725762,
+        "min": 547711
+      }
+    }
+  }
+}

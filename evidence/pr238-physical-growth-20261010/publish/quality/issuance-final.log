@@ -1,0 +1,24 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.97s
+     Running tests/token_issuance_atomicity.rs (target/debug/deps/token_issuance_atomicity-6e455f1ff337ab96)
+
+running 16 tests
+test authorization_code_identity_fences_concurrent_holders_and_refresh_families ... ok
+test authorization_code_receipt_migration_preserves_legacy_and_rejects_old_writers ... ok
+test cancelled_issuance_on_pool_runtime_discards_the_blocked_connection ... ok
+test concurrent_single_use_commits_commit_exactly_once ... ok
+test expired_redemption_receipt_is_invisible_before_physical_reclamation ... ok
+test expired_single_use_grant_rolls_back_everything ... ok
+test final_issuance_schema_is_created_directly_without_legacy_state ... ok
+test issuance_transaction_executes_on_the_connection_pool_runtime ... ok
+test native_source_and_device_secret_expiry_are_rechecked_after_destination_wait ... ok
+test native_source_busy_nowait_rolls_back_and_returns_retryable_dependency_failure ... ok
+test native_source_cross_client_capacity_and_maintenance_complete_without_deadlock ... ok
+test native_source_normal_member_rotation_does_not_invalidate_family_authority ... ok
+test native_source_revoked_after_preparation_rolls_back_destination ... ok
+test native_source_same_client_capacity_transfer_requires_own_live_retirement ... ok
+test native_source_share_lock_holds_through_required_audit_and_commit ... ok
+test rotation_conflict_keeps_family_compromise_and_only_reuse_audit ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.82s
+

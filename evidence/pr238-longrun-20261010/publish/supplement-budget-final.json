@@ -1,0 +1,9 @@
+{
+  "ts": 1791605228.7172108,
+  "native_formal_before": 360,
+  "native_formal_after": 300,
+  "required_wait_cutoff_epoch": 1791607148,
+  "required_formal_unchanged": 300,
+  "required_new_waiter_pid": 6563,
+  "reason": "Reserve completion time for both corrected fixtures; original failed attempts remain; no rate/safety gate/TTL change"
+}

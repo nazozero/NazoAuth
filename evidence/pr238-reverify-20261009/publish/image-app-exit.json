@@ -1,0 +1,1 @@
+{"command": ["docker", "build", "-t", "nazoauth-reverify-app:20261009", "-"], "exit": 0, "seconds": 1.9257356538437307}

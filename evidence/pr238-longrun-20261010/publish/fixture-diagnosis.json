@@ -1,0 +1,34 @@
+{
+  "generated_at": 1791603250.61588,
+  "native_first_run": {
+    "capacity": "FAIL",
+    "business_performance": "INVALID",
+    "formal_prepare_sut_failed": 240000,
+    "successful_business_ops": 0,
+    "finding": "Historical request metadata claimed native_sso enabled, but the task wrapper copied from mixed/revoke contained no activation hook. Clean-install baseline initializes native_sso disabled; PAR admission rejects device_sso when NativeSso is not accepting. The six-minute supplementary fixture explicitly records before/after desired states and checks actual enabled state before load.",
+    "proof_limit": "First run did not retain PAR error bodies or desired-state values. The fixture omission is directly verified; causal attribution will be strengthened by actual second-run state and successful operations.",
+    "source_locations": [
+      "migrations/20260828000600_remove_legacy_persisted_security_state/up.sql:242",
+      "crates/authorization-server/src/authorization/request/policy.rs:64",
+      "perf/k6/oauth.js:1739"
+    ]
+  },
+  "required_first_run": {
+    "capacity": "INVALID",
+    "formal_load_started": false,
+    "application_exit": 1,
+    "outer_exit": 2,
+    "underlying_error": "RuntimeError: app not ready after pinned exec start",
+    "observer_error": "KeyError: target_decisions after no load",
+    "configuration_omissions": [
+      "DEPLOYMENT_ID",
+      "AUDIT_ANCHOR_FRESHNESS_SECONDS=10"
+    ],
+    "source_locations": [
+      "crates/nazoauth/src/adapters/audit_anchor/config.rs:125",
+      "crates/nazoauth/src/bootstrap/startup/configuration.rs:75"
+    ],
+    "proof_limit": "Original application stderr not retained; missing mandatory DEPLOYMENT_ID is a source-supported cause, and independent same-parser diagnostic is reported separately. No valid Required sustained-load evidence from this run."
+  },
+  "production_source_modified": false
+}
