@@ -15,6 +15,7 @@ RUN mkdir -p /usr/local/cargo \
 COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./
 COPY crates ./crates
 COPY migrations ./migrations
+COPY tests/contracts/migrations.sha256 ./tests/contracts/migrations.sha256
 
 FROM build-base AS product-builder
 
