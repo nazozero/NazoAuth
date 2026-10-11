@@ -84,7 +84,9 @@ midnight, one second later, midday, the last second and the next day's boundary;
 keyctl lifecycle tests retain generation reuse, concurrent initialization,
 rotation, historical CRLs and import preservation. Official Suite execution and
 retained results are recorded separately in the
-[deployment report](../operations/reports/main-upgrade-2026-10-10.md).
+[deployment report](../operations/reports/main-upgrade-2026-10-10.md). The subsequent
+[managed mdoc privacy validation](../operations/reports/oidf-mdoc-privacy-2026-10-11.md)
+records the three corrected batch warnings and all 30 checked credential intervals.
 
 ## Evidence and remaining work
 

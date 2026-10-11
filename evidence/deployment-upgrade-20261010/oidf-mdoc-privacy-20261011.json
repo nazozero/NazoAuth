@@ -1,0 +1,1051 @@
+{
+  "schema": 1,
+  "scope": "Three locally managed mdoc batch time privacy warnings; not global unlinkability or whole-suite certification",
+  "source_sha": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+  "baseline_sha": "b1f4350dee6d0c2f565abf95a16ca6ee83a9c23d",
+  "ctl_source_sha": "e2525b4bd7b6a9fbaca4cade6798be264c924562",
+  "negative_variant": {
+    "base_sha": "b1f4350dee6d0c2f565abf95a16ca6ee83a9c23d",
+    "patch_sha256": "1b9a838fcf3b6259925b6bf1eb102a9463292645681db033115c9b51f6f3ffd4",
+    "behavior": "Unchanged now-based certificate validity; injectable builder clock and regression only."
+  },
+  "negative_test": {
+    "command": [
+      "cargo",
+      "+1.99.0",
+      "test",
+      "--release",
+      "--locked",
+      "-p",
+      "nazoauth",
+      "--lib",
+      "managed_mdoc_certificate_validity_uses_shared_utc_days",
+      "--",
+      "--nocapture"
+    ],
+    "exit_code": 101,
+    "seconds": 615.6999578475952
+  },
+  "negative_assertion": {
+    "actual_not_before": 1791590401,
+    "expected_not_before": 1791590400,
+    "passed": 0,
+    "failed": 1,
+    "ignored": 0
+  },
+  "checks": [
+    {
+      "name": "fmt-apply",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt"
+      ],
+      "exit_code": 0,
+      "seconds": 3.3778347969055176
+    },
+    {
+      "name": "keyctl",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "keyctl::openid4vc_material::tests",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 537.0410850048065
+    },
+    {
+      "name": "crypto",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-oauth-server",
+        "--lib",
+        "domain::openid4vc::credential_crypto::tests",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 6.386026382446289
+    },
+    {
+      "name": "vci",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-openid4vci",
+        "--test",
+        "service_contract",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 0.24199867248535156
+    },
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 3.2636873722076416
+    },
+    {
+      "name": "static",
+      "command": [
+        "python3",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 7.830233812332153
+    },
+    {
+      "name": "dependencies",
+      "command": [
+        "python3",
+        "scripts/check_persistence_dependency_graph.py"
+      ],
+      "exit_code": 0,
+      "seconds": 3.4927711486816406
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "clippy",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 218.87529015541077
+    }
+  ],
+  "test_counts": {
+    "keyctl": 16,
+    "crypto": 34,
+    "vci_service": 8
+  },
+  "build": {
+    "command": [
+      "cargo",
+      "+1.99.0",
+      "build",
+      "--release",
+      "--locked",
+      "-p",
+      "nazoauth"
+    ],
+    "exit_code": 0,
+    "seconds": 182.01177835464478,
+    "source_sha": "0ddf22e03366a979dfe31de59ca410fd64e406e2"
+  },
+  "package": [
+    {
+      "name": "image-build",
+      "command": [
+        "podman",
+        "build",
+        "--pull=never",
+        "-t",
+        "localhost:5001/nazoauth-main-20261010:0ddf22e0",
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/image-context"
+      ],
+      "exit_code": 0,
+      "seconds": 2.2864575386047363
+    },
+    {
+      "name": "image-identity",
+      "command": [
+        "podman",
+        "run",
+        "--rm",
+        "--entrypoint",
+        "/usr/local/bin/nazoauth",
+        "localhost:5001/nazoauth-main-20261010:0ddf22e0",
+        "release-identity"
+      ],
+      "exit_code": 0,
+      "seconds": 0.4777650833129883
+    },
+    {
+      "name": "image-push",
+      "command": [
+        "podman",
+        "push",
+        "--tls-verify=false",
+        "--digestfile",
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/manifest-digest",
+        "localhost:5001/nazoauth-main-20261010:0ddf22e0"
+      ],
+      "exit_code": 0,
+      "seconds": 0.47606897354125977
+    },
+    {
+      "name": "pinned-identity",
+      "command": [
+        "podman",
+        "run",
+        "--rm",
+        "--entrypoint",
+        "/usr/local/bin/nazoauth",
+        "localhost:5001/nazoauth-main-20261010@sha256:25289c16b3b4ae621d197cac332142ad199964aa6c87f45c37158c84e26dcdaf",
+        "release-identity"
+      ],
+      "exit_code": 0,
+      "seconds": 0.5157418251037598
+    },
+    {
+      "name": "ctl-build",
+      "command": [
+        "cargo",
+        "+1.97.1",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauthctl",
+        "--features",
+        "pre-release-validation"
+      ],
+      "exit_code": 0,
+      "seconds": 112.15747690200806
+    },
+    {
+      "name": "ctl-self-verify",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+        "--json",
+        "self",
+        "verify-state"
+      ],
+      "exit_code": 0,
+      "seconds": 0.09095048904418945
+    }
+  ],
+  "deployment_steps": [
+    {
+      "name": "backup-snapshot",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "backup",
+        "snapshot"
+      ],
+      "exit_code": 0,
+      "seconds": 1.62343168258667
+    },
+    {
+      "name": "backup-restore-test",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "backup",
+        "restore-test"
+      ],
+      "exit_code": 0,
+      "seconds": 7.138293027877808
+    },
+    {
+      "name": "update",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.0ddf22e0"
+      ],
+      "exit_code": 0,
+      "seconds": 2.3819453716278076
+    },
+    {
+      "name": "doctor",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "doctor"
+      ],
+      "exit_code": 0,
+      "seconds": 0.020045757293701172
+    },
+    {
+      "name": "verify",
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "verify"
+      ],
+      "exit_code": 0,
+      "seconds": 0.0847480297088623
+    }
+  ],
+  "deployment_proof": {
+    "source_sha": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+    "ctl_source_sha": "e2525b4bd7b6a9fbaca4cade6798be264c924562",
+    "binary_sha256": "91a3941c33120bc5214f103319d9b6fc0b86f669396eea3afce34905c1dd6936",
+    "requested_image": "localhost:5001/nazoauth-main-20261010@sha256:25289c16b3b4ae621d197cac332142ad199964aa6c87f45c37158c84e26dcdaf",
+    "image_config_id": "81de4efb080126e034f3e7b5cf60d65bdd482ea0a7d1f9ad2bf4cdd0e28551c3",
+    "image_revision": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+    "running": true,
+    "discovery_status": 200,
+    "issuer": "https://auth.nazo.run"
+  },
+  "before_batches": [
+    {
+      "plan": "openid4vc-vci-p029",
+      "module": "9MzfXidFBgjOfje",
+      "module_sha256": "c38f8e20af5adcacc951199694919f8c164fb8182867a3f5abb996f32bd3d015",
+      "certificate_sha256": [
+        "9ca8ceea279cfa81749060953ae424656a0c38bf9d9b3a33a19c7c0e8a2cde3c"
+      ],
+      "credential_count": 10,
+      "shared_certificate_and_signed": {
+        "certificate_not_after": "2028-01-11T02:46:13Z",
+        "certificate_not_before": "2026-10-11T02:46:13Z",
+        "result": "SUCCESS",
+        "signed": "2026-10-11T02:46:13Z",
+        "src": "ValidateMdocMsoSignedWithinDsCertificateValidity"
+      },
+      "shared_credential_interval": {
+        "result": "SUCCESS",
+        "src": "ValidateMdocMsoValidUntilAfterValidFrom",
+        "valid_from": "2026-10-11T02:46:13Z",
+        "valid_until": "2027-10-11T00:00:00Z"
+      },
+      "warnings": [
+        {
+          "format": "mso_mdoc",
+          "near_now_seconds": 120,
+          "now": 1791686818,
+          "precise_time_claims": [
+            "signed",
+            "validFrom"
+          ],
+          "requirements": [
+            "SDJWT-10.1"
+          ],
+          "result": "WARNING",
+          "signed_distinct_values": "[1791686773]",
+          "src": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "time": 1791686819958,
+          "validFrom_distinct_values": "[1791686773]",
+          "validUntil_distinct_values": "[1823212800]"
+        }
+      ]
+    },
+    {
+      "plan": "openid4vc-vci-p031",
+      "module": "l4JOc4Tjmsvx8RI",
+      "module_sha256": "2eeadfe4187b99f36cc42e806852ec1b9e2c5201c73ebe3013169e1e5059b31f",
+      "certificate_sha256": [
+        "9ca8ceea279cfa81749060953ae424656a0c38bf9d9b3a33a19c7c0e8a2cde3c"
+      ],
+      "credential_count": 10,
+      "shared_certificate_and_signed": {
+        "certificate_not_after": "2028-01-11T02:46:13Z",
+        "certificate_not_before": "2026-10-11T02:46:13Z",
+        "result": "SUCCESS",
+        "signed": "2026-10-11T02:46:13Z",
+        "src": "ValidateMdocMsoSignedWithinDsCertificateValidity"
+      },
+      "shared_credential_interval": {
+        "result": "SUCCESS",
+        "src": "ValidateMdocMsoValidUntilAfterValidFrom",
+        "valid_from": "2026-10-11T02:46:13Z",
+        "valid_until": "2027-10-11T00:00:00Z"
+      },
+      "warnings": [
+        {
+          "format": "mso_mdoc",
+          "near_now_seconds": 120,
+          "now": 1791686821,
+          "precise_time_claims": [
+            "signed",
+            "validFrom"
+          ],
+          "requirements": [
+            "SDJWT-10.1"
+          ],
+          "result": "WARNING",
+          "signed_distinct_values": "[1791686773]",
+          "src": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "time": 1791686822048,
+          "validFrom_distinct_values": "[1791686773]",
+          "validUntil_distinct_values": "[1823212800]"
+        }
+      ]
+    },
+    {
+      "plan": "openid4vc-vci-p033",
+      "module": "m4N7NX9hMsDK0bQ",
+      "module_sha256": "d8e7d09469ef062babae095fd08cbe3d166dc5004fd977ac4ca62225bd0db7a7",
+      "certificate_sha256": [
+        "9ca8ceea279cfa81749060953ae424656a0c38bf9d9b3a33a19c7c0e8a2cde3c"
+      ],
+      "credential_count": 10,
+      "shared_certificate_and_signed": {
+        "certificate_not_after": "2028-01-11T02:46:13Z",
+        "certificate_not_before": "2026-10-11T02:46:13Z",
+        "result": "SUCCESS",
+        "signed": "2026-10-11T02:46:13Z",
+        "src": "ValidateMdocMsoSignedWithinDsCertificateValidity"
+      },
+      "shared_credential_interval": {
+        "result": "SUCCESS",
+        "src": "ValidateMdocMsoValidUntilAfterValidFrom",
+        "valid_from": "2026-10-11T02:46:13Z",
+        "valid_until": "2027-10-11T00:00:00Z"
+      },
+      "warnings": [
+        {
+          "format": "mso_mdoc",
+          "near_now_seconds": 120,
+          "now": 1791686888,
+          "precise_time_claims": [
+            "signed",
+            "validFrom"
+          ],
+          "requirements": [
+            "SDJWT-10.1"
+          ],
+          "result": "WARNING",
+          "signed_distinct_values": "[1791686773]",
+          "src": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "time": 1791686889217,
+          "validFrom_distinct_values": "[1791686773]",
+          "validUntil_distinct_values": "[1823212800]"
+        }
+      ]
+    }
+  ],
+  "official": [
+    {
+      "name": "p029",
+      "command": {
+        "command": [
+          "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+          "--instance",
+          "production",
+          "oidf",
+          "run",
+          "openid4vc-vci-p029",
+          "--json",
+          "--jobs",
+          "4",
+          "--poll-timeout",
+          "1800"
+        ],
+        "exit_code": 0,
+        "seconds": 86.89496326446533
+      },
+      "conformance_artifact_revision": "77c362f9fc62e5114f3c61e2b4420f864d7112ab",
+      "server_source": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+      "ctl_source": "e2525b4bd7b6a9fbaca4cade6798be264c924562",
+      "module_count": 15,
+      "outcomes": {
+        "PASSED": 15
+      },
+      "suite_pass": true,
+      "acceptance_pass": true,
+      "failed": [],
+      "incomplete": [],
+      "target_cleanup_complete": true,
+      "integrity": {
+        "defined_modules": 15,
+        "created_instances": 15,
+        "terminal_modules": 15,
+        "all_modules_instantiated": true,
+        "all_modules_terminal": true,
+        "all_modules_settled": true,
+        "cleanup_complete": false,
+        "retention_requested": true,
+        "retention_eligible": true,
+        "retention_candidate_settled": true,
+        "retention_committed": true,
+        "suite_resources_settled": true
+      },
+      "manifest_sha256": "2ce548a5c44342ccac64a07b354e7a71c8375fc3127c2d750bd21d5667f553aa",
+      "module_hashes_verified": 15
+    },
+    {
+      "name": "p031",
+      "command": {
+        "command": [
+          "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+          "--instance",
+          "production",
+          "oidf",
+          "run",
+          "openid4vc-vci-p031",
+          "--json",
+          "--jobs",
+          "4",
+          "--poll-timeout",
+          "1800"
+        ],
+        "exit_code": 0,
+        "seconds": 91.9024965763092
+      },
+      "conformance_artifact_revision": "77c362f9fc62e5114f3c61e2b4420f864d7112ab",
+      "server_source": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+      "ctl_source": "e2525b4bd7b6a9fbaca4cade6798be264c924562",
+      "module_count": 15,
+      "outcomes": {
+        "PASSED": 14,
+        "SKIPPED": 1
+      },
+      "suite_pass": false,
+      "acceptance_pass": true,
+      "failed": [],
+      "incomplete": [],
+      "target_cleanup_complete": true,
+      "integrity": {
+        "defined_modules": 15,
+        "created_instances": 15,
+        "terminal_modules": 15,
+        "all_modules_instantiated": true,
+        "all_modules_terminal": true,
+        "all_modules_settled": true,
+        "cleanup_complete": false,
+        "retention_requested": true,
+        "retention_eligible": true,
+        "retention_candidate_settled": true,
+        "retention_committed": true,
+        "suite_resources_settled": true
+      },
+      "manifest_sha256": "6a9cb600745b30f215ca2084e74a63733fcc559916b43f55c57ee68b0b18bed9",
+      "module_hashes_verified": 15
+    },
+    {
+      "name": "p033",
+      "command": {
+        "command": [
+          "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-privacy-20261011/nazoauthctl-selected",
+          "--instance",
+          "production",
+          "oidf",
+          "run",
+          "openid4vc-vci-p033",
+          "--json",
+          "--jobs",
+          "4",
+          "--poll-timeout",
+          "1800"
+        ],
+        "exit_code": 0,
+        "seconds": 72.36966633796692
+      },
+      "conformance_artifact_revision": "77c362f9fc62e5114f3c61e2b4420f864d7112ab",
+      "server_source": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+      "ctl_source": "e2525b4bd7b6a9fbaca4cade6798be264c924562",
+      "module_count": 15,
+      "outcomes": {
+        "PASSED": 15
+      },
+      "suite_pass": true,
+      "acceptance_pass": true,
+      "failed": [],
+      "incomplete": [],
+      "target_cleanup_complete": true,
+      "integrity": {
+        "defined_modules": 15,
+        "created_instances": 15,
+        "terminal_modules": 15,
+        "all_modules_instantiated": true,
+        "all_modules_terminal": true,
+        "all_modules_settled": true,
+        "cleanup_complete": false,
+        "retention_requested": true,
+        "retention_eligible": true,
+        "retention_candidate_settled": true,
+        "retention_committed": true,
+        "suite_resources_settled": true
+      },
+      "manifest_sha256": "93807f17e00053aa206d5b33e5b0ebaccb4518d10119098cd18df4367a3e68f3",
+      "module_hashes_verified": 15
+    }
+  ],
+  "after_batches": [
+    {
+      "plan": "openid4vc-vci-p029",
+      "module": "dZVGw1iBjBaCdnx",
+      "official_result": "PASSED",
+      "module_sha256": "31b8d4b5ebf14891b357c2095cbcc9c9a57a8b08b62968e07f1471e6d7202751",
+      "certificate_sha256": [
+        "8e909ee836a249790f078bec58d4ae2e81b1a5608fac1dc1e830b0b8407e8464"
+      ],
+      "credential_count": 10,
+      "privacy": [
+        {
+          "format": "mso_mdoc",
+          "result": "SUCCESS",
+          "signed_distinct_values": "[1791676800]",
+          "src": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "validFrom_distinct_values": "[1791676800]",
+          "validUntil_distinct_values": "[1823212800]"
+        }
+      ],
+      "security_checks": {
+        "ValidateMdocIssuerSignedSignature": 10,
+        "ValidateMdocMsoValidUntilWithinDsCertificateValidity": 10,
+        "ValidateMdocDsCertificateChain": 10,
+        "VCIEnsureBatchBindingKeysMatchSentProofKeys": 1,
+        "VCIEnsureBatchBindingKeysAreDistinct": 1
+      },
+      "shared_certificate_and_signed": {
+        "certificate_not_before": "2026-10-11T00:00:00Z",
+        "certificate_not_after": "2028-01-11T00:00:00Z",
+        "signed": "2026-10-11T00:00:00Z"
+      },
+      "shared_credential_interval": {
+        "valid_from": "2026-10-11T00:00:00Z",
+        "valid_until": "2027-10-11T00:00:00Z"
+      },
+      "all_ten_values_checked": true
+    },
+    {
+      "plan": "openid4vc-vci-p031",
+      "module": "TWIMnAPNbMCmO1H",
+      "official_result": "PASSED",
+      "module_sha256": "7738c6e58646ea42deceab1da867bf78b9aaadc451ab70bb04a86288b27f5feb",
+      "certificate_sha256": [
+        "d9e8a34764c65e0d06457d08f0464112e6b012d8fababd4931ab5e127266e272"
+      ],
+      "credential_count": 10,
+      "privacy": [
+        {
+          "format": "mso_mdoc",
+          "result": "SUCCESS",
+          "signed_distinct_values": "[1791676800]",
+          "src": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "validFrom_distinct_values": "[1791676800]",
+          "validUntil_distinct_values": "[1823212800]"
+        }
+      ],
+      "security_checks": {
+        "ValidateMdocIssuerSignedSignature": 10,
+        "ValidateMdocMsoValidUntilWithinDsCertificateValidity": 10,
+        "ValidateMdocDsCertificateChain": 10,
+        "VCIEnsureBatchBindingKeysMatchSentProofKeys": 1,
+        "VCIEnsureBatchBindingKeysAreDistinct": 1
+      },
+      "shared_certificate_and_signed": {
+        "certificate_not_before": "2026-10-11T00:00:00Z",
+        "certificate_not_after": "2028-01-11T00:00:00Z",
+        "signed": "2026-10-11T00:00:00Z"
+      },
+      "shared_credential_interval": {
+        "valid_from": "2026-10-11T00:00:00Z",
+        "valid_until": "2027-10-11T00:00:00Z"
+      },
+      "all_ten_values_checked": true
+    },
+    {
+      "plan": "openid4vc-vci-p033",
+      "module": "D0VqapvCsVAWt2L",
+      "official_result": "PASSED",
+      "module_sha256": "487484385df8a71346201269fe58a5ebc0dc8f4f97d8c54f4d3459885d7080aa",
+      "certificate_sha256": [
+        "77675ae990fb07a3248fb6546e361b3d0e548bb01817582f71e364645f1151ca"
+      ],
+      "credential_count": 10,
+      "privacy": [
+        {
+          "format": "mso_mdoc",
+          "result": "SUCCESS",
+          "signed_distinct_values": "[1791676800]",
+          "src": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "validFrom_distinct_values": "[1791676800]",
+          "validUntil_distinct_values": "[1823212800]"
+        }
+      ],
+      "security_checks": {
+        "ValidateMdocIssuerSignedSignature": 10,
+        "ValidateMdocMsoValidUntilWithinDsCertificateValidity": 10,
+        "ValidateMdocDsCertificateChain": 10,
+        "VCIEnsureBatchBindingKeysMatchSentProofKeys": 1,
+        "VCIEnsureBatchBindingKeysAreDistinct": 1
+      },
+      "shared_certificate_and_signed": {
+        "certificate_not_before": "2026-10-11T00:00:00Z",
+        "certificate_not_after": "2028-01-11T00:00:00Z",
+        "signed": "2026-10-11T00:00:00Z"
+      },
+      "shared_credential_interval": {
+        "valid_from": "2026-10-11T00:00:00Z",
+        "valid_until": "2027-10-11T00:00:00Z"
+      },
+      "all_ten_values_checked": true
+    }
+  ],
+  "module_ledgers": {
+    "p029": [
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "hhnAQz9gAAfC2uQ",
+        "test_name": "oid4vci-1_0-issuer-metadata-test",
+        "sha256": "cfc98a0d645d5a1dd16d505ef53b4914c19075ab7e3bcca6fa8d98427c751e6e"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "2RpPNYQYTwSg9O3",
+        "test_name": "oid4vci-1_0-issuer-metadata-test-signed",
+        "sha256": "995582239afab022b2dacaf65b2ee81fbc5df4436a236fb09108824ffcbe4b75"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "LEpES6w4g2c0U6I",
+        "test_name": "oid4vci-1_0-issuer-happy-flow",
+        "sha256": "4d946eb0f673a5ff86ed0bd2f8eeff47ca732a0d62c32ebf5b0f1dae908cb7af"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "0Pg9AWmqUlzkPI3",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-additional-requests",
+        "sha256": "a64a44531a3b06ec692a34bd5a5a0c0ac1578db9b7548672a6fe305820981c43"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "NxpUyb1IpFFKFhd",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+        "sha256": "21df8f34626003ad98c85a115921a02b78a5d19d0c90f62ae131e5bc23defac3"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "YRuCcK8v1vv7Pil",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-skip-notification",
+        "sha256": "7b435ef5c7750441cdf329a903d80a06f0c9f64dfd0f6ca3153770e57f17c0a3"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "dZVGw1iBjBaCdnx",
+        "test_name": "oid4vci-1_0-issuer-batch-issuance",
+        "sha256": "31b8d4b5ebf14891b357c2095cbcc9c9a57a8b08b62968e07f1471e6d7202751"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "eTLYLjKmWm8egcP",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-nonce",
+        "sha256": "9252e490a0fac4976610cfbbae614b52c2026d8496d1320b019050a7712b497f"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "NyOafeRYAiBa1kK",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-jwt-proof-signature",
+        "sha256": "b47f58ad72eec32f51e41e1a2140cc855ae7b44020bd21aa26210705d1989b40"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "7lzN6wJ4y5CP1WG",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-key-attestation-signature",
+        "sha256": "768270cf9534555685340d4e799a56f0caa3cc033d6eaaf159c1643073a94cd1"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "nzr5NskXqHd8GUb",
+        "test_name": "oid4vci-1_0-issuer-fail-missing-proof",
+        "sha256": "fbeb05533dc7e4c86dd3d928253517b531a59c4425ef8f8d2f98edb864c90f73"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "2TAYONmMqxRyvUu",
+        "test_name": "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm",
+        "sha256": "a9de99c7ae949a0a52af7ffe4587c7004c80ace3d808f8ce40dfa350f3388c9f"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "tf7LufgcqERBs8Y",
+        "test_name": "oid4vci-1_0-issuer-fail-unknown-credential-configuration",
+        "sha256": "7113b5b740007ee3fa59b676f05bdd6636140356f5a4d48a3b5ee87f1b689606"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "046JLrfBJry1Aeb",
+        "test_name": "oid4vci-1_0-issuer-fail-unknown-credential-identifier",
+        "sha256": "68a89fa7fb4f0abaa0b85b8de4b4ab01c748f9c23223a8b9769ddd064dfa8149"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p029",
+        "suite_plan_id": "3XFZ23Yi0SCsC",
+        "module_id": "oEnuiJ02XTb9pZm",
+        "test_name": "oid4vci-1_0-issuer-fail-on-access-token-in-query",
+        "sha256": "1c37d4fa0d96eb86ff36327f7a974feff39d4a956f391f252a3d02a6c3de681c"
+      }
+    ],
+    "p031": [
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "yO4eZ5m6lydTZs2",
+        "test_name": "oid4vci-1_0-issuer-metadata-test",
+        "sha256": "2339003f43e3425e31af4616fa751f27d3d10fafc96eb1f5d27c1a4fa066682a"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "qqkC5U3fqYWaPRA",
+        "test_name": "oid4vci-1_0-issuer-metadata-test-signed",
+        "sha256": "5a4f64843fccfbb469368a2e885521f2053238e03532f9dd6f88ebdc3f323f74"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "nktiqNuVvXHJc9D",
+        "test_name": "oid4vci-1_0-issuer-happy-flow",
+        "sha256": "98f185e29b7f51bc47efbc67c057e69496ce1ecdcb38805293680182ca42717f"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "IrFOxnzY8haPRcR",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-additional-requests",
+        "sha256": "d48e12a622277aefa7a5347bb779b1d9389ee4b9290706a1e6c653a73ca99365"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "6ZmSjzPk2NDKAm3",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+        "sha256": "f69d66f38591d1ba5d8a43a197a918d3e95e4e2864e6eefce906a18f2d69b04b"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "NALuL5jAlsrGJRF",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-skip-notification",
+        "sha256": "41b47ae662ed5d73aa81a578d92e30d47e009c79952d5beb59a646fd436438ef"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "TWIMnAPNbMCmO1H",
+        "test_name": "oid4vci-1_0-issuer-batch-issuance",
+        "sha256": "7738c6e58646ea42deceab1da867bf78b9aaadc451ab70bb04a86288b27f5feb"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "uMeLS99tQmweRti",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-nonce",
+        "sha256": "0f96421404c121d0898ddf15739e190a9ef65f12db169487a28aab139df4186a"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "1Qbz5s94ia7UXkT",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-jwt-proof-signature",
+        "sha256": "ed2a8ea813c7ba3ee4e8c4b92b8e7307a19da74bc2321c22ba69e80af6e1d9a2"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "gOhF78C98aWuMvU",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-key-attestation-signature",
+        "sha256": "2a32a39ce9ffa6de54ee1d1752c7b89ac48e187fd3b267ad93144c7d55d5dfac"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "NTkgB7u8r5bY9fM",
+        "test_name": "oid4vci-1_0-issuer-fail-missing-proof",
+        "sha256": "1f78d828355b1e9f50b34999d32ea933ee6b05f7dc7009bb39342f2ad853d2fa"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "fICnSPBukYEL5bf",
+        "test_name": "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm",
+        "sha256": "3d959d0aa6dc34245728398f074836225adcdc20b7dd201d281ac92cc1babf34"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "OU4hYRuOOGTIXWu",
+        "test_name": "oid4vci-1_0-issuer-fail-unknown-credential-configuration",
+        "sha256": "8ed3d9107bf294a9cea621aaf620045994a55099a6eabc56226075f177d4ac95"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "8c3d1RZX1m4dDvv",
+        "test_name": "oid4vci-1_0-issuer-fail-unknown-credential-identifier",
+        "sha256": "e7b5abd4827302626590511b4a00fda7478ac04207e335ce3e8d58051caaa932"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p031",
+        "suite_plan_id": "0L2al2QLshFLm",
+        "module_id": "XiMGI8oGYrks2LH",
+        "test_name": "oid4vci-1_0-issuer-fail-on-access-token-in-query",
+        "sha256": "82ff8f8612bf3c1d8f3bcf9ff54d0383510f598410e214c0c61a4d813b2a3a23"
+      }
+    ],
+    "p033": [
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "x2yzRLhCtOKKKKH",
+        "test_name": "oid4vci-1_0-issuer-metadata-test",
+        "sha256": "7ec9386218e9351ae110c09286bd460fae464780a0c2a00b9efe711830e5f35d"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "kTXBRvEDCi4UE7g",
+        "test_name": "oid4vci-1_0-issuer-metadata-test-signed",
+        "sha256": "c65ec61030149dc302cc79e1eb3a227418156656934593652026479b85bd2bc3"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "RrpCGiWXKfCO6eY",
+        "test_name": "oid4vci-1_0-issuer-happy-flow",
+        "sha256": "9a37ce112c969d1aabf9f057b0cb5ab8215aa174031be6b0d9250c3c2190dd9a"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "uRNmndMH7cGyToh",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-additional-requests",
+        "sha256": "1536069f5f195e328b35c2c5300cf8b5290c1862df3bccd20c6270094271baee"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "5xUKOmfx1KEXXc9",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+        "sha256": "71f16f6abab340c1fdd0e8c8ac610a64516b09b76df7d84a84fb31e8ca1ab871"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "fglL8Y4c9oKOlmK",
+        "test_name": "oid4vci-1_0-issuer-happy-flow-skip-notification",
+        "sha256": "9b7210cbbadd1bee9b5b286403077f703276bd983143cf11fdb2b2cc1c71ffce"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "D0VqapvCsVAWt2L",
+        "test_name": "oid4vci-1_0-issuer-batch-issuance",
+        "sha256": "487484385df8a71346201269fe58a5ebc0dc8f4f97d8c54f4d3459885d7080aa"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "iGIHNnpoMtEFQkG",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-nonce",
+        "sha256": "c084b765a9c9f1104580ed24d3a28f3ea6968f98f7ba19164d794af6ab42a888"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "b5qk9MKUEtXcEzb",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-jwt-proof-signature",
+        "sha256": "c9e929ef225f14dea2c25e1d3f8e9cef6944694036a58861e7d9adb9064289c2"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "wk11wsmw8VMEFfN",
+        "test_name": "oid4vci-1_0-issuer-fail-invalid-key-attestation-signature",
+        "sha256": "54a3c0206b8ba80613f088aa3bba7538c3c3cec08dc34807204cbcb52001c4c5"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "46Dw3aaY9v5ERgF",
+        "test_name": "oid4vci-1_0-issuer-fail-missing-proof",
+        "sha256": "43d3534cf98c0d9e89ea54ece236988be7eb33b5961d7462ba593dd541992db3"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "AEDydIP2wPrg4cA",
+        "test_name": "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm",
+        "sha256": "1c3f212af56b25ef9693a9b5a041f3dc996e4a41032393b5553d71f753bfb812"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "hfjrBKDLdDzAYv2",
+        "test_name": "oid4vci-1_0-issuer-fail-unknown-credential-configuration",
+        "sha256": "b3df97bbb1e0e45496f65afbfcdacfcec682ab6a30cf8f9a0351d6b3d683df59"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "8CRejsMFmPpD1M7",
+        "test_name": "oid4vci-1_0-issuer-fail-unknown-credential-identifier",
+        "sha256": "b52c57a659bfcc5b833c0103bc7601e05a3d39988c89d1db4fcc11f93ec8167f"
+      },
+      {
+        "matrix_plan_id": "openid4vc-vci-p033",
+        "suite_plan_id": "SwUWwvYMOB2q9",
+        "module_id": "hd5q8BKXy88UGq5",
+        "test_name": "oid4vci-1_0-issuer-fail-on-access-token-in-query",
+        "sha256": "dc16ff82ee0ac91730bd94c4b1ec8e0bba2abfbacf03ded8db6f6c4e3eaa05b4"
+      }
+    ]
+  },
+  "final_state": {
+    "server_source": "0ddf22e03366a979dfe31de59ca410fd64e406e2",
+    "ctl_source": "e2525b4bd7b6a9fbaca4cade6798be264c924562",
+    "binary_sha256": "91a3941c33120bc5214f103319d9b6fc0b86f669396eea3afce34905c1dd6936",
+    "running": true,
+    "discovery_status": 200,
+    "active_run_journals": 0,
+    "installed_signed_controller_unchanged": true,
+    "ctl_worktree_clean": true
+  }
+}
