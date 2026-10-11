@@ -40,7 +40,7 @@ GitHub Actions、容器/Compose 输入、锁定的 Python 输入、精确 Rust s
   toolchain 构建八个平台目标
 - 在每个原生目标上实际执行 server 二进制
 - 验证 server 二进制的包版本和 operator protocol 版本
-- 从唯一源码打包一次 `nazo-operator-protocol`，校验包构建与 digest，并为精确
+- 从唯一源码一起打包 `nazo-crypto` 和 `nazo-operator-protocol`，校验包构建与 digest，并为精确
   `.crate` 生成标准 build provenance
 - 对精确 tag 再次运行 `cargo deny`（advisories、bans、licenses、sources）
 - 构建一个同时包含 `linux/amd64` 与 `linux/arm64` 的 OCI index
@@ -52,7 +52,7 @@ GitHub Actions、容器/Compose 输入、锁定的 Python 输入、精确 Rust s
 - 签名 OCI index；重跑时仅当现有 tag 指向精确的已扫描 digest 才接受，否则拒绝
 - 将 SBOM、OCI archive、predicate 和 Sigstore bundle 保存为内部 CI 证据
 - GitHub Release 持久制品严格只包含 8 个带平台后缀的 server 可执行文件和精确
-  版本的 `nazo-operator-protocol` crate；JSON、tar、bundle、脚本、checksum 和 SBOM
+  版本的 `nazo-operator-protocol` 和 `nazo-crypto` crate；JSON、tar、bundle、脚本、checksum 和 SBOM
   不属于 Release 制品
 - 只在每个既有 Release 制品逐字节一致时恢复部分发布，绝不覆盖 digest 不同的
   tag 或制品

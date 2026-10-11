@@ -111,14 +111,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo package --locked --package nazo-operator-protocol
+          cargo package --locked --package nazo-crypto --package nazo-operator-protocol
           mkdir -p target/release-protocol
-          mapfile -t packages < <(find target/package -maxdepth 1 -type f \
-            -name 'nazo-operator-protocol-*.crate' -print)
-          test "${#packages[@]}" -eq 1
-          cp -- "${packages[0]}" target/release-protocol/
-          (cd target/release-protocol && \
-            sha256sum "$(basename "${packages[0]}")" > SHA256SUMS)
+          version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "nazo-operator-protocol") | .version')"
+          for name in nazo-crypto nazo-operator-protocol; do
+            cp -- "target/package/${name}-${version}.crate" target/release-protocol/
+          done
+          (cd target/release-protocol && sha256sum *.crate > SHA256SUMS)
       - name: Upload immutable operator protocol package input
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -522,8 +521,9 @@ jobs:
           set -euo pipefail
           package="target/release-protocol/nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"
           test -f "$package"
+          test -f "target/release-protocol/nazo-crypto-${GITHUB_REF_NAME#v}.crate"
           (cd target/release-protocol && sha256sum --check SHA256SUMS)
-          echo "path=$package" >> "$GITHUB_OUTPUT"
+          echo "path=target/release-protocol/*.crate" >> "$GITHUB_OUTPUT"
       - name: Attest operator protocol package provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -634,14 +634,16 @@ jobs:
             test -f "target/release-binaries/nazoauth-$target.exe"
           done
           protocol_asset="nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"
+          crypto_asset="nazo-crypto-${GITHUB_REF_NAME#v}.crate"
           test -f "target/release-protocol/$protocol_asset"
+          test -f "target/release-protocol/$crypto_asset"
           (cd target/release-protocol && sha256sum --check SHA256SUMS)
           allowed_names="$(mktemp)"
           find target/release-binaries -maxdepth 1 -type f -printf '%f\n' \
             | sort > "$allowed_names"
-          printf '%s\n' "$protocol_asset" >> "$allowed_names"
+          printf '%s\n' "$protocol_asset" "$crypto_asset" >> "$allowed_names"
           sort -u -o "$allowed_names" "$allowed_names"
-          test "$(wc -l < "$allowed_names")" -eq 9
+          test "$(wc -l < "$allowed_names")" -eq 10
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
@@ -655,7 +657,7 @@ jobs:
             }
           done < "$remote_names"
           existing="$(mktemp -d)"
-          for asset in target/release-binaries/* "target/release-protocol/$protocol_asset"; do
+          for asset in target/release-binaries/* "target/release-protocol/$protocol_asset" "target/release-protocol/$crypto_asset"; do
             name="$(basename "$asset")"
             if grep -Fxq "$name" "$remote_names"; then
               gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
@@ -671,5 +673,5 @@ jobs:
           done
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --json assets --jq '.assets[].name' > "$remote_names"
-          test "$(wc -l < "$remote_names")" -eq 9
+          test "$(wc -l < "$remote_names")" -eq 10
           diff -u "$allowed_names" <(sort "$remote_names")

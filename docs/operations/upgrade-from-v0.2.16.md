@@ -18,9 +18,15 @@ contract version; conversion does not manufacture authorization-code holder
 proof or mark them as new-contract receipts.
 
 A legacy row without terminal access-token ownership/replay evidence fails
-closed without changing its data. Live encrypted legacy responses must finish
-their existing receipt window before conversion; do not delete or shorten that
-window to make upgrade pass. Expired response bodies and superseded request/
+closed without changing its data. All live legacy receipts, including ordinary rows without ciphertext, must finish
+their existing receipt window before conversion. Released rows do not record a
+verified refresh-family identity, so accepting a live row would lose complete
+post-upgrade replay revocation. Stop the old issuer and wait until the maximum
+original `expires_at` has passed; this can include the original refresh-token
+lifetime, not merely the authorization-code lifetime. Do not infer a family from
+client/user identity or ciphertext absence; do not delete or shorten that
+window to make upgrade pass. Already-applied cutovers do not replay this guard;
+the original pre-upgrade snapshot is needed to assess such installations. Expired response bodies and superseded request/
 response metadata are removed only by the guarded schema cutover. The cleanup
 function replacement preserves its owner, EXECUTE grants, and grant options. If a prior failed upgrade already retired `oauth_tokens`,
 conversion does not recreate that table or its obsolete index.
