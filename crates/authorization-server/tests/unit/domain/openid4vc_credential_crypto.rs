@@ -711,6 +711,74 @@ fn mdoc_signing_covers_holder_and_namespace_encoding_errors() {
 }
 
 #[test]
+fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (_, certificate) = x509_parser::parse_x509_certificate(&certs.leaf_der).unwrap();
+        let not_before =
+            chrono::DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
+                .unwrap();
+        let not_after =
+            chrono::DateTime::from_timestamp(certificate.validity().not_after.timestamp(), 0)
+                .unwrap();
+        let (holder_jwk, _) = es256_jwk(37);
+        let mut input = mdoc_input(
+            Some(HolderBinding::Jwk { jwk: holder_jwk }),
+            json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
+        );
+        input.issued_at = not_before - Duration::days(1);
+        input.expires_at = not_before + Duration::days(7);
+        for issued_at in [input.issued_at, not_before + Duration::seconds(10)] {
+            input.issued_at = issued_at;
+            let encoded = crypto
+                .sign(&input)
+                .await
+                .expect("credential within certificate validity");
+            let bytes = URL_SAFE_NO_PAD.decode(encoded).unwrap();
+            let document: ciborium::Value = ciborium::from_reader(bytes.as_slice()).unwrap();
+            let issuer_auth = document
+                .as_map()
+                .unwrap()
+                .iter()
+                .find(|(key, _)| key.as_text() == Some("issuerAuth"))
+                .unwrap()
+                .1
+                .clone();
+            let cose = coset::CoseSign1::from_slice(
+                &mdoc_rs::cbor::data_item::encode_cbor_canonical(&issuer_auth).unwrap(),
+            )
+            .unwrap();
+            let mso = mdoc_rs::model::issuer_auth::IssuerAuth::new(cose)
+                .mso()
+                .unwrap();
+            assert!(
+                mso.validity_info.signed >= not_before,
+                "published MSO signed time must not precede the pinned certificate"
+            );
+            assert!(mso.validity_info.signed <= not_after);
+            assert_eq!(mso.validity_info.signed, issued_at.max(not_before));
+            assert_eq!(mso.validity_info.valid_from, mso.validity_info.signed);
+            assert_eq!(
+                mso.validity_info.valid_until, input.expires_at,
+                "certificate alignment must not extend credential expiry"
+            );
+        }
+        input.issued_at = not_before - Duration::days(1);
+        input.expires_at = not_before;
+        assert_eq!(
+            crypto.sign(&input).await,
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+        input.issued_at = not_after + Duration::seconds(1);
+        input.expires_at = not_after + Duration::days(1);
+        assert_eq!(
+            crypto.sign(&input).await,
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    });
+}
+
+#[test]
 fn mdoc_signing_skips_mdl_country_validation_for_other_document_types() {
     futures_executor::block_on(async {
         let (holder_jwk, _) = es256_jwk(34);

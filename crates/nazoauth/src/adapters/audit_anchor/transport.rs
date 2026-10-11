@@ -65,6 +65,7 @@ pub(super) async fn send_batch(
                 encode_hash(&batch.digest)
             ),
         )
+        .header("X-Nazo-Audit-Generation", batch.generation)
         .header("X-Nazo-Audit-Schema", CHECKPOINT_SCHEMA_VERSION)
         .header("X-Nazo-Audit-Deployment", deployment_id)
         .header("X-Nazo-Audit-Sent-At", sent_at)

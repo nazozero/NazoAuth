@@ -275,9 +275,18 @@ fn build_openid4vc_certificate_bundle(
     signing_key_pem: &str,
     hostname: &str,
     mdoc_profile: Option<&MdocCertificateProfile>,
+    now: time::OffsetDateTime,
 ) -> anyhow::Result<Openid4vcCertificateBundle> {
-    let now = time::OffsetDateTime::now_utc();
-    let ca_not_after = now + time::Duration::days(3650);
+    // MSO issuance claims use UTC days. Locally managed mdoc certificates
+    // must cover that same boundary, including a newly generated signer.
+    // Anchor both ends so rounding never lengthens the certificate lifetime.
+    // Imported certificates retain their authority's original validity.
+    let not_before = if mdoc_profile.is_some() {
+        now.date().midnight().assume_utc()
+    } else {
+        now
+    };
+    let ca_not_after = not_before + time::Duration::days(3650);
     let ca_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
     let mut ca_params = CertificateParams::default();
     ca_params.distinguished_name = DistinguishedName::new();
@@ -299,7 +308,7 @@ fn build_openid4vc_certificate_bundle(
         BasicConstraints::Unconstrained
     });
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = now;
+    ca_params.not_before = not_before;
     ca_params.not_after = ca_not_after;
     ca_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     if mdoc_profile.is_some() {
@@ -343,9 +352,9 @@ fn build_openid4vc_certificate_bundle(
     }
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = now;
+    leaf_params.not_before = not_before;
     leaf_params.not_after = if mdoc_profile.is_some() {
-        now + time::Duration::days(457)
+        not_before + time::Duration::days(457)
     } else {
         ca_not_after
     };
@@ -527,6 +536,7 @@ fn build_managed_material(
         signing_key_pem,
         &profile.hostname,
         profile.mdoc_profile.as_ref(),
+        time::OffsetDateTime::now_utc(),
     )?;
     let chain = String::from_utf8(bundle.contents)?;
     let (mut anchors, mut iacas, mut revocation_snapshot) = match previous {

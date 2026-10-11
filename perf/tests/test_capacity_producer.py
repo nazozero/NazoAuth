@@ -339,5 +339,29 @@ export function handleSummary(data) {
                              ['count'], 7)
 
 
+
+
+@unittest.skipUnless(shutil.which('node'), 'Node is required to execute the real JS producer')
+class RefreshClassificationTest(unittest.TestCase):
+    def test_invalid_grant_alone_does_not_prove_expected_rejection(self):
+        script = r"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync(process.argv[2] + '/perf/k6/oauth.js', 'utf8');
+const op = source.slice(source.indexOf('async function capRefreshOp('), source.indexOf('function capTokenExchangeOp('));
+const context = vm.createContext({
+  __VU_STATE: {refreshToken: 'fixture'}, BASE_URL: 'https://fixture',
+  secrets: {clients: {oidc: 'client'}, client_secret: 'fixture'},
+  form: x => x, formHeaders: x => x, requestTags: x => x,
+  http: {post: () => ({status: 400})}, checkErr: () => false,
+  classifyError: () => 'oauth_invalid_grant'
+});
+vm.runInContext(op, context);
+vm.runInContext('capRefreshOp()', context).then(value => process.stdout.write(JSON.stringify(value)));
+"""
+        result = subprocess.run(['node', '-', str(ROOT)], input=script, text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(result.stdout), {'capOutcome': 'unexpected'})
+
+
 if __name__ == '__main__':
     unittest.main()

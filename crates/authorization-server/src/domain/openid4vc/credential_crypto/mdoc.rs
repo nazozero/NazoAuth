@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use coset::CborSerializable;
 use mdoc_rs::{
     builder::DocumentBuilder,
@@ -37,16 +37,28 @@ pub(super) async fn sign(
     let signing_material = crypto
         .signing_material(&lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
-    validate_mdl_issuing_country(
-        &signing_material.leaf_der,
-        &input.payload.credential_type,
-        namespaces,
-    )?;
+    let (remainder, certificate) = x509_parser::parse_x509_certificate(&signing_material.leaf_der)
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    if !remainder.is_empty() {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
+    validate_mdl_issuing_country(&certificate, &input.payload.credential_type, namespaces)?;
+    let not_before = DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    // A privacy-rounded timestamp may predate a newly selected certificate.
+    // Use that certificate's public cohort boundary, not a per-request clock;
+    // never extend the credential deadline to create a valid interval.
+    let signed = input.issued_at.max(not_before);
+    if signed >= input.expires_at
+        || signed.timestamp() > certificate.validity().not_after.timestamp()
+    {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
     let mut builder = DocumentBuilder::new(&input.payload.credential_type)
         .device_key(jwk_to_cose_key(jwk)?)
         .validity(ValidityInfo {
-            signed: input.issued_at,
-            valid_from: input.issued_at,
+            signed,
+            valid_from: signed,
             valid_until: input.expires_at,
             expected_update: None,
         });
@@ -98,7 +110,7 @@ pub(super) async fn sign(
 }
 
 fn validate_mdl_issuing_country(
-    leaf_der: &[u8],
+    certificate: &x509_parser::certificate::X509Certificate<'_>,
     credential_type: &str,
     namespaces: &Map<String, Value>,
 ) -> Result<(), CredentialTrustError> {
@@ -106,11 +118,6 @@ fn validate_mdl_issuing_country(
         return Ok(());
     }
 
-    let (remainder, certificate) = x509_parser::parse_x509_certificate(leaf_der)
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    if !remainder.is_empty() {
-        return Err(CredentialTrustError::InvalidEncoding);
-    }
     let mut country_attributes = certificate.subject().iter_country();
     let Some(country_attribute) = country_attributes.next() else {
         return Err(CredentialTrustError::InvalidEncoding);

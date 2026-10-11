@@ -478,3 +478,34 @@ OTLP HTTP trace, metric and log exporters make one send attempt per export;
 SDK retry policies are explicitly disabled. `OTEL_EXPORTER_OTLP_TIMEOUT` is the
 per-request timeout in milliseconds, not an additional retry budget. Required
 audit export and its acceptance barriers remain a separate pipeline.
+
+### SCIM denied-credential admission
+
+`SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS` defaults to 60 denied attempts per source
+IP hash per `RATE_LIMIT_WINDOW_SECONDS` window (60 seconds by default). Admission
+runs before a Required denial audit append; excess attempts receive HTTP 429
+with Retry-After. The admitted denial still waits for durable audit completion.
+An unavailable limiter fails closed. Valid bearer credentials do not consume
+this denial bucket. This setting must be positive.
+
+### FAPI HTTP-signature replay namespace cutover
+
+Deployments upgrading from the global fingerprint key to tenant-scoped
+`fapi_http_signature_replay:<tenant>:<fingerprint>` must stop signature-protected
+traffic on every old instance before cutover. Do not mix old and new consumers.
+Wait more than the old configured `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` plus
+5 seconds of future skew after the last old admission, then start all consumers
+on the new namespace. The configured maximum age is bounded to 1–300 seconds;
+more than 305 seconds covers every supported setting. Preserve Valkey state.
+This coordinated transition avoids a dual namespace authority in steady state;
+it does not make a rolling mixed-version deployment replay-safe.
+
+### External signing-key rotation
+
+Registering an external key prepublishes a successor of the active signing
+algorithm; it does not immediately change the active key. Once rotation is due
+and the prepublication window has elapsed, an explicitly registered external
+successor takes priority over an automatically generated local candidate.
+An external-active keyset needs another registered external successor for its
+next rotation and never silently falls back to local signing. Existing signature
+verification grace remains unchanged.

@@ -1,0 +1,30 @@
+[
+  {
+    "module_id": "RlGjo7VSDeGlGt9",
+    "waits": 2,
+    "offers": 2,
+    "wait_times": [
+      1791651831957,
+      1791651836160
+    ],
+    "offer_times": [
+      1791651832154,
+      1791651836575
+    ],
+    "second_offer_wait_ms": 415
+  },
+  {
+    "module_id": "EuFuSWBq3yx2cM3",
+    "waits": 2,
+    "offers": 2,
+    "wait_times": [
+      1791651832191,
+      1791651836557
+    ],
+    "offer_times": [
+      1791651832391,
+      1791651836871
+    ],
+    "second_offer_wait_ms": 314
+  }
+]

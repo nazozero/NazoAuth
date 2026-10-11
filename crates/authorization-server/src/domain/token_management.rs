@@ -259,7 +259,9 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     TokenManagementError::InspectionUnavailable
                 })?;
             let response_requires_signature = signed_response_requested
-                || client.security_policy.require_signed_introspection_response;
+                || self
+                    .config
+                    .requires_signed_introspection_response(&client.security_policy);
             if response_requires_signature {
                 let response_encryption_configured =
                     client.introspection_encrypted_response_alg.is_some()

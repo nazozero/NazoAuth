@@ -31,6 +31,9 @@ pub struct ServerScimRequestAuthorizer {
     tenant: TenantContext,
     audit: Arc<dyn SecurityAudit>,
     runtime_modules: Arc<SnapshotStore>,
+    denial_rate_limit: Arc<dyn nazo_auth::RequestRateLimitPort>,
+    denial_window_seconds: u64,
+    denial_max_requests: u64,
 }
 
 impl ServerScimRequestAuthorizer {
@@ -39,12 +42,18 @@ impl ServerScimRequestAuthorizer {
         tenant: TenantContext,
         runtime_modules: Arc<SnapshotStore>,
         audit: Arc<dyn SecurityAudit>,
+        denial_rate_limit: Arc<dyn nazo_auth::RequestRateLimitPort>,
+        denial_window_seconds: u64,
+        denial_max_requests: u64,
     ) -> Self {
         Self {
             service,
             tenant,
             audit,
             runtime_modules,
+            denial_rate_limit,
+            denial_window_seconds,
+            denial_max_requests,
         }
     }
 
@@ -114,6 +123,20 @@ impl ServerScimRequestAuthorizer {
         reason: &str,
         token_id: Option<uuid::Uuid>,
     ) -> Result<(), ScimAuthorizationError> {
+        let count = self
+            .denial_rate_limit
+            .increment(
+                nazo_auth::RequestRateLimitBucket::TokenManagement,
+                &format!("scim-denied:{ip_hash}"),
+                self.denial_window_seconds,
+            )
+            .await
+            .map_err(|_| ScimAuthorizationError::BackendUnavailable)?;
+        if count > self.denial_max_requests {
+            return Err(ScimAuthorizationError::RateLimited {
+                retry_after_seconds: self.denial_window_seconds,
+            });
+        }
         // Denial evidence is Required: it must be durable before the rejection
         // is returned, so an audit outage fails closed as BackendUnavailable.
         self.audit

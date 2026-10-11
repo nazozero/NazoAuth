@@ -16,14 +16,15 @@
 #   - openssl, curl, python3 (TLS certificate + seed generation only).
 #
 # Every scenario leaves a verdict line; a non-zero exit means at least one
-# invariant was violated. No immutable evidence rows are ever deleted by the
-# exporter path — reset_ledger below is test scaffolding only.
+# invariant was violated. Only receiver ACK deletes delivered events;
+# reset_ledger below is isolated test scaffolding only.
 set -euo pipefail
 
 PG_CONTAINER="${PG_CONTAINER:-pg18}"
 DB="${DB:-oauth}"
 PG_SUPER="${PG_SUPER:-postgres}"
 EXPORTER_DSN="${EXPORTER_DSN:-postgresql://nazo_audit_exporter:exporter-test-pass@127.0.0.1:5432/${DB}}"
+RECEIVER_DSN="${RECEIVER_DSN:?separate receiver-role database URL required}"
 NAZO_BIN="${NAZO_BIN:?path to nazoauth binary required}"
 RECEIVER_BIN="${RECEIVER_BIN:?path to audit-anchor-receiver binary required}"
 WORK_DIR="${WORK_DIR:-/tmp/anchor-fault-reg}"
@@ -39,7 +40,7 @@ PASS=0; FAIL=0
 WORKER_PIDS=()
 RECEIVER_PID=""
 
-psql() { docker exec -i "$PG_CONTAINER" psql -U "$PG_SUPER" -d "$DB" -tAX "$@"; }
+psql() { docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$PG_SUPER" -d "$DB" -tAX "$@"; }
 say()  { printf '%s %s\n' "$(date +%H:%M:%S)" "$*"; }
 ok()   { PASS=$((PASS+1)); say "PASS  $*"; }
 bad()  { FAIL=$((FAIL+1)); say "FAIL  $*"; }
@@ -107,6 +108,7 @@ start_receiver() {
   ANCHOR_RECEIVER_TOKEN="$TOKEN" \
   ANCHOR_RECEIVER_SIGNING_KEY="$(cat "$WORK_DIR/seed")" \
   ANCHOR_RECEIVER_DATA_DIR="$WORK_DIR/store" \
+  ANCHOR_RECEIVER_DATABASE_URL="$RECEIVER_DSN" \
     "$RECEIVER_BIN" >"$WORK_DIR/receiver.log" 2>&1 &
   RECEIVER_PID=$!
   for _ in $(seq 1 40); do
@@ -227,8 +229,6 @@ sleep 6
 set_fault none
 wait_for "duplicate-receipt path acks the batch" \
   "SELECT count(*) = 0 FROM public.security_audit_events" 40
-check "receiver observed duplicate redelivery" \
-  "$(psql -c "SELECT true")" "t"   # placeholder replaced below
 DUP_AFTER="$(state_field duplicates)"
 if [ "${DUP_AFTER:-0}" -gt "$DUP_BEFORE" ]; then ok "receiver counted duplicate redelivery ($DUP_AFTER)"; else bad "no duplicate redelivery observed"; fi
 check "anchor still contiguous" "$(anchor_seq)" "15"
@@ -298,7 +298,7 @@ TAMPER_SEQ="$(psql -c "SELECT max(sequence) FROM public.security_audit_chain_ent
 SAVED_HASH="$(psql -c "SELECT encode(event_hash,'hex') FROM public.security_audit_chain_entries WHERE sequence = $TAMPER_SEQ")"
 psql <<SQL >/dev/null
 SET session_replication_role = replica;
-UPDATE public.security_audit_chain_entries SET event_hash = decode('00','hex') || substr(event_hash,2) WHERE sequence = $TAMPER_SEQ;
+UPDATE public.security_audit_chain_entries SET event_hash = set_byte(event_hash, 0, get_byte(event_hash, 0) # 1) WHERE sequence = $TAMPER_SEQ;
 SET session_replication_role = DEFAULT;
 SQL
 start_receiver                # healthy receiver: only the digest check protects
@@ -333,6 +333,76 @@ check "health reports no pending" \
   "$(psql -c 'SELECT NOT pending_exists FROM public.nazo_security_audit_shared_anchor_health()')" "t"
 check "receiver accepted_events = total events" \
   "$(ckpt_field accepted_events)" "53"
+stop_workers
+
+# --- S10: committed ACK but lost HTTP response ----------------------------
+say "S10 drop_after_ack: receiver commit survives a lost signed response"
+emit_events 3 s10
+set_fault drop_after_ack
+start_worker s10
+wait_for "receiver commits before dropping HTTP response" \
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
+check "receiver retains all events despite lost response" "$(ckpt_field accepted_events)" "56"
+check "database checkpoint matches durable receiver" "$(anchor_seq)" "56"
+set_fault none
+emit_events 2 s10b
+wait_for "subsequent batch progresses after response loss" \
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
+check "final receiver event count" "$(ckpt_field accepted_events)" "58"
+check "final committed sequence" "$(anchor_seq)" "58"
+stop_workers
+
+# --- S11: real late commit failure at the receiver ACK boundary ----------
+say "S11 deferred commit failure must not return confirmed delivery"
+psql <<'SQL' >/dev/null
+CREATE FUNCTION public.receiver_test_commit_barrier() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'isolated receiver late commit failure'; END $$;
+CREATE CONSTRAINT TRIGGER receiver_test_commit_barrier
+AFTER UPDATE ON public.security_audit_chain_state DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW WHEN (NEW.anchor_sequence IS DISTINCT FROM OLD.anchor_sequence)
+EXECUTE FUNCTION public.receiver_test_commit_barrier();
+SQL
+emit_events 2 s11
+start_worker s11
+sleep 6
+check "late commit failure retains both pending events" "$(pending_depth)" "2"
+check "late commit failure does not advance committed checkpoint" "$(anchor_seq)" "58"
+check "receiver already durably stored the exact failed-commit batch" "$(ckpt_field accepted_events)" "60"
+stop_workers
+psql -c 'DROP TRIGGER receiver_test_commit_barrier ON public.security_audit_chain_state; DROP FUNCTION public.receiver_test_commit_barrier()' >/dev/null
+start_worker s11b
+wait_for "duplicate delivery confirms after late-failure recovery" \
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
+check "checkpoint advances only after successful commit" "$(anchor_seq)" "60"
+stop_workers
+
+# --- S12: real backend termination while COMMIT is waiting ---------------
+say "S12 terminate receiver backend during COMMIT, then recover"
+psql <<'SQL' >/dev/null
+CREATE FUNCTION public.receiver_test_commit_barrier() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(30); RETURN NEW; END $$;
+CREATE CONSTRAINT TRIGGER receiver_test_commit_barrier
+AFTER UPDATE ON public.security_audit_chain_state DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW WHEN (NEW.anchor_sequence IS DISTINCT FROM OLD.anchor_sequence)
+EXECUTE FUNCTION public.receiver_test_commit_barrier();
+SQL
+emit_events 2 s12
+start_worker s12
+wait_for "receiver is actually waiting inside COMMIT" \
+  "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND query='COMMIT' AND wait_event='PgSleep')" 20
+COMMIT_PID="$(psql -c "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND query='COMMIT' AND wait_event='PgSleep' LIMIT 1")"
+check "independent observer terminates the old receiver backend" "$(psql -c "SELECT pg_terminate_backend($COMMIT_PID)")" "t"
+wait_for "independent observer sees old backend disappear" \
+  "SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid=$COMMIT_PID)" 10
+check "disconnect before commit retains pending evidence" "$(pending_depth)" "2"
+check "disconnect before commit retains prior checkpoint" "$(anchor_seq)" "60"
+stop_workers
+psql -c 'DROP TRIGGER receiver_test_commit_barrier ON public.security_audit_chain_state; DROP FUNCTION public.receiver_test_commit_barrier()' >/dev/null
+start_worker s12b
+wait_for "replacement connection confirms durable duplicate after disconnect" \
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
+check "receiver and database end at the same sequence" "$(ckpt_field last_sequence)" "$(anchor_seq)"
+check "all 62 events remain in the durable receiver" "$(ckpt_field accepted_events)" "62"
 stop_workers
 
 say "summary: $PASS passed, $FAIL failed"

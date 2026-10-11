@@ -95,19 +95,30 @@ fn migration_versions_are_unique_across_merged_branches() {
 }
 
 #[test]
-fn embedded_migration_head_tracks_latest_directory() {
-    let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let latest = std::fs::read_dir(&migrations)
-        .expect("migration directory should be readable")
+fn embedded_migration_manifest_tracks_all_files() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let actual: std::collections::BTreeSet<_> = std::fs::read_dir(root.join("migrations"))
+        .unwrap()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
-        .map(|entry| entry.file_name())
-        .max()
-        .expect("at least one migration directory should exist");
+        .flat_map(|entry| std::fs::read_dir(entry.path()).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "sql"))
+        .map(|path| {
+            path.strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        })
+        .collect();
+    let recorded: std::collections::BTreeSet<_> =
+        include_str!("../../../tests/contracts/migrations.sha256")
+            .lines()
+            .map(|line| line.split_once("  ").unwrap().1.to_owned())
+            .collect();
     assert_eq!(
-        include_str!("../migration-head.txt").trim(),
-        latest.to_string_lossy(),
-        "append-only migrations must advance migration-head.txt so cached builds re-embed them"
+        recorded, actual,
+        "every migration must invalidate the embedded artifact cache"
     );
 }
 

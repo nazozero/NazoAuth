@@ -14,12 +14,13 @@ Use deployment-specific role names. The following names are illustrative only:
 CREATE ROLE nazoauth_migration_owner NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
 CREATE ROLE nazoauth_audit_writer LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
 CREATE ROLE nazoauth_audit_exporter LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+CREATE ROLE nazoauth_audit_receiver LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
 ```
 
 The migration URL must execute the migration as `nazoauth_migration_owner` (or
 as a short-lived migration runner that can `SET ROLE` to it). Do not use the
 long-running application role as the owner. The owner must remain the owner of
-the four ledger tables, their indexes/triggers, and all functions below; only
+the three ledger tables, their indexes/triggers, and all functions below; only
 the owner can alter or disable the append-only trigger.
 
 Before granting runtime access, remove the default schema creation path and
@@ -57,8 +58,9 @@ GRANT EXECUTE ON FUNCTION
 TO nazoauth_audit_writer;
 ```
 
-The exporter chains committed events, holds the single batch lease, and
-acknowledges delivered batches atomically with the checkpoint. It cannot
+The exporter chains committed events and holds the single batch lease. The
+independent receiver alone acknowledges durably stored batches atomically with
+the database checkpoint. It cannot
 create raw events. Fresh claims finalize chain assignment and the lease in one
 head update; legacy append/open functions remain available. The internal
 invoker-only proof helper is not granted to runtime roles. The fresh-claim
@@ -77,13 +79,35 @@ GRANT EXECUTE ON FUNCTION
     public.nazo_finalize_security_audit_claim(bigint, bytea, uuid[], bytea[], bigint, bigint, integer, bytea, integer),
     public.nazo_reclaim_security_audit_batch(bytea, integer),
     public.nazo_append_security_audit_chain(bigint, bytea, uuid[], bytea[]),
-    public.nazo_ack_security_audit_batch(bigint, bigint, bigint, integer, bytea, bytea, text),
     public.nazo_fail_security_audit_batch(bigint, timestamptz, text, boolean),
     public.nazo_observe_security_audit_anchor(text),
-    public.nazo_record_security_audit_genesis(text, bytea),
     public.nazo_security_audit_shared_anchor_health()
 TO nazoauth_audit_exporter;
 ```
+
+The receiver uses a separate database login, delivered only to the independently
+protected receiver. After it verifies and durably stores the exact batch, it
+commits ACK using this login before signing an accepted/duplicate receipt:
+
+```sql
+GRANT USAGE ON SCHEMA public TO nazoauth_audit_receiver;
+GRANT EXECUTE ON FUNCTION
+    public.nazo_ack_security_audit_batch(bigint, bigint, bigint, integer, bytea, bytea, text),
+    public.nazo_record_security_audit_genesis(text, bytea),
+    public.nazo_security_audit_shared_anchor_health()
+TO nazoauth_audit_receiver;
+```
+
+Do not share this login with the exporter or writer, or grant either process
+membership that permits assuming it. It has no event append/claim/table access.
+Migration `20261011000100_receiver_owned_audit_ack` removes every existing
+non-owner ACK/genesis function grant. Provision the receiver grants after the
+migration. Strict writer/exporter preflight rejects ACK authority reachable
+through inherited grants, PUBLIC or SET ROLE, including NOINHERIT membership.
+Old receivers must be upgraded with the worker and role grants: a signature
+alone no longer causes an exporter-side database mutation. Failed or uncertain
+receiver commits return failure, retain the immutable durable batch for retry,
+and never manufacture a successful checkpoint.
 
 `public.nazo_unblock_security_audit_batch()` is deliberately excluded from the
 exporter grant: unblocking a permanently rejected batch is an owner/operator
@@ -96,8 +120,10 @@ permit. The `20260924000100_audit_delivery_scoped_retention` migration
 removed the earlier `security_audit_archive` copy and its sweeper function —
 the receiver is the sole durable audit history.
 
-If one process intentionally performs both jobs, grant both function sets to
-one pre-created role and record that exception in the deployment inventory.
+If one process intentionally performs writer and exporter jobs, grant those
+two function sets to one pre-created role and record that exception in the
+deployment inventory. The independent receiver and its ACK authority must
+remain separate from that combined process and role.
 Never grant `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, or
 `TRIGGER` on any of the three ledger tables to that combined role. Runtime login roles
 must not be members of the migration owner, a superuser role, or any role that
@@ -118,8 +144,9 @@ roles still count. Each assumed role's inherited and PUBLIC privileges count,
 including privileges inherited from a role the login cannot itself assume.
 A role reachable only through SET FALSE and INHERIT FALSE does not grant ledger
 access; superuser and ledger-owner membership remain rejected independently.
-Therefore a writer cannot rewrite or
-truncate the ledger and an exporter cannot bypass the claim/ack state machine.
+Therefore a writer cannot rewrite or truncate the ledger, and an exporter
+cannot acknowledge or erase undelivered evidence even with its database
+credential. The receiver login is part of the independent durable authority.
 
 The authorization-server setting `SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE`
 should remain enabled in production. A test fixture may explicitly pass

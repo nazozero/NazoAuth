@@ -246,8 +246,12 @@ pub(crate) fn validate_token_request_profile(
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
-    nazo_oauth_server::token::dispatch::validate_token_request_profile(client, auth_method)
-        .map_err(nazo_http_actix::oauth_endpoint_error_response)
+    nazo_oauth_server::token::dispatch::validate_token_request_profile(
+        nazo_oauth_server::policy::AuthorizationServerProfile::Oauth2Baseline,
+        client,
+        auth_method,
+    )
+    .map_err(nazo_http_actix::oauth_endpoint_error_response)
 }
 
 fn authorization_service(state: &TestInfrastructure) -> Data<ServerAuthorizationService> {

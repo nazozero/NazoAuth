@@ -16,6 +16,14 @@ pins the sequence range, member content digest, generation, and lease. The
 server process does not run this exporter and does not receive its database
 role or sink secret.
 
+Upgrading from the retired per-event exporter protocol retains chained,
+unacknowledged events without creating a batch lease: that protocol had no
+committed batch membership or digest. The existing claimant forms the first
+and subsequent batches under both configured count and wire-byte bounds.
+The migration does not acknowledge, delete, rehash, or reorder events.
+Already committed batches under the batch protocol keep their original bounds
+and content across upgrades.
+
 The hash chain and its sequence belong to the deployment. HTTP security events
 capture `payload.tenant_id` from the same immutable tenant context that routes
 the request, before the event enters the shared writer queue. Concurrent
@@ -64,14 +72,17 @@ consistency.
 The worker authenticates the exact JSON body with HMAC-SHA-256 in
 `X-Nazo-Audit-Signature: sha256=<base64url>` (unpadded). The separate
 `X-Nazo-Audit-Sent-At` header is not covered by this MAC. A bare HTTP success
-never acknowledges a batch: only a signed `nazo.audit.anchor.receipt.v1` body
-that verifies under `AUDIT_ANCHOR_RECEIPT_VERIFY_KEY` (Ed25519) and binds the
-same schema, checkpoint kind, deployment, sequence range, event count, last
-hash, and batch digest does so. Receipt status `accepted` records durable
-acceptance; `duplicate` acknowledges an already-persisted identical batch; a
-`rejected` receipt with `permanent=true` blocks the batch until an operator
-runs `nazo_unblock_security_audit_batch()`, while a transient rejection or any
-missing/invalid receipt reschedules it. Acknowledgement deletes the batch's
+never counts as delivery confirmation to the worker: it verifies a signed
+`nazo.audit.anchor.receipt.v1` body under `AUDIT_ANCHOR_RECEIPT_VERIFY_KEY`
+(Ed25519), binding schema, checkpoint kind, deployment, sequence range, event
+count, last hash and batch digest, then reads the committed database checkpoint.
+The independent receiver persists the exact batch before committing the database
+ACK through its separate role, and only then sends an accepted/duplicate receipt.
+The exporter has no ACK/genesis grant. If the response is lost after commit,
+the event is already safely delivered; the next poll uses the committed checkpoint.
+Before commit, a missing/invalid receipt leaves pending evidence available for retry.
+A permanent rejection blocks the batch until `nazo_unblock_security_audit_batch()`;
+a transient rejection reschedules it. The ACK transaction deletes the batch's
 chain-entry rows and ordinary event rows in the same transaction that advances
 the anchor checkpoint. Committed authorization-decision facts are marked
 exported instead: they are still business consumption fences until their
@@ -84,14 +95,15 @@ never logged, and neither secret is ever included in logs or the checkpoint.
 
 Request authentication is a shared secret, but acknowledgement is
 non-repudiable: the receipt is an Ed25519 signature over the canonical receipt
-fields, so the worker holds durable proof that this receiver persisted the
-exact batch before acknowledgement. An idempotent receiver must persist before
+fields, so a received signature proves acceptance of that exact batch. The worker
+verifies but does not separately persist the receipt; the receiver owns durable
+evidence and database confirmation. A lost receipt does not undo its committed ACK. An idempotent receiver must persist before
 returning `accepted` and must return `duplicate` for a replayed identical
 batch rather than an ambiguous conflict. Empty-ledger genesis uses the nil
 UUID, sequence zero, identical previous/event hashes, and Unix epoch time; it
 is a checkpoint, not a fabricated security event.
 
-The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
+The worker records its observation; the receiver commits the externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
 A durable batch acknowledgement also refreshes the worker observation. After
 locking the chain head and validating the full batch, it samples the database's
 real clock once before mutation. Retained decision export time, checkpoint
@@ -158,7 +170,7 @@ Recommended production separation:
   `NAZOAUTH_MIGRATION_RUNTIME_ROLE` naming the server-writer role; migration
   resets that role's direct `public` schema/table/sequence privileges, grants
   application DML, and grants only ledger append/check-availability functions;
-* give the worker exporter role only chain assignment and pending-claim/ack/health rights;
+* give the worker exporter role only chain assignment and pending-claim/health rights;
 * provide the worker `AUDIT_ANCHOR_DATABASE_URL` and `AUDIT_ANCHOR_TOKEN` (or
   its secret-file form), while the server receives only the deployment identity;
 * use the [ledger role provisioning runbook](../operations/security-audit-ledger-roles.md)
@@ -216,3 +228,24 @@ independently protected receiver history survives that boundary.
 New batch claims count the exact escaped JSON envelope using the same borrowed Serde wire view as delivery. Each candidate event is serialized once for sizing; the header and comma bytes complete the count. A single legal event up to the 64 KiB canonical payload limit may use the finite 135168-byte singleton exception. The configured normal batch limit applies to new claims.
 
 Committed, in-flight and imported historical batches retain their original membership, range, digest and retry bytes, including batches above the new limit. They are not split or dropped during delivery. Receivers requiring a uniform strict limit must drain those batches before switching that policy; a historical batch may otherwise remain rejected. Batch and genesis receipt bodies are bounded by the configured envelope byte limit using both declared length and actual chunk bytes before buffer extension.
+
+## Receiver-owned confirmation cutover
+
+The receiver, not the exporter credential, is the ACK authority. The worker
+includes the current claim generation in `X-Nazo-Audit-Generation`; it is lease
+metadata, outside the immutable batch body. The receiver accepts it only for an
+already validated and durably stored identical batch. The SQL ACK function still
+checks generation, deployment, range, member count, digest and last hash.
+After an uncertain commit the receiver retries ACK or verifies an already
+advanced matching checkpoint. A lost response never permits discarding an
+unconfirmed local batch. Required admission reads only committed checkpoints.
+
+The reference receiver in `perf/audit-anchor-receiver` requires
+`ANCHOR_RECEIVER_DATABASE_URL` with the separately provisioned receiver role.
+Database TLS verifies hostname and public roots, or an explicit PEM
+`ANCHOR_RECEIVER_DATABASE_CA`. Prefer mode is hardened to require TLS; plaintext
+requires an explicit `sslmode=disable` and belongs only to isolated fixtures.
+The reference fixture is not evidence of a production WORM implementation.
+Stop old workers, migrate, grant the independent receiver role, update receivers
+and workers together, then verify required-mode health. Do not give ACK rights
+back to the exporter to work around an incomplete cutover.

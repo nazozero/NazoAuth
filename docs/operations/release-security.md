@@ -82,8 +82,12 @@ and database recovery boundaries.
 
 NazoAuthWeb is the default, optional UI. On first use, NazoAuth discovers the
 latest stable release from NazoAuthWeb's own GitHub repository, verifies the
-download against that release asset's digest and size, and installs writable
-files under `${DATA_DIR}/ui/current`. No frontend version or digest is stored in the
+download against that release asset's digest and size, then verifies its Sigstore
+provenance using the embedded production trust root, GitHub Actions OIDC issuer,
+and exact `nazozero/NazoAuthWeb/.github/workflows/release.yml@refs/tags/<tag>`
+identity. Certificate, transparency-log and artifact-digest checks must all pass
+before extraction. Missing or invalid provenance fails UI installation closed.
+It installs writable files under `${DATA_DIR}/ui/current`. No frontend version or digest is stored in the
 backend release manifest. Existing `index.html` prevents automatic installation;
 backend upgrades do not overwrite deployed UI files or recheck their digest.
 

@@ -156,9 +156,9 @@ pub struct SecurityAuditBatchAck {
     pub batch_digest: Vec<u8>,
 }
 
-/// Exporter-only security-ledger capability. Implementations must fence
-/// claims by generation and only delete batch members inside the same
-/// transaction that advances the durable anchor checkpoint.
+/// Exporter-only security-ledger capability. Claims are fenced by generation.
+/// Confirmation methods only read receiver-owned committed checkpoints; the
+/// exporter must never be able to reclaim events or advance the checkpoint.
 pub trait SecurityAuditExporter: Send + Sync {
     fn check_available(&self) -> BoxFuture<'_, Result<(), RepositoryError>>;
 
@@ -169,7 +169,7 @@ pub trait SecurityAuditExporter: Send + Sync {
         deployment_id: &'a str,
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
 
-    fn record_genesis<'a>(
+    fn confirm_genesis<'a>(
         &'a self,
         deployment_id: &'a str,
         head_hash: &'a [u8],
@@ -183,7 +183,7 @@ pub trait SecurityAuditExporter: Send + Sync {
         lock_timeout_seconds: i32,
     ) -> BoxFuture<'a, Result<SecurityAuditBatchClaim, RepositoryError>>;
 
-    fn ack_batch<'a>(
+    fn confirm_batch<'a>(
         &'a self,
         ack: SecurityAuditBatchAck,
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
@@ -216,12 +216,12 @@ where
         (**self).observe_anchor(deployment_id)
     }
 
-    fn record_genesis<'a>(
+    fn confirm_genesis<'a>(
         &'a self,
         deployment_id: &'a str,
         head_hash: &'a [u8],
     ) -> BoxFuture<'a, Result<(), RepositoryError>> {
-        (**self).record_genesis(deployment_id, head_hash)
+        (**self).confirm_genesis(deployment_id, head_hash)
     }
 
     fn claim_batch<'a>(
@@ -239,11 +239,11 @@ where
         )
     }
 
-    fn ack_batch<'a>(
+    fn confirm_batch<'a>(
         &'a self,
         ack: SecurityAuditBatchAck,
     ) -> BoxFuture<'a, Result<(), RepositoryError>> {
-        (**self).ack_batch(ack)
+        (**self).confirm_batch(ack)
     }
 
     fn fail_batch<'a>(

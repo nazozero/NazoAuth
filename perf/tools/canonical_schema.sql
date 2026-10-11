@@ -69,7 +69,11 @@ fns AS (
     SELECT n.nspname AS s, 'function' AS t, p.proname AS o,
            pg_get_function_identity_arguments(p.oid)
            || ':kind=' || p.prokind::text || ':lang=' || l.lanname
-           || ':volatile=' || p.provolatile::text AS d
+           || ':volatile=' || p.provolatile::text
+           || ':definition=' || CASE WHEN p.prokind = 'a' THEN p.prosrc
+              ELSE pg_get_functiondef(p.oid) END
+           || ':security_definer=' || p.prosecdef
+           || ':config=' || coalesce(array_to_string(p.proconfig, ','), '-') AS d
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang

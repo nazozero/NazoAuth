@@ -116,7 +116,19 @@ services:
     restart: unless-stopped
     environment:
       VALKEY_PASSWORD: "${NAZOAUTH_VALKEY_PASSWORD:?set a URL-safe Valkey password using only RFC 3986 unreserved characters}"
-    command: ["sh", "-euc", 'exec valkey-server --requirepass "$$VALKEY_PASSWORD" --save 60 1 --loglevel warning']
+    command:
+      - sh
+      - -euc
+      - |
+        case "$$VALKEY_PASSWORD" in
+          ''|*[!A-Za-z0-9._~-]*) echo 'Valkey password must be URL-safe' >&2; exit 1 ;;
+        esac
+        umask 077
+        printf 'requirepass %s\nsave 60 1\nloglevel warning\n' "$$VALKEY_PASSWORD" > /run/valkey/nazoauth.conf
+        unset VALKEY_PASSWORD
+        exec valkey-server /run/valkey/nazoauth.conf
+    tmpfs:
+      - /run/valkey:rw,noexec,nosuid,size=64k,mode=0700
     volumes:
       - valkey_data:/data
     healthcheck:

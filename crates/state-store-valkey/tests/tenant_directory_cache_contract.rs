@@ -25,7 +25,7 @@ fn snapshot(revision: u64) -> TenantDirectorySnapshot {
 }
 
 #[tokio::test]
-async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
+async fn authoritative_snapshot_repairs_even_a_higher_revision_cache() {
     let Ok(url) = std::env::var("VALKEY_URL") else {
         return;
     };
@@ -48,7 +48,8 @@ async fn cache_is_monotonic_and_authoritative_snapshot_repairs_corruption() {
     assert!(cache.publish_authoritative(&snapshot(2)).await.unwrap());
     assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(2)));
     assert!(!cache.publish_authoritative(&snapshot(2)).await.unwrap());
-    assert!(!cache.publish_authoritative(&snapshot(1)).await.unwrap());
+    assert!(cache.publish_authoritative(&snapshot(1)).await.unwrap());
+    assert_eq!(cache.load().await.unwrap().as_deref(), Some(&snapshot(1)));
 
     let repaired = TenantDirectorySnapshot {
         revision: 2,

@@ -149,6 +149,9 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
                 settings.tenant.context,
                 runtime_registry.snapshot_store(),
                 security_audit.clone(),
+                transient_state.request_rate_limits(),
+                settings.identity.rate_limit.window_seconds,
+                settings.identity.rate_limit.scim_denial_max_requests,
             )),
             Arc::new(ServerScimCursorProtector::new(
                 &scim_protocol.client_secret_pepper,

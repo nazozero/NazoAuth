@@ -849,12 +849,11 @@ def audit_pair_up(run_id: str, depid: str) -> dict:
         "public.nazo_finalize_security_audit_claim(BIGINT,BYTEA,UUID[],BYTEA[],BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),"
         "public.nazo_reclaim_security_audit_batch(BYTEA,INTEGER),"
         "public.nazo_append_security_audit_chain(BIGINT,BYTEA,UUID[],BYTEA[]),"
-        "public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),"
         "public.nazo_fail_security_audit_batch(BIGINT,TIMESTAMPTZ,TEXT,BOOLEAN),"
         "public.nazo_observe_security_audit_anchor(TEXT),"
-        "public.nazo_record_security_audit_genesis(TEXT,BYTEA),"
         "public.nazo_security_audit_shared_anchor_health() "
         "TO nazoauth_perf_exporter;")
+    psql("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='nazoauth_perf_receiver') THEN CREATE ROLE nazoauth_perf_receiver LOGIN PASSWORD 'receiver' NOSUPERUSER NOBYPASSRLS NOINHERIT; END IF; END $$; GRANT CONNECT ON DATABASE oauth TO nazoauth_perf_receiver; GRANT USAGE ON SCHEMA public TO nazoauth_perf_receiver; GRANT EXECUTE ON FUNCTION public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),public.nazo_record_security_audit_genesis(TEXT,BYTEA),public.nazo_security_audit_shared_anchor_health() TO nazoauth_perf_receiver; REVOKE EXECUTE ON FUNCTION public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),public.nazo_record_security_audit_genesis(TEXT,BYTEA) FROM nazoauth_perf_exporter;")
     rcv_name = f"sis-rcv-{run_id}"
     compose("run", "-d", "--name", rcv_name, "--no-deps",
             "-e", "ANCHOR_RECEIVER_LISTEN=0.0.0.0:9443",
@@ -864,6 +863,7 @@ def audit_pair_up(run_id: str, depid: str) -> dict:
             "-e", f"ANCHOR_RECEIVER_TOKEN={token}",
             "-e", f"ANCHOR_RECEIVER_SIGNING_KEY={seed}",
             "-e", "ANCHOR_RECEIVER_DATA_DIR=/data",
+            "-e", "ANCHOR_RECEIVER_DATABASE_URL=postgresql://nazoauth_perf_receiver:receiver@postgres:5432/oauth?sslmode=disable",
             "audit-receiver")
     verify_key = ""
     for _ in range(20):

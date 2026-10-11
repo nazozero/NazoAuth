@@ -186,8 +186,9 @@ writer manually or flush shared Valkey.
 ## Trust boundary
 
 Release bytes, attestations, Sigstore identity, manifest metadata, and the OCI
-digest are verified before activation. The application independently validates
-the signed ControlOperation against the executing binary or image digest, while
+digest are verified before activation. The privileged controller compares the live binary/image digest with protected
+deployment state before execution. The application validates the signed
+ControlOperation deployment, configuration and request bindings, while
 NazoAuthCtl observes the same content identity from the runtime.
 
 The controller's Release verifier accepts only a public non-draft Release. It

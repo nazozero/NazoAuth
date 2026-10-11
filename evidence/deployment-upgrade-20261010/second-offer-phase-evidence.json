@@ -1,0 +1,32 @@
+[
+  {
+    "module_id": "ap6cWciGYL7luZ4",
+    "offer_wait_times": [
+      1791650964987,
+      1791650969101
+    ],
+    "validated_offer_request_times": [
+      1791650965187
+    ],
+    "pending_browser_urls": 0,
+    "visited_urls": 1,
+    "user_agents": [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+    ]
+  },
+  {
+    "module_id": "Ul9qUhU8LKWghk5",
+    "offer_wait_times": [
+      1791650965880,
+      1791650970003
+    ],
+    "validated_offer_request_times": [
+      1791650966079
+    ],
+    "pending_browser_urls": 0,
+    "visited_urls": 1,
+    "user_agents": [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+    ]
+  }
+]

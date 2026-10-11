@@ -1,0 +1,1451 @@
+{
+  "schema": 1,
+  "review_date": "2026-10-11",
+  "scope": "All 41 REVIEW and 14 WARNING records from the composite ledger; review of retained evidence, no rerun or source change.",
+  "official_results_unchanged": true,
+  "formal_certification_approved": false,
+  "source_manifests": [
+    {
+      "run": "oidf-full-report.json",
+      "sha256": "218b6d8b48e10b2b65738e650f1c0a641a2335d0ed707a07d1af1dd19faacf1f"
+    },
+    {
+      "run": "offer-phase-fix/oidf-openid4vc-report.json",
+      "sha256": "1f1cc9ec8b9ac1800bf302f13d3c68b4a23e6a5a621a118c91fcf4155564ceb3"
+    }
+  ],
+  "counts": {
+    "INCOMPLETE": 17,
+    "ACCEPTABLE": 12,
+    "OPEN": 2,
+    "PASS": 24
+  },
+  "records": [
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p001",
+      "suite_plan_id": "rvKUDK87vgioB",
+      "module_id": "g0VRVNR1BVkVh82",
+      "test_name": "oidcc-prompt-login",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0014.json",
+      "evidence_sha256": "578aa5c22bc3386a894a21a527d723b47338eabd3dcf5611d6ec63c9369a06b7",
+      "condition": "ExpectSecondLoginPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "73879a12b963951dabf6c5106ba0ab05010438f7ca8eb99ed7adde8d029fc366",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": true,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": [
+        {
+          "condition": "CheckSecondIdTokenAuthTimeIsLaterIfPresent",
+          "result": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p001",
+      "suite_plan_id": "rvKUDK87vgioB",
+      "module_id": "zfie0hHnnvDbvRt",
+      "test_name": "oidcc-max-age-1",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0017.json",
+      "evidence_sha256": "b2dbbc68fdf3046ef5b19a3fc8678cb29cf875f990862f3673317d563d9e42e6",
+      "condition": "ExpectSecondLoginPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "73879a12b963951dabf6c5106ba0ab05010438f7ca8eb99ed7adde8d029fc366",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": true,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": [
+        {
+          "condition": "CheckIdTokenAuthTimeClaimPresentDueToMaxAge",
+          "result": "SUCCESS"
+        },
+        {
+          "condition": "CheckSecondIdTokenAuthTimeIsLaterIfPresent",
+          "result": "SUCCESS"
+        },
+        {
+          "condition": "CheckIdTokenAuthTimeIsRecentIfPresent",
+          "result": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p001",
+      "suite_plan_id": "rvKUDK87vgioB",
+      "module_id": "aeC3ADrgyu3yysU",
+      "test_name": "oidcc-ensure-registered-redirect-uri",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0027.json",
+      "evidence_sha256": "c5af8fbc642b525379b8a53e9e88c3a783c3ec756ce50ed61a5bcd9a07b55ae8",
+      "condition": "ExpectRedirectUriErrorPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "7850be51c4e0fa41470692c0104b92f8c5abf621e0bea56a421638834b316307",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": true,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p002",
+      "suite_plan_id": "SGNWZKNbtyUtJ",
+      "module_id": "whmBoiMsx8X9TOG",
+      "test_name": "oidcc-prompt-login",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0051.json",
+      "evidence_sha256": "09e7d2167eaba793e1eadeb79bb5d6198610eb1d714294c5ce9cc819cd54effe",
+      "condition": "ExpectSecondLoginPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "73879a12b963951dabf6c5106ba0ab05010438f7ca8eb99ed7adde8d029fc366",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": true,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": [
+        {
+          "condition": "CheckSecondIdTokenAuthTimeIsLaterIfPresent",
+          "result": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p002",
+      "suite_plan_id": "SGNWZKNbtyUtJ",
+      "module_id": "Ti9KN5UnGz3Bs1h",
+      "test_name": "oidcc-max-age-1",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0054.json",
+      "evidence_sha256": "a33ad8eece6a45df0a6e28d377b09810e30e74f466dc83c889d63069441bf64a",
+      "condition": "ExpectSecondLoginPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "73879a12b963951dabf6c5106ba0ab05010438f7ca8eb99ed7adde8d029fc366",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": true,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": [
+        {
+          "condition": "CheckIdTokenAuthTimeClaimPresentDueToMaxAge",
+          "result": "SUCCESS"
+        },
+        {
+          "condition": "CheckSecondIdTokenAuthTimeIsLaterIfPresent",
+          "result": "SUCCESS"
+        },
+        {
+          "condition": "CheckIdTokenAuthTimeIsRecentIfPresent",
+          "result": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p002",
+      "suite_plan_id": "SGNWZKNbtyUtJ",
+      "module_id": "iPpGw9IQsvB5dvk",
+      "test_name": "oidcc-ensure-registered-redirect-uri",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0064.json",
+      "evidence_sha256": "1a801dfba9e8feb4d2df04e646bd4e1703d5f450522f437627d24f879c1c41f4",
+      "condition": "ExpectRedirectUriErrorPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "7850be51c4e0fa41470692c0104b92f8c5abf621e0bea56a421638834b316307",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": true,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p003",
+      "suite_plan_id": "dmajiyi3tnFsz",
+      "module_id": "g9KWt0iX0fAoewF",
+      "test_name": "oidcc-prompt-login",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0087.json",
+      "evidence_sha256": "8c6a3d6a5eacad02692006e502d12a8f87bde91e8ace44de2989b62f9a5eac32",
+      "condition": "ExpectSecondLoginPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "73879a12b963951dabf6c5106ba0ab05010438f7ca8eb99ed7adde8d029fc366",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": true,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": [
+        {
+          "condition": "CheckSecondIdTokenAuthTimeIsLaterIfPresent",
+          "result": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p003",
+      "suite_plan_id": "dmajiyi3tnFsz",
+      "module_id": "rrPGvuc0xZtECd5",
+      "test_name": "oidcc-max-age-1",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0090.json",
+      "evidence_sha256": "1d40e6bca517de9a8df34647921fb06a43d9264b9ce2f6904bae8435068c62fd",
+      "condition": "ExpectSecondLoginPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "73879a12b963951dabf6c5106ba0ab05010438f7ca8eb99ed7adde8d029fc366",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": true,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": [
+        {
+          "condition": "CheckIdTokenAuthTimeClaimPresentDueToMaxAge",
+          "result": "SUCCESS"
+        },
+        {
+          "condition": "CheckSecondIdTokenAuthTimeIsLaterIfPresent",
+          "result": "SUCCESS"
+        },
+        {
+          "condition": "CheckIdTokenAuthTimeIsRecentIfPresent",
+          "result": "SUCCESS"
+        }
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-core-p003",
+      "suite_plan_id": "dmajiyi3tnFsz",
+      "module_id": "VCSzSUDHJgk02dX",
+      "test_name": "oidcc-ensure-registered-redirect-uri",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0100.json",
+      "evidence_sha256": "f4531758d0ac6dbfb410000caff88313d9db70fe4397a3afb0417ef8482df73c",
+      "condition": "ExpectRedirectUriErrorPage",
+      "requirements": [
+        "OIDCC-3.1.2.1"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "7850be51c4e0fa41470692c0104b92f8c5abf621e0bea56a421638834b316307",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": true,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": false,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "UtWMTiB6bvU0AfP",
+      "test_name": "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0113.json",
+      "evidence_sha256": "e3ed1a415ab3dc0acd23da5fa21ca902a4c49432c08b22b81bf7649321c0bed6",
+      "condition": "ExpectPostLogoutRedirectUriNotRegisteredErrorPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "wBr49nX58neOxie",
+      "test_name": "oidcc-rp-initiated-logout-modified-id-token-hint",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0114.json",
+      "evidence_sha256": "cec899607c8eb7fd5cb15cba37fe520348dcd9e141130e5006bfbd56ee5d1543",
+      "condition": "ExpectInvalidIdTokenHintErrorPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "vFUjdKuDCnchuic",
+      "test_name": "oidcc-rp-initiated-logout-no-id-token-hint",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0115.json",
+      "evidence_sha256": "5eb040dfb880e1c070b4d3d1420545837bb51d5876dd92a229d1a0ee90e4f8a8",
+      "condition": "ExpectIdTokenHintRequiredErrorPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "wos71i6GpZR4xs0",
+      "test_name": "oidcc-rp-initiated-logout-no-params",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0116.json",
+      "evidence_sha256": "442659e5f9e86d9989c6cd191fbf4c0fc2fd58c187b6e0ee55d3cbceaaf9ba0e",
+      "condition": "ExpectSuccessfulLogoutPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "Aa5R13JUGNOKdN2",
+      "test_name": "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0117.json",
+      "evidence_sha256": "fd613073c9386c3d0009eb11f25d04a1e8f7b83e1230e80d7a8771cf8c6f75c3",
+      "condition": "ExpectSuccessfulLogoutPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": false,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "vVp3KeUdmbP9FWQ",
+      "test_name": "oidcc-rp-initiated-logout-only-state",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0119.json",
+      "evidence_sha256": "49d285bdbb7632875458e23d21446468bcdd86569496ad99b9521a0dbb6df5d6",
+      "condition": "ExpectSuccessfulLogoutPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "LofjRkt36q9yAPC",
+      "test_name": "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0120.json",
+      "evidence_sha256": "f36f22957aa5f3b25d622841c0a3e810f4bdfb96b484610d76f34ca5f25efbce",
+      "condition": "ExpectPostLogoutRedirectUriNotRegisteredErrorPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "oidc-logout-p006",
+      "suite_plan_id": "nwqebiCPqYxSd",
+      "module_id": "SvpW8opQGXYoEsO",
+      "test_name": "oidcc-rp-initiated-logout-bad-id-token-hint",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0121.json",
+      "evidence_sha256": "cafa94facec458f97433680bf21eea99086884bdfe114cdd8c79826d24be35aa",
+      "condition": "ExpectInvalidIdTokenHintErrorPage",
+      "requirements": [
+        "OIDCRIL-2"
+      ],
+      "review_status": "INCOMPLETE",
+      "rationale": "Recorded page source supports behavior but is not the required real rendered screenshot; historical pixels cannot be reconstructed as original evidence.",
+      "page_source_sha256": "354ad735843daa1afe86c0b8d89675395a40fc6c16b09f74d3938765eee74685",
+      "has_official_image": false,
+      "manifest_screenshots": 0,
+      "login_form_recorded": false,
+      "redirect_rejection_recorded": false,
+      "logout_confirmation_recorded": true,
+      "logout_success_recorded": true,
+      "auth_time_checks": []
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-code-p015",
+      "suite_plan_id": "UNrP6PiCfPkdG",
+      "module_id": "ZRs9RPp7xJV6nG7",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0325.json",
+      "evidence_sha256": "8443ab065bc559be149330c1bb8e21808670e01aba58e102e30dd7ea5bb81726",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts",
+        "offline_access"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts",
+        "offline_access"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-code-p017",
+      "suite_plan_id": "n0qGRC28HI2H8",
+      "module_id": "Gd2ifBsIJg8iNrI",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0414.json",
+      "evidence_sha256": "c694d12e4e96bd1e48d24a9dce95b6963cafde589e07dcbb8238effdbd8801b3",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts",
+        "offline_access"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts",
+        "offline_access"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-code-p019",
+      "suite_plan_id": "90xER9cLPaQ1B",
+      "module_id": "bTIW2WEptGGmnAa",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0497.json",
+      "evidence_sha256": "99c8aab7b9fa0fcdcde8a19f92e06cfa49cee7cc98a5fff218ee83d74870daee",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts",
+        "offline_access"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts",
+        "offline_access"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-code-p021",
+      "suite_plan_id": "VZSSRMSZ041s1",
+      "module_id": "DrjOtnqxVRqR05T",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0574.json",
+      "evidence_sha256": "18ac628bdb42f0dc30a681ca56bef3dd31246b7ceb7220a60604bf59bc2aff01",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts",
+        "offline_access"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts",
+        "offline_access"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-credentials-p024",
+      "suite_plan_id": "MtAaJiR2ajsJ8",
+      "module_id": "yEONaGAigd687Ir",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0737.json",
+      "evidence_sha256": "92dd66f705c61fad45edc86a799978eadab3aa77415d0724eed19989b3f8ce07",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-credentials-p025",
+      "suite_plan_id": "ibMcBAipQ44K6",
+      "module_id": "0J4AttSdg4TVIiU",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0752.json",
+      "evidence_sha256": "f5b2a9e3f754671fdf8c33c4ce3aa43fd23df6e1f57e40e92b87d55ebe10ea19",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-credentials-p026",
+      "suite_plan_id": "YmTCPtw8yddFS",
+      "module_id": "qDkbfdxaEa6uC16",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0763.json",
+      "evidence_sha256": "f45e4672e9e80d501f0d2c7ef14b429ee953ded40e2c5e2b86b5fb521f8012dc",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts"
+      ]
+    },
+    {
+      "evidence_run": "initial-unaffected",
+      "server_source": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "ctl_source": "62470460ca0c98db2731617d2b1b7de3c6974832",
+      "matrix_plan_id": "fapi-security-credentials-p027",
+      "suite_plan_id": "XKdWEVwuJNX4F",
+      "module_id": "XCWOSxArDWYHoYF",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0772.json",
+      "evidence_sha256": "7f58a5ac026587ea4d8e2a0e31e42a034c0ae2fcccaa3c804d56fd535826a6e3",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "accounts"
+      ],
+      "unadvertised_scopes": [
+        "accounts"
+      ],
+      "granted_scopes": [
+        "accounts"
+      ]
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vci-p029",
+      "suite_plan_id": "n35G41SVE3GSA",
+      "module_id": "Y2KOjLvgQ4JPYvu",
+      "test_name": "oid4vci-1_0-issuer-batch-issuance",
+      "official_result": "WARNING",
+      "evidence_file": "module-0021.json",
+      "evidence_sha256": "49569b19a698669479280c706ea808e0b432dc3508837f40ce00ba61ef62ae46",
+      "condition": "VCIEnsureBatchTimeClaimsNotLinkable",
+      "requirements": [
+        "SDJWT-10.1"
+      ],
+      "review_status": "OPEN",
+      "rationale": "Shared certificate boundary explains the precise timestamp and preserves certificate validity; it does not establish a standards waiver or batch unlinkability for a small signer cohort.",
+      "credentials_checked": 10,
+      "certificate_pem_sha256": [
+        "21802fb37fcd31efb4c8db4a0516cdbe46a2402ca3dc2443aa8023c6c2601e17"
+      ],
+      "signed": "2026-10-10T17:02:59Z",
+      "certificate_not_before": "2026-10-10T17:02:59Z",
+      "precise_claims": [
+        "signed",
+        "validFrom"
+      ],
+      "rounded_expiry_epoch": "[1823126400]"
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vci-p031",
+      "suite_plan_id": "C9cXh83bojWbO",
+      "module_id": "9hiEw9anfjuCAed",
+      "test_name": "oid4vci-1_0-issuer-batch-issuance",
+      "official_result": "WARNING",
+      "evidence_file": "module-0051.json",
+      "evidence_sha256": "f50371d7ab072e52a14e8e3ab201f7a4d9be3abd1c8b05a248cbb4013118b8e7",
+      "condition": "VCIEnsureBatchTimeClaimsNotLinkable",
+      "requirements": [
+        "SDJWT-10.1"
+      ],
+      "review_status": "OPEN",
+      "rationale": "Shared certificate boundary explains the precise timestamp and preserves certificate validity; it does not establish a standards waiver or batch unlinkability for a small signer cohort.",
+      "credentials_checked": 10,
+      "certificate_pem_sha256": [
+        "21802fb37fcd31efb4c8db4a0516cdbe46a2402ca3dc2443aa8023c6c2601e17"
+      ],
+      "signed": "2026-10-10T17:02:59Z",
+      "certificate_not_before": "2026-10-10T17:02:59Z",
+      "precise_claims": [
+        "signed",
+        "validFrom"
+      ],
+      "rounded_expiry_epoch": "[1823126400]"
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vci-haip-p034",
+      "suite_plan_id": "wkhbFeLipVcBX",
+      "module_id": "ZGOAvXZvNSbqDGH",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0114.json",
+      "evidence_sha256": "9dc17f996c1dc50019c526fd686654c63f7143272e46fecfb0bce380c6bf7768",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "eu.europa.ec.eudi.pid.1"
+      ],
+      "unadvertised_scopes": [
+        "eu.europa.ec.eudi.pid.1"
+      ],
+      "granted_scopes": [
+        "eu.europa.ec.eudi.pid.1"
+      ]
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vci-haip-p035",
+      "suite_plan_id": "g5eLOnDbDZbDM",
+      "module_id": "7hEv1lMPURtzw8N",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0177.json",
+      "evidence_sha256": "2a925d565878f0a69a6e3f8469ad48deb2300ef5fa3a563cd3021bacf6baf8af",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "org.iso.18013.5.1.mDL"
+      ],
+      "unadvertised_scopes": [
+        "org.iso.18013.5.1.mDL"
+      ],
+      "granted_scopes": [
+        "org.iso.18013.5.1.mDL"
+      ]
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vci-haip-p036",
+      "suite_plan_id": "Sh6WPhHiPNhoF",
+      "module_id": "z7OOHT87PAlHmnO",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0240.json",
+      "evidence_sha256": "56ca84d311217d2b1afccdc350baac819cba030bcf336e80ee2ef5436faf43c9",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "eu.europa.ec.eudi.pid.1"
+      ],
+      "unadvertised_scopes": [
+        "eu.europa.ec.eudi.pid.1"
+      ],
+      "granted_scopes": [
+        "eu.europa.ec.eudi.pid.1"
+      ]
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vci-haip-p037",
+      "suite_plan_id": "iZW2yPSVod5sC",
+      "module_id": "TPpZ8TFZfdXl9NW",
+      "test_name": "fapi2-security-profile-final-happy-flow",
+      "official_result": "WARNING",
+      "evidence_file": "module-0303.json",
+      "evidence_sha256": "3e291e232ed079a2ce35183f7689eb385d173b0ad990f2d6973831aba4ddd0b4",
+      "condition": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+      "requirements": [
+        "RFC8414-2",
+        "OIDCD-3"
+      ],
+      "review_status": "ACCEPTABLE",
+      "rationale": "Supported scope is omitted from discovery, which RFC 8414 section 2 permits; actual successful token responses grant it.",
+      "requested_scopes": [
+        "org.iso.18013.5.1.mDL"
+      ],
+      "unadvertised_scopes": [
+        "org.iso.18013.5.1.mDL"
+      ],
+      "granted_scopes": [
+        "org.iso.18013.5.1.mDL"
+      ]
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p038",
+      "suite_plan_id": "EuFaSexsXkLfe",
+      "module_id": "F1zazWvVvSn3bCJ",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0342.json",
+      "evidence_sha256": "72e467a79e0bc06e1a2b551cfa726edef518ec394f5c6e787a233c2824dd6244",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "8464df23ae245b22ca7a297e58d2f09f355db1e23768651f4461130ab15dcf2d",
+      "trigger_path": "/openid4vp/complete/01a126cd-4c02-72ec-b178-489491e3d607",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p038",
+      "suite_plan_id": "EuFaSexsXkLfe",
+      "module_id": "oFFR8NT4DpTiePJ",
+      "test_name": "oid4vp-1final-verifier-minimal-cnf-jwk",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0343.json",
+      "evidence_sha256": "cab3d4f3e08fe461db449e40275b7be4f040ea9a5ded7d475f11ec402a607ac6",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "04af483e0eeac875b4646c11a3da848789ad6fe49142785090e023ba14bec480",
+      "trigger_path": "/openid4vp/complete/01a126cd-55b5-74c9-903b-c639362e0065",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p038",
+      "suite_plan_id": "EuFaSexsXkLfe",
+      "module_id": "mNOdpyb7rfJLKmx",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0344.json",
+      "evidence_sha256": "fbae24d8fb604e30bf14d5c6b4e75b4faf87ddffe33880b07d51beefc38b6f76",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "1fb1ba03bcdb0780b94a2cb39d4ad9565f060cc3617ae290021beb67fd8488e2",
+      "trigger_path": "/openid4vp/complete/01a126cd-5f0d-7376-b22d-d05bfa6c62d6",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p039",
+      "suite_plan_id": "znuKvdsKeMeb0",
+      "module_id": "Xlxj0BUURHb71ip",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0352.json",
+      "evidence_sha256": "2ddccfdb53416d35aa2f6e823621a6771533e15ba9b99f4a6a9ab5e88aaeeffa",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "0e3df120350dec29981ed8b393779f17917455a968bd87b43ea09cfc6aceebec",
+      "trigger_path": "/openid4vp/complete/01a126cd-4c9c-76e6-a4cb-3185e26c6fd5",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p039",
+      "suite_plan_id": "znuKvdsKeMeb0",
+      "module_id": "1ARDx0zRFQuxUFq",
+      "test_name": "oid4vp-1final-verifier-minimal-cnf-jwk",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0353.json",
+      "evidence_sha256": "792dad8bc02e2a23890689b4a656dfd84459afeec3b801f0fe1bffe49d32d1ed",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "d7dd5b17edf1634b1c87b37054d8e027358a1ac7a4b1cac1257664bfcc80bdf6",
+      "trigger_path": "/openid4vp/complete/01a126cd-5837-716a-bb85-1307c0cbfd8b",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p039",
+      "suite_plan_id": "znuKvdsKeMeb0",
+      "module_id": "nuUUJ82Rua46xHt",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0354.json",
+      "evidence_sha256": "1ad3be152caef06cbeeaf807e63a3bd6c968b75c2e33376e5afecdeb8d5f7d0e",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "1f129d5f2f539a559a499e78f29b0e0c8e682e4c5b1bc92ad88d3de1c8bc7cf9",
+      "trigger_path": "/openid4vp/complete/01a126cd-6309-767e-b5c4-ff1df8520622",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p039",
+      "suite_plan_id": "znuKvdsKeMeb0",
+      "module_id": "U95E6cYS4EGYB56",
+      "test_name": "oid4vp-1final-verifier-request-uri-fetched-twice",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0355.json",
+      "evidence_sha256": "8503c1490d3856051d55778c1b79f2ebc303844b21b0b85f6d359970483fb0fc",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "7e727bc6267eb52a4b7e5eb4bd94943f8f1300696101bef10b91982aac0e7862",
+      "trigger_path": "/openid4vp/complete/01a126cd-6e4c-7636-869b-72422bed487b",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p040",
+      "suite_plan_id": "rjGd8JVEYCUMv",
+      "module_id": "jCAG5rolbU2Df9b",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0363.json",
+      "evidence_sha256": "4d9af18c46ce757adec128830765149e31e67bddfdc1a1d82df09f5fdd4c7877",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "39a182b0f05c1fa685ae9a76f4e72fb3dec29295aea3f5e879d130e3b37f68fa",
+      "trigger_path": "/openid4vp/complete/01a126cd-922e-7029-a779-881aa53eeb57",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p040",
+      "suite_plan_id": "rjGd8JVEYCUMv",
+      "module_id": "bQCrJEDNcluIXCq",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0364.json",
+      "evidence_sha256": "b42d0cd59e837b51380fb34c8040a71f4dbb8cd6a183dae0f5098fbcd014c655",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "f10217717f26e08bb9831bc632ddfeb40bd387098162e105d28575e82ff0d179",
+      "trigger_path": "/openid4vp/complete/01a126cd-a0ff-763f-8749-7d4111900169",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p040",
+      "suite_plan_id": "rjGd8JVEYCUMv",
+      "module_id": "UljIVC0RtW05qIL",
+      "test_name": "oid4vp-1final-verifier-request-uri-fetched-twice",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0365.json",
+      "evidence_sha256": "89f8671a3c4604aaa6d786eb9bb406137ea6047177adf47911146ac53081e507",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "ee1e93bf4be21e6448704398f7bc7520715bae019be58522a3bec8767e539ee4",
+      "trigger_path": "/openid4vp/complete/01a126cd-ac35-753b-ac3e-e9732e0fd2f7",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p041",
+      "suite_plan_id": "UhVEqs2WxTBb5",
+      "module_id": "6SKNK9gCKIwBvjk",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0367.json",
+      "evidence_sha256": "45ccd6a40668c6019460e3794ba56572caefcce38cb5750ba33e5728fb4b776d",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "14d964f6b3526775a792f9f6d617d9970eb721f71bcde0e9eba1461eee6684c5",
+      "trigger_path": "/openid4vp/complete/01a126cd-ad16-7672-a42d-b1d3fec7bd8a",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p041",
+      "suite_plan_id": "UhVEqs2WxTBb5",
+      "module_id": "o7WI7RSWkfNhBlt",
+      "test_name": "oid4vp-1final-verifier-minimal-cnf-jwk",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0368.json",
+      "evidence_sha256": "ef83baaba027f50b7a08640025b1391673a6d5d012195941523fbbfd3ad2ae14",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "ae00ea137c5ace56e9eba7541011019d937c3d18bf776ebe97f18a83b26b7384",
+      "trigger_path": "/openid4vp/complete/01a126cd-b81f-7659-a2cc-9cd35eba57e5",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p041",
+      "suite_plan_id": "UhVEqs2WxTBb5",
+      "module_id": "cwmWlNmTNIIVNr2",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0369.json",
+      "evidence_sha256": "731d857c354cb79e179b0e60a2e0c22ac5180e6cba51db03120ba20cc86f29ec",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "7a20f7684c8e6ffa24e8e6294726ce3a87b87bb63f5b40b977f2ceb96cacc3b4",
+      "trigger_path": "/openid4vp/complete/01a126cd-c375-7687-9a71-08b32557a4fa",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p041",
+      "suite_plan_id": "UhVEqs2WxTBb5",
+      "module_id": "XDnIBXhZMzbfzSi",
+      "test_name": "oid4vp-1final-verifier-request-uri-fetched-twice",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0370.json",
+      "evidence_sha256": "74cc0f6254b50a225c38bcb4d56470d9646ad9b238f0447b0c84182dd629293a",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "0a0419ebaec0476f76869dc107d6cfd75b74e3f99f030db916e69b1e95739e3a",
+      "trigger_path": "/openid4vp/complete/01a126cd-ce82-77da-acf2-cfcbafb38521",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p042",
+      "suite_plan_id": "fbPFwAyvFXsUr",
+      "module_id": "MSIaxNtFxiR5EQG",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0378.json",
+      "evidence_sha256": "a0db5f2f8cf5726ff78a1c48b76b02c8e1267d0b176e9dadc2c13761990088b4",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "a5f8c8c9c58321f7b39238c947da8f5105bfd3167153738f467339ecabb40511",
+      "trigger_path": "/openid4vp/complete/01a126cd-c191-7445-a8a7-1d4c11cd7781",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p042",
+      "suite_plan_id": "fbPFwAyvFXsUr",
+      "module_id": "AKjj28VHsAdW9al",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0379.json",
+      "evidence_sha256": "24a8b0feb24bcc284a3ae3dc476f06f57e3a1f237c866ac2740ab3084bef3c9e",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "fb561bc5cf88d9cdb5f3d795286ce110c5ff7900fc3ba3ddd09b6ba96b83b3a3",
+      "trigger_path": "/openid4vp/complete/01a126cd-ccb8-739a-9382-dedb7252f99a",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-p042",
+      "suite_plan_id": "fbPFwAyvFXsUr",
+      "module_id": "9zLom4f0e1pf8Oa",
+      "test_name": "oid4vp-1final-verifier-request-uri-fetched-twice",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0380.json",
+      "evidence_sha256": "320d33ac7e160a2255174a1a37d8ea50fc9b94f4e7fd22ef0fbab132a26f995b",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "cf81c2e61632ca13804490690788a23d4c7a3e2ef341a6092442d0b38c0795d1",
+      "trigger_path": "/openid4vp/complete/01a126cd-d7de-7332-b3eb-d1bc991b3652",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p043",
+      "suite_plan_id": "piKhuzVWWyykT",
+      "module_id": "ZyKgPRMIrdXneY5",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0382.json",
+      "evidence_sha256": "00b5e3d5e5e6c986efe39dbba6244f411b208dbeed8b71482ef4853395db4fda",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "04cc1c755cf11e72f2962bbad82ff763104d9351f9d8a64dd7ab07d86261a343",
+      "trigger_path": "/openid4vp/complete/01a126cd-eb4e-7184-9991-eb77b387197f",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p043",
+      "suite_plan_id": "piKhuzVWWyykT",
+      "module_id": "WEB1XxqEL1wmxY9",
+      "test_name": "oid4vp-1final-verifier-minimal-cnf-jwk",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0383.json",
+      "evidence_sha256": "17a1f6a28dc54a7795d4400f658c2e3c418d92858ef24673fcc4f62e109c0efc",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "ae9c0921d876cb718385a30c25aecd59bc652ea1ca5b3868d923c3866582f8ad",
+      "trigger_path": "/openid4vp/complete/01a126cd-f656-7686-be07-b0620b41bb91",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p043",
+      "suite_plan_id": "piKhuzVWWyykT",
+      "module_id": "qo6S0TBCUevVBMU",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0384.json",
+      "evidence_sha256": "7ce1e11889a6df748e1c92113eb2a0107a83610267242fd3eb773d34140955d2",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "b07332a6dd2c857358a7e7b75c3ffd9729a1a8683fce446d6b71ee682d4436d0",
+      "trigger_path": "/openid4vp/complete/01a126ce-014f-759e-85b0-fb744794a71a",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p043",
+      "suite_plan_id": "piKhuzVWWyykT",
+      "module_id": "3CymEfCDqYPs9wQ",
+      "test_name": "oid4vp-1final-verifier-request-uri-fetched-twice",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0385.json",
+      "evidence_sha256": "d9bce427597b75f23287114814a2f3c5d8df5ec89c0bbf261d45400d2998e382",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "14805f6fc205310b3af352cd91f9b920b695b39dab42cef763b5ba4a39397cd5",
+      "trigger_path": "/openid4vp/complete/01a126ce-0bfc-7386-90f5-59a21b8ef1c8",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p044",
+      "suite_plan_id": "Xpdi5ePoh66xI",
+      "module_id": "YW6RqmDvqZULTxP",
+      "test_name": "oid4vp-1final-verifier-happy-flow",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0393.json",
+      "evidence_sha256": "5f99d9a77fc930edc0509546d6859cf5dd2f60f06d0b40b4dba42526fdd3fada",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "1d75dd45f19b2f5519af46343253d72b15729ad0772d8bfdf78ea4a4df210c0e",
+      "trigger_path": "/openid4vp/complete/01a126ce-0d52-7764-9d2e-64bb2b7b30ba",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p044",
+      "suite_plan_id": "Xpdi5ePoh66xI",
+      "module_id": "S0Ml1yBJXpac6d2",
+      "test_name": "oid4vp-1final-verifier-request-uri-method-post",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0394.json",
+      "evidence_sha256": "f4a48744f2b69439ed7c2c0204563903fc86e5918cc1c3b90cb18bf491647767",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "b6f7922f7e0b5c5b75cc95aa3e4df68b82a558bae87f7172a3cb57fb3b480e05",
+      "trigger_path": "/openid4vp/complete/01a126ce-18cb-76b3-8caa-b94dbd6576ce",
+      "official_image_matches": true
+    },
+    {
+      "evidence_run": "corrected-openid4vc",
+      "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+      "ctl_source": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+      "matrix_plan_id": "openid4vc-vp-haip-p044",
+      "suite_plan_id": "Xpdi5ePoh66xI",
+      "module_id": "rv6sKmfCb5ym70h",
+      "test_name": "oid4vp-1final-verifier-request-uri-fetched-twice",
+      "official_result": "REVIEW",
+      "evidence_file": "module-0395.json",
+      "evidence_sha256": "9f77d6e771eeb803c10546bef134430d6acdecdc4cbf0ada3449b55c07d7e209",
+      "condition": "ExpectVerifierSuccessfulVerificationPage",
+      "requirements": [
+        "OID4VP-1FINAL-8.2"
+      ],
+      "review_status": "PASS",
+      "rationale": "Verified success page; official image bytes match the retained transaction-bound WebDriver evidence.",
+      "screenshot_sha256": "a9656b6cd7e0f2c7c98be2898c84483523da68fe360c059a36bb85ab967c9a03",
+      "receipt_sha256": "e2486f8124e698672fe619062df543d5c311727726468e9ae78a163ee111ee85",
+      "trigger_path": "/openid4vp/complete/01a126ce-243e-71eb-a739-42bea631c971",
+      "official_image_matches": true
+    }
+  ]
+}
