@@ -5,7 +5,7 @@ The release preparation follows merged PR #242 and model/storage PR #238.
 ## Protocol package dependency
 
 `cargo +1.99.0 package --locked --package nazo-operator-protocol` failed with
-exit 101 at the original source because `nazo-crypto` is not in crates.io.
+exit 1 at the original source because `nazo-crypto` is not in crates.io.
 Packaging both workspace crates together succeeds and verifies both extracted
 packages. Publication now attests both crates and enforces exactly ten assets
 (eight server binaries and two crates). No `--no-verify` bypass is used.
