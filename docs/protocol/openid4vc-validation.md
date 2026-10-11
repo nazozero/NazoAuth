@@ -61,10 +61,30 @@ remain unchanged. `validUntil` is never extended; an empty validity interval
 or a signing time after `notAfter` rejects issuance. The verifier's historical
 certificate-time and signature checks remain unchanged.
 
+Locally generated mdoc DS and IACA certificates start at the beginning of their
+creation day in UTC. Their end dates use that same boundary (457 days for DS,
+3650 days for IACA), so this does not extend certificate lifetimes or credential
+expiry. A new signer therefore covers the day-rounded MSO time without exposing
+its creation second. Key creation, publication, rotation, revocation and signing
+lease ownership remain unchanged; certificate time rounding does not make a key
+available before it exists.
+
+Existing and imported certificates retain their signed validity fields. They are
+not silently regenerated, backdated or accepted outside their validity. Their
+first partial day can still require the exact public certificate lower bound;
+the general signer-validity guard remains necessary. A deployment importing such
+material must assess that shared cohort boundary or provision certificates whose
+validity covers its privacy rounding interval. A shared certificate by itself is
+not proof of unlinkability.
+
 The real COSE/MSO regression exercises a rounded claim preceding a newly active
 certificate, a claim already within its interval, deadline preservation and
-rejection of impossible intervals. Official Suite execution and retained results
-are recorded separately in the [deployment report](../operations/reports/main-upgrade-2026-10-10.md).
+rejection of impossible intervals. The managed-certificate regression checks
+midnight, one second later, midday, the last second and the next day's boundary;
+keyctl lifecycle tests retain generation reuse, concurrent initialization,
+rotation, historical CRLs and import preservation. Official Suite execution and
+retained results are recorded separately in the
+[deployment report](../operations/reports/main-upgrade-2026-10-10.md).
 
 ## Evidence and remaining work
 
