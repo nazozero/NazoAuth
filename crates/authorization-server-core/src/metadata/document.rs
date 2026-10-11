@@ -127,6 +127,8 @@ pub struct AuthorizationServerMetadataInput<'a> {
     pub subject_type: MetadataSubjectType,
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: &'a str,
+    pub additional_scopes_supported: &'a [String],
+    pub credential_scopes: &'a [String],
     pub require_pushed_authorization_requests: bool,
     pub signing_algorithms: MetadataSigningAlgorithms<'a>,
 }
@@ -178,6 +180,16 @@ pub fn authorization_server_metadata(
     let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
     if capabilities.native_sso {
         scopes_supported.push("device_sso");
+    }
+    for scope in input.additional_scopes_supported.iter().chain(
+        input
+            .credential_scopes
+            .iter()
+            .filter(|_| capabilities.openid4vci_issuer),
+    ) {
+        if !scopes_supported.contains(&scope.as_str()) {
+            scopes_supported.push(scope.as_str());
+        }
     }
     let mut metadata = json!({
         "issuer": issuer,

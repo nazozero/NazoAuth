@@ -17,6 +17,10 @@ pub struct MetadataConfig {
     pub subject_type: MetadataSubjectType,
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: String,
+    /// Additional public OAuth scopes; advertising does not grant access.
+    pub additional_scopes_supported: Vec<String>,
+    /// Scopes derived from credential configurations; exposed only while issuance accepts requests.
+    pub credential_scopes: Vec<String>,
     pub require_pushed_authorization_requests: bool,
 }
 
@@ -31,6 +35,8 @@ impl MetadataConfig {
             subject_type: self.subject_type,
             pairwise_subject_enabled: self.pairwise_subject_enabled,
             protected_resource_identifier: self.protected_resource_identifier.clone(),
+            additional_scopes_supported: self.additional_scopes_supported.clone(),
+            credential_scopes: self.credential_scopes.clone(),
             require_pushed_authorization_requests: self.require_pushed_authorization_requests,
         }
     }

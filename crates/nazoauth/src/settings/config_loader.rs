@@ -262,6 +262,20 @@ impl Settings {
             .optional_string("PROTECTED_RESOURCE_IDENTIFIER")
             .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
         validate_protected_resource_identifier(&protected_resource_identifier)?;
+        // RFC 6749 section 3.3: ASCII space separates scope-token values.
+        // This is public discovery policy, never a client authorization allowlist.
+        let additional_scopes_supported = config
+            .optional_string("ADDITIONAL_SCOPES_SUPPORTED")
+            .unwrap_or_default()
+            .split(' ')
+            .filter(|scope| !scope.is_empty())
+            .map(|scope| {
+                if !scope.bytes().all(|byte| matches!(byte, 0x21 | 0x23..=0x5b | 0x5d..=0x7e)) {
+                    bail!("ADDITIONAL_SCOPES_SUPPORTED must contain space-separated OAuth scope tokens");
+                }
+                Ok(scope.to_owned())
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let dpop_nonce_policy = profile::dpop_nonce_policy_from_config(config)?;
         let fapi_resource_dpop_nonce_policy =
             profile::fapi_resource_dpop_nonce_policy_from_config(config)?;
@@ -607,6 +621,7 @@ impl Settings {
             protocol: ProtocolSettings {
                 default_audience: config.string("DEFAULT_AUDIENCE", "resource://default"),
                 protected_resource_identifier,
+                additional_scopes_supported,
                 authorization_server_profile,
                 ciba_security_profile,
                 dpop_nonce_policy,

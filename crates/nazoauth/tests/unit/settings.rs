@@ -1760,3 +1760,41 @@ fn fapi_http_signature_max_age_rejects_invalid_values() {
         assert!(Settings::from_config(&config).is_err(), "accepted {value}");
     }
 }
+
+#[test]
+fn additional_discovery_scopes_follow_oauth_scope_token_grammar() {
+    for invalid in [
+        "orders\twrite",
+        "orders\nwrite",
+        "café",
+        "bad\\scope",
+        "bad\"scope",
+    ] {
+        let config = ConfigSource::from_pairs_for_test([("ADDITIONAL_SCOPES_SUPPORTED", invalid)]);
+        let error = Settings::from_config(&config)
+            .err()
+            .expect("invalid scope must fail startup");
+        assert!(
+            error.to_string().contains("ADDITIONAL_SCOPES_SUPPORTED"),
+            "{error}"
+        );
+    }
+    let config = ConfigSource::from_pairs_for_test([(
+        "ADDITIONAL_SCOPES_SUPPORTED",
+        " orders:read  urn:example:scope ",
+    )]);
+    assert_eq!(
+        Settings::from_config(&config)
+            .unwrap()
+            .protocol
+            .additional_scopes_supported,
+        ["orders:read", "urn:example:scope"]
+    );
+    assert!(
+        Settings::from_config(&ConfigSource::default())
+            .unwrap()
+            .protocol
+            .additional_scopes_supported
+            .is_empty()
+    );
+}

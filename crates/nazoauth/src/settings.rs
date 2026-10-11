@@ -128,6 +128,7 @@ impl TransportMode {
 pub(crate) struct ProtocolSettings {
     pub(crate) default_audience: String,
     pub(crate) protected_resource_identifier: String,
+    pub(crate) additional_scopes_supported: Vec<String>,
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
     pub(crate) ciba_security_profile: CibaSecurityProfile,
     pub(crate) dpop_nonce_policy: DpopNoncePolicy,

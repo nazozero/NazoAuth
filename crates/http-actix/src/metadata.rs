@@ -34,6 +34,8 @@ impl MetadataHandles {
                 subject_type: self.config.subject_type,
                 pairwise_subject_enabled: self.config.pairwise_subject_enabled,
                 protected_resource_identifier: &self.config.protected_resource_identifier,
+                additional_scopes_supported: &self.config.additional_scopes_supported,
+                credential_scopes: &self.config.credential_scopes,
                 require_pushed_authorization_requests: self
                     .config
                     .require_pushed_authorization_requests,
