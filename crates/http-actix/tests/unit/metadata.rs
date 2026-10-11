@@ -52,6 +52,8 @@ fn handles(source: Arc<TestSnapshots>) -> MetadataHandles {
             subject_type: MetadataSubjectType::Public,
             pairwise_subject_enabled: false,
             protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
+            additional_scopes_supported: vec!["orders:read".to_owned()],
+            credential_scopes: vec!["credential:inactive".to_owned()],
             require_pushed_authorization_requests: false,
         },
         source,
@@ -104,6 +106,9 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
         );
         let body: Value = test::read_body_json(response).await;
         assert_eq!(body["issuer"], "https://issuer.example");
+        let scopes = body["scopes_supported"].as_array().unwrap();
+        assert!(scopes.contains(&json!("orders:read")));
+        assert!(!scopes.contains(&json!("credential:inactive")));
         assert_eq!(
             body["grant_types_supported"][3],
             "urn:openid:params:grant-type:ciba"

@@ -509,3 +509,23 @@ successor takes priority over an automatically generated local candidate.
 An external-active keyset needs another registered external successor for its
 next rotation and never silently falls back to local signing. Existing signature
 verification grace remains unchanged.
+
+### Public discovery scopes
+
+`ADDITIONAL_SCOPES_SUPPORTED` is an optional, space-separated list of public
+OAuth scope tokens (RFC 6749 section 3.3). For example, an operator whose resource
+supports an `accounts` scope can set `ADDITIONAL_SCOPES_SUPPORTED: "accounts"`.
+It augments the built-in scopes in both OpenID Connect discovery and RFC 8414
+metadata; duplicates are emitted once. The default is empty. This process-wide
+publication policy applies to its tenant discovery documents. Do not put private
+client scope names here: discovery does not enumerate client registrations.
+
+OpenID4VCI scopes are derived from the existing
+`OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON` entries, not configured a second time.
+They are advertised only while the issuer module accepts new issuance requests.
+Disabled or draining issuers do not advertise those derived scopes.
+
+Publication does not register or grant a scope. Client allowlists, consent,
+resource binding and credential authorization remain authoritative. RFC 8414
+permits supported scopes to be omitted; configure public business scopes when
+clients need complete discovery, including the corresponding OIDF metadata check.

@@ -15,6 +15,10 @@ pub struct MetadataEndpointConfig {
     pub subject_type: MetadataSubjectType,
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: String,
+    /// Additional public OAuth scopes; advertising does not grant access.
+    pub additional_scopes_supported: Vec<String>,
+    /// Scopes derived from credential configurations; exposed only while issuance accepts requests.
+    pub credential_scopes: Vec<String>,
     pub require_pushed_authorization_requests: bool,
 }
 

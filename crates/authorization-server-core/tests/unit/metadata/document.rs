@@ -19,6 +19,8 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
         subject_type: MetadataSubjectType::Public,
         pairwise_subject_enabled: false,
         protected_resource_identifier: "https://issuer.example/fapi/resource",
+        additional_scopes_supported: &[],
+        credential_scopes: &[],
         require_pushed_authorization_requests: false,
         signing_algorithms: MetadataSigningAlgorithms {
             active: ACTIVE_RS256,
@@ -635,5 +637,58 @@ fn token_management_auth_metadata_projects_its_actual_endpoint_policies() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn discovery_scopes_merge_public_configuration_and_active_credential_scopes() {
+    let public = vec![
+        "orders:read".to_owned(),
+        "openid".to_owned(),
+        "orders:read".to_owned(),
+    ];
+    let credentials = vec![
+        "urn:example:credential:pid".to_owned(),
+        "orders:read".to_owned(),
+    ];
+    let input = AuthorizationServerMetadataInput {
+        additional_scopes_supported: &public,
+        credential_scopes: &credentials,
+        ..input()
+    };
+    let active = snapshot([ModuleId::Openid4vciIssuer]);
+    assert_eq!(
+        authorization_server_metadata(input, &active)["scopes_supported"],
+        json!([
+            "openid",
+            "profile",
+            "email",
+            "address",
+            "phone",
+            "offline_access",
+            "orders:read",
+            "urn:example:credential:pid"
+        ])
+    );
+    for inactive in [
+        snapshot([]),
+        ActiveModuleSnapshot {
+            revision: ModuleRevision::new(8),
+            accepting: BTreeSet::new(),
+            draining: [ModuleId::Openid4vciIssuer].into_iter().collect(),
+        },
+    ] {
+        assert_eq!(
+            authorization_server_metadata(input, &inactive)["scopes_supported"],
+            json!([
+                "openid",
+                "profile",
+                "email",
+                "address",
+                "phone",
+                "offline_access",
+                "orders:read"
+            ])
+        );
     }
 }

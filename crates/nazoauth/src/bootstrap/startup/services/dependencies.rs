@@ -319,6 +319,13 @@ fn metadata_config(settings: &Settings) -> MetadataConfig {
         },
         pairwise_subject_enabled: protocol.pairwise_subject_secret.is_some(),
         protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),
+        additional_scopes_supported: protocol.additional_scopes_supported.clone(),
+        credential_scopes: settings
+            .openid4vc
+            .credential_configurations
+            .values()
+            .filter_map(|configuration| configuration.scope.clone())
+            .collect(),
         require_pushed_authorization_requests: protocol.require_pushed_authorization_requests,
     }
 }

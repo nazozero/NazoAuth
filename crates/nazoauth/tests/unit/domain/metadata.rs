@@ -36,6 +36,8 @@ fn metadata_config_maps_only_the_focused_settings_boundary() {
             subject_type: MetadataSubjectType::Pairwise,
             pairwise_subject_enabled: true,
             protected_resource_identifier: "https://resource.example".to_owned(),
+            additional_scopes_supported: vec![],
+            credential_scopes: vec![],
             require_pushed_authorization_requests: true,
         }
     );
@@ -80,4 +82,19 @@ fn metadata_config_maps_both_ciba_profiles() {
         settings.protocol.ciba_security_profile = profile;
         assert_eq!(metadata_config(&settings).ciba_security_profile, expected);
     }
+}
+
+#[test]
+fn metadata_credential_scopes_come_from_the_issuer_configurations() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("ADDITIONAL_SCOPES_SUPPORTED", "orders:read"),
+        (
+            "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",
+            r#"{"pid":{"format":"dc+sd-jwt","scope":"urn:example:pid","vct":"https://issuer.example/pid","credential_signing_alg_values_supported":["ES256"]}}"#,
+        ),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+    let metadata = metadata_config(&settings).endpoint_config();
+    assert_eq!(metadata.additional_scopes_supported, ["orders:read"]);
+    assert_eq!(metadata.credential_scopes, ["urn:example:pid"]);
 }
