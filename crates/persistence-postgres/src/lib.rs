@@ -149,14 +149,14 @@ impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {
         Box::pin(async move { AuditLedgerRepository::observe_anchor(self, deployment_id).await })
     }
 
-    fn record_genesis<'a>(
+    fn confirm_genesis<'a>(
         &'a self,
         deployment_id: &'a str,
         head_hash: &'a [u8],
     ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>
     {
         Box::pin(async move {
-            AuditLedgerRepository::record_genesis(self, deployment_id, head_hash).await
+            AuditLedgerRepository::confirm_genesis(self, deployment_id, head_hash).await
         })
     }
 
@@ -182,12 +182,12 @@ impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {
         })
     }
 
-    fn ack_batch<'a>(
+    fn confirm_batch<'a>(
         &'a self,
         ack: nazo_persistence::SecurityAuditBatchAck,
     ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>
     {
-        Box::pin(async move { AuditLedgerRepository::ack_batch(self, ack).await })
+        Box::pin(async move { AuditLedgerRepository::confirm_batch(self, ack).await })
     }
 
     fn fail_batch<'a>(

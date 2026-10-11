@@ -30,6 +30,7 @@ use crate::token::native_sso::persist_native_sso_device_secret;
 
 #[derive(Clone)]
 pub struct TokenIssuanceConfig {
+    pub profile: crate::policy::AuthorizationServerProfile,
     pub issuer: Box<str>,
     pub mtls_endpoint_base_url: Box<str>,
     pub dpop_nonce_policy: DpopNoncePolicy,

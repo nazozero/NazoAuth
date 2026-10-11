@@ -393,7 +393,11 @@ impl TokenEndpointHandles {
                 }
             }
         };
-        validate_token_request_profile(&client, client.token_endpoint_auth_method.as_str())?;
+        validate_token_request_profile(
+            issuance_config.profile,
+            &client,
+            client.token_endpoint_auth_method.as_str(),
+        )?;
         if matches!(
             form.grant_type.as_str(),
             "authorization_code" | "refresh_token"

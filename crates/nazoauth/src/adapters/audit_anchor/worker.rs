@@ -127,10 +127,10 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
             match send_genesis_checkpoint(client, config, &snapshot.head_hash).await {
                 Ok(PushOutcome::Accepted { .. }) => {
                     if let Err(error) = repository
-                        .record_genesis(&config.preflight.deployment_id, &snapshot.head_hash)
+                        .confirm_genesis(&config.preflight.deployment_id, &snapshot.head_hash)
                         .await
                     {
-                        tracing::warn!(target: "audit.anchor", error_kind = %error_kind(&error), "audit anchor genesis acknowledgement could not be persisted");
+                        tracing::warn!(target: "audit.anchor", error_kind = %error_kind(&error), "audit anchor genesis was not confirmed in the database");
                         return IterationOutcome::Retry(retry_delay(1));
                     }
                     *last_anchored = Some(AnchorCheckpoint::genesis(expected_hash));
@@ -204,7 +204,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
                 last_hash: batch.last_hash.clone(),
                 batch_digest: batch.digest.clone(),
             };
-            match repository.ack_batch(ack).await {
+            match repository.confirm_batch(ack).await {
                 Ok(()) => {
                     *last_anchored = Some(AnchorCheckpoint::from_batch(&batch));
                     tracing::info!(
@@ -226,7 +226,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
                         target: "audit.anchor",
                         last_sequence = batch.last_sequence,
                         error_kind = %error_kind(&error),
-                        "audit batch acknowledgement failed; batch will be redelivered idempotently"
+                        "audit batch was not confirmed; retry will inspect committed state"
                     );
                     IterationOutcome::Retry(delay)
                 }

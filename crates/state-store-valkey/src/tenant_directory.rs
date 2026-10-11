@@ -18,59 +18,10 @@ const CACHE_INTEGRITY_MARKER: &str = "nazo-tenant-directory-cache-v2";
 const SNAPSHOT_KEY: &str = "tenant-directory:snapshot";
 
 const PUBLISH_AUTHORITATIVE_SCRIPT: &str = r#"
-local function valid_revision(value)
-  if not string.match(value, '^%d+$') then
-    return false
-  end
-  if string.len(value) > 1 and string.sub(value, 1, 1) == '0' then
-    return false
-  end
-  if string.len(value) > 20 then
-    return false
-  end
-  if string.len(value) == 20 and value > '18446744073709551615' then
-    return false
-  end
-  return true
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return 'unchanged'
 end
-
-local function valid_snapshot(current)
-  if type(current) ~= 'table' or current.schema_version ~= 2 or
-     current.integrity ~= 'nazo-tenant-directory-cache-v2' or
-     type(current.revision) ~= 'string' or not valid_revision(current.revision) or
-     type(current.tenants) ~= 'table' then
-    return false
-  end
-  for index, tenant in pairs(current.tenants) do
-    if type(index) ~= 'number' or index < 1 or index % 1 ~= 0 or
-       type(tenant) ~= 'table' or
-       type(tenant.tenant_id) ~= 'string' or tenant.tenant_id == '' or
-       type(tenant.realm_id) ~= 'string' or tenant.realm_id == '' or
-       type(tenant.organization_id) ~= 'string' or tenant.organization_id == '' or
-       type(tenant.runtime_revision) ~= 'string' or tenant.runtime_revision == '0' or
-       not valid_revision(tenant.runtime_revision) or
-       type(tenant.issuer) ~= 'string' or tenant.issuer == '' or
-       type(tenant.external_host) ~= 'string' or tenant.external_host == '' then
-      return false
-    end
-  end
-  return true
-end
-
-local current_json = redis.call('GET', KEYS[1])
-if current_json then
-  local decoded_ok, current = pcall(cjson.decode, current_json)
-  if decoded_ok and valid_snapshot(current) then
-    if string.len(current.revision) > string.len(ARGV[1]) or
-       (string.len(current.revision) == string.len(ARGV[1]) and current.revision > ARGV[1]) then
-      return 'not_newer'
-    end
-    if current.revision == ARGV[1] and current_json == ARGV[2] then
-      return 'not_newer'
-    end
-  end
-end
-redis.call('SET', KEYS[1], ARGV[2])
+redis.call('SET', KEYS[1], ARGV[1])
 return 'stored'
 "#;
 
@@ -108,8 +59,8 @@ impl TenantDirectoryCache {
             .transpose()
     }
 
-    /// Publishes a database-authoritative snapshot without allowing a lower
-    /// revision to replace a valid newer cache entry.
+    /// Repairs the cache from a database-authoritative snapshot, including an
+    /// ahead-of-database poisoned value. Consumers use this only as a hint.
     pub async fn publish_authoritative(
         &self,
         snapshot: &TenantDirectorySnapshot,
@@ -121,13 +72,13 @@ impl TenantDirectoryCache {
             .eval(
                 PUBLISH_AUTHORITATIVE_SCRIPT,
                 vec![self.client.deployment_key(SNAPSHOT_KEY)],
-                vec![snapshot.revision.to_string(), encoded],
+                vec![encoded],
             )
             .await
             .map_err(Error::from_fred)?;
         match reply.as_str() {
             "stored" => Ok(true),
-            "not_newer" => Ok(false),
+            "unchanged" => Ok(false),
             other => Err(Error::unexpected(format!(
                 "unexpected tenant directory CAS reply {other:?}"
             ))),

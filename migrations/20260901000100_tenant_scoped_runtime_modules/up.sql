@@ -36,6 +36,28 @@ ALTER TABLE runtime_module_state_events
     ADD CONSTRAINT fk_runtime_module_event_tenant
         FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 
+-- Before tenant scoping these rows governed every existing tenant. Preserve
+-- those explicit decisions instead of replacing them with new-tenant defaults.
+WITH inherited AS (
+    INSERT INTO runtime_module_desired_states
+        (tenant_id, module_id, desired_mode, revision, actor_id, reason, updated_at)
+    SELECT tenant.id, legacy.module_id, legacy.desired_mode, legacy.revision,
+           legacy.actor_id, legacy.reason, legacy.updated_at
+    FROM tenants AS tenant
+    CROSS JOIN runtime_module_desired_states AS legacy
+    WHERE legacy.tenant_id = '00000000-0000-0000-0000-000000000001'::uuid
+      AND tenant.id <> legacy.tenant_id
+    ON CONFLICT (tenant_id, module_id) DO NOTHING
+    RETURNING *
+)
+INSERT INTO runtime_module_state_events (
+    event_id, tenant_id, module_id, event_type, revision, instance_id, actor_id,
+    reason, before_state, after_state, outcome_code, occurred_at
+)
+SELECT uuidv7(), tenant_id, module_id, 'desired_state_changed', revision, NULL,
+       actor_id, 'inherited global module policy', NULL, desired_mode, NULL, CURRENT_TIMESTAMP
+FROM inherited;
+
 WITH modules(module_id, desired_mode) AS (
     VALUES
         ('device_authorization', 'enabled'), ('token_exchange', 'enabled'),

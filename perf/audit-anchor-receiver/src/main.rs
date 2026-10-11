@@ -7,7 +7,7 @@
 //!   POST /__fault       set fault mode {"mode": "..."} (Bearer)
 //!   GET  /__pubkey      Ed25519 receipt verification key, base64url (open)
 //!
-//! Fault modes: none | http_500 | drop | drop_after_persist | bad_signature
+//! Fault modes: none | http_500 | drop | drop_after_persist | drop_after_ack | bad_signature
 //!              | reject_transient | reject_permanent
 //!
 //! Configuration (environment):
@@ -17,10 +17,14 @@
 //!   ANCHOR_RECEIVER_DEPLOYMENT        expected deployment_id (required)
 //!   ANCHOR_RECEIVER_TOKEN             shared HMAC secret = AUDIT_ANCHOR_TOKEN
 //!   ANCHOR_RECEIVER_SIGNING_KEY       Ed25519 seed, base64url or hex (required)
+//!   ANCHOR_RECEIVER_DATABASE_URL      separate receiver-role database URL (required)
+//!   ANCHOR_RECEIVER_DATABASE_CA       optional PEM database CA; TLS verifies hostname
+//!                                    sslmode=disable is explicit fixture-only plaintext
 //!   ANCHOR_RECEIVER_DATA_DIR          durable state directory (required)
 //!   ANCHOR_RECEIVER_MAX_ENVELOPE      max body bytes, default 1572864
 //!   ANCHOR_RECEIVER_FAULT             initial fault mode, default none
 
+mod confirmation;
 mod store;
 mod wire;
 
@@ -43,6 +47,7 @@ enum Fault {
     Http500,
     Drop,
     DropAfterPersist,
+    DropAfterAck,
     BadSignature,
     RejectTransient,
     RejectPermanent,
@@ -55,6 +60,7 @@ impl Fault {
             "http_500" => Self::Http500,
             "drop" => Self::Drop,
             "drop_after_persist" => Self::DropAfterPersist,
+            "drop_after_ack" => Self::DropAfterAck,
             "bad_signature" => Self::BadSignature,
             "reject_transient" => Self::RejectTransient,
             "reject_permanent" => Self::RejectPermanent,
@@ -68,6 +74,7 @@ impl Fault {
             Self::Http500 => "http_500",
             Self::Drop => "drop",
             Self::DropAfterPersist => "drop_after_persist",
+            Self::DropAfterAck => "drop_after_ack",
             Self::BadSignature => "bad_signature",
             Self::RejectTransient => "reject_transient",
             Self::RejectPermanent => "reject_permanent",
@@ -81,6 +88,7 @@ struct Receiver {
     signing_key: ed25519_dalek::SigningKey,
     wrong_key: ed25519_dalek::SigningKey,
     store: Mutex<Store>,
+    confirmation: confirmation::DatabaseConfirmation,
     fault: Mutex<Fault>,
     max_envelope: usize,
     requests: AtomicU64,
@@ -111,6 +119,7 @@ async fn main() -> Result<()> {
         .unwrap_or(1_572_864);
     let fault = Fault::parse(&env("ANCHOR_RECEIVER_FAULT").unwrap_or_else(|_| "none".to_owned()))?;
 
+    let confirmation = confirmation::configuration(&env("ANCHOR_RECEIVER_DATABASE_URL")?)?;
     let acceptor = tls_acceptor(&cert_path, &key_path)?;
     let receiver = Arc::new(Receiver {
         deployment_id,
@@ -118,6 +127,7 @@ async fn main() -> Result<()> {
         wrong_key: ed25519_dalek::SigningKey::from_bytes(&[7; 32]),
         signing_key,
         store: Mutex::new(Store::open(data_dir)?),
+        confirmation,
         fault: Mutex::new(fault),
         max_envelope,
         requests: AtomicU64::new(0),
@@ -368,6 +378,24 @@ async fn handle_checkpoint<S: AsyncWriteExt + Unpin>(
         });
         receipt.permanent = matches!(fault, Fault::RejectPermanent);
         receiver.rejected.fetch_add(1, Ordering::Relaxed);
+    }
+    if matches!(fault, Fault::None | Fault::DropAfterAck)
+        && matches!(receipt.status.as_str(), "accepted" | "duplicate")
+    {
+        let generation = request
+            .header("x-nazo-audit-generation")
+            .and_then(|v| v.parse::<i64>().ok());
+        let confirmed = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            confirmation::confirm(&receiver.confirmation, &receipt, generation),
+        )
+        .await;
+        if !matches!(confirmed, Ok(Ok(()))) {
+            return respond(stream, 503, b"{}").await;
+        }
+        if matches!(fault, Fault::DropAfterAck) {
+            return stream.shutdown().await.map_err(Into::into);
+        }
     }
     let key = if matches!(fault, Fault::BadSignature) {
         &receiver.wrong_key

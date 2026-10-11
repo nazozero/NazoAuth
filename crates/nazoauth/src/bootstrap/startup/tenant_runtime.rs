@@ -387,12 +387,6 @@ struct TenantDirectoryRefreshState {
     rejected_cache_revision: Option<u64>,
 }
 
-#[derive(Clone, Copy)]
-enum SnapshotSource {
-    Cache,
-    Database,
-}
-
 /// Coordinates cache and authoritative-directory refreshes. Its mutex is
 /// control-plane-only and prevents concurrent builds/retirements.
 pub(super) struct TenantRuntimeRefresher {
@@ -427,9 +421,7 @@ impl TenantRuntimeRefresher {
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
         let _guard = self.gate.lock().await;
         let snapshot = Arc::new(snapshot);
-        let outcome = self
-            .apply_snapshot(&snapshot, SnapshotSource::Database)
-            .await?;
+        let outcome = self.apply_snapshot(&snapshot).await?;
         self.state
             .lock()
             .expect("tenant directory refresh state mutex is not poisoned")
@@ -452,30 +444,18 @@ impl TenantRuntimeRefresher {
                         .rejected_cache_revision
                         != Some(snapshot.revision) =>
             {
-                // The cache can decode a snapshot whose routing identity is
-                // nevertheless invalid. Treat that as cache corruption, not
-                // as an authority error: repair from PostgreSQL and avoid
-                // retrying an ahead-of-DB value every cache tick.
-                if let Err(error) = validate_snapshot(&snapshot) {
-                    tracing::warn!(%error, revision = snapshot.revision, "tenant directory cache snapshot is invalid; reconciling from database");
-                    let candidate_revision = snapshot.revision;
-                    let outcome = self.reconcile_database_locked(true).await?;
-                    let last_database_revision = self
-                        .state
+                // Valkey is an untrusted invalidation hint, never a routing
+                // authority. Even a well-formed newer value must be confirmed
+                // against PostgreSQL before a tenant generation is visible.
+                let candidate_revision = snapshot.revision;
+                let outcome = self.reconcile_database_locked(true).await?;
+                if self.registry.revision() < candidate_revision {
+                    self.state
                         .lock()
                         .expect("tenant directory refresh state mutex is not poisoned")
-                        .last_database_snapshot
-                        .as_ref()
-                        .map_or(0, |snapshot| snapshot.revision);
-                    if last_database_revision < candidate_revision {
-                        self.state
-                            .lock()
-                            .expect("tenant directory refresh state mutex is not poisoned")
-                            .rejected_cache_revision = Some(candidate_revision);
-                    }
-                    return Ok(outcome);
+                        .rejected_cache_revision = Some(candidate_revision);
                 }
-                self.apply_snapshot(&snapshot, SnapshotSource::Cache).await
+                Ok(outcome)
             }
             Ok(Some(_)) => Ok(TenantDirectoryRefreshOutcome::Unchanged),
             Ok(None) | Err(_) => self.reconcile_database_locked(true).await,
@@ -544,9 +524,7 @@ impl TenantRuntimeRefresher {
         let authoritative_revision = snapshot.revision;
         let cache_was_ahead = local_revision > authoritative_revision;
         let snapshot = Arc::new(snapshot);
-        let outcome = self
-            .apply_snapshot(&snapshot, SnapshotSource::Database)
-            .await?;
+        let outcome = self.apply_snapshot(&snapshot).await?;
         {
             let mut state = self
                 .state
@@ -573,12 +551,8 @@ impl TenantRuntimeRefresher {
     async fn apply_snapshot(
         &self,
         snapshot: &TenantDirectorySnapshot,
-        source: SnapshotSource,
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
         let current = self.registry.load();
-        if matches!(source, SnapshotSource::Cache) && snapshot.revision <= current.revision {
-            return Ok(TenantDirectoryRefreshOutcome::Unchanged);
-        }
         validate_snapshot(snapshot)?;
 
         let existing = current

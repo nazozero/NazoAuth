@@ -531,12 +531,11 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
             anyhow::bail!("keyset active key {active_kid} is not a current rotation key");
         }
         let active_algorithm = key_entry_algorithm(active)?;
-        if active.get("backend").and_then(Value::as_str) != Some("local-db") {
-            return Ok(false);
-        }
+        let active_is_local = active.get("backend").and_then(Value::as_str) == Some("local-db");
         let now = Utc::now();
         let rotation_due = key_entry_created_at(active)? + settings.rotation_interval;
-        let candidate = prepublished_candidate(keys, &active_kid, active_algorithm)?;
+        let candidate =
+            prepublished_candidate(keys, &active_kid, active_algorithm, active_is_local)?;
         let mut changed = false;
         let mut next_active = None;
         if now >= rotation_due {
@@ -556,7 +555,7 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
                     next_active = Some(next_kid);
                     changed = true;
                 }
-            } else {
+            } else if active_is_local {
                 keys.push(local_entry(
                     active_algorithm,
                     timestamp(now),
@@ -564,7 +563,10 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
                 )?);
                 changed = true;
             }
-        } else if now >= rotation_due - settings.prepublish_window && candidate.is_none() {
+        } else if active_is_local
+            && now >= rotation_due - settings.prepublish_window
+            && candidate.is_none()
+        {
             keys.push(local_entry(
                 active_algorithm,
                 timestamp(now),
@@ -576,7 +578,10 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
             nazo_crypto::jwt::Algorithm::RS256,
             nazo_crypto::jwt::Algorithm::PS256,
         ] {
-            if algorithm != active_algorithm && !has_live_protocol_key(keys, algorithm, now)? {
+            if active_is_local
+                && algorithm != active_algorithm
+                && !has_live_protocol_key(keys, algorithm, now)?
+            {
                 keys.push(local_entry(
                     algorithm,
                     timestamp(now),
@@ -601,23 +606,31 @@ fn prepublished_candidate(
     keys: &[Value],
     active_kid: &str,
     algorithm: nazo_crypto::jwt::Algorithm,
+    allow_local: bool,
 ) -> anyhow::Result<Option<usize>> {
-    let mut selected: Option<(usize, DateTime<Utc>)> = None;
+    let mut selected: Option<(usize, bool, DateTime<Utc>)> = None;
     for (index, entry) in keys.iter().enumerate() {
         if entry.get("kid").and_then(Value::as_str) == Some(active_kid)
             || entry.get("purposes").is_some()
             || key_entry_retire_at(entry)?.is_some()
             || key_entry_algorithm(entry)? != algorithm
-            || entry.get("backend").and_then(Value::as_str) != Some("local-db")
+            || (!allow_local
+                && entry.get("backend").and_then(Value::as_str) != Some("external-command"))
         {
             continue;
         }
+        let is_local = entry.get("backend").and_then(Value::as_str) == Some("local-db");
         let created = key_entry_created_at(entry)?;
-        if selected.is_none_or(|(_, selected_created)| created < selected_created) {
-            selected = Some((index, created));
+        // Explicitly registered external successors take precedence over
+        // automatically generated local candidates. External-active keysets
+        // never silently fall back to software signing.
+        if selected.is_none_or(|(_, selected_local, selected_created)| {
+            (is_local, created) < (selected_local, selected_created)
+        }) {
+            selected = Some((index, is_local, created));
         }
     }
-    Ok(selected.map(|(index, _)| index))
+    Ok(selected.map(|(index, _, _)| index))
 }
 
 fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: DateTime<Utc>) {

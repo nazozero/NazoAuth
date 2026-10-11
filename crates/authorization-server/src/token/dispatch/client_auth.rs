@@ -93,10 +93,13 @@ pub(super) fn validate_token_client_enabled(
 }
 
 pub fn validate_token_request_profile(
+    server_profile: crate::policy::AuthorizationServerProfile,
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), OAuthEndpointError> {
-    let profile = if client.security_policy.requires_fapi2_security() {
+    let profile = if server_profile.requires_fapi2_security()
+        || client.security_policy.requires_fapi2_security()
+    {
         SecurityProfile::Fapi2Security
     } else {
         SecurityProfile::Baseline

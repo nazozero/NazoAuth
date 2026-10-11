@@ -154,3 +154,19 @@ async fn official_ui_initialization_keeps_later_local_replacements() {
     );
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn security_cloud_ui_release_requires_signed_identity_and_exact_bytes() {
+    let fixture = include_bytes!("../support/fixtures/ui-release-v0.2.11.json");
+    let digest = "7c89dbd0db4f32a1d4788619d25299a4114cf148b987e5689a0d1b87c491ee5a";
+    verify_attestations(fixture, "v0.2.11", digest).unwrap();
+    assert!(verify_attestations(fixture, "v0.2.12", digest).is_err());
+    assert!(verify_attestations(fixture, "v0.2.11", &"0".repeat(64)).is_err());
+    assert!(verify_attestations(br#"{"attestations":[]}"#, "v0.2.11", digest).is_err());
+    let mut tampered: serde_json::Value = serde_json::from_slice(fixture).unwrap();
+    tampered["attestations"][0]["bundle"]["dsseEnvelope"]["signatures"][0]["sig"] =
+        serde_json::json!("AAAA");
+    assert!(
+        verify_attestations(&serde_json::to_vec(&tampered).unwrap(), "v0.2.11", digest).is_err()
+    );
+}

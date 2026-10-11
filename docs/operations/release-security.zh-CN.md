@@ -65,8 +65,11 @@ GitHub attestation，验证 tag 专属工作流身份和封闭 predicate，再�
 相同的制品身份、digest、目标平台和数据库恢复边界。
 
 NazoAuthWeb 是默认提供的可选 UI。首次使用时，NazoAuth 从 NazoAuthWeb 自己的
-GitHub 仓库获取最新正式 Release，用该制品的摘要和大小校验下载，然后将可写
-静态文件安装到 `${DATA_DIR}/ui/current`。后端发布证明不记录前端版本或摘要。
+GitHub 仓库获取最新正式 Release，用该制品的摘要和大小校验下载，再通过内置
+Sigstore production trust root 验证来源证明。证书身份必须精确匹配
+`nazozero/NazoAuthWeb/.github/workflows/release.yml@refs/tags/<tag>`，issuer 必须为
+GitHub Actions OIDC；证书、透明日志和制品摘要均须通过验证后才解压。证明缺失或无效
+会阻止 UI 安装。验证成功后将可写静态文件安装到 `${DATA_DIR}/ui/current`。后端发布证明不记录前端版本或摘要。
 已有 `index.html` 时直接使用，更新后端不覆盖 UI，也不会重新校验本地文件摘要。
 
 前端文件可在后端运行期间替换。`UI_STATIC_DIR` 用于指定已有的自定义目录，

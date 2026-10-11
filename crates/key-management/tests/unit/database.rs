@@ -509,7 +509,7 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
 }
 
 #[test]
-fn database_rotation_selects_the_oldest_local_candidate_and_ignores_external_candidates() {
+fn database_rotation_selects_registered_external_successor_over_automatic_local_candidates() {
     let mut payload = valid_payload();
     let now = chrono::Utc::now();
     active_entry_mut(&mut payload)["created_at"] =
@@ -522,7 +522,7 @@ fn database_rotation_selects_the_oldest_local_candidate_and_ignores_external_can
         None::<Vec<SigningPurpose>>,
     )
     .expect("oldest local candidate should generate");
-    let oldest_local_kid = oldest_local["kid"].as_str().unwrap().to_owned();
+
     let newer_local = local_entry(
         jsonwebtoken::Algorithm::RS256,
         timestamp(now - chrono::Duration::seconds(4)),
@@ -540,7 +540,16 @@ fn database_rotation_selects_the_oldest_local_candidate_and_ignores_external_can
         ..settings()
     };
     assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
-    assert_eq!(payload["active_kid"], oldest_local_kid);
+    assert_eq!(payload["active_kid"], "external-earliest");
+    assert!(!maintain_payload(&mut payload, &rotation_settings).unwrap());
+    let mut successor = external_entry_from_active(&payload, "external-next");
+    successor["retire_at"] = Value::Null;
+    successor["created_at"] = json!(timestamp(now - chrono::Duration::seconds(4)));
+    payload["keys"].as_array_mut().unwrap().push(successor);
+    active_entry_mut(&mut payload)["created_at"] =
+        json!(timestamp(now - chrono::Duration::seconds(11)));
+    assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
+    assert_eq!(payload["active_kid"], "external-next");
 }
 
 #[test]

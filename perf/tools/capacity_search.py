@@ -595,7 +595,7 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
     classified = _count(metrics_raw, "err_classified")
     expected_invalid_grant = _count(metrics_raw, "err_expected_invalid_grant")
     unexpected = (gate_unexpected if is_caprun
-                  else classified - expected_invalid_grant)
+                  else classified)
     metrics = {
         "rps": float(k6.get("rps", 0) or 0),
         "p50": float(latency.get("p50", 0) or 0), "p95": p95,

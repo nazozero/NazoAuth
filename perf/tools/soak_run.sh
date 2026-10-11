@@ -229,12 +229,11 @@ GRANT EXECUTE ON FUNCTION
   public.nazo_finalize_security_audit_claim(BIGINT,BYTEA,UUID[],BYTEA[],BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),
   public.nazo_reclaim_security_audit_batch(BYTEA,INTEGER),
   public.nazo_append_security_audit_chain(BIGINT,BYTEA,UUID[],BYTEA[]),
-  public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),
   public.nazo_fail_security_audit_batch(BIGINT,TIMESTAMPTZ,TEXT,BOOLEAN),
   public.nazo_observe_security_audit_anchor(TEXT),
-  public.nazo_record_security_audit_genesis(TEXT,BYTEA),
   public.nazo_security_audit_shared_anchor_health()
 TO nazoauth_perf_exporter;
+DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='nazoauth_perf_receiver') THEN CREATE ROLE nazoauth_perf_receiver LOGIN PASSWORD 'receiver' NOSUPERUSER NOBYPASSRLS NOINHERIT; END IF; END $$; GRANT CONNECT ON DATABASE oauth TO nazoauth_perf_receiver; GRANT USAGE ON SCHEMA public TO nazoauth_perf_receiver; GRANT EXECUTE ON FUNCTION public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),public.nazo_record_security_audit_genesis(TEXT,BYTEA),public.nazo_security_audit_shared_anchor_health() TO nazoauth_perf_receiver; REVOKE EXECUTE ON FUNCTION public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),public.nazo_record_security_audit_genesis(TEXT,BYTEA) FROM nazoauth_perf_exporter;
 SQL
   docker compose -f docker-compose.perf.yml run -d --name "$RCV_NAME" --no-deps \
     -e ANCHOR_RECEIVER_LISTEN=0.0.0.0:9443 \
@@ -244,6 +243,7 @@ SQL
     -e ANCHOR_RECEIVER_TOKEN="$ANCHOR_TOKEN" \
     -e ANCHOR_RECEIVER_SIGNING_KEY="$ANCHOR_SEED" \
     -e ANCHOR_RECEIVER_DATA_DIR=/data \
+    -e ANCHOR_RECEIVER_DATABASE_URL="postgresql://nazoauth_perf_receiver:receiver@postgres:5432/oauth?sslmode=disable" \
     audit-receiver >>"$LOG" 2>&1
   sleep 3
   VERIFY_KEY=$(docker logs "soak-anchor-rcv-$RUN_ID" 2>&1 | awk -F'pubkey=' 'NF>1{split($2,a,/[ \t]/); print a[1]; exit}')

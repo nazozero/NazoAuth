@@ -20,9 +20,8 @@ use diesel::{
     sql_types::{BigInt, Binary, Bool, Nullable, Text, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
-use nazo_persistence::{
-    SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter,
-};
+use nazo_persistence::SecurityAuditExporter;
+use nazo_persistence::{SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim};
 use nazo_postgres::{AuditLedgerRepository, SecurityAuditEvent, create_pool};
 use serde_json::json;
 use uuid::Uuid;
@@ -447,7 +446,8 @@ async fn anchor_observed(repository: &AuditLedgerRepository) {
         .await
         .expect("anchor health should be readable");
     if health.head_sequence == 0 {
-        SecurityAuditExporter::record_genesis(repository, "upgrade-test", &health.head_hash)
+        repository
+            .record_genesis("upgrade-test", &health.head_hash)
             .await
             .expect("genesis should record");
     }
