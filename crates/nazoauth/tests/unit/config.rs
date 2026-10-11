@@ -1004,6 +1004,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
         ENV_CONFIG_KEYS,
         &[
             "ACCESS_TOKEN_TTL_SECONDS",
+            "ADDITIONAL_SCOPES_SUPPORTED",
             "AUTH_CODE_TTL_SECONDS",
             "AUTH_RATE_LIMIT_MAX_REQUESTS",
             "AUTHORIZATION_SERVER_PROFILE",
