@@ -14,6 +14,8 @@ releases. Entries below describe their respective releases, not current support.
   in [the audit role guide](docs/operations/security-audit-ledger-roles.md).
 - Enforce FAPI policy floors, rate-limit unauthenticated SCIM audit admission,
   verify UI provenance, and reconcile tenant routing from PostgreSQL facts.
+- Reject cutover while any legacy issuance receipt is live, including rows
+  without ciphertext, because their refresh-family revocation link is absent.
 - Preserve released issuance and audit facts during database upgrades; follow
   [the v0.2.16 upgrade guide](docs/operations/upgrade-from-v0.2.16.md) and retain
   verified recovery material. Previously applied tenant-policy migrations are

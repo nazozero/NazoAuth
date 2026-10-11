@@ -67,10 +67,7 @@ async fn released_receipts_preserve_fences_retention_and_cleanup_acl() {
     assert!(sql_query("SELECT NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='oauth_token_issuances'::regclass AND attname='retain_until' AND NOT attisdropped) AND EXISTS(SELECT 1 FROM oauth_token_issuances WHERE access_token_jti IS NULL) AS value").get_result::<Flag>(&mut owner).await.unwrap().value);
     owner.batch_execute("UPDATE oauth_token_issuances SET access_token_jti='legacy-jti-1',access_token_expires_at=CURRENT_TIMESTAMP+INTERVAL '3 hours',response_ciphertext=decode('0102','hex'),response_digest=repeat('c',64),response_envelope_version='v1',response_key_id='legacy-key'").await.unwrap();
     let error = migrate(&mut owner).await.unwrap_err().to_string();
-    assert!(
-        error.contains("drain live legacy response receipts"),
-        "{error}"
-    );
+    assert!(error.contains("drain live legacy receipts"), "{error}");
     assert!(
         sql_query(
             "SELECT response_ciphertext=decode('0102','hex') AS value FROM oauth_token_issuances"
@@ -81,6 +78,17 @@ async fn released_receipts_preserve_fences_retention_and_cleanup_acl() {
         .value
     );
     owner.batch_execute("UPDATE oauth_token_issuances SET response_ciphertext=NULL,response_digest=NULL,response_envelope_version=NULL,response_key_id=NULL; INSERT INTO oauth_token_issuances(issuance_id,tenant_id,client_id,user_id,grant_key_blake3,request_digest,access_token_jti,access_token_expires_at,expires_at) VALUES('00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002',repeat('d',64),repeat('e',64),'legacy-jti-2',CURRENT_TIMESTAMP+INTERVAL '2 hours',CURRENT_TIMESTAMP+INTERVAL '5 hours')").await.unwrap();
+    // Ordinary released receipts have no ciphertext but still lack the
+    // refresh-family identity needed for complete post-cutover replay revocation.
+    let error = migrate(&mut owner)
+        .await
+        .expect_err("live plaintext receipts must prevent cutover")
+        .to_string();
+    assert!(error.contains("drain live legacy"), "{error}");
+    assert!(sql_query("SELECT count(*)=2 AND bool_and(expires_at>CURRENT_TIMESTAMP) AS value FROM oauth_token_issuances").get_result::<Flag>(&mut owner).await.unwrap().value);
+    // Model natural expiry in the isolated fixture; production must wait for
+    // the original deadline, not change TTLs or discard the receipts.
+    owner.batch_execute("UPDATE oauth_token_issuances SET expires_at=CURRENT_TIMESTAMP-INTERVAL '1 hour'; UPDATE oauth_token_issuances SET access_token_expires_at=CURRENT_TIMESTAMP-INTERVAL '2 hours' WHERE access_token_jti='legacy-jti-2'").await.unwrap();
     let before = sql_query("SELECT jsonb_agg(jsonb_build_object('id',issuance_id,'tenant',tenant_id,'client',client_id,'user',user_id,'key',grant_key_blake3,'jti',access_token_jti,'access_expiry',access_token_expires_at,'retain_until',GREATEST(expires_at,access_token_expires_at)) ORDER BY issuance_id)::text AS value FROM oauth_token_issuances").get_result::<Value>(&mut owner).await.unwrap().value;
     migrate(&mut owner).await.unwrap();
     let after = sql_query("SELECT jsonb_agg(jsonb_build_object('id',issuance_id,'tenant',tenant_id,'client',client_id,'user',user_id,'key',encode(single_use_key_blake3,'hex'),'jti',access_token_jti,'access_expiry',access_token_expires_at,'retain_until',retain_until) ORDER BY issuance_id)::text AS value FROM oauth_token_issuances").get_result::<Value>(&mut owner).await.unwrap().value;
@@ -102,7 +110,7 @@ async fn released_receipts_preserve_fences_retention_and_cleanup_acl() {
     for sql in LEGACY {
         owner.batch_execute(sql).await.unwrap();
     }
-    owner.batch_execute("INSERT INTO oauth_token_issuances(issuance_id,tenant_id,client_id,user_id,grant_key_blake3,request_digest,access_token_jti,access_token_expires_at,expires_at) VALUES('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002',repeat('f',64),repeat('a',64),'resume-jti',CURRENT_TIMESTAMP+INTERVAL '2 hours',CURRENT_TIMESTAMP+INTERVAL '1 hour')").await.unwrap();
+    owner.batch_execute("INSERT INTO oauth_token_issuances(issuance_id,tenant_id,client_id,user_id,grant_key_blake3,request_digest,access_token_jti,access_token_expires_at,expires_at) VALUES('00000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002',repeat('f',64),repeat('a',64),'resume-jti',CURRENT_TIMESTAMP+INTERVAL '2 hours',CURRENT_TIMESTAMP-INTERVAL '1 hour')").await.unwrap();
     migrate(&mut owner).await.unwrap();
     assert!(sql_query("SELECT to_regclass('public.oauth_tokens') IS NULL AND EXISTS(SELECT 1 FROM oauth_token_issuances WHERE access_token_jti='resume-jti' AND retain_until=access_token_expires_at) AS value").get_result::<Flag>(&mut owner).await.unwrap().value);
     drop(owner);
