@@ -63,7 +63,7 @@ set can be scanned from one place.
 | --- | --- |
 | [operations/configuration.md](operations/configuration.md) | Runtime configuration model and environment settings. |
 | [operations/configuration-inventory.md](operations/configuration-inventory.md) | Configuration ownership guide; code remains the key allowlist authority. |
-| [operations/security-audit-ledger-roles.md](operations/security-audit-ledger-roles.md) | Audit writer/exporter provisioning and privilege boundaries. |
+| [operations/security-audit-ledger-roles.md](operations/security-audit-ledger-roles.md) | Audit writer/exporter/receiver provisioning and privilege boundaries. |
 | [operations/control-discovery.md](operations/control-discovery.md) | Signed, read-only controller discovery protocol. |
 | [operations/controller-repository-split.md](operations/controller-repository-split.md) | Server/controller repository and release boundary. |
 | [operations/deployment.md](operations/deployment.md) | English deployment guide. |
@@ -122,6 +122,7 @@ set can be scanned from one place.
 
 | Document | Role |
 | --- | --- |
+| [security/security-cloud-20261011.md](security/security-cloud-20261011.md) | Security Cloud repairs, real failure evidence, and remaining findings. |
 | [security/threat-model.md](security/threat-model.md) | Threat model and security boundaries. |
 | [security/security-events.md](security/security-events.md) | Event taxonomy, producer ownership, and durability boundaries. |
 | [security/audit-anchor.md](security/audit-anchor.md) | External audit protocol, receiver contract, configuration, and trust limits. |

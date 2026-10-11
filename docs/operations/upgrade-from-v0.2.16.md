@@ -35,3 +35,23 @@ deleted by this conversion. See [audit anchoring](../security/audit-anchor.md).
 Cached builds depend on the existing complete migration checksum manifest.
 This covers new migration directories at any position, not only a changed
 latest-version marker. Migration checksum changes must be reviewed explicitly.
+
+## Receiver-owned audit confirmation
+
+The receiver-authority migration is a coordinated cutover: stop Required
+admission and old audit workers before applying
+`20261011000100_receiver_owned_audit_ack`. Preserve the independent receiver
+journal and existing pending batches. The migration revokes non-owner ACK/genesis
+grants; provision a separately protected receiver login after migration, configure
+its database connection and TLS, and upgrade receiver and worker together.
+Verify receipt signature and committed checkpoint before restoring Required
+traffic. Never grant receiver authority to the application/exporter, directly or
+through an assumable role. Follow the
+[role provisioning instructions](security-audit-ledger-roles.md) and
+[audit protocol](../security/audit-anchor.md).
+
+The historical tenant-scope migration now preserves explicit global module
+policy when it first runs. An already-recorded migration does not replay. For
+already-upgraded installations compare pre-upgrade policy and subsequent admin
+events before reconciling current per-tenant settings. Do not infer historic
+intent from defaults or automatically overwrite current policy.
