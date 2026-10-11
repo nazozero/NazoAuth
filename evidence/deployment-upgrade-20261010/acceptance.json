@@ -1,0 +1,491 @@
+{
+  "base_sha": "c9e9468f5ec5729acea6f1d53e3feb73e4774f34",
+  "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+  "binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91",
+  "negative_regression": {
+    "command": [
+      "cargo",
+      "+1.99.0",
+      "test",
+      "--release",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_chain_cutover",
+      "legacy_chained_backlog_spans_batches_without_losing_evidence",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "exit_code": 101
+  },
+  "failures": [
+    {
+      "candidate": "c9e9468f5ec5729acea6f1d53e3feb73e4774f34",
+      "exit_code": 1,
+      "migration": "20260920000100_audit_anchor_batch_delivery",
+      "error": "ck_security_audit_batch_shape: 40712 pending chained events exceed the 256-member batch bound"
+    },
+    {
+      "candidate": "a85d1a1c9c23f9d94a8bc362cc69089d7f56aca3",
+      "exit_code": 1,
+      "migration": "20260929000100_security_cleanup_index_cutoff",
+      "error": "cannot change return type of existing function; deployed receipt schema also still has legacy columns"
+    },
+    {
+      "candidate": "8ad388f0b67ac8485a23d9815275530661a4af8e",
+      "exit_code": 1,
+      "migration": "20260913000000_released_issuance_cutover",
+      "error": "oauth_tokens already retired by an earlier committed refresh migration; resume fix covered by final regression"
+    }
+  ],
+  "final_affected_gates": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 3.09,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "static",
+      "command": [
+        "python3",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 7.821,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "dependencies",
+      "command": [
+        "python3",
+        "scripts/check_persistence_dependency_graph.py"
+      ],
+      "exit_code": 0,
+      "seconds": 3.401,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "final-pg-regressions",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "audit_chain_cutover",
+        "--test",
+        "audit_pending_upgrade",
+        "--test",
+        "released_issuance_cutover",
+        "--",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 151.847,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "migration-manifest",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "migrations",
+        "embedded_migration_manifest_tracks_all_files",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "seconds": 27.425,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "final-clippy",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "clippy",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "audit_chain_cutover",
+        "--test",
+        "audit_pending_upgrade",
+        "--test",
+        "released_issuance_cutover",
+        "--test",
+        "migrations",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 26.721,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    },
+    {
+      "name": "build-fixed",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth"
+      ],
+      "exit_code": 0,
+      "seconds": 217.266,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    }
+  ],
+  "final_source_checks": [
+    {
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/verify_static_contracts.py",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "python3",
+        "scripts/check_persistence_dependency_graph.py"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "original_snapshot_upgrade": {
+    "before": {
+      "audit": {
+        "head_hash": "b5204b2f24b9227632b551f51fc8a51e77e765accf04c53073039d8be5f5cc16",
+        "chain_count": 40712,
+        "event_count": 43576,
+        "chain_sha256": "cff91679f6d052df6d27231d69c163952d3a5ba5a3ca46e37dcf8d88e0e55443",
+        "event_sha256": "e33e0d3e19f108abd155a40a26ecd84ca529d7059bc8f2e22c717941a8d1270b",
+        "head_sequence": 40712,
+        "anchor_sequence": null
+      },
+      "issuance": {
+        "count": 7214,
+        "facts_sha256": "0dda54e15ac943d0a7235987251e5aac78b09b77b7b6434355080ff48bf07389"
+      }
+    },
+    "after": {
+      "audit": {
+        "head_hash": "b5204b2f24b9227632b551f51fc8a51e77e765accf04c53073039d8be5f5cc16",
+        "chain_count": 40712,
+        "event_count": 43576,
+        "chain_sha256": "cff91679f6d052df6d27231d69c163952d3a5ba5a3ca46e37dcf8d88e0e55443",
+        "event_sha256": "e33e0d3e19f108abd155a40a26ecd84ca529d7059bc8f2e22c717941a8d1270b",
+        "head_sequence": 40712,
+        "anchor_sequence": null
+      },
+      "issuance": {
+        "count": 7214,
+        "facts_sha256": "0dda54e15ac943d0a7235987251e5aac78b09b77b7b6434355080ff48bf07389"
+      }
+    },
+    "identical": true,
+    "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+    "binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91"
+  },
+  "final_migration_state": {
+    "batch_last": null,
+    "batch_count": null,
+    "batch_first": null,
+    "last_migration": "20261010000600"
+  },
+  "fresh_database_migration": {
+    "command": [
+      "nazoauth",
+      "migrate"
+    ],
+    "fixture": "fresh isolated PostgreSQL database",
+    "exit_code": 0
+  },
+  "migration_manifest_regression": {
+    "name": "migration-manifest",
+    "command": [
+      "cargo",
+      "+1.99.0",
+      "test",
+      "--release",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "migrations",
+      "embedded_migration_manifest_tracks_all_files",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "exit_code": 0,
+    "seconds": 116.921
+  },
+  "production_catalog_preflight": {
+    "owner_is_lifecycle": true,
+    "lifecycle_has_schema_create": true,
+    "lifecycle_can_use_function_owner": true
+  },
+  "fixture": "docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+  "production": {
+    "updated": true,
+    "doctor_exit_code": 0,
+    "discovery_status": 200,
+    "verify_exit_code": 0,
+    "serving_previous_artifact": false,
+    "last_migration": "20261010000600",
+    "configuration_revision": 8
+  },
+  "oidf": {
+    "status": "EXECUTION_COMPLETE_REVIEW_REQUIRED",
+    "suite_origin": "https://www.certification.openid.net",
+    "groups": 11,
+    "plans": 44,
+    "plans_started": 44,
+    "defined_modules": 1173,
+    "jobs": 4,
+    "excluded_plans": [],
+    "command": [
+      "nazoauthctl-selected",
+      "--instance",
+      "production",
+      "oidf",
+      "run",
+      "--json",
+      "--jobs",
+      "4",
+      "--poll-timeout",
+      "1800"
+    ],
+    "initial_summary": "oidf-initial-summary.json",
+    "interrupted_correction": "oidf-interrupted-retest-summary.json",
+    "corrected_selection": "openid4vc",
+    "corrected_defined_modules": 397,
+    "final_summary": "oidf-final-summary.json",
+    "corrected_run_exit_code": 0,
+    "suite_pass": false,
+    "acceptance_pass": false,
+    "composite_outcomes": {
+      "PASSED": 1107,
+      "REVIEW": 41,
+      "SKIPPED": 11,
+      "WARNING": 14
+    }
+  },
+  "scope": "focused upgrade gates and deployed artifact verification passed; official full OIDF run in progress; full workspace CI pending final review; no new performance claim",
+  "standard_image_build_inputs": {
+    "command": [
+      "podman",
+      "build",
+      "--target",
+      "build-base",
+      "--tag",
+      "localhost/nazoauth-upgrade-build-inputs:20261010",
+      "--file",
+      "Containerfile",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 7.978,
+    "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+    "copied_manifest_sha256": "322d6b68a56d2f7b87a3a6bf7eb1c39e36864f5cba688ad401b5f5b41bb019cf",
+    "manifest_matches": true,
+    "compile_target_created": false
+  },
+  "wire_bound_regression": {
+    "before_source_sha": "186b046742a1a61133bc050865e4767f4ad6b60e",
+    "command": [
+      "cargo",
+      "+1.99.0",
+      "test",
+      "--release",
+      "--locked",
+      "-p",
+      "nazo-postgres",
+      "--test",
+      "audit_chain_cutover",
+      "legacy_chained_backlog_spans_batches_without_losing_evidence",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "exit_code": 101,
+    "configured_max_bytes": 131072,
+    "before_batch_bytes": 1133039,
+    "after_batch_count": 18,
+    "after_max_batch_bytes": 128673,
+    "fixture_events": 513,
+    "fixture_payload_detail_bytes": 4096,
+    "event_facts_and_ack_checkpoint_preserved": true
+  },
+  "deployment_authorized": true,
+  "candidate_artifact": {
+    "repository": "nazozero/NazoAuth",
+    "version": "v0.2.16+repair.bad5174d",
+    "oci_image": "localhost:5001/nazoauth-main-20261010",
+    "oci_pull_digest": "sha256:dc48d19e5bd53266fec26eed3a25bf1e1376f55421b6a6d8620fda3ed785b76d",
+    "oci_runtime_digest": "sha256:dc48d19e5bd53266fec26eed3a25bf1e1376f55421b6a6d8620fda3ed785b76d",
+    "host_binary_path": "/opt/nazoauth-main-target/release/nazoauth",
+    "host_binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91"
+  },
+  "deployment_attempts": [
+    {
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.bad5174d"
+      ],
+      "exit_code": 1,
+      "seconds": 1.228,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "failure": "candidate packaging used the image config digest in place of the OCI manifest digest; one-shot did not start"
+    },
+    {
+      "command": [
+        "/var/lib/nazoauthctl/evidence/main-oidf-20261010/nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.bad5174d"
+      ],
+      "exit_code": 1,
+      "seconds": 1.245,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+      "resumed_after_metadata_correction": true,
+      "failure": "controller key admission rejected: the existing active slot expired on 2026-10-01T07:35:16.327567Z before migration admission",
+      "operation_id": "01a1265b-28ed-7372-be12-3d89dd9b1d24"
+    },
+    {
+      "command": [
+        "nazoauthctl-selected",
+        "--json",
+        "--instance",
+        "production",
+        "update",
+        "--to",
+        "v0.2.16+repair.bad5174d"
+      ],
+      "exit_code": 0,
+      "seconds": 6.919,
+      "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad"
+    }
+  ],
+  "deployment_status": "PASS",
+  "controller_recovery_needed": false,
+  "runtime_recovery": {
+    "command": [
+      "podman",
+      "start",
+      "nazoauth-01a05bdf1ab677338e56e11ce8da10fd"
+    ],
+    "exit_code": 0,
+    "reason": "operator admission rejected before migration; released schema maximum unchanged",
+    "authority": "real operator authorization rejection before migration, original migration maximum unchanged; unresolved operation evidence retained"
+  },
+  "deployment_proof": {
+    "source_sha": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+    "binary_sha256": "e2049bc3aec9a8a3a26cf5e357ddf52466381152b7eee4732213420a6176af91",
+    "running": true,
+    "requested_image": "localhost:5001/nazoauth-main-20261010@sha256:dc48d19e5bd53266fec26eed3a25bf1e1376f55421b6a6d8620fda3ed785b76d",
+    "image_config_id": "66922c220bf5702e5f63c4c70a91527806b916e237826721e67047abc46bac0f",
+    "image_revision": "bad5174d5f6609ef4d43aec54aacb1e3b8688cad",
+    "container_revision_label": "1d3549e09eaa04d7a0d11ccbf928c26c420753bf",
+    "container_revision_label_note": "Preserved old container metadata; image configuration and running binary verify candidate identity.",
+    "discovery_status": 200,
+    "issuer": "https://auth.nazo.run",
+    "observed_last_migration": "20261010000600",
+    "migration_observation_exit_code": 0
+  },
+  "controller_recovery": {
+    "method": "documented host-root admin create, real MFA enrollment, official controller rotate",
+    "rotate_exit_code": 0,
+    "new_slot_expires_at": "2026-11-09T15:33:35.96822Z",
+    "dedicated_recovery_account_retained": true,
+    "existing_accounts_reset": false,
+    "security_checks_bypassed": false
+  },
+  "rejected_operation_settlement": {
+    "operation_id": "01a1265b-28ed-7372-be12-3d89dd9b1d24",
+    "previous_state": "dispatched",
+    "server_record_absent": true,
+    "server_temporary_record_absent": true,
+    "real_admission_rejection": true,
+    "expired_key_replaced": true,
+    "archive_sha256": "000b9ab78d2d75ff6a8d464b82e93f31e90c355635f5aee8d27318a0fef9053f",
+    "action": "archive only the definitively unaccepted client intent under both journal locks; retain host operation history"
+  },
+  "source_sha_scope": "Original upgrade regression source; final deployed source is recorded separately.",
+  "deployed_source_sha": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+  "validation_controller_source_sha": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+  "final_deployment_proof": {
+    "source_sha": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+    "ctl_source_sha": "dbd8b0647731dcf4fa3d725cd8269fc745f9e5ee",
+    "binary_sha256": "cf97faf9b6e8f0639aff031ebef2d7870dce5a7f2e2824150d8a1c11e78a0817",
+    "requested_image": "localhost:5001/nazoauth-main-20261010@sha256:019874a63a3ab07d05808479ceb6015f9275e2c78be981fbe4b3f8ae19f7bfee",
+    "image_config_id": "17492cce998208d98f012e23619571480be1f65e427a56aa34b833e1f64bfb9f",
+    "image_revision": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+    "running": true,
+    "discovery_status": 200,
+    "issuer": "https://auth.nazo.run"
+  }
+}

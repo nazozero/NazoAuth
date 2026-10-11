@@ -48,6 +48,24 @@ profile requires cryptographic holder binding and rejects DCQL requests that
 explicitly waive it. Supporting that waiver requires a dedicated credential
 verification profile; ordinary holder-signature verification remains required.
 
+## mdoc signing time and certificate validity
+
+Issuance uses shared day-rounded time claims to avoid publishing a precise
+per-request timestamp. For mdoc, that rounded time must also be within the
+selected document signer certificate's validity: a certificate activated during
+the day cannot authenticate an MSO claiming to have been signed at midnight.
+The signer bounds `signed` and `validFrom` below by that pinned certificate's
+public `notBefore` value. This is one shared boundary for that certificate,
+not a new clock reading for each holder or credential. Later rounded times
+remain unchanged. `validUntil` is never extended; an empty validity interval
+or a signing time after `notAfter` rejects issuance. The verifier's historical
+certificate-time and signature checks remain unchanged.
+
+The real COSE/MSO regression exercises a rounded claim preceding a newly active
+certificate, a claim already within its interval, deadline preservation and
+rejection of impossible intervals. Official Suite execution and retained results
+are recorded separately in the [deployment report](../operations/reports/main-upgrade-2026-10-10.md).
+
 ## Evidence and remaining work
 
 Signed proof regressions use actual ES256 signatures and trusted attestation

@@ -1,0 +1,46 @@
+   Compiling nazo-postgres v0.2.16 (/opt/nazoauth-main-20261010/crates/persistence-postgres)
+    Finished `release` profile [optimized] target(s) in 2m 18s
+     Running tests/audit_chain_cutover.rs (/opt/nazoauth-main-target/release/deps/audit_chain_cutover-f02192d07553fd1d)
+
+running 2 tests
+test audit_cutover_preserves_history_and_moves_chain_authority_to_exporter ... ok
+test legacy_chained_backlog_spans_batches_without_losing_evidence ... legacy batch 1..29: 29 events, 128632 bytes
+legacy batch 30..58: 29 events, 128642 bytes
+legacy batch 59..87: 29 events, 128642 bytes
+legacy batch 88..116: 29 events, 128660 bytes
+legacy batch 117..145: 29 events, 128673 bytes
+legacy batch 146..174: 29 events, 128673 bytes
+legacy batch 175..203: 29 events, 128673 bytes
+legacy batch 204..232: 29 events, 128673 bytes
+legacy batch 233..261: 29 events, 128673 bytes
+legacy batch 262..290: 29 events, 128673 bytes
+legacy batch 291..319: 29 events, 128673 bytes
+legacy batch 320..348: 29 events, 128673 bytes
+legacy batch 349..377: 29 events, 128673 bytes
+legacy batch 378..406: 29 events, 128673 bytes
+legacy batch 407..435: 29 events, 128673 bytes
+legacy batch 436..464: 29 events, 128673 bytes
+legacy batch 465..493: 29 events, 128673 bytes
+legacy batch 494..513: 20 events, 88848 bytes
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.43s
+
+     Running tests/audit_pending_upgrade.rs (/opt/nazoauth-main-target/release/deps/audit_pending_upgrade-86db30842276d767)
+
+running 5 tests
+test pending_set_upgrade_from_empty_state ... ok
+test pending_set_upgrade_from_inflight_batch ... ok
+test pending_set_upgrade_from_mixed_backlog ... ok
+test pending_set_upgrade_from_unchained_backlog ... ok
+test pending_set_upgrade_rolls_back_on_divergence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.37s
+
+     Running tests/released_issuance_cutover.rs (/opt/nazoauth-main-target/release/deps/released_issuance_cutover-afd171e313ba3944)
+
+running 1 test
+test released_receipts_preserve_fences_retention_and_cleanup_acl ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.58s
+

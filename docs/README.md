@@ -67,6 +67,7 @@ set can be scanned from one place.
 | [operations/control-discovery.md](operations/control-discovery.md) | Signed, read-only controller discovery protocol. |
 | [operations/controller-repository-split.md](operations/controller-repository-split.md) | Server/controller repository and release boundary. |
 | [operations/deployment.md](operations/deployment.md) | English deployment guide. |
+| [operations/upgrade-from-v0.2.16.md](operations/upgrade-from-v0.2.16.md) | Released-schema cutover, audit preservation, and upgrade preflight. |
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |
 | [operations/one-click-update.md](operations/one-click-update.md) | Signed one-click Podman, Docker, and host installation and updates. |
 | [operations/one-click-update.zh-CN.md](operations/one-click-update.zh-CN.md) | Chinese signed one-click installation and update guide. |

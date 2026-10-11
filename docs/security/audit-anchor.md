@@ -16,6 +16,14 @@ pins the sequence range, member content digest, generation, and lease. The
 server process does not run this exporter and does not receive its database
 role or sink secret.
 
+Upgrading from the retired per-event exporter protocol retains chained,
+unacknowledged events without creating a batch lease: that protocol had no
+committed batch membership or digest. The existing claimant forms the first
+and subsequent batches under both configured count and wire-byte bounds.
+The migration does not acknowledge, delete, rehash, or reorder events.
+Already committed batches under the batch protocol keep their original bounds
+and content across upgrades.
+
 The hash chain and its sequence belong to the deployment. HTTP security events
 capture `payload.tenant_id` from the same immutable tenant context that routes
 the request, before the event enters the shared writer queue. Concurrent

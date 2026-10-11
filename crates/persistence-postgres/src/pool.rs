@@ -12,10 +12,10 @@ use std::{str::FromStr as _, time::Duration};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
-// Cargo cannot discover newly added directories through `embed_migrations!`.
-// The tested head marker changes with every appended migration and therefore
-// invalidates this crate in cached deployment builds.
-const _: &str = include_str!("../migration-head.txt");
+// Cargo cannot discover new directories through `embed_migrations!`. The
+// authoritative checksum manifest covers every migration, so adding a
+// directory at any position also invalidates cached embedded migrations.
+const _: &str = include_str!("../../../tests/contracts/migrations.sha256");
 
 const MIGRATION_ADVISORY_LOCK: i64 = 564196923451771041;
 const MIGRATION_LOCK_TIMEOUT: Duration = Duration::from_secs(25);

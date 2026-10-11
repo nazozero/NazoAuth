@@ -1,0 +1,175 @@
+{
+  "server_source": "8abe4fe33891621ce2659f78d6bc2c224f042e17",
+  "ctl_source": "4b4984b59b22dfcea0fc26498a4e1aaa1e24f36a",
+  "command_result": {
+    "command": [
+      "/var/lib/nazoauthctl/evidence/main-oidf-20261010/mdoc-fix/nazoauthctl-selected",
+      "--instance",
+      "production",
+      "oidf",
+      "run",
+      "openid4vc",
+      "--json",
+      "--jobs",
+      "4",
+      "--poll-timeout",
+      "1800"
+    ],
+    "exit_code": 130,
+    "seconds": 406.10644125938416
+  },
+  "stop_reason": {
+    "reason": "Second-client offer waiting persists in actual official runner; stop bounded diagnostic run to repair orchestration rather than wait for expired attestations.",
+    "signal": "SIGINT",
+    "at": 1791651281.0121877
+  },
+  "progress": {
+    "completed": 157,
+    "total": 397,
+    "groups": [
+      {
+        "id": "openid4vc-vci",
+        "profile": "openid4vc",
+        "completed": 70,
+        "total": 90,
+        "status": "Incomplete",
+        "passed": 65,
+        "reviewed": 0,
+        "warnings": 1,
+        "skipped": 2,
+        "failed": 0,
+        "incomplete": 2,
+        "running": 0,
+        "remaining": 20
+      },
+      {
+        "id": "openid4vc-vci-haip",
+        "profile": "openid4vc",
+        "completed": 87,
+        "total": 252,
+        "status": "Incomplete",
+        "passed": 84,
+        "reviewed": 0,
+        "warnings": 2,
+        "skipped": 0,
+        "failed": 0,
+        "incomplete": 1,
+        "running": 0,
+        "remaining": 165
+      },
+      {
+        "id": "openid4vc-vp",
+        "profile": "openid4vc",
+        "completed": 0,
+        "total": 40,
+        "status": "Remaining",
+        "passed": 0,
+        "reviewed": 0,
+        "warnings": 0,
+        "skipped": 0,
+        "failed": 0,
+        "incomplete": 0,
+        "running": 0,
+        "remaining": 40
+      },
+      {
+        "id": "openid4vc-vp-haip",
+        "profile": "openid4vc",
+        "completed": 0,
+        "total": 15,
+        "status": "Remaining",
+        "passed": 0,
+        "reviewed": 0,
+        "warnings": 0,
+        "skipped": 0,
+        "failed": 0,
+        "incomplete": 0,
+        "running": 0,
+        "remaining": 15
+      }
+    ],
+    "passed_groups": 0,
+    "review_groups": 0,
+    "warning_groups": 0,
+    "skipped_groups": 0,
+    "failed_groups": 0,
+    "incomplete_groups": 2,
+    "running_groups": 0,
+    "remaining_groups": 2,
+    "passed": 149,
+    "reviewed": 0,
+    "warnings": 3,
+    "skipped": 2,
+    "failed": 0,
+    "incomplete": 3,
+    "running": 0,
+    "remaining": 240,
+    "current_profile": null,
+    "current_variant": null,
+    "current_test": null
+  },
+  "warning_modules": [
+    {
+      "module": "openid4vc-vci-p029/oid4vci-1_0-issuer-batch-issuance?variant={\"authorization_request_type\":\"simple\",\"client_auth_type\":\"private_key_jwt\",\"credential_format\":\"mdoc\",\"fapi_profile\":\"vci\",\"fapi_request_method\":\"unsigned\",\"fapi_response_mode\":\"plain_response\",\"openid\":\"plain_oauth\",\"sender_constrain\":\"dpop\",\"vci_authorization_code_flow_variant\":\"wallet_initiated\",\"vci_credential_encryption\":\"encrypted\",\"vci_grant_type\":\"authorization_code\"}",
+      "official_status": "FINISHED",
+      "official_result": "WARNING",
+      "condition_results": [
+        "WARNING"
+      ],
+      "condition_count": 1,
+      "warning_conditions": [
+        {
+          "source": "VCIEnsureBatchTimeClaimsNotLinkable",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "module": "openid4vc-vci-haip-p034/fapi2-security-profile-final-happy-flow?variant={\"authorization_request_type\":\"simple\",\"client_auth_type\":\"client_attestation\",\"credential_format\":\"sd_jwt_vc\",\"fapi_profile\":\"vci_haip\",\"fapi_request_method\":\"unsigned\",\"fapi_response_mode\":\"plain_response\",\"openid\":\"plain_oauth\",\"sender_constrain\":\"dpop\",\"vci_authorization_code_flow_variant\":\"wallet_initiated\",\"vci_credential_encryption\":\"plain\",\"vci_grant_type\":\"authorization_code\"}",
+      "official_status": "FINISHED",
+      "official_result": "WARNING",
+      "condition_results": [
+        "WARNING"
+      ],
+      "condition_count": 1,
+      "warning_conditions": [
+        {
+          "source": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "module": "openid4vc-vci-haip-p035/fapi2-security-profile-final-happy-flow?variant={\"authorization_request_type\":\"simple\",\"client_auth_type\":\"client_attestation\",\"credential_format\":\"mdoc\",\"fapi_profile\":\"vci_haip\",\"fapi_request_method\":\"unsigned\",\"fapi_response_mode\":\"plain_response\",\"openid\":\"plain_oauth\",\"sender_constrain\":\"dpop\",\"vci_authorization_code_flow_variant\":\"wallet_initiated\",\"vci_credential_encryption\":\"plain\",\"vci_grant_type\":\"authorization_code\"}",
+      "official_status": "FINISHED",
+      "official_result": "WARNING",
+      "condition_results": [
+        "WARNING"
+      ],
+      "condition_count": 1,
+      "warning_conditions": [
+        {
+          "source": "CheckDiscEndpointScopesSupportedContainsRequestedScopes",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "tenant_cleanup_complete": true,
+  "orchestration_integrity": {
+    "defined_modules": 397,
+    "created_instances": 157,
+    "terminal_modules": 157,
+    "all_modules_instantiated": false,
+    "all_modules_terminal": false,
+    "cleanup_complete": true,
+    "retention_requested": true,
+    "retention_eligible": false,
+    "retention_committed": false,
+    "suite_resources_settled": true
+  },
+  "evidence_manifest_sha256": "106174aef502a15621c8e30e10430195cf4dba4313b749c5eca40d1c477e9986",
+  "matrix_digest": "b91abfbc1365fcd45ab4a006998854703a12643a9b11534f04745be68762d45f",
+  "assisted": false,
+  "acceptance": "INCOMPLETE"
+}

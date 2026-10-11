@@ -1,0 +1,37 @@
+running 1 test
+test legacy_chained_backlog_spans_batches_without_losing_evidence ... 
+thread 'legacy_chained_backlog_spans_batches_without_losing_evidence' (1967464) panicked at crates/persistence-postgres/tests/audit_chain_cutover.rs:644:18:
+legacy pending evidence must survive the batch protocol upgrade: DatabaseError(CheckViolation, "new row for relation \"security_audit_chain_state\" violates check constraint \"ck_security_audit_batch_shape\"")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    legacy_chained_backlog_spans_batches_without_losing_evidence
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.42s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_chain_cutover`
+
+Wire-bound negative regression on count-only bootstrap:
+   Compiling nazo-postgres v0.2.16 (/opt/nazoauth-main-20261010/crates/persistence-postgres)
+    Finished `release` profile [optimized] target(s) in 21.58s
+     Running tests/audit_chain_cutover.rs (/opt/nazoauth-main-target/release/deps/audit_chain_cutover-f02192d07553fd1d)
+
+running 1 test
+test legacy_chained_backlog_spans_batches_without_losing_evidence ... legacy batch 1..256: 256 events, 1133039 bytes
+
+thread 'legacy_chained_backlog_spans_batches_without_losing_evidence' (1984767) panicked at crates/persistence-postgres/tests/audit_chain_cutover.rs:707:9:
+an unleased legacy backlog must respect the configured wire limit
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    legacy_chained_backlog_spans_batches_without_losing_evidence
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.36s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_chain_cutover`
