@@ -27,9 +27,12 @@ BEGIN
                   OR grant_key_blake3 !~ '^[0-9a-f]{64}$') THEN
         RAISE EXCEPTION 'legacy issuance lacks terminal ownership/replay evidence';
     END IF;
+    -- Released ordinary receipts have no ciphertext and no refresh-family
+    -- identity. Preserve their entire original replay/revocation window;
+    -- ciphertext absence cannot prove that no refresh token was issued.
     IF EXISTS (SELECT 1 FROM public.oauth_token_issuances
-               WHERE response_ciphertext IS NOT NULL AND expires_at > clock_timestamp()) THEN
-        RAISE EXCEPTION 'drain live legacy response receipts before issuance cutover';
+               WHERE expires_at > clock_timestamp()) THEN
+        RAISE EXCEPTION 'drain live legacy receipts before issuance cutover';
     END IF;
 
     ALTER TABLE public.oauth_token_issuances
