@@ -4,7 +4,29 @@ Project changes are recorded by release. Before 0.5.0, the project iterates
 rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 
-## Unreleased
+## 0.3.0 - 2026-10-11
+
+### Security and upgrade
+
+- Separate audit receiver acknowledgement authority from exporter credentials;
+  preserve commit confirmation and signed durable receipts. Existing audit
+  installations require the coordinated receiver/worker/role cutover described
+  in [the audit role guide](docs/operations/security-audit-ledger-roles.md).
+- Enforce FAPI policy floors, rate-limit unauthenticated SCIM audit admission,
+  verify UI provenance, and reconcile tenant routing from PostgreSQL facts.
+- Preserve released issuance and audit facts during database upgrades; follow
+  [the v0.2.16 upgrade guide](docs/operations/upgrade-from-v0.2.16.md) and retain
+  verified recovery material. Previously applied tenant-policy migrations are
+  not automatically replayed.
+- Use common UTC-day boundaries for generated mdoc certificates without
+  extending credential validity.
+- Package and attest the protocol and its crypto dependency together. Operator
+  protocol 3 and release-manifest schema 7 remain unchanged.
+
+See [security verification and remaining boundaries](docs/security/security-cloud-20261011.md).
+Historical conformance and performance reports describe their recorded source
+revisions; this version bump does not assert new certification or load results.
+
 
 ### Removed
 

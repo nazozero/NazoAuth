@@ -514,8 +514,9 @@ class ReleaseGovernanceTests(unittest.TestCase):
             "  platform-binaries:", 1
         )[0]
         self.assertIn(
-            "cargo package --locked --package nazo-operator-protocol", package_job
+            "cargo package --locked --package nazo-crypto --package nazo-operator-protocol", package_job
         )
+        self.assertIn("for name in nazo-crypto nazo-operator-protocol; do", package_job)
         self.assertNotIn("--no-verify", package_job)
         self.assertIn("release-operator-protocol-package", package_job)
 
@@ -533,7 +534,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             'protocol_asset="nazo-operator-protocol-${GITHUB_REF_NAME#v}.crate"',
             publish,
         )
-        self.assertIn('test "$(wc -l < "$allowed_names")" -eq 9', publish)
+        self.assertIn('test "$(wc -l < "$allowed_names")" -eq 10', publish)
         self.assertIn(
             'diff -u "$allowed_names" <(sort "$remote_names")', publish
         )

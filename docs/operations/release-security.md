@@ -48,7 +48,7 @@ The `release-security` workflow runs for `v*` tags and manual dispatch:
   macOS runners with the pinned Rust toolchain
 - executes the server binary on every native target and verifies its package
   release version and operator protocol version
-- packages `nazo-operator-protocol` once from its unique source, verifies the
+- packages `nazo-crypto` and `nazo-operator-protocol` together from its unique source, verifies the
   package build, records its digest, and gives the exact `.crate` standard
   build-provenance attestation
 - reruns `cargo deny` (advisories, bans, licenses, sources) for the exact tag
@@ -65,7 +65,7 @@ The `release-security` workflow runs for `v*` tags and manual dispatch:
 - retains SBOMs, OCI archives, predicates, and Sigstore bundles as internal CI
   evidence
 - publishes exactly 8 platform-suffixed server executable files plus the exact
-  versioned `nazo-operator-protocol` crate as persistent GitHub Release assets;
+  versioned `nazo-operator-protocol` and `nazo-crypto` crates as persistent GitHub Release assets;
   JSON, tar, bundle, script, checksum, and SBOM files are not Release assets
 - resumes partial publication only when every existing Release asset is
   byte-identical, and never overwrites a mismatching tag or asset
