@@ -277,7 +277,44 @@ impl AuditLedgerRepository {
         result
     }
 
-    /// Durable whole-batch acknowledgement. The database verifies the fencing
+    /// Read-only check after the receiver has committed its acknowledgement.
+    /// Exporter credentials have no permission to advance this checkpoint.
+    pub async fn confirm_batch(&self, ack: SecurityAuditBatchAck) -> Result<(), RepositoryError> {
+        let health = self.anchor_health().await?;
+        if health.deployment_id.as_deref() == Some(ack.deployment_id.as_str())
+            && health.last_exported_at.is_some()
+            && health
+                .last_exported_sequence
+                .is_some_and(|sequence| sequence >= ack.last_sequence)
+            && (health.last_exported_sequence != Some(ack.last_sequence)
+                || health.last_exported_hash.as_deref() == Some(ack.last_hash.as_slice()))
+        {
+            return Ok(());
+        }
+        Err(RepositoryError::Consistency(
+            "receiver has not confirmed this audit batch".to_owned(),
+        ))
+    }
+
+    pub async fn confirm_genesis(
+        &self,
+        deployment_id: &str,
+        head_hash: &[u8],
+    ) -> Result<(), RepositoryError> {
+        let health = self.anchor_health().await?;
+        if health.deployment_id.as_deref() == Some(deployment_id)
+            && health.last_exported_at.is_some()
+            && health.last_exported_sequence == Some(0)
+            && health.last_exported_hash.as_deref() == Some(head_hash)
+        {
+            return Ok(());
+        }
+        Err(RepositoryError::Consistency(
+            "receiver has not confirmed audit genesis".to_owned(),
+        ))
+    }
+
+    /// Receiver-only durable whole-batch acknowledgement. The database verifies the fencing
     /// generation and receiver-bound range/content before reclaiming chain
     /// proofs, deleting ordinary events, marking retained decisions exported,
     /// and advancing the anchor in one transaction.

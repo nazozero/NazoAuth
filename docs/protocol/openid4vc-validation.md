@@ -48,6 +48,46 @@ profile requires cryptographic holder binding and rejects DCQL requests that
 explicitly waive it. Supporting that waiver requires a dedicated credential
 verification profile; ordinary holder-signature verification remains required.
 
+## mdoc signing time and certificate validity
+
+Issuance uses shared day-rounded time claims to avoid publishing a precise
+per-request timestamp. For mdoc, that rounded time must also be within the
+selected document signer certificate's validity: a certificate activated during
+the day cannot authenticate an MSO claiming to have been signed at midnight.
+The signer bounds `signed` and `validFrom` below by that pinned certificate's
+public `notBefore` value. This is one shared boundary for that certificate,
+not a new clock reading for each holder or credential. Later rounded times
+remain unchanged. `validUntil` is never extended; an empty validity interval
+or a signing time after `notAfter` rejects issuance. The verifier's historical
+certificate-time and signature checks remain unchanged.
+
+Locally generated mdoc DS and IACA certificates start at the beginning of their
+creation day in UTC. Their end dates use that same boundary (457 days for DS,
+3650 days for IACA), so this does not extend certificate lifetimes or credential
+expiry. A new signer therefore covers the day-rounded MSO time without exposing
+its creation second. Key creation, publication, rotation, revocation and signing
+lease ownership remain unchanged; certificate time rounding does not make a key
+available before it exists.
+
+Existing and imported certificates retain their signed validity fields. They are
+not silently regenerated, backdated or accepted outside their validity. Their
+first partial day can still require the exact public certificate lower bound;
+the general signer-validity guard remains necessary. A deployment importing such
+material must assess that shared cohort boundary or provision certificates whose
+validity covers its privacy rounding interval. A shared certificate by itself is
+not proof of unlinkability.
+
+The real COSE/MSO regression exercises a rounded claim preceding a newly active
+certificate, a claim already within its interval, deadline preservation and
+rejection of impossible intervals. The managed-certificate regression checks
+midnight, one second later, midday, the last second and the next day's boundary;
+keyctl lifecycle tests retain generation reuse, concurrent initialization,
+rotation, historical CRLs and import preservation. Official Suite execution and
+retained results are recorded separately in the
+[deployment report](../operations/reports/main-upgrade-2026-10-10.md). The subsequent
+[managed mdoc privacy validation](../operations/reports/oidf-mdoc-privacy-2026-10-11.md)
+records the three corrected batch warnings and all 30 checked credential intervals.
+
 ## Evidence and remaining work
 
 Signed proof regressions use actual ES256 signatures and trusted attestation

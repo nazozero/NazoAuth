@@ -136,6 +136,22 @@ impl SecurityAudit for Audit {
     }
 }
 
+#[derive(Default)]
+struct DenialRate(AtomicUsize);
+impl nazo_auth::RequestRateLimitPort for DenialRate {
+    fn increment<'a>(
+        &'a self,
+        bucket: nazo_auth::RequestRateLimitBucket,
+        subject: &'a str,
+        window: u64,
+    ) -> nazo_auth::RequestRateLimitFuture<'a> {
+        assert_eq!(bucket, nazo_auth::RequestRateLimitBucket::TokenManagement);
+        assert!(subject.starts_with("scim-denied:"));
+        assert_eq!(window, 60);
+        Box::pin(async move { Ok((self.0.fetch_add(1, Ordering::Relaxed) + 1) as u64) })
+    }
+}
+
 fn authorizer(audit: Arc<Audit>) -> (ServerScimRequestAuthorizer, Arc<Credentials>) {
     let tenant = TenantContext::default_system();
     let credentials = Arc::new(Credentials {
@@ -157,6 +173,9 @@ fn authorizer(audit: Arc<Audit>) -> (ServerScimRequestAuthorizer, Arc<Credential
                 draining: Default::default(),
             })),
             audit,
+            Arc::new(DenialRate::default()),
+            60,
+            60,
         ),
         credentials,
     )
@@ -318,6 +337,9 @@ fn module_shutdown_during_live_credential_lookup_blocks_authorization() {
             tenant,
             runtime,
             audit.clone(),
+            Arc::new(DenialRate::default()),
+            60,
+            60,
         );
         assert_eq!(
             authorizer
@@ -327,5 +349,40 @@ fn module_shutdown_during_live_credential_lookup_blocks_authorization() {
             ScimAuthorizationError::Disabled
         );
         assert!(audit.events.lock().unwrap().is_empty());
+    });
+}
+
+#[test]
+fn scim_denial_limit_precedes_required_append_without_affecting_valid_credentials() {
+    futures_executor::block_on(async {
+        let audit = Arc::new(Audit::default());
+        let (mut authorizer, credentials) = authorizer(audit.clone());
+        authorizer.denial_max_requests = 1;
+        let mut missing = facts();
+        missing.bearer_token = None;
+        assert_eq!(
+            authorizer
+                .authorize(missing.clone(), ScimRequiredScope::Read)
+                .await
+                .err(),
+            Some(ScimAuthorizationError::MissingBearer)
+        );
+        assert_eq!(
+            authorizer
+                .authorize(missing, ScimRequiredScope::Read)
+                .await
+                .err(),
+            Some(ScimAuthorizationError::RateLimited {
+                retry_after_seconds: 60
+            })
+        );
+        assert_eq!(credentials.lookups.load(Ordering::Relaxed), 0);
+        assert_eq!(audit.required.lock().unwrap().len(), 1);
+        assert!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Read)
+                .await
+                .is_ok()
+        );
     });
 }

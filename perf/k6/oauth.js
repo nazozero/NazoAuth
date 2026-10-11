@@ -256,10 +256,6 @@ function requestTags(step, extra = {}) {
 // attributable (HTTP status, OAuth error code, timeout, limiter rejection).
 const errClassified = new Counter('err_classified');
 let failedChecks = 0;
-// oauth_invalid_grant on the refresh path is an expected business outcome of
-// the bounded-family model (capacity eviction / spent-token replay). Count it
-// separately so capacity gates evaluate unexpected errors only.
-const errExpectedInvalidGrant = new Counter('err_expected_invalid_grant');
 
 function classifyError(res) {
   if (!res) {
@@ -309,9 +305,6 @@ function checkErr(res, conds, stepHint) {
       status: String(res ? res.status : 0),
       err,
     });
-    if (err === 'oauth_invalid_grant' && step === 'refresh') {
-      errExpectedInvalidGrant.add(1);
-    }
     // bounded per-VU failure log: preserves status/error-body evidence in
     // run.log so saturation causes are attributable without unbounded volume.
     if ((__VU_STATE.errLogged || 0) < 40) {
@@ -1347,7 +1340,7 @@ function capWarmedUp() {
 
 // Ops return true/false, or a { capOutcome } object for classified exits:
 // local_no_request (no HTTP request was ever sent), expected_rejection
-// (protocol-correct rejection such as bounded-family invalid_grant).
+// (only when the scenario establishes the rejection independently).
 function capOutcomeOf(result, threw) {
   if (result && typeof result === 'object' && result.capOutcome) {
     return result.capOutcome;
@@ -1595,8 +1588,7 @@ async function capRefreshOp() {
     return true;
   }
   return {
-    capOutcome: classifyError(response) === 'oauth_invalid_grant'
-      ? 'expected_rejection' : 'unexpected',
+    capOutcome: 'unexpected',
   };
 }
 

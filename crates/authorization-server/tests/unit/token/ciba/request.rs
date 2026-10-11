@@ -787,8 +787,12 @@ fn ciba_profile_does_not_apply_authorization_code_only_controls() {
         ..BackchannelAuthenticationForm::default()
     };
 
-    validate_token_request_profile(&client, "private_key_jwt")
-        .expect("CIBA-compatible client authentication should pass the server profile");
+    validate_token_request_profile(
+        crate::policy::AuthorizationServerProfile::Oauth2Baseline,
+        &client,
+        "private_key_jwt",
+    )
+    .expect("CIBA-compatible client authentication should pass the server profile");
     validate_ciba_security_profile_client_with_config(&settings, &client, "private_key_jwt")
         .expect("official FAPI-CIBA compatibility policy should remain separate");
     validate_ciba_request_object_presence_with_config(&settings, &client, &form)
@@ -1259,5 +1263,34 @@ fn protocol_ciba_signed_request_rejects_all_outer_authentication_fields() {
                 "field {field}, empty {empty}"
             );
         }
+    }
+}
+
+#[test]
+fn security_cloud_global_fapi_floor_rejects_baseline_dcr_token_authentication() {
+    use crate::policy::AuthorizationServerProfile;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.security_policy = Default::default();
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = false;
+    client.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    validate_token_request_profile(
+        AuthorizationServerProfile::Oauth2Baseline,
+        &client,
+        "client_secret_basic",
+    )
+    .unwrap();
+    for profile in [
+        AuthorizationServerProfile::Fapi2Security,
+        AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest,
+        AuthorizationServerProfile::Fapi2MessageSigningJarm,
+        AuthorizationServerProfile::Fapi2MessageSigningIntrospection,
+    ] {
+        assert!(validate_token_request_profile(profile, &client, "client_secret_basic").is_err());
+        assert!(validate_token_request_profile(profile, &client, "private_key_jwt").is_err());
+        client.require_dpop_bound_tokens = true;
+        validate_token_request_profile(profile, &client, "private_key_jwt").unwrap();
+        client.require_dpop_bound_tokens = false;
     }
 }

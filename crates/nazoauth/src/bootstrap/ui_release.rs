@@ -161,6 +161,7 @@ async fn install_default(root: &Path) -> anyhow::Result<()> {
     let result = async {
         let archive = work.join(ARTIFACT_NAME);
         download(&client, &descriptor, &archive).await?;
+        verify_provenance(&client, &descriptor).await?;
         let staged = work.join("ui");
         fs::create_dir(&staged)?;
         extract(&archive, &staged)?;
@@ -209,6 +210,68 @@ async fn download(
         bail!("frontend archive does not match the GitHub asset digest and size");
     }
     Ok(())
+}
+
+// Release metadata locates bytes; the embedded Sigstore root and exact release
+// workflow identity independently authorize them before extraction.
+async fn verify_provenance(
+    client: &reqwest::Client,
+    descriptor: &FrontendDownload,
+) -> anyhow::Result<()> {
+    let response = client
+        .get(format!(
+            "https://api.github.com/repos/nazozero/NazoAuthWeb/attestations/sha256:{}",
+            descriptor.sha256
+        ))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await?
+        .error_for_status()?;
+    let mut stream = response.bytes_stream();
+    let mut metadata = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if metadata.len() + chunk.len() > MAX_METADATA_BYTES {
+            bail!("frontend attestation metadata exceeds the size limit");
+        }
+        metadata.extend_from_slice(&chunk);
+    }
+    verify_attestations(&metadata, &descriptor.version, &descriptor.sha256)
+}
+
+fn verify_attestations(metadata: &[u8], version: &str, digest: &str) -> anyhow::Result<()> {
+    use sigstore_verify::{
+        VerificationPolicy, Verifier,
+        trust_root::{SIGSTORE_PRODUCTION_TRUSTED_ROOT, TrustedRoot},
+        types::{Bundle, Sha256Hash},
+    };
+    #[derive(Deserialize)]
+    struct Attestations {
+        attestations: Vec<Attestation>,
+    }
+    #[derive(Deserialize)]
+    struct Attestation {
+        bundle: serde_json::Value,
+    }
+    let attestations: Attestations = serde_json::from_slice(metadata)?;
+    let root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)?;
+    let verifier = Verifier::new(&root)?;
+    let policy = VerificationPolicy::new(
+        format!(
+            "https://github.com/nazozero/NazoAuthWeb/.github/workflows/release.yml@refs/tags/{version}"
+        ),
+        "https://token.actions.githubusercontent.com",
+    );
+    let digest = Sha256Hash::from_hex(digest)?;
+    for attestation in attestations.attestations {
+        let Ok(bundle) = serde_json::from_value::<Bundle>(attestation.bundle) else {
+            continue;
+        };
+        if verifier.verify(digest, &bundle, &policy).is_ok() {
+            return Ok(());
+        }
+    }
+    bail!("frontend archive has no valid official release attestation")
 }
 
 fn allowed_download_url(url: &Url) -> bool {

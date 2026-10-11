@@ -1,0 +1,258 @@
+{
+  "source_sha": "b4f35d27aa32db5907f81d261ceca65fe747ef8e",
+  "checks": [
+    {
+      "name": "server-auth-verified",
+      "command": "cargo +1.99.0 test --release --locked -p nazo-oauth-server -p nazo-key-management --lib",
+      "exit_code": 0,
+      "scope": "375 OAuth + 88 key-management tests"
+    },
+    {
+      "name": "receiver-authority",
+      "command": "cargo +1.99.0 test --release --locked -p nazo-postgres --test audit_receiver_authority",
+      "exit_code": 0,
+      "scope": "Real PostgreSQL old-grant exploit and receiver-only authority"
+    },
+    {
+      "name": "tenant-migration-verified",
+      "command": "cargo +1.99.0 test --release --locked -p nazo-postgres --test tenant_module_scope",
+      "exit_code": 0,
+      "scope": "Real PostgreSQL tenant policy preservation"
+    },
+    {
+      "name": "audit-upgrade-regressions",
+      "command": "cargo +1.99.0 test --release --locked -p nazo-postgres --test audit_preflight_roles --test audit_pending_upgrade",
+      "exit_code": 0,
+      "scope": "6 real PostgreSQL role and pending upgrade cases"
+    },
+    {
+      "name": "ui-final",
+      "command": "cargo +1.99.0 test --release --locked -p nazoauth --lib ui_release -- --nocapture",
+      "exit_code": 0,
+      "scope": "8 passed; opt-in live case separately executed below"
+    },
+    {
+      "name": "ui-live-final",
+      "command": "cargo +1.99.0 test --release --locked -p nazoauth --lib ui_release -- --ignored --nocapture",
+      "exit_code": 0,
+      "scope": "1 live official UI download, verify, install and custom replacement"
+    },
+    {
+      "name": "audit-worker-final",
+      "command": "cargo +1.99.0 test --release --locked -p nazoauth --lib adapters::audit_anchor -- --nocapture",
+      "exit_code": 0,
+      "scope": "46 passed, including real PostgreSQL idle heartbeat"
+    },
+    {
+      "name": "tenant-cache-real-final",
+      "command": "cargo +1.99.0 test --release --locked -p nazo-valkey --test tenant_directory_cache_contract",
+      "exit_code": 0,
+      "scope": "Real Valkey authoritative cache repair"
+    },
+    {
+      "name": "server-clippy-verified",
+      "command": "cargo +1.99.0 clippy --release --workspace --all-targets --all-features --locked --keep-going -- -D warnings",
+      "exit_code": 0,
+      "scope": "Workspace compile/lint, not a full executed workspace test suite"
+    },
+    {
+      "name": "receiver-clippy-final",
+      "command": "cargo +1.99.0 clippy --release --locked --manifest-path perf/audit-anchor-receiver/Cargo.toml --all-targets -- -D warnings",
+      "exit_code": 0,
+      "scope": "Standalone receiver compile/lint"
+    },
+    {
+      "name": "server-fmt-final",
+      "command": "cargo +1.99.0 fmt --all -- --check",
+      "exit_code": 0,
+      "scope": "Server format"
+    },
+    {
+      "name": "receiver-fmt-final",
+      "command": "cargo +1.99.0 fmt --manifest-path perf/audit-anchor-receiver/Cargo.toml -- --check",
+      "exit_code": 0,
+      "scope": "Receiver format"
+    },
+    {
+      "name": "server-static-committed",
+      "command": "python3 scripts/verify_static_contracts.py --check",
+      "exit_code": 0,
+      "scope": "Static contracts and migration checksums"
+    },
+    {
+      "name": "server-binary",
+      "command": "cargo +1.99.0 build --release --locked -p nazoauth --bin nazoauth",
+      "exit_code": 0,
+      "scope": "Final server release binary"
+    },
+    {
+      "name": "receiver-build-final",
+      "command": "cargo +1.99.0 build --release --locked --manifest-path perf/audit-anchor-receiver/Cargo.toml",
+      "exit_code": 0,
+      "scope": "Final receiver release binary"
+    },
+    {
+      "name": "receiver-faults",
+      "command": "bash perf/tools/audit_anchor_fault_regression.sh",
+      "exit_code": 0,
+      "scope": "Real PostgreSQL + HTTPS: 12 scenarios, 34 assertions, zero failures"
+    },
+    {
+      "name": "perf-final",
+      "command": "python -m unittest -v perf.tests.test_capacity_window perf.tests.test_stream_cohort perf.tests.test_capacity_producer",
+      "exit_code": 0,
+      "scope": "87 tests: 85 passed, 2 k6-dependent skips; Node invalid_grant regression executed"
+    }
+  ],
+  "receiver_fault_proof": {
+    "source_sha": "b4f35d27aa32db5907f81d261ceca65fe747ef8e",
+    "exit_code": 0,
+    "scenarios": 12,
+    "assertions_passed": 34,
+    "assertions_failed": 0,
+    "database": {
+      "sequence": 62,
+      "hash": "628ca13fc13d91ea7f5ebbd1c38a882480045f36a48c650a31e0bdcf2e50e86f",
+      "pending": 0,
+      "chain_entries": 0
+    },
+    "receiver": {
+      "last_sequence": 62,
+      "accepted_events": 62,
+      "unique_event_ids": 62,
+      "last_hash_hex": "628ca13fc13d91ea7f5ebbd1c38a882480045f36a48c650a31e0bdcf2e50e86f",
+      "journal_sha256": "f4a087b9848283e8aaf85545e1a4452d736ecaa4f780eeb46da79009c423831b"
+    },
+    "commit_failures": {
+      "s11": {
+        "received_http_5xx": true,
+        "reported_anchored_success": false
+      },
+      "s12": {
+        "received_http_5xx": true,
+        "reported_anchored_success": false
+      }
+    },
+    "server_binary_sha256": "cccf0401b963a982df5f7c11d12da79cdd7f53e842f32f5fbec17dfcbea70c05",
+    "receiver_binary_sha256": "1a81ec1aa6788d110bb2d125362652617dcdd17eba75773e3475bc67ac71ba96"
+  },
+  "additional_real_evidence": {
+    "schema-fingerprint": {
+      "exit_code": 0,
+      "series": [
+        {
+          "phase": "initial",
+          "old_sha256": "1bda65ad0ddb50c6a51d198d45ebaf8d86a1336aafa121337634d865769c145f",
+          "new_sha256": "7a0d1bcd2f25fe98e21599ea73a75be680f035e433573642170bd09407d52c5e"
+        },
+        {
+          "phase": "body",
+          "old_sha256": "1bda65ad0ddb50c6a51d198d45ebaf8d86a1336aafa121337634d865769c145f",
+          "new_sha256": "0ff460d242d92ddcf8613c5393830e8e5e94b4e5e3482dba65d5dc1c8251287c"
+        },
+        {
+          "phase": "definer",
+          "old_sha256": "1bda65ad0ddb50c6a51d198d45ebaf8d86a1336aafa121337634d865769c145f",
+          "new_sha256": "2d8861d291b691c73599bc909948ae640785a6a797293993650f5782bfb3df42"
+        },
+        {
+          "phase": "search_path",
+          "old_sha256": "1bda65ad0ddb50c6a51d198d45ebaf8d86a1336aafa121337634d865769c145f",
+          "new_sha256": "ee5f8e0aad1e69c1caf3185625e12f21dc954ca1afd9b7d83d3976ee8ec09d14"
+        }
+      ]
+    },
+    "tenant-migration": [
+      {
+        "revision": "before",
+        "exit_code": 0,
+        "peer_dcr_mode": "enabled"
+      },
+      {
+        "revision": "after",
+        "exit_code": 0,
+        "peer_dcr_mode": "disabled"
+      }
+    ],
+    "compose-valkey": {
+      "exit_code": 0,
+      "image": "docker.io/valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11",
+      "unauthenticated_rejected": true,
+      "authenticated_ping": "PONG",
+      "argv_has_password": false,
+      "config_mode": "600"
+    }
+  },
+  "limitations": [
+    "No new performance acceptance or full local server workspace execution claimed.",
+    "No production deployment or migration performed.",
+    "Two k6-dependent Python tests skipped; actual JS invalid_grant regression ran under Node."
+  ],
+  "ci_first_workspace": {
+    "head": "3b693728a27ff89c0b361f025a5634577cf54ec2",
+    "url": "https://github.com/nazozero/NazoAuth/actions/runs/38126006382",
+    "exit_code": 101,
+    "passed": 3730,
+    "failed": 2,
+    "ignored": 4,
+    "failures": [
+      "tenant_module_scope: fixture env variable mismatch",
+      "canonical_config_keys_are_locked_to_the_reviewed_baseline: missing new SCIM configuration key"
+    ]
+  },
+  "ci_followup_targeted_checks": [
+    {
+      "name": "ci-fixture-tenant",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "tenant_module_scope"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "ci-config-baseline",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "config::tests::canonical_config_keys_are_locked_to_the_reviewed_baseline",
+        "--",
+        "--exact"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "ci-test-fmt",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "initial_exit_code": 1,
+      "repair": "rustfmt wrapped longer environment-variable lookup; cargo fmt --check rerun exit 0"
+    }
+  ],
+  "codeql_false_positive": {
+    "alert": 590,
+    "analysis": 1931087988,
+    "reason": "Cross-field flow from u64 request cap to independent protocol pepper String",
+    "review_url": "https://github.com/nazozero/NazoAuth/pull/242#issuecomment-6107397696",
+    "status": "dismissed as false positive"
+  }
+}

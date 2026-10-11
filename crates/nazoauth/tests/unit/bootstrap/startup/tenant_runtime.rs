@@ -407,7 +407,7 @@ async fn old_and_equal_cached_revisions_are_rejected_without_database_or_builds(
 }
 
 #[tokio::test]
-async fn newer_cached_snapshot_is_published_without_database_read() {
+async fn newer_cached_hint_is_confirmed_by_database_before_publication() {
     let tenant_a = binding(1, "tenant-a.example", "https://tenant-a.example");
     let changed_a = binding(1, "tenant-a.example", "https://tenant-a.example/v2");
     let tenant_b = binding(2, "tenant-b.example", "https://tenant-b.example");
@@ -415,10 +415,10 @@ async fn newer_cached_snapshot_is_published_without_database_read() {
         snapshot(1, vec![tenant_a]),
         [CacheReply::Snapshot(snapshot(
             2,
-            vec![changed_a.clone(), tenant_b],
+            vec![changed_a.clone(), tenant_b.clone()],
         ))],
         2,
-        [],
+        [snapshot(2, vec![changed_a.clone(), tenant_b])],
     )
     .await;
 
@@ -453,8 +453,8 @@ async fn newer_cached_snapshot_is_published_without_database_read() {
             .is_some()
     );
     assert_eq!(fixture.cache.load_count(), 1);
-    assert_eq!(fixture.directory.revision_read_count(), 0);
-    assert_eq!(fixture.directory.snapshot_read_count(), 0);
+    assert_eq!(fixture.directory.revision_read_count(), 1);
+    assert_eq!(fixture.directory.snapshot_read_count(), 1);
 }
 
 #[tokio::test]
@@ -473,7 +473,13 @@ async fn tenant_runtime_revision_rebuilds_only_the_changed_tenant() {
             ],
         ))],
         2,
-        [],
+        [snapshot(
+            2,
+            vec![
+                reloaded_a.clone(),
+                binding(2, "tenant-b.example", "https://tenant-b.example"),
+            ],
+        )],
     )
     .await;
     let previous_a = fixture
@@ -518,7 +524,7 @@ async fn tenant_runtime_revision_rebuilds_only_the_changed_tenant() {
 }
 
 #[tokio::test]
-async fn database_payload_replaces_same_revision_previously_applied_from_cache() {
+async fn database_payload_is_used_instead_of_same_revision_cache_payload() {
     let initial_a = binding(1, "tenant-a.example", "https://tenant-a.example");
     let cached_a = binding(1, "tenant-a.example", "https://tenant-a.example/cache");
     let authoritative_a = binding(1, "tenant-a.example", "https://tenant-a.example/database");
@@ -546,15 +552,15 @@ async fn database_payload_replaces_same_revision_previously_applied_from_cache()
         .get("tenant-a.example")
         .cloned()
         .expect("cached tenant A is routable");
-    assert_eq!(cache_runtime.binding, cached_a);
+    assert_eq!(cache_runtime.binding, authoritative_a);
 
     assert_eq!(
         fixture
             .refresher
             .reconcile_database_once()
             .await
-            .expect("database payload reconciles the same revision"),
-        TenantDirectoryRefreshOutcome::Applied { revision: 2 }
+            .expect("confirmed revision stays unchanged"),
+        TenantDirectoryRefreshOutcome::Unchanged
     );
     let authoritative_runtime = fixture
         .registry
@@ -564,16 +570,16 @@ async fn database_payload_replaces_same_revision_previously_applied_from_cache()
         .cloned()
         .expect("authoritative tenant A is routable");
     assert_eq!(authoritative_runtime.binding, authoritative_a);
-    assert!(!Arc::ptr_eq(&cache_runtime, &authoritative_runtime));
+    assert!(Arc::ptr_eq(&cache_runtime, &authoritative_runtime));
     assert!(authoritative_runtime.shares_lifecycle_with(&cache_runtime));
-    assert_eq!(fixture.builder.build_with_previous_count(), 2);
-    assert_eq!(fixture.directory.revision_read_count(), 1);
+    assert_eq!(fixture.builder.build_with_previous_count(), 1);
+    assert_eq!(fixture.directory.revision_read_count(), 2);
     assert_eq!(fixture.directory.snapshot_read_count(), 1);
     assert_eq!(fixture.cache.stored().last(), Some(&authoritative));
 }
 
 #[tokio::test]
-async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
+async fn cache_ahead_of_database_never_routes_and_rejects_repeated_revision() {
     let authoritative_a = binding(1, "tenant-a.example", "https://tenant-a.example");
     let cached_a = binding(1, "tenant-a.example", "https://tenant-a.example/cache");
     let cached_revision = snapshot(3, vec![cached_a.clone()]);
@@ -594,8 +600,8 @@ async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
             .refresher
             .refresh_cache_once()
             .await
-            .expect("cache-ahead revision applies speculatively"),
-        TenantDirectoryRefreshOutcome::Applied { revision: 3 }
+            .expect("cache-ahead revision is rejected"),
+        TenantDirectoryRefreshOutcome::Unchanged
     );
     assert_eq!(
         fixture
@@ -606,7 +612,7 @@ async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
             .cloned()
             .expect("cached tenant A is routable")
             .binding,
-        cached_a
+        authoritative_a
     );
 
     assert_eq!(
@@ -614,8 +620,8 @@ async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
             .refresher
             .reconcile_database_once()
             .await
-            .expect("database rolls back cache-ahead revision"),
-        TenantDirectoryRefreshOutcome::Applied { revision: 1 }
+            .expect("database remains authoritative"),
+        TenantDirectoryRefreshOutcome::Unchanged
     );
     assert_eq!(fixture.registry.revision(), 1);
     assert_eq!(
@@ -643,8 +649,8 @@ async fn cache_ahead_of_database_rolls_back_and_rejects_repeated_revision() {
     assert_eq!(fixture.registry.revision(), 1);
     assert_eq!(fixture.builder.build_count(), builds_after_rollback);
     assert_eq!(fixture.cache.load_count(), 2);
-    assert_eq!(fixture.directory.revision_read_count(), 1);
-    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+    assert_eq!(fixture.directory.revision_read_count(), 2);
+    assert_eq!(fixture.directory.snapshot_read_count(), 0);
 }
 
 async fn assert_cache_failure_falls_back_to_database(cache_reply: CacheReply) {
@@ -811,9 +817,12 @@ async fn candidate_build_failure_retains_last_good_snapshot() {
     let tenant_b = binding(2, "tenant-b.example", "https://tenant-b.example");
     let fixture = Fixture::new(
         snapshot(1, vec![tenant_a.clone()]),
-        [CacheReply::Snapshot(snapshot(2, vec![tenant_a, tenant_b]))],
+        [CacheReply::Snapshot(snapshot(
+            2,
+            vec![tenant_a.clone(), tenant_b.clone()],
+        ))],
         2,
-        [],
+        [snapshot(2, vec![tenant_a, tenant_b])],
     )
     .await;
     let original = fixture
@@ -853,8 +862,8 @@ async fn candidate_build_failure_retains_last_good_snapshot() {
             .is_none()
     );
     assert_eq!(fixture.builder.build_count(), 2);
-    assert_eq!(fixture.directory.revision_read_count(), 0);
-    assert_eq!(fixture.directory.snapshot_read_count(), 0);
+    assert_eq!(fixture.directory.revision_read_count(), 1);
+    assert_eq!(fixture.directory.snapshot_read_count(), 1);
 }
 
 #[tokio::test]
@@ -865,7 +874,7 @@ async fn in_flight_request_arc_keeps_old_runtime_after_atomic_update() {
         snapshot(1, vec![tenant_a.clone()]),
         [CacheReply::Snapshot(snapshot(2, vec![changed_a.clone()]))],
         2,
-        [],
+        [snapshot(2, vec![changed_a.clone()])],
     )
     .await;
     let in_flight = fixture
@@ -905,9 +914,9 @@ async fn disable_removes_tenant_only_from_new_requests() {
     let tenant_b = binding(2, "tenant-b.example", "https://tenant-b.example");
     let fixture = Fixture::new(
         snapshot(1, vec![tenant_a.clone(), tenant_b.clone()]),
-        [CacheReply::Snapshot(snapshot(2, vec![tenant_b]))],
+        [CacheReply::Snapshot(snapshot(2, vec![tenant_b.clone()]))],
         2,
-        [],
+        [snapshot(2, vec![tenant_b])],
     )
     .await;
     let in_flight_a = fixture
@@ -963,11 +972,14 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
     let revision_two = snapshot(2, vec![tenant_a.clone(), tenant_b]);
     let shared_cache = Arc::new(RecordingCache::new([
         CacheReply::Snapshot(revision_two.clone()),
-        CacheReply::Snapshot(revision_two),
+        CacheReply::Snapshot(revision_two.clone()),
         CacheReply::Snapshot(snapshot(1, vec![tenant_a.clone()])),
         CacheReply::Snapshot(snapshot(1, vec![tenant_a.clone()])),
     ]));
-    let shared_directory = Arc::new(RecordingDirectory::new(2, []));
+    let shared_directory = Arc::new(RecordingDirectory::new(
+        2,
+        [revision_two.clone(), revision_two],
+    ));
 
     let registry_one = TenantRuntimeRegistry::empty();
     let builder_one = Arc::new(RecordingBuilder::new());
@@ -1042,8 +1054,8 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
             .expect("instance two rejects stale replay"),
         TenantDirectoryRefreshOutcome::Unchanged
     );
-    assert_eq!(shared_directory.revision_read_count(), 0);
-    assert_eq!(shared_directory.snapshot_read_count(), 0);
+    assert_eq!(shared_directory.revision_read_count(), 2);
+    assert_eq!(shared_directory.snapshot_read_count(), 2);
 }
 
 #[tokio::test]
@@ -1148,7 +1160,10 @@ async fn cache_failure_does_not_republish_unconfirmed_cache_payload() {
     fixture.refresher.refresh_cache_once().await.unwrap();
     fixture.refresher.refresh_cache_once().await.unwrap();
     assert_eq!(fixture.directory.snapshot_read_count(), 1);
-    assert_eq!(fixture.cache.stored(), vec![authoritative.clone()]);
+    assert_eq!(
+        fixture.cache.stored(),
+        vec![authoritative.clone(), authoritative.clone()]
+    );
     assert_eq!(
         fixture
             .registry
@@ -1204,10 +1219,7 @@ async fn publication_stops_only_displaced_lifecycles() {
     changed_second.runtime_revision = 2;
     fixture
         .refresher
-        .apply_snapshot(
-            &snapshot(2, vec![first, changed_second]),
-            SnapshotSource::Database,
-        )
+        .apply_snapshot(&snapshot(2, vec![first, changed_second]))
         .await
         .unwrap();
     assert!(
@@ -1396,11 +1408,12 @@ async fn newer_database_snapshot_uses_its_own_revision_to_reject_cache_ahead() {
     .await;
     assert_eq!(
         fixture.refresher.refresh_cache_once().await.unwrap(),
-        TenantDirectoryRefreshOutcome::Applied { revision: 4 }
+        TenantDirectoryRefreshOutcome::Applied { revision: 3 }
     );
+    fixture.directory.set_revision(3);
     assert_eq!(
         fixture.refresher.reconcile_database_once().await.unwrap(),
-        TenantDirectoryRefreshOutcome::Applied { revision: 3 }
+        TenantDirectoryRefreshOutcome::Unchanged
     );
     assert_eq!(fixture.registry.revision(), 3);
     assert_eq!(
@@ -1432,4 +1445,41 @@ async fn newer_database_snapshot_uses_its_own_revision_to_reject_cache_ahead() {
             .rejected_cache_revision,
         None
     );
+}
+
+#[tokio::test]
+async fn security_cloud_increasing_forged_cache_revisions_cannot_swap_or_remove_tenants() {
+    let tenant_a = binding(1, "tenant-a.example", "https://tenant-a.example");
+    let tenant_b = binding(2, "tenant-b.example", "https://tenant-b.example");
+    let authoritative = snapshot(1, vec![tenant_a.clone(), tenant_b.clone()]);
+    let fixture = Fixture::new(
+        authoritative.clone(),
+        [
+            CacheReply::Snapshot(snapshot(100, vec![])),
+            CacheReply::Snapshot(snapshot(
+                101,
+                vec![binding(1, "tenant-b.example", "https://tenant-b.example")],
+            )),
+            CacheReply::Snapshot(snapshot(
+                102,
+                vec![binding(2, "tenant-a.example", "https://tenant-a.example")],
+            )),
+        ],
+        1,
+        [],
+    )
+    .await;
+    for _ in 0..3 {
+        assert_eq!(
+            fixture.refresher.refresh_cache_once().await.unwrap(),
+            TenantDirectoryRefreshOutcome::Unchanged
+        );
+        assert_eq!(fixture.registry.revision(), 1);
+        let current = fixture.registry.load();
+        assert_eq!(current.by_host["tenant-a.example"].binding, tenant_a);
+        assert_eq!(current.by_host["tenant-b.example"].binding, tenant_b);
+    }
+    assert_eq!(fixture.builder.build_count(), 2);
+    assert_eq!(fixture.directory.snapshot_read_count(), 0);
+    assert_eq!(fixture.cache.stored(), vec![authoritative; 3]);
 }

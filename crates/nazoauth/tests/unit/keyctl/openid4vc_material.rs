@@ -1242,3 +1242,43 @@ async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_rev
         ds.raw_serial()
     );
 }
+
+#[test]
+fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
+    // Two unrelated key generations on the same day must not expose their
+    // creation second through the MSO's certificate lower bound.
+    let day = time::OffsetDateTime::from_unix_timestamp(1_791_590_400).unwrap();
+    assert_eq!(day.unix_timestamp().rem_euclid(86_400), 0);
+    for offset in [0, 1, 43_217, 86_399, 86_400] {
+        let now = day + time::Duration::seconds(offset);
+        let key = nazo_crypto::certificate::generate_p256_private_key_pem().unwrap();
+        let profile = managed_profile("issuer.example");
+        let bundle = build_openid4vc_certificate_bundle(
+            &key,
+            &profile.hostname,
+            profile.mdoc_profile.as_ref(),
+            now,
+        )
+        .unwrap();
+        let material = bundle.mdoc_material.unwrap();
+        let (_, leaf) = x509_parser::parse_x509_certificate(&material.leaf_der).unwrap();
+        let (_, ca) = x509_parser::parse_x509_certificate(&material.ca_der).unwrap();
+        let expected = now.date().midnight().assume_utc().unix_timestamp();
+        for (certificate, lifetime) in [(&leaf, 457), (&ca, 3650)] {
+            assert_eq!(certificate.validity().not_before.timestamp(), expected);
+            assert_eq!(
+                certificate.validity().not_after.timestamp(),
+                expected + lifetime * 86_400
+            );
+            assert!(
+                certificate.validity().not_after.timestamp()
+                    <= now.unix_timestamp() + lifetime * 86_400
+            );
+        }
+        assert!(mdoc_certificate_profile_matches(
+            &leaf,
+            &ca,
+            profile.mdoc_profile.as_ref().unwrap()
+        ));
+    }
+}

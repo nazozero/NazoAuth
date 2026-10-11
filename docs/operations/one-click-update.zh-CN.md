@@ -110,7 +110,7 @@ nazoauthctl recover --instance production --recovery-secret-file ./recovery-secr
 
 ## 信任边界
 
-激活前必须验证 Release bytes、attestation、Sigstore identity、manifest 与 OCI digest。应用直接用正在执行的二进制或镜像摘要验证签名 ControlOperation，Ctl 从 runtime 观测同一个内容身份。
+激活前必须验证 Release bytes、attestation、Sigstore identity、manifest 与 OCI digest。具备宿主权限的 Ctl 在执行前，将实际二进制或镜像摘要与受保护的 DeploymentState 比对；应用验证签名 ControlOperation 的 deployment、配置和请求绑定。应用不独立测量运行制品摘要。
 
 控制器的 Release verifier 只接受公开、非草稿 Release，使用有界 `curl` 请求，并通过
 宿主 `cosign` 或固定的 Podman/Docker 后备镜像验证 Sigstore bundle。缺少验证工具

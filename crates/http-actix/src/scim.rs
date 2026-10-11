@@ -539,6 +539,19 @@ fn authorization_error(error: ScimAuthorizationError) -> HttpResponse {
             "SCIM event receiver audience is not configured",
         ),
         ScimAuthorizationError::BackendUnavailable => return backend_unavailable(),
+        ScimAuthorizationError::RateLimited {
+            retry_after_seconds,
+        } => {
+            let mut response = scim_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "tooMany",
+                "SCIM denial rate limit exceeded",
+            );
+            if let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            return response;
+        }
     };
     let mut response = scim_error(status, scim_type, detail);
     if status == StatusCode::UNAUTHORIZED {

@@ -30,6 +30,14 @@ impl AuthorizationConfig {
             || client.require_signed_authorization_request
     }
 
+    pub fn requires_signed_introspection_response(
+        &self,
+        client: &nazo_auth::ClientSecurityPolicy,
+    ) -> bool {
+        self.profile == AuthorizationServerProfile::Fapi2MessageSigningIntrospection
+            || client.require_signed_introspection_response
+    }
+
     pub fn requires_signed_authorization_response(
         &self,
         client: &nazo_auth::ClientSecurityPolicy,

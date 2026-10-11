@@ -32,6 +32,7 @@ pub enum ScimAuthorizationError {
     TenantMismatch,
     EventReceiverNotConfigured,
     BackendUnavailable,
+    RateLimited { retry_after_seconds: u64 },
 }
 
 pub trait ScimRequestAuthorizer: Send + Sync {

@@ -244,6 +244,10 @@ pub fn sign_receipt(mut receipt: AnchorReceipt, key: &SigningKey) -> Result<Vec<
 }
 
 /// The exporter-facing receipt for one envelope's declared identity.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Fields mirror the signed receipt wire contract"
+)]
 pub fn receipt_for(
     kind: &str,
     status: &str,
@@ -291,7 +295,7 @@ pub fn verifying_key_b64(key: &SigningKey) -> String {
 }
 
 fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
-    if value.len() % 2 != 0 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if !value.len().is_multiple_of(2) || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(());
     }
     (0..value.len())

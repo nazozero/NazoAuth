@@ -216,12 +216,9 @@ async fn audit_ledger_append_is_chained_and_pending() {
         .anchor_health()
         .await
         .expect("initial shared anchor health should be readable");
-    let genesis = SecurityAuditExporter::record_genesis(
-        &repository,
-        "test-deployment",
-        &initial_health.head_hash,
-    )
-    .await;
+    let genesis = repository
+        .record_genesis("test-deployment", &initial_health.head_hash)
+        .await;
     if initial_health.head_sequence == 0 {
         genesis.expect("an empty ledger should accept its genesis checkpoint");
     } else {
@@ -1183,13 +1180,10 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
                 .await
                 .expect("anchor health should be readable");
             if health.head_sequence == 0 {
-                SecurityAuditExporter::record_genesis(
-                    &repository,
-                    "test-deployment",
-                    &health.head_hash,
-                )
-                .await
-                .expect("genesis should record");
+                repository
+                    .record_genesis("test-deployment", &health.head_hash)
+                    .await
+                    .expect("genesis should record");
             }
             SecurityAuditExporter::observe_anchor(&repository, "test-deployment")
                 .await
@@ -1290,7 +1284,8 @@ async fn audit_claim_survives_dead_prefix_and_autovacuum_recovers() {
         .await
         .expect("anchor health should be readable");
     if health.head_sequence == 0 {
-        SecurityAuditExporter::record_genesis(&repository, "test-deployment", &health.head_hash)
+        repository
+            .record_genesis("test-deployment", &health.head_hash)
             .await
             .expect("genesis should record");
     }

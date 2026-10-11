@@ -14,6 +14,7 @@ pub(crate) struct RateLimitSettings {
     pub(crate) auth_max_requests: u64,
     pub(crate) token_max_requests: u64,
     pub(crate) token_management_max_requests: u64,
+    pub(crate) scim_denial_max_requests: u64,
     pub(crate) login_failure_window_seconds: u64,
     pub(crate) login_failure_ip_email_max_attempts: u64,
     pub(crate) mfa_failure_window_seconds: u64,
@@ -36,12 +37,16 @@ impl RateLimitSettings {
                 "TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS",
                 DEFAULT_SHARED_IP_MAX_REQUESTS,
             )?,
+            scim_denial_max_requests: config.parse("SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS", 60)?,
             login_failure_window_seconds: config.parse("LOGIN_FAILURE_WINDOW_SECONDS", 900)?,
             login_failure_ip_email_max_attempts: config
                 .parse("LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS", 5)?,
             mfa_failure_window_seconds: config.parse("MFA_FAILURE_WINDOW_SECONDS", 900)?,
             mfa_failure_max_attempts: config.parse("MFA_FAILURE_MAX_ATTEMPTS", 5)?,
         };
+        if settings.scim_denial_max_requests == 0 {
+            bail!("SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS must be positive");
+        }
         if settings.window_seconds == 0
             || settings.login_failure_window_seconds == 0
             || settings.mfa_failure_window_seconds == 0
