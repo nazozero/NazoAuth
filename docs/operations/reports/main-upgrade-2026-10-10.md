@@ -9,7 +9,9 @@ These are authorized repair-branch builds, not new signed releases.
 Production deployment, snapshot/restore rehearsal, doctor and public verify pass.
 The initial official suite and one interrupted correction run remain recorded
 below. The final OpenID4VC correction run is complete with zero failures/incomplete
-modules. Official acceptance still requires human review; no certification PASS
+modules. The [2026-10-11 evidence review](oidf-review-2026-10-11.md) locally accepts
+24 VP screenshot obligations and 12 scope warnings, identifies 17 missing OIDC
+screenshots, and leaves two mdoc privacy warnings open. No certification PASS
 is claimed.
 
 ## Upgrade failures and repairs
@@ -271,7 +273,10 @@ validated controller for upgraded-schema backups until the controller repair is
 released. The formally provisioned recovery administrator, MFA recovery material
 and controller keys remain root-private; existing accounts were not reset.
 
-No new performance or long-term storage conclusion is made. Remaining work for
-formal certification is official human review of REVIEW/WARNING records, not
-hidden failed or unexecuted protocol modules. CI is checked only after execution
-and evidence publication, as requested.
+No new performance or long-term storage conclusion is made. The subsequent
+[complete REVIEW/WARNING review](oidf-review-2026-10-11.md) found concrete remaining
+evidence work: 17 OIDC screenshots are absent, and two mdoc privacy warnings
+remain open. The 24 VP image obligations and 12 scope warnings are locally
+accepted without changing official results. Final report-head CI passed
+(9 checks passed, 2 workflow skips); the controller passed all four platforms.
+The review is not OpenID Foundation certification approval.
