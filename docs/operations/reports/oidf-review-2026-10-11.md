@@ -1,5 +1,10 @@
 # OIDF retained-evidence review, 2026-10-11
 
+> Follow-up: [Suite HTML evidence and controller WebDriver removal](oidf-no-webdriver-2026-10-11.md)
+> supersedes the blanket PNG-only objection below. Historical records are retained;
+> the new selected run observes three mdoc privacy warnings rather than two.
+
+
 This review covers **all 41 REVIEW and 14 WARNING modules** in the composite
 1,173-module ledger. It checks the retained official logs, actual screenshot
 bytes, module/transaction evidence, current source and primary specifications.
