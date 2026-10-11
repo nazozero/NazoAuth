@@ -187,5 +187,72 @@
     "No new performance acceptance or full local server workspace execution claimed.",
     "No production deployment or migration performed.",
     "Two k6-dependent Python tests skipped; actual JS invalid_grant regression ran under Node."
-  ]
+  ],
+  "ci_first_workspace": {
+    "head": "3b693728a27ff89c0b361f025a5634577cf54ec2",
+    "url": "https://github.com/nazozero/NazoAuth/actions/runs/38126006382",
+    "exit_code": 101,
+    "passed": 3730,
+    "failed": 2,
+    "ignored": 4,
+    "failures": [
+      "tenant_module_scope: fixture env variable mismatch",
+      "canonical_config_keys_are_locked_to_the_reviewed_baseline: missing new SCIM configuration key"
+    ]
+  },
+  "ci_followup_targeted_checks": [
+    {
+      "name": "ci-fixture-tenant",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazo-postgres",
+        "--test",
+        "tenant_module_scope"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "ci-config-baseline",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "test",
+        "--release",
+        "--locked",
+        "-p",
+        "nazoauth",
+        "--lib",
+        "config::tests::canonical_config_keys_are_locked_to_the_reviewed_baseline",
+        "--",
+        "--exact"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "ci-test-fmt",
+      "command": [
+        "cargo",
+        "+1.99.0",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "initial_exit_code": 1,
+      "repair": "rustfmt wrapped longer environment-variable lookup; cargo fmt --check rerun exit 0"
+    }
+  ],
+  "codeql_false_positive": {
+    "alert": 590,
+    "analysis": 1931087988,
+    "reason": "Cross-field flow from u64 request cap to independent protocol pepper String",
+    "review_url": "https://github.com/nazozero/NazoAuth/pull/242#issuecomment-6107397696",
+    "status": "dismissed as false positive"
+  }
 }

@@ -145,3 +145,34 @@ performed, and no CI result is inferred from a local build. Earlier failed setup
 compile and fixture attempts remain in private execution evidence; they are not
 counted as negative vulnerability demonstrations.
 
+
+## Final CI follow-up
+
+The first complete workspace run on report head
+`3b693728a27ff89c0b361f025a5634577cf54ec2`
+([run 38126006382](https://github.com/nazozero/NazoAuth/actions/runs/38126006382))
+exited 101: 3,730 tests passed, two failed and four were ignored across 192
+reported suites. The two failures were test integration omissions, not hidden:
+
+- The reviewed canonical configuration list omitted the newly added
+  `SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS`. The explicit expected list now includes
+  this documented configuration key; the equality assertion remains intact.
+- The tenant-scope migration regression required `NAZO_TEST_DATABASE_URL`, while
+  CI provisions the isolated fixture through `NAZO_AUDIT_TEST_DATABASE_URL`.
+  The test now uses that existing explicit fixture contract. It still fails if
+  the fixture is missing; it neither skips nor falls back to a production URL.
+
+Both regressions were executed successfully after correction in the authorized
+test environment. These follow-up changes modify test wiring only. The verified
+runtime source and binaries remain those recorded above. Final PR checks are
+reported separately against the final repository head.
+
+CodeQL alert [590](https://github.com/nazozero/NazoAuth/security/code-scanning/590)
+was a confirmed cross-field false positive: its SARIF flow incorrectly connects
+the `u64` SCIM limit `60` under `Settings.identity.rate_limit` to the distinct
+`Settings.protocol.client_secret_pepper: String` consumed by HMAC. The pepper is
+loaded and checked independently. The
+[complete data-flow review](https://github.com/nazozero/NazoAuth/pull/242#issuecomment-6107397696)
+is attached to the alert. It was dismissed as false positive without disabling
+any rule or changing runtime controls. This separate GitHub alert does not change
+the initial Security Cloud inventory (38 fixed/closed, four retained open).

@@ -10,7 +10,8 @@ struct Mode {
 
 #[tokio::test]
 async fn existing_tenants_inherit_global_module_decisions() {
-    let url = std::env::var("NAZO_TEST_DATABASE_URL").expect("isolated test database required");
+    let url =
+        std::env::var("NAZO_AUDIT_TEST_DATABASE_URL").expect("isolated test database required");
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     let schema = format!("module_scope_{}", uuid::Uuid::now_v7().simple());
     connection
