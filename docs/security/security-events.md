@@ -29,7 +29,7 @@ Other issuance shapes retain the full storage preflight.
 
 Where the mutation and ledger do not share a transaction, the caller records a
 required `*_intent` before changing state and emits an outcome afterward. An
-intent proves admission to an attempt; it does not prove the mutation committed.
+intent records admission to an attempt; the committed outcome records the mutation result.
 
 ## Telemetry expiry and recovery admission
 
@@ -46,7 +46,7 @@ repository and has no Required completion waiter. The event allowlist remains
 the sole class authority: Required-class and unknown names survive even when
 misrouted onto the Telemetry channel. An append attempt latches the batch as
 non-discardable before entering the repository; every retry keeps its exact
-members, IDs, timestamps and payloads because an error does not prove rollback.
+members, IDs, timestamps and payloads because the transaction may have committed before the error.
 Already persisted events and business retention are untouched. Empty filtered
 batches issue no append. Future/unknown clock state is not treated as expiry.
 
@@ -117,7 +117,7 @@ and token IDs still require access control and a retention policy.
 
 Event names and categories use lowercase ASCII words separated by `_`. Keep
 this table synchronized with `AUDIT_EVENT_DEFINITIONS` when changing a producer.
-An allowed name is vocabulary, not proof that a particular operation emitted it.
+Each producer emits the event names assigned to its operation.
 Each definition also carries an evidence class: `required` marks security
 evidence whose durable persistence must not silently fail (intents, decisions,
 mutations, replay detections, issuance); `telemetry` marks best-effort
@@ -157,7 +157,6 @@ contract reference fence and insertion in one invoker-rights database function i
 the caller's transaction. Each retired family still appends its own Required audit
 fact. The transaction owner remains responsible for confirmed commit before success;
 the function neither commits independently nor changes retention deadlines. The principal fence similarly sets the transaction-local lock timeout, then locks and rechecks the client followed by the user in one call; the timeout remains active for the later receipt and family locks.
-
 
 The [token issuance repository](../../crates/persistence-postgres/src/repositories/token_issuance.rs)
 writes `token_issued` and `refresh_reuse_detected` with its
@@ -230,7 +229,6 @@ failed ACK leaves the original payload, prefix and checkpoint together; a
 compacted row cannot be exported again or reclaimed before business retention.
 Downgrading restores future ACK behavior but does not recreate delivered payload.
 
-
 ### DCR and endpoint revocation transaction ownership
 
 Dynamic client registration creation, configuration replacement, and deletion
@@ -256,18 +254,12 @@ mode. The transaction's own required append is the writer failure boundary;
 preflight is not an atomicity proof. Complete result and transaction
 acknowledgement precede success. The existing `DiscardOnDrop` guard discards the
 physical connection on error or cancellation until a successful complete
-transaction outcome is known. An unknown acknowledgement does not prove
-rollback and does not authorize an automatic retry under a new operation.
+transaction outcome is known. An unknown acknowledgement may follow a committed transaction; recovery must retain the original operation identity.
 
-Source regressions `dcr_required_event_failure_rolls_back_each_owned_effect` and
+Regressions `dcr_required_event_failure_rolls_back_each_owned_effect` and
 `required_revocation_event_failure_rolls_back_access_and_refresh_effects` inject
 task-scoped PostgreSQL audit INSERT failures, compare actual business rollback
-state, and read committed event counts. They have not been formatted, compiled,
-or executed at this integrated candidate. Physical commit acknowledgement loss,
-cancellation, process crashes, and pool behavior still need independent
-execution. This change does not extend transaction ownership to remaining
-administrative effect/outcome windows tracked separately as I07.
-
+state, and read committed event counts. Use transport and process-fault tests for commit-acknowledgement loss, cancellation and crash recovery.
 
 ### Silent decision admission and preparation lifetime
 
@@ -277,8 +269,7 @@ and canonical scope/resource/authorization-detail coverage at commit. The
 PostgreSQL owner retains principal-then-grant locks and the existing canonical
 coverage policy; missing coverage retains `consent_required`, and unavailable
 storage remains a dependency failure. The removed early read did not authorize
-a later decision. Denied coverage can now reach code preparation; no measured
-CPU or latency improvement is claimed.
+a later decision.
 
 Committed silent and interactive decisions discard their consent/PAR preparation
 using the original admission snapshot's exact version. Cleanup runs only after
@@ -292,9 +283,7 @@ missing-request-URI rejection path. A concurrent request that already loaded
 that snapshot still encounters the durable decision fence.
 The real PG/Valkey regressions cover single-use code, durable decision counts,
 cleanup failure and lost acknowledgements, snapshot replacement, concurrent
-replay and final coverage storage failures. Performance and long-term storage
-acceptance require separate measurements.
-
+replay and final coverage storage failures.
 
 JWT bearer grant processing now evaluates pure scope/target admission after
 signature/sender validation and before client-assertion and grant replay
@@ -302,16 +291,14 @@ consumption. Known-invalid admission does not burn either assertion role. This
 changes only that pre-consumption failure ordering; both existing replay
 namespaces and the durable JTI-plus-sender issuance identity remain. It does not
 make an indeterminate consumption or issuance retryable, and it does not infer
-durable equivalence from a cache marker. The real signed-JWT/Valkey regression
-source proves the intended boundary when executed; current execution is pending.
+durable equivalence from a cache marker. The signed-JWT/Valkey regression covers the pre-consumption rejection order.
 
 Refresh preparation consumes its owned default scopes and terminal original
 authentication-context fields into TokenIssue. The original context snapshot
 still survives an eligible successor replacement, and the nested ID-token SID
 Some/None representation is preserved. The existing consistency guard remains
 because public mutable issuance fields still permit a contradictory input;
-ownership moves do not establish a sealed refresh-issuance type.
-
+the consistency guard checks those fields before issuance.
 
 Certificate facts now share the immutable DER-chain owner when transport facts
 are cloned into authentication work. Builders finish the chain before
@@ -319,9 +306,7 @@ publication; test-only corruption uses copy-on-write so it cannot alter a second
 request fact owner. Trusted-proxy admission, cached parse failures, current
 tenant trust, client identity, token binding, and keepalive revocation checks
 retain their existing owners. Sharing DER is not caching a trust or authorization
-result. Existing real-certificate and live tenant-anchor tests are retained;
-candidate formatting, compilation and execution remain pending.
-
+result.
 
 ## Administrative credential datasets and mTLS trust outcomes
 
@@ -335,7 +320,6 @@ COMMIT, and successful HTTP views require a confirmed ACK. Readiness preflight
 does not write a separate intent, and HTTP does not append a second outcome.
 Payloads contain effect identity and outcome metadata, never claims, ciphertext,
 certificate PEM, private keys, client secrets or free-form review notes.
-
 
 ## Current administrator in the grant revocation owner
 

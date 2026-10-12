@@ -25,7 +25,6 @@ releases. Entries below describe their respective releases, not current support.
 - Package and attest the protocol and its crypto dependency together. Operator
   protocol 3 and release-manifest schema 7 remain unchanged.
 
-See [security verification and remaining boundaries](docs/security/security-cloud-20261011.md).
 Historical conformance and performance reports describe their recorded source
 revisions; this version bump does not assert new certification or load results.
 

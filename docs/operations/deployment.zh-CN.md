@@ -189,7 +189,7 @@ RFC 9440 `Client-Cert` header 转交。NazoAuth 再根据客户端注册信息�
 预检必须执行 `openssl verify -CAfile run-ca.pem client.pem`；否则，不同密钥却复用同一
 subject/issuer DN 的叶证书可能被 OpenSSL/HAProxy 判为自签证书并拒绝握手。
 
-客户端证书必须能链接到本轮 active bundle。NazoAuth 仍会验证注册的 subject/SAN
+客户端证书必须能链接到当前 active bundle。NazoAuth 仍会验证注册的 subject/SAN
 和可选证书摘要。同时还必须满足：
 
 - HAProxy 先删除公网请求中的证书 header，再写入自己从 TLS 连接取得的证书；

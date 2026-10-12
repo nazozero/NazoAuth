@@ -100,8 +100,7 @@ administrative mTLS commands append their canonical Required outcome inside the
 business owner and present only its accepted commit result. Administrative
 controller identity and proactive recovery-root commands follow that same ACK
 boundary through purpose ports; signed break-glass and offline controller
-recovery retain their independent contracts. New combined-source PostgreSQL and
-real HTTP regression execution remains pending.
+recovery retain their independent contracts.
 
 Ordinary admin client PATCH carries its original semantic metadata snapshot
 through preparation, including external sector-document retrieval. The adapter
@@ -111,6 +110,4 @@ transaction. A mismatch returns HTTP 409; callers reload and prepare a new patch
 The expected identity cannot select a different tenant/client/root context.
 Comparison excludes stored credential digests because this metadata command
 does not replace them. Existing confidential-to-public invalidation triggers
-remain part of the write transaction. This port still carries no current admin
-principal and does not claim a final hierarchy check. The PostgreSQL stale-patch
-and fresh-retry cases are source additions with execution pending.
+remain part of the write transaction. This metadata port has no current-admin input; the administrative command owns the hierarchy check.

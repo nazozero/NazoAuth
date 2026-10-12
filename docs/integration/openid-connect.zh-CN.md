@@ -7,9 +7,7 @@
 状态术语按字面理解：**完整支持**表示该能力已按所列角色/profile 实现，
 并且只有满足启用条件时才会宣告；**永不支持**表示没有运行时开关、客户
 端元数据字段或隐藏兼容路径可以启用该能力，未来若要加入必须先有新的
-规范和安全证据，并显式推翻现有策略；**待最终 RFC/Final 审计**表示当前
-实现已经覆盖对应草案或 Implementer's Draft 的主要行为，但不能宣称最终
-规范一致性；**不支持（待实现）**表示该能力已
+规范和安全证据，并显式推翻现有策略；**待最终 RFC/Final 审计**表示实现基于列出的草案或 Implementer's Draft，最终规范的差异待核对；**不支持（待实现）**表示该能力已
 进入路线图，但当前不可执行、也不会宣告；**不支持**表示标准定义了该可
 选值，但当前不宣告，也没有路线图承诺。所有情况下，discovery 与
 registration metadata 都是可执行 allowlist。
@@ -63,11 +61,11 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 
 | 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | draft-15 实现基础；draft-16 待审计 | 当前跟踪 [draft-ietf-oauth-v2-1-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。先前 draft-15 的证据不能证明 draft-16 或最终 RFC 一致性。 | 复审输入大小、PKCE 和同意流程等差异，再更新支持声明。 |
-| OAuth 2.0 for Browser-Based Applications | 最终 RFC 待审计 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 已发布，先前 draft-27 审查不能证明最终 RFC 一致性。 | 按 RFC 复审 SPA、BFF、浏览器客户端和会话要求；不新增 runtime profile。 |
+| OAuth 2.1 Authorization Framework | draft-15 实现基础；draft-16 待审计 | 当前跟踪 [draft-ietf-oauth-v2-1-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。当前实现基于 draft-15，draft-16 差异待核对。 | 复审输入大小、PKCE 和同意流程等差异，再更新支持声明。 |
+| OAuth 2.0 for Browser-Based Applications | 最终 RFC 待审计 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 已发布；当前实现基于 draft-27，最终 RFC 差异待核对。 | 按 RFC 复审 SPA、BFF、浏览器客户端和会话要求；不新增 runtime profile。 |
 | Cross-Device Flows: Security BCP | 待审计 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 已发布。Device Grant、CIBA 和 Native SSO 已存在，但尚未完成该 BCP 的逐条审计。 | 复审各适用跨设备流程，不自动扩大 grant 权限。 |
 | OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
-| JWT BCP / JWT Assertion bis | 不支持（待审计） | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布。当前支持的是 RFC 8725/RFC 7523 行为，不宣称支持这两个 bis 草案。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
+| JWT BCP / JWT Assertion bis | 不支持（待审计） | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布。当前支持 RFC 8725/RFC 7523，两个 bis 草案暂不支持。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
 | OAuth Client Attestation | 支持 OpenID4VCI 1.0 固定引用的 draft-07；默认关闭 | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) 是 OpenID4VCI 1.0 Final 明确固定的版本；当前实现支持 `attest_jwt_client_auth`，并将 refresh token 绑定到 Client Instance `cnf` 公钥。只有模块启用且客户端策略要求时才宣告。 | 后续草案及最终 RFC 必须作为独立 delta audit；不能把更新草案的破坏性语法变化混入 HAIP 1.0 / OpenID4VCI 1.0 profile。 |
 | FAPI 2.0 HTTP Signatures | 实验性支持；默认关闭；待稳定规范审计 | [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) 不是 Final Specification；持久化 `http_message_signatures` 模块控制 `/fapi/resource`。 | 规范稳定或有 adopter 后再决定是否宣告；每个新草案/Final 都必须做 delta audit。 |
 | Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |
@@ -371,7 +369,7 @@ RFC 8705 第 7.4 节还指出：如果授权服务器信任多个 CA，攻击者
 审批在取得租户串行化锁、当前管理员、申请和客户端行锁后采样一次数据库当前时间；证书有效期和当前信任锚配额使用同一接受点时间。这不承诺 COMMIT ACK 必须在证书到期前到达。
 
 - 单客户端最多保留 8 个当前有效信任锚和 4 个待审批申请，单用户在每个租户最多保留 16 个待审批申请，单租户最多保留 128 个不同的当前有效信任锚；创建和审批按租户串行化。
-- 反向代理只能安装从控制面导出的已批准 bundle。应用认证仍校验客户端唯一登记的 RFC 8705 subject selector；经公网审批的 PKI 信任还必须匹配叶证书 pin。self-signed 客户端继续绑定其登记证书 key。因此 TLS 层信任某个 CA，不代表 OAuth 层授权该 CA 签发的全部证书。
+- 反向代理只能安装从控制面导出的已批准 bundle。应用认证仍校验客户端唯一登记的 RFC 8705 subject selector；经公网审批的 PKI 信任还必须匹配叶证书 pin。self-signed 客户端继续绑定其登记证书 key。OAuth 授权仍按客户端登记的证书身份检查。
 - subject DN 必须是合法 RFC 4514 值，并通过 OpenSSL 的 X.509 名称规范比较满足 RFC 4517 `distinguishedNameMatch` 要求。DNS 和邮件域名不区分大小写，URI SAN 精确匹配，IP SAN 解析后按二进制地址比较；非法或歧义 selector 一律拒绝。
 
 ## Logout 与 Session

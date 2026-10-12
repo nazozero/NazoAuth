@@ -275,8 +275,7 @@ for the server/client boundary, default matrix, policy JSON, and upgrade rules.
 ## Experimental FAPI HTTP signatures
 
 The explicit persisted `http_message_signatures` runtime-module state changes
-only `/fapi/resource`. It is default-off, has no discovery metadata, and is
-not a claimed certification profile.
+only `/fapi/resource`. It is experimental, default-off and has no discovery metadata.
 Each token's `client_id` must resolve to an active client with an exact public
 JWK matching the request `keyid` and algorithm. Supported algorithms are
 Ed25519, RSA PKCS#1 v1.5 SHA-256 with RSA keys of at least 2048 bits, and
@@ -318,8 +317,7 @@ For the concrete HAProxy 3.2 preset, trust-bundle installation, atomic reload,
 and rollback requirements, see
 [`deploy/proxy/README.md`](../../deploy/proxy/README.md).
 
-CORS is endpoint-scoped. `CORS_ALLOWED_ORIGINS` is an exact allowlist, not proof
-that a browser client is confidential. Authorization and browser-redirect
+CORS is endpoint-scoped. `CORS_ALLOWED_ORIGINS` is an exact allowlist; browser clients still use public-client authentication rules. Authorization and browser-redirect
 endpoints are navigation-only and are not CORS APIs. `/token` and `/revoke`
 allow non-credentialed browser CORS only for POST with the protocol headers
 needed for content type, client/token authorization, DPoP nonce, challenge, and
@@ -420,7 +418,7 @@ connections keep the generation they accepted. Server-side TLS resumption is
   requires a controlled restart. In proxy mode, the optional `TLS_CLIENT_CA_FILE`
   applies the same PKI validation to the forwarded leaf and `Client-Cert-Chain`.
   A trusted proxy must verify possession of the client private key and replace
-  incoming certificate headers; header forwarding alone does not establish CA trust.
+  incoming certificate headers; CA trust requires the configured certificate-chain checks.
 
 The mTLS listener verifies CertificateVerify signatures while permitting unknown
 CAs and absent certificates to reach OAuth client authentication. `tls_client_auth`

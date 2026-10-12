@@ -16,7 +16,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = ROOT / "perf" / "results"
 DEFAULT_CAPACITY_RESULTS = RESULTS_DIR / "data" / "capacity" / "latest.json"
-DEFAULT_CAPACITY_REPORT = ROOT / "docs" / "performance" / "performance-capacity-curve.md"
+DEFAULT_CAPACITY_REPORT = RESULTS_DIR / "reports" / "performance-capacity-curve.md"
 CHECKPOINT_LOCK = RESULTS_DIR / ".capacity-checkpoint.lock"
 
 DEFAULT_RATES: dict[str, list[int]] = {
@@ -52,14 +52,6 @@ def run_command(command: list[str], env: dict[str, str]) -> None:
         raise RuntimeError(f"command failed with exit code {completed.returncode}: {' '.join(command)}")
 
 
-def run_git(command: list[str], env: dict[str, str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(command, cwd=ROOT, env=env, text=True, capture_output=True)
-    if check and completed.returncode != 0:
-        detail = "\n".join(part for part in (completed.stdout, completed.stderr) if part).strip()
-        raise RuntimeError(f"command failed with exit code {completed.returncode}: {' '.join(command)}\n{detail}")
-    return completed
-
-
 @contextlib.contextmanager
 def checkpoint_lock():
     CHECKPOINT_LOCK.parent.mkdir(parents=True, exist_ok=True)
@@ -84,66 +76,6 @@ def checkpoint_lock():
             CHECKPOINT_LOCK.rmdir()
         except FileNotFoundError:
             pass
-
-
-def checkpoint_enabled() -> bool:
-    return os.environ.get("CAPACITY_CHECKPOINT_COMMIT", "0") == "1"
-
-
-def git_branch(env: dict[str, str]) -> str:
-    configured = env.get("CAPACITY_CHECKPOINT_BRANCH") or env.get("CNB_BRANCH")
-    if configured:
-        return configured
-    completed = run_git(["git", "branch", "--show-current"], env)
-    branch = completed.stdout.strip()
-    if not branch:
-        raise RuntimeError("capacity checkpoint requires a checked-out branch")
-    return branch
-
-
-def checkpoint_commit(
-    *,
-    env: dict[str, str],
-    report_path: Path,
-    results_path: Path,
-    instances: int,
-    scenario: str,
-    rate: int,
-    status: str,
-) -> None:
-    if not checkpoint_enabled():
-        return
-    branch = git_branch(env)
-    suffix = env.get("CAPACITY_REPORT_SUFFIX", scenario)
-    run_git(["git", "config", "user.name", env.get("CNB_GIT_USER_NAME", "NazoAuth Capacity Bot")], env)
-    run_git(
-        ["git", "config", "user.email", env.get("CNB_GIT_USER_EMAIL", "nazoauth-capacity-bot@noreply.cnb.cool")],
-        env,
-    )
-    paths = [display_path(report_path), display_path(results_path)]
-    env_report = env.get("CAPACITY_ENV_REPORT_PATH")
-    if env_report and root_path(env_report).exists():
-        paths.append(display_path(root_path(env_report)))
-    for attempt in range(1, 4):
-        try:
-            run_git(["git", "add", "-f", *paths], env)
-            diff = run_git(["git", "diff", "--cached", "--quiet", "--", *paths], env, check=False)
-            if diff.returncode == 0:
-                print(f"capacity checkpoint has no changes for {suffix} {instances}x {scenario} {rate}/s")
-                return
-            message = f"Checkpoint capacity {suffix}: {instances}x {scenario} {rate}rps {status}"
-            run_git(["git", "commit", "-m", message], env)
-            run_git(["git", "pull", "--rebase", "--autostash", "origin", branch], env)
-            run_git(["git", "push", "origin", f"HEAD:{branch}"], env)
-            print(f"capacity checkpoint pushed: {suffix} {instances}x {scenario} {rate}/s status={status}")
-            return
-        except Exception as exc:
-            print(f"capacity checkpoint attempt {attempt} failed: {exc}")
-            if attempt == 3:
-                if os.environ.get("CAPACITY_CHECKPOINT_STRICT", "1") == "1":
-                    raise
-                return
-            time.sleep(attempt * 5)
 
 
 def compose_project_name(env: dict[str, str]) -> str:
@@ -638,15 +570,6 @@ def main() -> None:
                             report_path=report_path,
                             results_path=results_path,
                         )
-                        checkpoint_commit(
-                            env=os.environ.copy(),
-                            report_path=report_path,
-                            results_path=results_path,
-                            instances=instance_count,
-                            scenario=scenario,
-                            rate=rate,
-                            status="skipped_after_threshold_failure",
-                        )
                     continue
                 print(
                     f"capacity point: instances={instance_count} "
@@ -667,15 +590,6 @@ def main() -> None:
                         duration=args.duration,
                         report_path=report_path,
                         results_path=results_path,
-                    )
-                    checkpoint_commit(
-                        env=os.environ.copy(),
-                        report_path=report_path,
-                        results_path=results_path,
-                        instances=instance_count,
-                        scenario=scenario,
-                        rate=rate,
-                        status=point_status(point),
                     )
 
 

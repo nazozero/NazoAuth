@@ -2,7 +2,7 @@
 set -eu
 
 cd /workspace
-mkdir -p docs/performance/archive/dev perf/results/.run
+mkdir -p perf/results/reports perf/results/.run
 children_file="perf/results/.run/dev-capacity-children.txt"
 cpusets_file="perf/results/.run/dev-capacity-cpusets.txt"
 : >"${children_file}"
@@ -86,7 +86,6 @@ run_child() {
     export PERF_APP_CPUSET="${cpu_set}"
     export PERF_INFRA_CPUSET="${cpu_set}"
     export CNB_CAPACITY_SKIP_BOOTSTRAP=1
-    export CNB_CAPACITY_COMMIT=0
     export CAPACITY_DURATION="${CAPACITY_DURATION:-30m}"
     export CAPACITY_INSTANCES="${CAPACITY_INSTANCES:-1,2,4}"
     export CNB_BUILD_ID="dev-capacity"

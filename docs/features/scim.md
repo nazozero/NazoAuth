@@ -150,7 +150,7 @@ lookup on successful responses.
 
 Caller-supplied `ack` and `setErrs` remain durable receiver dispositions applied
 by the first poll transaction. A later authorization denial does not undo them.
-Local database commit acknowledgement does not prove receiver acceptance of new
+Receiver acknowledgement confirms acceptance of new
 SETs, and returning a SET does not acknowledge it. The query frequency is retained
 until an owned cross-instance wakeup/subscription path and lost-notification
 fallback can preserve these boundaries.

@@ -21,7 +21,6 @@ export CAPACITY_DURATION="${duration}"
 export CAPACITY_INSTANCES="${instances}"
 export CAPACITY_REPORT_SUFFIX="${suffix}"
 export PERF_APP_CPUS="${app_cpus}"
-export CNB_CAPACITY_COMMIT="${CNB_CAPACITY_COMMIT:-0}"
 export CAPACITY_MAX_VUS="${max_vus}"
 
 if [ -n "${APP_CPU_CAPACITY_INFRA_CPUSET:-}" ]; then

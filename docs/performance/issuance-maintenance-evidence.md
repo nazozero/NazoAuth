@@ -63,9 +63,7 @@ is `FAIL`; a complete valid observation within it is `PASS`.
   age. Their ledger-start timestamp precedes the backlog statement, so that age
   is a diagnostic lower bound. The gate uses the sampler's same-statement clock.
 - `PASS` establishes the **sampled issuance expiry-age objective in this run**.
-  It does not establish an infinite steady state or prove retention of other
-  categories. In particular, a fresh 30-minute test does not cross the one-hour
-  refresh-contract grace.
+  Measure each state category through its own retention period; the one-hour refresh-contract grace requires a longer window.
 - Phase 3 cannot retain a candidate with missing/invalid issuance evidence or a
   failed age objective. Prepare failures are also source-sensitive: local or
   unclassified preparation failures are `INVALID`; service preparation failures

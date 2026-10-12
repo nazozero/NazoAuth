@@ -13,19 +13,8 @@ DURATION="${CAPACITY_DURATION:-30m}"
 INSTANCES="${CAPACITY_INSTANCES:-1,2,4}"
 RATES="${CAPACITY_RATES:-}"
 MAX_VUS="${CAPACITY_MAX_VUS:-1024}"
-case "${REPORT_SUFFIX}" in
-  dev-*) REPORT="docs/performance/archive/dev/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
-  extended-*) REPORT="docs/performance/reports/extended/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
-  app-cpu-*|single-instance-*) REPORT="docs/performance/reports/special/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
-  *) REPORT="docs/performance/reports/main/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
-esac
+REPORT="perf/results/reports/performance-capacity-curve-${REPORT_SUFFIX}.md"
 ENV_REPORT="perf/results/environments/${REPORT_SUFFIX}.md"
-export CAPACITY_ENV_REPORT_PATH="${ENV_REPORT}"
-if [ "${CNB_CAPACITY_COMMIT:-1}" = "0" ]; then
-  export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-0}"
-else
-  export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-1}"
-fi
 COMPOSE_PROJECT_NAME="$(printf 'nazoauth-%s-%s' "${CNB_BUILD_ID:-local}" "${REPORT_SUFFIX}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | cut -c1-63)"
 export COMPOSE_PROJECT_NAME
 
@@ -166,7 +155,7 @@ fi
   echo "| Valkey container | docker.io/valkey/valkey:9.1.2-alpine; RDB save disabled; AOF disabled; warning log level; ephemeral state for benchmark isolation. |"
   echo "| NazoAuth container | Built from local Containerfile target runtime; application performance collection absent; signing keys are database-backed. |"
   echo "| Migration setup | migrate service runs a signed, one-shot operator-task before the NazoAuth service is considered ready for benchmark traffic. |"
-  echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports under docs/performance/reports/ and runtime JSON/logs to ignored perf/results/. |"
+  echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports and runtime JSON/logs to ignored perf/results/. |"
   echo "| Metrics sources | k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; NazoAuth DB pool metrics; Valkey INFO counters. |"
   echo
 } >"${ENV_REPORT}"
@@ -271,27 +260,4 @@ if status != 0:
 target_path.write_text(source, encoding="utf-8", newline="\n")
 PY
 
-if [ "${CNB_CAPACITY_COMMIT:-1}" = "0" ]; then
-  exit "${status}"
-fi
-
-git config user.name "${CNB_GIT_USER_NAME:-NazoAuth Capacity Bot}"
-git config user.email "${CNB_GIT_USER_EMAIL:-nazoauth-capacity-bot@noreply.cnb.cool}"
-git add "${REPORT}"
-if git diff --cached --quiet; then
-  echo "No capacity report changes to commit."
-  exit "${status}"
-fi
-
-git commit -m "Record capacity curve ${REPORT_SUFFIX}"
-
-BRANCH="${CNB_BRANCH:-main}"
-for attempt in 1 2 3; do
-  if git pull --rebase origin "${BRANCH}" && git push origin "HEAD:${BRANCH}"; then
-    exit "${status}"
-  fi
-  sleep $((attempt * 10))
-done
-
-git push origin "HEAD:${BRANCH}"
 exit "${status}"

@@ -69,8 +69,7 @@ Actix resource-route tests cover the default-off boundary and its HTTP
 integration. No separate Python wire-vector runner is a current source of
 cryptographic truth or external-conformance evidence.
 
-These tests are bounded implementation evidence, not certification. The
-experiment is not covered by certification of other FAPI profiles.
+HTTP Signatures is an experimental profile with its own test suite.
 
 ## Specification update policy
 

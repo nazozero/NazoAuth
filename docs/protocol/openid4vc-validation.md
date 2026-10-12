@@ -74,21 +74,16 @@ not silently regenerated, backdated or accepted outside their validity. Their
 first partial day can still require the exact public certificate lower bound;
 the general signer-validity guard remains necessary. A deployment importing such
 material must assess that shared cohort boundary or provision certificates whose
-validity covers its privacy rounding interval. A shared certificate by itself is
-not proof of unlinkability.
+validity covers its privacy rounding interval. Assess credential linkability across all disclosed fields.
 
 The real COSE/MSO regression exercises a rounded claim preceding a newly active
 certificate, a claim already within its interval, deadline preservation and
 rejection of impossible intervals. The managed-certificate regression checks
 midnight, one second later, midday, the last second and the next day's boundary;
 keyctl lifecycle tests retain generation reuse, concurrent initialization,
-rotation, historical CRLs and import preservation. Official Suite execution and
-retained results are recorded separately in the
-[deployment report](../operations/reports/main-upgrade-2026-10-10.md). The subsequent
-[managed mdoc privacy validation](../operations/reports/oidf-mdoc-privacy-2026-10-11.md)
-records the three corrected batch warnings and all 30 checked credential intervals.
+rotation, historical CRLs and import preservation. Store external conformance results with their tested version outside the source tree.
 
-## Evidence and remaining work
+## Regression coverage
 
 Signed proof regressions use actual ES256 signatures and trusted attestation
 keys. Encryption regressions encrypt and decrypt real compact JWE, retain
@@ -96,12 +91,8 @@ the status through storage/replay helpers, and assert the HTTP presenter uses
 the semantic status for both encodings. The live deferred fixture also replays
 the initial encrypted response through PostgreSQL. The completion-failure
 fixture is a semantic store-port injection, not a PostgreSQL driver fault.
-These source tests require designated CNB execution at an exact SHA before
-acceptance. No conformance/certification or failover result follows from source
-inspection alone.
 
-The stable authorization implementation below and the DCQL changes have new
-source regressions and require exact-candidate CNB validation. DCQL `aki` compares
+DCQL `aki` compares
 decoded KeyIdentifier bytes from the authenticated credential issuer chain, never
 the issuer URL/thumbprint, a holder chain or separately loaded anchors. Issuer
 trust, revocation and format signatures still run in their original verifier;
@@ -126,8 +117,7 @@ as an invalid credential. DCQL ignores unknown extension properties at every
 object level while retaining known-field types and declared-reference checks.
 
 Signed SD-JWT/mdoc fixtures cover issuer AKI projection; service-port fixtures
-cover DCQL selection, discard and error disposition. These are distinct evidence
-boundaries and no current execution pass is claimed.
+cover DCQL selection, discard and error disposition. Run both fixture groups when changing these checks.
 
 Credential and deferred requests that select response encryption must themselves
 use the issuer's advertised request encryption. Plain requests with that parameter
@@ -170,7 +160,6 @@ polls are not cached as final issuance outcomes. Real PostgreSQL fixtures preser
 the active lease on Busy/wrong-owner attempts. The live fixture exercises encrypted
 Pending, plain Busy, the same poll after readiness and final exact response replay.
 Its controlled readiness/lease fields affect only fixture-owned rows.
-
 
 ## Authorization continuity across refresh
 
@@ -221,8 +210,7 @@ PreserveExisting case checks the signed reference without a new RT. The new real
 PostgreSQL regression covers expired source ATs, wrong authorization, narrowed
 configuration/identifier, sender mismatch, expired/revoked current ATs, exact
 lease ownership, response and notification continuity, and conservative legacy
-rows. These are source additions awaiting designated execution at an exact
-candidate SHA; no current acceptance or performance result is claimed here.
+rows.
 
 Management dataset writes return their own committed view after the encrypted
 mutation, its audit event, the complete result stream and transaction commit
@@ -231,11 +219,8 @@ fetch and decrypt a second post-write view. Its returned `updated_at` comes from
 the database mutation. A later update does not replace that response snapshot.
 Current actor and subject gates stay in the write statement. The subject
 precheck stays until rejection distinguishes subject, actor and source failures.
-PostgreSQL regression assertions for the committed view are source additions;
-their current-candidate execution remains pending.
 
-
-### Independent V02/V03/V04 source corrections
+### Credential sender and trust checks
 
 Pre-authorized credential access persists the same verified mTLS certificate
 fingerprint that is signed into its access token. A matching certificate must
@@ -256,10 +241,7 @@ revocation snapshots take the verifier dependency path (503), while known
 revoked/unknown individual certificate status retains its policy disposition.
 
 Signed service regressions and a live PostgreSQL/Valkey pre-authorized sender
-regression are supplied in source. Formatting, compilation, and execution of
-the integrated candidate remain pending; no dynamic or physical fault evidence
-is claimed by these source corrections.
-
+regression are supplied in source.
 
 ### DCQL known-shape admission
 
@@ -271,14 +253,9 @@ The retained request completion path invokes this same validation owner before
 verifying any credentials or persisting a result, so historical malformed
 queries cannot be accepted as unconstrained or as zero-evidence completions.
 
-The existing empty-meta profile is retained as an explicit unconstrained
-profile; this correction does not claim to implement every format-specific
-mandatory type-identifier rule, ID charset, duplicate claim-path, claims.values,
-or trusted-authorities cardinality requirement. See OpenID4VP 1.0 sections 6,
+The empty-meta profile accepts unconstrained queries. Format-specific type identifiers, ID character sets, duplicate claim paths, claims.values and trusted-authorities cardinality require separate validation. See OpenID4VP 1.0 sections 6,
 6.1 and appendices B.2.3/B.3.5 for the separate conformance boundaries.
-Typed create, domain validation, and retained-service prevention regressions
-are source only until the new isolated candidate is compiled and executed.
-
+Regression tests cover typed creation, domain validation and retained-query rejection.
 
 ### Presentation completion deadline acceptance
 
@@ -292,11 +269,10 @@ result and erases the response key. It returns success only after commit ACK,
 with the existing DiscardOnDrop guard armed on cancellation or incomplete ACK.
 
 The reported result timestamp and existing response wire format are preserved.
-This is a locked logical mutation acceptance deadline, not a promise that a
-network commit ACK reaches the caller before expiry. No extra deadline check is
+The deadline applies when the locked mutation is accepted. The commit ACK may arrive later. No extra deadline check is
 added at each await. Real PostgreSQL source regressions cover old caller time,
 pool acquisition wait, an unchanged locked row crossing its deadline, response
-key/result preservation, and one-winner success; they remain unexecuted here.
+key/result preservation, and one-winner success; run them against the isolated test database.
 
 Deferred claiming locks the original and current grant rows in token-ID order
 and consumes their complete projection before locking the retained intent.

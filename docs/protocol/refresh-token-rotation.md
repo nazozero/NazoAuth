@@ -167,16 +167,14 @@ Rotation sets the new current member's expiry to `now + REFRESH_TOKEN_TTL_SECOND
 Unbound public proof volume is consequently proportional to rotations during
 the token lifetime, plus cleanup lag, rather than bounded to 64 per family.
 Expired proofs use the existing indexed, bounded maintenance sweep. This is
-not a promise to detect replay of tokens after their original expiry.
+with replay detection retained through each token's original expiry.
 
 ### Upgrade and Rollback Boundary
 
 Migration `20261001000500_refresh_replay_retention` revokes existing unbound
 public refresh families once, preserving their rows and writing a Required
 `refresh_family_security_revoked` event with reason
-`public_replay_retention_cutover`. Old opaque-token associations already
-trimmed by previous releases cannot be reconstructed, and a small or empty
-proof set does not establish that none were lost. Affected clients must obtain
+`public_replay_retention_cutover`. Previous releases may have trimmed opaque-token associations. Those associations cannot be reconstructed from the remaining proofs. Affected clients must obtain
 a fresh authorization grant after upgrade. Existing confidential and DPoP/mTLS-
 bound families are unaffected by this one-time cutover.
 

@@ -178,10 +178,7 @@ Recommended production separation:
 * protect the HTTPS receiver with append-only/WORM retention and verify its
   idempotency behavior independently.
 
-This repository contains the worker protocol and shared database preflight logic;
-it does not prove a deployed receiver's WORM guarantees, cross-host
-availability, or real external acceptance.  Those require a deployment-level
-probe and an independent receiver audit.
+The worker protocol and database preflight are implemented here. Validate receiver WORM retention, cross-host availability and delivery acknowledgements in the deployed environment.
 
 Database provisioning remains responsible for database `CONNECT`, removal of
 `PUBLIC` schema `CREATE` and database temporary-table rights, and the exporter
@@ -245,7 +242,7 @@ The reference receiver in `perf/audit-anchor-receiver` requires
 Database TLS verifies hostname and public roots, or an explicit PEM
 `ANCHOR_RECEIVER_DATABASE_CA`. Prefer mode is hardened to require TLS; plaintext
 requires an explicit `sslmode=disable` and belongs only to isolated fixtures.
-The reference fixture is not evidence of a production WORM implementation.
+Production receivers need independently verified WORM retention.
 Stop old workers, migrate, grant the independent receiver role, update receivers
 and workers together, then verify required-mode health. Do not give ACK rights
 back to the exporter to work around an incomplete cutover.

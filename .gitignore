@@ -36,3 +36,9 @@ tmp_coverage_linux.sh
 flamegraph.svg
 perf/results/
 perf-results-mirror/
+
+# Run-specific evidence belongs in external artifacts, not source history.
+/evidence/
+/docs/performance/reports/
+/docs/performance/archive/
+/docs/operations/reports/

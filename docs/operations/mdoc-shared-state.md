@@ -32,8 +32,7 @@ ISO/IEC 18013-5:2021 section 9.3.1, step 5 requires the MSO
 `validityInfo.signed` time to fall within the document signer certificate's
 validity period. The verifier checks the issuer certificate chain at that
 signing time, as well as the issuer signature, credential validity, revocation,
-and device authentication. A certificate being valid when a presentation is
-received does not establish that it was valid when the MSO was signed.
+and device authentication. Certificate validity is checked at the MSO signing time.
 
 The standard is identified in the [HAIP normative references](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#ISO.18013-5).
 Freshly issued test certificates and backdated MSO signing times can violate
@@ -102,6 +101,4 @@ public/private projection binding and revocation structure validation, without
 preparing unrelated JWT signers or request-object RSA keys. The selected DS,
 issuer fingerprint/contact, status, serial and revocation time remain checked;
 the crypto signer matches the IACA private key to the certificate and signs
-using that same prepared key. Historical IACA records remain available. CRL
-numbers retain the existing wall-clock-derived behavior and are not evidence
-of persistent uniqueness.
+using that same prepared key. Historical IACA records remain available. CRL numbers derive from the wall clock and may repeat.

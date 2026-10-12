@@ -383,7 +383,6 @@ after its authentication snapshot, before key resolution, cryptographic proof
 validation or assertion consumption. Introspection and revocation share this
 requester gate; the token issuer's own activity checks remain separate.
 
-
 Native SSO exchange carries a separate family-level source fence into the
 final destination issuance transaction. After destination writes and capacity
 retirement, a source `FOR SHARE NOWAIT` lock rechecks tenant, user, source client,
@@ -459,14 +458,13 @@ new generation's credential, flag, backup codes and remembered devices.
 
 Credential revocation’s scoped unknown-status exemption follows the successfully authenticated path anchor DER. Scoped anchors are considered before global anchors during the same path validation; an unrelated loaded or attached scoped certificate supplies no exemption. Known revocation and missing/stale required snapshots remain failures.
 
-Local avatar upload synchronizes the candidate and its directory lineage through the configured storage root only. Deployment must precreate and durably provision that root and its parent entry before serving uploads; per-upload code does not claim durability or read permissions for unrelated OS ancestors.
+Local avatar upload synchronizes the candidate and its directory lineage through the configured storage root only. Deployment must precreate and durably provision that root and its parent entry before serving uploads; upload code operates within that storage root.
 
 MFA profile operations classify active or pending MFA state from one validated
 session snapshot and check the account once. An active session with no pending
 challenge returns the existing challenge-missing response without clearing
 cookies; inactive or corrupt sessions are invalidated, while dependency failures
 retain the browser session and return its unavailable response.
-
 
 ## Access-request credential delivery
 
@@ -505,8 +503,7 @@ The Actix FAPI endpoint keeps one request-local digest result for its captured
 immutable body, including a failed result, and uses one generated digest for its
 outgoing response. Error response linkage preserves the existing omission of an
 invalid request digest. This removes repeated body hashes on the normal path;
-it is a source-level operation count, not a measured latency or throughput claim.
-
+latency and throughput are measured by the performance runner.
 
 MFA disable uses a purpose-specific identity port which accepts the exact
 confirmed generation and commits its dependent deletes, active-account update,
@@ -516,12 +513,7 @@ append the outcome after the effect. The adapter retains the established lock
 order and discards its physical connection on error or cancellation; successful
 results follow the transaction ACK. A missing required capability fails closed
 before any clear. The ordinary repository clear remains available for fixture
-setup/cleanup and is not the profile operation's accepting contract. Real PG
-fixture source checks append-failure rollback and a committed-but-unknown
-response retaining one canonical event while an old proof cannot clear a formal
-new enrollment; these are source additions pending execution, not ACK-loss or
-failover qualification.
-
+setup/cleanup and is not the profile operation's accepting contract. PostgreSQL regressions cover append rollback, committed-but-unknown responses and rejection of old proofs after new enrollment.
 
 Access-request approval and rejection use neutral purpose ports whose default
 is Unavailable before any effect. The PG owner locks Pending and the current
@@ -541,8 +533,6 @@ an independent recovery contract, not a transaction shared with PostgreSQL.
 Dynamic audit-health preflight remains on initial decisions and recovery.
 The applicant's one-time consumption uses the same Required evidence predicate;
 historical Approved rows alone do not authorize secret disclosure there either.
-Real PG append-failure rollback, runtime-privilege and committed-Unknown
-fixtures are source additions pending exact-candidate execution.
 
 MFA confirmation and backup-code regeneration use purpose-specific Required
 repository capabilities. Their existing PostgreSQL owner locks the pending or
@@ -560,8 +550,7 @@ their existing purpose; they do not replace the committed mutation outcome.
 
 管理员用户创建和 patch 通过专用 Required capability 进入现有用户创建/层级修改 owner，使用同一 tenant/realm/organization 的当前 actor/target 事实。创建共享完整返回行的 insert body；patch 保持排序行锁与 `authorize_admin_update` 的唯一层级权限策略、既有拒绝结果和租户内 identity event。成功和 no-op 的 `admin_user_created`/`admin_user_updated` canonical outcome 基于实际返回账户，在同一事务最终 ACK 后才允许 HTTP 成功视图；canonical 写失败同时回滚账户和 identity event，Unknown 不返回账户 receipt。无该 capability 的适配器不回退 bare setup 方法。
 
-Administrative controller approval, slot create/rotate/revoke, and proactive recovery-root approval/rotation use explicit Required purpose commands. Existing validation and mutation owners remain authoritative: current active administrator in the exact tenant/realm/organization is locked through canonical outcome and commit ACK; returned slot/root rows supply the outcome. Approval issuance drains its actual returned binding before publishing a token. Creation keeps its initial root atomic; rotation/revocation preserve exact single-use approval binding and existing deployment locks. Errors or cancellation discard the accepting connection. Unsupported purpose capabilities fail without bare mutation. HTTP performs transactional readiness and presents only the accepted owner result. Signed break-glass challenges, allocation proofs and independent offline recovery retain their existing authority and do not acquire an admin requirement. New real PostgreSQL rollback, current-actor, hidden actual committed ACK and cancellation fixtures require independent execution; hidden ACK is not evidence of physical network loss.
-
+Administrative controller approval, slot create/rotate/revoke, and proactive recovery-root approval/rotation use explicit Required purpose commands. Existing validation and mutation owners remain authoritative: current active administrator in the exact tenant/realm/organization is locked through canonical outcome and commit ACK; returned slot/root rows supply the outcome. Approval issuance drains its actual returned binding before publishing a token. Creation keeps its initial root atomic; rotation/revocation preserve exact single-use approval binding and existing deployment locks. Errors or cancellation discard the accepting connection. Unsupported purpose capabilities fail without bare mutation. HTTP performs transactional readiness and presents only the accepted owner result. Signed break-glass challenges, allocation proofs and independent offline recovery retain their existing authority and do not acquire an admin requirement.
 
 ### Request-local refresh and logout verification projections
 

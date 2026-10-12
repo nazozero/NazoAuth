@@ -6,7 +6,7 @@ echo "extended capacity matrix bootstrap started $(date -u '+%Y-%m-%dT%H:%M:%SZ'
 install_capacity_dependencies
 docker compose version >/dev/null
 
-mkdir -p docs/performance perf/results/.run perf/results/data/extended perf/results/environments
+mkdir -p perf/results/.run perf/results/data/extended perf/results/environments
 children_file="perf/results/.run/cnb-extended-capacity-children.txt"
 cpusets_file="perf/results/.run/cnb-extended-capacity-cpusets.txt"
 : >"${children_file}"
@@ -65,46 +65,6 @@ PY
 echo "using extended capacity CPU sets:"
 cat "${cpusets_file}"
 
-git config user.name "${CNB_GIT_USER_NAME:-NazoAuth Capacity Bot}"
-git config user.email "${CNB_GIT_USER_EMAIL:-nazoauth-capacity-bot@noreply.cnb.cool}"
-
-push_capacity_commit() {
-  branch="${CNB_BRANCH:-$(git branch --show-current 2>/dev/null || echo main)}"
-  for attempt in 1 2 3; do
-    if git push origin "HEAD:${branch}"; then
-      return 0
-    fi
-    sleep $((attempt * 10))
-  done
-  git push origin "HEAD:${branch}"
-}
-
-extended_report_path() {
-  suffix="$1"
-  echo "docs/performance/reports/extended/performance-capacity-curve-extended-${suffix}.md"
-}
-
-commit_extended_report() {
-  suffix="$1"
-  report="$(extended_report_path "${suffix}")"
-  results="perf/results/data/extended/${suffix}.json"
-  env_report="perf/results/environments/extended-${suffix}.md"
-  if [ ! -f "${report}" ]; then
-    echo "extended capacity report not found for ${suffix}: ${report}"
-    return 0
-  fi
-  git add perf/capacity.py perf/run_capacity.sh perf/extended_capacity_matrix.sh perf/k6/oauth.js perf/runner.py perf/seed.py
-  git add "${report}"
-  [ -f "${results}" ] && git add -f "${results}" || true
-  [ -f "${env_report}" ] && git add -f "${env_report}" || true
-  if git diff --cached --quiet; then
-    echo "No extended capacity report changes to commit for ${suffix}."
-    return 0
-  fi
-  git commit -m "Record extended capacity ${suffix}"
-  push_capacity_commit
-}
-
 run_extended_child() {
   scenario="$1"
   suffix="$2"
@@ -122,7 +82,6 @@ run_extended_child() {
     export PERF_APP_CPUSET="${cpu_set}"
     export PERF_INFRA_CPUSET="${cpu_set}"
     export CNB_CAPACITY_SKIP_BOOTSTRAP=1
-    export CNB_CAPACITY_COMMIT=0
     export CNB_BUILD_ID="${CNB_BUILD_ID:-extended-capacity}"
     ./perf/run_capacity.sh
   ) >"${log_path}" 2>&1 &
@@ -171,30 +130,15 @@ while read -r pid suffix log_path; do
   [ -n "${pid}" ] || continue
   if wait "${pid}"; then
     echo "extended capacity scenario ${suffix} completed"
-    commit_extended_report "${suffix}"
   else
     child_status=$?
     status=1
     echo "extended capacity scenario ${suffix} failed with exit code ${child_status}"
     tail -n 120 "${log_path}" || true
-    commit_extended_report "${suffix}"
   fi
 done <"${children_file}"
 
 kill "${reporter_pid}" 2>/dev/null || true
 wait "${reporter_pid}" 2>/dev/null || true
-
-if find docs/performance/reports/extended -maxdepth 1 -name 'performance-capacity-curve-extended-*.md' -print -quit | grep -q .; then
-  git add perf/capacity.py perf/run_capacity.sh perf/extended_capacity_matrix.sh perf/k6/oauth.js perf/runner.py perf/seed.py docs/performance/reports/extended/performance-capacity-curve-extended-*.md
-  if git diff --cached --quiet; then
-    echo "No extended capacity changes to commit."
-  else
-    git commit -m "Record extended capacity matrix"
-    push_capacity_commit
-  fi
-else
-  echo "No extended capacity reports were generated."
-  status=1
-fi
 
 exit "${status}"

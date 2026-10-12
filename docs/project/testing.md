@@ -178,7 +178,7 @@ Targeted suites with their own entry points:
   rollback after dependent deletes, and a real committed clear with a hidden ACK
   followed by a stale G1 retry. Full credential/flag/backup/remembered-device
   snapshots establish preservation; a forwarding fault injector hides only the
-  clear ACK. It does not prove driver packet loss or Required audit crash closure.
+  clear ACK. Use separate fault tests for driver packet loss and crash recovery.
 - `crates/state-store-valkey/tests/replay_contract.rs` covers real client-
   attestation owner-clock expiry, shared token/PAR consumption and concurrent NX.
   `crates/nazoauth/tests/unit/http/token/dispatch/attestation.rs` combines signed
@@ -224,8 +224,7 @@ Targeted suites with their own entry points:
 Update affected documentation, examples, and index entries when a change
 affects documented behavior, contracts, ownership, configuration, or source
 paths; purely internal or mechanical changes do not require documentation-only
-churn. Keep historical reports tied to their recorded revisions instead of
-rewriting them as current test results.
+churn. Store run-specific reports outside the source tree, bound to the tested revision.
 
 ## Release CI prerequisites
 
@@ -316,7 +315,6 @@ and delivered-chain statistics. It asserts bounded logical buffer reads for a
 256-event batch and exact checkpoint/reclamation, independently of shared CPU
 scheduling. All seed rows and table options are transaction-local; it requires
 the isolated `NAZO_AUDIT_TEST_DATABASE_URL` like other audit integration tests.
-
 
 ## Model and revocation identity compaction
 

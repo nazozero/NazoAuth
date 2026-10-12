@@ -193,11 +193,8 @@ infrastructure half. The default scenario is `oidc_cold_login_refresh`, which
 includes PAR, password login, authorization decision, authorization-code token
 exchange, and refresh-token rotation.
 
-The extended matrix wrapper below is a publishing workflow: it changes local
-Git identity, commits reports, and pushes to the current/CNB branch. Run it only
-with explicit publication authorization in its dedicated benchmark checkout.
-For an unpublished local run, use `perf/capacity.py` with selected scenarios
-and leave `CAPACITY_CHECKPOINT_COMMIT=0`.
+The extended matrix wrapper runs the selected scenarios and leaves results
+in ignored `perf/results/`. It does not change Git identity, commit or push.
 
 ```sh
 ./perf/extended_capacity_matrix.sh
@@ -207,13 +204,10 @@ The long capacity curve runs 30 minutes per point across 1, 2, and 4 NazoAuth
 replicas. It is intended for dedicated benchmark machines, not routine local
 verification.
 
-Results are written to `perf/results/*.summary.json` and
-`perf/results/*.k6.json`. Runners generate Markdown summaries and capacity
-reports under `docs/performance/`; a fresh summary is run output, not an
-automatically maintained repository baseline. Promote a report only with its
-raw JSON, source identity, and environment capture, and update the
-[performance index](../docs/performance/README.md). Keep temporary experiments
-in the run's artifact directory until they meet that evidence boundary.
+Results and Markdown reports are written to ignored `perf/results/`. Retain
+raw JSON, source identity and environment capture together in external artifacts
+when publishing a benchmark claim. See the
+[measurement guide](../docs/performance/README.md).
 
 ## Load Model
 
@@ -337,18 +331,14 @@ FAPI scenario uses client-level PAR request-object enforcement,
 uses the RFC 9440 `Client-Cert` header carrying the fixture certificate on the
 isolated trusted perf network.
 
-`perf/run_capacity.sh` defaults to committing and pushing results. Set both
-`CNB_CAPACITY_COMMIT=0` and `CAPACITY_CHECKPOINT_COMMIT=0` for a local run.
-The app-CPU and single-instance wrappers disable their own final commit by
-default, but inherited checkpoint settings must still be reviewed. The extended
-matrix's parent publication step has no equivalent opt-out.
+Capacity runners write local reports and JSON checkpoints in ignored
+`perf/results/`. Publish results through CI artifacts or the associated issue/PR;
+do not commit run-specific output to the source repository.
 
-## Incremental current-B acceptance
+## Capacity result evaluation
 
-The [current incremental report](../docs/performance/reports/2026-09-28-incremental-b/report.md)
-and [structured baseline](results/data/capacity/current-capacity.json) distinguish
-reviewed service intervals, exploratory candidates and unestablished uppers.
-Read the per-row deployment and frozen recipe before reproducing a point.
+Bind externally retained results to their source SHA, deployment configuration,
+workload and measurement window before comparing or reproducing a point.
 
 `perf/tools/current_capacity.py` evaluates the main workload and each of the
 four mixed sidecars through `capacity_search.evaluate` with required stream

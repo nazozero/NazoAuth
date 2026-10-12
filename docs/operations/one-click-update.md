@@ -95,8 +95,8 @@ Registry, or logs.
 > Check the target server's configuration and migration requirements before an
 > update. Controller persistence has a separate compatibility contract: supported
 > historical records remain readable, and inspection does not rewrite them.
-> Keep a verified backup and matching recovery tools. Readable controller state
-> does not establish that a server artifact or database migration can be rolled back.
+> Keep a verified backup and matching recovery tools. Rollback requires a
+> compatible server artifact and a recoverable database backup.
 
 ```sh
 nazoauthctl update --instance production --to '<nazoauth-release-tag>'

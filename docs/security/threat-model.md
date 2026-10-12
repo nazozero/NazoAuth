@@ -50,7 +50,7 @@ Update this model when one of those invariants or its implementation changes.
 | --- | --- | --- |
 | Authorization code theft and replay | Client/redirect binding, PKCE S256, short pending-code lifetime, atomic transient-state transitions, and durable issuance identity with consumed-code revocation. | Consumed-code evidence is the durable issuance row's single-use fence, retained until the access-token acceptance window plus the grant deadline close — not for the refresh family's lifetime. |
 | Principal disabled or changed during issuance | The durable issuance transaction locks and checks the relevant principal before commit. | A preceding HTTP or cache check does not replace that transaction boundary. |
-| Lost token response or refresh reuse | Encrypted durable issuance response, exact issuance identity, token-family state, and reuse handling. | Follow the selected profile's rotation policy and [refresh-token contract](../protocol/refresh-token-rotation.md); FAPI2 does not imply routine rotation. |
+| Lost token response or refresh reuse | Encrypted durable issuance response, exact issuance identity, token-family state, and reuse handling. | Follow the selected profile's rotation policy and [refresh-token contract](../protocol/refresh-token-rotation.md); FAPI2 defaults to sender-constrained refresh tokens without routine rotation. |
 | Redirect mix-up or signed-request replay | Exact redirect and issuer validation, signed request validation, and replay checks for supported request-object and assertion claims. | Required claims depend on the selected profile; do not infer a universal mandatory JAR `jti` policy. |
 | DPoP or mTLS bypass | Method/URI/token binding, nonce and replay state, key thumbprint, and trusted transport certificate evidence. | Cached certificate facts are request-scoped and created only after trust checks. Resource servers must enforce sender constraints too. |
 | Cross-tenant data, keys, or audit attribution | Immutable request tenant, tenant-scoped repositories and keysets, signed management bindings, and tenant capture before audit queueing. | Database ownership and arbitrary host code execution are outside row-level application isolation. |
@@ -78,8 +78,7 @@ exporter credentials are separate authorities. Losing one is not repaired by
 rotating another. Root/engine compromise can read mounted secrets and alter
 local state; compromise of both the writer host and the independent receiver
 also defeats that external evidence boundary. The implemented exporter requires
-a real configured receiver and verified retention policy. Local root is an
-actor category, not proof of a natural person's identity or online approval.
+a real configured receiver and verified retention policy. Local-root events identify the system actor; human identity and approval require separate credentials.
 
 ## Review triggers
 

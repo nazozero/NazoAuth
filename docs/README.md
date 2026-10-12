@@ -26,7 +26,6 @@ set can be scanned from one place.
 | Protocol and profile status | [protocol/profile-matrix.md](protocol/profile-matrix.md) |
 | Composable capability policy | [protocol/composable-capability-policy.md](protocol/composable-capability-policy.md) |
 | Protocol regression and external OIDF evidence | [conformance/README.md](conformance/README.md) |
-| Performance benchmark overview | [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) |
 
 ## Categories
 
@@ -34,12 +33,12 @@ set can be scanned from one place.
 | --- | --- | --- |
 | Integration | [integration](integration) | Relying-party and ecosystem integration guides. |
 | Operations | [operations](operations) | Configuration, deployment, release-security, PostgreSQL, and Valkey operations. |
-| Protocol | [protocol](protocol) | OAuth/OIDC/FAPI profile matrices, RFC coverage, implementation contracts, and standards backlog. |
+| Protocol | [protocol](protocol) | OAuth/OIDC/FAPI profile matrices, RFC coverage, implementation contracts, and supported boundaries. |
 | Features | [features](features) | Feature design and integration notes for ecosystem onboarding, tenancy, SCIM, federation, MFA, passkeys, and resource-server verification. |
 | Security | [security](security) | Threat model, security policy links, and runtime security event taxonomy. |
 | Conformance | [conformance](conformance) | Protocol regression contracts and external black-box validation evidence. |
 | Coverage | [coverage](coverage) | Coverage runbooks and evidence. |
-| Performance | [performance](performance) | NazoAuth-only capacity, stress, and benchmark reports. |
+| Performance | [performance](performance) | Load-test methods and measurement contracts. |
 | Project | [project](project) | Product scope, roadmap, and project-level decision records. |
 | Examples | [../examples](../examples) | Resource-server and client fixture documentation. |
 | Benchmark tooling | [../perf](../perf) | Reproducible load-test runner instructions and generated report sources. |
@@ -100,7 +99,6 @@ set can be scanned from one place.
 | [protocol/authorization-code-redemption.md](protocol/authorization-code-redemption.md) | Stable code identity, independent holder requirements, receipt migration and coordinated cutover. |
 | [protocol/client-attestation-replay.md](protocol/client-attestation-replay.md) | Verified PoP windows, atomic replay-owner acceptance, Unknown behavior and HA/upgrade boundaries. |
 | [protocol/spec-freshness.md](protocol/spec-freshness.md) | Machine-checked current specification inventory. |
-| [protocol/oauth-spec-implementation-backlog.md](protocol/oauth-spec-implementation-backlog.md) | Protocol implementation backlog. |
 | [protocol/fapi-http-signatures.md](protocol/fapi-http-signatures.md) | Experimental HTTP Message Signatures resource contract. |
 | [protocol/not-implemented-security-policy.md](protocol/not-implemented-security-policy.md) | Policy for unsupported protocol features. |
 | [protocol/refresh-token-rotation.md](protocol/refresh-token-rotation.md) | Refresh-token rotation behavior and boundaries. |
@@ -122,7 +120,6 @@ set can be scanned from one place.
 
 | Document | Role |
 | --- | --- |
-| [security/security-cloud-20261011.md](security/security-cloud-20261011.md) | Security Cloud repairs, real failure evidence, and remaining findings. |
 | [security/threat-model.md](security/threat-model.md) | Threat model and security boundaries. |
 | [security/security-events.md](security/security-events.md) | Event taxonomy, producer ownership, and durability boundaries. |
 | [security/audit-anchor.md](security/audit-anchor.md) | External audit protocol, receiver contract, configuration, and trust limits. |
@@ -146,10 +143,7 @@ set can be scanned from one place.
 | Document | Role |
 | --- | --- |
 | [../perf/README.md](../perf/README.md) | Benchmark runner usage, load model, profiles, and metrics. |
-| [performance/README.md](performance/README.md) | Local performance documentation index, report groups, common semantics, and maintenance rules. |
-| [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) | Current release capacity baseline with its recorded source and environment. |
-| [performance/one-hour-token-state-baseline.md](performance/one-hour-token-state-baseline.md) | One-hour current-source short tests after token-state reduction; scoped evidence and deadline. |
-| [performance/reports](performance/reports) | Dated evidence reports: current-capacity set, redesign, and historical root-cause records. |
+| [performance/README.md](performance/README.md) | Local performance measurement guide and result-artifact policy. |
 
 ### Project
 
@@ -182,16 +176,15 @@ These files are text artifacts but are not general reader documentation.
 - Keep user-facing repository entry points at the repository root when tools or
   hosting expect them there: `README.md`, `README.zh-CN.md`, `SECURITY.md`, and
   `CHANGELOG.md`.
-- Keep benchmark runner instructions in `perf/README.md`; performance entry
-  points and summaries belong under `docs/performance/`, while scenario
-  reports belong under `docs/performance/reports/`.
+- Keep benchmark runner instructions in `perf/README.md`; measurement contracts belong under `docs/performance/`; generated results stay
+  in ignored `perf/results/` or external artifacts.
 - Keep maintained protocol regression contracts under `docs/conformance/`; link
   formal certification to its public register and exact certified version.
 - Do not commit one-time task plans, finding ledgers, review transcripts, or
   completion/acceptance reports. Fold lasting behavior into its owning guide;
   keep run-specific evidence in CI artifacts or the associated issue/PR.
-- Retain historical release notes and benchmark baselines only with a clear
-  version/source and purpose. Benchmark claims must link retained raw results.
+- Keep user-facing release history in `CHANGELOG.md`. Store benchmark baselines
+  and raw results outside Git, bound to their source revision and test settings.
 - Update affected guides, translations, indexes, source references, and
   specification inventory when a change affects documented behavior,
   contracts, ownership, configuration, or source paths — including code

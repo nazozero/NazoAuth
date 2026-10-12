@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "perf" / "results"
-DOCS = ROOT / "docs" / "performance" / "archive" / "dev"
+DOCS = RESULTS / "reports"
 DURATION = "30m"
 INSTANCES = "1,2,4"
 SCENARIO_RATES = {

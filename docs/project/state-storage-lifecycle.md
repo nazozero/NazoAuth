@@ -2,7 +2,7 @@
 
 Expiry is checked at use. Physical reclamation must not grant or revoke authority.
 
-This inventory classifies all 58 tables in the merged-source catalog and the active Valkey families. A retention deadline alone does not decide storage: atomic mutation and evidence ownership do. It does not authorize shortening retention or losing replay evidence.
+This guide describes PostgreSQL and Valkey state ownership. Storage choices follow transaction, recovery and replay-protection requirements.
 
 ## PostgreSQL ownership
 
@@ -16,7 +16,7 @@ This inventory classifies all 58 tables in the merged-source catalog and the act
 |有限保留的事务安全凭据|`oauth_refresh_contracts`, `oauth_refresh_families`, `oauth_refresh_spent_tokens`, `oauth_token_issuances`, `access_token_revocations`|PG 例外；保留窗口可能短，但与原子发行、刷新、撤销、重放处理同事务。不是长期业务档案，也不是可丢缓存。不得迁移消费标记单独跨库提交。|`crates/persistence-postgres/src/repositories/token_issuance.rs`|
 |VCI offer 的单次消费|`openid4vci_offers`|30–600 秒的流程材料与消费事实；offer 消费和后续 grant 写入是两个提交，不是共同事务。当前保留 PG 的已确认消费，不直接迁移到可能恢复旧快照的 KV：grant 没有 offer 身份，旧值复活后没有另一条持久防线。消费时在原 UPDATE 内清空不再读取的 grants 密文和 TX-code verifier，保留原截止、消费事实及另一授权入口所需元数据。|`crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs`|
 |VCI 原子完成与可恢复签发|`openid4vci_nonces`, `openid4vci_access_grants`, `openid4vci_deferred_transactions`, `openid4vci_notifications`, `openid4vci_issuance_responses`|PG 有限保留工作流；nonce 最终消费与结果/通知创建确实共同提交，grant 所有权和撤销仍须校验。期限在读写时判断，子记录/所有权不能独立 TTL 删除。|`crates/persistence-postgres/src/repositories/openid4vc_issuance_store/`|
-|VP 创建幂等与结果|`openid4vp_transactions`|PG 有限保留工作流；保存操作签名请求的幂等身份、原始加密密钥和已完成结果。不是普通浏览器准备缓存；本轮保留既有跨重启可恢复契约，没有以 TTL 为由改成可能丢失的状态。|`crates/persistence-postgres/src/repositories/openid4vc_presentation.rs`|
+|VP 创建幂等与结果|`openid4vp_transactions`|PG 有限保留工作流；保存操作签名请求的幂等身份、原始加密密钥和已完成结果。状态须支持跨重启恢复。|`crates/persistence-postgres/src/repositories/openid4vc_presentation.rs`|
 |安全审计与投递事实|`identity_security_events`, `scim_audit_events`, `scim_security_events`, `scim_security_event_receipts`, `backchannel_logout_deliveries`, `security_audit_events`, `security_audit_chain_entries`, `security_audit_chain_state`|PG；普通审计事件/链条目 ACK 后释放；decision 的审计载荷确认后压缩，消费凭据仍留到安全截止。SCIM 有独立保留/订阅回执，投递有重试/租约。checkpoint 不按业务 TTL 删除。|`crates/persistence-postgres/src/repositories/audit_ledger.rs`|
 |适配器版本元数据|`__diesel_schema_migrations`|PG；schema 版本，不是业务模型。|`migrations/`|
 
@@ -47,10 +47,9 @@ Model placement is not changed merely to satisfy a storage label. The existing i
 
 No worker writes an “expired” status to make a credential invalid. Every use must enforce its timestamp and security predicates even when the row still exists. The single maintenance worker selects `ProtocolState` on its normal 60-second interval and `IncludingHistory` initially and after an hour has elapsed since a completed history cycle. The latter additionally reclaims SCIM audit history only after its unchanged 180-day retention, expired MFA remembered devices, and expired controller identity approvals. Both retain the existing bounded batches, database cutoff, lock rules, cancellation behavior and catch-up budget. Failures or incomplete catch-up do not defer unfinished history for an hour.
 
-The earlier 10-second interval experiment is not used. Conversely, a one-hour interval is not applied to high-rate protocol receipts: it would increase their expired resident population without shortening any safety obligation. Required evidence is never discarded by a timer before acknowledgement. Optional/Disabled audit exports are not promised bounded disk use during an indefinite receiver outage.
+High-rate protocol receipts use the 60-second cycle to limit expired resident rows. Required evidence is never discarded by a timer before acknowledgement. Optional/Disabled audit exports are not promised bounded disk use during an indefinite receiver outage.
 
 TTL moves physical expiry into Valkey; it does not remove the logical live-state cost or make asynchronous replication durable. Local memory is appropriate for request values and reconstructible projections, not a replacement for shared one-use or revocation authority. At rate λ and necessary retention T, approximately λ×T records can be legitimate live state. Expired eligible backlog, retained live records, dead tuples waiting for vacuum and reusable physical high-water space must be measured separately.
-
 
 ## Compact retention migration
 
@@ -75,9 +74,7 @@ signed checkpoints retain their original lifecycle.
 256 is a per-category transaction batch limit, not an hourly quota. Saturated
 batches continue inside the existing 30-second catch-up budget; unfinished history
 is retried after elapsed work time rather than waiting a fresh hour. Locked rows
-are skipped and remain eligible for later passes. These limits do not by themselves
-prove the collector keeps pace at every workload.
-
+are skipped and remain eligible for later passes. Monitor eligible backlog and oldest expiry age at the intended workload.
 
 `20261010000300_compact_mfa_credentials` removes already-used backup verifiers
 and their unused creation/consumption columns. New consumption is a conditional
@@ -90,7 +87,6 @@ Protected secret, key identity, credential generation, confirmation and replay
 step remain. Rollback reconstructs only unused metadata and never resurrects
 consumed backup verifiers.
 
-
 `20261010000400_compact_control_receipt_metadata` removes the unread creation
 time from administrator provisioning receipts and unread first-seen time from
 recovery used-key history. Neither timestamp participates in validity, retention,
@@ -99,7 +95,6 @@ used-key identities retain their original lifetime. Downgrade recreates only
 unused timestamp metadata, not its original historical values. No data row is
 removed. Apply the schema with the matching adapter; existing heap tuples may
 retain dropped-column space until normal row replacement.
-
 
 Revocation rows use their existing `(tenant_id, access_token_jti_blake3)`
 authority key as the primary key. The unread independent UUID and its index are

@@ -70,9 +70,7 @@ prerequisite-gated protocol surface.
   non-HTTPS targets unless a deployment explicitly allowlists the exact private
   HTTPS origin. Redirects and DNS rebinding cannot escape the resolved policy.
 - Duplicate `kid`, private JWK material, and stale JWKS cache behavior are covered.
-- Missing or incorrect deployment initial access tokens fail closed. This
-  endpoint does not claim token issuance, expiry, or replay semantics that RFC
-  7591 leaves to the deployment.
+- Missing or incorrect deployment initial access tokens fail closed. The deployment controls initial access-token issuance, expiry and replay policy under RFC 7591.
 - Registered clients cannot escalate from public to confidential or from baseline to FAPI profile capabilities without policy approval.
 - Dynamic client registration, read, update, and delete audit event names remain
   allowlisted and use non-secret fields only.

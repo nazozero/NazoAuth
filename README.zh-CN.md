@@ -57,7 +57,7 @@ OID4VCI、OID4VP 登记页中的实现版本写作 `v0.2.0`。上方认证标识
 | 身份管理 | 账号资料、客户端与授权管理、SCIM 用户供应、安全事件 |
 | 数字凭据 | OpenID4VCI 签发与 OpenID4VP 出示，按部署配置凭据类型及信任材料 |
 
-服务公布某项能力，不等于每个客户端都能使用它。
+客户端可用的能力由其注册配置和授权策略决定。
 [能力策略](docs/protocol/composable-capability-policy.md)列出了默认值、启用条件和客户端控制。
 Implicit、Hybrid、密码授权、未签名 Request Object 和 CIBA push 不受支持。
 

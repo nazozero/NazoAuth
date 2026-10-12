@@ -155,6 +155,6 @@ retained when the operation and compensation fail.
 ## Discovery semantics
 
 Discovery publishes the union of currently active server capabilities.
-Discovery does not claim that every registered client may use every published
+Client registration and policy determine access to each published
 feature. The authenticated request is still checked against the client's grant
 allowlist, metadata, sender constraints, and `security_policy`.

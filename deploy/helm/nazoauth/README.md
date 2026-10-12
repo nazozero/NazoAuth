@@ -21,9 +21,7 @@ Review the rendered manifests against the current
   shared encryption roots. MFA, token-response and enabled OpenID4VC secrets
   must also remain consistent across replicas through explicit inputs.
 - The default data PVC is ReadWriteOnce. The template rejects multiple replicas
-  with that PVC, or without `appSecrets.existingSecret`. Passing those guards
-  does not establish HA: supply each replica's persistent instance identity,
-  all shared secrets, and suitable avatar storage explicitly.
+  with that PVC, or without `appSecrets.existingSecret`. For HA, supply each replica's persistent instance identity, shared secrets and suitable avatar storage.
 - The current probes have no Host override. For a hostname-bound tenant, add
   the issuer's Host to `/startup`, `/health`, and `/live` probes in the rendered
   deployment. An IP-only probe is rejected by tenant routing.
