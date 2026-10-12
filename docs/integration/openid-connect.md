@@ -8,16 +8,15 @@ deployment flags that affect metadata.
 Use `https://issuer.example` only as a placeholder in this document. Every
 deployment and every conformance run must use its own public HTTPS issuer.
 
-Status terms are literal. **Complete** means the capability is implemented for
-the stated role/profile and is advertised only when its enablement conditions
-are true. **Never supported** means no runtime flag, client metadata field, or
-hidden compatibility path enables that capability; adding it would require an
-explicit policy reversal backed by new standards and security evidence.
-**Final RFC/Final audit pending** means the implementation targets the listed draft or Implementer's Draft; final-specification changes need review. **Not supported (planned)** means the capability is accepted as
-future work but is not currently executable or advertised. **Not supported**
-means a standards-defined optional value is not currently advertised and has no
-roadmap commitment. In all cases, discovery and registration metadata are the
-executable allowlist.
+Support status:
+
+- **Complete**: implemented for the stated role or profile; advertised when enabled.
+- **Never supported**: excluded by product policy, with no flag or hidden configuration to enable it.
+- **Final RFC/Final audit pending**: implemented against the listed draft; final-specification changes need review.
+- **Not supported (planned)**: planned, but currently unavailable.
+- **Not supported**: currently unavailable, with no implementation plan.
+
+Clients should use the deployment's actual discovery and registration metadata.
 
 ## Standards and profile support
 

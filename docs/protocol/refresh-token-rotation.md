@@ -166,8 +166,8 @@ Rotation sets the new current member's expiry to `now + REFRESH_TOKEN_TTL_SECOND
 (default 30 days); it does not extend any spent proof's original expiry.
 Unbound public proof volume is consequently proportional to rotations during
 the token lifetime, plus cleanup lag, rather than bounded to 64 per family.
-Expired proofs use the existing indexed, bounded maintenance sweep. This is
-with replay detection retained through each token's original expiry.
+Replay detection retains each proof through its original expiry. The indexed
+maintenance sweep reclaims expired proofs in bounded batches.
 
 ### Upgrade and Rollback Boundary
 

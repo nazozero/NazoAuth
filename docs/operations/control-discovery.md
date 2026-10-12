@@ -26,8 +26,9 @@ its own persistent mount; its `identity.key`, `identity.pub`, runtime ID and
 signed statement live there and must never be shared with another replica.
 
 `deployment-statement.jws` uses the distinct
-`nazoauth-deployment-statement+jwt` type and has no freshness claim. It identifies an offline deployment. The recovery controller verifies the mounted binary hash or local OCI digest against cached Release,
-attestation, and signature evidence.
+`nazoauth-deployment-statement+jwt` type and identifies an offline deployment.
+It contains no freshness assertion. The recovery controller verifies the mounted
+binary hash or local OCI digest against cached Release attestations and signatures.
 
 Replicas sharing a logical deployment must share the persisted deployment ID
 but use separate instance identity directories and runtime-instance IDs. Set
