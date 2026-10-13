@@ -18,6 +18,7 @@ impl From<&Settings> for DeviceHttpConfig {
 }
 pub(crate) fn device_config_from_settings(settings: &Settings) -> DeviceConfig {
     DeviceConfig {
+        profile: settings.protocol.authorization_server_profile,
         issuer: settings.endpoint.issuer.as_str().into(),
         mtls_endpoint_base_url: settings.endpoint.mtls_endpoint_base_url.as_str().into(),
         frontend_base_url: settings.endpoint.frontend_base_url.as_str().into(),

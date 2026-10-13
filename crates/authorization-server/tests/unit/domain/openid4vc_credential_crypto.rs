@@ -1100,7 +1100,10 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     let verified = crypto
         .verify_sd_jwt(&no_disclosure)
         .expect("empty disclosure presentation");
-    assert_eq!(verified.claims, json!({}));
+    assert_eq!(verified.claims["iss"], "https://issuer.example");
+    assert_eq!(verified.claims["cnf"]["jwk"], holder_jwk);
+    assert!(verified.claims.get("_sd").is_none());
+    assert!(verified.claims.get("_sd_alg").is_none());
 
     let wrong_hash_kb = encode(
         &kb_header,
@@ -2340,4 +2343,63 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
             "retain the pinned NumericDate fractional-time acceptance"
         );
     })
+}
+
+#[test]
+fn sd_jwt_checks_validity_after_disclosures_with_valid_issuer_and_holder_signatures() {
+    let (crypto, original, _, certs) = sd_presentation_fixture();
+    let parts: Vec<_> = original.encoded.split('~').collect();
+    let header = decode_header(parts[0]).unwrap();
+    let original_claims: Value = jsonwebtoken::dangerous::insecure_decode::<Value>(parts[0])
+        .unwrap()
+        .claims;
+    let issuer_key = EncodingKey::from_ec_der(&certs.leaf_key.serialize_der());
+    let (_, holder_key) = es256_jwk(71);
+    let mut kb_header = Header::new(Algorithm::ES256);
+    kb_header.typ = Some("kb+jwt".into());
+    for (name, value, accepted, selective) in [
+        ("nbf", json!(Utc::now().timestamp() + 300), false, false),
+        ("nbf", json!("tomorrow"), false, false),
+        ("nbf", json!(Utc::now().timestamp() - 1), true, false),
+        ("exp", json!(Utc::now().timestamp() - 120), false, false),
+        ("name", json!("Permanently disclosed"), true, false),
+        ("nbf", json!(Utc::now().timestamp() - 1), false, true),
+        ("exp", json!(Utc::now().timestamp() + 300), false, true),
+        ("iat", json!(Utc::now().timestamp()), true, true),
+    ] {
+        let mut claims = original_claims.clone();
+        let extra = if selective {
+            claims.as_object_mut().unwrap().remove(name);
+            let encoded =
+                URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!(["salt", name, value])).unwrap());
+            claims["_sd"].as_array_mut().unwrap().push(json!(
+                URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(encoded.as_bytes()))
+            ));
+            format!("{encoded}~")
+        } else {
+            claims[name] = value.clone();
+            String::new()
+        };
+        let jwt = encode(&header, &claims, &issuer_key).unwrap();
+        let input = format!("{jwt}~{}~{extra}", parts[1]);
+        let kb = encode(
+            &kb_header,
+            &json!({
+                "nonce": original.expected_nonce, "aud": original.expected_audience,
+                "iat": Utc::now().timestamp(),
+                "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input.as_bytes())),
+            }),
+            &holder_key,
+        )
+        .unwrap();
+        let presentation = PresentedCredential {
+            encoded: format!("{input}{kb}"),
+            ..original.clone()
+        };
+        let result = crypto.verify_sd_jwt(&presentation);
+        assert_eq!(result.is_ok(), accepted, "{name}: {result:?}");
+        if accepted {
+            assert_eq!(result.unwrap().claims[name], value);
+        }
+    }
 }

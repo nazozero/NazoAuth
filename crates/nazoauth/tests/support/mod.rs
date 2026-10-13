@@ -376,6 +376,7 @@ pub(crate) fn federation_service(
             state_ttl_seconds: crate::http::auth::federation::FEDERATION_STATE_TTL_SECONDS,
             saml_replay_ttl_seconds: crate::http::auth::federation::SAML_REPLAY_TTL_SECONDS,
             session_ttl_seconds: state.settings.session.session_ttl_seconds,
+            pending_mfa_session_ttl_seconds: state.settings.session.pending_mfa_session_ttl_seconds,
         },
     ))
 }
@@ -392,6 +393,7 @@ pub(crate) fn federation_http_config(
             session.session_cookie_name.as_str(),
             session.csrf_cookie_name.as_str(),
             session.session_ttl_seconds,
+            session.pending_mfa_session_ttl_seconds,
             session.cookie_secure,
         )
         .expect("federation HTTP configuration"),

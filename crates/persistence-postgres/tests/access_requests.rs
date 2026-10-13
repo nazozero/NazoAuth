@@ -358,7 +358,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .unwrap();
     let mut registration = client(&suffix);
     registration.jwks_uri = Some("https://client.example.test/jwks.json".to_owned());
-    registration.jwks = Some(serde_json::json!({"keys": []}));
+    registration.jwks = Some(serde_json::json!({"keys": []}).into());
     registration.request_uris = vec!["https://client.example.test/request.jwt".to_owned()];
     registration.initiate_login_uri = Some("https://client.example.test/initiate".to_owned());
     registration.presentation = nazo_auth::ClientPresentationMetadata {

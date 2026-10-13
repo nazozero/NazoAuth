@@ -158,7 +158,7 @@ impl<'a> ClientMetadata<'a> {
             backchannel_user_code_parameter: false,
             backchannel_logout_uri: client.backchannel_logout_uri.as_deref(),
             frontchannel_logout_uri: client.frontchannel_logout_uri.as_deref(),
-            jwks: client.jwks.as_ref(),
+            jwks: client.jwks.as_deref(),
             id_token_signed_response_alg: client.id_token_signed_response_alg.as_deref(),
             id_token_encrypted_response_alg: client.id_token_encrypted_response_alg.as_deref(),
             id_token_encrypted_response_enc: client.id_token_encrypted_response_enc.as_deref(),

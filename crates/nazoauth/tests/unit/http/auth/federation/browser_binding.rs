@@ -11,6 +11,7 @@ fn binding_http_config(secure: bool) -> FederationHttpConfig {
         settings.session.session_cookie_name.as_str(),
         settings.session.csrf_cookie_name.as_str(),
         settings.session.session_ttl_seconds,
+        settings.session.pending_mfa_session_ttl_seconds,
         secure,
     )
     .unwrap()

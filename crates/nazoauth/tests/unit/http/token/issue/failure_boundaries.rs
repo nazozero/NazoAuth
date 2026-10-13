@@ -235,9 +235,12 @@ async fn id_token_encryption_failure_does_not_issue_an_unencrypted_token() {
     client.client_id = format!("issue-id-encrypt-{}", Uuid::now_v7());
     client.id_token_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
     client.id_token_encrypted_response_enc = Some("A256GCM".to_owned());
-    client.jwks = Some(json!({
-        "keys": [{"kty": "RSA", "use": "enc", "alg": "RSA-OAEP-256"}]
-    }));
+    client.jwks = Some(
+        json!({
+            "keys": [{"kty": "RSA", "use": "enc", "alg": "RSA-OAEP-256"}]
+        })
+        .into(),
+    );
     let user_id = Uuid::now_v7();
     insert_issue_client(&state, &client).await;
     insert_issue_user(&state, user_id).await;

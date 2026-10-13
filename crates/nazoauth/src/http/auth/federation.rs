@@ -43,6 +43,7 @@ pub(crate) struct FederationHttpConfig {
     session_cookie_name: String,
     csrf_cookie_name: String,
     session_ttl_seconds: u64,
+    pending_mfa_session_ttl_seconds: u64,
     cookie_secure: bool,
 }
 
@@ -53,6 +54,7 @@ impl FederationHttpConfig {
         session_cookie_name: impl Into<String>,
         csrf_cookie_name: impl Into<String>,
         session_ttl_seconds: u64,
+        pending_mfa_session_ttl_seconds: u64,
         cookie_secure: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
@@ -62,6 +64,7 @@ impl FederationHttpConfig {
             session_cookie_name: session_cookie_name.into(),
             csrf_cookie_name: csrf_cookie_name.into(),
             session_ttl_seconds,
+            pending_mfa_session_ttl_seconds,
             cookie_secure,
         })
     }
@@ -548,25 +551,31 @@ fn federation_session_response(
     config: &FederationHttpConfig,
     success: LoginSuccess,
 ) -> HttpResponse {
+    let mfa_required = success.session.pending_mfa();
+    let ttl = if mfa_required {
+        config.pending_mfa_session_ttl_seconds
+    } else {
+        config.session_ttl_seconds
+    };
     with_cookie_headers(
         json_response(json!({
-            "expires_in": config.session_ttl_seconds,
+            "expires_in": ttl,
             "csrf_token": success.csrf_token,
-            "mfa_required": false
+            "mfa_required": mfa_required
         })),
         &[
             make_cookie(
                 &config.session_cookie_name,
                 &success.session_id,
                 true,
-                config.session_ttl_seconds,
+                ttl,
                 config.cookie_secure,
             ),
             make_cookie(
                 &config.csrf_cookie_name,
                 &success.csrf_token,
                 false,
-                config.session_ttl_seconds,
+                ttl,
                 config.cookie_secure,
             ),
         ],

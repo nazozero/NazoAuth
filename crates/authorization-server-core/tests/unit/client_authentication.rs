@@ -40,7 +40,7 @@ fn client(client_type: &str, method: &str) -> OAuthClient {
             tls_client_auth_san_ip: Vec::new(),
             tls_client_auth_san_email: Vec::new(),
             jwks_uri: None,
-            jwks: Some(json!({"keys": []})),
+            jwks: Some(json!({"keys": []}).into()),
             request_uris: Vec::new(),
             initiate_login_uri: None,
             presentation: crate::ClientPresentationMetadata::default(),

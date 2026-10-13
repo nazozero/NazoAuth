@@ -456,6 +456,7 @@ async fn authenticate_device_authorization_client(
             remote_client_documents,
             security_audit,
         )
+        .with_fapi2_requirement(config.profile.requires_fapi2_security())
         .with_endpoint_audience_aliases(std::slice::from_ref(
             &config.mtls_endpoint_base_url.as_ref(),
         )),

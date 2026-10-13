@@ -172,7 +172,10 @@ async fn jwks_fetches_valid_documents_and_reuses_a_matching_cache_entry() {
         .jwks_for_kid(&uri, Some("key-1"))
         .await
         .expect("matching kid should use cache");
-    assert_eq!(cached, first);
+    assert!(
+        Arc::ptr_eq(&cached, &first),
+        "cache hits must share the keyset allocation"
+    );
     server.join().expect("TLS test server should exit");
 }
 

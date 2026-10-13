@@ -376,7 +376,7 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
     };
     let mut client = client(TenantContext::default_system());
     client.jwks_uri = Some("https://client.example/jwks.json".to_owned());
-    client.jwks = Some(serde_json::json!({"keys": []}));
+    client.jwks = Some(serde_json::json!({"keys": []}).into());
     client.request_uris = vec!["https://client.example/request.jwt".to_owned()];
     client.initiate_login_uri = Some("https://client.example/login/initiate".to_owned());
     client.presentation = nazo_auth::ClientPresentationMetadata {
@@ -1005,7 +1005,7 @@ async fn replace_registration_returns_the_committed_row() {
     let repository = OAuthClientRepository::new(pool.clone());
     let mut client = client(TenantContext::default_system());
     client.jwks_uri = Some("https://client.example/jwks.json".to_owned());
-    client.jwks = Some(serde_json::json!({"keys": [{"kid": "dc01"}]}));
+    client.jwks = Some(serde_json::json!({"keys": [{"kid": "dc01"}]}).into());
     client.request_uris = vec!["https://client.example/request.jwt".to_owned()];
     let initial_token = registration_token(&client, "dc01-initial");
     let rotated_token = registration_token(&client, "dc01-rotated");

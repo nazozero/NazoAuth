@@ -219,6 +219,7 @@ async fn every_account_result_passes_active_gate_before_link_audit_or_session_cr
                     state_ttl_seconds: 300,
                     saml_replay_ttl_seconds: 300,
                     session_ttl_seconds: 300,
+                    pending_mfa_session_ttl_seconds: 120,
                 },
             );
             let result = service
@@ -256,6 +257,7 @@ async fn every_account_result_passes_active_gate_before_link_audit_or_session_cr
             state_ttl_seconds: 300,
             saml_replay_ttl_seconds: 300,
             session_ttl_seconds: 300,
+            pending_mfa_session_ttl_seconds: 120,
         },
     );
     assert!(matches!(

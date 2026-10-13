@@ -5,7 +5,8 @@ use nazo_auth::{
 };
 use serde_json::Value;
 
-pub type RemoteJwksFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, String>> + Send + 'a>>;
+pub type RemoteJwksFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Arc<Value>, String>> + Send + 'a>>;
 
 /// Resolves a remote JWKS under the embedding server's outbound-document policy.
 pub trait RemoteJwksResolverPort: Send + Sync {

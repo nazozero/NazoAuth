@@ -354,7 +354,7 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     let public_jwk = key.public_jwk("client-kid");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.jwks = Some(json!({"keys": [public_jwk]}));
+    client.jwks = Some(json!({"keys": [public_jwk]}).into());
     let req = TestRequest::post().uri("/token").to_http_request();
     let assertion = signed_client_assertion(
         &client.client_id,
@@ -570,7 +570,7 @@ async fn private_key_jwt_without_kid_uses_the_registered_key_source() {
     let mut client = confidential_client_with_secret(&fixture_secret("key-source"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
     client.jwks_uri = Some(uri.to_owned());
-    client.jwks = Some(json!({"keys": [old.public_jwk("A")]}));
+    client.jwks = Some(json!({"keys": [old.public_jwk("A")]}).into());
     for (key, kid, remote, unavailable, accepted, calls) in [
         (&old, None, true, false, false, 1),
         (&current, None, true, false, true, 1),
@@ -748,7 +748,7 @@ async fn self_signed_client_auth_accepts_registered_rfc9440_certificate() {
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
     client.jwks = Some(
-        json!({"keys": [{"kid": "registered-client-cert", "x5c": [certificate.header.trim_matches(':')]}]}),
+        json!({"keys": [{"kid": "registered-client-cert", "x5c": [certificate.header.trim_matches(':')]}]}).into(),
     );
     let credentials = client_credentials("self_signed_tls_client_auth");
 
@@ -850,7 +850,7 @@ async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
     let public_jwk = key.public_jwk("client-kid");
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
-    client.jwks = Some(json!({"keys": [public_jwk]}));
+    client.jwks = Some(json!({"keys": [public_jwk]}).into());
     let req = TestRequest::post().uri("/token").to_http_request();
     let client_id = client.client_id.clone();
 
@@ -905,7 +905,7 @@ async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     client.token_endpoint_auth_method = "private_key_jwt".to_owned();
     client.require_mtls_bound_tokens = true;
     client.allow_client_assertion_endpoint_audience = true;
-    client.jwks = Some(json!({"keys": [public_jwk]}));
+    client.jwks = Some(json!({"keys": [public_jwk]}).into());
     let req = TestRequest::post().uri("/bc-authorize").to_http_request();
 
     for (index, audience) in [

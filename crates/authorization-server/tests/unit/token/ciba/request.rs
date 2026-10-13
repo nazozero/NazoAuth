@@ -33,6 +33,7 @@ fn oauth_error_code(error: OAuthEndpointError) -> String {
 }
 fn config() -> CibaConfig {
     CibaConfig {
+        profile: crate::policy::AuthorizationServerProfile::Oauth2Baseline,
         issuer: "https://issuer.example".into(),
         mtls_endpoint_base_url: "".into(),
         frontend_base_url: "https://app.example".into(),
@@ -92,7 +93,7 @@ fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixtur
     ];
     client.grant_types = vec![CIBA_GRANT_TYPE.into(), "refresh_token".into()];
     client.require_dpop_bound_tokens = false;
-    client.jwks = Some(json!({"keys":[fixture.public_jwk(kid)]}));
+    client.jwks = Some(json!({"keys":[fixture.public_jwk(kid)]}).into());
     client.security_policy.allow_cross_device_flows = true;
     client
 }

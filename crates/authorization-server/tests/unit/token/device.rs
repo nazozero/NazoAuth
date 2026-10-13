@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 fn device_config() -> DeviceConfig {
     DeviceConfig {
+        profile: crate::policy::AuthorizationServerProfile::Oauth2Baseline,
         issuer: "http://127.0.0.1:8000".into(),
         mtls_endpoint_base_url: "http://127.0.0.1:8000".into(),
         frontend_base_url: "http://127.0.0.1:8000/ui".into(),

@@ -130,7 +130,7 @@ where
             tls_client_auth_san_ip: trim_string_vec(request.tls_client_auth_san_ip),
             tls_client_auth_san_email: trim_string_vec(request.tls_client_auth_san_email),
             jwks_uri: trim_optional_string(request.jwks_uri),
-            jwks: request.jwks,
+            jwks: request.jwks.map(Into::into),
             request_uris: trim_string_vec(request.request_uris),
             initiate_login_uri: trim_optional_string(request.initiate_login_uri),
             presentation: request.presentation,

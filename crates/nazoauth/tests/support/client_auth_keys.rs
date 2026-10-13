@@ -66,7 +66,9 @@ impl RemoteJwksResolverPort for CountingJwksResolver {
             if let Some(message) = failure {
                 return Err(message);
             }
-            document.ok_or_else(|| "test JWKS URI is not configured".to_owned())
+            document
+                .map(Into::into)
+                .ok_or_else(|| "test JWKS URI is not configured".to_owned())
         })
     }
 }

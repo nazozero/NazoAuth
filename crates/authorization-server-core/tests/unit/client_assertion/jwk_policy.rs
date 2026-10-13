@@ -74,7 +74,7 @@ fn shared_jwk_policy_rejects_private_material_and_ambiguous_key_ids() {
             tls_client_auth_san_ip: Vec::new(),
             tls_client_auth_san_email: Vec::new(),
             jwks_uri: None,
-            jwks: Some(json!({"keys": [public.clone(), public]})),
+            jwks: Some(json!({"keys": [public.clone(), public]}).into()),
             request_uris: Vec::new(),
             initiate_login_uri: None,
             presentation: crate::ClientPresentationMetadata::default(),

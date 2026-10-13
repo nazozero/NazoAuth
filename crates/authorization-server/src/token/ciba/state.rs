@@ -22,6 +22,7 @@ pub fn ciba_grant_key(auth_req_id: &str) -> String {
 
 #[derive(Clone)]
 pub struct CibaConfig {
+    pub profile: crate::policy::AuthorizationServerProfile,
     pub issuer: Box<str>,
     pub mtls_endpoint_base_url: Box<str>,
     pub frontend_base_url: Box<str>,

@@ -12,7 +12,7 @@ fn nested_request_object(claims: &Value) -> (String, ClientRow) {
     jwk["alg"] = json!("EdDSA");
     jwk["use"] = json!("sig");
     let mut client = crate::test_support::authorization::client(true);
-    client.registration.jwks = Some(json!({"keys": [jwk]}));
+    client.registration.jwks = Some(json!({"keys": [jwk]}).into());
     client.registration.request_object_signing_alg = Some("EdDSA".into());
     client.registration.request_object_encryption_alg = Some("RSA-OAEP-256".into());
     client.registration.request_object_encryption_enc = Some("A256GCM".into());

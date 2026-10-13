@@ -111,7 +111,7 @@ pub(super) fn dynamic_registration_response(
     if let Some(jwks_uri) = &client.jwks_uri {
         body["jwks_uri"] = json!(jwks_uri);
     } else if let Some(jwks) = &client.jwks {
-        body["jwks"] = jwks.clone();
+        body["jwks"] = jwks.as_ref().clone();
     }
     if !client.request_uris.is_empty() {
         body["request_uris"] = json!(client.request_uris);

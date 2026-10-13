@@ -26,6 +26,8 @@ pub struct ClientAssertionVerificationInput<'a> {
     pub assertion: &'a str,
     pub now: i64,
     pub expected_signing_algorithm: Option<&'a str>,
+    /// The endpoint's mandatory profile, combined with the client's own policy.
+    pub require_fapi2: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -129,11 +131,21 @@ pub fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> 
 pub fn verify_private_key_jwt(
     input: ClientAssertionVerificationInput<'_>,
 ) -> Result<ValidatedClientAssertion, ClientAssertionValidationError> {
+    let require_fapi2 =
+        input.require_fapi2 || input.client.security_policy.requires_fapi2_security();
     let header =
         decode_header(input.assertion).map_err(|_| ClientAssertionValidationError::DecodeHeader)?;
     let Some((algorithm_name, _)) = supported_client_jwt_algorithm(header.alg) else {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     };
+    if require_fapi2
+        && !matches!(
+            header.alg,
+            Algorithm::PS256 | Algorithm::ES256 | Algorithm::EdDSA
+        )
+    {
+        return Err(ClientAssertionValidationError::InvalidAlgorithm);
+    }
     if input
         .expected_signing_algorithm
         .is_some_and(|expected| expected != algorithm_name)
@@ -163,10 +175,10 @@ pub fn verify_private_key_jwt(
         &client_assertion_audience_candidates(
             input.issuer,
             input.endpoint_path,
-            input.client.allow_client_assertion_endpoint_audience,
+            !require_fapi2 && input.client.allow_client_assertion_endpoint_audience,
             input.endpoint_audience_aliases,
         ),
-        input.client.allow_client_assertion_audience_array,
+        !require_fapi2 && input.client.allow_client_assertion_audience_array,
     ) {
         return Err(ClientAssertionValidationError::Audience);
     }
@@ -267,7 +279,7 @@ fn client_assertion_decoding_key(
         return client_jwt_decoding_key(client, kid, algorithm)
             .map(|decoding_key| (Some(kid.to_owned()), decoding_key));
     }
-    let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
+    let keys = client.jwks.as_deref()?.get("keys")?.as_array()?;
     let mut matching = keys.iter().filter_map(|key| {
         jwt_decoding_key_from_jwk(key, algorithm).map(|decoding_key| (None, decoding_key))
     });
@@ -280,7 +292,7 @@ pub(crate) fn client_jwt_decoding_key(
     kid: &str,
     algorithm: Algorithm,
 ) -> Option<JwtVerificationKey> {
-    let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
+    let keys = client.jwks.as_deref()?.get("keys")?.as_array()?;
     let mut matching = keys
         .iter()
         .filter(|key| key.get("kid").and_then(Value::as_str) == Some(kid));

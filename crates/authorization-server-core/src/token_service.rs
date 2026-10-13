@@ -1023,7 +1023,8 @@ where
     ) -> Result<TokenInspection, TokenPortError> {
         if let Some(claims) = self.signer.decode_access_token(issuer, raw_token).await? {
             let audience_allowed = resource_server
-                .allowed_audiences
+                .security_policy
+                .introspection_audiences
                 .iter()
                 .any(|audience| crate::token_audience_contains(&claims.aud, audience));
             if (claims.client_id != resource_server.client_id && !audience_allowed)

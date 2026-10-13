@@ -139,6 +139,7 @@ pub struct FederationServiceConfig {
     pub state_ttl_seconds: u64,
     pub saml_replay_ttl_seconds: u64,
     pub session_ttl_seconds: u64,
+    pub pending_mfa_session_ttl_seconds: u64,
 }
 
 pub struct FederationService<T, H, S, A> {
@@ -473,15 +474,21 @@ where
             account.user_id(),
             now.timestamp(),
             vec![method.clone(), "federated".to_owned()],
-            false,
+            account.account.mfa_enabled,
             Some(random_urlsafe_token()),
         );
         session.record_authentication_at(now);
         let session_id = random_urlsafe_token();
         let csrf_token = random_urlsafe_token();
+        // Raw upstream claims do not establish completion of local MFA.
+        let ttl = if session.pending_mfa() {
+            self.config.pending_mfa_session_ttl_seconds
+        } else {
+            self.config.session_ttl_seconds
+        };
         match self
             .sessions
-            .create(&session_id, &session, self.config.session_ttl_seconds)
+            .create(&session_id, &session, ttl)
             .await
             .map_err(FederationError::Session)?
         {

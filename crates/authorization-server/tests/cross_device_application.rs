@@ -268,6 +268,7 @@ fn fixture_with_client(
     let mut authorization = authorization_fixture::Fixture::new(Ok(Some(client)), Ok(None));
     authorization.config.client_secret_pepper = app::crypto::random_urlsafe_token().into();
     let config = CibaConfig {
+        profile: app::policy::AuthorizationServerProfile::Oauth2Baseline,
         issuer: "https://issuer.example".into(),
         mtls_endpoint_base_url: "".into(),
         frontend_base_url: "https://frontend.example".into(),

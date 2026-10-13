@@ -389,7 +389,7 @@ impl DynamicRegistrationApplication {
         security_policy_override: Option<&nazo_auth::ClientSecurityPolicy>,
     ) -> Result<PreparedClientRegistration, AdminClientError> {
         if let Some(uri) = registration.request.jwks_uri.as_deref() {
-            registration.request.jwks = Some(
+            registration.request.jwks = Some(Arc::unwrap_or_clone(
                 self.security
                     .remote_jwks
                     .resolve(uri, None)
@@ -399,7 +399,7 @@ impl DynamicRegistrationApplication {
                             "jwks_uri could not be resolved: {error}"
                         ))
                     })?,
-            );
+            ));
         }
         let mut request = registration.request;
         if let Some(security_policy) = security_policy_override {

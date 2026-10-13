@@ -199,7 +199,7 @@ fn client_row() -> ClientRow {
         allow_client_assertion_endpoint_audience: true,
         require_par_request_object: true,
         is_active: true,
-        jwks: Some(json!({"keys": []})),
+        jwks: Some(json!({"keys": []}).into()),
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         userinfo_signed_response_alg: None,

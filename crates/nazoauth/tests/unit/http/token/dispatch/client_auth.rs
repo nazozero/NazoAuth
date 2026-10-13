@@ -791,8 +791,8 @@ async fn token_endpoint_private_key_jwt_without_kid_obeys_jwks_uri() {
     let uri = format!("https://localhost:{}/jwks", address.port());
     let resolver = Arc::new(resolver_for(address, &certificate));
     assert_eq!(
-        resolver.jwks_for_kid(&uri, None).await.unwrap(),
-        old_document
+        resolver.jwks_for_kid(&uri, None).await.unwrap().as_ref(),
+        &old_document
     );
     let client_id = format!("kidless-{}", Uuid::now_v7());
     insert_token_client(

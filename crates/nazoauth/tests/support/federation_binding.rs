@@ -83,6 +83,7 @@ pub(crate) fn unavailable_federation_service(
             state_ttl_seconds: crate::http::auth::federation::FEDERATION_STATE_TTL_SECONDS,
             saml_replay_ttl_seconds: crate::http::auth::federation::SAML_REPLAY_TTL_SECONDS,
             session_ttl_seconds: state.settings.session.session_ttl_seconds,
+            pending_mfa_session_ttl_seconds: state.settings.session.pending_mfa_session_ttl_seconds,
         },
     );
     (Data::new(service), states)

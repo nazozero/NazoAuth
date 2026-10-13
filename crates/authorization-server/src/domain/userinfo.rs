@@ -269,7 +269,7 @@ impl ServerUserinfoOperations {
             None => None,
         };
         let encryption_key = client_jwe_key(
-            client.jwks.as_ref(),
+            client.jwks.as_deref(),
             client.userinfo_encrypted_response_alg.as_deref(),
             client.userinfo_encrypted_response_enc.as_deref(),
             "userinfo",
