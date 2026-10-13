@@ -54,6 +54,7 @@ pub struct ClientAuthConfig<'a> {
     endpoint_audience_aliases: &'a [&'a str],
     remote_jwks: &'a dyn RemoteJwksResolverPort,
     audit: &'a dyn crate::ports::audit::SecurityAudit,
+    require_fapi2: bool,
 }
 
 impl<'a> ClientAuthConfig<'a> {
@@ -69,11 +70,17 @@ impl<'a> ClientAuthConfig<'a> {
             endpoint_audience_aliases: &[],
             remote_jwks,
             audit,
+            require_fapi2: false,
         }
     }
 
     pub fn with_endpoint_audience_aliases(mut self, aliases: &'a [&'a str]) -> Self {
         self.endpoint_audience_aliases = aliases;
+        self
+    }
+
+    pub fn with_fapi2_requirement(mut self, required: bool) -> Self {
+        self.require_fapi2 = required;
         self
     }
 }
@@ -210,6 +217,7 @@ pub async fn authenticate_client_with_dependencies<'credential>(
                 config.endpoint_audience_aliases,
                 client,
                 assertion,
+                config.require_fapi2,
             )
             .map(Some)
             .map_err(|error| {

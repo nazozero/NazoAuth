@@ -421,6 +421,7 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
             "session",
             "csrf",
             300,
+            120,
             true,
         )
         .unwrap();

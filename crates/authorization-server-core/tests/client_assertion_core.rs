@@ -68,7 +68,7 @@ fn client(jwks: Value) -> OAuthClient {
             tls_client_auth_san_ip: Vec::new(),
             tls_client_auth_san_email: Vec::new(),
             jwks_uri: None,
-            jwks: Some(jwks),
+            jwks: Some(jwks.into()),
             request_uris: Vec::new(),
             initiate_login_uri: None,
             presentation: nazo_auth::ClientPresentationMetadata::default(),
@@ -146,6 +146,7 @@ fn verify_at(
         assertion,
         now: NOW,
         expected_signing_algorithm: None,
+        require_fapi2: false,
     })
 }
 
@@ -181,6 +182,7 @@ fn registered_client_assertion_algorithm_is_enforced_before_key_selection() {
             assertion: &assertion,
             now: NOW,
             expected_signing_algorithm: client.token_endpoint_auth_signing_alg.as_deref(),
+            require_fapi2: false,
         }),
         Err(ClientAssertionValidationError::InvalidAlgorithm)
     ));
@@ -261,6 +263,7 @@ fn configured_mtls_endpoint_alias_is_only_accepted_for_opted_in_endpoint_audienc
             assertion: &assertion,
             now: NOW,
             expected_signing_algorithm: None,
+            require_fapi2: false,
         }),
         Err(ClientAssertionValidationError::Audience)
     ));
@@ -275,6 +278,7 @@ fn configured_mtls_endpoint_alias_is_only_accepted_for_opted_in_endpoint_audienc
             assertion: &assertion,
             now: NOW,
             expected_signing_algorithm: None,
+            require_fapi2: false,
         })
         .is_ok()
     );
@@ -468,4 +472,83 @@ fn unverified_identity_is_only_a_lookup_hint_with_matching_nonempty_parties() {
         unverified_client_assertion_client_id(&assertion(json!({"sub": "different"}), Some("kid")))
             .is_none()
     );
+}
+
+#[test]
+fn fapi_overrides_client_compatibility_for_every_assertion_endpoint() {
+    let mut client = client(json!({"keys": [public_jwk(Some("client-kid"))]}));
+    client.allow_client_assertion_endpoint_audience = true;
+    client.allow_client_assertion_audience_array = true;
+    for server_profile in [false, true] {
+        client.security_policy = if server_profile {
+            nazo_auth::ClientSecurityPolicy::default()
+        } else {
+            nazo_auth::ClientSecurityPolicy::fapi2()
+        };
+        for path in [
+            "/token",
+            "/par",
+            "/bc-authorize",
+            "/introspect",
+            "/revoke",
+            "/device_authorization",
+        ] {
+            for (aud, accepted) in [
+                (json!("https://issuer.example"), true),
+                (json!(["https://issuer.example"]), false),
+                (json!(format!("https://issuer.example{path}")), false),
+                (json!(format!("https://mtls.example{path}")), false),
+            ] {
+                let assertion = assertion(json!({"aud": aud}), Some("client-kid"));
+                let result = verify_private_key_jwt(ClientAssertionVerificationInput {
+                    issuer: "https://issuer.example",
+                    endpoint_path: path,
+                    endpoint_audience_aliases: &["https://mtls.example"],
+                    client: &client,
+                    assertion: &assertion,
+                    now: NOW,
+                    expected_signing_algorithm: None,
+                    require_fapi2: server_profile,
+                });
+                assert_eq!(result.is_ok(), accepted, "{path}: {result:?}");
+                if !accepted {
+                    assert!(matches!(
+                        result,
+                        Err(ClientAssertionValidationError::Audience)
+                    ));
+                }
+            }
+        }
+        let assertion = assertion_with_algorithm(json!({}), Some("client-kid"), "RS256");
+        assert!(matches!(
+            verify_private_key_jwt(ClientAssertionVerificationInput {
+                issuer: "https://issuer.example",
+                endpoint_path: "/token",
+                endpoint_audience_aliases: &[],
+                client: &client,
+                assertion: &assertion,
+                now: NOW,
+                expected_signing_algorithm: Some("RS256"),
+                require_fapi2: server_profile,
+            }),
+            Err(ClientAssertionValidationError::InvalidAlgorithm)
+        ));
+    }
+}
+
+#[test]
+fn client_snapshots_share_immutable_keys_and_preserve_wire_json() {
+    let keys = json!({"keys": [public_jwk(Some("client-kid"))]});
+    let original = client(keys.clone());
+    let mut refreshed = original.clone();
+    assert!(std::sync::Arc::ptr_eq(
+        original.jwks.as_ref().unwrap(),
+        refreshed.jwks.as_ref().unwrap()
+    ));
+    refreshed.jwks = Some(json!({"keys": []}).into());
+    assert_eq!(
+        serde_json::to_value(&original.registration).unwrap()["jwks"],
+        keys
+    );
+    assert_ne!(original.jwks, refreshed.jwks);
 }

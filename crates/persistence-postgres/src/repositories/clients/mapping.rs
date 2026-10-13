@@ -124,7 +124,7 @@ impl OAuthClientRecord {
                     "tls_client_auth_san_email",
                 )?,
                 jwks_uri: self.jwks_uri,
-                jwks: self.jwks,
+                jwks: self.jwks.map(Into::into),
                 request_uris: string_array(self.request_uris, "request_uris")?,
                 initiate_login_uri: self.initiate_login_uri,
                 presentation: nazo_auth::ClientPresentationMetadata {

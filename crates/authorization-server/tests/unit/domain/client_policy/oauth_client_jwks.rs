@@ -292,7 +292,8 @@ impl crate::contracts::dynamic_client_registration::RemoteJwksResolverPort for S
                     "use": "sig",
                     "kid": "remote"
                 }]
-            }))
+            })
+            .into())
         })
     }
 }
@@ -341,7 +342,7 @@ fn client_for_jwks_refresh() -> crate::domain::rows::ClientRow {
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
             jwks_uri: None,
-            jwks: Some(json!({"keys": []})),
+            jwks: Some(json!({"keys": []}).into()),
             request_uris: Vec::new(),
             initiate_login_uri: None,
             presentation: nazo_auth::ClientPresentationMetadata::default(),
@@ -397,7 +398,7 @@ fn refresh_client_jwks_uses_registered_uri_and_preserves_snapshot_without_one() 
         );
 
         client.jwks_uri = None;
-        client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}));
+        client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}).into());
         refresh_client_jwks(&mut client, &resolver, Some("remote"))
             .await
             .expect("clients without jwks_uri keep their persisted snapshot");
@@ -417,7 +418,7 @@ fn refresh_client_jwks_does_not_replace_snapshot_when_resolution_fails() {
         };
         let mut client = client_for_jwks_refresh();
         client.jwks_uri = Some("https://client.example/jwks".to_owned());
-        client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}));
+        client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}).into());
 
         let error = refresh_client_jwks(&mut client, &resolver, Some("remote"))
             .await

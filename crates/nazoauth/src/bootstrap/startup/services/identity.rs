@@ -433,6 +433,7 @@ pub(super) async fn build(
             state_ttl_seconds: FEDERATION_STATE_TTL_SECONDS,
             saml_replay_ttl_seconds: SAML_REPLAY_TTL_SECONDS,
             session_ttl_seconds: session.session_ttl_seconds,
+            pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
         },
     ));
     let federation_http_config = web::Data::new(FederationHttpConfig::new(
@@ -441,6 +442,7 @@ pub(super) async fn build(
         session.session_cookie_name.as_str(),
         session.csrf_cookie_name.as_str(),
         session.session_ttl_seconds,
+        session.pending_mfa_session_ttl_seconds,
         session.cookie_secure,
     )?);
 

@@ -927,7 +927,7 @@ fn request_object_jwks_failure_is_server_error_without_using_persisted_fallback(
         let mut client = authorization_fixture::client(true);
         client.registration.client_id = "remote-jar-client".into();
         client.registration.jwks_uri = Some("https://localhost:1/jwks".into());
-        client.registration.jwks = Some(json!({"keys":[{"kid":"persisted"}]}));
+        client.registration.jwks = Some(json!({"keys":[{"kid":"persisted"}]}).into());
         let response = apply_request_object_with_context(&context, &mut outer, &mut client, None)
             .await
             .expect_err("unavailable remote JWK source must reject the request object");

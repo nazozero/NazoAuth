@@ -84,7 +84,7 @@ pub fn client_jwt_decoding_key(
     kid: &str,
     alg: Algorithm,
 ) -> Option<JwtVerificationKey> {
-    let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
+    let keys = client.jwks.as_deref()?.get("keys")?.as_array()?;
     let key = keys
         .iter()
         .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))?;

@@ -106,7 +106,7 @@ where
         client.tls_client_auth_san_email = value;
     }
     if let Some(value) = request.jwks {
-        client.jwks = Some(value);
+        client.jwks = Some(value.into());
     }
     if let Some(value) = request.id_token_signed_response_alg {
         client.id_token_signed_response_alg = trim_optional_string(Some(value));
@@ -235,7 +235,7 @@ where
             require_dpop_bound_tokens: client.require_dpop_bound_tokens,
             require_mtls_bound_tokens: client.require_mtls_bound_tokens,
             jwks_uri: client.jwks_uri.as_deref(),
-            jwks: client.jwks.as_ref(),
+            jwks: client.jwks.as_deref(),
         },
         crypto,
     )?;

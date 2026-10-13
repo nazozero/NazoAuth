@@ -110,16 +110,16 @@ pub trait FederationLinkRepositoryPort: Send + Sync {
 }
 
 pub trait FederationLoginRepositoryPort: Send + Sync {
-    fn resolve_existing(
-        &self,
-        login: FederationLogin,
-    ) -> RepositoryFuture<'_, Option<PublicAccount>>;
+    fn resolve_existing<'a>(
+        &'a self,
+        login: &'a FederationLogin,
+    ) -> RepositoryFuture<'a, Option<PublicAccount>>;
 
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         tenant_id: TenantId,
         email: &'a str,
-    ) -> RepositoryFuture<'a, Option<PublicAccount>>;
+    ) -> RepositoryFuture<'a, bool>;
 
     fn create_federated(
         &self,

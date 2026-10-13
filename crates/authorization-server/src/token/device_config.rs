@@ -1,5 +1,6 @@
 #[derive(Clone)]
 pub struct DeviceConfig {
+    pub profile: crate::policy::AuthorizationServerProfile,
     pub issuer: Box<str>,
     pub mtls_endpoint_base_url: Box<str>,
     pub frontend_base_url: Box<str>,

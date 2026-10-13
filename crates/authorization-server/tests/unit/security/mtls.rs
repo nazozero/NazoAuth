@@ -350,7 +350,7 @@ fn self_signed_client_certificate_matches_registered_x5c() {
     let registered = test_certificate("client-1", -60, 3600);
     let mut client = client();
     client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
-    client.jwks = Some(json!({"keys": [{"kid": "cert-1", "x5c": [registered.x5c]}]}));
+    client.jwks = Some(json!({"keys": [{"kid": "cert-1", "x5c": [registered.x5c]}]}).into());
     let certificate = ClientCertificateFacts {
         thumbprint: Some(registered.thumbprint),
         ..ClientCertificateFacts::default()
@@ -365,12 +365,15 @@ fn self_signed_client_certificate_ignores_non_leaf_x5c_entries() {
     let chain_member = test_certificate("client-chain-member", -60, 3600);
     let mut client = client();
     client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
-    client.jwks = Some(json!({
-        "keys": [{
-            "kid": "cert-chain",
-            "x5c": [chain_member.x5c, leaf.x5c]
-        }]
-    }));
+    client.jwks = Some(
+        json!({
+            "keys": [{
+                "kid": "cert-chain",
+                "x5c": [chain_member.x5c, leaf.x5c]
+            }]
+        })
+        .into(),
+    );
     let certificate = ClientCertificateFacts {
         thumbprint: Some(leaf.thumbprint),
         ..ClientCertificateFacts::default()
@@ -385,12 +388,15 @@ fn self_signed_client_certificate_rotation_accepts_only_registered_x5c_set() {
     let new = test_certificate("client-new", -60, 3600);
     let mut client = client();
     client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
-    client.jwks = Some(json!({
-        "keys": [
-            {"kid": "old", "x5c": [old.x5c.clone()]},
-            {"kid": "new", "x5c": [new.x5c.clone()]}
-        ]
-    }));
+    client.jwks = Some(
+        json!({
+            "keys": [
+                {"kid": "old", "x5c": [old.x5c.clone()]},
+                {"kid": "new", "x5c": [new.x5c.clone()]}
+            ]
+        })
+        .into(),
+    );
     let old_certificate = ClientCertificateFacts {
         thumbprint: Some(old.thumbprint.clone()),
         ..ClientCertificateFacts::default()
@@ -402,7 +408,7 @@ fn self_signed_client_certificate_rotation_accepts_only_registered_x5c_set() {
     assert!(client_mtls_certificate_matches(&client, &old_certificate));
     assert!(client_mtls_certificate_matches(&client, &new_certificate));
 
-    client.jwks = Some(json!({"keys": [{"kid": "new", "x5c": [new.x5c]}]}));
+    client.jwks = Some(json!({"keys": [{"kid": "new", "x5c": [new.x5c]}]}).into());
     assert!(!client_mtls_certificate_matches(&client, &old_certificate));
     assert!(client_mtls_certificate_matches(&client, &new_certificate));
 }
@@ -412,7 +418,7 @@ fn self_signed_client_certificate_rejects_expired_x5c() {
     let expired = test_certificate("client-expired", -7200, -3600);
     let mut client = client();
     client.token_endpoint_auth_method = "self_signed_tls_client_auth".to_owned();
-    client.jwks = Some(json!({"keys": [{"kid": "expired", "x5c": [expired.x5c]}]}));
+    client.jwks = Some(json!({"keys": [{"kid": "expired", "x5c": [expired.x5c]}]}).into());
     let certificate = ClientCertificateFacts {
         thumbprint: Some(expired.thumbprint),
         ..ClientCertificateFacts::default()

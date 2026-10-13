@@ -3,6 +3,10 @@ use nazo_openid4vp::AuthorizationResponse;
 
 use std::sync::Arc;
 
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use diesel::sql_query;
 use diesel_async::RunQueryDsl;
 use nazo_auth::SigningPurpose;
@@ -23,6 +27,7 @@ use rcgen::{
     PKCS_ECDSA_P256_SHA256,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 struct PresentationFixture {
@@ -556,13 +561,31 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
             .status,
         400
     );
-    assert!(matches!(
-        operations
-            .request(signed_post.transaction_id, Some("wallet-nonce"))
-            .await
-            .expect("wallet nonce should bind the signed request"),
-        PresentationResponseBody::RequestObject(value) if value.split('.').count() == 3
-    ));
+    let PresentationResponseBody::RequestObject(value) = operations
+        .request(signed_post.transaction_id, Some("wallet-nonce"))
+        .await
+        .expect("wallet nonce should bind the signed request")
+    else {
+        panic!("signed POST must return a request object");
+    };
+    let header = nazo_crypto::jwt::decode_header(&value).unwrap();
+    let leaf_der = STANDARD.decode(&header.x5c.unwrap()[0]).unwrap();
+    let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der).unwrap();
+    let key = nazo_crypto::jwt::VerificationKey::from_ec_sec1(
+        leaf.public_key().subject_public_key.data.as_ref(),
+    );
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::ES256);
+    validation.set_audience(&["https://self-issued.me/v2"]);
+    let claims = nazo_crypto::jwt::decode::<serde_json::Value>(&value, &key, &validation)
+        .unwrap()
+        .claims;
+    let client_id = format!(
+        "x509_hash:{}",
+        URL_SAFE_NO_PAD.encode(Sha256::digest(&leaf_der))
+    );
+    assert_eq!(claims["client_id"], client_id);
+    assert_eq!(claims["iss"], client_id);
+    assert_eq!(claims["wallet_nonce"], "wallet-nonce");
 
     let rotated_signed_post = operations
         .create(create_input(

@@ -17,22 +17,7 @@ pub fn verify_private_key_jwt_claims_for_issuer(
     endpoint_audience_aliases: &[&str],
     client: &ClientRow,
     assertion: &str,
-) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    verify_private_key_jwt_claims_with_issuer(
-        issuer,
-        endpoint_path,
-        endpoint_audience_aliases,
-        client,
-        assertion,
-    )
-}
-
-fn verify_private_key_jwt_claims_with_issuer(
-    issuer: &str,
-    endpoint_path: &str,
-    endpoint_audience_aliases: &[&str],
-    client: &ClientRow,
-    assertion: &str,
+    require_fapi2: bool,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
     verify_private_key_jwt(ClientAssertionVerificationInput {
         issuer,
@@ -42,6 +27,7 @@ fn verify_private_key_jwt_claims_with_issuer(
         assertion,
         now: Utc::now().timestamp(),
         expected_signing_algorithm: client.token_endpoint_auth_signing_alg.as_deref(),
+        require_fapi2,
     })
     .map_err(|error| {
         log_client_assertion_rejection(endpoint_path, client, error.audit_reason());

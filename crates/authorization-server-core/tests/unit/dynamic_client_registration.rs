@@ -553,3 +553,20 @@ fn client() -> OAuthClient {
         is_active: true,
     }
 }
+
+#[test]
+fn registration_metadata_cannot_grant_introspection_authority() {
+    let request = serde_json::from_value(json!({
+        "introspection_audiences": ["resource://private"],
+        "security_policy": {"version": 1, "introspection_audiences": ["resource://private"]}
+    }))
+    .unwrap();
+    let prepared = prepare_dynamic_client_registration(request, POLICY).unwrap();
+    assert!(
+        prepared
+            .request
+            .security_policy
+            .introspection_audiences
+            .is_empty()
+    );
+}

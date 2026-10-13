@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use base64::{
     Engine as _,
@@ -42,7 +42,7 @@ pub(super) async fn sign(
         let mut salt = [0_u8; 16];
         rand::rng().fill_bytes(&mut salt);
         let disclosure = URL_SAFE_NO_PAD.encode(
-            serde_json::to_vec(&json!([URL_SAFE_NO_PAD.encode(salt), name, value]))
+            serde_json::to_vec(&(URL_SAFE_NO_PAD.encode(salt), name, value))
                 .map_err(|_| CredentialTrustError::InvalidEncoding)?,
         );
         digests.push(URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes())));
@@ -67,12 +67,13 @@ pub(super) async fn sign(
         .prepare_signing()
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let material = crypto
-        .signing_material(&lease)
+        .signing_material(lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
     header.typ = Some("dc+sd-jwt".to_owned());
     header.x5c = Some(material.x5c);
-    let jwt = lease
+    let jwt = material
+        .lease
         .encode_jwt(nazo_auth::SigningPurpose::Credential, &header, &credential)
         .await
         .map_err(|_| CredentialTrustError::Unavailable)?;
@@ -146,24 +147,34 @@ pub(super) fn verify(
     if binding.get("nonce").and_then(Value::as_str) != Some(&presentation.expected_nonce) {
         return Err(CredentialTrustError::InvalidNonce);
     }
+    // Include the final separator without reconstructing or copying the payload.
+    let sd_input = &presentation.encoded[..presentation.encoded.len() - kb_jwt.len()];
+    if binding.get("sd_hash").and_then(Value::as_str)
+        != Some(
+            URL_SAFE_NO_PAD
+                .encode(Sha256::digest(sd_input.as_bytes()))
+                .as_str(),
+        )
+    {
+        return Err(CredentialTrustError::InvalidHolderBinding);
+    }
+    let holder_jwk = holder_jwk.clone();
+    let credential = process_disclosures(credential, disclosures)?;
+    let issuer = credential
+        .get("iss")
+        .and_then(Value::as_str)
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
     // Preserve the pinned JWT policy's required NumericDate, rounded fractional
     // seconds and default leeway, but apply it only after nonce authentication.
     // Missing/malformed/expired issuer exp remains an invalid credential.
-    let expiration = credential
-        .get("exp")
-        .and_then(|value| {
-            value.as_u64().or_else(|| {
-                value
-                    .as_f64()
-                    .filter(|value| {
-                        value.is_finite() && *value >= 0.0 && *value < (u64::MAX as f64)
-                    })
-                    .map(|value| value.round() as u64)
-            })
-        })
-        .ok_or(CredentialTrustError::InvalidSignature)?;
+    let expiration = numeric_date(&credential, "exp")?;
     let now = Utc::now().timestamp() as u64;
     if expiration < now.saturating_sub(validation.leeway) {
+        return Err(CredentialTrustError::InvalidSignature);
+    }
+    if credential.get("nbf").is_some()
+        && numeric_date(&credential, "nbf")? > now.saturating_add(validation.leeway)
+    {
         return Err(CredentialTrustError::InvalidSignature);
     }
     // A discardable revocation result cannot hide an authenticated nonce
@@ -198,60 +209,6 @@ pub(super) fn verify(
     {
         return Err(CredentialTrustError::InvalidHolderBinding);
     }
-    let sd_input = if disclosures.is_empty() {
-        format!("{credential_jwt}~")
-    } else {
-        format!("{}~{}~", credential_jwt, disclosures.join("~"))
-    };
-    if binding.get("sd_hash").and_then(Value::as_str)
-        != Some(
-            URL_SAFE_NO_PAD
-                .encode(Sha256::digest(sd_input.as_bytes()))
-                .as_str(),
-        )
-    {
-        return Err(CredentialTrustError::InvalidHolderBinding);
-    }
-    if credential
-        .get("_sd_alg")
-        .and_then(Value::as_str)
-        .is_some_and(|algorithm| algorithm != "sha-256")
-    {
-        return Err(CredentialTrustError::InvalidEncoding);
-    }
-    let expected_digests = credential
-        .get("_sd")
-        .and_then(Value::as_array)
-        .ok_or(CredentialTrustError::InvalidEncoding)?
-        .iter()
-        .filter_map(Value::as_str)
-        .collect::<HashSet<_>>();
-    let mut disclosed = Map::new();
-    for disclosure in disclosures {
-        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
-        if !expected_digests.contains(digest.as_str()) {
-            return Err(CredentialTrustError::InvalidSignature);
-        }
-        let decoded: Value = serde_json::from_slice(
-            &URL_SAFE_NO_PAD
-                .decode(disclosure)
-                .map_err(|_| CredentialTrustError::InvalidEncoding)?,
-        )
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-        let array = decoded
-            .as_array()
-            .filter(|value| value.len() == 3)
-            .ok_or(CredentialTrustError::InvalidEncoding)?;
-        let name = array[1]
-            .as_str()
-            .ok_or(CredentialTrustError::InvalidEncoding)?;
-        if disclosed
-            .insert(name.to_owned(), array[2].clone())
-            .is_some()
-        {
-            return Err(CredentialTrustError::InvalidEncoding);
-        }
-    }
     Ok(VerifiedCredential {
         format: CredentialFormat::SdJwtVc,
         issuer: issuer.to_owned(),
@@ -262,12 +219,178 @@ pub(super) fn verify(
             .and_then(Value::as_str)
             .ok_or(CredentialTrustError::InvalidEncoding)?
             .to_owned(),
-        claims: Value::Object(disclosed),
-        holder_key: Some(holder_jwk.clone()),
+        holder_key: Some(holder_jwk),
         issued_at: timestamp_claim(&credential, "iat"),
         expires_at: timestamp_claim(&credential, "exp"),
         status: credential.get("status").cloned(),
+        claims: credential,
     })
+}
+
+fn numeric_date(payload: &Value, name: &str) -> Result<u64, CredentialTrustError> {
+    payload
+        .get(name)
+        .and_then(|value| {
+            value.as_u64().or_else(|| {
+                value
+                    .as_f64()
+                    .filter(|value| {
+                        value.is_finite() && *value >= 0.0 && *value < (u64::MAX as f64)
+                    })
+                    .map(|value| value.round() as u64)
+            })
+        })
+        .ok_or(CredentialTrustError::InvalidSignature)
+}
+
+/// RFC 9901 section 7.1: expand only authenticated digest references in place.
+fn process_disclosures(
+    mut payload: Value,
+    encoded: &[&str],
+) -> Result<Value, CredentialTrustError> {
+    let object = payload
+        .as_object_mut()
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    if let Some(algorithm) = object.remove("_sd_alg")
+        && algorithm.as_str() != Some("sha-256")
+    {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
+    let mut disclosures = HashMap::with_capacity(encoded.len());
+    for encoded in encoded {
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(encoded.as_bytes()));
+        let decoded = URL_SAFE_NO_PAD
+            .decode(encoded)
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        let Value::Array(mut values) = serde_json::from_slice::<Value>(&decoded)
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?
+        else {
+            return Err(CredentialTrustError::InvalidEncoding);
+        };
+        if !(2..=3).contains(&values.len()) || !values[0].is_string() {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
+        let value = values.pop().ok_or(CredentialTrustError::InvalidEncoding)?;
+        let name = if values.len() == 2 {
+            let Value::String(name) = values.pop().ok_or(CredentialTrustError::InvalidEncoding)?
+            else {
+                return Err(CredentialTrustError::InvalidEncoding);
+            };
+            if matches!(name.as_str(), "_sd" | "..." | "_sd_alg") {
+                return Err(CredentialTrustError::InvalidEncoding);
+            }
+            Some(name)
+        } else {
+            None
+        };
+        if disclosures.insert(digest, (name, value)).is_some() {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
+    }
+    expand_disclosures(&mut payload, &mut disclosures, &mut HashSet::new(), 0, true)?;
+    if !disclosures.is_empty() {
+        return Err(CredentialTrustError::InvalidSignature);
+    }
+    Ok(payload)
+}
+
+// SD-JWT VC section 2.2.2.3 also protects every subclaim of these root claims.
+fn always_disclosed_vc_claim(name: &str) -> bool {
+    matches!(
+        name,
+        "iss" | "nbf" | "exp" | "cnf" | "vct" | "vct#integrity" | "aka_vcts" | "status"
+    )
+}
+
+fn expand_disclosures(
+    value: &mut Value,
+    disclosures: &mut HashMap<String, (Option<String>, Value)>,
+    seen: &mut HashSet<String>,
+    depth: usize,
+    disclosures_allowed: bool,
+) -> Result<(), CredentialTrustError> {
+    // Separate, individually valid disclosures can otherwise compose an
+    // unbounded recursion even though the JSON decoder bounds each document.
+    if depth > 128 {
+        return Err(CredentialTrustError::InvalidEncoding);
+    }
+    match value {
+        Value::Object(object) => {
+            if object.contains_key("...") || object.contains_key("_sd_alg") {
+                return Err(CredentialTrustError::InvalidEncoding);
+            }
+            if let Some(digests) = object.remove("_sd") {
+                if !disclosures_allowed {
+                    return Err(CredentialTrustError::InvalidEncoding);
+                }
+                let Value::Array(digests) = digests else {
+                    return Err(CredentialTrustError::InvalidEncoding);
+                };
+                for digest in digests {
+                    let Value::String(digest) = digest else {
+                        return Err(CredentialTrustError::InvalidEncoding);
+                    };
+                    if !seen.insert(digest.clone()) {
+                        return Err(CredentialTrustError::InvalidEncoding);
+                    }
+                    if let Some((name, disclosed)) = disclosures.remove(&digest) {
+                        let name = name.ok_or(CredentialTrustError::InvalidEncoding)?;
+                        if depth == 0 && always_disclosed_vc_claim(&name) {
+                            return Err(CredentialTrustError::InvalidEncoding);
+                        }
+                        if object.insert(name, disclosed).is_some() {
+                            return Err(CredentialTrustError::InvalidEncoding);
+                        }
+                    }
+                }
+            }
+            for (name, value) in object {
+                expand_disclosures(
+                    value,
+                    disclosures,
+                    seen,
+                    depth + 1,
+                    disclosures_allowed && !(depth == 0 && always_disclosed_vc_claim(name)),
+                )?;
+            }
+        }
+        Value::Array(array) => {
+            let mut expanded = Vec::with_capacity(array.len());
+            for mut value in std::mem::take(array) {
+                if let Some(object) = value.as_object()
+                    && let Some(digest) = object.get("...")
+                {
+                    if !disclosures_allowed || object.len() != 1 {
+                        return Err(CredentialTrustError::InvalidEncoding);
+                    }
+                    let digest = digest
+                        .as_str()
+                        .ok_or(CredentialTrustError::InvalidEncoding)?;
+                    if !seen.insert(digest.to_owned()) {
+                        return Err(CredentialTrustError::InvalidEncoding);
+                    }
+                    let Some((name, disclosed)) = disclosures.remove(digest) else {
+                        continue;
+                    };
+                    if name.is_some() {
+                        return Err(CredentialTrustError::InvalidEncoding);
+                    }
+                    value = disclosed;
+                }
+                expand_disclosures(
+                    &mut value,
+                    disclosures,
+                    seen,
+                    depth + 1,
+                    disclosures_allowed,
+                )?;
+                expanded.push(value);
+            }
+            *array = expanded;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 pub(super) fn validate_sd_jwt_chain(
@@ -308,3 +431,7 @@ pub(super) fn validate_sd_jwt_chain(
         scoped_anchor_authenticated,
     })
 }
+
+#[cfg(test)]
+#[path = "../../../../tests/unit/domain/openid4vc/credential_crypto/sd_jwt.rs"]
+mod tests;

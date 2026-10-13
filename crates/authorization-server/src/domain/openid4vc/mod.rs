@@ -3,6 +3,7 @@ mod credential_crypto;
 mod crypto_helpers;
 mod proof_validator;
 
+pub(crate) use credential_crypto::Openid4vcSigningMaterial;
 pub use credential_crypto::{Openid4vcCredentialCrypto, parse_scoped_credential_trust_anchors};
 pub use proof_validator::Openid4vcProofValidator;
 

@@ -455,7 +455,7 @@ fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixtur
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
         is_active: true,
-        jwks: Some(json!({"keys": [public_jwk]})),
+        jwks: Some(json!({"keys": [public_jwk]}).into()),
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         userinfo_signed_response_alg: None,

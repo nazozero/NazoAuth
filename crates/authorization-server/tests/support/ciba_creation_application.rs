@@ -223,7 +223,7 @@ fn short_creation_validity_starts_after_required_audit_and_request_replay_comple
     block_on(async {
         let keys = nazo_key_management::KeyManager::for_test(jsonwebtoken::Algorithm::PS256);
         let mut client = client();
-        client.jwks = Some(keys.snapshot().jwks());
+        client.jwks = Some(keys.snapshot().jwks().into());
         client.backchannel_authentication_request_signing_alg = Some("PS256".to_owned());
         let kid = keys.snapshot().verification_keys[0].kid.clone();
         let now = chrono::Utc::now().timestamp();

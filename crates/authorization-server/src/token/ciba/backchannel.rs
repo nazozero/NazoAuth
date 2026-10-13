@@ -137,6 +137,9 @@ impl CibaApplication {
                 remote_jwks,
                 security_audit,
             )
+            .with_fapi2_requirement(
+                config.profile.requires_fapi2_security() || config.ciba_fapi2_hardening,
+            )
             .with_endpoint_audience_aliases(std::slice::from_ref(
                 &config.mtls_endpoint_base_url.as_ref(),
             )),

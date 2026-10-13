@@ -11,6 +11,7 @@ pub(super) mod mdoc;
 mod sd_jwt;
 mod signer;
 
+pub(crate) use certificates::Openid4vcSigningMaterial;
 pub use certificates::parse_scoped_credential_trust_anchors;
 
 #[derive(Clone)]

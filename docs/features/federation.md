@@ -12,7 +12,19 @@ Supported federation modes:
 - OAuth2 social provider adapters for QQ, WeChat, and custom JSON userinfo providers
 - one trusted SAML gateway integration
 - tenant-scoped external identity links in the resolved request runtime
-- normal HTTPOnly server-side sessions after successful federation login
+- HTTPOnly server-side sessions that retain the local account MFA requirement
+
+## Local MFA
+
+OIDC, social, and SAML gateway login use the local account's `mfa_enabled`
+setting. An enabled account receives a pending-MFA session and
+`mfa_required=true`; its storage TTL, session/CSRF cookie lifetimes and response
+`expires_in` use `PENDING_MFA_SESSION_TTL_SECONDS`. It must complete the existing
+local MFA flow before accessing an authenticated session. Accounts without
+local MFA receive the regular session lifetime.
+
+Upstream `amr` and `acr` claims are retained as external identity metadata.
+They do not satisfy local MFA: no provider assurance mapping is configured.
 
 ## Provider Registry
 

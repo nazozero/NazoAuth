@@ -1618,7 +1618,7 @@ async fn concurrent_federated_create_is_idempotent_with_one_connection_and_tenan
     };
     assert!(
         repository
-            .resolve_existing(FederationLogin {
+            .resolve_existing(&FederationLogin {
                 tenant: other_tenant,
                 ..login
             })

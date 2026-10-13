@@ -26,6 +26,10 @@ pub struct ClientSecurityPolicy {
     pub require_signed_authorization_response: bool,
     #[serde(default)]
     pub require_signed_introspection_response: bool,
+    /// Administrator-granted resources whose access tokens this client may inspect.
+    /// Token issuance audiences never confer introspection authority.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub introspection_audiences: Vec<String>,
     #[serde(default)]
     pub session_management: bool,
     #[serde(default)]
@@ -46,6 +50,7 @@ impl Default for ClientSecurityPolicy {
             require_signed_authorization_request: false,
             require_signed_authorization_response: false,
             require_signed_introspection_response: false,
+            introspection_audiences: Vec::new(),
             session_management: false,
             allow_cross_device_flows: false,
             allow_confidential_oidc_without_pkce: false,
@@ -125,7 +130,7 @@ pub struct ValidatedClientRegistration {
     /// HTTPS URI registered by a dynamic client for retrieving its public JWK Set.
     /// `jwks` contains the last validated snapshot used by protocol verification.
     pub jwks_uri: Option<String>,
-    pub jwks: Option<Value>,
+    pub jwks: Option<std::sync::Arc<Value>>,
     /// Exact, pre-registered HTTPS locations from which OIDC Request Objects may be loaded.
     pub request_uris: Vec<String>,
     /// RP endpoint used by OpenID Connect Third-Party Initiated Login.

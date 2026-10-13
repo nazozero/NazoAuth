@@ -560,7 +560,7 @@ impl SecurityAudit for Ports {
 impl RemoteJwksResolverPort for Ports {
     fn resolve<'a>(&'a self, _uri: &'a str, _kid: Option<&'a str>) -> RemoteJwksFuture<'a> {
         self.record("remote_jwks");
-        Box::pin(async { self.remote_jwks.lock().unwrap().clone() })
+        Box::pin(async { self.remote_jwks.lock().unwrap().clone().map(Into::into) })
     }
 }
 impl RemoteRequestObjectResolverPort for Ports {

@@ -523,7 +523,7 @@ pub async fn issue_token_response(
             }
         };
         let id_token = match client_jwe_key(
-            client.jwks.as_ref(),
+            client.jwks.as_deref(),
             client.id_token_encrypted_response_alg.as_deref(),
             client.id_token_encrypted_response_enc.as_deref(),
             "id_token",

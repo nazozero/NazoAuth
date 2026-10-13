@@ -417,7 +417,7 @@ impl CredentialDatasetPort for Dataset {
 }
 
 #[derive(Clone, Default)]
-struct RecordingSigner(Arc<Mutex<Vec<CredentialSignInput>>>);
+struct RecordingSigner(Arc<Mutex<Vec<CredentialSignInput>>>, Arc<Mutex<Vec<usize>>>);
 
 impl CredentialSignerPort for RecordingSigner {
     fn sign<'a>(
@@ -425,6 +425,12 @@ impl CredentialSignerPort for RecordingSigner {
         input: &'a CredentialSignInput,
     ) -> CredentialFuture<'a, Result<String, CredentialTrustError>> {
         Box::pin(async move {
+            self.1.lock().unwrap().push(
+                input.payload.subject_claims["given_name"]
+                    .as_str()
+                    .unwrap()
+                    .as_ptr() as usize,
+            );
             self.0.lock().unwrap().push(input.clone());
             Ok(format!("credential-{}", self.0.lock().unwrap().len()))
         })
@@ -592,9 +598,31 @@ fn test_issuance_identity() -> IssuanceIdentity {
 
 #[tokio::test]
 async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
+    #[derive(Clone)]
+    struct MovingDataset(Arc<Mutex<usize>>);
+    impl CredentialDatasetPort for MovingDataset {
+        fn dataset<'a>(
+            &'a self,
+            _: &'a CredentialAccess,
+            _: &'a str,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<Value, CredentialIssuanceError>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async move {
+                let dataset = json!({"given_name": "Ada"});
+                *self.0.lock().unwrap() = dataset["given_name"].as_str().unwrap().as_ptr() as usize;
+                Ok(dataset)
+            })
+        }
+    }
     let now = Utc::now();
     let store = RecordingStore::default();
     let signer = RecordingSigner::default();
+    let dataset = MovingDataset(Arc::default());
     let proofs = FixedProofs(vec![
         ValidatedProof {
             holder_binding: json!({"jwk":{"kid":"holder-1"}}),
@@ -606,7 +634,7 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
     let service = CredentialIssuerService::new(
         store.clone(),
         proofs,
-        Dataset,
+        dataset.clone(),
         signer.clone(),
         "https://issuer.example".to_owned(),
         4,
@@ -629,6 +657,11 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
     let response = pending.response;
     assert_eq!(*store.nonce_finalized.lock().unwrap(), 1);
     assert_eq!(response.credentials.as_ref().map(Vec::len), Some(2));
+    assert_eq!(
+        *signer.1.lock().unwrap(),
+        vec![*dataset.0.lock().unwrap(); 2],
+        "every holder must borrow the original dataset allocation"
+    );
     {
         let signed = signer.0.lock().unwrap();
         assert_ne!(

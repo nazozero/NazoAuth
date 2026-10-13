@@ -676,30 +676,27 @@ where
         match issuance.disposition {
             IssuanceDisposition::Immediate => {
                 let mut credentials = Vec::with_capacity(holder_bindings.len());
-                let issued_at = batch_privacy_claim_time(now);
-                let expires_at = batch_privacy_claim_time(issuance.expires_at);
+                let mut input = CredentialSignInput {
+                    payload: CredentialPayload {
+                        issuer: self.issuer.clone(),
+                        format: issuance.configuration.format,
+                        configuration_id: issuance.configuration_id.clone(),
+                        credential_type: issuance
+                            .configuration
+                            .vct
+                            .clone()
+                            .or_else(|| issuance.configuration.doctype.clone())
+                            .ok_or(CredentialIssuanceError::InvalidConfiguration)?,
+                        subject_claims: dataset,
+                        holder_binding: None,
+                    },
+                    issued_at: batch_privacy_claim_time(now),
+                    expires_at: batch_privacy_claim_time(issuance.expires_at),
+                    status: issuance.status.clone(),
+                };
                 for holder_binding in holder_bindings {
-                    let credential = self
-                        .signer
-                        .sign(&CredentialSignInput {
-                            payload: CredentialPayload {
-                                issuer: self.issuer.clone(),
-                                format: issuance.configuration.format,
-                                configuration_id: issuance.configuration_id.clone(),
-                                credential_type: issuance
-                                    .configuration
-                                    .vct
-                                    .clone()
-                                    .or_else(|| issuance.configuration.doctype.clone())
-                                    .ok_or(CredentialIssuanceError::InvalidConfiguration)?,
-                                subject_claims: dataset.clone(),
-                                holder_binding: serde_json::from_value(holder_binding).ok(),
-                            },
-                            issued_at,
-                            expires_at,
-                            status: issuance.status.clone(),
-                        })
-                        .await?;
+                    input.payload.holder_binding = serde_json::from_value(holder_binding).ok();
+                    let credential = self.signer.sign(&input).await?;
                     credentials.push(IssuedCredential {
                         credential: Value::String(credential),
                     });

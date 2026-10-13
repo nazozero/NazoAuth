@@ -591,9 +591,10 @@ they execute after the transport preparation call returns. HTTP message-signatur
 capture borrows unique request header values and normalized names while the outer
 handler holds the request and body; no request extension guard crosses a port.
 The signature-fields command and response header map still own data required by
-their independent consumers. Remote JWKS still copies its shared cached document
-into the owning mutable client registration DTO; changing only the resolver port
-would move that copy into the consumer. Current account and tenant-trust decisions
+their independent consumers. Remote JWKS cache entries, resolver results and client registration snapshots
+share an immutable `Arc<Value>`. Request-local refresh replaces the shared handle;
+cache hits and client clones do not copy the JSON keyset. Registration wire inputs
+still own their JSON, and persistence borrows the shared value when serializing. Current account and tenant-trust decisions
 remain fresh authority reads, and Bytes/DER Arc clones remain shared storage.
 
 Operator presentation holds private immutable original compact segments, decoded

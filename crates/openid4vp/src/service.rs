@@ -361,30 +361,26 @@ fn credential_matches_query(
     let Some(claims) = query.claims.as_ref() else {
         return true;
     };
-    let available = claims
-        .iter()
-        .filter(|claim| {
-            claim_values(&credential.claims, &claim.path).is_some_and(|values| {
-                claim
-                    .values
-                    .as_ref()
-                    .is_none_or(|allowed| values.iter().any(|value| allowed.contains(value)))
-            })
-        })
-        .filter_map(|claim| claim.id.as_deref())
-        .collect::<std::collections::BTreeSet<_>>();
-    let all_available = claims.iter().all(|claim| {
+    let matches = |claim: &nazo_digital_credentials::ClaimsQuery| {
         claim_values(&credential.claims, &claim.path).is_some_and(|values| {
             claim
                 .values
                 .as_ref()
                 .is_none_or(|allowed| values.iter().any(|value| allowed.contains(value)))
         })
-    });
-    query.claim_sets.as_ref().map_or(all_available, |sets| {
-        sets.iter()
-            .any(|set| set.iter().all(|id| available.contains(id.as_str())))
-    })
+    };
+    match &query.claim_sets {
+        None => claims.iter().all(matches),
+        Some(sets) => {
+            let available = claims
+                .iter()
+                .filter(|claim| matches(claim))
+                .filter_map(|claim| claim.id.as_deref())
+                .collect::<std::collections::BTreeSet<_>>();
+            sets.iter()
+                .any(|set| set.iter().all(|id| available.contains(id.as_str())))
+        }
+    }
 }
 
 fn claim_values<'a>(

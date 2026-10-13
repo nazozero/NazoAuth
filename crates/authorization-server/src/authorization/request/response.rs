@@ -214,7 +214,7 @@ impl<'a> From<&'a ClientRow> for AuthorizationResponseProtection<'a> {
             signing_alg: client.authorization_signed_response_alg.as_deref(),
             encryption_alg: client.authorization_encrypted_response_alg.as_deref(),
             encryption_enc: client.authorization_encrypted_response_enc.as_deref(),
-            jwks: client.jwks.as_ref(),
+            jwks: client.jwks.as_deref(),
         }
     }
 }

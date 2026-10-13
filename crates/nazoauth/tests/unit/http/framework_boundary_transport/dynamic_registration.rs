@@ -154,7 +154,7 @@ impl nazo_oauth_server::contracts::dynamic_client_registration::RemoteJwksResolv
         _uri: &'a str,
         _expected_kid: Option<&'a str>,
     ) -> nazo_oauth_server::contracts::dynamic_client_registration::RemoteJwksFuture<'a> {
-        Box::pin(async { Ok(json!({"keys": []})) })
+        Box::pin(async { Ok(json!({"keys": []}).into()) })
     }
 }
 

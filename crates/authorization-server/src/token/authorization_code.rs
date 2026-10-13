@@ -228,7 +228,7 @@ async fn committed_single_use_redemption(
     token_service: &ServerTokenService,
     client: &ClientRow,
     code_identity: &str,
-    legacy_key: &str,
+    legacy_key: impl FnOnce() -> String,
     candidate: &FreshCodeHolderFacts,
     selected_mtls: Option<&str>,
 ) -> Result<Option<SingleUseRedemption>, OAuthEndpointError> {
@@ -254,11 +254,13 @@ async fn committed_single_use_redemption(
     }
     // No public-client empty proof can qualify for legacy revocation. The
     // compatibility key still demands the original exact request proof set.
+    // TODO: Remove this fallback after all receipts without holder facts expire.
     if candidate.requirements(selected_mtls).is_none() {
         return Ok(None);
     }
+    let legacy_key = legacy_key();
     Ok(token_service
-        .single_use_redemption(client.tenant_id, client.id, legacy_key)
+        .single_use_redemption(client.tenant_id, client.id, &legacy_key)
         .await
         .map_err(unavailable)?
         .filter(|receipt| receipt.authorization_code_holder.is_none()))
@@ -497,11 +499,16 @@ pub async fn token_authorization_code_with_service(
         } else {
             nazo_auth::AuthorizationCodeClientAuthentication::Public
         },
-        pkce_s256: form
-            .code_verifier
-            .as_deref()
-            .filter(|verifier| is_valid_pkce_value(verifier))
-            .map(pkce_s256),
+        // A pending request has already proved this digest in parameter
+        // validation. Replays without a pending payload must derive it.
+        pkce_s256: match expected_payload.as_deref() {
+            Some(payload) => payload.pkce.challenge().map(ToOwned::to_owned),
+            None => form
+                .code_verifier
+                .as_deref()
+                .filter(|verifier| is_valid_pkce_value(verifier))
+                .map(pkce_s256),
+        },
         dpop_jkt: dpop_jkt.clone(),
         certificate_thumbprint: facts
             .certificate
@@ -513,13 +520,15 @@ pub async fn token_authorization_code_with_service(
     if expected_payload.is_some() && issuance_holder.is_none() {
         return Err(authorization_code_client_mismatch_response());
     }
-    let legacy_key = legacy_authorization_code_redemption_key(
-        &code_hash,
-        form,
-        dpop_jkt.as_deref(),
-        mtls_x5t_s256.as_deref(),
-        client_attestation_jkt,
-    );
+    let legacy_key = || {
+        legacy_authorization_code_redemption_key(
+            &code_hash,
+            form,
+            dpop_jkt.as_deref(),
+            mtls_x5t_s256.as_deref(),
+            client_attestation_jkt,
+        )
+    };
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,

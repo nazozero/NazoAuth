@@ -2111,3 +2111,44 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
 
 #[path = "federation/browser_binding.rs"]
 mod browser_binding;
+
+#[actix_web::test]
+async fn federation_response_exposes_pending_mfa_and_matching_cookie_lifetime() {
+    for pending in [false, true] {
+        let config = FederationHttpConfig::new(
+            crate::settings::FederationProviderRegistry::default(),
+            None,
+            "session",
+            "csrf",
+            3600,
+            120,
+            true,
+        )
+        .unwrap();
+        let success = LoginSuccess {
+            session_id: "session-id".into(),
+            csrf_token: "csrf-token".into(),
+            session: nazo_identity::session::SessionRecord::new(
+                nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
+                Utc::now().timestamp(),
+                vec!["oidc".into(), "federated".into()],
+                pending,
+                Some("sid".into()),
+            ),
+        };
+        let response = federation_session_response(&config, success);
+        let expected_ttl = if pending { 120 } else { 3600 };
+        assert_eq!(response.headers().get_all(header::SET_COOKIE).count(), 2);
+        for header in response.headers().get_all(header::SET_COOKIE) {
+            assert!(
+                header
+                    .to_str()
+                    .unwrap()
+                    .contains(&format!("Max-Age={expected_ttl}"))
+            );
+        }
+        let (_, body) = response_json(response).await;
+        assert_eq!(body["mfa_required"], pending);
+        assert_eq!(body["expires_in"], expected_ttl);
+    }
+}

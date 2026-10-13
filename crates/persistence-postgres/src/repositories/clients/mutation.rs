@@ -212,7 +212,7 @@ impl OAuthClientRepository {
                 oauth_clients::tls_client_auth_san_email
                     .eq(serde_json::json!(&client.tls_client_auth_san_email)),
                 oauth_clients::jwks_uri.eq(&client.jwks_uri),
-                oauth_clients::jwks.eq(&client.jwks),
+                oauth_clients::jwks.eq(client.jwks.as_deref()),
                 oauth_clients::request_uris.eq(serde_json::json!(&client.request_uris)),
                 oauth_clients::initiate_login_uri.eq(&client.initiate_login_uri),
                 oauth_clients::logo_uri.eq(&client.presentation.logo_uri),
@@ -422,7 +422,7 @@ impl OAuthClientRepository {
             oauth_clients::tls_client_auth_san_email
                 .eq(serde_json::json!(&client.tls_client_auth_san_email)),
             oauth_clients::jwks_uri.eq(&client.jwks_uri),
-            oauth_clients::jwks.eq(&client.jwks),
+            oauth_clients::jwks.eq(client.jwks.as_deref()),
             oauth_clients::request_uris.eq(serde_json::json!(&client.request_uris)),
             oauth_clients::initiate_login_uri.eq(&client.initiate_login_uri),
             oauth_clients::logo_uri.eq(&client.presentation.logo_uri),
@@ -1036,7 +1036,7 @@ pub(crate) async fn upsert_client_on_connection(
         &client.frontchannel_logout_uri,
     )
     .bind::<diesel::sql_types::Bool, _>(client.frontchannel_logout_session_required)
-    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(&client.jwks)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(client.jwks.as_deref())
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
         &client.authorization_signed_response_alg,
     )

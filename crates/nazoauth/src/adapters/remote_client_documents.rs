@@ -66,14 +66,14 @@ impl RemoteClientDocumentResolver {
         &self,
         uri: &str,
         expected_kid: Option<&str>,
-    ) -> Result<Value, String> {
+    ) -> Result<Arc<Value>, String> {
         let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
         let cache_key = canonical_cache_key(uri)?;
         let cached = self.jwks_cache.get(&cache_key, self.cache_epoch.elapsed());
         if let Some(document) = &cached
             && jwks_contains_kid(document, expected_kid)
         {
-            return Ok(document.as_ref().clone());
+            return Ok(Arc::clone(document));
         }
         let document =
             match self
@@ -92,7 +92,7 @@ impl RemoteClientDocumentResolver {
                     guard.finish(result, self.cache_epoch.elapsed())?
                 }
             };
-        Ok(document.as_ref().clone())
+        Ok(document)
     }
 
     async fn fetch_jwks(&self, uri: &str, deadline: Instant) -> Result<Value, String> {

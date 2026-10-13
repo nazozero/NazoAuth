@@ -147,10 +147,9 @@ where
         }
         if self
             .accounts
-            .account_by_email(self.tenant.tenant_id, normalized_email)
+            .email_exists(self.tenant.tenant_id, normalized_email)
             .await
             .map_err(SendVerificationCodeError::AccountLookup)?
-            .is_some()
         {
             return Ok(SendVerificationCodeOutcome::Suppressed);
         }
@@ -265,10 +264,9 @@ where
         // handled below after the one-time code has been atomically consumed.
         if self
             .accounts
-            .account_by_email(self.tenant.tenant_id, &input.email)
+            .email_exists(self.tenant.tenant_id, &input.email)
             .await
             .map_err(RegisterLocalAccountError::AccountLookup)?
-            .is_some()
         {
             return Err(RegisterLocalAccountError::Conflict);
         }

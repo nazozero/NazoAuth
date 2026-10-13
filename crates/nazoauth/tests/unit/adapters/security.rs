@@ -131,6 +131,10 @@ fn verify_private_key_jwt_claims_with_settings(
         std::slice::from_ref(&settings.endpoint.mtls_endpoint_base_url.as_str()),
         client,
         assertion,
+        settings
+            .protocol
+            .authorization_server_profile
+            .requires_fapi2_security(),
     )
 }
 
@@ -176,7 +180,7 @@ fn private_key_jwt_client(jwks: Value) -> ClientRow {
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
         is_active: true,
-        jwks: Some(jwks),
+        jwks: Some(jwks.into()),
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         userinfo_signed_response_alg: None,

@@ -946,7 +946,7 @@ pub(crate) async fn insert_client(
             oauth_clients::tls_client_auth_san_ip.eq(json!(&prepared.tls_client_auth_san_ip)),
             oauth_clients::tls_client_auth_san_email.eq(json!(&prepared.tls_client_auth_san_email)),
             oauth_clients::jwks_uri.eq(&prepared.jwks_uri),
-            oauth_clients::jwks.eq(&prepared.jwks),
+            oauth_clients::jwks.eq(prepared.jwks.as_deref()),
             oauth_clients::request_uris.eq(json!(&prepared.request_uris)),
             oauth_clients::initiate_login_uri.eq(&prepared.initiate_login_uri),
             oauth_clients::logo_uri.eq(&prepared.presentation.logo_uri),

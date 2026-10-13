@@ -355,6 +355,7 @@ impl TokenEndpointHandles {
                     self.remote_client_documents.as_ref(),
                     self.core.security_audit.as_ref(),
                 )
+                .with_fapi2_requirement(issuance_config.profile.requires_fapi2_security())
                 .with_endpoint_audience_aliases(std::slice::from_ref(
                     &issuance_config.mtls_endpoint_base_url(),
                 )),

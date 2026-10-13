@@ -243,6 +243,29 @@ revoked/unknown individual certificate status retains its policy disposition.
 Signed service regressions and a live PostgreSQL/Valkey pre-authorized sender
 regression are supplied in source.
 
+### SD-JWT processed claims and credential status
+
+The verifier reconstructs the RFC 9901 processed payload from the authenticated
+issuer payload. Signed plaintext claims remain present; disclosures may populate
+nested object properties and array elements. Undisclosed array placeholders are
+removed. Malformed disclosures, reserved names, duplicate digest references,
+unused disclosures and collisions with existing object properties are rejected.
+The returned claims omit `_sd` and `_sd_alg` processing metadata. The composed
+payload is limited to 128 nesting levels, matching the JSON parser's depth bound.
+
+After holder nonce authentication, issuer `exp` is required and an included
+`nbf` is enforced with the JWT verifier's 60-second clock tolerance. Both checks
+apply to the processed payload. SD-JWT VC control claims (`iss`, `nbf`, `exp`,
+`cnf`, `vct`, `vct#integrity`, `aka_vcts`, `status`) and their subclaims must
+remain plaintext; disclosure references within them are rejected. `iat` and
+`sub` may be selectively disclosed, as specified in
+[SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
+
+A returned credential `status` is metadata, not a credential-level revocation
+verdict. The verifier checks configured issuer certificate revocation; it does
+not fetch or evaluate Token Status Lists. Deployments requiring individual
+credential revocation cannot rely on certificate checks to satisfy that rule.
+
 ### DCQL known-shape admission
 
 The existing DCQL validator rejects an explicitly empty credential_sets array,

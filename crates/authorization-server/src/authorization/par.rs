@@ -344,7 +344,8 @@ impl PreparedParClient<'_> {
                     &context.config.client_secret_pepper,
                     context.remote_client_documents,
                     context.security_audit,
-                ),
+                )
+                .with_fapi2_requirement(fapi2_security),
                 &auth_request,
                 &mut client,
                 &credentials,

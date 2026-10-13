@@ -162,7 +162,8 @@ impl ServerTokenManagementOperations {
             &self.config.client_secret_pepper,
             self.remote_client_documents.as_ref(),
             self.audit.as_ref(),
-        );
+        )
+        .with_fapi2_requirement(self.config.profile.requires_fapi2_security());
         let auth_request =
             ClientAuthRequestFacts::new(&request.endpoint_path, request.client_certificate.clone());
         let result = match context {
@@ -213,7 +214,7 @@ impl ServerTokenManagementOperations {
                 TokenManagementError::ResponseProtectionFailed
             })?;
         let key = client_jwe_key(
-            client.jwks.as_ref(),
+            client.jwks.as_deref(),
             client.introspection_encrypted_response_alg.as_deref(),
             client.introspection_encrypted_response_enc.as_deref(),
             "introspection",

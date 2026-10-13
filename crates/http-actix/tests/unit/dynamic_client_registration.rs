@@ -221,7 +221,7 @@ impl RemoteJwksResolverPort for FakeSecurity {
         _uri: &'a str,
         _expected_kid: Option<&'a str>,
     ) -> RemoteJwksFuture<'a> {
-        Box::pin(async { Ok(json!({"keys": []})) })
+        Box::pin(async { Ok(json!({"keys": []}).into()) })
     }
 }
 

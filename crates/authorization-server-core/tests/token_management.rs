@@ -398,7 +398,7 @@ fn expired_introspection_avoids_storage_but_live_token_fails_closed_on_storage_e
 #[test]
 fn ownership_introspection_audience_shapes_keep_membership_and_tenant_boundaries() {
     let mut resource = client(Uuid::from_u128(101));
-    resource.registration.allowed_audiences = vec![
+    resource.security_policy.introspection_audiences = vec![
         "resource://api".into(),
         "resource://\u{7b7e}\u{540d}".into(),
     ];
@@ -538,4 +538,68 @@ fn ownership_refresh_introspection_preserves_scope_output() {
         assert_eq!(document["scope"], expected);
         assert_eq!(ports.calls.lock().unwrap().revocation_reads, 0);
     }
+}
+
+#[test]
+fn introspection_requires_explicit_resource_authority_and_preserves_tenant_isolation() {
+    let owner = client(Uuid::now_v7());
+    let mut resource = owner.clone();
+    resource.registration.client_id = "resource-server".into();
+    let token = claims(&owner, 1_800_000_000);
+    let audience = owner.client_id.clone();
+    resource.registration.allowed_audiences = vec![audience.clone()];
+    let (service, calls) = fixture(Some(token), false);
+    let inspect = |client: &OAuthClient| {
+        futures_executor::block_on(service.inspect_token(
+            "https://issuer.example",
+            "jwt",
+            client,
+            Utc.timestamp_opt(1_799_999_999, 0).unwrap(),
+        ))
+    };
+    assert!(matches!(inspect(&resource), Ok(TokenInspection::Inactive)));
+    assert_eq!(calls.lock().unwrap().revocation_reads, 0);
+    assert!(matches!(
+        inspect(&owner),
+        Ok(TokenInspection::ActiveAccess { .. })
+    ));
+    resource
+        .registration
+        .security_policy
+        .introspection_audiences = vec!["other-resource".into()];
+    assert!(matches!(inspect(&resource), Ok(TokenInspection::Inactive)));
+    resource
+        .registration
+        .security_policy
+        .introspection_audiences = vec![audience];
+    assert!(matches!(
+        inspect(&resource),
+        Ok(TokenInspection::ActiveAccess { .. })
+    ));
+    resource.tenant_id = Uuid::now_v7();
+    assert!(matches!(inspect(&resource), Ok(TokenInspection::Inactive)));
+    assert_eq!(calls.lock().unwrap().revocation_reads, 2);
+}
+
+#[test]
+fn old_policy_documents_deny_cross_client_introspection_without_schema_churn() {
+    let mut policy: nazo_auth::ClientSecurityPolicy =
+        serde_json::from_value(serde_json::json!({"version": 1})).unwrap();
+    assert!(policy.introspection_audiences.is_empty());
+    assert!(
+        serde_json::to_value(&policy)
+            .unwrap()
+            .get("introspection_audiences")
+            .is_none()
+    );
+    policy.introspection_audiences = vec!["resource://authorized".into()];
+    let stored = serde_json::to_value(&policy).unwrap();
+    assert_eq!(
+        stored["introspection_audiences"],
+        serde_json::json!(["resource://authorized"])
+    );
+    assert_eq!(
+        serde_json::from_value::<nazo_auth::ClientSecurityPolicy>(stored).unwrap(),
+        policy
+    );
 }

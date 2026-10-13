@@ -308,12 +308,12 @@ struct HiddenAck {
     committed: Arc<Mutex<Vec<Uuid>>>,
 }
 impl RegistrationAccountRepositoryPort for HiddenAck {
-    fn account_by_email<'a>(
-        &'a self,
-        tenant: TenantId,
-        email: &'a str,
-    ) -> RepositoryFuture<'a, Option<PublicAccount>> {
-        Box::pin(async move { self.inner.public_account_by_email(tenant, email).await })
+    fn email_exists<'a>(&'a self, tenant: TenantId, email: &'a str) -> RepositoryFuture<'a, bool> {
+        nazo_identity::ports::RegistrationAccountRepositoryPort::email_exists(
+            &self.inner,
+            tenant,
+            email,
+        )
     }
     fn create_user(&self, user: NewUser) -> RepositoryFuture<'_, PublicAccount> {
         Box::pin(async move { self.inner.create(user).await })
@@ -417,12 +417,12 @@ async fn admin_user_required_hidden_committed_ack_returns_no_account_receipt() {
 
 struct Unsupported;
 impl RegistrationAccountRepositoryPort for Unsupported {
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         _tenant: TenantId,
         _email: &'a str,
-    ) -> RepositoryFuture<'a, Option<PublicAccount>> {
-        Box::pin(async { Ok(None) })
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Ok(false) })
     }
     fn create_user(&self, _user: NewUser) -> RepositoryFuture<'_, PublicAccount> {
         panic!("Required creation must not fall back to bare mutation")

@@ -61,6 +61,7 @@ Admin-created clients receive this default policy:
   "require_signed_authorization_request": false,
   "require_signed_authorization_response": false,
   "require_signed_introspection_response": false,
+  "introspection_audiences": [],
   "session_management": false,
   "allow_cross_device_flows": false,
   "allow_confidential_oidc_without_pkce": false
@@ -79,6 +80,7 @@ compose compatible controls, for example:
   "require_signed_authorization_request": true,
   "require_signed_authorization_response": true,
   "require_signed_introspection_response": true,
+  "introspection_audiences": ["https://api.example"],
   "session_management": true,
   "allow_cross_device_flows": true,
   "allow_confidential_oidc_without_pkce": false
@@ -118,6 +120,32 @@ with `assurance=baseline`, `require_pushed_authorization_requests=true`,
 `token_endpoint_auth_method=attest_jwt_client_auth`, and
 `require_dpop_bound_tokens=true`. This composition does not weaken FAPI2 client
 authentication or impose PAR on unrelated DPoP clients.
+
+## Client assertion and introspection authority
+
+A FAPI2 server profile or client assurance policy constrains `private_key_jwt`
+before signature verification. It accepts PS256, ES256, or EdDSA with Ed25519,
+and requires a single string `aud` equal to the issuer identifier. Client
+compatibility flags cannot permit endpoint, mTLS alias, or array audiences in
+this mode. The same policy reaches token, PAR, introspection, revocation,
+Device Authorization and CIBA authentication; CIBA FAPI2 hardening also enables
+these constraints. Baseline clients retain their explicit compatibility settings.
+
+A client can introspect its own tokens within its tenant. Inspecting another
+client's access token requires an exact match between a token audience and the
+administrator-granted `security_policy.introspection_audiences`. The token's
+issuing tenant must still match, and normal expiry/revocation checks still apply.
+`allowed_audiences` authorizes issuance and never grants introspection access.
+Dynamic registration cannot grant this permission; configuration updates retain
+the policy assigned by the administrator.
+
+Policies without `introspection_audiences` deserialize to an empty list. After
+upgrading, administrators must explicitly grant each resource server the audiences
+it is authorized to inspect. Until then, cross-client introspection returns
+inactive. There is no fallback to issuance audience permissions.
+Empty grants are omitted when serializing existing policies. Upgrade all server
+instances before storing non-empty grants: older binaries reject this policy
+field and still use the old introspection authorization rule.
 
 ## Upgrade behavior
 

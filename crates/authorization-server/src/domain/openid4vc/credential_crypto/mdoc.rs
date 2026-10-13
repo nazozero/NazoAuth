@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
-use coset::CborSerializable;
+use coset::{AsCborValue, CborSerializable};
 use mdoc_rs::{
     builder::DocumentBuilder,
     cbor::data_item::{encode_cbor_canonical, wrap_tag24},
@@ -35,7 +35,7 @@ pub(super) async fn sign(
         .prepare_signing()
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let signing_material = crypto
-        .signing_material(&lease)
+        .signing_material(lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let (remainder, certificate) = x509_parser::parse_x509_certificate(&signing_material.leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
@@ -79,7 +79,7 @@ pub(super) async fn sign(
     }
     let document = crypto
         .mdoc_signer
-        .sign(builder, lease, signing_material.leaf_der)
+        .sign(builder, signing_material.lease, signing_material.leaf_der)
         .await?;
     let mut namespace_entries = Vec::new();
     for (namespace, items) in &document.issuer_signed.name_spaces {
@@ -88,14 +88,11 @@ pub(super) async fn sign(
             ciborium::Value::Array(items.iter().map(|item| wrap_tag24(&item.encoded)).collect()),
         ));
     }
-    let cose_bytes = document
+    let cose = document
         .issuer_signed
         .issuer_auth
         .cose_sign1
-        .clone()
-        .to_vec()
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let cose = ciborium::from_reader(cose_bytes.as_slice())
+        .to_cbor_value()
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     let issuer_signed = ciborium::Value::Map(vec![
         (
