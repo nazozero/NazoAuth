@@ -188,12 +188,12 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
 struct NoExistingAccount;
 
 impl RegistrationAccountRepositoryPort for NoExistingAccount {
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         _tenant_id: crate::TenantId,
         _email: &'a str,
-    ) -> RepositoryFuture<'a, Option<crate::PublicAccount>> {
-        Box::pin(async { Ok(None) })
+    ) -> RepositoryFuture<'a, bool> {
+        Box::pin(async { Ok(false) })
     }
 
     fn create_user(&self, _user: NewUser) -> RepositoryFuture<'_, crate::PublicAccount> {

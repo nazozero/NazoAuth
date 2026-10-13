@@ -1099,14 +1099,24 @@ impl nazo_identity::ports::AvatarRepositoryPort for UserRepository {
 }
 
 impl nazo_identity::ports::RegistrationAccountRepositoryPort for UserRepository {
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,
         email: &'a str,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
-        Box::pin(
-            async move { UserRepository::public_account_by_email(self, tenant_id, email).await },
-        )
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| RepositoryError::Unavailable)?;
+            diesel::select(diesel::dsl::exists(
+                users::table
+                    .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                    .filter(users::email.eq(email.trim())),
+            ))
+            .get_result(&mut connection)
+            .await
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+        })
     }
 
     fn create_user(

@@ -35,7 +35,7 @@ pub(super) async fn sign(
         .prepare_signing()
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let signing_material = crypto
-        .signing_material(&lease)
+        .signing_material(lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let (remainder, certificate) = x509_parser::parse_x509_certificate(&signing_material.leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
@@ -79,7 +79,7 @@ pub(super) async fn sign(
     }
     let document = crypto
         .mdoc_signer
-        .sign(builder, lease, signing_material.leaf_der)
+        .sign(builder, signing_material.lease, signing_material.leaf_der)
         .await?;
     let mut namespace_entries = Vec::new();
     for (namespace, items) in &document.issuer_signed.name_spaces {

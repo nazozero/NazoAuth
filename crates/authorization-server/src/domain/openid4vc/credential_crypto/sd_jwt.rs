@@ -42,7 +42,7 @@ pub(super) async fn sign(
         let mut salt = [0_u8; 16];
         rand::rng().fill_bytes(&mut salt);
         let disclosure = URL_SAFE_NO_PAD.encode(
-            serde_json::to_vec(&json!([URL_SAFE_NO_PAD.encode(salt), name, value]))
+            serde_json::to_vec(&(URL_SAFE_NO_PAD.encode(salt), name, value))
                 .map_err(|_| CredentialTrustError::InvalidEncoding)?,
         );
         digests.push(URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes())));
@@ -67,12 +67,13 @@ pub(super) async fn sign(
         .prepare_signing()
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let material = crypto
-        .signing_material(&lease)
+        .signing_material(lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
     header.typ = Some("dc+sd-jwt".to_owned());
     header.x5c = Some(material.x5c);
-    let jwt = lease
+    let jwt = material
+        .lease
         .encode_jwt(nazo_auth::SigningPurpose::Credential, &header, &credential)
         .await
         .map_err(|_| CredentialTrustError::Unavailable)?;

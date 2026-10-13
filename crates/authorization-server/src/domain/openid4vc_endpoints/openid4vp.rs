@@ -5,7 +5,6 @@ use std::sync::Arc;
 use base64::Engine as _;
 use chrono::{Duration, Utc};
 use nazo_digital_credentials::EphemeralEncryptionKey;
-use nazo_key_management::Openid4vcSigningLease;
 use nazo_openid4vp::application::{
     CreatePresentationRequest, CreatePresentationResponse, PresentationFuture,
     PresentationHttpError, PresentationOperations, PresentationResponseBody,
@@ -23,7 +22,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::crypto::random_urlsafe_token;
-use crate::domain::openid4vc::{Openid4vcCredentialCrypto, parse_scoped_credential_trust_anchors};
+use crate::domain::openid4vc::{
+    Openid4vcCredentialCrypto, Openid4vcSigningMaterial, parse_scoped_credential_trust_anchors,
+};
 use nazo_runtime_modules::SnapshotStore;
 
 pub struct ServerPresentationOperations {
@@ -149,7 +150,7 @@ impl ServerPresentationOperations {
     async fn request_object(
         &self,
         request: &AuthorizationRequest,
-        lease: &Openid4vcSigningLease,
+        material: Openid4vcSigningMaterial,
     ) -> Result<String, PresentationHttpError> {
         let now = Utc::now().timestamp();
         let mut claims = serde_json::to_value(request)
@@ -160,38 +161,9 @@ impl ServerPresentationOperations {
         claims["exp"] = json!(now + self.transaction_ttl_seconds as i64);
         claims["jti"] = json!(Uuid::now_v7());
         self.crypto
-            .sign_request_object(lease, &claims)
+            .sign_request_object(material, &claims)
             .await
             .map_err(|_| vp_error(503, "server_error", "Presentation request signing failed."))
-    }
-
-    fn request_with_signing_client_id(
-        &self,
-        request: &AuthorizationRequest,
-        prefix: ClientIdPrefix,
-        lease: &Openid4vcSigningLease,
-    ) -> Result<AuthorizationRequest, PresentationHttpError> {
-        let mut request = request.clone();
-        request.client_id = match prefix {
-            ClientIdPrefix::RedirectUri => return Ok(request),
-            ClientIdPrefix::X509Hash => self.crypto.x509_hash_client_id(lease).map_err(|_| {
-                vp_error(
-                    503,
-                    "server_error",
-                    "Verifier client identity is unavailable.",
-                )
-            })?,
-            ClientIdPrefix::X509SanDns => {
-                self.crypto.x509_san_dns_client_id(lease).map_err(|_| {
-                    vp_error(
-                        503,
-                        "server_error",
-                        "Verifier client identity is unavailable.",
-                    )
-                })?
-            }
-        };
-        Ok(request)
     }
 
     async fn active_trust_policy(
@@ -372,7 +344,8 @@ impl PresentationOperations for ServerPresentationOperations {
                 ClientIdPrefix::RedirectUri => None,
                 ClientIdPrefix::X509Hash => Some(
                     self.crypto
-                        .x509_hash_client_id(&signing_lease)
+                        .signing_material(signing_lease.clone())
+                        .map(|material| material.x509_hash_client_id())
                         .map_err(|_| {
                             vp_error(
                                 503,
@@ -383,7 +356,8 @@ impl PresentationOperations for ServerPresentationOperations {
                 ),
                 ClientIdPrefix::X509SanDns => Some(
                     self.crypto
-                        .x509_san_dns_client_id(&signing_lease)
+                        .signing_material(signing_lease.clone())
+                        .and_then(|material| material.x509_san_dns_client_id())
                         .map_err(|_| {
                             vp_error(
                                 400,
@@ -548,7 +522,12 @@ impl PresentationOperations for ServerPresentationOperations {
             ) {
                 None
             } else {
-                Some(self.request_object(&request, &signing_lease).await?)
+                // Store/trust reads above may have waited past certificate expiry.
+                // Prepare at the signing boundary instead of retaining their result.
+                let material = self.crypto.signing_material(signing_lease).map_err(|_| {
+                    vp_error(503, "server_error", "Presentation request signing failed.")
+                })?;
+                Some(self.request_object(&request, material).await?)
             };
             let now = Utc::now();
             let transaction = PresentationTransaction {
@@ -663,12 +642,25 @@ impl PresentationOperations for ServerPresentationOperations {
                 let lease = self.crypto.prepare_signing().map_err(|_| {
                     vp_error(503, "server_error", "Presentation request signing failed.")
                 })?;
-                let request = self.request_with_signing_client_id(
-                    &transaction.request,
-                    transaction.client_id_prefix,
-                    &lease,
-                )?;
-                if request.client_id != transaction.request.client_id {
+                let material = self.crypto.signing_material(lease).map_err(|_| {
+                    vp_error(503, "server_error", "Presentation request signing failed.")
+                })?;
+                let client_id_matches = match transaction.client_id_prefix {
+                    ClientIdPrefix::RedirectUri => true,
+                    ClientIdPrefix::X509Hash => {
+                        material.x509_hash_client_id() == transaction.request.client_id
+                    }
+                    ClientIdPrefix::X509SanDns => {
+                        material.x509_san_dns_client_id().map_err(|_| {
+                            vp_error(
+                                503,
+                                "server_error",
+                                "Verifier client identity is unavailable.",
+                            )
+                        })? == transaction.request.client_id
+                    }
+                };
+                if !client_id_matches {
                     return Err(vp_error(
                         400,
                         "invalid_request_uri",
@@ -676,7 +668,7 @@ impl PresentationOperations for ServerPresentationOperations {
                     ));
                 }
                 return self
-                    .request_object(&request, &lease)
+                    .request_object(&transaction.request, material)
                     .await
                     .map(PresentationResponseBody::RequestObject);
             }

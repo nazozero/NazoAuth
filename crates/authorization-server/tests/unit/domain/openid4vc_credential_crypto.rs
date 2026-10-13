@@ -515,7 +515,7 @@ fn request_and_metadata_signing_emit_required_jose_headers() {
         let lease = crypto.prepare_signing().expect("signing lease");
         let request = crypto
             .sign_request_object(
-                &lease,
+                crypto.signing_material(lease).expect("signing material"),
                 &json!({"client_id": "wallet", "response_type": ["vp_token"]}),
             )
             .await
@@ -557,7 +557,9 @@ fn request_and_metadata_signing_map_key_failures_to_errors() {
         assert!(
             crypto
                 .sign_request_object(
-                    &crypto.prepare_signing().expect("failing signing lease"),
+                    crypto
+                        .signing_material(crypto.prepare_signing().expect("failing signing lease"))
+                        .expect("signing material"),
                     &json!({"iss": "issuer"}),
                 )
                 .await
@@ -581,15 +583,16 @@ fn certificate_client_ids_bind_to_hash_and_dns_san() {
         crate::policy::Openid4vcRevocationPolicy::Disabled,
     );
     let lease = crypto.prepare_signing().expect("signing lease");
+    let material = crypto.signing_material(lease).expect("signing material");
     assert_eq!(
-        crypto.x509_hash_client_id(&lease).expect("x509 hash"),
+        material.x509_hash_client_id(),
         format!(
             "x509_hash:{}",
             URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&certs.leaf_der))
         )
     );
     assert_eq!(
-        crypto.x509_san_dns_client_id(&lease).expect("DNS SAN"),
+        material.x509_san_dns_client_id().expect("DNS SAN"),
         "x509_san_dns:issuer.example"
     );
 }
@@ -602,7 +605,7 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
             Some(HolderBinding::Jwk {
                 jwk: holder_jwk.clone(),
             }),
-            json!({"given_name": "Ada", "age": 42}),
+            json!({"given_name": "Ada", "age": 42, "nested": {"items": [null, true, "Ada", 42]}}),
             Some(json!({"idx": 2, "uri": "https://status.example"})),
         );
         let (crypto, certs, _) = real_crypto_fixture().await;
@@ -613,7 +616,7 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         );
         let encoded = crypto.sign(&input).await.expect("SD-JWT signing");
         let parts = encoded.split('~').collect::<Vec<_>>();
-        assert_eq!(parts.len(), 4);
+        assert_eq!(parts.len(), 5);
         assert!(parts[0].split('.').count() == 3);
         assert_eq!(parts.last(), Some(&""));
         let header = decode_header(parts[0]).expect("SD-JWT header");
@@ -627,6 +630,16 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         .claims;
         assert_eq!(claims["vct"], "ExampleCredential");
         assert_eq!(claims["cnf"]["jwk"], holder_jwk);
+        for disclosure in &parts[1..parts.len() - 1] {
+            let decoded = URL_SAFE_NO_PAD.decode(disclosure).unwrap();
+            let fields: Value = serde_json::from_slice(&decoded).unwrap();
+            assert_eq!(fields.as_array().unwrap().len(), 3);
+            let name = fields[1].as_str().unwrap();
+            assert_eq!(fields[2], input.payload.subject_claims[name]);
+            assert!(claims["_sd"].as_array().unwrap().contains(&json!(
+                URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(disclosure.as_bytes()))
+            )));
+        }
 
         let malformed = sd_input(None, json!("not an object"), None);
         assert_eq!(

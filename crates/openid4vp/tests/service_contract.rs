@@ -815,3 +815,97 @@ fn presentation_transaction_debug_does_not_expose_decryption_material() {
         "PresentationTransaction([REDACTED])"
     );
 }
+
+#[tokio::test]
+async fn dcql_claim_modes_preserve_required_optional_and_wildcard_matching() {
+    struct ClaimsVerifier;
+    impl CredentialVerifierPort for ClaimsVerifier {
+        fn verify<'a>(
+            &'a self,
+            _: &'a PresentedCredential,
+        ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
+            Box::pin(async {
+                Ok(VerifiedCredential {
+                    format: CredentialFormat::SdJwtVc,
+                    issuer: "trusted-issuer".to_owned(),
+                    issuer_chain_authority_key_identifiers: Vec::new(),
+                    credential_type: "example".to_owned(),
+                    claims: json!({"name": "Ada", "people": [{"name":"Grace"}, {"name":"Ada"}]}),
+                    holder_key: Some(json!({"kty":"EC"})),
+                    issued_at: None,
+                    expires_at: None,
+                    status: None,
+                })
+            })
+        }
+    }
+    for (claims, sets, accepted) in [
+        (
+            json!([{"path":["name"],"values":["Ada"]}]),
+            json!(null),
+            true,
+        ),
+        (
+            json!([{"path":["name"],"values":["Grace"]}]),
+            json!(null),
+            false,
+        ),
+        (
+            json!([{"path":["missing"]},{"path":["name"]}]),
+            json!(null),
+            false,
+        ),
+        (
+            json!([{"id":"present","path":["name"]},{"id":"absent","path":["missing"]}]),
+            json!([["present"], ["absent"]]),
+            true,
+        ),
+        (
+            json!([{"id":"present","path":["name"]},{"id":"absent","path":["missing"]}]),
+            json!([["present", "absent"]]),
+            false,
+        ),
+        (
+            json!([{"path":["people",null,"name"],"values":["Ada"]}]),
+            json!(null),
+            true,
+        ),
+        (
+            json!([{"path":["people",null,"name"],"values":["Other"]}]),
+            json!(null),
+            false,
+        ),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credentials = vec![
+            serde_json::from_value(json!({
+                "id":"first", "format":"dc+sd-jwt", "meta":{"vct_values":["example"]},
+                "claims":claims, "claim_sets":sets,
+            }))
+            .unwrap(),
+        ];
+        let store = RecordingStore::default();
+        let result = PresentationService::new(store.clone(), ClaimsVerifier)
+            .verify_response(
+                &transaction,
+                &AuthorizationResponse {
+                    vp_token: Some(json!({"first":["signed-credential"]})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                Utc::now(),
+            )
+            .await;
+        assert_eq!(
+            result.is_ok(),
+            accepted,
+            "claims={claims}, claim_sets={sets}, result={result:?}"
+        );
+        assert_eq!(
+            store.completed.load(Ordering::SeqCst),
+            usize::from(accepted)
+        );
+    }
+}

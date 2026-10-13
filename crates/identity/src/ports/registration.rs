@@ -5,11 +5,11 @@ use super::NewUser;
 use super::common::{PasswordHashInput, RepositoryFuture};
 
 pub trait RegistrationAccountRepositoryPort: Send + Sync {
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
-    ) -> RepositoryFuture<'a, Option<PublicAccount>>;
+    ) -> RepositoryFuture<'a, bool>;
 
     fn create_user(&self, user: NewUser) -> RepositoryFuture<'_, PublicAccount>;
 

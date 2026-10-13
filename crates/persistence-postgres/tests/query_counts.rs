@@ -2018,6 +2018,43 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 
+#[tokio::test]
+async fn registration_email_existence_is_tenant_scoped_and_single_read() {
+    use nazo_identity::ports::RegistrationAccountRepositoryPort;
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&database_url, tenant).await;
+    let email = format!("query-count-{}@example.test", seed.user_id);
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = UserRepository::new(pool);
+    let mut connection = connect(&database_url).await;
+    for active in [true, false] {
+        sql_query("UPDATE users SET is_active=$1 WHERE id=$2")
+            .bind::<sql_types::Bool, _>(active)
+            .bind::<sql_types::Uuid, _>(seed.user_id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        for (scope, lookup, expected) in [
+            (tenant.tenant_id, email.clone(), true),
+            (tenant.tenant_id, format!("  {email}  "), true),
+            (tenant.tenant_id, "missing@example.test".to_owned(), false),
+            (TenantId::new(Uuid::now_v7()).unwrap(), email.clone(), false),
+        ] {
+            let (result, delta) = measure(&counter, repository.email_exists(scope, &lookup)).await;
+            assert_eq!(result.unwrap(), expected);
+            assert_eq!(delta.data_queries, 1);
+            assert_no_transaction(delta);
+            assert_clean(delta);
+        }
+    }
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
 // Ordinary OIDC refresh combines presentation and successful subject preparation.
 async fn replace_oidc_refresh_contract(
     connection: &mut AsyncPgConnection,

@@ -61,7 +61,10 @@ pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Ve
     Ok(anchors)
 }
 
-pub(super) struct Openid4vcSigningMaterial {
+/// Request-local certificate projection, tied to the exact signing generation.
+/// Prepare after dependency I/O and consume at the signing boundary.
+pub(crate) struct Openid4vcSigningMaterial {
+    pub(super) lease: Openid4vcSigningLease,
     pub(super) x5c: Vec<String>,
     pub(super) leaf_der: Vec<u8>,
 }
@@ -89,41 +92,11 @@ impl Openid4vcCredentialCrypto {
         self.keyset.prepare_openid4vc_signing()
     }
 
-    pub(super) fn signing_material(
+    pub(crate) fn signing_material(
         &self,
-        lease: &Openid4vcSigningLease,
+        lease: Openid4vcSigningLease,
     ) -> anyhow::Result<Openid4vcSigningMaterial> {
         signing_material(lease)
-    }
-
-    pub(crate) fn x509_hash_client_id(
-        &self,
-        lease: &Openid4vcSigningLease,
-    ) -> anyhow::Result<String> {
-        Ok(format!(
-            "x509_hash:{}",
-            base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(Sha256::digest(signing_material(lease)?.leaf_der))
-        ))
-    }
-
-    pub(crate) fn x509_san_dns_client_id(
-        &self,
-        lease: &Openid4vcSigningLease,
-    ) -> anyhow::Result<String> {
-        let leaf_der = signing_material(lease)?.leaf_der;
-        let (_, certificate) = parse_x509(&leaf_der, "OpenID4VC signing leaf")?;
-        let dns_name = certificate
-            .subject_alternative_name()?
-            .into_iter()
-            .flat_map(|extension| extension.value.general_names.iter())
-            .find_map(|name| match name {
-                x509_parser::extensions::GeneralName::DNSName(name) => Some((*name).to_owned()),
-                _ => None,
-            })
-            .filter(|name| !name.is_empty())
-            .ok_or_else(|| anyhow::anyhow!("OpenID4VP signing certificate has no DNS SAN"))?;
-        Ok(format!("x509_san_dns:{dns_name}"))
     }
 
     pub(super) fn combined_trust_anchors(
@@ -171,7 +144,31 @@ impl Openid4vcCredentialCrypto {
     }
 }
 
-fn signing_material(lease: &Openid4vcSigningLease) -> anyhow::Result<Openid4vcSigningMaterial> {
+impl Openid4vcSigningMaterial {
+    pub(crate) fn x509_hash_client_id(&self) -> String {
+        format!(
+            "x509_hash:{}",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(&self.leaf_der))
+        )
+    }
+
+    pub(crate) fn x509_san_dns_client_id(&self) -> anyhow::Result<String> {
+        let (_, certificate) = parse_x509(&self.leaf_der, "OpenID4VC signing leaf")?;
+        let dns_name = certificate
+            .subject_alternative_name()?
+            .into_iter()
+            .flat_map(|extension| extension.value.general_names.iter())
+            .find_map(|name| match name {
+                x509_parser::extensions::GeneralName::DNSName(name) => Some((*name).to_owned()),
+                _ => None,
+            })
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("OpenID4VP signing certificate has no DNS SAN"))?;
+        Ok(format!("x509_san_dns:{dns_name}"))
+    }
+}
+
+fn signing_material(lease: Openid4vcSigningLease) -> anyhow::Result<Openid4vcSigningMaterial> {
     let certificates = parse_pem_certificates(lease.material().certificate_chain_pem.as_bytes())?;
     let leaf_der = certificates
         .first()
@@ -179,19 +176,17 @@ fn signing_material(lease: &Openid4vcSigningLease) -> anyhow::Result<Openid4vcSi
         .clone();
     let trust_anchors = parse_trust_anchors(lease.material())?;
     verify_openid4vc_chain(&certificates, &trust_anchors)?;
-    let x5c_der = certificates
+    let x5c = certificates
         .iter()
         .filter(|certificate| !trust_anchors.contains(certificate))
-        .cloned()
+        .map(|certificate| STANDARD.encode(certificate))
         .collect::<Vec<_>>();
-    if x5c_der.is_empty() {
+    if x5c.is_empty() {
         anyhow::bail!("OpenID4VC x5c chain must contain a non-anchor leaf certificate");
     }
     Ok(Openid4vcSigningMaterial {
-        x5c: x5c_der
-            .into_iter()
-            .map(|certificate| STANDARD.encode(certificate))
-            .collect(),
+        lease,
+        x5c,
         leaf_der,
     })
 }

@@ -618,12 +618,12 @@ async fn token_state_preserves_native_sso_key_contract() {
 #[derive(Clone, Copy)]
 struct EmptyRegistrationAccounts;
 impl nazo_identity::ports::RegistrationAccountRepositoryPort for EmptyRegistrationAccounts {
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         _: TenantId,
         _: &'a str,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
-        Box::pin(async { Ok(None) })
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async { Ok(false) })
     }
     fn create_user(
         &self,
