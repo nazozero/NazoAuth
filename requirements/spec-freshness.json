@@ -109,6 +109,7 @@
     {"id":"rfc9728","title":"OAuth 2.0 Protected Resource Metadata","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9728","number":9728,"markers":["RFC 9728","OAuth 2.0 Protected Resource Metadata"]},
     {"id":"rfc9767","title":"Grant Negotiation and Authorization Protocol Resource Server Connections","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9767","number":9767,"markers":["RFC 9767","Grant Negotiation and Authorization Protocol Resource Server Connections"]},
     {"id":"rfc9865","title":"Cursor-Based Pagination of SCIM Resources","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9865","number":9865,"markers":["RFC 9865","Cursor-Based Pagination of System of Cross-domain Identity Management (SCIM) Resources"]},
+    {"id":"rfc9901","title":"Selective Disclosure for JSON Web Tokens","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9901","number":9901,"markers":["RFC 9901","Selective Disclosure for JSON Web Tokens"]},
     {"id":"rfc9967","title":"SCIM Profile for Security Event Tokens","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9967","number":9967,"markers":["RFC 9967","System for Cross-Domain Identity Management (SCIM) Profile for Security Event Tokens (SETs)"]},
 
     {"id":"oidc-core","title":"OpenID Connect Core 1.0","kind":"openid_document","url":"https://openid.net/specs/openid-connect-core-1_0.html","markers":["OpenID Connect Core 1.0","Final"]},
