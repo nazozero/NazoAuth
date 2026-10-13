@@ -309,7 +309,11 @@ struct HiddenAck {
 }
 impl RegistrationAccountRepositoryPort for HiddenAck {
     fn email_exists<'a>(&'a self, tenant: TenantId, email: &'a str) -> RepositoryFuture<'a, bool> {
-        self.inner.email_exists(tenant, email)
+        nazo_identity::ports::RegistrationAccountRepositoryPort::email_exists(
+            &self.inner,
+            tenant,
+            email,
+        )
     }
     fn create_user(&self, user: NewUser) -> RepositoryFuture<'_, PublicAccount> {
         Box::pin(async move { self.inner.create(user).await })

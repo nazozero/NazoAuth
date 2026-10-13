@@ -13,14 +13,13 @@ struct Ports {
     sessions: Arc<Mutex<Vec<(SessionRecord, u64)>>>,
 }
 impl FederationLoginRepositoryPort for Ports {
-    fn resolve_existing(&self, _: FederationLogin) -> RepositoryFuture<'_, Option<PublicAccount>> {
+    fn resolve_existing<'a>(
+        &'a self,
+        _: &'a FederationLogin,
+    ) -> RepositoryFuture<'a, Option<PublicAccount>> {
         Box::pin(async { Ok(Some(self.account.clone())) })
     }
-    fn account_by_email<'a>(
-        &'a self,
-        _: TenantId,
-        _: &'a str,
-    ) -> RepositoryFuture<'a, Option<PublicAccount>> {
+    fn email_exists<'a>(&'a self, _: TenantId, _: &'a str) -> RepositoryFuture<'a, bool> {
         panic!("existing link must be resolved directly")
     }
     fn create_federated(&self, _: NewFederatedIdentity) -> RepositoryFuture<'_, PublicAccount> {

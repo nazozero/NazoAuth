@@ -2019,8 +2019,8 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
 }
 
 #[tokio::test]
-async fn registration_email_existence_is_tenant_scoped_and_single_read() {
-    use nazo_identity::ports::RegistrationAccountRepositoryPort;
+async fn registration_and_federation_email_existence_are_tenant_scoped_and_single_read() {
+    use nazo_identity::ports::{FederationLoginRepositoryPort, RegistrationAccountRepositoryPort};
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -2030,7 +2030,8 @@ async fn registration_email_existence_is_tenant_scoped_and_single_read() {
     let seed = seed_principal(&database_url, tenant).await;
     let email = format!("query-count-{}@example.test", seed.user_id);
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = UserRepository::new(pool);
+    let repository = UserRepository::new(pool.clone());
+    let federation = nazo_postgres::FederationRepository::new(pool);
     let mut connection = connect(&database_url).await;
     for active in [true, false] {
         sql_query("UPDATE users SET is_active=$1 WHERE id=$2")
@@ -2045,7 +2046,16 @@ async fn registration_email_existence_is_tenant_scoped_and_single_read() {
             (tenant.tenant_id, "missing@example.test".to_owned(), false),
             (TenantId::new(Uuid::now_v7()).unwrap(), email.clone(), false),
         ] {
-            let (result, delta) = measure(&counter, repository.email_exists(scope, &lookup)).await;
+            let (result, delta) = measure(
+                &counter,
+                RegistrationAccountRepositoryPort::email_exists(&repository, scope, &lookup),
+            )
+            .await;
+            assert_eq!(result.unwrap(), expected);
+            assert_eq!(delta.data_queries, 1);
+            assert_no_transaction(delta);
+            assert_clean(delta);
+            let (result, delta) = measure(&counter, federation.email_exists(scope, &lookup)).await;
             assert_eq!(result.unwrap(), expected);
             assert_eq!(delta.data_queries, 1);
             assert_no_transaction(delta);

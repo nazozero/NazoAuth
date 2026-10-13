@@ -100,14 +100,14 @@ pub fn refresh_token_audiences(
     token: &TokenRow,
     form: &TokenForm,
 ) -> Result<Vec<String>, RefreshAudienceError> {
-    let original_audiences = token.audience.clone();
+    let original_audiences = &token.audience;
     if original_audiences.is_empty() {
         return Err(RefreshAudienceError::MissingOriginal);
     }
     if form.audiences.is_empty() {
-        return Ok(original_audiences);
+        return Ok(original_audiences.clone());
     }
-    is_subset(&form.audiences, &original_audiences)
+    is_subset(&form.audiences, original_audiences)
         .then(|| form.audiences.clone())
         .ok_or(RefreshAudienceError::RequestedExceedsOriginal)
 }

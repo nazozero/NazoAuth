@@ -54,27 +54,36 @@ struct CompletionPorts {
     creates: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     sessions: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     audit: std::sync::Arc<std::sync::Mutex<Vec<FederationAuditEvent>>>,
+    claim_addresses: std::sync::Arc<std::sync::Mutex<Vec<usize>>>,
 }
 
 impl FederationLoginRepositoryPort for CompletionPorts {
-    fn resolve_existing(
-        &self,
-        _login: FederationLogin,
-    ) -> crate::ports::RepositoryFuture<'_, Option<PublicAccount>> {
+    fn resolve_existing<'a>(
+        &'a self,
+        login: &'a FederationLogin,
+    ) -> crate::ports::RepositoryFuture<'a, Option<PublicAccount>> {
+        self.claim_addresses
+            .lock()
+            .unwrap()
+            .push(login.claims["payload"].as_str().unwrap().as_ptr() as usize);
         let account = self.existing.then(|| self.account.clone());
         Box::pin(async move { Ok(account) })
     }
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         _tenant: crate::TenantId,
         _email: &'a str,
-    ) -> crate::ports::RepositoryFuture<'a, Option<PublicAccount>> {
-        Box::pin(async { Ok(None) })
+    ) -> crate::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async { Ok(false) })
     }
     fn create_federated(
         &self,
-        _identity: NewFederatedIdentity,
+        identity: NewFederatedIdentity,
     ) -> crate::ports::RepositoryFuture<'_, PublicAccount> {
+        self.claim_addresses
+            .lock()
+            .unwrap()
+            .push(identity.login.claims["payload"].as_str().unwrap().as_ptr() as usize);
         self.creates
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let account = self.account.clone();
@@ -189,6 +198,7 @@ fn completion_ports(existing: bool, active: bool) -> std::sync::Arc<CompletionPo
         creates: Default::default(),
         sessions: Default::default(),
         audit: Default::default(),
+        claim_addresses: Default::default(),
     })
 }
 
@@ -199,7 +209,7 @@ fn completion_identity() -> VerifiedExternalIdentity {
         subject: "subject".to_owned(),
         email: Some("federated@example.test".to_owned()),
         display_name: None,
-        claims: serde_json::json!({}),
+        claims: serde_json::json!({"payload": "claims allocation to retain"}),
     }
 }
 
@@ -222,13 +232,15 @@ async fn every_account_result_passes_active_gate_before_link_audit_or_session_cr
                     pending_mfa_session_ttl_seconds: 120,
                 },
             );
+            let identity = completion_identity();
+            let claim_address = identity.claims["payload"].as_str().unwrap().as_ptr() as usize;
             let result = service
-                .complete_verified(
-                    completion_identity(),
-                    "oidc".to_owned(),
-                    "source".to_owned(),
-                )
+                .complete_verified(identity, "oidc".to_owned(), "source".to_owned())
                 .await;
+            assert_eq!(
+                *ports.claim_addresses.lock().unwrap(),
+                vec![claim_address; if existing { 1 } else { 2 }]
+            );
             assert_eq!(
                 ports.creates.load(std::sync::atomic::Ordering::Relaxed),
                 usize::from(!existing)

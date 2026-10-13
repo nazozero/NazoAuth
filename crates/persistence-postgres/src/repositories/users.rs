@@ -199,6 +199,24 @@ impl UserRepository {
         Ok(count == 1)
     }
 
+    pub async fn email_exists(
+        &self,
+        tenant_id: TenantId,
+        email: &str,
+    ) -> Result<bool, RepositoryError> {
+        let mut connection = get_conn(&self.pool)
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        diesel::select(diesel::dsl::exists(
+            users::table
+                .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(users::email.eq(email.trim())),
+        ))
+        .get_result(&mut connection)
+        .await
+        .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+    }
+
     pub async fn public_account_by_email(
         &self,
         tenant_id: TenantId,
@@ -1104,19 +1122,7 @@ impl nazo_identity::ports::RegistrationAccountRepositoryPort for UserRepository 
         tenant_id: nazo_identity::TenantId,
         email: &'a str,
     ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| RepositoryError::Unavailable)?;
-            diesel::select(diesel::dsl::exists(
-                users::table
-                    .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-                    .filter(users::email.eq(email.trim())),
-            ))
-            .get_result(&mut connection)
-            .await
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))
-        })
+        Box::pin(async move { UserRepository::email_exists(self, tenant_id, email).await })
     }
 
     fn create_user(

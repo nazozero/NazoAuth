@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
-use coset::CborSerializable;
+use coset::{AsCborValue, CborSerializable};
 use mdoc_rs::{
     builder::DocumentBuilder,
     cbor::data_item::{encode_cbor_canonical, wrap_tag24},
@@ -88,14 +88,11 @@ pub(super) async fn sign(
             ciborium::Value::Array(items.iter().map(|item| wrap_tag24(&item.encoded)).collect()),
         ));
     }
-    let cose_bytes = document
+    let cose = document
         .issuer_signed
         .issuer_auth
         .cose_sign1
-        .clone()
-        .to_vec()
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let cose = ciborium::from_reader(cose_bytes.as_slice())
+        .to_cbor_value()
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     let issuer_signed = ciborium::Value::Map(vec![
         (

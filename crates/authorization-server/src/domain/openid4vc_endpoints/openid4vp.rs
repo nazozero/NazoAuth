@@ -1,6 +1,6 @@
 use super::helpers::*;
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use base64::Engine as _;
 use chrono::{Duration, Utc};
@@ -98,8 +98,10 @@ impl ServerPresentationOperations {
                 vp_error(500, "server_error", "Presentation request encoding failed.")
             })?;
             for (name, value) in encoded.as_object().into_iter().flatten() {
-                url.query_pairs_mut()
-                    .append_pair(name, value.as_str().unwrap_or(&value.to_string()));
+                let value = value
+                    .as_str()
+                    .map_or_else(|| Cow::Owned(value.to_string()), Cow::Borrowed);
+                url.query_pairs_mut().append_pair(name, &value);
             }
         }
         Ok(CreatePresentationResponse {

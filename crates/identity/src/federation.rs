@@ -389,11 +389,11 @@ where
             provider_id: identity.provider_id.clone(),
             subject: identity.subject.clone(),
             email: identity.email.clone(),
-            claims: identity.claims.clone(),
+            claims: identity.claims,
         };
         let existing = self
             .accounts
-            .resolve_existing(login.clone())
+            .resolve_existing(&login)
             .await
             .map_err(FederationError::Account)?;
         let (account, linked) = if let Some(account) = existing {
@@ -408,10 +408,9 @@ where
                 .ok_or(FederationError::VerifiedEmailRequired)?;
             if self
                 .accounts
-                .account_by_email(self.config.tenant.tenant_id, &email)
+                .email_exists(self.config.tenant.tenant_id, &email)
                 .await
                 .map_err(FederationError::Account)?
-                .is_some()
             {
                 self.audit
                     .record_required(FederationAuditEvent::RelinkDenied {

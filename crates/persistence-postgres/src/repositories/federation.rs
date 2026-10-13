@@ -113,7 +113,7 @@ impl FederationRepository {
     }
     pub async fn resolve_existing(
         &self,
-        login: FederationLogin,
+        login: &FederationLogin,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
@@ -125,24 +125,28 @@ impl FederationRepository {
                     .filter(external_identity_links::provider_type.eq(&login.provider_type))
                     .filter(external_identity_links::provider_id.eq(&login.provider_id))
                     .filter(external_identity_links::subject.eq(&login.subject))
-                    .select(ExternalIdentityLinkRow::as_select())
-                    .first::<ExternalIdentityLinkRow>(connection)
+                    .select((
+                        external_identity_links::id,
+                        external_identity_links::user_id,
+                        external_identity_links::email,
+                    ))
+                    .first::<(uuid::Uuid, uuid::Uuid, String)>(connection)
                     .await
                     .optional()?;
-                let Some(link) = link else {
+                let Some((link_id, user_id, previous_email)) = link else {
                     return Ok(None);
                 };
                 let user = users::table
-                    .find(link.user_id)
+                    .find(user_id)
                     .filter(users::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
                     .select(PublicAccountRow::as_select())
                     .first::<PublicAccountRow>(connection)
                     .await?;
-                let email = login.email.unwrap_or(link.email);
-                diesel::update(external_identity_links::table.find(link.id))
+                let email = login.email.as_deref().unwrap_or(&previous_email);
+                diesel::update(external_identity_links::table.find(link_id))
                     .set((
                         external_identity_links::email.eq(email),
-                        external_identity_links::claims.eq(login.claims),
+                        external_identity_links::claims.eq(&login.claims),
                         external_identity_links::last_login_at.eq(diesel::dsl::now),
                         external_identity_links::updated_at.eq(diesel::dsl::now),
                     ))
@@ -160,24 +164,29 @@ impl FederationRepository {
         &self,
         new_identity: NewFederatedIdentity,
     ) -> Result<PublicAccount, RepositoryError> {
-        let retry_login = new_identity.login.clone();
+        let NewFederatedIdentity {
+            login,
+            email,
+            display_name,
+            password_hash,
+        } = new_identity;
+        let borrowed_login = &login;
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let result = connection
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
-                let tenant = new_identity.login.tenant;
+                let tenant = borrowed_login.tenant;
                 let user = diesel::insert_into(users::table)
                     .values((
                         users::tenant_id.eq(tenant.tenant_id.as_uuid()),
                         users::realm_id.eq(tenant.realm_id.as_uuid()),
                         users::organization_id.eq(tenant.organization_id.as_uuid()),
-                        users::username.eq(&new_identity.email),
-                        users::email.eq(&new_identity.email),
-                        users::password_hash
-                            .eq(new_identity.password_hash.into_persistence_value()),
+                        users::username.eq(&email),
+                        users::email.eq(&email),
+                        users::password_hash.eq(password_hash.into_persistence_value()),
                         users::email_verified.eq(true),
-                        users::display_name.eq(new_identity.display_name),
+                        users::display_name.eq(display_name),
                     ))
                     .returning(PublicAccountRow::as_returning())
                     .get_result::<PublicAccountRow>(connection)
@@ -186,11 +195,11 @@ impl FederationRepository {
                     .values((
                         external_identity_links::tenant_id.eq(tenant.tenant_id.as_uuid()),
                         external_identity_links::user_id.eq(user.id),
-                        external_identity_links::provider_type.eq(new_identity.login.provider_type),
-                        external_identity_links::provider_id.eq(new_identity.login.provider_id),
-                        external_identity_links::subject.eq(new_identity.login.subject),
-                        external_identity_links::email.eq(new_identity.email),
-                        external_identity_links::claims.eq(new_identity.login.claims),
+                        external_identity_links::provider_type.eq(&borrowed_login.provider_type),
+                        external_identity_links::provider_id.eq(&borrowed_login.provider_id),
+                        external_identity_links::subject.eq(&borrowed_login.subject),
+                        external_identity_links::email.eq(email),
+                        external_identity_links::claims.eq(&borrowed_login.claims),
                         external_identity_links::last_login_at.eq(diesel::dsl::now),
                     ))
                     .execute(connection)
@@ -205,7 +214,7 @@ impl FederationRepository {
                 .try_into()
                 .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0)),
             Err(Error::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => self
-                .resolve_existing(retry_login)
+                .resolve_existing(&login)
                 .await?
                 .ok_or(RepositoryError::Conflict),
             Err(error) => Err(map_error(error)),
@@ -245,21 +254,21 @@ impl nazo_identity::ports::FederationLinkRepositoryPort for FederationRepository
 }
 
 impl nazo_identity::ports::FederationLoginRepositoryPort for FederationRepository {
-    fn resolve_existing(
-        &self,
-        login: FederationLogin,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<PublicAccount>> {
+    fn resolve_existing<'a>(
+        &'a self,
+        login: &'a FederationLogin,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<PublicAccount>> {
         Box::pin(async move { FederationRepository::resolve_existing(self, login).await })
     }
 
-    fn account_by_email<'a>(
+    fn email_exists<'a>(
         &'a self,
         tenant_id: TenantId,
         email: &'a str,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<PublicAccount>> {
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
         Box::pin(async move {
             super::UserRepository::new(self.pool.clone())
-                .public_account_by_email(tenant_id, email)
+                .email_exists(tenant_id, email)
                 .await
         })
     }
