@@ -780,7 +780,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let row = oauth_token_issuances::table
                 .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
                 .filter(oauth_token_issuances::client_id.eq(client_id))
-                .filter(oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().to_vec()))
+                .filter(
+                    oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().as_slice()),
+                )
                 // Expiry closes replay authority even while physical
                 // reclamation has not visited this receipt. Keep the complete
                 // safety horizon, not merely the access-token expiration.

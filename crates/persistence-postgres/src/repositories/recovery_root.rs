@@ -1221,7 +1221,7 @@ impl RecoveryRootRepository {
                 )
                 .bind::<DieselUuid, _>(submission.challenge_id)
                 .bind::<Timestamptz, _>(now)
-                .bind::<Binary, _>(accepted_signature_sha256.to_vec())
+                .bind::<Binary, _>(accepted_signature_sha256.as_slice())
                 .bind::<Varchar, _>(&slot.controller_id)
                 .bind::<SmallInt, _>(slot.slot_index)
                 .bind::<Timestamptz, _>(slot.issued_at)

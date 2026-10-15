@@ -440,7 +440,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
                 .and_then(AvatarContentType::parse)
                 .ok_or(AvatarStorageError::InvalidState)?;
             Ok(AvatarObject {
-                bytes: response.bytes().await.map_err(unavailable)?.to_vec(),
+                bytes: response.bytes().await.map_err(unavailable)?.into(),
                 content_type,
                 version: final_object_id.to_owned(),
             })

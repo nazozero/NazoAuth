@@ -1193,7 +1193,7 @@ async fn persist_refresh_token_inner(
             .values((
                 oauth_refresh_spent_tokens::tenant_id.eq(token.tenant_id),
                 oauth_refresh_spent_tokens::refresh_token_blake3
-                    .eq(family.current_token_blake3.clone()),
+                    .eq(family.current_token_blake3.as_slice()),
                 oauth_refresh_spent_tokens::token_family_id.eq(token.family_id),
                 oauth_refresh_spent_tokens::member_id.eq(family.current_member_id),
                 oauth_refresh_spent_tokens::successor_member_id.eq(token.member_id),
@@ -1234,11 +1234,11 @@ async fn persist_refresh_token_inner(
         )
         .set((
             oauth_refresh_families::current_member_id.eq(token.member_id),
-            oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().to_vec()),
+            oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().as_slice()),
             oauth_refresh_families::current_audience.eq(serde_json::json!(token.audiences)),
             oauth_refresh_families::current_issued_at.eq(token.issued_at),
             oauth_refresh_families::current_expires_at.eq(token.expires_at),
-            oauth_refresh_families::current_id_token_sid.eq(token.id_token_sid.clone()),
+            oauth_refresh_families::current_id_token_sid.eq(token.id_token_sid.as_deref()),
         ))
         .execute(connection)
         .await?;
