@@ -327,12 +327,8 @@ fn load_generation(
     endpoint_names: &[String],
     revision: u64,
 ) -> anyhow::Result<DirectTlsGeneration> {
-    let first = read_material_snapshot(paths)?;
-    let second = read_material_snapshot(paths)?;
-    if first != second {
-        anyhow::bail!("direct TLS material changed while the candidate generation was being read");
-    }
-    let [certificate_bytes, private_key_bytes] = second;
+    let certificate_bytes = read_bounded(&paths.certificate, "TLS certificate chain", false)?;
+    let private_key_bytes = read_bounded(&paths.private_key, "TLS private key", true)?;
 
     let certificates = CertificateDer::pem_slice_iter(&certificate_bytes)
         .collect::<Result<Vec<_>, _>>()
@@ -459,13 +455,6 @@ pub(super) fn load_client_verifier(
     WebPkiClientVerifier::builder_with_provider(Arc::new(client_roots), provider)
         .build()
         .context("failed to build mutual TLS client certificate verifier")
-}
-
-fn read_material_snapshot(paths: &DirectTlsMaterialPaths) -> anyhow::Result<[Vec<u8>; 2]> {
-    Ok([
-        read_bounded(&paths.certificate, "TLS certificate chain", false)?,
-        read_bounded(&paths.private_key, "TLS private key", true)?,
-    ])
 }
 
 fn endpoint_server_names(settings: &Settings) -> anyhow::Result<Vec<String>> {
