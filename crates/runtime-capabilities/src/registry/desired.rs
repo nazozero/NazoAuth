@@ -102,13 +102,13 @@ where
                 current: Some(current),
             });
         }
-        let next_revision = ModuleRevision::new(match expected_revision {
-            None => 1,
-            Some(revision) => revision
+        let next_revision = ModuleRevision::new(
+            current
+                .revision
                 .get()
                 .checked_add(1)
                 .ok_or(RegistryError::RevisionExhausted(module_id))?,
-        });
+        );
         self.repository
             .compare_and_set_desired_guarded(
                 DesiredStateChange {
