@@ -91,19 +91,6 @@ fn outer_request_uri_parameters_must_match_pushed_values() {
 }
 
 #[test]
-fn login_query_preserves_the_original_par_reference() {
-    let expanded = query(&[("scope", "openid"), ("state", "expanded")]);
-    let original = query(&[("request_uri", "urn:par:1"), ("state", "original")]);
-    let request_uri = original.get("request_uri");
-
-    assert_eq!(
-        authorization_login_query(&expanded, Some(&original), request_uri),
-        original
-    );
-    assert_eq!(authorization_login_query(&expanded, None, None), expanded);
-}
-
-#[test]
 fn login_url_encodes_next_request_and_optional_reauth_nonce() {
     let url = authorization_login_url_for_frontend(
         "https://frontend.example/",

@@ -509,9 +509,13 @@ impl SessionRecord {
         &self.logged_in_client_ids
     }
 
-    pub fn add_logged_in_client(&mut self, client_id: &str) {
-        if !self.logged_in_client_ids.iter().any(|id| id == client_id) {
-            self.logged_in_client_ids.push(client_id.to_owned());
+    pub fn add_logged_in_client(&mut self, client_id: impl AsRef<str> + Into<String>) {
+        if !self
+            .logged_in_client_ids
+            .iter()
+            .any(|id| id == client_id.as_ref())
+        {
+            self.logged_in_client_ids.push(client_id.into());
         }
     }
 

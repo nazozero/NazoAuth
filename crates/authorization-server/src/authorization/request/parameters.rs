@@ -61,20 +61,6 @@ pub(super) fn outer_request_uri_parameters_match_pushed(
     })
 }
 
-pub(super) fn authorization_login_query(
-    expanded: &HashMap<String, String>,
-    original: Option<&HashMap<String, String>>,
-    request_uri: Option<&String>,
-) -> HashMap<String, String> {
-    if request_uri.is_some()
-        || original.is_some_and(|q| q.contains_key("request") || q.contains_key("request_uri"))
-    {
-        original.cloned().unwrap_or_else(|| expanded.clone())
-    } else {
-        expanded.clone()
-    }
-}
-
 pub(super) fn authorization_login_url_for_frontend(
     frontend_base_url: &str,
     q: &HashMap<String, String>,

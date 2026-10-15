@@ -11,9 +11,8 @@ use super::{
 };
 pub(super) use parameters::authorization_duplicate_parameters;
 use parameters::{
-    authorization_login_query, authorization_login_url_for_frontend,
-    outer_request_uri_parameters_match_pushed, preserve_verified_dpop_binding,
-    reauth_nonce_parameter,
+    authorization_login_url_for_frontend, outer_request_uri_parameters_match_pushed,
+    preserve_verified_dpop_binding, reauth_nonce_parameter,
 };
 use policy::{credential_configuration_ids, runtime_authorization_capability_error};
 use prompt_none::issue_authorization_code_without_interaction_with_context;

@@ -1025,6 +1025,82 @@ fn attested_clients_enforce_their_pushed_request_policy_before_login() {
 }
 
 #[test]
+fn login_redirect_preserves_original_par_reference_and_plain_request_parameters() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use chrono::{Duration, Utc};
+
+    futures_executor::block_on(async {
+        for pushed in [false, true] {
+            let fixture = authorization_fixture::Fixture::new(
+                Ok(Some(authorization_fixture::client(true))),
+                Ok(None),
+            );
+            let mut parameters = query(&[
+                ("client_id", "client-1"),
+                ("redirect_uri", "https://client.example/callback"),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                ("state", "login-state"),
+                (
+                    "code_challenge",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ),
+                ("code_challenge_method", "S256"),
+            ]);
+            if pushed {
+                let uri = "urn:ietf:params:oauth:request_uri:login-request";
+                fixture.ports.stored_par.lock().unwrap().push((
+                    uri.into(),
+                    nazo_auth::PushedAuthorizationRequest {
+                        client_id: "client-1".into(),
+                        params: parameters,
+                        dpop_jkt: None,
+                        mtls_x5t_s256: None,
+                        issued_at: Utc::now(),
+                        expires_at: Utc::now() + Duration::seconds(60),
+                    },
+                    60,
+                ));
+                parameters = query(&[("client_id", "client-1"), ("request_uri", uri)]);
+            }
+            let original = parameters.clone();
+            let result = fixture
+                .make_application()
+                .authorize(
+                    &AuthorizationRequestFacts {
+                        source_ip: "192.0.2.10",
+                        session_id: None,
+                        user_agent: None,
+                    },
+                    &mut parameters,
+                )
+                .await
+                .unwrap();
+            let AuthorizationOutcome::Redirect { location } = result else {
+                panic!("unauthenticated authorization must redirect to login");
+            };
+            let login = url::Url::parse(&location).unwrap();
+            assert_eq!(login.path(), "/auth");
+            let next = login
+                .query_pairs()
+                .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
+                .unwrap();
+            let next = url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
+            assert_eq!(next.path(), "/authorize");
+            assert_eq!(
+                next.query_pairs().into_owned().collect::<HashMap<_, _>>(),
+                original
+            );
+            assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+            assert_eq!(
+                fixture.ports.stored_par.lock().unwrap().len(),
+                usize::from(pushed)
+            );
+        }
+    });
+}
+
+#[test]
 fn protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonce() {
     use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
     use nazo_identity::SessionId;

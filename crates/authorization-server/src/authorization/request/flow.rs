@@ -18,11 +18,10 @@ use uuid::Uuid;
 
 use super::{
     AuthorizationRequestContext, AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
-    apply_request_object_with_context, authorization_login_query,
-    authorization_login_url_with_context, authorization_oauth_error_redirect,
-    authorization_response_redirect_with_context, consume_reauth_nonce_with_context,
-    credential_configuration_ids, is_pushed_authorization_request_uri,
-    issue_authorization_code_without_interaction_with_context,
+    apply_request_object_with_context, authorization_login_url_with_context,
+    authorization_oauth_error_redirect, authorization_response_redirect_with_context,
+    consume_reauth_nonce_with_context, credential_configuration_ids,
+    is_pushed_authorization_request_uri, issue_authorization_code_without_interaction_with_context,
     outer_request_uri_parameters_match_pushed, preserve_verified_dpop_binding,
     runtime_authorization_capability_error,
 };
@@ -385,11 +384,7 @@ pub(crate) async fn authorize_request_with_context(
         } => {
             return match authorization_login_url_with_context(
                 context,
-                &authorization_login_query(
-                    q,
-                    original_authorization_query.as_ref(),
-                    pending_pushed_request_uri.as_ref(),
-                ),
+                original_authorization_query.as_ref().unwrap_or(q),
                 fresh_authentication,
             )
             .await

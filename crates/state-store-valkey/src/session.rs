@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use nazo_identity::{UserId, session::SessionRecord};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -41,54 +43,54 @@ return 'ok'
 "#;
 
 #[derive(Deserialize, Serialize)]
-struct SessionWireRecord {
+struct SessionWireRecord<'a> {
     user_id: Uuid,
     auth_time: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_time_micros: Option<i64>,
-    amr: Vec<String>,
+    amr: Cow<'a, [String]>,
     pending_mfa: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    oidc_sid: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    logged_in_client_ids: Vec<String>,
+    oidc_sid: Option<Cow<'a, str>>,
+    #[serde(default, skip_serializing_if = "<[String]>::is_empty")]
+    logged_in_client_ids: Cow<'a, [String]>,
 }
 
-impl From<&SessionRecord> for SessionWireRecord {
-    fn from(value: &SessionRecord) -> Self {
+impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
+    fn from(value: &'a SessionRecord) -> Self {
         Self {
             user_id: value.user_id().as_uuid(),
             auth_time: value.auth_time(),
             auth_time_micros: value.auth_time_micros(),
-            amr: value.amr().to_vec(),
+            amr: Cow::Borrowed(value.amr()),
             pending_mfa: value.pending_mfa(),
-            oidc_sid: value.oidc_sid().map(str::to_owned),
-            logged_in_client_ids: value.logged_in_client_ids().to_vec(),
+            oidc_sid: value.oidc_sid().map(Cow::Borrowed),
+            logged_in_client_ids: Cow::Borrowed(value.logged_in_client_ids()),
         }
     }
 }
 
-impl TryFrom<SessionWireRecord> for SessionRecord {
+impl TryFrom<SessionWireRecord<'_>> for SessionRecord {
     type Error = Error;
 
-    fn try_from(value: SessionWireRecord) -> Result<Self, Self::Error> {
+    fn try_from(value: SessionWireRecord<'_>) -> Result<Self, Self::Error> {
         let user_id = UserId::new(value.user_id).map_err(|error| {
             Error::corrupt_data(format!("invalid stored session user: {error}"))
         })?;
         let mut record = Self::new(
             user_id,
             value.auth_time,
-            value.amr,
+            value.amr.into_owned(),
             value.pending_mfa,
-            value.oidc_sid,
+            value.oidc_sid.map(Cow::into_owned),
         );
         if !record.restore_auth_time_micros(value.auth_time_micros) {
             return Err(Error::corrupt_data(
                 "inconsistent stored authentication precision",
             ));
         }
-        for client_id in value.logged_in_client_ids {
-            record.add_logged_in_client(&client_id);
+        for client_id in value.logged_in_client_ids.into_owned() {
+            record.add_logged_in_client(client_id);
         }
         Ok(record)
     }
@@ -378,3 +380,7 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/session.rs"]
+mod tests;
