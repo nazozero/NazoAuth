@@ -9,6 +9,7 @@ use nazo_identity::{
     },
 };
 use std::sync::Mutex;
+use uuid::Uuid;
 
 struct FakeSessionStore {
     loaded: Result<Option<SessionSnapshot>, RepositoryError>,
@@ -268,6 +269,28 @@ fn resolved_session_preserves_account_authentication_and_logged_in_clients() {
 }
 
 #[test]
+fn resolved_session_moves_authentication_buffers() {
+    let session = CurrentSession {
+        user: account(true).principal,
+        pending_mfa: false,
+        auth_time: 1_000,
+        auth_time_micros: None,
+        amr: vec!["password".to_owned()],
+        oidc_sid: "sid-1".to_owned(),
+        logged_in_client_ids: vec!["client-1".to_owned()],
+    };
+    let amr = session.amr.as_ptr();
+    let sid = session.oidc_sid.as_ptr();
+    let clients = session.logged_in_client_ids.as_ptr();
+
+    let current =
+        resolved_session(nazo_identity::SessionResolution::Present(Box::new(session))).unwrap();
+    assert_eq!(current.amr.as_ptr(), amr);
+    assert_eq!(current.oidc_sid.as_ptr(), sid);
+    assert_eq!(current.logged_in_client_ids.as_ptr(), clients);
+}
+
+#[test]
 fn administrator_policy_requires_a_positive_admin_level() {
     assert!(matches!(
         require_admin_session(None),
@@ -281,6 +304,7 @@ fn administrator_policy_requires_a_positive_admin_level() {
         let mut user = account(true);
         user.principal.role = role;
         let session = CurrentSession {
+            pending_mfa: false,
             user: user.principal,
             auth_time: 1_000,
             auth_time_micros: None,
@@ -289,99 +313,6 @@ fn administrator_policy_requires_a_positive_admin_level() {
             logged_in_client_ids: Vec::new(),
         };
         assert_eq!(require_admin_session(Some(session)).is_ok(), allowed);
-    }
-}
-
-fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
-    nazo_identity::session::valid_authentication_metadata(
-        payload.auth_time,
-        &payload.amr,
-        payload.oidc_sid.as_deref(),
-        now,
-    )
-}
-
-fn valid_payload() -> SessionPayload {
-    SessionPayload {
-        user_id: Uuid::now_v7(),
-        auth_time: 1_000,
-        amr: vec!["password".to_owned()],
-        pending_mfa: false,
-        oidc_sid: Some("sid-1".to_owned()),
-    }
-}
-
-#[test]
-fn session_payload_requires_authentication_metadata_and_oidc_sid() {
-    let valid = valid_payload();
-
-    assert!(valid_session_payload(&valid, 1_001));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            oidc_sid: None,
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            oidc_sid: Some(" ".to_owned()),
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            auth_time: 0,
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            auth_time: 2_000,
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            amr: Vec::new(),
-            ..valid
-        },
-        1_001
-    ));
-}
-
-#[test]
-fn session_payload_allows_only_small_clock_skew_for_auth_time() {
-    let mut payload = valid_payload();
-
-    payload.auth_time = 1_030;
-    assert!(valid_session_payload(&payload, 1_000));
-
-    payload.auth_time = 1_031;
-    assert!(!valid_session_payload(&payload, 1_000));
-}
-
-#[test]
-fn session_payload_preserves_pending_mfa_as_metadata_not_validity() {
-    let mut payload = valid_payload();
-    payload.pending_mfa = true;
-
-    assert!(valid_session_payload(&payload, 1_001));
-}
-
-#[test]
-fn session_payload_requires_non_blank_oidc_sid_after_trimming() {
-    for sid in ["", " ", "\t\n"] {
-        let mut payload = valid_payload();
-        payload.oidc_sid = Some(sid.to_owned());
-
-        assert!(
-            !valid_session_payload(&payload, 1_001),
-            "blank sid {sid:?} must not produce an OIDC session"
-        );
     }
 }
 

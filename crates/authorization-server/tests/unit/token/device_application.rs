@@ -323,6 +323,7 @@ fn pending(ports: &Ports) {
 }
 fn session() -> CurrentSession {
     CurrentSession {
+        pending_mfa: false,
         user: crate::test_support::authorization::account().principal,
         auth_time: Utc::now().timestamp(),
         auth_time_micros: None,

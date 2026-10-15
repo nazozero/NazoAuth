@@ -146,15 +146,16 @@ pub enum SessionUpdateOutcome {
     Missing,
 }
 
+/// Account and authentication metadata resolved by `SessionService`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentSession<A = PublicAccount> {
-    user: A,
-    pending_mfa: bool,
-    auth_time: i64,
-    auth_time_micros: Option<i64>,
-    amr: Vec<String>,
-    oidc_sid: String,
-    logged_in_client_ids: Vec<String>,
+    pub user: A,
+    pub pending_mfa: bool,
+    pub auth_time: i64,
+    pub auth_time_micros: Option<i64>,
+    pub amr: Vec<String>,
+    pub oidc_sid: String,
+    pub logged_in_client_ids: Vec<String>,
 }
 
 impl<A> CurrentSession<A> {
@@ -406,7 +407,7 @@ impl SessionService {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(SessionResolution::Missing);
         };
-        let record = snapshot.record();
+        let record = snapshot.record;
         if !valid_authentication_metadata(record.auth_time(), record.amr(), record.oidc_sid(), now)
         {
             let _ = self.sessions.delete(session_id).await;
@@ -427,12 +428,9 @@ impl SessionService {
             pending_mfa: record.pending_mfa(),
             auth_time: record.auth_time(),
             auth_time_micros: record.auth_time_micros(),
-            amr: record.amr().to_vec(),
-            oidc_sid: record
-                .oidc_sid()
-                .expect("validated session has an OIDC sid")
-                .to_owned(),
-            logged_in_client_ids: record.logged_in_client_ids().to_vec(),
+            amr: record.amr,
+            oidc_sid: record.oidc_sid.expect("validated session has an OIDC sid"),
+            logged_in_client_ids: record.logged_in_client_ids,
         })))
     }
 

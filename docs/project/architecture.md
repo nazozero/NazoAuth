@@ -378,6 +378,11 @@ through the existing tenant-scoped narrow query. Profile and MFA consumers use
 same session metadata, pending-MFA and active-account gates; profile consumers do
 not first load a principal and then query the account again.
 
+Identity owns the resolved `CurrentSession` value. Application session resolution
+transfers that value with its authentication buffers, and logout consumes its
+session ID and client list. Stored-session payload fixtures belong to HTTP test
+support; production persistence uses the identity session record and its adapter.
+
 Token grant orchestration belongs to `authorization-server::token::dispatch`;
 the core owns `GrantType` and admission policy. Rust callers use the application
 dispatcher and its form model. HTTP signature parsers return

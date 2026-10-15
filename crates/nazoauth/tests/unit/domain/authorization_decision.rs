@@ -437,7 +437,7 @@ impl DecisionLiveFixture {
     }
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
-        let payload = nazo_oauth_server::sessions::SessionPayload {
+        let payload = crate::test_support::SessionPayload {
             user_id: user.id,
             auth_time,
             amr: vec!["pwd".to_owned()],

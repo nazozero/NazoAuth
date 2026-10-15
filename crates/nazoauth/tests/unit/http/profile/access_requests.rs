@@ -6,7 +6,7 @@ use nazo_identity::DEFAULT_REALM_ID;
 
 use nazo_identity::DEFAULT_TENANT_ID;
 
-use nazo_oauth_server::sessions::SessionPayload;
+use crate::test_support::SessionPayload;
 
 use crate::settings::Settings;
 

@@ -4,29 +4,9 @@ use nazo_identity::{
     Principal, PublicAccount, SessionId, TenantId,
     ports::{RepositoryError, SessionAccountPort, SessionStorePort},
 };
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use uuid::Uuid;
 
-#[derive(Clone, Deserialize, Serialize)]
-pub struct SessionPayload {
-    pub user_id: Uuid,
-    pub auth_time: i64,
-    pub amr: Vec<String>,
-    #[serde(default)]
-    pub pending_mfa: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub oidc_sid: Option<String>,
-}
-
-pub struct CurrentSession<A = Principal> {
-    pub user: A,
-    pub auth_time: i64,
-    pub auth_time_micros: Option<i64>,
-    pub amr: Vec<String>,
-    pub oidc_sid: String,
-    pub logged_in_client_ids: Vec<String>,
-}
+pub type CurrentSession<A = Principal> = nazo_identity::CurrentSession<A>;
 
 pub use nazo_identity::session::ADMIN_MFA_MAX_AGE_SECONDS;
 use nazo_identity::session::recent_interactive_mfa as recent_mfa_authentication;
@@ -94,21 +74,7 @@ fn resolved_session<A>(
     resolution: nazo_identity::SessionResolution<A>,
 ) -> Option<CurrentSession<A>> {
     match resolution {
-        nazo_identity::SessionResolution::Present(session) => {
-            let auth_time = session.auth_time();
-            let auth_time_micros = session.auth_time_micros();
-            let amr = session.amr().to_vec();
-            let oidc_sid = session.oidc_sid().to_owned();
-            let logged_in_client_ids = session.logged_in_client_ids().to_vec();
-            Some(CurrentSession {
-                user: (*session).into_user(),
-                auth_time,
-                auth_time_micros,
-                amr,
-                oidc_sid,
-                logged_in_client_ids,
-            })
-        }
+        nazo_identity::SessionResolution::Present(session) => Some(*session),
         nazo_identity::SessionResolution::Missing
         | nazo_identity::SessionResolution::Invalidated => None,
     }

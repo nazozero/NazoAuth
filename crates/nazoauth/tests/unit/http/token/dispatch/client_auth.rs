@@ -9,9 +9,9 @@ use base64::engine::general_purpose::{STANDARD as B64, URL_SAFE_NO_PAD};
 use nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER;
 
 use crate::http::sessions::test_support::admin_session_handles;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_del;
 use crate::test_support::valkey::valkey_set_ex;
-use nazo_oauth_server::sessions::SessionPayload;
 
 fn pending_authorization_code_payload(raw: &str) -> Result<Option<CodePayload>, serde_json::Error> {
     match serde_json::from_str::<AuthorizationCodeState>(raw)? {

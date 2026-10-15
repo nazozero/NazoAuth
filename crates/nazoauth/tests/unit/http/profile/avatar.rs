@@ -4,12 +4,12 @@ use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc, time::Duration as
 use crate::adapters::avatar_files::LocalAvatarStorage;
 use crate::schema::users;
 use crate::settings::Settings;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
-use nazo_oauth_server::sessions::SessionPayload;
 
 use actix_web::error::PayloadError;
 use actix_web::{

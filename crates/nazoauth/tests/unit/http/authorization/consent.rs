@@ -32,8 +32,8 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::test_support::SessionPayload;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::{create_pool, get_conn};
 
 async fn authorize_consent(

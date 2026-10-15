@@ -99,7 +99,7 @@ async fn authorized_response(
     .await
     .expect("authorization fixture grant insert");
     drop(connection);
-    let payload = nazo_oauth_server::sessions::SessionPayload {
+    let payload = crate::test_support::SessionPayload {
         user_id,
         auth_time: now,
         amr: vec!["pwd".to_owned()],

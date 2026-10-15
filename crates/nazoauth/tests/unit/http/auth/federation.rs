@@ -6,6 +6,7 @@ use std::{sync::Arc, time::Duration};
 use crate::config::ConfigSource;
 use crate::schema::external_identity_links;
 use crate::settings::Settings;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_get;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{
@@ -17,7 +18,6 @@ use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_oauth_server::crypto::pkce_s256;
-use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
 use nazo_valkey::test_support::oidc_federation_storage_key as oidc_state_key;

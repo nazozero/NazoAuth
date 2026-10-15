@@ -574,3 +574,29 @@ async fn principal_guard_uses_one_narrow_lookup_and_preserves_session_gates() {
         assert_eq!(store.deleted.lock().unwrap().len(), usize::from(!active));
     }
 }
+
+#[test]
+fn authentication_metadata_requires_time_methods_and_session_id() {
+    let cases: &[(i64, &[&str], Option<&str>, bool)] = &[
+        (1_000, &["password"], Some("sid"), true),
+        (0, &["password"], Some("sid"), false),
+        (1_030, &["password"], Some("sid"), true),
+        (1_031, &["password"], Some("sid"), false),
+        (1_000, &[], Some("sid"), false),
+        (1_000, &[" "], Some("sid"), false),
+        (1_000, &["password"], None, false),
+        (1_000, &["password"], Some(""), false),
+        (1_000, &["password"], Some(" "), false),
+        (1_000, &["password"], Some("\t\n"), false),
+    ];
+    for &(auth_time, methods, sid, expected) in cases {
+        let amr = methods
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            valid_authentication_metadata(auth_time, &amr, sid, 1_000),
+            expected
+        );
+    }
+}

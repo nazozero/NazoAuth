@@ -4,6 +4,7 @@ use crate::http::admin::clients::test_support::{
     admin_session_handles, insert_prepared_client, prepare_client_insert_with_secret_pepper,
 };
 use crate::settings::Settings;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use actix_web::HttpRequest;
@@ -22,7 +23,6 @@ use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_oauth_server::domain::rows::ClientRow;
-use nazo_oauth_server::sessions::SessionPayload;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;

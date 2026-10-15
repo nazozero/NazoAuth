@@ -1,3 +1,4 @@
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::{valkey_get, valkey_set_ex};
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use crate::{config::ConfigSource, settings::Settings};
@@ -22,7 +23,6 @@ use nazo_oauth_server::{
     authorization::{AuthorizationOutcome, AuthorizationRequestFacts},
     crypto::pkce_s256,
     domain::oauth::{AuthorizationCodeState, PushedAuthorizationRequest},
-    sessions::SessionPayload,
 };
 use nazo_postgres::create_pool;
 use nazo_valkey::test_support::authorization_code_storage_key as authorization_code_key;

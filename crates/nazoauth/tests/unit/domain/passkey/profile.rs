@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::settings::Settings;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabasePasskeyFixture, DatabaseUserFixture, TestInfrastructure};
 use actix_web::{
@@ -30,7 +31,6 @@ use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_identity::ports::PasskeyCredential;
 use nazo_oauth_server::services::PASSKEY_CEREMONY_TTL_SECONDS;
-use nazo_oauth_server::sessions::SessionPayload;
 use passkey_auth::RegistrationResponse;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

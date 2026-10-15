@@ -292,6 +292,7 @@ fn fixture_with_client(
         ports.clone(),
     );
     let session = CurrentSession {
+        pending_mfa: false,
         user: user.principal,
         auth_time: now - 10,
         auth_time_micros: None,

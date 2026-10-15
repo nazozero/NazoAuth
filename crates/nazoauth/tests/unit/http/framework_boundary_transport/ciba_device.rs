@@ -236,7 +236,7 @@ mod ciba_device_contract {
     }
 
     async fn store_device_session(state: &TestInfrastructure, session_id: &str, user_id: Uuid) {
-        let payload = nazo_oauth_server::sessions::SessionPayload {
+        let payload = crate::test_support::SessionPayload {
             user_id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned()],
