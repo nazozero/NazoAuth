@@ -547,6 +547,11 @@ fn pushed_request_digest_is_independent_of_hash_map_iteration_order() {
         super::pushed_authorization_request_digest(&first).unwrap(),
         super::pushed_authorization_request_digest(&second).unwrap()
     );
+    let canonical = br#"{"client_id":"client-1","params":{"redirect_uri":"https://client.example/cb","scope":"openid"},"dpop_jkt":null,"mtls_x5t_s256":null,"issued_at":"2023-11-14T22:13:20Z","expires_at":"2023-11-14T22:23:20Z"}"#;
+    assert_eq!(
+        super::pushed_authorization_request_digest(&first).unwrap(),
+        blake3::hash(canonical).to_hex().to_string()
+    );
 }
 
 #[test]

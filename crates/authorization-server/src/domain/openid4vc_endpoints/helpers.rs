@@ -168,9 +168,10 @@ pub(super) fn issuance_request_digest<T: serde::Serialize>(
         "method": method,
     });
     input["request"] = request;
-    let encoded = serde_json::to_vec(&input)
+    let mut digest = blake3::Hasher::new();
+    serde_json::to_writer(&mut digest, &input)
         .map_err(|_| vci_error(500, "server_error", "Credential request digest failed."))?;
-    Ok(blake3::hash(&encoded).to_hex().to_string())
+    Ok(digest.finalize().to_hex().to_string())
 }
 
 pub(super) fn stable_issuance_id(token_id: Uuid, request_digest: &str) -> Uuid {

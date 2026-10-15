@@ -127,14 +127,30 @@ pub(super) async fn compare_and_set_desired(
                         current: Some(current),
                     });
                 }
+                let guarded_revisions = if required_revisions.is_empty() {
+                    Vec::new()
+                } else {
+                    runtime_module_desired_states::table
+                        .filter(runtime_module_desired_states::tenant_id.eq(repository.tenant_id()))
+                        .filter(
+                            runtime_module_desired_states::module_id.eq_any(
+                                required_revisions
+                                    .iter()
+                                    .map(|guard| module_id(guard.module_id)),
+                            ),
+                        )
+                        .select((
+                            runtime_module_desired_states::module_id,
+                            runtime_module_desired_states::revision,
+                        ))
+                        .load::<(String, i64)>(connection)
+                        .await?
+                };
                 for guard in &required_revisions {
-                    let guarded_revision = runtime_module_desired_states::table
-                        .find((repository.tenant_id(), module_id(guard.module_id)))
-                        .select(runtime_module_desired_states::revision)
-                        .first::<i64>(connection)
-                        .await
-                        .optional()?
-                        .map(mapping::parse_revision)
+                    let guarded_revision = guarded_revisions
+                        .iter()
+                        .find(|(id, _)| id == module_id(guard.module_id))
+                        .map(|(_, revision)| mapping::parse_revision(*revision))
                         .transpose()
                         .map_err(RuntimeTransactionError::Repository)?;
                     if guarded_revision != guard.expected_revision {

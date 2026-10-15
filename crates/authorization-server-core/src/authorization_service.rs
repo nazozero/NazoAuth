@@ -269,9 +269,10 @@ pub fn pushed_authorization_request_digest(
         issued_at: &request.issued_at,
         expires_at: &request.expires_at,
     };
-    serde_json::to_vec(&canonical)
-        .map(|encoded| blake3::hash(&encoded).to_hex().to_string())
-        .map_err(|_| AuthorizationPortError::Unexpected)
+    let mut digest = blake3::Hasher::new();
+    serde_json::to_writer(&mut digest, &canonical)
+        .map_err(|_| AuthorizationPortError::Unexpected)?;
+    Ok(digest.finalize().to_hex().to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -770,7 +771,8 @@ where
             {
                 return Err(AuthorizationPortError::CorruptData);
             }
-            let encoded = serde_json::to_vec(&code.payload)
+            let mut digest = blake3::Hasher::new();
+            serde_json::to_writer(&mut digest, &code.payload)
                 .map_err(|_| AuthorizationPortError::CorruptData)?;
             let fields = input
                 .audit_fields
@@ -783,7 +785,7 @@ where
             fields.insert("code_hash".to_owned(), Value::String(code.hash.clone()));
             fields.insert(
                 "code_payload_digest".to_owned(),
-                Value::String(blake3::hash(&encoded).to_hex().to_string()),
+                Value::String(digest.finalize().to_hex().to_string()),
             );
             input.retain_until = input.retain_until.max(code.payload.expires_at);
         }

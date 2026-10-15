@@ -428,9 +428,9 @@ impl LogoutService {
 
 #[must_use]
 pub fn logout_operation_key(session: &LogoutSession) -> String {
-    let mut input = Vec::with_capacity(32 + session.oidc_sid.len());
-    input.extend_from_slice(b"oidc-logout:v1\0");
-    input.extend_from_slice(session.user_id.as_bytes());
-    input.extend_from_slice(session.oidc_sid.as_bytes());
-    blake3::hash(&input).to_hex().to_string()
+    let mut digest = blake3::Hasher::new();
+    digest.update(b"oidc-logout:v1\0");
+    digest.update(session.user_id.as_bytes());
+    digest.update(session.oidc_sid.as_bytes());
+    digest.finalize().to_hex().to_string()
 }

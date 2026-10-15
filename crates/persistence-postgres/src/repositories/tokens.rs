@@ -622,10 +622,11 @@ fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), Re
     })?;
     // Keep this adapter's existing deterministic struct encoding. Historical
     // family references never pass through this path or have their key recomputed.
-    let bytes = serde_json::to_vec(contract).map_err(|error| {
+    let mut digest = blake3::Hasher::new();
+    serde_json::to_writer(&mut digest, contract).map_err(|error| {
         RepositoryError::Consistency(format!("refresh contract could not be encoded: {error}"))
     })?;
-    Ok((blake3::hash(&bytes).as_bytes().to_vec(), value))
+    Ok((digest.finalize().as_bytes().to_vec(), value))
 }
 
 /// Only new families serialize/hash their original contract before borrowing
