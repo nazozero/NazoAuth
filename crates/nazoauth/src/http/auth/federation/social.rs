@@ -208,10 +208,10 @@ fn normalize_social_identity(
     let claims = json!({
         "adapter": "oauth2_social",
         "kind": format!("{:?}", provider.kind).to_ascii_lowercase(),
-        "subject": subject.clone(),
-        "email": email.clone(),
+        "subject": subject,
+        "email": email,
         "email_verified": email_verified,
-        "display_name": display_name.clone(),
+        "display_name": display_name,
         "union_id": union_id,
         "userinfo": userinfo,
         "openid": openid_claims,
