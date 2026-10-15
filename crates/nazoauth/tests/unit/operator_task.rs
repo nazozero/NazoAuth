@@ -387,7 +387,7 @@ fn apply_change_sets_are_digest_bound_to_the_signed_identities() {
 }
 
 #[test]
-fn config_revision_fencing_against_the_local_marker_is_constant_time() {
+fn config_revision_fencing_rejects_stale_missing_and_empty_markers() {
     let directory = temporary_directory();
     let marker = directory.join("config-revision");
     fs::write(&marker, b"config-revision-1\n").unwrap();
