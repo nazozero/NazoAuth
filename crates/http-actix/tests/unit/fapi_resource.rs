@@ -71,7 +71,7 @@ impl FapiHttpMessageSignatures for DisabledSignatures {
         &'a self,
         _tenant_id: &'a str,
         _client_id: &'a str,
-        _input: &'a VerifiedInput,
+        _input: &'a ParsedSignatureInput,
     ) -> FapiFuture<'a, Result<(), FapiSignatureVerificationError>> {
         Box::pin(async { unreachable!("disabled signatures are not verified") })
     }
@@ -199,7 +199,7 @@ impl FapiHttpMessageSignatures for EnabledSignatures {
         &'a self,
         tenant_id: &'a str,
         _client_id: &'a str,
-        _input: &'a VerifiedInput,
+        _input: &'a ParsedSignatureInput,
     ) -> FapiFuture<'a, Result<(), FapiSignatureVerificationError>> {
         self.verify_calls.fetch_add(1, Ordering::Relaxed);
         self.verified_tenants

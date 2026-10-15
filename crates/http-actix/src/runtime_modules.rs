@@ -196,13 +196,17 @@ async fn require_runtime_admin(
     endpoint: &RuntimeModuleAdminEndpoint,
     request: &HttpRequest,
     require_recent_mfa: bool,
-) -> Result<Box<CurrentSession>, HttpResponse> {
+) -> Result<Box<CurrentSession<nazo_identity::Principal>>, HttpResponse> {
     let Some(session_id) = endpoint.cookies.session_id(request) else {
         return Err(admin_required());
     };
     let now = (endpoint.now)();
     let now_seconds = unix_timestamp(now);
-    let session = match endpoint.sessions.current(&session_id, now_seconds).await {
+    let session = match endpoint
+        .sessions
+        .current_principal(&session_id, now_seconds)
+        .await
+    {
         Ok(SessionResolution::Present(session)) => session,
         Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
             return Err(admin_required());
@@ -215,7 +219,7 @@ async fn require_runtime_admin(
             )));
         }
     };
-    if session.user().admin_level() < 2 {
+    if session.user().admin_level().unwrap_or(0) < 2 {
         return Err(no_store(oauth_error(
             StatusCode::FORBIDDEN,
             "access_denied",
@@ -240,7 +244,7 @@ fn admin_required() -> HttpResponse {
     ))
 }
 
-fn recent_mfa(session: &CurrentSession, now: i64) -> bool {
+fn recent_mfa(session: &CurrentSession<nazo_identity::Principal>, now: i64) -> bool {
     nazo_identity::session::recent_interactive_mfa(session.auth_time(), session.amr(), now)
 }
 

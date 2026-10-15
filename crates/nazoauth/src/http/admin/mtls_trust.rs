@@ -66,7 +66,7 @@ pub(crate) async fn admin_mtls_trust_requests(
     };
     match service
         .page(
-            admin.principal.tenant.tenant_id,
+            admin.tenant.tenant_id,
             status,
             i64::from(page_size),
             i64::from(offset),
@@ -147,21 +147,11 @@ async fn resolve(
     }
     let result = if approve {
         service
-            .approve(
-                admin.principal.tenant.tenant_id,
-                request_id,
-                admin.user_id(),
-                note,
-            )
+            .approve(admin.tenant.tenant_id, request_id, admin.user_id, note)
             .await
     } else {
         service
-            .reject(
-                admin.principal.tenant.tenant_id,
-                request_id,
-                admin.user_id(),
-                note,
-            )
+            .reject(admin.tenant.tenant_id, request_id, admin.user_id, note)
             .await
     };
     match result {
@@ -235,9 +225,9 @@ pub(crate) async fn admin_revoke_mtls_trust_anchor(
     }
     match service
         .revoke(
-            admin.principal.tenant.tenant_id,
+            admin.tenant.tenant_id,
             request_id,
-            admin.user_id(),
+            admin.user_id,
             reason.to_owned(),
         )
         .await
@@ -272,10 +262,7 @@ pub(crate) async fn admin_mtls_trust_bundle(
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
-    match service
-        .active_bundle(admin.principal.tenant.tenant_id, None)
-        .await
-    {
+    match service.active_bundle(admin.tenant.tenant_id, None).await {
         Ok(bundle) => {
             let bundle_sha256 = sha256_hex(bundle.as_bytes());
             let certificate_count = bundle.matches("-----BEGIN CERTIFICATE-----").count();

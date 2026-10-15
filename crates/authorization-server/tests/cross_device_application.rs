@@ -292,7 +292,7 @@ fn fixture_with_client(
         ports.clone(),
     );
     let session = CurrentSession {
-        user,
+        user: user.principal,
         auth_time: now - 10,
         auth_time_micros: None,
         amr: vec!["pwd".into(), "otp".into()],
@@ -467,7 +467,7 @@ fn ciba_decision_audit_failure_never_mutates_request_state() {
 fn ciba_decision_binds_expected_user_to_current_session() {
     block_on(async {
         let (application, ports, mut session, _) = fixture(AuditFailure::None);
-        session.user.principal.user_id = UserId::new(Uuid::from_u128(999)).unwrap();
+        session.user.user_id = UserId::new(Uuid::from_u128(999)).unwrap();
         let error = application
             .decide("auth-request".into(), "deny", &session, "127.0.0.1")
             .await

@@ -246,7 +246,7 @@ pub(crate) async fn admin_controller_approval(
     match registry
         .issue_approval_with_required_audit(
             AdminIdentityAudit {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 actor_user_id: admin.id(),
                 source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
             },
@@ -346,7 +346,7 @@ pub(crate) async fn admin_controller_slot_commit(
             &body.request(),
             Utc::now(),
             AdminIdentityAudit {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 actor_user_id: admin.id(),
                 source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
             },
@@ -406,7 +406,7 @@ pub(crate) async fn admin_controller_slot_rotate(
             &body.request(),
             Utc::now(),
             AdminIdentityAudit {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 actor_user_id: admin.id(),
                 source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
             },
@@ -460,7 +460,7 @@ pub(crate) async fn admin_controller_slot_revoke(
             &body.request(),
             Utc::now(),
             AdminIdentityAudit {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 actor_user_id: admin.id(),
                 source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
             },

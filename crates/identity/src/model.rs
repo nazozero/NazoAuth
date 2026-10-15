@@ -38,11 +38,28 @@ pub struct Principal {
 
 impl Principal {
     #[must_use]
+    pub const fn id(&self) -> uuid::Uuid {
+        self.user_id.as_uuid()
+    }
+
+    #[must_use]
     pub const fn admin_level(&self) -> Option<u32> {
         match self.role {
             UserRole::User => None,
             UserRole::Admin { level } => Some(level),
         }
+    }
+}
+
+impl AsRef<Principal> for Principal {
+    fn as_ref(&self) -> &Principal {
+        self
+    }
+}
+
+impl AsRef<Principal> for PublicAccount {
+    fn as_ref(&self) -> &Principal {
+        &self.principal
     }
 }
 

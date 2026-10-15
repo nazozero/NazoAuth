@@ -300,7 +300,14 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     .expect("JSON response should be stored");
     assert_eq!(stored.status, 200);
     assert_eq!(stored.dpop_nonce.as_deref(), Some("dpop"));
-    let recovered = response_from_record(stored).expect("stored JSON should recover");
+    assert!(
+        response_from_record(stored.clone(), nazo_auth::DpopNoncePolicy::Optional)
+            .expect("optional policy must omit a historical nonce")
+            .dpop_nonce
+            .is_none()
+    );
+    let recovered = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required)
+        .expect("stored JSON should recover");
     assert_eq!(recovered.dpop_nonce.as_deref(), Some("dpop"));
     assert!(matches!(recovered.body, CredentialResponseBody::Json(_)));
 
@@ -322,7 +329,9 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     .expect("deferred response should be stored");
     assert_eq!(stored.status, 202);
     assert_eq!(
-        response_from_record(stored).unwrap().status,
+        response_from_record(stored, nazo_auth::DpopNoncePolicy::Required)
+            .unwrap()
+            .status,
         nazo_openid4vci::application::CredentialResponseStatus::Deferred
     );
 
@@ -338,7 +347,8 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     )
     .expect("JWT response should be stored");
     assert_eq!(stored.status, 202);
-    let recovered = response_from_record(stored).expect("stored JWT should recover");
+    let recovered = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required)
+        .expect("stored JWT should recover");
     assert_eq!(
         recovered.status,
         nazo_openid4vci::application::CredentialResponseStatus::Deferred
@@ -360,7 +370,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         expires_at: now,
     };
     assert_eq!(
-        response_from_record(invalid.clone())
+        response_from_record(invalid.clone(), nazo_auth::DpopNoncePolicy::Required)
             .expect_err("invalid JSON must fail")
             .error,
         "server_error"
@@ -368,7 +378,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     invalid.encoding = CredentialResponseEncoding::Jwt;
     invalid.body = vec![0xff];
     assert_eq!(
-        response_from_record(invalid)
+        response_from_record(invalid, nazo_auth::DpopNoncePolicy::Required)
             .expect_err("invalid UTF-8 must fail")
             .error,
         "server_error"

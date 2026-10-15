@@ -2813,3 +2813,36 @@ fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
         expires_at: chrono::DateTime::from_timestamp(1_700_003_600, 0).unwrap(),
     }
 }
+
+#[tokio::test]
+async fn session_principal_projection_is_tenant_scoped_and_single_read() {
+    use nazo_identity::ports::SessionAccountPort;
+    let _serial = SERIAL.lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&url, tenant).await;
+    let (pool, counter) = instrumented_pool(&url).await;
+    let repository = UserRepository::new(pool);
+    for (scope, expected) in [
+        (tenant.tenant_id, true),
+        (TenantId::new(Uuid::now_v7()).unwrap(), false),
+    ] {
+        let (result, delta) = measure(
+            &counter,
+            SessionAccountPort::principal_by_id(
+                &repository,
+                scope,
+                UserId::new(seed.user_id).unwrap(),
+            ),
+        )
+        .await;
+        assert_eq!(result.unwrap().is_some(), expected);
+        assert_eq!(delta.data_queries, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+    cleanup_seed(&url, tenant, &seed).await;
+}

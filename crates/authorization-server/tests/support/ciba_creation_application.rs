@@ -27,7 +27,7 @@ fn creation_fixture(
     authorization_fixture::Fixture,
 ) {
     let fixture = fixture_with_client(failure, client, true);
-    *fixture.1.account.lock().unwrap() = Some(Ok(Some(fixture.2.user.clone())));
+    *fixture.1.account.lock().unwrap() = Some(Ok(Some(authorization_fixture::account())));
     let salt = app::crypto::random_urlsafe_token();
     *fixture.3.ports.client_secret.lock().unwrap() = Some((
         salt.clone(),
@@ -179,11 +179,10 @@ fn creation_requires_active_user_and_durable_audit_and_reports_state_failure() {
             }
         }
         for inactive in [false, true] {
-            let (application, ports, mut session, _) =
-                creation_fixture(AuditFailure::None, client());
-            session.user.principal.active = false;
-            *ports.account.lock().unwrap() =
-                Some(Ok(if inactive { Some(session.user) } else { None }));
+            let (application, ports, _, _) = creation_fixture(AuditFailure::None, client());
+            let mut account = authorization_fixture::account();
+            account.principal.active = false;
+            *ports.account.lock().unwrap() = Some(Ok(if inactive { Some(account) } else { None }));
             let error = create(&application, form())
                 .await
                 .err()

@@ -11,8 +11,8 @@ use crate::verify::{
     top_level_parameter_count, validate_parameters, validate_time,
 };
 use crate::{
-    BodyDigest, PreparedSignature, RequestInput, SignatureFields, VerificationPolicy,
-    VerifiedInput, VerifyError, content_digest_field_matches,
+    BodyDigest, ParsedSignatureInput, PreparedSignature, RequestInput, SignatureFields,
+    VerificationPolicy, VerifyError, content_digest_field_matches,
 };
 
 const SIGNATURE_NAME: &str = "nazo";
@@ -103,7 +103,7 @@ pub fn parse_response_for_verification(
     original: OriginalRequest<'_>,
     fields: SignatureFields,
     policy: VerificationPolicy,
-) -> Result<VerifiedInput, VerifyError> {
+) -> Result<ParsedSignatureInput, VerifyError> {
     validate_body_digest(response.headers, response.body)?;
     validate_original_digest(&original, None).map_err(|_| VerifyError::DigestMismatch)?;
 
@@ -171,7 +171,7 @@ pub fn parse_response_for_verification(
     base.push_str(signature_params);
     let replay_fingerprint = fingerprint(base.as_bytes(), keyid.as_bytes());
 
-    Ok(VerifiedInput::new(
+    Ok(ParsedSignatureInput::new(
         base.into_bytes(),
         signature,
         keyid.to_owned(),

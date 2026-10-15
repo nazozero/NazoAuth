@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use nazo_http_signatures::VerifiedInput;
+use nazo_http_signatures::ParsedSignatureInput;
 use nazo_resource_server::{
     ProtectedResourceAuthorizationContext, ProtectedResourceAuthorizationError,
     ProtectedResourceAuthorizationRequest, ProtectedResourceAuthorizationResult,
@@ -52,7 +52,7 @@ pub trait FapiHttpMessageSignatures: Send + Sync {
         &'a self,
         tenant_id: &'a str,
         client_id: &'a str,
-        input: &'a VerifiedInput,
+        input: &'a ParsedSignatureInput,
     ) -> FapiFuture<'a, Result<(), FapiSignatureVerificationError>>;
 
     fn response_signature(

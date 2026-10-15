@@ -216,12 +216,10 @@ pub use token::{
     RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 pub use token_endpoint::{
-    AdmittedTokenClient, AppliedSenderConstraint, AuthorizationCodeTokenRequest,
-    ClientCredentialsTokenRequest, PresentedSenderConstraint, RefreshTokenRequest,
+    AdmittedTokenClient, AppliedSenderConstraint, PresentedSenderConstraint,
     TokenClientAuthPresentation, TokenClientAuthenticationContext, TokenClientPolicy,
-    TokenEndpointDispatch, TokenEndpointError, TokenEndpointRequestInput, admit_token_client,
-    apply_sender_constraint, sender_constraint_policy, token_client_authentication_context,
-    token_endpoint_dispatch,
+    TokenEndpointError, admit_token_client, apply_sender_constraint, sender_constraint_policy,
+    token_client_authentication_context,
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,

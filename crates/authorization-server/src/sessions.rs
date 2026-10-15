@@ -1,7 +1,7 @@
 //! Session resolution and administrator authentication policy.
 use chrono::Utc;
 use nazo_identity::{
-    PublicAccount, SessionId, TenantId,
+    Principal, PublicAccount, SessionId, TenantId,
     ports::{RepositoryError, SessionAccountPort, SessionStorePort},
 };
 use serde::{Deserialize, Serialize};
@@ -19,8 +19,8 @@ pub struct SessionPayload {
     pub oidc_sid: Option<String>,
 }
 
-pub struct CurrentSession {
-    pub user: PublicAccount,
+pub struct CurrentSession<A = Principal> {
+    pub user: A,
     pub auth_time: i64,
     pub auth_time_micros: Option<i64>,
     pub amr: Vec<String>,
@@ -71,29 +71,46 @@ impl SessionResolver {
         &self,
         session_id: &str,
     ) -> anyhow::Result<Option<CurrentSession>> {
-        match self
-            .service
-            .current(&SessionId::new(session_id), Utc::now().timestamp())
-            .await?
-        {
-            nazo_identity::SessionResolution::Present(session) => {
-                let auth_time = session.auth_time();
-                let auth_time_micros = session.auth_time_micros();
-                let amr = session.amr().to_vec();
-                let oidc_sid = session.oidc_sid().to_owned();
-                let logged_in_client_ids = session.logged_in_client_ids().to_vec();
-                Ok(Some(CurrentSession {
-                    user: (*session).into_user(),
-                    auth_time,
-                    auth_time_micros,
-                    amr,
-                    oidc_sid,
-                    logged_in_client_ids,
-                }))
-            }
-            nazo_identity::SessionResolution::Missing
-            | nazo_identity::SessionResolution::Invalidated => Ok(None),
+        Ok(resolved_session(
+            self.service
+                .current_principal(&SessionId::new(session_id), Utc::now().timestamp())
+                .await?,
+        ))
+    }
+
+    pub async fn current_profile_session_by_id(
+        &self,
+        session_id: &str,
+    ) -> anyhow::Result<Option<CurrentSession<PublicAccount>>> {
+        Ok(resolved_session(
+            self.service
+                .current(&SessionId::new(session_id), Utc::now().timestamp())
+                .await?,
+        ))
+    }
+}
+
+fn resolved_session<A>(
+    resolution: nazo_identity::SessionResolution<A>,
+) -> Option<CurrentSession<A>> {
+    match resolution {
+        nazo_identity::SessionResolution::Present(session) => {
+            let auth_time = session.auth_time();
+            let auth_time_micros = session.auth_time_micros();
+            let amr = session.amr().to_vec();
+            let oidc_sid = session.oidc_sid().to_owned();
+            let logged_in_client_ids = session.logged_in_client_ids().to_vec();
+            Some(CurrentSession {
+                user: (*session).into_user(),
+                auth_time,
+                auth_time_micros,
+                amr,
+                oidc_sid,
+                logged_in_client_ids,
+            })
         }
+        nazo_identity::SessionResolution::Missing
+        | nazo_identity::SessionResolution::Invalidated => None,
     }
 }
 
@@ -107,12 +124,15 @@ pub fn require_admin_session(
     session: Option<CurrentSession>,
 ) -> Result<CurrentSession, AdminSessionError> {
     match session {
-        Some(session) if session.user.admin_level() > 0 => Ok(session),
+        Some(session) if session.user.admin_level().unwrap_or(0) > 0 => Ok(session),
         Some(_) | None => Err(AdminSessionError::AccessDenied),
     }
 }
 
-pub fn require_recent_mfa(session: &CurrentSession, now: i64) -> Result<(), AdminSessionError> {
+pub fn require_recent_mfa<A>(
+    session: &CurrentSession<A>,
+    now: i64,
+) -> Result<(), AdminSessionError> {
     if recent_mfa_authentication(session.auth_time, &session.amr, now) {
         Ok(())
     } else {

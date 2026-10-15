@@ -570,7 +570,7 @@ fn parse(
     request_headers: &[(&str, &str)],
     request_fields: &SignatureFields,
     response_fields: SignatureFields,
-) -> Result<nazo_http_signatures::VerifiedInput, VerifyError> {
+) -> Result<nazo_http_signatures::ParsedSignatureInput, VerifyError> {
     parse_response_for_verification(
         ResponseInput {
             status,

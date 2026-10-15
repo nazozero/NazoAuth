@@ -72,6 +72,18 @@ impl nazo_identity::ports::SessionStorePort for UnreachableProfileDependencies {
 }
 
 impl nazo_identity::ports::SessionAccountPort for UnreachableProfileDependencies {
+    fn principal_by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         _tenant: nazo_identity::TenantId,

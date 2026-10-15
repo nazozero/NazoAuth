@@ -230,7 +230,6 @@ impl ServerUserinfoOperations {
                 self.handles
                     .issue_dpop_nonce()
                     .await
-                    .map(Some)
                     .map_err(map_dpop_error)
             }
             (AccessTokenAuthScheme::DPoP, _) => {
@@ -383,8 +382,13 @@ impl UserinfoHandles {
         .await
     }
 
-    pub async fn issue_dpop_nonce(&self) -> Result<String, DpopError> {
-        nazo_auth::issue_authorization_server_dpop_nonce(self.dpop_state.as_ref()).await
+    pub async fn issue_dpop_nonce(&self) -> Result<Option<String>, DpopError> {
+        if self.config.dpop_nonce_policy == DpopNoncePolicy::Optional {
+            return Ok(None);
+        }
+        nazo_auth::issue_authorization_server_dpop_nonce(self.dpop_state.as_ref())
+            .await
+            .map(Some)
     }
 
     pub async fn sign_response_jwt(

@@ -298,6 +298,9 @@ where
     };
     match store.validate_nonce(nonce).await {
         Ok(true) => Ok(()),
+        // Optional mode never announces a nonce requirement that a retry can
+        // drop. A supplied invalid nonce remains an invalid proof.
+        Ok(false) if policy == DpopNoncePolicy::Optional => Err(DpopError::InvalidProof),
         Ok(false) => Err(DpopError::UseNonce(
             issue_authorization_server_dpop_nonce(store).await?,
         )),

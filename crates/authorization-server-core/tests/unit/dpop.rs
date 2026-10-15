@@ -423,6 +423,35 @@ fn required_nonce_is_reusable_while_jti_replay_remains_one_time() {
     );
 }
 
+#[test]
+fn optional_nonce_rejects_unknown_nonce_without_issuing_a_challenge() {
+    futures_executor::block_on(async {
+        let state = AtomicDpopState::default();
+        let invalid = proof(public_jwk(), json!({"nonce": "unknown"}));
+        assert_eq!(
+            validate_authorization_server_dpop_at(
+                &state,
+                request(Some(&invalid), None),
+                DpopNoncePolicy::Optional,
+                NOW,
+            )
+            .await,
+            Err(DpopError::InvalidProof),
+        );
+        assert!(state.nonces.lock().unwrap().is_empty());
+        assert!(state.replay.lock().unwrap().is_empty());
+        let omitted = proof(public_jwk(), json!({}));
+        validate_authorization_server_dpop_at(
+            &state,
+            request(Some(&omitted), None),
+            DpopNoncePolicy::Optional,
+            NOW,
+        )
+        .await
+        .expect("optional mode never announced a nonce requirement");
+    });
+}
+
 async fn required_nonce_is_reusable_while_jti_replay_remains_one_time_async() {
     let state = AtomicDpopState::default();
     let proof_without_nonce = proof(public_jwk(), json!({}));
@@ -437,6 +466,17 @@ async fn required_nonce_is_reusable_while_jti_replay_remains_one_time_async() {
     let DpopError::UseNonce(nonce) = challenge else {
         panic!("missing nonce must return use_dpop_nonce");
     };
+
+    assert!(matches!(
+        validate_authorization_server_dpop_at(
+            &state,
+            request(Some(&proof_without_nonce), None),
+            DpopNoncePolicy::Required,
+            NOW,
+        )
+        .await,
+        Err(DpopError::UseNonce(_))
+    ));
 
     let proof_with_nonce = proof(public_jwk(), json!({"nonce": nonce}));
     validate_authorization_server_dpop_at(

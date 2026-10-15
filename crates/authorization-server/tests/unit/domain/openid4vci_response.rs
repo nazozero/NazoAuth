@@ -34,7 +34,13 @@ fn dpop_nonce_generation_fails_closed_when_nonce_state_is_unavailable() {
             dpop_jkt: Some("unit-dpop-thumbprint".to_owned()),
             expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
         };
-        let error = next_dpop_nonce(&UnavailableDpopState, &access)
+        assert_eq!(
+            next_dpop_nonce(&UnavailableDpopState, &access, DpopNoncePolicy::Optional)
+                .await
+                .expect("optional policy must not access nonce storage"),
+            None
+        );
+        let error = next_dpop_nonce(&UnavailableDpopState, &access, DpopNoncePolicy::Required)
             .await
             .expect_err("unavailable DPoP nonce state must fail closed");
         assert_error(
@@ -198,7 +204,7 @@ fn deferred_response_status_survives_real_encryption_and_stored_replay() {
         )
         .unwrap();
         assert_eq!(stored.status, 202);
-        let replay = response_from_record(stored).unwrap();
+        let replay = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required).unwrap();
         assert_eq!(replay.status, CredentialResponseStatus::Deferred);
         assert_eq!(replay.body, body);
         let CredentialResponseBody::Jwt(encoded) = replay.body else {

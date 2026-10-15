@@ -424,6 +424,55 @@ fn missing_required_nonce_does_not_consume_replay_marker() {
     block_on(missing_required_nonce_does_not_consume_replay_marker_async());
 }
 
+#[test]
+fn optional_nonce_rejects_unknown_nonce_without_issuing_a_challenge() {
+    let fixture = fixture();
+    let dpop = dpop_fixture();
+    let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
+    let replay = AtomicReplayStore::default();
+    let service = ProtectedResourceAuthorizationService::new(
+        fixture.verifier,
+        DpopProofVerifier::new(DpopProofVerifierConfig::default()),
+        TestRevocations::returning(Ok(false)),
+        replay.clone(),
+    )
+    .with_dpop_nonce_policy(DpopNoncePolicy::Optional);
+    let invalid = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "optional-nonce",
+        Some("unknown"),
+        None,
+    );
+    assert_eq!(
+        block_on(service.authorize(
+            request(&access_token, AccessTokenScheme::Dpop, Some(&invalid)),
+            context(None),
+        )),
+        Err(ProtectedResourceAuthorizationError::InvalidDpopProof(
+            DpopProofVerifierError::NonceMismatch,
+        ))
+    );
+    assert!(replay.nonces.lock().unwrap().is_empty());
+    assert!(replay.keys.lock().unwrap().is_empty());
+    let omitted = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "optional-nonce",
+        None,
+        None,
+    );
+    block_on(service.authorize(
+        request(&access_token, AccessTokenScheme::Dpop, Some(&omitted)),
+        context(None),
+    ))
+    .expect("optional mode never announced a nonce requirement");
+}
+
 async fn missing_required_nonce_does_not_consume_replay_marker_async() {
     let fixture = fixture();
     let dpop = dpop_fixture();
@@ -458,6 +507,16 @@ async fn missing_required_nonce_does_not_consume_replay_marker_async() {
         error => panic!("unexpected nonce challenge error: {error:?}"),
     };
     assert_eq!(replay.keys.lock().unwrap().len(), 0);
+
+    assert!(matches!(
+        service
+            .authorize(
+                request(&access_token, AccessTokenScheme::Dpop, Some(&initial)),
+                context(None),
+            )
+            .await,
+        Err(ProtectedResourceAuthorizationError::UseDpopNonce(_))
+    ));
 
     let replayed_with_nonce = dpop_proof(
         &dpop,

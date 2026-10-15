@@ -73,6 +73,18 @@ impl FakeAccounts {
 }
 
 impl SessionAccountPort for FakeAccounts {
+    fn principal_by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         tenant_id: TenantId,
@@ -247,7 +259,7 @@ fn resolved_session_preserves_account_authentication_and_logged_in_clients() {
     let current = block_on(resolver(store.clone(), accounts).current_session_by_id("session-1"))
         .unwrap()
         .unwrap();
-    assert_eq!(current.user, user);
+    assert_eq!(current.user, user.principal);
     assert_eq!(current.auth_time, 1_000);
     assert_eq!(current.amr, ["password", "otp", "mfa"]);
     assert_eq!(current.oidc_sid, "sid-1");
@@ -269,7 +281,7 @@ fn administrator_policy_requires_a_positive_admin_level() {
         let mut user = account(true);
         user.principal.role = role;
         let session = CurrentSession {
-            user,
+            user: user.principal,
             auth_time: 1_000,
             auth_time_micros: None,
             amr: vec!["password".to_owned()],

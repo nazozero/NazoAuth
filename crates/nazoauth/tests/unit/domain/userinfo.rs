@@ -1754,3 +1754,29 @@ fn userinfo_accepts_only_userinfo_or_default_audience() {
         &json!(["resource://other", "https://issuer.example/fapi/resource"])
     ));
 }
+
+#[actix_web::test]
+async fn userinfo_optional_nonce_policy_does_not_access_nonce_storage() {
+    let mut state = userinfo_test_state();
+    Arc::get_mut(&mut state.settings)
+        .unwrap()
+        .protocol
+        .dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
+    assert_eq!(
+        userinfo_handles_from_test_infrastructure(&state)
+            .issue_dpop_nonce()
+            .await
+            .unwrap(),
+        None
+    );
+    Arc::get_mut(&mut state.settings)
+        .unwrap()
+        .protocol
+        .dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Required;
+    assert!(
+        userinfo_handles_from_test_infrastructure(&state)
+            .issue_dpop_nonce()
+            .await
+            .is_err()
+    );
+}

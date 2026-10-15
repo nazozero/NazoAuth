@@ -1,5 +1,28 @@
 # Upgrade from v0.2.16
 
+## Federated MFA session cutover
+
+Deployments upgrading from a runtime that admitted federated logins without local
+MFA must invalidate the affected pre-upgrade sessions. The new callback fixes new
+sessions; stored `pending_mfa=false` records do not record whether local MFA was
+incorrectly skipped. Without independent evidence identifying affected sessions,
+invalidate all browser sessions for that deployment at the coordinated cutover.
+
+Stop all old session writers, upgrade every serving node, and remove only the
+browser-session keys under the deployment's existing
+`nazo:state:v1:<deployment>:<epoch>:oauth:session:*` namespace before resuming traffic.
+Use bounded `SCAN`/`UNLINK` batches with the exact configured namespace. Preserve
+DPoP/client-assertion replay markers and the rest of transient state; do not flush
+Valkey or rotate its entire state epoch for this session-only repair. Users sign
+in again through the corrected MFA flow. This is an operator cutover, not an
+additional authentication check on every request.
+
+For the introspection permission cutover, follow the
+[client policy upgrade order](../protocol/composable-capability-policy.md): all
+readers must understand the new field before non-empty grants are stored.
+
+## Schema cutover
+
 Validate the complete migration chain against an isolated restore of the
 current database before stopping the deployed writer. Fresh-database tests
 cannot establish compatibility with an already-applied historical migration.

@@ -36,7 +36,7 @@ impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures for 
         &'a self,
         _tenant_id: &'a str,
         _client_id: &'a str,
-        _input: &'a nazo_http_signatures::VerifiedInput,
+        _input: &'a nazo_http_signatures::ParsedSignatureInput,
     ) -> nazo_oauth_server::contracts::fapi_resource::FapiFuture<
         'a,
         Result<(), nazo_oauth_server::contracts::fapi_resource::FapiSignatureVerificationError>,
@@ -102,7 +102,7 @@ impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures
         &'a self,
         _tenant_id: &'a str,
         _client_id: &'a str,
-        _input: &'a nazo_http_signatures::VerifiedInput,
+        _input: &'a nazo_http_signatures::ParsedSignatureInput,
     ) -> nazo_oauth_server::contracts::fapi_resource::FapiFuture<
         'a,
         Result<(), nazo_oauth_server::contracts::fapi_resource::FapiSignatureVerificationError>,
@@ -189,7 +189,7 @@ impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures
         &'a self,
         _tenant_id: &'a str,
         _client_id: &'a str,
-        _input: &'a nazo_http_signatures::VerifiedInput,
+        _input: &'a nazo_http_signatures::ParsedSignatureInput,
     ) -> nazo_oauth_server::contracts::fapi_resource::FapiFuture<
         'a,
         Result<(), nazo_oauth_server::contracts::fapi_resource::FapiSignatureVerificationError>,
@@ -350,7 +350,7 @@ mod fapi_signed_contract {
             &'a self,
             tenant: &'a str,
             client: &'a str,
-            input: &'a VerifiedInput,
+            input: &'a ParsedSignatureInput,
         ) -> FapiFuture<'a, Result<(), FapiSignatureVerificationError>> {
             self.calls.lock().unwrap().push("verify_and_consume");
             assert_eq!(tenant, "00000000-0000-0000-0000-000000000001");

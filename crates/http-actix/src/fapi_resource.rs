@@ -13,8 +13,8 @@ use actix_web::{
 };
 use chrono::Utc;
 use nazo_http_signatures::{
-    BodyDigest, OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
-    VerificationPolicy, VerifiedInput, parse_request_for_verification_with_digest,
+    BodyDigest, OriginalRequest, ParsedSignatureInput, RequestInput, ResponseInput, ResponsePolicy,
+    SignatureFields, VerificationPolicy, parse_request_for_verification_with_digest,
     prepare_response_with_digests,
 };
 use nazo_resource_server::{
@@ -451,7 +451,7 @@ impl<'body> CapturedRequest<'body> {
         Ok(headers)
     }
 
-    fn parse(&self, max_age_seconds: i64) -> Result<VerifiedInput, ()> {
+    fn parse(&self, max_age_seconds: i64) -> Result<ParsedSignatureInput, ()> {
         let fields = self.signature_fields()?;
         let headers = self.verification_headers()?;
         let digest = self.valid_digest();

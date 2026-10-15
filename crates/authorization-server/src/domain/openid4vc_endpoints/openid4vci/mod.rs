@@ -139,8 +139,9 @@ fn validate_response_encryption_transport(
 async fn next_dpop_nonce<S: DpopStateStorePort + ?Sized>(
     store: &S,
     access: &CredentialAccess,
+    policy: DpopNoncePolicy,
 ) -> Result<Option<String>, CredentialHttpError> {
-    if access.dpop_jkt.is_none() {
+    if access.dpop_jkt.is_none() || policy == DpopNoncePolicy::Optional {
         return Ok(None);
     }
     issue_authorization_server_dpop_nonce(store)

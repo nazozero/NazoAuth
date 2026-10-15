@@ -21,7 +21,7 @@ mod production {
         FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
     };
     use nazo_crypto::jwt::Algorithm;
-    use nazo_http_signatures::VerifiedInput;
+    use nazo_http_signatures::ParsedSignatureInput;
     use nazo_key_management::{HttpSigningLease, KeySnapshot};
     use nazo_resource_server::{
         AccessTokenRevocationLookup, ConfirmationPolicy,
@@ -218,7 +218,7 @@ mod production {
             &'a self,
             tenant_id: &'a str,
             client_id: &'a str,
-            input: &'a VerifiedInput,
+            input: &'a ParsedSignatureInput,
         ) -> FapiFuture<'a, Result<(), FapiSignatureVerificationError>> {
             Box::pin(async move {
                 let requested_tenant_id = nazo_identity::TenantId::new(

@@ -45,8 +45,8 @@ pub(crate) async fn admin_put_credential_dataset(
     }
     match endpoint
         .put_dataset(
-            admin.principal.tenant.tenant_id.as_uuid(),
-            admin.user_id().as_uuid(),
+            admin.tenant.tenant_id.as_uuid(),
+            admin.user_id.as_uuid(),
             subject_id,
             configuration_id.clone(),
             payload,
@@ -71,7 +71,7 @@ pub(crate) async fn admin_get_credential_dataset(
     let (subject_id, configuration_id) = path.into_inner();
     match endpoint
         .get_dataset(
-            admin.principal.tenant.tenant_id.as_uuid(),
+            admin.tenant.tenant_id.as_uuid(),
             subject_id,
             configuration_id,
         )
@@ -102,8 +102,8 @@ pub(crate) async fn admin_delete_credential_dataset(
     }
     match endpoint
         .delete_dataset(
-            admin.principal.tenant.tenant_id.as_uuid(),
-            admin.user_id().as_uuid(),
+            admin.tenant.tenant_id.as_uuid(),
+            admin.user_id.as_uuid(),
             subject_id,
             configuration_id.clone(),
         )

@@ -51,9 +51,11 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?
             {
-                return response_from_record(response);
+                return response_from_record(response, self.dpop_nonce_policy);
             }
-            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
+            let dpop_nonce =
+                next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
+                    .await?;
             let configuration = self
                 .configurations
                 .get(&configuration_id)
@@ -184,9 +186,11 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?
             {
-                return response_from_record(response);
+                return response_from_record(response, self.dpop_nonce_policy);
             }
-            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
+            let dpop_nonce =
+                next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
+                    .await?;
             let transaction_hash = blake3_hex(&request.transaction_id);
             let claim_id = Uuid::now_v7().to_string();
             let outcome = self
@@ -364,7 +368,9 @@ impl ServerCredentialIssuerOperations {
                 ));
             }
             let access = self.access(&context).await?;
-            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
+            let dpop_nonce =
+                next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
+                    .await?;
             let recorded = self
                 .store
                 .record_notification(&IssuanceNotification {

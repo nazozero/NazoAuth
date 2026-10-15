@@ -18,7 +18,9 @@ pub struct VerificationPolicy {
     pub future_skew_seconds: i64,
 }
 
-pub struct VerifiedInput {
+/// Parsed message and signature bytes. The key owner must still verify the
+/// signature and consume replay state before treating the request as authenticated.
+pub struct ParsedSignatureInput {
     signature_base: Vec<u8>,
     signature: Vec<u8>,
     keyid: String,
@@ -27,13 +29,13 @@ pub struct VerifiedInput {
     replay_fingerprint: [u8; 32],
 }
 
-impl fmt::Debug for VerifiedInput {
+impl fmt::Debug for ParsedSignatureInput {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("VerifiedInput { .. }")
+        formatter.write_str("ParsedSignatureInput { .. }")
     }
 }
 
-impl VerifiedInput {
+impl ParsedSignatureInput {
     pub fn signature_base(&self) -> &[u8] {
         &self.signature_base
     }
@@ -81,7 +83,7 @@ pub fn parse_request_for_verification(
     input: RequestInput<'_>,
     fields: SignatureFields,
     policy: VerificationPolicy,
-) -> Result<VerifiedInput, VerifyError> {
+) -> Result<ParsedSignatureInput, VerifyError> {
     parse_request_for_verification_with_digest(input, fields, policy, None)
 }
 
@@ -93,7 +95,7 @@ pub fn parse_request_for_verification_with_digest(
     fields: SignatureFields,
     policy: VerificationPolicy,
     digest: Option<&BodyDigest<'_>>,
-) -> Result<VerifiedInput, VerifyError> {
+) -> Result<ParsedSignatureInput, VerifyError> {
     let signature_input: Dictionary = Parser::new(&fields.signature_input)
         .parse()
         .map_err(|_| VerifyError::MalformedSignature)?;
@@ -209,7 +211,7 @@ pub fn parse_request_for_verification_with_digest(
 
     let replay_fingerprint = fingerprint(&signature_base, keyid.as_bytes());
 
-    Ok(VerifiedInput {
+    Ok(ParsedSignatureInput {
         signature_base,
         signature,
         keyid: keyid.to_owned(),

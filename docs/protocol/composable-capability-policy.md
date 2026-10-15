@@ -146,6 +146,9 @@ inactive. There is no fallback to issuance audience permissions.
 Empty grants are omitted when serializing existing policies. Upgrade all server
 instances before storing non-empty grants: older binaries reject this policy
 field and still use the old introspection authorization rule.
+After non-empty grants have been stored, rollback to those older binaries requires
+a coordinated data/runtime rollback; simply replacing one node's executable is
+not supported. Never copy issuance audiences into introspection grants automatically.
 
 ## Upgrade behavior
 

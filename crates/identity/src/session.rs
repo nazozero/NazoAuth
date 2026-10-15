@@ -147,8 +147,8 @@ pub enum SessionUpdateOutcome {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CurrentSession {
-    user: PublicAccount,
+pub struct CurrentSession<A = PublicAccount> {
+    user: A,
     pending_mfa: bool,
     auth_time: i64,
     auth_time_micros: Option<i64>,
@@ -157,7 +157,7 @@ pub struct CurrentSession {
     logged_in_client_ids: Vec<String>,
 }
 
-impl CurrentSession {
+impl<A> CurrentSession<A> {
     /// MFA flows may resolve either state from one validated storage snapshot.
     #[must_use]
     pub const fn pending_mfa(&self) -> bool {
@@ -165,12 +165,12 @@ impl CurrentSession {
     }
 
     #[must_use]
-    pub fn user(&self) -> &PublicAccount {
+    pub fn user(&self) -> &A {
         &self.user
     }
 
     #[must_use]
-    pub fn into_user(self) -> PublicAccount {
+    pub fn into_user(self) -> A {
         self.user
     }
 
@@ -201,8 +201,8 @@ impl CurrentSession {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SessionResolution {
-    Present(Box<CurrentSession>),
+pub enum SessionResolution<A = PublicAccount> {
+    Present(Box<CurrentSession<A>>),
     Missing,
     Invalidated,
 }
@@ -305,7 +305,22 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, Some(false)).await
+        self.resolve(session_id, now, Some(false), |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
+    }
+
+    /// Resolve an identity/authorization guard without loading profile data.
+    pub async fn current_principal(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+    ) -> Result<SessionResolution<crate::Principal>, RepositoryError> {
+        self.resolve(session_id, now, Some(false), |id| {
+            self.accounts.principal_by_id(self.tenant_id, id)
+        })
+        .await
     }
 
     pub async fn pending_mfa(
@@ -313,7 +328,10 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, Some(true)).await
+        self.resolve(session_id, now, Some(true), |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
     }
 
     /// Resolve active or pending MFA state with one session read and one active
@@ -323,7 +341,10 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, None).await
+        self.resolve(session_id, now, None, |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
     }
 
     pub async fn step_up(
@@ -375,12 +396,13 @@ impl SessionService {
         }
     }
 
-    async fn resolve(
-        &self,
+    async fn resolve<'a, A: AsRef<crate::Principal>>(
+        &'a self,
         session_id: &SessionId,
         now: i64,
         expected_pending_mfa: Option<bool>,
-    ) -> Result<SessionResolution, RepositoryError> {
+        load_account: impl FnOnce(UserId) -> crate::ports::RepositoryFuture<'a, Option<A>>,
+    ) -> Result<SessionResolution<A>, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(SessionResolution::Missing);
         };
@@ -393,11 +415,9 @@ impl SessionService {
         if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
         }
-        let Some(user) = self
-            .accounts
-            .public_account_by_id(self.tenant_id, record.user_id())
+        let Some(user) = load_account(record.user_id())
             .await?
-            .filter(|account| account.principal.active)
+            .filter(|account| account.as_ref().active)
         else {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);

@@ -323,7 +323,7 @@ fn pending(ports: &Ports) {
 }
 fn session() -> CurrentSession {
     CurrentSession {
-        user: crate::test_support::authorization::account(),
+        user: crate::test_support::authorization::account().principal,
         auth_time: Utc::now().timestamp(),
         auth_time_micros: None,
         amr: vec!["pwd".into()],

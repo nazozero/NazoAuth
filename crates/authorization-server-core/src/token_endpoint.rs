@@ -3,78 +3,6 @@ use crate::{
     SenderConstraintPolicy, validate_token_request_profile,
 };
 
-#[derive(Clone, Default, Eq, PartialEq)]
-pub struct TokenEndpointRequestInput {
-    pub grant_type: String,
-    pub code: Option<String>,
-    pub redirect_uri: Option<String>,
-    pub code_verifier: Option<String>,
-    pub refresh_token: Option<String>,
-    pub scope: Option<String>,
-    pub resources: Vec<String>,
-}
-
-impl std::fmt::Debug for TokenEndpointRequestInput {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("TokenEndpointRequestInput([REDACTED])")
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct AuthorizationCodeTokenRequest {
-    pub code: String,
-    pub redirect_uri: Option<String>,
-    pub code_verifier: Option<String>,
-    pub resources: Vec<String>,
-}
-
-impl std::fmt::Debug for AuthorizationCodeTokenRequest {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("AuthorizationCodeTokenRequest([REDACTED])")
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct RefreshTokenRequest {
-    pub refresh_token: String,
-    pub scope: Option<String>,
-    pub resources: Vec<String>,
-}
-
-impl std::fmt::Debug for RefreshTokenRequest {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("RefreshTokenRequest([REDACTED])")
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ClientCredentialsTokenRequest {
-    pub scope: Option<String>,
-    pub resources: Vec<String>,
-}
-
-/// Typed dispatch target. Extension grants remain explicit without forcing
-/// their state machines into the core three-grant request model.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TokenEndpointDispatch {
-    AuthorizationCode(AuthorizationCodeTokenRequest),
-    RefreshToken(RefreshTokenRequest),
-    ClientCredentials(ClientCredentialsTokenRequest),
-    Extension(GrantType),
-}
-
-impl TokenEndpointDispatch {
-    #[must_use]
-    pub const fn grant_type(&self) -> GrantType {
-        match self {
-            Self::AuthorizationCode(_) => GrantType::AuthorizationCode,
-            Self::RefreshToken(_) => GrantType::RefreshToken,
-            Self::ClientCredentials(_) => GrantType::ClientCredentials,
-            Self::Extension(grant_type) => *grant_type,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TokenEndpointError {
     InvalidRequest,
@@ -101,51 +29,6 @@ impl TokenEndpointError {
             Self::ServerError => "server_error",
         }
     }
-}
-
-/// Parses the transport-neutral token form into one typed dispatch target.
-pub fn token_endpoint_dispatch(
-    request: &TokenEndpointRequestInput,
-) -> Result<TokenEndpointDispatch, TokenEndpointError> {
-    let grant_type = GrantType::try_from(request.grant_type.as_str())
-        .map_err(|_| TokenEndpointError::UnsupportedGrantType)?;
-    match grant_type {
-        GrantType::AuthorizationCode => {
-            let code = required_nonempty(request.code.as_deref())
-                .ok_or(TokenEndpointError::InvalidGrant)?;
-            Ok(TokenEndpointDispatch::AuthorizationCode(
-                AuthorizationCodeTokenRequest {
-                    code,
-                    redirect_uri: request.redirect_uri.clone(),
-                    code_verifier: request.code_verifier.clone(),
-                    resources: request.resources.clone(),
-                },
-            ))
-        }
-        GrantType::RefreshToken => {
-            let refresh_token = required_nonempty(request.refresh_token.as_deref())
-                .ok_or(TokenEndpointError::InvalidGrant)?;
-            Ok(TokenEndpointDispatch::RefreshToken(RefreshTokenRequest {
-                refresh_token,
-                scope: request.scope.clone(),
-                resources: request.resources.clone(),
-            }))
-        }
-        GrantType::ClientCredentials => Ok(TokenEndpointDispatch::ClientCredentials(
-            ClientCredentialsTokenRequest {
-                scope: request.scope.clone(),
-                resources: request.resources.clone(),
-            },
-        )),
-        GrantType::DeviceCode
-        | GrantType::TokenExchange
-        | GrantType::JwtBearer
-        | GrantType::Ciba => Ok(TokenEndpointDispatch::Extension(grant_type)),
-    }
-}
-
-fn required_nonempty(value: Option<&str>) -> Option<String> {
-    value.filter(|value| !value.is_empty()).map(str::to_owned)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

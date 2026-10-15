@@ -336,7 +336,9 @@ pub async fn issue_token_response(
         .map(|source| source.family_id)
         .or_else(|| refresh_family.as_ref().map(|(family, _, _)| *family))
         .unwrap_or(issuance_id);
-    let next_dpop_nonce = if issue.dpop_jkt.is_some() {
+    let next_dpop_nonce = if issue.dpop_jkt.is_some()
+        && context.config.dpop_nonce_policy == DpopNoncePolicy::Required
+    {
         match issue_authorization_server_dpop_nonce(context.authorization).await {
             Ok(nonce) => Some(nonce),
             Err(error) => {

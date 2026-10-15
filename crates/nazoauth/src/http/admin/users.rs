@@ -36,7 +36,7 @@ pub(crate) async fn admin_users(
     };
     let (page, page_size, offset) = pagination(&q);
     let (total, user_rows) = match users
-        .page(admin.tenant().tenant_id, page_size as i64, offset as i64)
+        .page(admin.tenant.tenant_id, page_size as i64, offset as i64)
         .await
     {
         Ok(page) => (page.total, page.users),
@@ -103,7 +103,7 @@ pub(crate) async fn system_set_tenant_admin(
     let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req)
         .await
     {
-        Ok(admin) if admin.admin_level() >= 2 => admin,
+        Ok(admin) if admin.admin_level().unwrap_or(0) >= 2 => admin,
         Ok(_) => {
             return oauth_error(
                 StatusCode::FORBIDDEN,
@@ -246,13 +246,13 @@ pub(crate) async fn admin_create_user(
     match accounts
         .create_user_with_required_audit(
             NewUser {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 username: format!("user_{}", Uuid::now_v7()),
                 email,
                 password_hash,
                 email_verified: true,
             },
-            admin.user_id(),
+            admin.user_id,
             source_ip_hash,
         )
         .await
@@ -328,7 +328,7 @@ pub(crate) async fn admin_patch_user(
     let source_ip_hash = blake3_hex(&client_ip_with_config(&req, &client_ip_config));
     let updated = match users
         .update_authorized_with_required_audit(
-            admin.tenant(),
+            admin.tenant,
             actor_id,
             user_id,
             nazo_identity::ports::AdminUserUpdate {

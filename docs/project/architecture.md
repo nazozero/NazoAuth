@@ -372,6 +372,18 @@ OP session before returning an authorization code; a missing session or failed
 binding cannot return the code. A committed decision is not undone by a later
 session-binding or response failure.
 
+Authorization, administrator and runtime-module guards resolve `Principal`
+through the existing tenant-scoped narrow query. Profile and MFA consumers use
+`PublicAccount` from a single full projection. Both projections pass through the
+same session metadata, pending-MFA and active-account gates; profile consumers do
+not first load a principal and then query the account again.
+
+Token grant orchestration belongs to `authorization-server::token::dispatch`;
+the core owns `GrantType` and admission policy. Rust callers use the application
+dispatcher and its form model. HTTP signature parsers return
+`ParsedSignatureInput`; signature verification and replay consumption remain with
+the key-owning verifier.
+
 High-impact administration uses one identity-owned interactive-MFA predicate:
 `mfa` plus `otp` or `recovery_code`, with an authentication age from zero through
 300 seconds inclusive. Future authentication times do not count as completed

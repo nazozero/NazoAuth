@@ -1169,6 +1169,14 @@ impl nazo_identity::ports::LoginAccountRepositoryPort for UserRepository {
 }
 
 impl nazo_identity::ports::SessionAccountPort for UserRepository {
+    fn principal_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<Principal>> {
+        Box::pin(self.principal_by_tenant_id(tenant_id, user_id))
+    }
+
     fn public_account_by_id(
         &self,
         tenant_id: nazo_identity::TenantId,

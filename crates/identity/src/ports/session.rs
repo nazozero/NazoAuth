@@ -58,6 +58,12 @@ where
 
 /// Reads the minimum account projection required to resolve an authenticated session.
 pub trait SessionAccountPort: Send + Sync {
+    fn principal_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<crate::Principal>>;
+
     fn public_account_by_id(
         &self,
         tenant_id: TenantId,

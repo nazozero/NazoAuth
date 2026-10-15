@@ -261,10 +261,12 @@ remain plaintext; disclosure references within them are rejected. `iat` and
 `sub` may be selectively disclosed, as specified in
 [SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
 
-A returned credential `status` is metadata, not a credential-level revocation
-verdict. The verifier checks configured issuer certificate revocation; it does
-not fetch or evaluate Token Status Lists. Deployments requiring individual
-credential revocation cannot rely on certificate checks to satisfy that rule.
+The verifier accepts credentials without individual status references. A signed
+`status` in SD-JWT VC or mdoc is rejected with `InvalidStatus`: no individual
+credential status mechanism, including Token Status Lists, is currently supported.
+Issuer certificate revocation remains a separate check. Deployments that require
+individual credential revocation need a supported status evaluator before they can
+accept those credentials; the verifier does not make online status requests.
 
 ### DCQL known-shape admission
 

@@ -378,6 +378,13 @@ where
             .map_err(ProtectedResourceAuthorizationError::DependencyUnavailable)?
         {
             DpopNonceValidationResult::Accepted => Ok(()),
+            DpopNonceValidationResult::Unknown
+                if self.dpop_nonce_policy == DpopNoncePolicy::Optional =>
+            {
+                Err(ProtectedResourceAuthorizationError::InvalidDpopProof(
+                    DpopProofVerifierError::NonceMismatch,
+                ))
+            }
             DpopNonceValidationResult::Unknown => {
                 Err(ProtectedResourceAuthorizationError::UseDpopNonce(
                     self.issue_dpop_nonce(now).await?,

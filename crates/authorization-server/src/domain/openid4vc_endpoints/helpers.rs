@@ -220,6 +220,7 @@ pub(super) fn stored_response(
 
 pub(super) fn response_from_record(
     response: StoredCredentialResponse,
+    nonce_policy: nazo_auth::DpopNoncePolicy,
 ) -> Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError> {
     let status = match response.status {
         200 => CredentialResponseStatus::Issued,
@@ -255,7 +256,10 @@ pub(super) fn response_from_record(
     Ok(CredentialEndpointResponse {
         body,
         status,
-        dpop_nonce: response.dpop_nonce,
+        dpop_nonce: match nonce_policy {
+            nazo_auth::DpopNoncePolicy::Required => response.dpop_nonce,
+            nazo_auth::DpopNoncePolicy::Optional => None,
+        },
     })
 }
 

@@ -253,6 +253,7 @@ impl CoseSigner for TestMdocIssuerSigner {
 fn valid_mdoc_presentation(
     certs: &CertificateFixture,
     signed_at: chrono::DateTime<Utc>,
+    status: Option<ciborium::Value>,
 ) -> (String, Vec<u8>) {
     let issuer_secret =
         p256::SecretKey::from_pkcs8_der(&certs.leaf_key.serialize_der()).expect("leaf private key");
@@ -267,7 +268,7 @@ fn valid_mdoc_presentation(
     )
     .build();
     let now = Utc::now();
-    let issuer_document = DocumentBuilder::new("org.iso.18013.5.1.mDL")
+    let builder = DocumentBuilder::new("org.iso.18013.5.1.mDL")
         .device_key(device_key)
         .validity(ValidityInfo {
             signed: signed_at,
@@ -281,7 +282,12 @@ fn valid_mdoc_presentation(
                 ("given_name", ciborium::Value::Text("Ada".to_owned())),
                 ("age", ciborium::Value::Integer(42.into())),
             ],
-        )
+        );
+    let builder = match status {
+        Some(status) => builder.status_raw(status),
+        None => builder,
+    };
+    let issuer_document = builder
         .sign(&TestMdocIssuerSigner {
             signing_key: issuer_signing_key,
             certificate_der: certs.leaf_der.clone(),
@@ -426,7 +432,6 @@ fn sd_presentation_fixture_with_aki(
         "_sd_alg": "sha-256",
         "_sd": [URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(disclosure.as_bytes()))],
         "cnf": {"jwk": holder_jwk},
-        "status": {"idx": 3},
     });
     let mut credential_header = Header::new(Algorithm::ES256);
     credential_header.typ = Some("dc+sd-jwt".to_owned());
@@ -977,7 +982,7 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
         assert_eq!(verified.issuer, "https://issuer.example");
         assert_eq!(verified.credential_type, "ExampleCredential");
         assert_eq!(verified.claims["given_name"], disclosed);
-        assert_eq!(verified.status, Some(json!({"idx": 3})));
+        assert_eq!(verified.status, None);
         assert!(verified.holder_key.is_some());
 
         let mut malformed = presentation.clone();
@@ -1241,7 +1246,7 @@ fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
 fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now());
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded,
@@ -1284,7 +1289,7 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
         let (encoded, transcript) =
-            valid_mdoc_presentation(&certs, Utc::now() - Duration::hours(1));
+            valid_mdoc_presentation(&certs, Utc::now() - Duration::hours(1), None);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded,
@@ -1541,7 +1546,7 @@ fn mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
             entries: vec![],
         };
         install_revocation_snapshot(&strict, &certs, fresh.clone());
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now());
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
         let unrelated = certificate_fixture("unrelated.example");
         let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
@@ -1902,7 +1907,7 @@ fn signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service() {
 fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, _) = valid_mdoc_presentation(&certs, Utc::now());
+        let (encoded, _) = valid_mdoc_presentation(&certs, Utc::now(), None);
         let different_transcript = SessionTranscript::Oid4vp {
             mdoc_nonce: "mdoc-nonce".to_owned(),
             client_id: "https://verifier.example".to_owned(),
@@ -2415,4 +2420,81 @@ fn sd_jwt_checks_validity_after_disclosures_with_valid_issuer_and_holder_signatu
             assert_eq!(result.unwrap().claims[name], value);
         }
     }
+}
+
+#[test]
+fn verifier_rejects_unimplemented_credential_status_after_holder_authentication() {
+    futures_executor::block_on(async {
+        let (crypto, presentation, _, certs) = sd_presentation_fixture();
+        let parts: Vec<_> = presentation.encoded.split('~').collect();
+        let mut claims: Value = serde_json::from_slice(
+            &URL_SAFE_NO_PAD
+                .decode(parts[0].split('.').nth(1).unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        claims["status"] =
+            json!({"status_list": {"idx": 3, "uri": "https://issuer.example/status"}});
+        let with_status = resign_sd_fixture_with_claims(
+            &presentation,
+            &certs,
+            vec![STANDARD.encode(&certs.leaf_der)],
+            &presentation.expected_nonce,
+            &claims,
+        );
+        assert_eq!(
+            crypto.verify(&with_status).await,
+            Err(CredentialTrustError::InvalidStatus)
+        );
+        let wrong_nonce = resign_sd_fixture_with_claims(
+            &presentation,
+            &certs,
+            vec![STANDARD.encode(&certs.leaf_der)],
+            "other-transaction",
+            &claims,
+        );
+        assert_eq!(
+            crypto.verify(&wrong_nonce).await,
+            Err(CredentialTrustError::InvalidNonce)
+        );
+        assert!(crypto.verify(&presentation).await.is_ok());
+    });
+}
+
+#[test]
+fn verifier_rejects_mdoc_with_unimplemented_credential_status() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let status = ciborium::Value::Map(vec![(
+            ciborium::Value::Text("status_list".into()),
+            ciborium::Value::Map(vec![
+                (
+                    ciborium::Value::Text("idx".into()),
+                    ciborium::Value::Integer(3.into()),
+                ),
+                (
+                    ciborium::Value::Text("uri".into()),
+                    ciborium::Value::Text("https://issuer.example/status".into()),
+                ),
+            ]),
+        )]);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), Some(status));
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded,
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            response_uri: "https://verifier.example/response".into(),
+            mdoc_session_transcript: Some(transcript),
+            additional_trust_anchors: vec![],
+        };
+        assert!(
+            crypto.verify_mdoc(&presentation).is_ok(),
+            "signatures and transcript must be valid"
+        );
+        assert_eq!(
+            crypto.verify(&presentation).await,
+            Err(CredentialTrustError::InvalidStatus)
+        );
+    });
 }
