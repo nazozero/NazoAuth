@@ -203,7 +203,7 @@ async fn signed_directory_create_executes_recovers_and_fails_closed() {
     write_runtime_fixtures(&root);
     let operation_id = "019c8ca2-30a6-7000-8000-00000000c001";
     let op = directory_operation(operation_id, &kid, directory_create_payload());
-    let compact = sign_control_operation(&op, &controller).unwrap();
+    let compact = sign_control_operation(&op, &controller).unwrap().0;
 
     let first = run_operator_task(&root, &compact, &database_url);
     assert!(
@@ -253,7 +253,7 @@ async fn signed_directory_create_executes_recovers_and_fails_closed() {
         other => unreachable!("{other:?}"),
     };
     let stale = directory_operation("019c8ca2-30a6-7000-8000-00000000c002", &kid, stale_payload);
-    let stale_compact = sign_control_operation(&stale, &controller).unwrap();
+    let stale_compact = sign_control_operation(&stale, &controller).unwrap().0;
     let stale_output = run_operator_task(&root, &stale_compact, &database_url);
     assert!(
         stale_output.status.success(),

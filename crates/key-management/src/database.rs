@@ -4,6 +4,7 @@ use anyhow::{Context, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use nazo_auth::SigningPurpose;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -202,8 +203,7 @@ pub(crate) async fn openid4vc_state(
         revision: record.revision,
         material: payload
             .get("openid4vc")
-            .cloned()
-            .map(serde_json::from_value)
+            .map(Openid4vcMaterial::deserialize)
             .transpose()?,
     })
 }
@@ -231,12 +231,11 @@ pub(crate) async fn mdoc_crl_material(
         .as_str()
         .context("managed IACA private material is not PEM text")?
         .to_owned();
-    let snapshot: nazo_digital_credentials::CertificateRevocationSnapshot = serde_json::from_value(
+    let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::deserialize(
         material
             .pointer("/public/revocation_snapshot")
             .filter(|value| !value.is_null())
-            .context("mdoc authority has no revocation state")?
-            .clone(),
+            .context("mdoc authority has no revocation state")?,
     )?;
     snapshot
         .validate_structure()
@@ -329,8 +328,7 @@ pub(crate) async fn commit_openid4vc(
                 revision: record.revision,
                 material: payload
                     .get("openid4vc")
-                    .cloned()
-                    .map(serde_json::from_value)
+                    .map(Openid4vcMaterial::deserialize)
                     .transpose()?,
             };
             Ok((loaded, state))
@@ -882,8 +880,7 @@ fn load_payload(
         request_object_encryption_jwk,
         openid4vc_material: payload
             .get("openid4vc")
-            .cloned()
-            .map(serde_json::from_value)
+            .map(Openid4vcMaterial::deserialize)
             .transpose()?,
     };
     validate_openid4vc_material(&loaded)?;

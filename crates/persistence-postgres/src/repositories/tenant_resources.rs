@@ -246,7 +246,7 @@ impl TryFrom<Openid4vcTrustPolicyRow> for StoredOpenid4vcTrustPolicy {
             Some(&row.resource_digest),
         )?;
         validate_bounded_public_material(&row.public_material)?;
-        let wallet_origins = validate_stored_wallet_origins(&row.wallet_origins)?;
+        let wallet_origins = validate_stored_wallet_origins(row.wallet_origins)?;
         if row.active == row.revoked_at.is_some() {
             return Err(RepositoryError::Consistency(
                 "OpenID4VC trust policy active state is inconsistent".to_owned(),
@@ -1245,16 +1245,21 @@ fn validate_bounded_public_material(public_material: &Value) -> Result<(), Repos
     Ok(())
 }
 
-fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<String>, RepositoryError> {
+fn validate_wallet_origins(wallet_origins: &[String]) -> Result<(), RepositoryError> {
     if wallet_origins.is_empty() || wallet_origins.len() > 16 {
         return Err(RepositoryError::Consistency(
             "OpenID4VC trust policy wallet origins are out of bounds".to_owned(),
         ));
     }
-    let mut normalized = wallet_origins.to_vec();
-    for origin in &normalized {
+    for origin in wallet_origins {
         validate_wallet_origin(origin)?;
     }
+    Ok(())
+}
+
+fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<String>, RepositoryError> {
+    validate_wallet_origins(wallet_origins)?;
+    let mut normalized = wallet_origins.to_vec();
     normalized.sort();
     let original_len = normalized.len();
     normalized.dedup();
@@ -1266,14 +1271,14 @@ fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<String>,
     Ok(normalized)
 }
 
-fn validate_stored_wallet_origins(value: &Value) -> Result<Vec<String>, RepositoryError> {
-    let origins = serde_json::from_value::<Vec<String>>(value.clone()).map_err(|_| {
+fn validate_stored_wallet_origins(value: Value) -> Result<Vec<String>, RepositoryError> {
+    let origins = serde_json::from_value::<Vec<String>>(value).map_err(|_| {
         RepositoryError::Consistency(
             "stored OpenID4VC trust policy wallet origins are invalid".to_owned(),
         )
     })?;
-    let normalized = validate_new_wallet_origins(&origins)?;
-    if origins != normalized {
+    validate_wallet_origins(&origins)?;
+    if !origins.windows(2).all(|pair| pair[0] < pair[1]) {
         return Err(RepositoryError::Consistency(
             "stored OpenID4VC trust policy wallet origins are not canonical".to_owned(),
         ));
@@ -1304,3 +1309,7 @@ fn map_error(error: diesel::result::Error) -> RepositoryError {
         _ => RepositoryError::Unavailable,
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/repositories/tenant_resources.rs"]
+mod tests;

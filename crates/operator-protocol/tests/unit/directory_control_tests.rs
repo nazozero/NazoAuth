@@ -58,8 +58,9 @@ fn tenant_directory_payloads_roundtrip_and_validate() {
         operation: directory_create_payload(),
         ..directory_operation()
     };
-    let compact = sign_control_operation(&create, &key).unwrap();
-    let canonical_hash = control_operation_request_hash(&create).unwrap();
+    let compact = sign_control_operation(&create, &key).unwrap().0;
+    let canonical_hash =
+        control_operation_request_hash(&crate::canonical_control_operation_bytes(&create).unwrap());
     let decoded = verify_control_operation_signature(
         &compact,
         directory_controller_kid().as_str(),
@@ -68,7 +69,9 @@ fn tenant_directory_payloads_roundtrip_and_validate() {
     .unwrap();
     assert_eq!(decoded.operation, directory_create_payload());
     assert_eq!(
-        control_operation_request_hash(&decoded).unwrap(),
+        control_operation_request_hash(
+            &crate::canonical_control_operation_bytes(&decoded).unwrap()
+        ),
         canonical_hash
     );
 
@@ -79,7 +82,7 @@ fn tenant_directory_payloads_roundtrip_and_validate() {
         },
         ..directory_operation()
     };
-    let compact = sign_control_operation(&disable, &key).unwrap();
+    let compact = sign_control_operation(&disable, &key).unwrap().0;
     let decoded = verify_control_operation_signature(
         &compact,
         directory_controller_kid().as_str(),
@@ -101,7 +104,7 @@ fn tenant_directory_payloads_roundtrip_and_validate() {
         },
         ..directory_operation()
     };
-    let compact = sign_control_operation(&reload, &key).unwrap();
+    let compact = sign_control_operation(&reload, &key).unwrap().0;
     let decoded = verify_control_operation_signature(
         &compact,
         directory_controller_kid().as_str(),

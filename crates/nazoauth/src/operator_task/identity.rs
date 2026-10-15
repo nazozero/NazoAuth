@@ -7,8 +7,7 @@
 //!    authoritative anchors (server config, persisted instance identity, and
 //!    the operator state anchor);
 //! 2. config_revision fencing: the signed opaque revision must equal the
-//!    local revision marker, constant-time compared through the frozen
-//!    [`nazo_operator_protocol::config_revision_matches`] helper.
+//!    local revision marker.
 //!
 //! The old TaskEnvelope-era secret-binding HMAC checks and canonical config
 //! manifest validation are gone with that envelope: `config_revision` is the
@@ -45,7 +44,7 @@ pub(super) fn validate_config_revision_at(
     if local_revision.is_empty() {
         bail!("operator configuration revision authority is empty");
     }
-    if !nazo_operator_protocol::config_revision_matches(operation, local_revision.as_bytes()) {
+    if operation.config_revision != local_revision {
         bail!("operator configuration revision binding mismatch");
     }
     Ok(())

@@ -85,10 +85,8 @@ pub struct ControlOperation {
     /// Audience binding: exactly one target deployment.
     pub deployment_id: String,
     /// Opaque configuration revision of the deployment state this operation
-    /// was constructed against.  Carried verbatim into the operation journal;
-    /// CAS comparison semantics land with F05 — until then the only consumer
-    /// is [`config_revision_matches`], an equality check against the local
-    /// revision marker.
+    /// was constructed against. Carried verbatim into the operation journal
+    /// and compared with the deployment's current revision before admission.
     pub config_revision: String,
     /// Closed operation set with typed payloads.  Unknown operations are a
     /// protocol change and must be rejected by older consumers.
@@ -1090,11 +1088,11 @@ pub fn controller_key_id(key: &VerifyingKey) -> String {
 
 /// Canonical bytes of a control operation: sorted-key compact UTF-8 JSON
 /// (see the module docs for the exact algorithm), bounded by
-/// [`MAX_CONTROL_OPERATION_BYTES`].  Pure serialization; validation is
-/// separate so verifiers can canonicalize before or after policy checks.
+/// [`MAX_CONTROL_OPERATION_BYTES`]. Validates the operation before encoding.
 pub fn canonical_control_operation_bytes(
     operation: &ControlOperation,
 ) -> Result<Vec<u8>, ProtocolError> {
+    validate_control_operation(operation)?;
     let mut value = serde_json::to_value(operation).map_err(|_| ProtocolError::Json)?;
     value.sort_all_objects();
     let bytes = serde_json::to_vec(&value).map_err(|_| ProtocolError::Json)?;
@@ -1104,27 +1102,23 @@ pub fn canonical_control_operation_bytes(
     Ok(bytes)
 }
 
-/// Single canonical-hash API (E02): validates the operation, serializes it
-/// canonically, and returns the lowercase hexadecimal SHA-256 of those
-/// bytes.  Pretty JSON, map ordering, and escape spelling never reach the
-/// digest.
-pub fn control_operation_request_hash(
-    operation: &ControlOperation,
-) -> Result<String, ProtocolError> {
-    validate_control_operation(operation)?;
-    let bytes = canonical_control_operation_bytes(operation)?;
-    Ok(lower_hex_sha256(&bytes))
+/// Lowercase hexadecimal SHA-256 of the bytes returned by
+/// [`canonical_control_operation_bytes`]. Callers reuse that encoding for
+/// signing or payload comparison instead of serializing the operation again.
+pub fn control_operation_request_hash(canonical: &[u8]) -> String {
+    lower_hex_sha256(canonical)
 }
 
 /// Sign one control operation with the instance Controller Key.
 ///
 /// The signer's derived kid must match `operation.kid`; the compact JWS uses
-/// the fixed protected header and the canonical payload bytes.
+/// the fixed protected header and the canonical payload bytes. Returns the
+/// compact JWS and its request hash, both derived from the same encoding.
 pub fn sign_control_operation(
     operation: &ControlOperation,
     key: &SigningKey,
-) -> Result<String, ProtocolError> {
-    validate_control_operation(operation)?;
+) -> Result<(String, String), ProtocolError> {
+    let canonical = canonical_control_operation_bytes(operation)?;
     let kid = controller_key_id(&key.verifying_key());
     if operation.kid != kid {
         return Err(ProtocolError::Policy(
@@ -1132,14 +1126,15 @@ pub fn sign_control_operation(
         ));
     }
     let protected = encode_protected_header(&operation.kid)?;
-    let payload = URL_SAFE_NO_PAD.encode(canonical_control_operation_bytes(operation)?);
+    let request_hash = control_operation_request_hash(&canonical);
+    let payload = URL_SAFE_NO_PAD.encode(canonical);
     let signing_input = format!("{protected}.{payload}");
     let signature = key.sign(signing_input.as_bytes());
     let compact = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
     if compact.len() > MAX_COMPACT_JWS_BYTES {
         return Err(ProtocolError::TooLarge);
     }
-    Ok(compact)
+    Ok((compact, request_hash))
 }
 
 /// Verify signature, canonical encoding, envelope policy, and header/key
@@ -1162,7 +1157,6 @@ pub fn verify_control_operation_signature(
     let operation: ControlOperation =
         serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
     ensure_control_operation_kid(&operation, expected_kid)?;
-    validate_control_operation(&operation)?;
     let canonical = canonical_control_operation_bytes(&operation)?;
     verify_control_operation_payload(
         protected,
@@ -1201,7 +1195,6 @@ impl<'a> PresentedControlOperation<'a> {
         }
         let operation: ControlOperation =
             serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
-        validate_control_operation(&operation)?;
         let canonical = canonical_control_operation_bytes(&operation)?;
         Ok(Self {
             protected,
@@ -1219,7 +1212,7 @@ impl<'a> PresentedControlOperation<'a> {
     }
 
     pub fn request_hash(&self) -> String {
-        lower_hex_sha256(&self.canonical)
+        control_operation_request_hash(&self.canonical)
     }
 
     pub fn verify(
@@ -1298,7 +1291,7 @@ fn verify_control_operation_payload(
     canonical: &[u8],
     key: &VerifyingKey,
 ) -> Result<(), ProtocolError> {
-    if !constant_time_eq(payload_bytes, canonical) {
+    if payload_bytes != canonical {
         return Err(ProtocolError::Policy(
             "control operation payload is not canonically encoded",
         ));
@@ -1312,28 +1305,6 @@ fn verify_control_operation_payload(
         &signature_bytes,
     )
     .map_err(|_| ProtocolError::Signature)
-}
-
-/// Constant-time byte-slice equality for secret-adjacent values (config
-/// revision tokens, request-hash echoes).  Length differences return false
-/// immediately; lengths themselves are public metadata.
-pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (left, right) in a.iter().zip(b.iter()) {
-        diff |= left ^ right;
-    }
-    diff == 0
-}
-
-/// Revision-marker consumption: true only when the envelope's
-/// `config_revision` equals the deployment's current revision marker value,
-/// compared in constant time.  CAS comparison semantics land with F05; until
-/// then this equality check is the field's only consumer.
-pub fn config_revision_matches(operation: &ControlOperation, current_revision: &[u8]) -> bool {
-    constant_time_eq(operation.config_revision.as_bytes(), current_revision)
 }
 
 /// Validate and serialize a [`ControlResult`] for the journal or the

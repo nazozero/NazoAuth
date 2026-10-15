@@ -604,7 +604,7 @@ where
                 account.user_id(),
                 claim.request_id,
                 claim.approved_client_id,
-                &claim.client_id,
+                claim.client_id,
                 stored.secret_binding.as_deref(),
             )
             .await
@@ -655,10 +655,10 @@ struct DeliveryCandidate {
     token: String,
 }
 
-struct DeliveryClaim {
+struct DeliveryClaim<'a> {
     request_id: Uuid,
     approved_client_id: Uuid,
-    client_id: String,
+    client_id: &'a str,
 }
 
 fn delivery_payload_matches(candidate: &DeliveryCandidate, payload: &Value) -> bool {
@@ -668,15 +668,14 @@ fn delivery_payload_matches(candidate: &DeliveryCandidate, payload: &Value) -> b
         && payload["approved_client_id"] == serde_json::json!(candidate.approved_client_id)
 }
 
-fn delivery_claim(value: &Value) -> Option<DeliveryClaim> {
+fn delivery_claim(value: &Value) -> Option<DeliveryClaim<'_>> {
     if value.get("delivery_state")?.as_str()? != "committed" {
         return None;
     }
     Some(DeliveryClaim {
-        request_id: serde_json::from_value(value.get("request_id")?.clone()).ok()?,
-        approved_client_id: serde_json::from_value(value.get("approved_client_id")?.clone())
-            .ok()?,
-        client_id: value.get("client_id")?.as_str()?.to_owned(),
+        request_id: Uuid::parse_str(value.get("request_id")?.as_str()?).ok()?,
+        approved_client_id: Uuid::parse_str(value.get("approved_client_id")?.as_str()?).ok()?,
+        client_id: value.get("client_id")?.as_str()?,
     })
 }
 

@@ -4,6 +4,7 @@ use diesel_async::RunQueryDsl;
 use nazo_openid4vci::{
     CredentialAuthorization, CredentialStoreError, CredentialStoreFuture, StoredCredentialOffer,
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use super::super::Openid4vciRepository;
@@ -77,9 +78,8 @@ impl Openid4vciRepository {
             };
             // Decode before consumption so corrupt authorization state cannot
             // spend the offer and then fail while building its response.
-            let configuration_ids =
-                serde_json::from_value(row.credential_configuration_ids.clone())
-                    .map_err(|_| CredentialStoreError::InvalidTransition)?;
+            let configuration_ids = Vec::<String>::deserialize(&row.credential_configuration_ids)
+                .map_err(|_| CredentialStoreError::InvalidTransition)?;
             let matches = match (row.tx_code_hash.as_deref(), tx_code) {
                 (None, None) => true,
                 (Some(expected), Some(presented)) => {

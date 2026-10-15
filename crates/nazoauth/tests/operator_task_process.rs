@@ -335,7 +335,7 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
     write_runtime_fixtures(&root);
     let operation_id = "019c8ca2-30a6-7000-8000-00000000b001";
     let op = operation(operation_id, &kid, ControlOperationPayload::MigrateApply);
-    let compact = sign_control_operation(&op, &controller).unwrap();
+    let compact = sign_control_operation(&op, &controller).unwrap().0;
 
     let first = run_operator_task(
         &root,
@@ -361,7 +361,7 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
     // Same id, different canonical request: permanent conflict.
     let mut conflicting = op.clone();
     conflicting.config_revision = "different-revision".to_owned();
-    let conflicting_compact = sign_control_operation(&conflicting, &controller).unwrap();
+    let conflicting_compact = sign_control_operation(&conflicting, &controller).unwrap().0;
     let conflict = run_operator_task(
         &root,
         &conflicting_compact,
@@ -398,7 +398,7 @@ async fn killed_before_side_effect_resumes_without_duplicating_the_mutation() {
     write_runtime_fixtures(&root);
     let operation_id = "019c8ca2-30a6-7000-8000-00000000b002";
     let op = operation(operation_id, &kid, ControlOperationPayload::MigrateApply);
-    let compact = sign_control_operation(&op, &controller).unwrap();
+    let compact = sign_control_operation(&op, &controller).unwrap().0;
 
     let marker = root.join("before-side-effect.marker");
     let killed = spawn_operator_task(
@@ -517,7 +517,7 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
     write_runtime_fixtures(&root);
     let env = || vec![("DATABASE_URL", database_url.clone())];
     let signed = |operation: &ControlOperation, key: &SigningKey| {
-        sign_control_operation(operation, key).unwrap()
+        sign_control_operation(operation, key).unwrap().0
     };
     let run = |compact: String, env: Vec<(&str, String)>| run_operator_task(&root, &compact, env);
 
@@ -688,7 +688,8 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
             ),
             &controller,
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         vec![("DATABASE_URL", database_url.clone())],
     );
     assert_success(&initialize);
@@ -709,7 +710,8 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
         ),
         &controller,
     )
-    .unwrap();
+    .unwrap()
+    .0;
 
     let first = run_operator_task(
         &root,
@@ -752,7 +754,8 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
             ),
             &controller,
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         vec![("DATABASE_URL", database_url)],
     );
     assert_success(&validate);
