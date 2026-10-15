@@ -403,16 +403,16 @@ impl MfaService {
                 "persisted backup-code count exceeds the supported maximum".to_owned(),
             )));
         }
-        let hashes = candidates
-            .iter()
-            .map(|candidate| candidate.hash.clone())
-            .collect();
+        let (candidate_ids, hashes): (Vec<_>, Vec<_>) = candidates
+            .into_iter()
+            .map(|candidate| (candidate.id, candidate.hash))
+            .unzip();
         let matching = self
             .hasher
             .find_matching_secret(normalized, hashes)
             .await
             .map_err(mfa_hash_error)?;
-        let Some(candidate) = matching.and_then(|index| candidates.get(index)) else {
+        let Some(&candidate_id) = matching.and_then(|index| candidate_ids.get(index)) else {
             self.repository
                 .record_invalid_backup_code_attempt(account.tenant().tenant_id, account.user_id())
                 .await
@@ -424,7 +424,7 @@ impl MfaService {
             .consume_backup_code_candidate(
                 account.tenant().tenant_id,
                 account.user_id(),
-                candidate.id,
+                candidate_id,
             )
             .await
             .map_err(MfaServiceError::repository)?;

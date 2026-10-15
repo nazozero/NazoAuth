@@ -105,21 +105,15 @@ pub(crate) fn reject_private_jwk_members(
     Ok(())
 }
 
-pub(crate) fn external_public_jwk(entry: &Value) -> anyhow::Result<Value> {
-    let kid = entry
-        .get("kid")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("key entry missing kid"))?;
-    let alg = entry
-        .get("alg")
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("key {kid} missing alg"))?;
-    let jwk = entry
-        .get("public_jwk")
-        .and_then(Value::as_object)
+pub(crate) fn validate_external_public_jwk(
+    kid: &str,
+    alg: &str,
+    jwk: &Value,
+) -> anyhow::Result<()> {
+    let jwk = jwk
+        .as_object()
         .ok_or_else(|| anyhow!("public_jwk must be an object"))?;
     reject_private_jwk_members(jwk)?;
-    let jwk = Value::Object(jwk.clone());
     match jwk.get("kid").and_then(Value::as_str) {
         Some(value) if value != kid => anyhow::bail!("public_jwk kid does not match key entry"),
         Some(_) => {}
@@ -135,7 +129,7 @@ pub(crate) fn external_public_jwk(entry: &Value) -> anyhow::Result<Value> {
         Some(_) => anyhow::bail!("public_jwk use must be sig"),
         None => anyhow::bail!("public_jwk missing use"),
     }
-    Ok(jwk)
+    Ok(())
 }
 
 pub(crate) fn key_entry_retire_at(entry: &Value) -> anyhow::Result<Option<DateTime<Utc>>> {

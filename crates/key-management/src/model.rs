@@ -713,7 +713,7 @@ pub(crate) fn openid4vc_material_is_revoked(material: &Openid4vcMaterial) -> any
 impl KeyManager {
     /// Read operator key metadata from the repository-backed keyset.
     pub async fn database_list_keys(&self) -> anyhow::Result<Vec<KeyRecord>> {
-        crate::database::list(&self.inner.settings, &self.inner.database).await
+        crate::database::list(&self.inner.database).await
     }
 
     /// Register an external signer in the repository-backed keyset.
@@ -721,12 +721,7 @@ impl KeyManager {
         &self,
         registration: ExternalKeyRegistration,
     ) -> anyhow::Result<()> {
-        let loaded = crate::database::register_external(
-            &self.inner.settings,
-            &self.inner.database,
-            registration,
-        )
-        .await?;
+        let loaded = crate::database::register_external(&self.inner.database, registration).await?;
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)?));
@@ -749,12 +744,8 @@ impl KeyManager {
         &self,
         registration: LocalKeyRegistration,
     ) -> anyhow::Result<(String, String)> {
-        let (kid, loaded, revision) = crate::database::register_local(
-            &self.inner.settings,
-            &self.inner.database,
-            registration,
-        )
-        .await?;
+        let (kid, loaded, revision) =
+            crate::database::register_local(&self.inner.database, registration).await?;
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)?));
@@ -771,7 +762,7 @@ impl KeyManager {
     /// keyset. The persisted revocation timestamps are returned unchanged;
     /// request handling uses the generation-pinned projection instead.
     pub async fn database_openid4vc_state(&self) -> anyhow::Result<Openid4vcState> {
-        crate::database::openid4vc_state(&self.inner.database, &self.inner.settings).await
+        crate::database::openid4vc_state(&self.inner.database).await
     }
 
     /// Read one fresh authoritative generation for the selected CRL issuer.
@@ -1031,7 +1022,7 @@ impl KeyManager {
     /// Validate the sealed repository generation, including its public/private
     /// correspondence and request-object key material.
     pub async fn database_validate(&self) -> anyhow::Result<()> {
-        crate::database::validate(&self.inner.settings, &self.inner.database).await
+        crate::database::validate(&self.inner.database).await
     }
 
     /// Opaque repository generation revision for an operator result.

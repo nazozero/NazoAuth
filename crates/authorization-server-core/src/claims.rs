@@ -157,8 +157,8 @@ pub fn access_token_claims(
 }
 
 fn access_token_public_user_id(user_id: Option<Uuid>, subject: &str) -> Option<String> {
-    let user_id = user_id?;
-    (subject == user_id.to_string()).then_some(user_id.to_string())
+    let user_id = user_id?.to_string();
+    (subject == user_id).then_some(user_id)
 }
 
 fn token_audience_claim(audiences: &[String]) -> Value {
@@ -169,8 +169,8 @@ fn token_audience_claim(audiences: &[String]) -> Value {
 }
 
 fn sorted_scope_string(scopes: &[String]) -> String {
-    let mut values = scopes.to_vec();
-    values.sort();
+    let mut values = scopes.iter().map(String::as_str).collect::<Vec<_>>();
+    values.sort_unstable();
     values.dedup();
     values.join(" ")
 }

@@ -47,6 +47,118 @@ async fn database_fixture() -> (
     (manager, repository, tenant_id, wrapping_keys)
 }
 
+#[test]
+fn public_projection_preserves_public_fields_and_the_private_source() {
+    let payload = json!({
+        "schema": "nazo.keyset.v1",
+        "request_object_private_pem": "private-request-key",
+        "keys": [{"kid": "active", "private_pkcs8_der": "private-signing-key", "public_jwk": {"kty": "EC"}}],
+        "openid4vc": {"iaca_private_materials": {"root": "private-ca-key"}, "public": {"chain": "certificate"}},
+        "extension": {"nested": [1, 2, 3]},
+    });
+    let expected = json!({
+        "schema": "nazo.keyset.v1",
+        "keys": [{"kid": "active", "public_jwk": {"kty": "EC"}}],
+        "openid4vc": {"public": {"chain": "certificate"}},
+        "extension": {"nested": [1, 2, 3]},
+    });
+    let projected = public_projection(&payload).unwrap();
+    assert_eq!(projected, expected);
+    assert_eq!(
+        serde_json::to_vec(&projected).unwrap(),
+        serde_json::to_vec(&expected).unwrap()
+    );
+    assert_eq!(
+        payload["keys"][0]["private_pkcs8_der"],
+        "private-signing-key"
+    );
+    assert_eq!(
+        payload["openid4vc"]["iaca_private_materials"]["root"],
+        "private-ca-key"
+    );
+    for malformed in [
+        Value::Null,
+        json!({}),
+        json!({"keys": null}),
+        json!({"keys": [null]}),
+        json!({"keys": [], "openid4vc": null}),
+    ] {
+        assert!(public_projection(&malformed).is_err());
+    }
+}
+
+#[tokio::test]
+async fn startup_reuses_the_loaded_or_created_record() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct StartupRepository {
+        inner: MemorySigningKeyRepository,
+        reads: AtomicUsize,
+        creates: AtomicUsize,
+        hide_first_read: bool,
+    }
+    impl SigningKeyRepository for StartupRepository {
+        fn load(&self) -> crate::SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+            let first = self.reads.fetch_add(1, Ordering::SeqCst) == 0;
+            if first && self.hide_first_read {
+                Box::pin(async { Ok(None) })
+            } else {
+                self.inner.load()
+            }
+        }
+
+        fn create_if_absent(
+            &self,
+            candidate: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+            self.creates.fetch_add(1, Ordering::SeqCst);
+            self.inner.create_if_absent(candidate)
+        }
+
+        fn compare_and_swap(
+            &self,
+            expected: i64,
+            candidate: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+            self.inner.compare_and_swap(expected, candidate)
+        }
+    }
+
+    let (original, existing, tenant_id, wrapping_keys) = database_fixture().await;
+    let existing = existing.snapshot().unwrap();
+    for (seed, hide_first_read, creates) in [
+        (Some(existing.clone()), false, 0),
+        (None, false, 1),
+        (Some(existing.clone()), true, 1),
+    ] {
+        let had_existing = seed.is_some();
+        let repository = Arc::new(StartupRepository {
+            inner: MemorySigningKeyRepository::default(),
+            reads: AtomicUsize::new(0),
+            creates: AtomicUsize::new(0),
+            hide_first_read,
+        });
+        repository.inner.replace(seed);
+        let manager = KeyManager::load_or_create_database(
+            settings(),
+            None,
+            tenant_id,
+            repository.clone(),
+            wrapping_keys.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(repository.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(repository.creates.load(Ordering::SeqCst), creates);
+        if had_existing {
+            assert_eq!(
+                manager.snapshot().active_kid,
+                original.snapshot().active_kid
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn external_registration_rejects_unusable_verification_material_without_persisting() {
     let (manager, repository, tenant_id, wrapping_keys) = database_fixture().await;
@@ -890,10 +1002,15 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
         wrapping_keys,
         external_signer: None,
     };
-    let error = update(&binding, &settings(), false, |payload| {
-        payload["fixture_mutation"] = json!(true);
-        Ok(true)
-    })
+    let error = update(
+        &binding,
+        require_record(&binding).await.unwrap(),
+        false,
+        |payload| {
+            payload["fixture_mutation"] = json!(true);
+            Ok(true)
+        },
+    )
     .await
     .err()
     .unwrap();
@@ -904,23 +1021,33 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
     );
     assert_eq!(conflicts.calls.load(Ordering::SeqCst), MAX_CAS_ATTEMPTS);
     assert_eq!(repository.snapshot().unwrap().revision, before.revision);
-    update(&binding, &settings(), false, |payload| {
-        if payload.get("fixture_mutation") == Some(&json!(true)) {
-            return Ok(false);
-        }
-        payload["fixture_mutation"] = json!(true);
-        Ok(true)
-    })
+    update(
+        &binding,
+        require_record(&binding).await.unwrap(),
+        false,
+        |payload| {
+            if payload.get("fixture_mutation") == Some(&json!(true)) {
+                return Ok(false);
+            }
+            payload["fixture_mutation"] = json!(true);
+            Ok(true)
+        },
+    )
     .await
     .unwrap();
     let committed = repository.snapshot().unwrap().revision;
-    update(&binding, &settings(), false, |payload| {
-        if payload.get("fixture_mutation") == Some(&json!(true)) {
-            return Ok(false);
-        }
-        payload["fixture_mutation"] = json!(true);
-        Ok(true)
-    })
+    update(
+        &binding,
+        require_record(&binding).await.unwrap(),
+        false,
+        |payload| {
+            if payload.get("fixture_mutation") == Some(&json!(true)) {
+                return Ok(false);
+            }
+            payload["fixture_mutation"] = json!(true);
+            Ok(true)
+        },
+    )
     .await
     .unwrap();
     assert_eq!(repository.snapshot().unwrap().revision, committed);
