@@ -243,11 +243,6 @@ pub(super) struct TenantRuntimeBuilder {
 }
 
 impl TenantRuntimeBuilder {
-    #[allow(dead_code)]
-    pub(super) fn new(port: Arc<dyn TenantRuntimeBuildPort>) -> Self {
-        Self { port }
-    }
-
     pub(super) fn production(process: Arc<ProcessRuntime>) -> Self {
         Self {
             port: Arc::new(ServiceAssemblyTenantRuntimeBuilder { process }),

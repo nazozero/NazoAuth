@@ -116,36 +116,6 @@ fn origin_predicate() -> impl Fn(&HeaderValue, &RequestHead) -> bool + 'static {
     }
 }
 
-#[allow(dead_code)]
-pub(crate) fn cors_well_known(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).well_known()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_browser_token_management(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).browser_token_management()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_browser_userinfo(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).browser_userinfo()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_auth_api(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).auth_api()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_admin(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).admin()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_scim(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).scim()
-}
-
 #[cfg(test)]
 #[path = "../../tests/unit/bootstrap/cors.rs"]
 mod tests;

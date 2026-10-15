@@ -128,7 +128,10 @@ pub fn parse_response_for_verification(
         .get(SIGNATURE_NAME)
         .ok_or(VerifyError::MissingSignature)?;
     let signature_entry = signatures
-        .get(SIGNATURE_NAME)
+        .into_iter()
+        .next()
+        .filter(|(name, _)| name.as_str() == SIGNATURE_NAME)
+        .map(|(_, entry)| entry)
         .ok_or(VerifyError::MissingSignature)?;
     let params = match input_entry {
         ListEntry::InnerList(inner) => inner,
@@ -137,7 +140,7 @@ pub fn parse_response_for_verification(
     if top_level_parameter_count(&fields.signature_input) != params.params.len() {
         return Err(VerifyError::MalformedSignature);
     }
-    let signature = signature_bytes(signature_entry)?.to_vec();
+    let signature = signature_bytes(signature_entry)?;
     let created = integer_parameter(params, "created").ok_or(VerifyError::InvalidCreated)?;
     let keyid = string_parameter(params, "keyid")
         .filter(|value| !value.is_empty())

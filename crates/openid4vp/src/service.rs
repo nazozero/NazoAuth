@@ -159,14 +159,14 @@ where
                     .verifier
                     .verify(&PresentedCredential {
                         format: query.format,
-                        encoded: encoded.to_owned(),
-                        expected_nonce: transaction.request.nonce.clone(),
-                        expected_audience: transaction.request.client_id.clone(),
-                        response_uri: transaction.request.response_uri.clone(),
+                        encoded: encoded.into(),
+                        expected_nonce: transaction.request.nonce.as_str().into(),
+                        expected_audience: transaction.request.client_id.as_str().into(),
                         mdoc_session_transcript: (query.format == CredentialFormat::MsoMdoc)
-                            .then(|| mdoc_session_transcript.clone())
-                            .flatten(),
-                        additional_trust_anchors: additional_trust_anchors.to_vec(),
+                            .then_some(mdoc_session_transcript.as_deref())
+                            .flatten()
+                            .map(Into::into),
+                        additional_trust_anchors: additional_trust_anchors.into(),
                     })
                     .await
                 {

@@ -115,8 +115,7 @@ impl ModuleCatalog {
             .get_mut(&module_id)
             .expect("the fixed catalog contains every closed module ID")
             .dependencies = dependencies.into_iter().collect();
-        let specs = self.specs.values().cloned().collect::<Vec<_>>();
-        validate_module_specs(&specs)?;
+        validate_module_specs(self.specs.values())?;
         Ok(self)
     }
 

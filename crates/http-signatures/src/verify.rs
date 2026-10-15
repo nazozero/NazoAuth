@@ -118,7 +118,10 @@ pub fn parse_request_for_verification_with_digest(
         .first()
         .ok_or(VerifyError::MissingSignature)?;
     let signature_entry = signatures
-        .get(label.as_str())
+        .into_iter()
+        .next()
+        .filter(|(name, _)| name == label)
+        .map(|(_, entry)| entry)
         .ok_or(VerifyError::MissingSignature)?;
 
     let params = match input_entry {
@@ -128,7 +131,7 @@ pub fn parse_request_for_verification_with_digest(
     if top_level_parameter_count(&fields.signature_input) != params.params.len() {
         return Err(VerifyError::MalformedSignature);
     }
-    let signature = signature_bytes(signature_entry)?.to_vec();
+    let signature = signature_bytes(signature_entry)?;
     let components = component_names(params)?;
     let created = integer_parameter(params, "created").ok_or(VerifyError::InvalidCreated)?;
     let keyid = string_parameter(params, "keyid")
@@ -221,16 +224,12 @@ pub fn parse_request_for_verification_with_digest(
     })
 }
 
-pub(crate) fn signature_bytes(entry: &ListEntry) -> Result<&[u8], VerifyError> {
+pub(crate) fn signature_bytes(entry: ListEntry) -> Result<Vec<u8>, VerifyError> {
     match entry {
-        ListEntry::Item(item)
-            if item.params.is_empty() && matches!(item.bare_item, BareItem::ByteSequence(_)) =>
-        {
-            match &item.bare_item {
-                BareItem::ByteSequence(bytes) => Ok(bytes),
-                _ => unreachable!(),
-            }
-        }
+        ListEntry::Item(item) if item.params.is_empty() => match item.bare_item {
+            BareItem::ByteSequence(bytes) => Ok(bytes),
+            _ => Err(VerifyError::MalformedSignature),
+        },
         _ => Err(VerifyError::MalformedSignature),
     }
 }

@@ -82,7 +82,7 @@ pub(super) async fn sign(
 
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential,
+    presentation: &PresentedCredential<'_>,
 ) -> Result<VerifiedCredential, CredentialTrustError> {
     let parts = presentation.encoded.split('~').collect::<Vec<_>>();
     if parts.len() < 2 || parts[0].is_empty() || parts.last().is_some_and(|part| part.is_empty()) {

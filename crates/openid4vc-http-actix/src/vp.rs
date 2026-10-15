@@ -1,11 +1,11 @@
 use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 use actix_web::{HttpRequest, HttpResponse, http::header, web};
+use nazo_openid4vp::AuthorizationResponse;
 use nazo_openid4vp::application::{
     CreatePresentationRequest, PresentationHttpError, PresentationOperations,
     PresentationResponseBody, PresentationResponseInput,
 };
-use nazo_openid4vp::{AuthorizationResponse, PresentationTransaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -251,6 +251,3 @@ fn presentation_error(error: PresentationHttpError) -> HttpResponse {
             "error_description": error.description,
         }))
 }
-
-#[allow(dead_code)]
-fn _assert_transaction_is_send_sync(_: &PresentationTransaction) {}

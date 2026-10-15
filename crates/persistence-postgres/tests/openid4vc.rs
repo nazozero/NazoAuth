@@ -829,6 +829,17 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     let invalid_binding_sha256 = "f".repeat(64);
     assert_eq!(
         verifier
+            .find_by_create_request(nazo_openid4vp::PresentationCreateIdempotency {
+                request_jti: &create_request_jti,
+                request_sha256: &invalid_binding_sha256,
+                canonical_request: &create_request,
+            })
+            .await
+            .expect_err("lookup must validate canonical JSON and digest at its public boundary"),
+        nazo_openid4vp::PresentationStoreError::InvalidTransition
+    );
+    assert_eq!(
+        verifier
             .create(
                 &transaction,
                 nazo_openid4vp::PresentationCreateIdempotency {
@@ -891,6 +902,13 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
         .unwrap()
         .unwrap();
     assert_eq!(bound.request.wallet_nonce.as_deref(), Some("wallet-nonce"));
+    assert_eq!(
+        bound.response_encryption_private_key,
+        loaded.response_encryption_private_key
+    );
+    assert_eq!(bound.request.state, loaded.request.state);
+    assert_eq!(bound.request_object, loaded.request_object);
+    assert_eq!(bound.request_uri, loaded.request_uri);
     assert_eq!(
         verifier
             .request(transaction_id, now)

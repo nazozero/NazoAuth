@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     future::Future,
     pin::Pin,
@@ -32,14 +33,13 @@ pub trait CredentialSignerPort: Send + Sync {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PresentedCredential {
+pub struct PresentedCredential<'a> {
     pub format: CredentialFormat,
-    pub encoded: String,
-    pub expected_nonce: String,
-    pub expected_audience: String,
-    pub response_uri: String,
-    pub mdoc_session_transcript: Option<Vec<u8>>,
-    pub additional_trust_anchors: Vec<Vec<u8>>,
+    pub encoded: Cow<'a, str>,
+    pub expected_nonce: Cow<'a, str>,
+    pub expected_audience: Cow<'a, str>,
+    pub mdoc_session_transcript: Option<Cow<'a, [u8]>>,
+    pub additional_trust_anchors: Cow<'a, [Vec<u8>]>,
 }
 
 /// Return the stable identity used by a revocation snapshot for an X.509
@@ -562,7 +562,7 @@ impl VerifiedCredential {
 pub trait CredentialVerifierPort: Send + Sync {
     fn verify<'a>(
         &'a self,
-        presentation: &'a PresentedCredential,
+        presentation: &'a PresentedCredential<'_>,
     ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>>;
 }
 

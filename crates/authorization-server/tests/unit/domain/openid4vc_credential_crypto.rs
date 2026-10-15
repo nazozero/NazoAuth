@@ -51,7 +51,7 @@ fn verify_certificate_chain_at<'a>(
 trait CredentialCryptoTestExt {
     fn verify_sd_jwt(
         &self,
-        presentation: &nazo_digital_credentials::PresentedCredential,
+        presentation: &nazo_digital_credentials::PresentedCredential<'_>,
     ) -> Result<
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
@@ -65,7 +65,7 @@ trait CredentialCryptoTestExt {
 
     fn verify_mdoc(
         &self,
-        presentation: &nazo_digital_credentials::PresentedCredential,
+        presentation: &nazo_digital_credentials::PresentedCredential<'_>,
     ) -> Result<
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
@@ -75,7 +75,7 @@ trait CredentialCryptoTestExt {
 impl CredentialCryptoTestExt for Openid4vcCredentialCrypto {
     fn verify_sd_jwt(
         &self,
-        presentation: &nazo_digital_credentials::PresentedCredential,
+        presentation: &nazo_digital_credentials::PresentedCredential<'_>,
     ) -> Result<
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
@@ -94,7 +94,7 @@ impl CredentialCryptoTestExt for Openid4vcCredentialCrypto {
 
     fn verify_mdoc(
         &self,
-        presentation: &nazo_digital_credentials::PresentedCredential,
+        presentation: &nazo_digital_credentials::PresentedCredential<'_>,
     ) -> Result<
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
@@ -398,7 +398,7 @@ fn es256_jwk(seed: u8) -> (Value, EncodingKey) {
 
 fn sd_presentation_fixture() -> (
     Openid4vcCredentialCrypto,
-    PresentedCredential,
+    PresentedCredential<'static>,
     Value,
     CertificateFixture,
 ) {
@@ -409,7 +409,7 @@ fn sd_presentation_fixture_with_aki(
     include_aki: bool,
 ) -> (
     Openid4vcCredentialCrypto,
-    PresentedCredential,
+    PresentedCredential<'static>,
     Value,
     CertificateFixture,
 ) {
@@ -457,12 +457,11 @@ fn sd_presentation_fixture_with_aki(
     let encoded = format!("{credential_jwt}~{disclosure}~{kb_jwt}");
     let presentation = PresentedCredential {
         format: CredentialFormat::SdJwtVc,
-        encoded,
-        expected_nonce: expected_nonce.to_owned(),
-        expected_audience: expected_audience.to_owned(),
-        response_uri: "https://verifier.example/response".to_owned(),
+        encoded: encoded.into(),
+        expected_nonce: expected_nonce.into(),
+        expected_audience: expected_audience.into(),
         mdoc_session_transcript: None,
-        additional_trust_anchors: vec![],
+        additional_trust_anchors: vec![].into(),
     };
     let crypto = crypto_with_certificate(
         nazo_key_management::KeyManager::for_test(Algorithm::ES256),
@@ -986,7 +985,7 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
         assert!(verified.holder_key.is_some());
 
         let mut malformed = presentation.clone();
-        malformed.encoded = "broken".to_owned();
+        malformed.encoded = "broken".into();
         assert_eq!(
             crypto.verify_sd_jwt(&malformed),
             Err(CredentialTrustError::InvalidEncoding)
@@ -998,7 +997,7 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
         let (_, issuer_key) = es256_jwk(99);
         let claims = json!({"iss": "https://issuer.example", "exp": Utc::now().timestamp() + 300});
         let jwt = encode(&header, &claims, &issuer_key).expect("JWT");
-        wrong_typ.encoded = format!("{jwt}~{}~{}", parts[1], parts[2]);
+        wrong_typ.encoded = format!("{jwt}~{}~{}", parts[1], parts[2]).into();
         assert_eq!(
             crypto.verify_sd_jwt(&wrong_typ),
             Err(CredentialTrustError::InvalidEncoding)
@@ -1027,13 +1026,13 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
         let parts = presentation.encoded.split('~').collect::<Vec<_>>();
         let disclosure =
             URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!(["salt2", "x", 1])).unwrap());
-        unknown_disclosure.encoded = format!("{}~{}~{}", parts[0], disclosure, parts[2]);
+        unknown_disclosure.encoded = format!("{}~{}~{}", parts[0], disclosure, parts[2]).into();
         assert_eq!(
             crypto.verify_sd_jwt(&unknown_disclosure),
             Err(CredentialTrustError::InvalidHolderBinding),
             "changing the disclosure while retaining the original KB JWT breaks sd_hash",
         );
-        unknown_disclosure.encoded = rebind(format!("{}~{disclosure}~", parts[0]));
+        unknown_disclosure.encoded = rebind(format!("{}~{disclosure}~", parts[0])).into();
         assert_eq!(
             crypto.verify_sd_jwt(&unknown_disclosure),
             Err(CredentialTrustError::InvalidSignature),
@@ -1041,7 +1040,7 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
         );
 
         let mut duplicate = presentation.clone();
-        duplicate.encoded = rebind(format!("{}~{}~{}~", parts[0], parts[1], parts[1]));
+        duplicate.encoded = rebind(format!("{}~{}~{}~", parts[0], parts[1], parts[1])).into();
         assert_eq!(
             crypto.verify_sd_jwt(&duplicate),
             Err(CredentialTrustError::InvalidEncoding)
@@ -1069,7 +1068,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     )
     .expect("wrong-type key binding");
     let wrong_type = PresentedCredential {
-        encoded: format!("{}~{}~{}", parts[0], parts[1], wrong_type_kb),
+        encoded: format!("{}~{}~{}", parts[0], parts[1], wrong_type_kb).into(),
         ..presentation.clone()
     };
     assert_eq!(
@@ -1112,7 +1111,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     )
     .expect("empty disclosure key binding");
     let no_disclosure = PresentedCredential {
-        encoded: format!("{credential_jwt}~{no_disclosure_kb}"),
+        encoded: format!("{credential_jwt}~{no_disclosure_kb}").into(),
         ..presentation.clone()
     };
     let verified = crypto
@@ -1135,7 +1134,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     )
     .expect("wrong disclosure hash key binding");
     let wrong_hash = PresentedCredential {
-        encoded: format!("{}~{}~{}", parts[0], parts[1], wrong_hash_kb),
+        encoded: format!("{}~{}~{}", parts[0], parts[1], wrong_hash_kb).into(),
         ..presentation
     };
     assert_eq!(
@@ -1148,7 +1147,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
 fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
     let (crypto, presentation, _, certs) = sd_presentation_fixture();
     let mut no_anchor = presentation.clone();
-    no_anchor.additional_trust_anchors = vec![certs.leaf_der.clone()];
+    no_anchor.additional_trust_anchors = vec![certs.leaf_der.clone()].into();
     assert_eq!(
         crypto.verify_sd_jwt(&no_anchor),
         Err(CredentialTrustError::UntrustedIssuer)
@@ -1167,20 +1166,20 @@ fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
     });
     header.x5c = Some(vec![STANDARD.encode(&certs.leaf_der)]);
     let jwt = encode(&header, &claims, &issuer_key).expect("JWT");
-    no_cnf.encoded = format!("{jwt}~{}", parts[2]);
+    no_cnf.encoded = format!("{jwt}~{}", parts[2]).into();
     assert_eq!(
         crypto.verify_sd_jwt(&no_cnf),
         Err(CredentialTrustError::InvalidHolderBinding)
     );
 
     let mut wrong_audience = presentation.clone();
-    wrong_audience.expected_audience = "https://other.example".to_owned();
+    wrong_audience.expected_audience = "https://other.example".into();
     assert_eq!(
         crypto.verify_sd_jwt(&wrong_audience),
         Err(CredentialTrustError::InvalidHolderBinding)
     );
     let mut wrong_nonce = presentation.clone();
-    wrong_nonce.expected_nonce = "other-nonce".to_owned();
+    wrong_nonce.expected_nonce = "other-nonce".into();
     assert_eq!(
         crypto.verify_sd_jwt(&wrong_nonce),
         Err(CredentialTrustError::InvalidNonce)
@@ -1210,19 +1209,18 @@ fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
         let (crypto, _, _) = real_crypto_fixture().await;
         let missing_transcript = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded: URL_SAFE_NO_PAD.encode([0xa0]),
-            expected_nonce: "nonce".to_owned(),
-            expected_audience: "aud".to_owned(),
-            response_uri: "https://verifier.example/response".to_owned(),
+            encoded: URL_SAFE_NO_PAD.encode([0xa0]).into(),
+            expected_nonce: "nonce".into(),
+            expected_audience: "aud".into(),
             mdoc_session_transcript: None,
-            additional_trust_anchors: vec![],
+            additional_trust_anchors: vec![].into(),
         };
         assert_eq!(
             crypto.verify_mdoc(&missing_transcript),
             Err(CredentialTrustError::InvalidHolderBinding)
         );
         let bad_cbor = PresentedCredential {
-            mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6]),
+            mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6].into()),
             ..missing_transcript.clone()
         };
         assert_eq!(
@@ -1230,9 +1228,9 @@ fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
             Err(CredentialTrustError::InvalidEncoding)
         );
         let bad_anchor = PresentedCredential {
-            mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6]),
-            encoded: URL_SAFE_NO_PAD.encode([0xa0]),
-            additional_trust_anchors: vec![vec![1, 2, 3]],
+            mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6].into()),
+            encoded: URL_SAFE_NO_PAD.encode([0xa0]).into(),
+            additional_trust_anchors: vec![vec![1, 2, 3]].into(),
             ..missing_transcript
         };
         assert_eq!(
@@ -1249,12 +1247,11 @@ fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
         let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded,
-            expected_nonce: "verifier-nonce".to_owned(),
-            expected_audience: "https://verifier.example".to_owned(),
-            response_uri: "https://verifier.example/response".to_owned(),
-            mdoc_session_transcript: Some(transcript),
-            additional_trust_anchors: vec![],
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![].into(),
         };
         let verified = crypto
             .verify_mdoc(&presentation)
@@ -1292,12 +1289,11 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
             valid_mdoc_presentation(&certs, Utc::now() - Duration::hours(1), None);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded,
-            expected_nonce: "verifier-nonce".to_owned(),
-            expected_audience: "https://verifier.example".to_owned(),
-            response_uri: "https://verifier.example/response".to_owned(),
-            mdoc_session_transcript: Some(transcript),
-            additional_trust_anchors: vec![],
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![].into(),
         };
         assert!(
             verify_certificate_chain_at(
@@ -1485,7 +1481,7 @@ fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
     };
     install_revocation_snapshot(&strict, &certs, fresh.clone());
     let unrelated = certificate_fixture("unrelated.example");
-    presentation.additional_trust_anchors = vec![unrelated.ca_der.clone()];
+    presentation.additional_trust_anchors = vec![unrelated.ca_der.clone()].into();
     assert_eq!(
         strict.verify_sd_jwt(&presentation),
         Err(CredentialTrustError::RevocationStatusUnknown)
@@ -1503,7 +1499,7 @@ fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
         )
         .is_err()
     );
-    presentation.additional_trust_anchors = vec![certs.ca_der.clone()];
+    presentation.additional_trust_anchors = vec![certs.ca_der.clone()].into();
     assert!(
         strict.verify_sd_jwt(&presentation).is_ok(),
         "same DER globally and scoped is an actual scoped path"
@@ -1550,18 +1546,17 @@ fn mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
         let unrelated = certificate_fixture("unrelated.example");
         let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded,
+            encoded: encoded.into(),
             expected_nonce: "verifier-nonce".into(),
             expected_audience: "https://verifier.example".into(),
-            response_uri: "https://verifier.example/response".into(),
-            mdoc_session_transcript: Some(transcript),
-            additional_trust_anchors: vec![unrelated.ca_der],
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![unrelated.ca_der].into(),
         };
         assert_eq!(
             strict.verify_mdoc(&presentation),
             Err(CredentialTrustError::RevocationStatusUnknown)
         );
-        presentation.additional_trust_anchors = vec![certs.ca_der.clone()];
+        presentation.additional_trust_anchors = vec![certs.ca_der.clone()].into();
         assert!(strict.verify_mdoc(&presentation).is_ok());
         let mut revoked = fresh;
         revoked
@@ -1651,12 +1646,12 @@ fn expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_s
         KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
     )
     .unwrap();
-    presentation.additional_trust_anchors = vec![expired.der().as_ref().to_vec()];
+    presentation.additional_trust_anchors = vec![expired.der().as_ref().to_vec()].into();
     assert_eq!(
         strict.verify_sd_jwt(&presentation),
         Err(CredentialTrustError::RevocationStatusUnknown)
     );
-    presentation.additional_trust_anchors = vec![vec![1, 2, 3]];
+    presentation.additional_trust_anchors = vec![vec![1, 2, 3]].into();
     assert!(strict.verify_sd_jwt(&presentation).is_err());
 }
 
@@ -1678,7 +1673,7 @@ fn certificate_subject_key_identifier(der: &[u8]) -> Vec<u8> {
 fn sd_jwt_projects_aki_only_from_its_authenticated_issuer_chain() {
     let (crypto, mut presentation, _, certs) = sd_presentation_fixture();
     let unrelated = certificate_fixture("unrelated.example");
-    presentation.additional_trust_anchors = vec![unrelated.ca_der.clone()];
+    presentation.additional_trust_anchors = vec![unrelated.ca_der.clone()].into();
     let verified = crypto
         .verify_sd_jwt(&presentation)
         .expect("real signed SD-JWT and holder binding");
@@ -1727,7 +1722,7 @@ fn signed_holder_nonce_failure_is_distinct_from_other_holder_failures() {
         }
         let kb = encode(&header, &claims, &holder_key).expect("signed holder proof");
         let response = PresentedCredential {
-            encoded: format!("{}~{}~{kb}", parts[0], parts[1]),
+            encoded: format!("{}~{}~{kb}", parts[0], parts[1]).into(),
             ..presentation.clone()
         };
         assert_eq!(
@@ -1738,7 +1733,7 @@ fn signed_holder_nonce_failure_is_distinct_from_other_holder_failures() {
     let (_, attacker_key) = es256_jwk(72);
     let kb = encode(&header, &json!({"nonce": "other-transaction", "aud": presentation.expected_audience, "iat": Utc::now().timestamp(), "sd_hash": "bad"}), &attacker_key).unwrap();
     let untrusted = PresentedCredential {
-        encoded: format!("{}~{}~{kb}", parts[0], parts[1]),
+        encoded: format!("{}~{}~{kb}", parts[0], parts[1]).into(),
         ..presentation
     };
     assert_eq!(
@@ -1918,12 +1913,11 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
         .unwrap();
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded,
-            expected_nonce: "another-transaction".to_owned(),
-            expected_audience: "https://verifier.example".to_owned(),
-            response_uri: "https://verifier.example/response".to_owned(),
-            mdoc_session_transcript: Some(different_transcript),
-            additional_trust_anchors: vec![],
+            encoded: encoded.into(),
+            expected_nonce: "another-transaction".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(different_transcript.into()),
+            additional_trust_anchors: vec![].into(),
         };
         assert_eq!(
             crypto.verify_mdoc(&presentation),
@@ -1933,7 +1927,7 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
 }
 
 fn signed_sd_transaction(
-    presentation: &PresentedCredential,
+    presentation: &PresentedCredential<'_>,
 ) -> nazo_openid4vp::PresentationTransaction {
     nazo_openid4vp::PresentationTransaction {
         id: uuid::Uuid::now_v7(),
@@ -1944,7 +1938,7 @@ fn signed_sd_transaction(
         request: serde_json::from_value(json!({
             "client_id": presentation.expected_audience,
             "response_type": "vp_token", "response_mode": "direct_post",
-            "response_uri": presentation.response_uri,
+            "response_uri": "https://verifier.example/response",
             "nonce": presentation.expected_nonce, "state": "state",
             "dcql_query": {
                 "credentials": [
@@ -1967,11 +1961,11 @@ fn signed_sd_transaction(
 }
 
 fn resign_sd_fixture(
-    presentation: &PresentedCredential,
+    presentation: &PresentedCredential<'static>,
     certs: &CertificateFixture,
     x5c: Vec<String>,
     nonce: &str,
-) -> PresentedCredential {
+) -> PresentedCredential<'static> {
     let parts = presentation.encoded.split('~').collect::<Vec<_>>();
     let claims: Value = serde_json::from_slice(
         &URL_SAFE_NO_PAD
@@ -1983,12 +1977,12 @@ fn resign_sd_fixture(
 }
 
 fn resign_sd_fixture_with_claims(
-    presentation: &PresentedCredential,
+    presentation: &PresentedCredential<'static>,
     certs: &CertificateFixture,
     x5c: Vec<String>,
     nonce: &str,
     claims: &Value,
-) -> PresentedCredential {
+) -> PresentedCredential<'static> {
     let parts = presentation.encoded.split('~').collect::<Vec<_>>();
     let mut issuer_header = Header::new(Algorithm::ES256);
     issuer_header.typ = Some("dc+sd-jwt".to_owned());
@@ -2014,7 +2008,7 @@ fn resign_sd_fixture_with_claims(
     )
     .unwrap();
     PresentedCredential {
-        encoded: format!("{sd_input}{kb}"),
+        encoded: format!("{sd_input}{kb}").into(),
         ..presentation.clone()
     }
 }
@@ -2282,7 +2276,7 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
                 }
             }
             for (nonce, fatal) in [
-                (accepted.expected_nonce.as_str(), false),
+                (accepted.expected_nonce.as_ref(), false),
                 ("another-transaction", true),
             ] {
                 let optional = resign_sd_fixture_with_claims(
@@ -2338,7 +2332,7 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
                     "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes())),
                 }), &attacker_key).unwrap();
                 let untrusted = PresentedCredential {
-                    encoded: format!("{sd_input}{kb}"),
+                    encoded: format!("{sd_input}{kb}").into(),
                     ..optional
                 };
                 assert_eq!(
@@ -2411,7 +2405,7 @@ fn sd_jwt_checks_validity_after_disclosures_with_valid_issuer_and_holder_signatu
         )
         .unwrap();
         let presentation = PresentedCredential {
-            encoded: format!("{input}{kb}"),
+            encoded: format!("{input}{kb}").into(),
             ..original.clone()
         };
         let result = crypto.verify_sd_jwt(&presentation);
@@ -2482,12 +2476,11 @@ fn verifier_rejects_mdoc_with_unimplemented_credential_status() {
         let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), Some(status));
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
-            encoded,
+            encoded: encoded.into(),
             expected_nonce: "verifier-nonce".into(),
             expected_audience: "https://verifier.example".into(),
-            response_uri: "https://verifier.example/response".into(),
-            mdoc_session_transcript: Some(transcript),
-            additional_trust_anchors: vec![],
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![].into(),
         };
         assert!(
             crypto.verify_mdoc(&presentation).is_ok(),

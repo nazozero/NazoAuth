@@ -310,6 +310,19 @@ async fn approval_rejects_mismatched_actor_context() {
             .status,
         AccessRequestStatus::Pending
     );
+    let (_, actor_tenant, actor_id) = fixture().await.unwrap();
+    assert_eq!(actor_tenant, tenant);
+    assert_ne!(actor_id, user_id);
+    repository
+        .approve(
+            tenant,
+            request.id,
+            actor_id,
+            &prepared_client(tenant, client(&Uuid::now_v7().simple().to_string()), false),
+        )
+        .await
+        .expect("two distinct users in the same context must satisfy the batched lookup");
+    cleanup(&pool, actor_id).await;
     cleanup(&pool, user_id).await;
 }
 

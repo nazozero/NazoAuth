@@ -39,7 +39,9 @@ pub enum ModuleCatalogError {
 }
 
 /// Validates completeness and acyclicity without assigning domain policy.
-pub fn validate_module_specs(specs: &[ModuleSpec]) -> Result<(), ModuleCatalogError> {
+pub fn validate_module_specs<'a>(
+    specs: impl IntoIterator<Item = &'a ModuleSpec>,
+) -> Result<(), ModuleCatalogError> {
     let mut by_id = BTreeMap::new();
     for spec in specs {
         if by_id.insert(spec.id, spec).is_some() {
@@ -53,7 +55,7 @@ pub fn validate_module_specs(specs: &[ModuleSpec]) -> Result<(), ModuleCatalogEr
         }
     }
 
-    for spec in specs {
+    for spec in by_id.values() {
         if spec.dependencies.contains(&spec.id) {
             return Err(ModuleCatalogError::SelfDependency(spec.id));
         }

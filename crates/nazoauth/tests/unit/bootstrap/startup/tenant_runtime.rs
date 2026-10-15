@@ -281,7 +281,9 @@ impl Fixture {
             registry.clone(),
             directory.clone(),
             cache.clone(),
-            TenantRuntimeBuilder::new(builder.clone()),
+            TenantRuntimeBuilder {
+                port: builder.clone(),
+            },
         );
         let expected_revision = initial.revision;
         assert_eq!(
@@ -987,7 +989,7 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
         registry_one.clone(),
         shared_directory.clone(),
         shared_cache.clone(),
-        TenantRuntimeBuilder::new(builder_one),
+        TenantRuntimeBuilder { port: builder_one },
     );
     refresher_one
         .install_initial(snapshot(1, vec![tenant_a.clone()]))
@@ -1000,7 +1002,7 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
         registry_two.clone(),
         shared_directory.clone(),
         shared_cache.clone(),
-        TenantRuntimeBuilder::new(builder_two),
+        TenantRuntimeBuilder { port: builder_two },
     );
     refresher_two
         .install_initial(snapshot(1, vec![tenant_a]))

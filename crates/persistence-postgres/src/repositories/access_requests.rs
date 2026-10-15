@@ -410,24 +410,21 @@ impl AccessRequestRepository {
                     if source_ip_hash.is_some() {
                         authorize_access_request_actor(connection, tenant, actor_user_id, request_user_id, true).await?;
                     } else {
-                    for user_id in [request_user_id, actor_user_id.as_uuid()] {
-                        let consistent = users::table
-                            .find(user_id)
+                        let expected_users = if request_user_id == actor_user_id.as_uuid() { 1 } else { 2 };
+                        let consistent_users = users::table
+                            .filter(users::id.eq_any([request_user_id, actor_user_id.as_uuid()]))
                             .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
                             .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
                             .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
-                            .select(users::id)
-                            .first::<Uuid>(connection)
+                            .count()
+                            .get_result::<i64>(connection)
                             .await
-                            .optional()
-                            .map_err(map_error)?
-                            .is_some();
-                        if !consistent {
+                            .map_err(map_error)?;
+                        if consistent_users != expected_users {
                             return Err(ApprovalError::Repository(RepositoryError::Consistency(
                                 "access-request user context is inconsistent".to_owned(),
                             )));
                         }
-                    }
                     }
                     let approved = insert_client(connection, tenant, client).await?;
                     let required_event_id = if let Some(source_ip_hash) = &source_ip_hash {

@@ -25,7 +25,7 @@ pub struct Openid4vcCredentialCrypto {
 impl CredentialVerifierPort for Openid4vcCredentialCrypto {
     fn verify<'a>(
         &'a self,
-        presentation: &'a PresentedCredential,
+        presentation: &'a PresentedCredential<'_>,
     ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
         Box::pin(async move {
             let credential = match presentation.format {

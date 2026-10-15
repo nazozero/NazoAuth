@@ -159,10 +159,10 @@ pub(super) fn mdoc_element_to_cbor(
 
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential,
+    presentation: &PresentedCredential<'_>,
 ) -> Result<VerifiedCredential, CredentialTrustError> {
     let bytes = URL_SAFE_NO_PAD
-        .decode(&presentation.encoded)
+        .decode(presentation.encoded.as_bytes())
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     let session_transcript = presentation
         .mdoc_session_transcript
@@ -175,7 +175,7 @@ pub(super) fn verify(
             &bytes,
             &mdoc_rs::VerifyOptions {
                 session_transcript: Some(mdoc_rs::session::SessionTranscript::Raw(
-                    session_transcript.clone(),
+                    session_transcript.to_vec(),
                 )),
                 ..Default::default()
             },
