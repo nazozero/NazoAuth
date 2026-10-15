@@ -2446,11 +2446,12 @@ fn verifier_rejects_unimplemented_credential_status_after_holder_authentication(
             crypto.verify(&with_status).await,
             Err(CredentialTrustError::InvalidStatus)
         );
+        let unrelated_nonce = crate::crypto::random_urlsafe_token();
         let wrong_nonce = resign_sd_fixture_with_claims(
             &presentation,
             &certs,
             vec![STANDARD.encode(&certs.leaf_der)],
-            "other-transaction",
+            &unrelated_nonce,
             &claims,
         );
         assert_eq!(

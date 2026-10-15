@@ -13,7 +13,7 @@ blake3 = "1.8.7"
 chrono = { version = "0.4.45", features = ["serde"] }
 ed25519-dalek = "3.0.0"
 hmac = "0.13.0"
-rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 rustls-pemfile = "2.2.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
