@@ -115,7 +115,7 @@ impl fmt::Debug for DirectTlsGeneration {
         formatter
             .debug_struct("DirectTlsGeneration")
             .field("revision", &self.revision)
-            .field("material_sha256", &hex_digest(&self.material_sha256))
+            .field("material_sha256", &hex::encode(self.material_sha256))
             .finish_non_exhaustive()
     }
 }
@@ -132,7 +132,7 @@ impl fmt::Debug for DirectTlsSnapshotStore {
         formatter
             .debug_struct("DirectTlsSnapshotStore")
             .field("revision", &current.revision)
-            .field("material_sha256", &hex_digest(&current.material_sha256))
+            .field("material_sha256", &hex::encode(current.material_sha256))
             .field("endpoint_names", &self.endpoint_names)
             .finish_non_exhaustive()
     }
@@ -308,7 +308,7 @@ pub(super) fn spawn_direct_tls_reloader(
                     target: "transport.tls",
                     previous_revision = previous,
                     current_revision = current,
-                    material_sha256 = %hex_digest(&snapshots.material_sha256()),
+                    material_sha256 = %hex::encode(snapshots.material_sha256()),
                     "published direct TLS identity generation"
                 ),
                 Err(error) => tracing::warn!(
@@ -562,8 +562,4 @@ fn material_digest(material: &[(&str, &[u8])]) -> [u8; 32] {
         digest.update(bytes);
     }
     digest.finalize().into()
-}
-
-fn hex_digest(digest: &[u8; 32]) -> String {
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }

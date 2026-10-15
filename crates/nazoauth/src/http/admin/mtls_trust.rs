@@ -11,7 +11,6 @@ use nazo_http_actix::{
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use uuid::Uuid;
 
 use crate::adapters::audit::audit_event_required;
@@ -316,12 +315,7 @@ fn valid_csrf(sessions: &AdminSessionHandles, req: &HttpRequest) -> bool {
 }
 
 fn sha256_hex(value: &[u8]) -> String {
-    Sha256::digest(value)
-        .iter()
-        .fold(String::with_capacity(64), |mut output, byte| {
-            write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
-            output
-        })
+    hex::encode(Sha256::digest(value))
 }
 
 #[cfg(test)]

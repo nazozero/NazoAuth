@@ -510,11 +510,7 @@ fn safe_object_id(object_id: &str) -> Result<(), AvatarStorageError> {
 fn tenant_namespace(tenant_id: TenantId) -> String {
     use sha2::{Digest as _, Sha256};
 
-    let digest = Sha256::digest(tenant_id.as_uuid().as_bytes());
-    digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>()
+    hex::encode(Sha256::digest(tenant_id.as_uuid().as_bytes()))
 }
 
 fn expiry_seconds(expires_at: DateTime<Utc>) -> Result<u32, AvatarStorageError> {

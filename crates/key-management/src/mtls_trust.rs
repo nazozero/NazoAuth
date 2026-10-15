@@ -102,13 +102,9 @@ pub fn validate_mtls_trust_anchor(
         .ok_or(MtlsTrustAnchorError::InvalidPem)?;
     Ok(ValidatedMtlsTrustAnchor {
         certificate_pem: format!("{BEGIN_CERTIFICATE}\n{canonical_body}\n{END_CERTIFICATE}\n"),
-        certificate_sha256: hex_digest(&Sha256::digest(&der)),
+        certificate_sha256: hex::encode(Sha256::digest(&der)),
         subject_dn: certificate.subject().to_string(),
         not_before,
         not_after,
     })
-}
-
-fn hex_digest(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

@@ -206,7 +206,7 @@ async fn download(
     }
     file.flush().await?;
     file.sync_all().await?;
-    if size != descriptor.size || hex(&digest.finalize()) != descriptor.sha256 {
+    if size != descriptor.size || hex::encode(digest.finalize()) != descriptor.sha256 {
         bail!("frontend archive does not match the GitHub asset digest and size");
     }
     Ok(())
@@ -346,15 +346,6 @@ fn lower_hex(value: &str, length: usize) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(output, "{byte:02x}");
-    }
-    output
 }
 
 #[cfg(test)]

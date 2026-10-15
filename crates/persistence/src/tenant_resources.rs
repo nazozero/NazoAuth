@@ -498,10 +498,7 @@ fn profile_text(
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// Result of application policy preparation consumed by a persistence adapter.

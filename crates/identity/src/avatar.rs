@@ -17,11 +17,7 @@ fn avatar_url(final_object_id: &str) -> String {
 }
 
 fn final_object_id(upload_id: &str, bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let encoded = digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let encoded = hex::encode(Sha256::digest(bytes));
     format!("{upload_id}-{encoded}")
 }
 

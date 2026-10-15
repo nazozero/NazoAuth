@@ -257,12 +257,7 @@ impl IdentityChange {
     /// is bound to and a commit must reproduce exactly.
     #[must_use]
     pub fn action_sha256(&self) -> String {
-        let mut encoded = String::with_capacity(64);
-        for byte in Sha256::digest(self.canonical_bytes()) {
-            use std::fmt::Write as _;
-            write!(&mut encoded, "{byte:02x}").expect("hex writing cannot fail");
-        }
-        encoded
+        hex::encode(Sha256::digest(self.canonical_bytes()))
     }
 }
 

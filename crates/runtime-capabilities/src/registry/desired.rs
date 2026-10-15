@@ -34,15 +34,21 @@ where
         if enabling && !self.catalog.is_available(module_id) {
             return Err(RegistryError::ServiceNotConstructed(module_id));
         }
+        if !enabling && matches!(disable_policy, DisablePolicy::NotRuntimeDisableable) {
+            return Err(RegistryError::RuntimeDisableBlocked(module_id));
+        }
         let snapshot = self.snapshot();
+        let desired = self
+            .repository
+            .read_all_desired()
+            .await
+            .map_err(RegistryError::Repository)?;
         let mut required_revisions = Vec::new();
         if enabling {
             for dependency in &spec.dependencies {
-                let dependency_desired = self
-                    .repository
-                    .read_desired(*dependency)
-                    .await
-                    .map_err(RegistryError::Repository)?
+                let dependency_desired = desired
+                    .iter()
+                    .find(|record| record.module_id == *dependency)
                     .ok_or(RegistryError::MissingDesiredState(*dependency))?;
                 if !self
                     .catalog
@@ -60,20 +66,15 @@ where
                 });
             }
         } else {
-            if matches!(disable_policy, DisablePolicy::NotRuntimeDisableable) {
-                return Err(RegistryError::RuntimeDisableBlocked(module_id));
-            }
             for dependent in self
                 .catalog
                 .specs()
                 .values()
                 .filter(|candidate| candidate.dependencies.contains(&module_id))
             {
-                let dependent_desired = self
-                    .repository
-                    .read_desired(dependent.id)
-                    .await
-                    .map_err(RegistryError::Repository)?
+                let dependent_desired = desired
+                    .iter()
+                    .find(|record| record.module_id == dependent.id)
                     .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
                 if self
                     .catalog
@@ -92,11 +93,9 @@ where
                 });
             }
         }
-        let current = self
-            .repository
-            .read_desired(module_id)
-            .await
-            .map_err(RegistryError::Repository)?
+        let current = desired
+            .into_iter()
+            .find(|record| record.module_id == module_id)
             .ok_or(RegistryError::MissingDesiredState(module_id))?;
         if Some(current.revision) != expected_revision {
             return Ok(CasOutcome::Stale {

@@ -18,13 +18,19 @@ where
             .catalog
             .spec(module_id)
             .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        if spec.dependencies.is_empty() {
+            return Ok(None);
+        }
         let snapshot = self.snapshot();
+        let desired = self
+            .repository
+            .read_all_desired()
+            .await
+            .map_err(RegistryError::Repository)?;
         for dependency in &spec.dependencies {
-            let desired = self
-                .repository
-                .read_desired(*dependency)
-                .await
-                .map_err(RegistryError::Repository)?
+            let desired = desired
+                .iter()
+                .find(|record| record.module_id == *dependency)
                 .ok_or(RegistryError::MissingDesiredState(*dependency))?;
             if !self
                 .catalog
@@ -41,26 +47,34 @@ where
         &self,
         module_id: ModuleId,
     ) -> Result<Option<ModuleId>, RegistryError<R::Error>> {
-        let snapshot = self.snapshot();
-        for dependent in self
+        let dependents = self
             .catalog
             .specs()
             .values()
             .filter(|candidate| candidate.dependencies.contains(&module_id))
-        {
-            let desired = self
-                .repository
-                .read_desired(dependent.id)
-                .await
-                .map_err(RegistryError::Repository)?
-                .ok_or(RegistryError::MissingDesiredState(dependent.id))?;
+            .map(|candidate| candidate.id)
+            .collect::<Vec<_>>();
+        if dependents.is_empty() {
+            return Ok(None);
+        }
+        let snapshot = self.snapshot();
+        let desired = self
+            .repository
+            .read_all_desired()
+            .await
+            .map_err(RegistryError::Repository)?;
+        for dependent in dependents {
+            let desired = desired
+                .iter()
+                .find(|record| record.module_id == dependent)
+                .ok_or(RegistryError::MissingDesiredState(dependent))?;
             if self
                 .catalog
-                .effective_enabled(dependent.id, desired.mode.is_enabled())
-                || snapshot.admits(dependent.id)
-                || snapshot.draining.contains(&dependent.id)
+                .effective_enabled(dependent, desired.mode.is_enabled())
+                || snapshot.admits(dependent)
+                || snapshot.draining.contains(&dependent)
             {
-                return Ok(Some(dependent.id));
+                return Ok(Some(dependent));
             }
         }
         Ok(None)

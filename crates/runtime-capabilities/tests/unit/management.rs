@@ -49,7 +49,6 @@ struct CasPause {
 }
 
 struct ReadPause {
-    module_id: ModuleId,
     entered: mpsc::SyncSender<()>,
     release: mpsc::Receiver<()>,
 }
@@ -155,7 +154,7 @@ struct TestRepository {
     reconcile_reads: AtomicUsize,
     desired_after_reconcile_read: Mutex<Option<DesiredStateRecord>>,
     cas_pause: Mutex<Option<CasPause>>,
-    read_pauses: Mutex<Vec<ReadPause>>,
+    read_pause: Mutex<Option<ReadPause>>,
     desired_transaction: Mutex<()>,
     instance_outcomes: Mutex<VecDeque<CasOutcome<InstanceStateRecord>>>,
 }
@@ -179,17 +178,6 @@ impl ModuleStateRepository for TestRepository {
             .iter()
             .find(|record| record.module_id == module_id)
             .cloned();
-        let pause = {
-            let mut configured = self.read_pauses.lock().unwrap();
-            configured
-                .iter()
-                .position(|pause| pause.module_id == module_id)
-                .map(|position| configured.remove(position))
-        };
-        if let Some(pause) = pause {
-            pause.entered.send(()).unwrap();
-            pause.release.recv().unwrap();
-        }
         Ok(current)
     }
 
@@ -198,7 +186,13 @@ impl ModuleStateRepository for TestRepository {
         if self.fail_bulk_desired.load(Ordering::Relaxed) {
             return Err(TestError::Unavailable);
         }
-        Ok(self.state.lock().unwrap().desired.clone())
+        let snapshot = self.state.lock().unwrap().desired.clone();
+        let pause = self.read_pause.lock().unwrap().take();
+        if let Some(pause) = pause {
+            pause.entered.send(()).unwrap();
+            pause.release.recv().unwrap();
+        }
+        Ok(snapshot)
     }
 
     async fn read_reconcile_state(
@@ -533,6 +527,47 @@ fn settled_repository() -> Arc<TestRepository> {
     }
     drop(state);
     repository
+}
+
+#[test]
+fn settled_reconcile_reads_dependency_policy_once() {
+    for enabled in [true, false] {
+        let repository = settled_repository();
+        if !enabled {
+            let mut state = repository.state.lock().unwrap();
+            for desired in &mut state.desired {
+                desired.mode = DesiredMode::Disabled;
+            }
+            for instance in &mut state.instances {
+                instance.state = ModuleState::Disabled;
+            }
+        }
+        let catalog = fixed_catalog()
+            .with_dependencies(ModuleId::Ciba, [ModuleId::RequestObjects, ModuleId::Jarm])
+            .unwrap()
+            .with_dependencies(ModuleId::Jarm, [ModuleId::RequestObjects])
+            .unwrap();
+        let registry = registry(
+            repository.clone(),
+            catalog,
+            if enabled {
+                ModuleId::ALL.into_iter().collect()
+            } else {
+                BTreeSet::new()
+            },
+        );
+        let module_id = if enabled {
+            ModuleId::Ciba
+        } else {
+            ModuleId::RequestObjects
+        };
+        assert_eq!(
+            block_on(registry.reconcile_once(module_id)).unwrap(),
+            ReconcileOutcome::NoChange
+        );
+        assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 1);
+        assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 1);
+    }
 }
 
 #[test]
@@ -1050,22 +1085,12 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
         })
     };
     entered_rx.recv().unwrap();
-    let (dependency_read_tx, dependency_read_rx) = mpsc::sync_channel(1);
-    let (dependency_release_tx, dependency_release_rx) = mpsc::sync_channel(1);
-    let (target_read_tx, target_read_rx) = mpsc::sync_channel(1);
-    let (target_release_tx, target_release_rx) = mpsc::sync_channel(1);
-    repository.read_pauses.lock().unwrap().extend([
-        ReadPause {
-            module_id: ModuleId::RequestObjects,
-            entered: dependency_read_tx,
-            release: dependency_release_rx,
-        },
-        ReadPause {
-            module_id: ModuleId::Jarm,
-            entered: target_read_tx,
-            release: target_release_rx,
-        },
-    ]);
+    let (snapshot_read_tx, snapshot_read_rx) = mpsc::sync_channel(1);
+    let (snapshot_release_tx, snapshot_release_rx) = mpsc::sync_channel(1);
+    *repository.read_pause.lock().unwrap() = Some(ReadPause {
+        entered: snapshot_read_tx,
+        release: snapshot_release_rx,
+    });
     let enabling = {
         let registry = enabling_registry;
         std::thread::spawn(move || {
@@ -1079,22 +1104,22 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
             ))
         })
     };
-    dependency_read_rx.recv().unwrap();
-    dependency_release_tx.send(()).unwrap();
-    target_read_rx.recv().unwrap();
-    target_release_tx.send(()).unwrap();
+    snapshot_read_rx.recv().unwrap();
     release_tx.send(()).unwrap();
 
     assert!(matches!(
         disabling.join().unwrap(),
         Ok(CasOutcome::Applied(_))
     ));
+    snapshot_release_tx.send(()).unwrap();
     assert!(matches!(
         enabling.join().unwrap(),
         Ok(CasOutcome::Stale { current: Some(current) })
             if current.module_id == ModuleId::Jarm
                 && current.revision == ModuleRevision::new(1)
     ));
+    assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 2);
     let state = repository.state.lock().unwrap();
     assert_eq!(
         state

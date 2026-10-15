@@ -200,12 +200,9 @@ impl RecoveryRootRotation {
             "kid": self.kid,
             "public_key": URL_SAFE_NO_PAD.encode(self.public_key),
         });
-        let mut encoded = String::with_capacity(64);
-        for byte in Sha256::digest(serde_json::to_vec(&value).expect("json serialization")) {
-            use std::fmt::Write as _;
-            write!(&mut encoded, "{byte:02x}").expect("hex writing cannot fail");
-        }
-        encoded
+        hex::encode(Sha256::digest(
+            serde_json::to_vec(&value).expect("json serialization"),
+        ))
     }
 }
 

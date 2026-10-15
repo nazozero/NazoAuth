@@ -837,10 +837,7 @@ pub(super) fn verify_public_jwk_at(
     let bytes =
         read_regular_file_bounded(&path, MAX_EXTERNAL_PUBLIC_JWK_BYTES, "external public JWK")
             .context("external public JWK was not mounted")?;
-    let actual: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let actual = hex::encode(Sha256::digest(&bytes));
     if !constant_time_eq(actual.as_bytes(), expected_sha256.as_bytes()) {
         bail!("external public JWK digest mismatch");
     }
