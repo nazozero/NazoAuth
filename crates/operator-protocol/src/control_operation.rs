@@ -39,8 +39,6 @@
 //! The controller key id (`kid`) is `base64url(SHA-256(raw public key
 //! bytes))`, unpadded (43 characters); see [`controller_key_id`].
 
-use std::collections::BTreeMap;
-
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -1097,9 +1095,9 @@ pub fn controller_key_id(key: &VerifyingKey) -> String {
 pub fn canonical_control_operation_bytes(
     operation: &ControlOperation,
 ) -> Result<Vec<u8>, ProtocolError> {
-    let value = serde_json::to_value(operation).map_err(|_| ProtocolError::Json)?;
-    let bytes =
-        serde_json::to_vec(&canonicalize_json_value(value)).map_err(|_| ProtocolError::Json)?;
+    let mut value = serde_json::to_value(operation).map_err(|_| ProtocolError::Json)?;
+    value.sort_all_objects();
+    let bytes = serde_json::to_vec(&value).map_err(|_| ProtocolError::Json)?;
     if bytes.len() > MAX_CONTROL_OPERATION_BYTES {
         return Err(ProtocolError::TooLarge);
     }
@@ -1116,27 +1114,6 @@ pub fn control_operation_request_hash(
     validate_control_operation(operation)?;
     let bytes = canonical_control_operation_bytes(operation)?;
     Ok(lower_hex_sha256(&bytes))
-}
-
-/// Recursively sort object members by UTF-8 key order so two encodings of
-/// the same logical value always produce identical canonical bytes.
-pub(crate) fn canonicalize_json_value(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Array(values) => serde_json::Value::Array(
-            values
-                .into_iter()
-                .map(canonicalize_json_value)
-                .collect::<Vec<_>>(),
-        ),
-        serde_json::Value::Object(members) => {
-            let sorted: BTreeMap<String, serde_json::Value> = members
-                .into_iter()
-                .map(|(key, value)| (key, canonicalize_json_value(value)))
-                .collect();
-            serde_json::Value::Object(sorted.into_iter().collect())
-        }
-        scalar => scalar,
-    }
 }
 
 /// Sign one control operation with the instance Controller Key.

@@ -77,7 +77,7 @@ pub(crate) async fn unlink_my_federation_link(
     };
     if audit_event_required(
         "external_identity_unlinked",
-        audit_fields(&[
+        audit_fields([
             ("user_id", json!(user.id())),
             ("provider_type", json!(link.provider_type)),
             ("provider_id", json!(link.provider_id)),

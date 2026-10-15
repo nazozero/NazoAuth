@@ -55,10 +55,10 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         })?;
     // Prompt-none shares the same durable decision fence as interactive
     // approval. Preparation/cache disposal cannot grant authorization.
-    let mut intent_fields = audit_fields(&[
+    let mut intent_fields = audit_fields([
         ("request_id_hash", json!(blake3_hex(&payload.request_id))),
         ("user_id", json!(payload.user_id)),
-        ("client_id", json!(payload.client_id.clone())),
+        ("client_id", json!(payload.client_id)),
         ("decision", json!("approve")),
         ("decision_source", json!("prompt_none")),
         ("scope", json!(payload.scopes.join(" "))),

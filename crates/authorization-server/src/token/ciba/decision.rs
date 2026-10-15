@@ -148,7 +148,7 @@ async fn prepare_ciba_decision_intent(
         CibaDecision::Approve(_) => "approve",
         CibaDecision::Deny => "deny",
     };
-    let mut fields = audit_fields(&[
+    let mut fields = audit_fields([
         ("client_id", json!(state.client_id)),
         ("user_id", json!(state.user_id)),
         ("auth_req_id_hash", json!(blake3_hex(&command.auth_req_id))),
@@ -215,7 +215,7 @@ fn complete_ciba_decision(
                 CibaDecision::Approve(_) => "approve",
                 CibaDecision::Deny => "deny",
             };
-            let mut fields = audit_fields(&[
+            let mut fields = audit_fields([
                 ("client_id", json!(committed.state.client_id)),
                 ("user_id", json!(committed.state.user_id)),
                 ("auth_req_id_hash", json!(blake3_hex(auth_req_id))),

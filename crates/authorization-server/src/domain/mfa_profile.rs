@@ -203,7 +203,7 @@ impl ServerMfaProfileOperations {
         account: &PublicAccount,
         context: &MfaRequestContext,
     ) -> serde_json::Map<String, serde_json::Value> {
-        audit_fields(&[
+        audit_fields([
             ("user_id", json!(account.user_id().as_uuid())),
             ("source_ip_hash", json!(blake3_hex(&context.source_ip))),
         ])

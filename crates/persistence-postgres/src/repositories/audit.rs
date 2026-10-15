@@ -381,20 +381,22 @@ pub(super) async fn insert_identity_security_event(
     connection: &mut AsyncPgConnection,
     event: &IdentitySecurityEvent,
 ) -> Result<(), RepositoryError> {
-    for (field, user_id) in [("actor", event.actor_id), ("target", event.target_user_id)] {
-        if field == "target" && event.target_user_id == event.actor_id {
-            continue;
-        }
-        if let Some(user_id) = user_id {
-            let belongs_to_tenant = users::table
-                .find(user_id.as_uuid())
-                .filter(users::tenant_id.eq(event.tenant_id.as_uuid()))
-                .select(diesel::dsl::count_star())
-                .first::<i64>(&mut *connection)
-                .await
-                .map_err(map_error)?
-                == 1;
-            if !belongs_to_tenant {
+    if event.actor_id.is_some() || event.target_user_id.is_some() {
+        let user_ids = [event.actor_id, event.target_user_id]
+            .into_iter()
+            .flatten()
+            .map(nazo_identity::UserId::as_uuid);
+        let matching_users = users::table
+            .filter(users::id.eq_any(user_ids))
+            .filter(users::tenant_id.eq(event.tenant_id.as_uuid()))
+            .select(users::id)
+            .load::<Uuid>(&mut *connection)
+            .await
+            .map_err(map_error)?;
+        for (field, user_id) in [("actor", event.actor_id), ("target", event.target_user_id)] {
+            if let Some(user_id) = user_id
+                && !matching_users.contains(&user_id.as_uuid())
+            {
                 return Err(RepositoryError::Consistency(format!(
                     "identity security event {field} tenant mismatch"
                 )));

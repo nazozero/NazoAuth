@@ -270,7 +270,7 @@ pub(crate) async fn admin_mtls_trust_bundle(
             // the bundle leaves; an audit outage fails closed with 503.
             if let Err(error) = audit_event_required(
                 "mtls_trust_bundle_exported",
-                audit_fields(&[
+                audit_fields([
                     ("admin_user_id", serde_json::json!(admin.id())),
                     ("bundle_sha256", serde_json::json!(bundle_sha256)),
                     ("certificate_count", serde_json::json!(certificate_count)),

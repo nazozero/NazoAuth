@@ -551,7 +551,7 @@ impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
     fn audit(&self, event: &'static str, client: &nazo_auth::OAuthClient, source_ip: &str) {
         self.audit.record(
             event,
-            audit_fields(&[
+            audit_fields([
                 ("client_id", json!(client.client_id)),
                 ("client_type", json!(client.client_type)),
                 ("grant_types", json!(client.grant_types)),

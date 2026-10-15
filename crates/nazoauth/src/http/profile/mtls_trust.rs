@@ -95,7 +95,7 @@ pub(crate) async fn create_mtls_trust_request(
         Ok(created) => {
             if audit_event_required(
                 "mtls_trust_anchor_requested",
-                audit_fields(&[
+                audit_fields([
                     ("request_id", serde_json::json!(created.id)),
                     ("requester_user_id", serde_json::json!(user.id())),
                     ("client_id", serde_json::json!(&created.client_id)),

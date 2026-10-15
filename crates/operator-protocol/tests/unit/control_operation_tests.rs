@@ -10,7 +10,6 @@ use nazo_crypto::ed25519::SigningKey;
 use sha2::{Digest as _, Sha256};
 
 use super::*;
-use crate::control_operation::canonicalize_json_value;
 use crate::wire::{TenantResourceIdentity, TenantResourceKind, TenantResourceSelector};
 
 fn controller_key() -> SigningKey {
@@ -142,9 +141,9 @@ fn two_encodings_of_one_logical_request_produce_identical_bytes() {
         "schema".to_owned(),
         serde_json::json!(CONTROL_OPERATION_SCHEMA),
     );
-    let reordered = canonicalize_json_value(serde_json::Value::Object(root));
+    let reordered = serde_json::from_value(serde_json::Value::Object(root)).unwrap();
     assert_eq!(
-        serde_json::to_vec(&reordered).unwrap(),
+        canonical_control_operation_bytes(&reordered).unwrap(),
         direct,
         "member insertion order must not change canonical bytes"
     );
@@ -161,9 +160,9 @@ fn two_encodings_of_one_logical_request_produce_identical_bytes() {
         }}"#,
         operation.kid,
     );
-    let parsed: serde_json::Value = serde_json::from_str(&pretty).unwrap();
+    let parsed: ControlOperation = serde_json::from_str(&pretty).unwrap();
     assert_eq!(
-        serde_json::to_vec(&canonicalize_json_value(parsed)).unwrap(),
+        canonical_control_operation_bytes(&parsed).unwrap(),
         direct,
         "whitespace and unicode-escape spellings must not change canonical bytes"
     );

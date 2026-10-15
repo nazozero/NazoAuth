@@ -56,7 +56,7 @@ impl nazo_identity::ports::AuthenticationAuditPort for TracingAuthenticationAudi
                 if let Some(user_id) = user_id {
                     fields.push(("user_id", json!(user_id.as_uuid())));
                 }
-                self.audit.record("login_failure", audit_fields(&fields));
+                self.audit.record("login_failure", audit_fields(fields));
             }
             nazo_identity::ports::AuthenticationAuditEvent::Success {
                 user_id,
@@ -64,7 +64,7 @@ impl nazo_identity::ports::AuthenticationAuditPort for TracingAuthenticationAudi
                 amr,
             } => self.audit.record(
                 "login_success",
-                audit_fields(&[
+                audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
                     ("source_ip_hash", json!(blake3_hex(&source_ip))),
                     ("amr", json!(amr)),

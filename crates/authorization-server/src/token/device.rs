@@ -176,7 +176,7 @@ impl DeviceDecisionHandles {
         };
         self.audit.record(
             "device_authorization_started",
-            audit_fields(&[
+            audit_fields([
                 ("client_id", json!(client.client_id)),
                 ("scope", json!(payload.scopes.join(" "))),
                 ("audience", json!(payload.resource_indicators)),
@@ -282,14 +282,14 @@ impl DeviceDecisionHandles {
             .audit
             .record_required(
                 "device_decision_intent",
-                audit_fields(&[
-                    ("client_id", json!(payload.client_id.clone())),
+                audit_fields([
+                    ("client_id", json!(payload.client_id)),
                     ("user_id", json!(session.user.id())),
                     ("decision", json!(decision_name)),
                     ("decision_source", json!("user")),
                     ("user_code_hash", json!(blake3_hex(&normalized_user_code))),
                     ("scope", json!(payload.scopes.join(" "))),
-                    ("audience", json!(payload.resource_indicators.clone())),
+                    ("audience", json!(payload.resource_indicators)),
                     ("source_ip_hash", json!(blake3_hex(source_ip))),
                 ]),
             )
@@ -365,7 +365,7 @@ impl DeviceDecisionHandles {
                 };
                 self.audit.record(
                     event,
-                    audit_fields(&[
+                    audit_fields([
                         ("client_id", json!(payload.client_id)),
                         ("user_id", json!(session.user.id())),
                         ("user_code_hash", json!(blake3_hex(&normalized_user_code))),

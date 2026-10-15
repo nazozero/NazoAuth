@@ -201,7 +201,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                 // persisted before the irreversible session delete: an
                 // append failure aborts the logout while the session can
                 // still be retried instead of completing unaudited.
-                let mut fields = audit_fields(&[
+                let mut fields = audit_fields([
                     ("operation_key", json!(operation_key)),
                     ("client_id", json!(audit_client_id)),
                 ]);

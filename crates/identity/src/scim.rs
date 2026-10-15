@@ -474,31 +474,34 @@ pub fn normalize_patch(operations: Vec<ScimPatchOperation>) -> Result<ScimPatch,
 }
 
 pub fn apply_patch_object(patch: &mut ScimPatch, value: Value) -> Result<(), ScimError> {
-    let object = value
-        .as_object()
-        .ok_or_else(|| ScimError::new("invalidSyntax", "PATCH value must be object"))?;
-    if let Some(value) = object.get("userName") {
-        patch.user_name = Some(required_email_value(value.clone(), "userName")?);
+    let Value::Object(mut object) = value else {
+        return Err(ScimError::new(
+            "invalidSyntax",
+            "PATCH value must be object",
+        ));
+    };
+    if let Some(value) = object.remove("userName") {
+        patch.user_name = Some(required_email_value(value, "userName")?);
     }
-    if let Some(value) = object.get("active") {
-        patch.active = Some(required_bool_value(value.clone(), "active")?);
+    if let Some(value) = object.remove("active") {
+        patch.active = Some(required_bool_value(value, "active")?);
     }
-    if let Some(value) = object.get("name") {
-        let name = value
-            .as_object()
-            .ok_or_else(|| ScimError::new("invalidSyntax", "name must be object"))?;
-        if let Some(value) = name.get("formatted") {
-            patch.display_name = Some(required_string_value(value.clone(), "name.formatted")?);
+    if let Some(value) = object.remove("name") {
+        let Value::Object(mut name) = value else {
+            return Err(ScimError::new("invalidSyntax", "name must be object"));
+        };
+        if let Some(value) = name.remove("formatted") {
+            patch.display_name = Some(required_string_value(value, "name.formatted")?);
         }
-        if let Some(value) = name.get("givenName") {
-            patch.given_name = Some(required_string_value(value.clone(), "name.givenName")?);
+        if let Some(value) = name.remove("givenName") {
+            patch.given_name = Some(required_string_value(value, "name.givenName")?);
         }
-        if let Some(value) = name.get("familyName") {
-            patch.family_name = Some(required_string_value(value.clone(), "name.familyName")?);
+        if let Some(value) = name.remove("familyName") {
+            patch.family_name = Some(required_string_value(value, "name.familyName")?);
         }
     }
-    if let Some(value) = object.get("emails") {
-        patch.email = Some(primary_email_from_value(value.clone())?);
+    if let Some(value) = object.remove("emails") {
+        patch.email = Some(primary_email_from_value(value)?);
     }
     if let (Some(user_name), Some(email)) = (&patch.user_name, &patch.email)
         && user_name != email
@@ -600,7 +603,11 @@ pub fn normalize_scim_string(
 }
 
 pub fn required_string_value(value: Value, field: &str) -> Result<String, ScimError> {
-    normalize_scim_string(value.as_str().map(ToOwned::to_owned), 120, field, true)?
+    let value = match value {
+        Value::String(value) => Some(value),
+        _ => None,
+    };
+    normalize_scim_string(value, 120, field, true)?
         .ok_or_else(|| ScimError::new("invalidValue", "value required"))
 }
 

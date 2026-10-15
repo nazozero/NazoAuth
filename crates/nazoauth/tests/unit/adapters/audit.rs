@@ -11,7 +11,7 @@ async fn interleaved_requests_capture_their_own_tenant_before_audit_queueing() {
             tokio::task::yield_now().await;
             prepare_event(
                 "login_success",
-                audit_fields(&[("user_id", json!("same-id"))]),
+                audit_fields([("user_id", json!("same-id"))]),
             )
             .unwrap()
         })
@@ -39,13 +39,13 @@ async fn audit_payload_cannot_override_the_resolved_request_tenant() {
             assert!(matches!(
                 prepare_event(
                     "login_success",
-                    audit_fields(&[("tenant_id", json!(tenant_b))])
+                    audit_fields([("tenant_id", json!(tenant_b))])
                 ),
                 Err("tenant_context_mismatch")
             ));
             let event = prepare_event(
                 "login_success",
-                audit_fields(&[("tenant_id", json!(tenant_a))]),
+                audit_fields([("tenant_id", json!(tenant_a))]),
             )
             .unwrap();
             assert_eq!(event.payload["tenant_id"], json!(tenant_a));
@@ -55,7 +55,7 @@ async fn audit_payload_cannot_override_the_resolved_request_tenant() {
 
 #[test]
 fn audit_fields_can_remove_sensitive_material() {
-    let mut fields = audit_fields(&[
+    let mut fields = audit_fields([
         ("client_id", json!("client-1")),
         ("access_token", json!("secret-token")),
     ]);
@@ -195,7 +195,7 @@ fn audit_schema_version_is_stable_for_collectors() {
 fn prepare_event_normalizes_security_payload_and_rejects_unknown_or_oversized_events() {
     let queued = prepare_event(
         "login_success",
-        audit_fields(&[
+        audit_fields([
             ("user_id", json!("user-1")),
             ("access_token", json!("must-not-persist")),
         ]),
@@ -214,7 +214,7 @@ fn prepare_event_normalizes_security_payload_and_rejects_unknown_or_oversized_ev
         prepare_event("unknown_event", serde_json::Map::new()),
         Err("unknown_event_type")
     ));
-    let oversized = audit_fields(&[(
+    let oversized = audit_fields([(
         "large",
         json!("x".repeat(nazo_postgres::MAX_SECURITY_AUDIT_PAYLOAD_BYTES + 1)),
     )]);
@@ -226,7 +226,7 @@ fn prepare_event_normalizes_security_payload_and_rejects_unknown_or_oversized_ev
 
 #[test]
 fn prepare_event_redacts_every_known_credential_from_intent_and_outcome_payloads() {
-    let mut fields = audit_fields(&[("request_id_hash", json!("request-hash"))]);
+    let mut fields = audit_fields([("request_id_hash", json!("request-hash"))]);
     for key in SENSITIVE_FIELD_NAMES {
         fields.insert((*key).to_owned(), json!(format!("{key}-raw-secret")));
     }
@@ -401,7 +401,7 @@ async fn explicitly_bound_audit_does_not_use_the_request_tenant() {
             let error = audit
                 .record_required(
                     "login_success",
-                    audit_fields(&[("tenant_id", json!(request))]),
+                    audit_fields([("tenant_id", json!(request))]),
                 )
                 .await
                 .unwrap_err();
@@ -1336,7 +1336,7 @@ fn administrative_mutation_events_are_registered_required_evidence() {
     ] {
         assert_eq!(audit_event_category(name), Some("administration"));
         assert!(audit_event_is_required(name));
-        let prepared = prepare_event(name, audit_fields(&[("actor_user_id", json!("actor"))]))
+        let prepared = prepare_event(name, audit_fields([("actor_user_id", json!("actor"))]))
             .expect("real administrative handlers must have a registered event");
         assert_eq!(prepared.event_type, name);
     }

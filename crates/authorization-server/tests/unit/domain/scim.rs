@@ -205,7 +205,7 @@ fn successful_authorization_uses_one_live_lookup_and_one_unified_audit_event() {
         assert_eq!(events[0].0, "scim_token_used");
         assert_eq!(
             events[0].1,
-            audit_fields(&[
+            audit_fields([
                 ("token_id", json!(uuid::Uuid::from_u128(11))),
                 ("tenant_id", json!(authorized.tenant.tenant_id.as_uuid())),
                 ("scope", json!("scim:read")),

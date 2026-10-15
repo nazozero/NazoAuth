@@ -1,12 +1,10 @@
 //! Counter writes require a confirmed idle transaction after rejection.
 
 use super::{RecoveryRootError, RecoveryRootRepository};
+use crate::repositories::query_counter;
 use chrono::Utc;
 use diesel_async::{AsyncConnection, AsyncPgConnection, TransactionManager as _};
 use uuid::Uuid;
-
-#[path = "../../support/query_counter.rs"]
-mod query_counter;
 
 #[tokio::test]
 async fn failed_attempt_counter_refuses_open_and_broken_transaction_states() {

@@ -276,7 +276,7 @@ impl CibaApplication {
         if let Err(error) = security_audit
             .record_required(
                 "ciba_authorization_intent",
-                audit_fields(&[
+                audit_fields([
                     ("client_id", json!(client.client_id)),
                     ("user_id", json!(user.id())),
                     ("scope", json!(scopes.join(" "))),

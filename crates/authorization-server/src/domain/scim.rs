@@ -102,7 +102,7 @@ impl ServerScimRequestAuthorizer {
     ) {
         self.audit.record(
             "scim_token_used",
-            audit_fields(&[
+            audit_fields([
                 ("token_id", serde_json::json!(credential.token_id)),
                 (
                     "tenant_id",
@@ -142,7 +142,7 @@ impl ServerScimRequestAuthorizer {
         self.audit
             .record_required(
                 "scim_token_denied",
-                audit_fields(&[
+                audit_fields([
                     ("token_id", serde_json::json!(token_id)),
                     ("scope", serde_json::json!(required_scope.as_str())),
                     ("reason", serde_json::json!(reason)),
