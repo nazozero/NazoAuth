@@ -28,7 +28,6 @@ use crate::token::client_auth::ClientAuthRequestFacts;
 use crate::token::client_auth::TokenManagementClientAuthError;
 use crate::token::client_auth::authenticate_introspection_client_with_dependencies;
 use crate::token::client_auth::authenticate_revocation_client_with_dependencies;
-use crate::token::client_auth::perform_dummy_client_secret_verification;
 
 #[derive(Clone)]
 pub struct ServerTokenManagementRequestGuard {
@@ -135,10 +134,6 @@ impl ServerTokenManagementOperations {
         {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
             Ok(None) => {
-                perform_dummy_client_secret_verification(
-                    credentials,
-                    &self.config.client_secret_pepper,
-                );
                 return Err(TokenManagementError::InvalidClient {
                     basic_challenge: has_basic,
                 });
@@ -149,10 +144,6 @@ impl ServerTokenManagementOperations {
             }
         };
         if !client.is_active {
-            perform_dummy_client_secret_verification(
-                credentials,
-                &self.config.client_secret_pepper,
-            );
             return Err(TokenManagementError::InvalidClient {
                 basic_challenge: has_basic,
             });

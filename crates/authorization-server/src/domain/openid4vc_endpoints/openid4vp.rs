@@ -126,7 +126,7 @@ impl ServerPresentationOperations {
             admission,
         )
     }
-    fn wallet_origin(endpoint: &str) -> Result<String, PresentationHttpError> {
+    fn wallet_endpoint(endpoint: &str) -> Result<url::Url, PresentationHttpError> {
         let url = url::Url::parse(endpoint).map_err(|_| {
             vp_error(
                 400,
@@ -141,7 +141,7 @@ impl ServerPresentationOperations {
                 "Wallet authorization endpoint is invalid.",
             ));
         }
-        Ok(url.origin().ascii_serialization())
+        Ok(url)
     }
 
     fn static_wallet_origin_allowed(&self, origin: &str) -> bool {
@@ -209,7 +209,9 @@ impl ServerPresentationOperations {
                 ));
             }
         };
-        let wallet_origin = Self::wallet_origin(&transaction.wallet_authorization_endpoint)?;
+        let wallet_origin = Self::wallet_endpoint(&transaction.wallet_authorization_endpoint)?
+            .origin()
+            .ascii_serialization();
         let policy = self
             .active_trust_policy(binding.1, &wallet_origin, binding.2)
             .await?
@@ -262,17 +264,9 @@ impl PresentationOperations for ServerPresentationOperations {
                     "create_request_jti must be a canonical lowercase UUID.",
                 )
             })?;
-            let wallet_origin = Self::wallet_origin(&input.wallet_authorization_endpoint)?;
-            let wallet_authorization_endpoint =
-                url::Url::parse(&input.wallet_authorization_endpoint)
-                    .map_err(|_| {
-                        vp_error(
-                            400,
-                            "invalid_request",
-                            "Wallet authorization endpoint is invalid.",
-                        )
-                    })?
-                    .to_string();
+            let endpoint = Self::wallet_endpoint(&input.wallet_authorization_endpoint)?;
+            let wallet_origin = endpoint.origin().ascii_serialization();
+            let wallet_authorization_endpoint: String = endpoint.into();
             let static_wallet_allowed = self.static_wallet_origin_allowed(&wallet_origin);
             let binding = match (
                 input.openid4vc_trust_policy_resource_id.as_deref(),

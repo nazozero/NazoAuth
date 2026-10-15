@@ -406,15 +406,11 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
             "authorization codes require the code identity and holder contract".to_owned(),
         ));
     }
-    if let TokenIssuanceMode::AuthorizationCode {
-        code_identity,
-        holder,
-        ..
-    } = &input.mode
-        && (!code_identity.starts_with("authorization_code:v2:") || !holder.is_well_formed())
+    if let TokenIssuanceMode::AuthorizationCode { code_identity, .. } = &input.mode
+        && !code_identity.starts_with("authorization_code:v2:")
     {
         return Err(RepositoryError::Consistency(
-            "authorization code holder contract is malformed".to_owned(),
+            "authorization code identity is malformed".to_owned(),
         ));
     }
     let expected_authorization_id = input
@@ -813,14 +809,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             nazo_auth::AuthorizationCodeHolderEvidence::from_persisted(value)
                                 .ok_or(TokenPortError::CorruptData)
                         })
-                        .transpose()
-                        .map_err(|_| TokenPortError::CorruptData)?;
-                    if authorization_code_holder
-                        .as_ref()
-                        .is_some_and(|holder| !holder.is_well_formed())
-                    {
-                        return Err(TokenPortError::CorruptData);
-                    }
+                        .transpose()?;
                     Ok(SingleUseRedemption {
                         authorization_code_holder,
                         access_token_jti,

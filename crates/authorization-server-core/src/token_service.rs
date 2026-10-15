@@ -231,7 +231,22 @@ impl AuthorizationCodeHolderEvidence {
         mtls_x5t_s256: Option<String>,
         client_attestation_jkt: Option<String>,
     ) -> Option<Self> {
-        let value = Self {
+        let proofs = [
+            &pkce_s256,
+            &dpop_jkt,
+            &mtls_x5t_s256,
+            &client_attestation_jkt,
+        ];
+        if proofs
+            .iter()
+            .any(|proof| proof.as_ref().is_some_and(String::is_empty))
+            || (client_authentication == AuthorizationCodeClientAuthentication::Public
+                && proofs.iter().all(|proof| proof.is_none()))
+            || (dpop_jkt.is_some() && mtls_x5t_s256.is_some())
+        {
+            return None;
+        }
+        Some(Self {
             version: 1,
             authenticated_client: client_authentication
                 == AuthorizationCodeClientAuthentication::Authenticated,
@@ -239,8 +254,7 @@ impl AuthorizationCodeHolderEvidence {
             dpop_jkt,
             mtls_x5t_s256,
             client_attestation_jkt,
-        };
-        value.is_well_formed().then_some(value)
+        })
     }
 
     /// Restore persisted requirements through the same checked boundary.
@@ -283,22 +297,6 @@ impl AuthorizationCodeHolderEvidence {
     #[must_use]
     pub fn client_attestation_jkt(&self) -> Option<&str> {
         self.client_attestation_jkt.as_deref()
-    }
-
-    #[must_use]
-    pub fn is_well_formed(&self) -> bool {
-        let proofs = [
-            &self.pkce_s256,
-            &self.dpop_jkt,
-            &self.mtls_x5t_s256,
-            &self.client_attestation_jkt,
-        ];
-        self.version == 1
-            && proofs
-                .iter()
-                .all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
-            && (self.authenticated_client || proofs.iter().any(|proof| proof.is_some()))
-            && !(self.dpop_jkt.is_some() && self.mtls_x5t_s256.is_some())
     }
 }
 

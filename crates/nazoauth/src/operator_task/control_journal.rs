@@ -654,15 +654,16 @@ fn persist_completed_result(
     prepared: PreparedJournalResult,
 ) -> Result<JournaledOutcome, JournalFlowError> {
     let PreparedJournalResult { result, stdout } = prepared;
-    ensure_file_safe_identifier(&result.operation_id)?;
-    ensure_request_hash_shape(&result.request_hash)?;
     let path = record_path(
         &control_journal_directory(state_directory),
         &result.operation_id,
     );
     recover_temporary(&path)?;
     let mut record = read_record(&path).map_err(transport)?;
-    if record.request_hash != result.request_hash || record.accepted_at != result.accepted_at {
+    if record.operation_id != result.operation_id
+        || record.request_hash != result.request_hash
+        || record.accepted_at != result.accepted_at
+    {
         return Err(JournalFlowError::OperationIdConflict);
     }
     record.phase = PHASE_COMPLETED.to_owned();
@@ -676,7 +677,6 @@ fn persist_completed_result(
         None
     };
     record.result = Some(result);
-    validate_record(&record).map_err(transport)?;
     replace_record(&path, &record)?;
     // Publication, including the directory sync, succeeded. The complete
     // result remains owned by this record; no deep copy or second encoding

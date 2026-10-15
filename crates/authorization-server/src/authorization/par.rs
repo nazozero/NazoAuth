@@ -223,10 +223,6 @@ impl<'a> PreparedParParameters<'a> {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                crate::token::client_auth::perform_dummy_client_secret_verification(
-                    &credentials,
-                    &context.config.client_secret_pepper,
-                );
                 return Err(OAuthEndpointError::json(
                     StatusCode::UNAUTHORIZED,
                     "invalid_client",

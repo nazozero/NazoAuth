@@ -69,7 +69,6 @@ impl CibaApplication {
             },
         );
         let authorization_service = &self.authorization;
-        let config = &self.handles.config;
         let Some(client_id) = credentials.client_id.as_deref() else {
             return Err(OAuthEndpointError::json(
                 StatusCode::UNAUTHORIZED,
@@ -85,10 +84,6 @@ impl CibaApplication {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                crate::token::client_auth::perform_dummy_client_secret_verification(
-                    &credentials,
-                    &config.client_secret_pepper,
-                );
                 return Err(OAuthEndpointError::json(
                     StatusCode::UNAUTHORIZED,
                     "invalid_client",

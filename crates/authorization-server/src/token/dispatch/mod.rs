@@ -12,7 +12,6 @@ use crate::token::client_auth::{
     ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
     authenticate_client_with_dependencies,
     consume_token_client_assertion_with_authorization_service,
-    perform_dummy_client_secret_verification,
 };
 use crate::token::client_credentials::token_client_credentials_with_service;
 use crate::token::device_issuance::token_device_code_with_service;
@@ -237,10 +236,6 @@ impl TokenEndpointHandles {
         {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
             Ok(None) => {
-                perform_dummy_client_secret_verification(
-                    credentials,
-                    issuance_config.client_secret_pepper(),
-                );
                 return Err(OAuthEndpointError::token(
                     StatusCode::UNAUTHORIZED,
                     "invalid_client",

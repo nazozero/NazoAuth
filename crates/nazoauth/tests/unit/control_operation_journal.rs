@@ -1299,6 +1299,30 @@ fn recovery_result() -> ControlResult {
 }
 
 #[test]
+fn completion_rejects_a_durable_record_bound_to_another_operation() {
+    let directory = temporary_directory();
+    accept(
+        &directory,
+        &operation(OPERATION_ID),
+        &hash('a'),
+        &snapshot(),
+    )
+    .unwrap();
+    let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
+    let mut record = read_record(&path).unwrap();
+    record.operation_id = OPERATION_ID_B.to_owned();
+    let bytes = serde_json::to_vec(&record).unwrap();
+    fs::write(&path, &bytes).unwrap();
+
+    assert!(matches!(
+        complete(&directory, succeeded_result(OPERATION_ID, &hash('a'))),
+        Err(JournalFlowError::OperationIdConflict)
+    ));
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
     let directory = temporary_directory();
     accept(

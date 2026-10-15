@@ -1,6 +1,5 @@
 //! token 管理端点复用的客户端认证。
-use crate::crypto::blake3_hex;
-use crate::crypto::client_secret_digest;
+use crate::crypto::{blake3_hex, client_secret_digest};
 use crate::domain::client_policy::refresh_client_jwks;
 use crate::domain::rows::ClientRow;
 use crate::security::client_assertion::ClientAssertionError;
@@ -82,31 +81,6 @@ impl<'a> ClientAuthConfig<'a> {
     pub fn with_fapi2_requirement(mut self, required: bool) -> Self {
         self.require_fapi2 = required;
         self
-    }
-}
-
-fn dummy_client_secret_salt(client_id: Option<&str>) -> String {
-    blake3_hex(client_id.unwrap_or(""))
-}
-
-/// Equalizes the CPU work for an unknown secret-authenticated client without touching storage.
-/// The result is deliberately consumed so release optimization cannot remove the calculation.
-pub fn perform_dummy_client_secret_verification<'credential>(
-    credentials: impl Into<PresentedClientCredentialsView<'credential>>,
-    client_secret_pepper: &str,
-) {
-    let credentials = credentials.into();
-    if matches!(
-        credentials.method,
-        "client_secret_basic" | "client_secret_post"
-    ) && let Some(secret) = credentials.client_secret
-    {
-        let dummy_salt = dummy_client_secret_salt(credentials.client_id);
-        drop(std::hint::black_box(client_secret_digest(
-            secret,
-            client_secret_pepper,
-            &dummy_salt,
-        )));
     }
 }
 
@@ -239,13 +213,7 @@ pub async fn authenticate_client_with_dependencies<'credential>(
                         .client_secret_digest_matches(client.id, &candidate_digest)
                         .await
                 }
-                None => {
-                    perform_dummy_client_secret_verification(
-                        credentials,
-                        config.client_secret_pepper,
-                    );
-                    Ok(false)
-                }
+                None => Ok(false),
             };
             if client_secret_auth_result(secret_match)? {
                 Ok(None)
