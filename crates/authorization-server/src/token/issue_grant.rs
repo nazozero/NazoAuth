@@ -701,7 +701,12 @@ pub async fn issue_token_response(
                         if redemption.authorization_code_holder.as_ref().is_some_and(
                             |expected| {
                                 crate::token::authorization_code::holder_matches_original(
-                                    expected, holder,
+                                    expected,
+                                    holder.authenticated_client(),
+                                    holder.pkce_s256(),
+                                    holder.dpop_jkt(),
+                                    holder.mtls_x5t_s256(),
+                                    holder.client_attestation_jkt(),
                                 )
                             },
                         ) =>

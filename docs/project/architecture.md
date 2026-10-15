@@ -383,6 +383,11 @@ transfers that value with its authentication buffers, and logout consumes its
 session ID and client list. Stored-session payload fixtures belong to HTTP test
 support; production persistence uses the identity session record and its adapter.
 
+Authorization-code replay compares borrowed fresh proof digests against the
+receipt's checked original requirements. The legacy receipt lookup reuses the
+request's issuance-holder result; neither path reconstructs holder evidence for
+comparison or repeats its structural validation.
+
 Token grant orchestration belongs to `authorization-server::token::dispatch`;
 the core owns `GrantType` and admission policy. Rust callers use the application
 dispatcher and its form model. HTTP signature parsers return
