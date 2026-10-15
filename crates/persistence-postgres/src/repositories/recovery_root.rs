@@ -1072,7 +1072,7 @@ impl RecoveryRootRepository {
                         Some(expires_at),
                         Some(recovery_generation),
                     ) = (
-                        challenge.recovered_controller_id.clone(),
+                        challenge.recovered_controller_id,
                         challenge.recovered_slot_index,
                         challenge.recovered_slot_issued_at,
                         challenge.recovered_slot_expires_at,
@@ -1111,18 +1111,14 @@ impl RecoveryRootRepository {
                     .await?
                     .ok_or(RecoveryRootError::RootMissing)?;
                 let proposal = nazo_operator_protocol::RecoveryProposal {
-                    deployment_id: challenge.deployment_id.clone(),
-                    controller_label: challenge.controller_label.clone(),
-                    controller_kid: challenge.controller_kid.clone(),
-                    controller_public_key: challenge
-                        .controller_public_key
-                        .clone()
-                        .try_into()
-                        .map_err(|_| {
-                            transport(anyhow::anyhow!("stored challenge holds invalid key length"))
-                        })?,
-                    recovery_kid: challenge.recovery_kid.clone(),
-                    recovery_public_key: challenge.recovery_public_key.clone().try_into().map_err(
+                    deployment_id: challenge.deployment_id,
+                    controller_label: challenge.controller_label,
+                    controller_kid: challenge.controller_kid,
+                    controller_public_key: challenge.controller_public_key.try_into().map_err(
+                        |_| transport(anyhow::anyhow!("stored challenge holds invalid key length")),
+                    )?,
+                    recovery_kid: challenge.recovery_kid,
+                    recovery_public_key: challenge.recovery_public_key.try_into().map_err(
                         |_| transport(anyhow::anyhow!("stored challenge holds invalid key length")),
                     )?,
                 };
@@ -1177,16 +1173,10 @@ impl RecoveryRootRepository {
                 let slot = insert_slot_on_connection(
                     connection,
                     &NewControllerSlot {
-                        deployment_id: challenge.deployment_id.clone(),
-                        label: challenge.controller_label.clone(),
-                        kid: challenge.controller_kid.clone(),
-                        public_key: challenge.controller_public_key.clone().try_into().map_err(
-                            |_| {
-                                transport(anyhow::anyhow!(
-                                    "stored challenge holds invalid key length"
-                                ))
-                            },
-                        )?,
+                        deployment_id: proposal.deployment_id,
+                        label: proposal.controller_label,
+                        kid: proposal.controller_kid,
+                        public_key: proposal.controller_public_key,
                     },
                     now,
                 )
@@ -1195,14 +1185,8 @@ impl RecoveryRootRepository {
                     connection,
                     &NewRecoveryRoot {
                         deployment_id: submission.deployment_id.clone(),
-                        kid: challenge.recovery_kid,
-                        public_key: challenge.recovery_public_key.clone().try_into().map_err(
-                            |_| {
-                                transport(anyhow::anyhow!(
-                                    "stored challenge holds invalid key length"
-                                ))
-                            },
-                        )?,
+                        kid: proposal.recovery_kid,
+                        public_key: proposal.recovery_public_key,
                     },
                     now,
                 )
