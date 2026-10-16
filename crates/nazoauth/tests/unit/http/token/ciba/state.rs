@@ -120,6 +120,7 @@ struct RecordingCibaStore {
     yield_before_load: bool,
     load_barrier: Option<Arc<Barrier>>,
     barrier_loads: Arc<AtomicUsize>,
+    loads: Arc<AtomicUsize>,
 }
 
 impl RecordingCibaStore {
@@ -131,6 +132,7 @@ impl RecordingCibaStore {
             yield_before_load,
             load_barrier: None,
             barrier_loads: Arc::new(AtomicUsize::new(0)),
+            loads: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -169,7 +171,9 @@ impl CibaStateStorePort for RecordingCibaStore {
         let yield_before_load = self.yield_before_load;
         let load_barrier = self.load_barrier.clone();
         let barrier_loads = Arc::clone(&self.barrier_loads);
+        let loads = Arc::clone(&self.loads);
         Box::pin(async move {
+            loads.fetch_add(1, Ordering::SeqCst);
             if yield_before_load {
                 tokio::task::yield_now().await;
             }
@@ -1156,4 +1160,67 @@ async fn approved_ciba_external_deadline_conflict_retries_same_value_cas() {
         ]
     );
     assert_eq!(service.load(id).await.unwrap().unwrap().state(), &state);
+}
+
+#[actix_web::test]
+async fn ciba_poll_stops_loading_when_conflict_budget_is_exhausted() {
+    let store = RecordingCibaStore::new(false);
+    let state = pending_state(1000);
+    let id = "poll-contention";
+    store.seed(id, state.clone());
+    let service = CibaService::new(store.clone());
+    let initial = service.load(id).await.unwrap().unwrap();
+    for _ in 0..4 {
+        store.push_outcome(CibaAtomicResult::Conflict);
+    }
+    assert_eq!(
+        service.poll(id, &state.client_id, initial, || 1001).await,
+        Err(CibaPollFailure::Contended)
+    );
+    assert_eq!(store.calls().len(), 4);
+    assert_eq!(store.loads.load(Ordering::SeqCst), 4);
+}
+
+#[actix_web::test]
+async fn ciba_prepared_decision_reloads_only_for_remaining_attempts() {
+    let store = RecordingCibaStore::new(false);
+    let state = pending_state(1000);
+    let id = "decision-contention";
+    store.seed(id, state.clone());
+    let service = CibaService::new(store.clone());
+    let prepared = service.prepare_decision(id).await.unwrap().unwrap();
+    for _ in 0..4 {
+        store.push_outcome(CibaAtomicResult::Conflict);
+    }
+    assert_eq!(
+        service
+            .decide_prepared(prepared, CibaDecision::Deny, Some(state.user_id), || 1001)
+            .await,
+        Err(CibaDecisionFailure::Contended)
+    );
+    assert_eq!(store.calls().len(), 4);
+    assert_eq!(store.loads.load(Ordering::SeqCst), 4);
+}
+
+#[actix_web::test]
+async fn ciba_prepared_decision_rejects_retargeted_authority_after_conflict() {
+    let store = RecordingCibaStore::new(false);
+    let mut state = pending_state(1000);
+    let id = "decision-retarget";
+    store.seed(id, state.clone());
+    let service = CibaService::new(store.clone());
+    let prepared = service.prepare_decision(id).await.unwrap().unwrap();
+    state.scopes.push("changed-scope".to_owned());
+    store.seed(id, state.clone());
+    store.push_outcome(CibaAtomicResult::Conflict);
+    assert_eq!(
+        service
+            .decide_prepared(prepared, CibaDecision::Deny, Some(state.user_id), || 1001)
+            .await,
+        Err(CibaDecisionFailure::Storage(
+            CibaStatePortError::CorruptData
+        ))
+    );
+    assert_eq!(store.calls().len(), 1);
+    assert_eq!(store.loads.load(Ordering::SeqCst), 2);
 }

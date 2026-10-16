@@ -568,24 +568,29 @@ where
             auth_req_id,
             stored,
         } = prepared;
-        let expected_request = stored.state.clone();
-        let mut next_snapshot = Some(stored);
-        for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
-            let stored = match next_snapshot.take() {
-                Some(stored) => stored,
-                None => self
+        let mut refreshed;
+        for attempt in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
+            let current = if attempt == 0 {
+                &stored
+            } else {
+                refreshed = self
                     .load(&auth_req_id)
                     .await
                     .map_err(CibaDecisionFailure::Storage)?
-                    .ok_or(CibaDecisionFailure::Missing)?,
+                    .ok_or(CibaDecisionFailure::Missing)?;
+                if !same_ciba_authorization(&stored.state, &refreshed.state) {
+                    return Err(CibaDecisionFailure::Storage(
+                        CibaStatePortError::CorruptData,
+                    ));
+                }
+                &refreshed
             };
-            if !same_ciba_authorization(&expected_request, &stored.state) {
-                return Err(CibaDecisionFailure::Storage(
-                    CibaStatePortError::CorruptData,
-                ));
-            }
-            match evaluate_ciba_decision(&stored.state, expected_user_id, &decision, current_time())
-            {
+            match evaluate_ciba_decision(
+                &current.state,
+                expected_user_id,
+                &decision,
+                current_time(),
+            ) {
                 CibaDecisionEvaluation::InvalidAuthenticationContext => {
                     return Err(CibaDecisionFailure::InvalidAuthenticationContext);
                 }
@@ -600,7 +605,7 @@ where
                         .store
                         .delete_with_authorization_deadline(
                             &auth_req_id,
-                            &stored.version,
+                            &current.version,
                             authorization_deadline,
                         )
                         .await
@@ -614,15 +619,15 @@ where
                 }
                 CibaDecisionEvaluation::Commit(next) => {
                     let decision_deadline = Some(
-                        authorization_deadline.map_or(stored.state.expires_at, |deadline| {
-                            deadline.min(stored.state.expires_at)
+                        authorization_deadline.map_or(current.state.expires_at, |deadline| {
+                            deadline.min(current.state.expires_at)
                         }),
                     );
                     match self
                         .store
                         .replace_with_authorization_deadline(
                             &auth_req_id,
-                            &stored.version,
+                            &current.version,
                             &next,
                             decision_deadline,
                         )
@@ -678,7 +683,14 @@ where
         F: FnMut() -> i64,
     {
         let mut stored = validate_stored_request(stored).map_err(CibaPollFailure::Storage)?;
-        for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
+        for attempt in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
+            if attempt > 0 {
+                stored = self
+                    .load(auth_req_id)
+                    .await
+                    .map_err(CibaPollFailure::Storage)?
+                    .ok_or(CibaPollFailure::Missing)?;
+            }
             if stored.state.client_id != expected_client_id {
                 return Err(CibaPollFailure::ClientMismatch);
             }
@@ -772,13 +784,7 @@ where
                 }
             };
             match atomic {
-                CibaAtomicResult::Conflict => {
-                    stored = self
-                        .load(auth_req_id)
-                        .await
-                        .map_err(CibaPollFailure::Storage)?
-                        .ok_or(CibaPollFailure::Missing)?;
-                }
+                CibaAtomicResult::Conflict => continue,
                 CibaAtomicResult::DeadlineElapsed => return Ok(CibaPollCommit::Expired),
                 CibaAtomicResult::Applied => unreachable!("applied transitions return immediately"),
             }
@@ -835,12 +841,14 @@ pub fn evaluate_ciba_decision(
     if now >= state.expires_at {
         return CibaDecisionEvaluation::Expired;
     }
+    if let CibaDecision::Approve(context) = decision
+        && !valid_authentication_context(context)
+    {
+        return CibaDecisionEvaluation::InvalidAuthenticationContext;
+    }
     let mut next = state.clone();
     match decision {
         CibaDecision::Approve(authentication_context) => {
-            if !valid_authentication_context(authentication_context) {
-                return CibaDecisionEvaluation::InvalidAuthenticationContext;
-            }
             next.status = CibaStatus::Approved;
             next.authentication_context = Some(authentication_context.clone());
         }
