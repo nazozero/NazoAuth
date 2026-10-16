@@ -88,23 +88,7 @@ async fn database_key_manager_for_tenant(
     .await
 }
 
-pub(crate) async fn operator_list_database_for_tenant(
-    config: &ConfigSource,
-    binding: &nazo_identity::TenantDirectoryBinding,
-    persistence: &dyn crate::operator_task::OperatorPersistence,
-) -> anyhow::Result<String> {
-    let settings = Settings::from_directory_binding(config, binding)?;
-    let (_, revision) = nazo_key_management::KeyManager::inspect_database(
-        settings.external_key_signer(),
-        binding.tenant.tenant_id.as_uuid(),
-        persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
-        crate::settings::signing_key_wrapping_key_ring(config)?,
-    )
-    .await?;
-    Ok(revision)
-}
-
-pub(crate) async fn operator_validate_database_for_tenant(
+pub(crate) async fn operator_inspect_database_for_tenant(
     config: &ConfigSource,
     binding: &nazo_identity::TenantDirectoryBinding,
     persistence: &dyn crate::operator_task::OperatorPersistence,

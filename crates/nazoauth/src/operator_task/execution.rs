@@ -103,30 +103,15 @@ pub(super) async fn execute_inner(
                 .map(|_| None)
                 .map_err(map_owned_persistence_error)?)
         }
-        ControlOperationPayload::KeysList => {
+        ControlOperationPayload::KeysList | ControlOperationPayload::KeysValidate => {
             let persistence = require_persistence(persistence)?;
             let config = crate::config::ConfigSource::load()?;
             let binding = system_tenant_binding(persistence).await?;
             Ok(
-                crate::keyctl::operator_list_database_for_tenant(&config, &binding, persistence)
+                crate::keyctl::operator_inspect_database_for_tenant(&config, &binding, persistence)
                     .await
                     .map(|_| None)
                     .map_err(map_owned_persistence_error)?,
-            )
-        }
-        ControlOperationPayload::KeysValidate => {
-            let persistence = require_persistence(persistence)?;
-            let config = crate::config::ConfigSource::load()?;
-            let binding = system_tenant_binding(persistence).await?;
-            Ok(
-                crate::keyctl::operator_validate_database_for_tenant(
-                    &config,
-                    &binding,
-                    persistence,
-                )
-                .await
-                .map(|_| None)
-                .map_err(map_owned_persistence_error)?,
             )
         }
         ControlOperationPayload::KeysGenerateLocal { alg, purposes } => {
