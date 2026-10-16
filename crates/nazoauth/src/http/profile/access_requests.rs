@@ -19,8 +19,8 @@ pub(crate) async fn my_access_requests(
     service: Data<nazo_oauth_server::services::ClientAccessProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     match service.list(&user).await {
@@ -99,8 +99,8 @@ pub(crate) async fn create_access_request(
     if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     let row = service

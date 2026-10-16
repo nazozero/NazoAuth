@@ -478,12 +478,12 @@ where
 
     pub async fn list(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
     ) -> Result<Vec<AccessRequestWithDelivery>, AccessRequestListError> {
         const DELIVERY_LOOKUP_BATCH_SIZE: usize = 128;
         let rows = self
             .requests
-            .list_for_user(account.tenant().tenant_id, account.user_id())
+            .list_for_user(account.tenant.tenant_id, account.user_id)
             .await
             .map_err(AccessRequestListError::Repository)?;
         let candidates = rows
@@ -520,15 +520,15 @@ where
 
     pub async fn create(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
         input: NewAccessRequestInput,
     ) -> Result<AccessRequest, AccessRequestCreateError> {
         let input =
             validate_access_request_input(input).map_err(AccessRequestCreateError::Validation)?;
         self.requests
             .create(NewAccessRequest {
-                tenant_id: account.tenant().tenant_id,
-                user_id: account.user_id(),
+                tenant_id: account.tenant.tenant_id,
+                user_id: account.user_id,
                 site_name: input.site_name,
                 site_url: input.site_url,
                 request_description: input.request_description,
@@ -539,17 +539,17 @@ where
 
     pub async fn claim_delivery(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
         request_id: Uuid,
     ) -> Result<Value, DeliveryReadError> {
         let token = access_delivery_token(
             &self.client_secret_pepper,
-            account.user_id().as_uuid(),
+            account.user_id.as_uuid(),
             request_id,
         );
         let stored = self
             .deliveries
-            .load(account.user_id(), &token)
+            .load(account.user_id, &token)
             .await
             .map_err(DeliveryReadError::DeliveryStore)?
             .ok_or(DeliveryReadError::Invalid)?;
@@ -560,25 +560,25 @@ where
             if stored.value.get("delivery_state").and_then(Value::as_str) == Some("committed") {
                 let _ = self
                     .deliveries
-                    .retire(account.user_id(), &token, &stored)
+                    .retire(account.user_id, &token, &stored)
                     .await;
             }
             return Err(DeliveryReadError::Invalid);
         };
         if claim.request_id != request_id
-            || stored.value["user_id"] != serde_json::json!(account.user_id().as_uuid())
+            || stored.value["user_id"] != serde_json::json!(account.user_id.as_uuid())
         {
             let _ = self
                 .deliveries
-                .retire(account.user_id(), &token, &stored)
+                .retire(account.user_id, &token, &stored)
                 .await;
             return Err(DeliveryReadError::Invalid);
         }
         match self
             .requests
             .approved_delivery_with_required_audit_matches(
-                account.tenant().tenant_id,
-                account.user_id(),
+                account.tenant.tenant_id,
+                account.user_id,
                 claim.request_id,
                 claim.approved_client_id,
                 claim.client_id,
@@ -590,7 +590,7 @@ where
             Ok(false) => {
                 let _ = self
                     .deliveries
-                    .retire(account.user_id(), &token, &stored)
+                    .retire(account.user_id, &token, &stored)
                     .await;
                 return Err(DeliveryReadError::Invalid);
             }
@@ -598,10 +598,10 @@ where
         }
         match self
             .deliveries
-            .consume(account.user_id(), &token, &stored)
+            .consume(account.user_id, &token, &stored)
             .await
         {
-            Ok(DeliveryConsume::Consumed(value)) => Ok(value),
+            Ok(DeliveryConsume::Consumed) => Ok(stored.value),
             Ok(DeliveryConsume::MissingOrChanged) => Err(DeliveryReadError::Invalid),
             Err(error) => Err(DeliveryReadError::DeliveryStore(error)),
         }
@@ -685,20 +685,20 @@ impl FederationLinksService {
 
     pub async fn list_summaries(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
     ) -> Result<Vec<FederationLinkSummary>, RepositoryError> {
         self.links
-            .list_summaries(account.tenant().tenant_id, account.user_id())
+            .list_summaries(account.tenant.tenant_id, account.user_id)
             .await
     }
 
     pub async fn unlink(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
         link_id: Uuid,
     ) -> Result<Option<FederationLinkSummary>, RepositoryError> {
         self.links
-            .delete(account.tenant().tenant_id, account.user_id(), link_id)
+            .delete(account.tenant.tenant_id, account.user_id, link_id)
             .await
     }
 }

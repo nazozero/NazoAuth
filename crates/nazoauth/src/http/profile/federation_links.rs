@@ -21,8 +21,8 @@ pub(crate) async fn my_federation_links(
     federation: Data<nazo_oauth_server::services::FederationProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     let rows = match federation.list_summaries(&user).await {
@@ -58,8 +58,8 @@ pub(crate) async fn unlink_my_federation_link(
     }
     // link_id 来自路径参数，但后续删除仍必须叠加当前 user_id 约束。
     let link_id = path.into_inner();
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     let link = match federation.unlink(&user, link_id).await {
@@ -84,8 +84,8 @@ pub(crate) async fn unlink_my_federation_link(
         "external_identity_unlinked",
         audit_fields([
             ("user_id", json!(user.id())),
-            ("provider_type", json!(link.provider_type)),
-            ("provider_id", json!(link.provider_id)),
+            ("provider_type", link.provider_type.into()),
+            ("provider_id", link.provider_id.into()),
             ("link_id", json!(link.id)),
         ]),
     )
