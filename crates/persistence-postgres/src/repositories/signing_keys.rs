@@ -64,19 +64,18 @@ impl SigningKeyRepository for SigningKeysetRepository {
             let created = sql_query(
                 "INSERT INTO tenant_signing_keysets \
                  (tenant_id, revision, public_metadata, encrypted_private_material, wrapping_key_id) \
-                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id) DO NOTHING \
-                 RETURNING revision, public_metadata, encrypted_private_material, wrapping_key_id",
+                 VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id) DO NOTHING",
             )
             .bind::<sql_types::Uuid, _>(self.tenant_id)
             .bind::<sql_types::BigInt, _>(candidate.revision)
-            .bind::<sql_types::Jsonb, _>(candidate.public_metadata)
-            .bind::<sql_types::Binary, _>(candidate.encrypted_private_material)
-            .bind::<sql_types::Text, _>(candidate.wrapping_key_id)
-            .get_result::<KeysetRow>(&mut connection)
+            .bind::<sql_types::Jsonb, _>(&candidate.public_metadata)
+            .bind::<sql_types::Binary, _>(&candidate.encrypted_private_material)
+            .bind::<sql_types::Text, _>(&candidate.wrapping_key_id)
+            .execute(&mut connection)
             .await
-            .optional().map_err(crate::unavailable::signing_query)?;
-            if let Some(row) = created {
-                return Ok(SigningKeysetCreateResult::Created(row.into()));
+            .map_err(crate::unavailable::signing_query)?;
+            if created == 1 {
+                return Ok(SigningKeysetCreateResult::Created(candidate));
             }
             // A separate statement sees the concurrent INSERT that won the
             // conflict, even when it committed after our INSERT snapshot.
@@ -105,20 +104,19 @@ impl SigningKeyRepository for SigningKeysetRepository {
             let updated = sql_query(
                 "UPDATE tenant_signing_keysets SET revision = $2, public_metadata = $3, \
                  encrypted_private_material = $4, wrapping_key_id = $5, updated_at = CURRENT_TIMESTAMP \
-                 WHERE tenant_id = $1 AND revision = $6 \
-                 RETURNING revision, public_metadata, encrypted_private_material, wrapping_key_id",
+                 WHERE tenant_id = $1 AND revision = $6",
             )
             .bind::<sql_types::Uuid, _>(self.tenant_id)
             .bind::<sql_types::BigInt, _>(candidate.revision)
-            .bind::<sql_types::Jsonb, _>(candidate.public_metadata)
-            .bind::<sql_types::Binary, _>(candidate.encrypted_private_material)
-            .bind::<sql_types::Text, _>(candidate.wrapping_key_id)
+            .bind::<sql_types::Jsonb, _>(&candidate.public_metadata)
+            .bind::<sql_types::Binary, _>(&candidate.encrypted_private_material)
+            .bind::<sql_types::Text, _>(&candidate.wrapping_key_id)
             .bind::<sql_types::BigInt, _>(expected_revision)
-            .get_result::<KeysetRow>(&mut connection)
+            .execute(&mut connection)
             .await
-            .optional().map_err(crate::unavailable::signing_query)?;
-            if let Some(row) = updated {
-                return Ok(SigningKeysetCompareAndSwapResult::Applied(row.into()));
+            .map_err(crate::unavailable::signing_query)?;
+            if updated == 1 {
+                return Ok(SigningKeysetCompareAndSwapResult::Applied(candidate));
             }
             let current = self
                 .load_on(&mut connection)
