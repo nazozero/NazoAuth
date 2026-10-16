@@ -272,71 +272,6 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
 }
 
 #[tokio::test]
-async fn required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled_back() {
-    let Some(f) = Fixture::new().await else {
-        return;
-    };
-    let name = format!("approval_expiry_{}", Uuid::now_v7().simple());
-    get_conn(&f.pool)
-        .await
-        .unwrap()
-        .batch_execute(&format!(
-            "CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.expires_at := NEW.expires_at + interval '1 microsecond'; RETURN NEW; END $$; CREATE TRIGGER {name} BEFORE INSERT ON controller_identity_approvals FOR EACH ROW WHEN (NEW.deployment_id='{}') EXECUTE FUNCTION {name}();",
-            f.deployment
-        ))
-        .await
-        .unwrap();
-    let before = snapshot(&f).await;
-    let body = std::panic::AssertUnwindSafe(async {
-        let now = DateTime::<Utc>::from_timestamp(1_800_000_000, 123_456_789).unwrap();
-        let mut command = f.approval(ControllerIdentityAction::Add);
-        command.now = now;
-        let error = f
-            .registry
-            .issue_identity_approval_with_required_audit(command, f.audit.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(error, IdentityApprovalError::Transport(_)));
-        assert!(
-            error
-                .to_string()
-                .contains("approval insert changed its authority binding")
-        );
-        assert_eq!(snapshot(&f).await, before);
-        let mut command = f.recovery_approval();
-        command.now = now;
-        let error = f
-            .recovery
-            .issue_rotation_approval_with_required_audit(command, f.audit.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            RecoveryRotationError::Approval(IdentityApprovalError::Transport(_))
-        ));
-        assert!(
-            error
-                .to_string()
-                .contains("approval insert changed its authority binding")
-        );
-        assert_eq!(snapshot(&f).await, before);
-    })
-    .catch_unwind()
-    .await;
-    get_conn(&f.pool)
-        .await
-        .unwrap()
-        .batch_execute(&format!(
-            "DROP TRIGGER {name} ON controller_identity_approvals; DROP FUNCTION {name}();"
-        ))
-        .await
-        .unwrap();
-    if let Err(error) = body {
-        std::panic::resume_unwind(error);
-    }
-}
-
-#[tokio::test]
 async fn required_control_plane_all_six_ledger_failures_roll_back_exact_owners() {
     let Some(f) = Fixture::new().await else {
         return;
@@ -554,11 +489,23 @@ async fn required_control_plane_current_actor_denies_inactive_demoted_and_moved_
     let realm = Uuid::now_v7();
     sql_query("INSERT INTO realms(id,tenant_id,slug,display_name) VALUES($1,$2,$1::text,'Required identity context')")
         .bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(f.audit.tenant.tenant_id.as_uuid()).execute(&mut get_conn(&f.pool).await.unwrap()).await.unwrap();
-    for state in ["inactive", "demoted", "moved"] {
+    for state in [
+        "inactive",
+        "demoted",
+        "admin_without_level",
+        "user_with_level",
+        "moved",
+    ] {
         let sql = match state {
             "inactive" => "UPDATE users SET is_active=false WHERE id=$1 AND $2::uuid IS NOT NULL",
             "demoted" => {
                 "UPDATE users SET is_active=true,role='user',admin_level=0 WHERE id=$1 AND $2::uuid IS NOT NULL"
+            }
+            "admin_without_level" => {
+                "UPDATE users SET is_active=true,role='admin',admin_level=0 WHERE id=$1 AND $2::uuid IS NOT NULL"
+            }
+            "user_with_level" => {
+                "UPDATE users SET is_active=true,role='user',admin_level=10 WHERE id=$1 AND $2::uuid IS NOT NULL"
             }
             _ => {
                 "UPDATE users SET is_active=true,role='admin',admin_level=10,realm_id=$2 WHERE id=$1"

@@ -38,14 +38,12 @@ mod approvals;
 pub(crate) mod required;
 mod slots;
 
+use approvals::approval_token_digest;
 pub use approvals::{
     ControllerIdentityAction, IDENTITY_APPROVAL_TTL_SECONDS, IdentityApprovalError,
     IssuedIdentityApproval,
 };
-use approvals::{approval_token_digest, contract_action};
-pub(crate) use approvals::{
-    consume_approval_on_connection, contract_approval, contract_approval_error,
-};
+pub(crate) use approvals::{consume_approval_on_connection, contract_approval_error};
 pub use slots::{
     AdmittedController, CONTROLLER_KEY_TTL_SECONDS, ControllerRegistryError, ControllerSlotStatus,
     ControllerSlotSummary, DEPLOYMENT_IDENTITY_LOCK_SEED, MAX_ACTIVE_CONTROLLER_SLOTS,
@@ -183,8 +181,7 @@ impl ControllerRegistryRepository {
         self.commit_slot_creation_owned(
             contract::SlotCreationCommand {
                 approval_token: approval_token.to_owned(),
-                action: contract::ControllerIdentityAction::parse(expected_action.as_str())
-                    .expect("closed identity action"),
+                action: expected_action,
                 action_sha256: expected_action_sha256.to_owned(),
                 slot: contract::NewControllerSlot {
                     deployment_id: slot.deployment_id,
@@ -217,7 +214,7 @@ impl ControllerRegistryRepository {
             initial_root,
             now,
         } = command;
-        let expected_action = contract_action(action);
+        let expected_action = action;
         let expected_action_sha256 = action_sha256.as_str();
         let approval_token = approval_token.as_str();
         let slot = NewControllerSlot {
@@ -527,14 +524,13 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             self.issue_identity_approval_owned(
                 &command.deployment_id,
-                contract_action(command.action),
+                command.action,
                 &command.action_sha256,
                 audit.actor_user_id,
                 command.now,
                 Some(audit),
             )
             .await
-            .map(contract_approval)
             .map_err(contract_approval_error)
         })
     }
@@ -599,13 +595,12 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
             ControllerRegistryRepository::issue_identity_approval(
                 self,
                 deployment_id,
-                contract_action(action),
+                action,
                 action_sha256,
                 admin_user_id,
                 now,
             )
             .await
-            .map(contract_approval)
             .map_err(contract_approval_error)
         })
     }
@@ -626,7 +621,7 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
             ControllerRegistryRepository::commit_slot_creation(
                 self,
                 approval_token,
-                contract_action(expected_action),
+                expected_action,
                 expected_action_sha256,
                 NewControllerSlot {
                     deployment_id: slot.deployment_id,

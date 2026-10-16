@@ -1320,7 +1320,6 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
                     Some(audit),
                 )
                 .await
-                .map(super::controller_registry::contract_approval)
                 .map_err(|error| {
                     contract::RecoveryRotationError::Approval(
                         super::controller_registry::contract_approval_error(error),
@@ -1378,7 +1377,6 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
                 now,
             )
             .await
-            .map(super::controller_registry::contract_approval)
             .map_err(contract_rotation_error)
         })
     }
