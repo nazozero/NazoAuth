@@ -272,3 +272,47 @@ fn id_token_claim_values_filter_output_and_allow_matching_contact_claims() {
     assert!(claims.get("email_verified").is_none());
     assert_eq!(claims["phone_number"], "+15555550000");
 }
+
+#[test]
+fn claim_projection_skips_unrequested_values_and_builds_selected_values_once() {
+    let mut claims = serde_json::Map::new();
+    insert_claim(&mut claims, &[], "address", false, || {
+        panic!("unrequested value built")
+    });
+    let calls = std::cell::Cell::new(0);
+    let requests = [OidcClaimRequest {
+        name: "address".to_owned(),
+        essential: true,
+        value: Some(json!({"country": "US"})),
+        values: Vec::new(),
+    }];
+    insert_claim(&mut claims, &requests, "address", false, || {
+        calls.set(calls.get() + 1);
+        Some(json!({"country": "US"}))
+    });
+    assert_eq!(calls.get(), 1);
+    assert_eq!(claims["address"], json!({"country": "US"}));
+}
+
+#[test]
+fn optional_claims_are_trimmed_and_empty_addresses_are_omitted() {
+    let mut user = user();
+    user.given_name = Some("  Alice  ".to_owned());
+    user.family_name = Some("  ".to_owned());
+    let address = user.address.as_mut().unwrap();
+    address.formatted = None;
+    address.street_address = None;
+    address.locality = None;
+    address.region = None;
+    address.postal_code = None;
+    address.country = Some("  ".to_owned());
+    let claims = oidc_user_claims(
+        &user,
+        &["profile".to_owned(), "address".to_owned()],
+        "subject",
+        &[],
+    );
+    assert_eq!(claims["given_name"], "Alice");
+    assert!(!claims.contains_key("family_name"));
+    assert!(!claims.contains_key("address"));
+}

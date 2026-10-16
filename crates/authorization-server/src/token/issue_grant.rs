@@ -429,17 +429,14 @@ pub async fn issue_token_response(
         let loaded_claims = subject_claims_snapshot
             .as_ref()
             .expect("openid token issues have a validated subject snapshot");
-        let mut user_claims = Some(oidc_id_token_user_claims(
+        let mut user_claims = oidc_id_token_user_claims(
             &loaded_claims.claims,
             id_token_claim_scopes,
             &issue.subject,
             &issue.id_token_claim_requests,
-        ));
+        );
         if let Some(native_sso) = issue.native_sso.as_ref() {
-            let claims = user_claims.get_or_insert_with(|| json!({}));
-            if let Some(claims) = claims.as_object_mut() {
-                claims.insert("ds_hash".to_owned(), json!(native_sso.ds_hash));
-            }
+            user_claims.insert("ds_hash".to_owned(), json!(native_sso.ds_hash));
         }
         let frontchannel_logout_enabled =
             context.permits(nazo_runtime_modules::ModuleId::FrontchannelLogout);
@@ -450,7 +447,7 @@ pub async fn issue_token_response(
                 &issue,
                 client,
                 frontchannel_logout_enabled,
-                user_claims.as_ref(),
+                &user_claims,
             )
         {
             mark_failed_authorization_code_if_needed(
@@ -467,6 +464,7 @@ pub async fn issue_token_response(
                 false,
             ));
         }
+        let user_claims = Value::Object(user_claims);
         let signed_id_token = match token_service
             .sign_id_token(nazo_auth::IdTokenSignInput {
                 issuer: &context.config.issuer,
@@ -483,7 +481,7 @@ pub async fn issue_token_response(
                 amr: &issue.amr,
                 sid: id_token_sid,
                 acr: issue.acr.as_deref(),
-                extra_claims: user_claims.as_ref(),
+                extra_claims: Some(&user_claims),
                 ttl_seconds: context.config.id_token_ttl_seconds,
                 signing_algorithm: signing_algorithm_name(id_token_signing_alg_for_client(client)),
             })

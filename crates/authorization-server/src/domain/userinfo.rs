@@ -198,7 +198,7 @@ impl ServerUserinfoOperations {
             UserinfoError::ResponseProtectionFailed
         })?;
         let representation = self
-            .protect_response(&client, response_claims)
+            .protect_response(&client, Value::Object(response_claims))
             .await
             .map_err(|error| {
                 tracing::warn!(

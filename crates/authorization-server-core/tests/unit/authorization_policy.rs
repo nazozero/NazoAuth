@@ -433,3 +433,17 @@ fn same_second_fresh_authentication_requires_strictly_later_server_event() {
         );
     }
 }
+
+#[test]
+fn acr_values_reject_invalid_entries_even_after_a_supported_value() {
+    let claim = OidcClaimRequest {
+        name: "acr".to_owned(),
+        essential: true,
+        value: None,
+        values: vec![serde_json::json!(BASELINE_ACR_VALUE), serde_json::json!(17)],
+    };
+    assert_eq!(
+        requested_acr(&HashMap::new(), Some(&claim)),
+        Err(AuthorizationPolicyError::InvalidRequest)
+    );
+}
