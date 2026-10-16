@@ -1483,3 +1483,61 @@ async fn failed_rollback_does_not_reuse_a_connection_for_the_counter() {
         before
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn allocation_reuses_one_pending_lookup_and_preserves_replay_precedence() {
+    let Some((url, _fixture)) = isolated("allocation_lookup").await else {
+        return;
+    };
+    let pool = create_pool(url, 1).unwrap();
+    let counter = QueryCounter::new();
+    let mut connection = pool.get().await.unwrap();
+    connection.set_instrumentation(counter.clone());
+    drop(connection);
+    let repository = RecoveryRootRepository::new(pool);
+    let deployment = "deployment-allocation-lookup";
+    let current = recovery_material(deployment, 1);
+    let replacement = recovery_material(deployment, 2);
+    enroll_root(&repository, deployment, &current, at(0)).await;
+    let input = challenge_input(deployment, 30, &replacement, &current);
+
+    let before = counter.snapshot();
+    let first = repository
+        .issue_recovery_challenge(input.clone(), at(1))
+        .await
+        .unwrap();
+    assert_eq!(counter.since(before).data_queries, 6);
+    let before = counter.snapshot();
+    let retry = repository
+        .issue_recovery_challenge(input.clone(), at(2))
+        .await
+        .unwrap();
+    assert_eq!(first, retry);
+    assert_eq!(counter.since(before).data_queries, 5);
+    let other = challenge_input(deployment, 31, &replacement, &current);
+    assert!(matches!(
+        repository
+            .issue_recovery_challenge(other.clone(), at(3))
+            .await,
+        Err(RecoveryRootError::ChallengePending)
+    ));
+    // Expiring the original request permits another pending challenge. A
+    // captured original allocation proof must still report replay, never
+    // return or displace the newer pending request.
+    let next = repository
+        .issue_recovery_challenge(other.clone(), at(602))
+        .await
+        .unwrap();
+    assert_ne!(next.challenge_id, first.challenge_id);
+    assert!(matches!(
+        repository.issue_recovery_challenge(input, at(603)).await,
+        Err(RecoveryRootError::AllocationProofReplayed)
+    ));
+    assert_eq!(
+        repository
+            .issue_recovery_challenge(other, at(604))
+            .await
+            .unwrap(),
+        next
+    );
+}

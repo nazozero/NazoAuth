@@ -37,14 +37,13 @@
 //!   identifiers and timestamps but never key bytes, and no API here accepts
 //!   a secret-shaped input at all.
 
-use blake3::Hasher;
 use chrono::{DateTime, Duration, Utc};
 use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::result::Error as QueryError;
 use diesel::sql_query;
 use diesel::sql_types::{
-    BigInt, Binary, Integer, Nullable, SmallInt, Timestamptz, Uuid as DieselUuid, Varchar,
+    BigInt, Binary, Bool, Integer, Nullable, SmallInt, Timestamptz, Uuid as DieselUuid, Varchar,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, TransactionManager as _};
 use sha2::{Digest as _, Sha256};
@@ -65,12 +64,10 @@ use super::controller_registry::{
 };
 use crate::{DbPool, get_conn};
 
-/// Fixed challenge lifetime in seconds: a single short window, computed
-/// server-side and pinned by the migration CHECK constraint.
-#[derive(diesel::QueryableByName)]
-struct CountRow {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    count: i64,
+#[derive(QueryableByName)]
+struct ExistsRow {
+    #[diesel(sql_type = Bool)]
+    present: bool,
 }
 
 pub const RECOVERY_CHALLENGE_TTL_SECONDS: i64 = contract::RECOVERY_CHALLENGE_TTL_SECONDS;
@@ -87,46 +84,10 @@ pub const MAX_RECOVERY_CHALLENGE_ATTEMPTS: i32 = contract::MAX_RECOVERY_CHALLENG
 /// active-slot re-check and its batch revoke.
 use super::controller_registry::DEPLOYMENT_IDENTITY_LOCK_SEED;
 
-/// One stored Recovery Root (public material only).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StoredRecoveryRoot {
-    pub deployment_id: String,
-    pub recovery_kid: String,
-    /// Raw Ed25519 public key bytes (32) of the derived Recovery Key.
-    pub recovery_public_key: Vec<u8>,
-    /// Pinned derivation parameter set; always `hkdf-sha256-v1`.
-    pub kdf: String,
-    /// Monotonic counter bumped by every approved replacement.
-    pub generation: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl StoredRecoveryRoot {
-    /// Non-secret summary for human-facing surfaces.  Never carries key bytes.
-    #[must_use]
-    pub fn summary(&self) -> RecoveryRootSummary {
-        RecoveryRootSummary {
-            deployment_id: self.deployment_id.clone(),
-            recovery_kid: self.recovery_kid.clone(),
-            kdf: self.kdf.clone(),
-            generation: self.generation,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
-        }
-    }
-}
-
-/// Non-secret Recovery Root view used by status surfaces.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecoveryRootSummary {
-    pub deployment_id: String,
-    pub recovery_kid: String,
-    pub kdf: String,
-    pub generation: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
+pub use contract::{
+    IssuedRecoveryChallenge, NewRecoveryChallenge, NewRecoveryRoot, RecoveredSlotCommit,
+    RecoveryRootSummary, RecoverySubmission, StoredRecoveryRoot,
+};
 
 /// Non-secret summary of one still-admitting controller slot.  Carried by the
 /// `CONTROLLER_STILL_ADMITTED` refusal so the unauthenticated gate response
@@ -139,63 +100,6 @@ pub struct AdmittedControllerSummary {
     pub kid: String,
     #[diesel(sql_type = Timestamptz)]
     pub expires_at: DateTime<Utc>,
-}
-
-/// Server-side input for enrolling or rotating the Recovery Public Key.
-/// Secret material is not representable here by construction.
-#[derive(Clone, Debug)]
-pub struct NewRecoveryRoot {
-    pub deployment_id: String,
-    /// Unpadded base64url SHA-256 of `public_key`.
-    pub kid: String,
-    pub public_key: [u8; 32],
-}
-
-/// Server-side input for issuing one recovery challenge (D11 steps 1–3): the
-/// exact proposed replacement controller key and replacement Recovery Public
-/// Key, both bound into the challenge and its canonical message.
-#[derive(Clone)]
-pub struct NewRecoveryChallenge {
-    pub deployment_id: String,
-    pub controller_label: String,
-    pub controller_kid: String,
-    pub controller_public_key: [u8; 32],
-    pub recovery_kid: String,
-    pub recovery_public_key: [u8; 32],
-    /// Client-generated nonce bound into the allocation authorization.
-    pub allocation_nonce: [u8; 32],
-    /// Signature by the currently anchored Recovery Root over the deployment,
-    /// complete replacement proposal, and `allocation_nonce`.
-    pub allocation_signature: [u8; 64],
-}
-
-/// One issued challenge as returned to the control side.  The nonce is a
-/// public value — the signer needs it verbatim — and appears exactly once
-/// here.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IssuedRecoveryChallenge {
-    pub challenge_id: Uuid,
-    pub deployment_id: String,
-    pub nonce: [u8; 32],
-    pub expires_at: DateTime<Utc>,
-}
-
-/// Signed answer to one challenge (D11 step 4): Ed25519 signature over the
-/// canonical challenge message made with the OLD Recovery Key.
-#[derive(Clone)]
-pub struct RecoverySubmission {
-    pub deployment_id: String,
-    pub challenge_id: Uuid,
-    pub nonce: [u8; 32],
-    pub signature: [u8; 64],
-}
-
-/// Outcome of one accepted recovery: exactly one new active slot plus the
-/// generation of the freshly installed Recovery Root.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecoveredSlotCommit {
-    pub slot: StoredControllerSlot,
-    pub recovery_generation: i32,
 }
 
 /// Typed recovery-plane failures.  Transport failures are infrastructure
@@ -363,11 +267,9 @@ struct RecoveryRootRow {
     updated_at: DateTime<Utc>,
 }
 
-impl TryFrom<RecoveryRootRow> for StoredRecoveryRoot {
-    type Error = anyhow::Error;
-
-    fn try_from(row: RecoveryRootRow) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<RecoveryRootRow> for StoredRecoveryRoot {
+    fn from(row: RecoveryRootRow) -> Self {
+        Self {
             deployment_id: row.deployment_id,
             recovery_kid: row.recovery_kid,
             recovery_public_key: row.recovery_public_key,
@@ -375,7 +277,7 @@ impl TryFrom<RecoveryRootRow> for StoredRecoveryRoot {
             generation: row.generation,
             created_at: row.created_at,
             updated_at: row.updated_at,
-        })
+        }
     }
 }
 
@@ -428,21 +330,6 @@ const CHALLENGE_COLUMNS: &str = "challenge_id, deployment_id, nonce, controller_
 const ROOT_COLUMNS: &str =
     "deployment_id, recovery_kid, recovery_public_key, kdf, generation, created_at, updated_at";
 
-/// Constant-time-flavoured comparison of two equal-length public byte strings:
-/// both sides are hashed first so the comparison operates on digests instead
-/// of attacker-controlled raw bytes.  These values are non-secret (the nonce
-/// is handed out at issuance); the sensitive comparison boundary of the
-/// recovery plane is the Ed25519 signature verification itself.
-fn digest_matches(left: &[u8], right: &[u8]) -> bool {
-    let mut hasher = Hasher::new();
-    hasher.update(left);
-    let left = hasher.finalize().to_hex().to_string();
-    let mut hasher = Hasher::new();
-    hasher.update(right);
-    let right = hasher.finalize().to_hex().to_string();
-    left == right
-}
-
 fn signature_sha256(signature: &[u8; 64]) -> [u8; 32] {
     Sha256::digest(signature).into()
 }
@@ -470,9 +357,7 @@ async fn read_root_on_connection(
     .get_result::<RecoveryRootRow>(connection)
     .await
     .optional()
-    .map_err(transport)?
-    .map(StoredRecoveryRoot::try_from)
-    .transpose()
+    .map(|row| row.map(StoredRecoveryRoot::from))
     .map_err(transport)
 }
 
@@ -515,7 +400,7 @@ pub(crate) async fn enroll_initial_root_on_connection(
     }
     let row = rows.pop().expect("one fully received initial root row");
     record_fresh_root_key_on_connection(connection, root).await?;
-    StoredRecoveryRoot::try_from(row).map_err(transport)
+    Ok(StoredRecoveryRoot::from(row))
 }
 
 async fn record_fresh_root_key_on_connection(
@@ -596,7 +481,7 @@ async fn replace_root_on_connection(
     .execute(connection)
     .await
     .map_err(transport)?;
-    StoredRecoveryRoot::try_from(row).map_err(transport)
+    Ok(StoredRecoveryRoot::from(row))
 }
 
 fn validate_challenge_input(challenge: &NewRecoveryChallenge) -> Result<(), RecoveryRootError> {
@@ -633,10 +518,10 @@ fn same_allocation(row: &ChallengeRow, challenge: &NewRecoveryChallenge) -> bool
     row.deployment_id == challenge.deployment_id
         && row.controller_label == challenge.controller_label
         && row.controller_kid == challenge.controller_kid
-        && digest_matches(&row.controller_public_key, &challenge.controller_public_key)
+        && row.controller_public_key == challenge.controller_public_key
         && row.recovery_kid == challenge.recovery_kid
-        && digest_matches(&row.recovery_public_key, &challenge.recovery_public_key)
-        && digest_matches(&row.allocation_nonce, &challenge.allocation_nonce)
+        && row.recovery_public_key == challenge.recovery_public_key
+        && row.allocation_nonce == challenge.allocation_nonce
 }
 
 /// Repository facade over the Recovery Root tables.  Shares the pool with the
@@ -721,11 +606,7 @@ impl RecoveryRootRepository {
                 approval_token: approval_token.to_owned(),
                 deployment_id: expected_deployment_id.to_owned(),
                 action_sha256: expected_action_sha256.to_owned(),
-                root: contract::NewRecoveryRoot {
-                    deployment_id: root.deployment_id,
-                    kid: root.kid,
-                    public_key: root.public_key,
-                },
+                root,
                 now,
             },
             None,
@@ -747,12 +628,6 @@ impl RecoveryRootRepository {
         } = command;
         let approval_token = approval_token.as_str();
         let expected_deployment_id = deployment_id.as_str();
-        let expected_action_sha256 = action_sha256.as_str();
-        let root = NewRecoveryRoot {
-            deployment_id: root.deployment_id,
-            kid: root.kid,
-            public_key: root.public_key,
-        };
 
         validate_deployment_id(expected_deployment_id)
             .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
@@ -770,7 +645,7 @@ impl RecoveryRootRepository {
             ));
         }
         let token_hash = blake3::hash(approval_token.as_bytes()).to_hex().to_string();
-        let expected_action_sha256 = expected_action_sha256.to_owned();
+        let expected_action_sha256 = action_sha256;
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
                 .await
@@ -883,7 +758,9 @@ impl RecoveryRootRepository {
                 let prior = sql_query(format!(
                     "SELECT {CHALLENGE_COLUMNS}
                      FROM controller_recovery_challenges
-                     WHERE deployment_id = $1 AND allocation_nonce = $2
+                     WHERE deployment_id = $1
+                       AND (allocation_nonce = $2 OR consumed_at IS NULL)
+                     ORDER BY (allocation_nonce = $2) DESC
                      LIMIT 1
                      FOR UPDATE"
                 ))
@@ -910,22 +787,6 @@ impl RecoveryRootRepository {
                             expires_at: prior.expires_at,
                         });
                     }
-                    return Err(RecoveryRootError::ChallengePending);
-                }
-
-                let pending = sql_query(format!(
-                    "SELECT {CHALLENGE_COLUMNS}
-                     FROM controller_recovery_challenges
-                     WHERE deployment_id = $1 AND consumed_at IS NULL
-                     LIMIT 1
-                     FOR UPDATE"
-                ))
-                .bind::<Varchar, _>(&challenge.deployment_id)
-                .get_result::<ChallengeRow>(connection)
-                .await
-                .optional()
-                .map_err(transport)?;
-                if pending.is_some() {
                     return Err(RecoveryRootError::ChallengePending);
                 }
 
@@ -1055,13 +916,9 @@ impl RecoveryRootRepository {
                         return Err(RecoveryRootError::ChallengeExhausted);
                     }
                     let submitted_signature_sha256 = signature_sha256(&submission.signature);
-                    if !digest_matches(&submission.nonce, &challenge.nonce)
-                        || !challenge
-                            .accepted_signature_sha256
-                            .as_deref()
-                            .is_some_and(|stored| {
-                                digest_matches(&submitted_signature_sha256, stored)
-                            })
+                    if challenge.nonce != submission.nonce
+                        || challenge.accepted_signature_sha256.as_deref()
+                            != Some(submitted_signature_sha256.as_slice())
                     {
                         return Err(RecoveryRootError::ChallengeReplayed);
                     }
@@ -1104,7 +961,7 @@ impl RecoveryRootRepository {
                 if challenge.expires_at <= now {
                     return Err(RecoveryRootError::ChallengeExpired);
                 }
-                if !digest_matches(&submission.nonce, &challenge.nonce) {
+                if challenge.nonce != submission.nonce {
                     return Err(RecoveryRootError::NonceMismatch);
                 }
                 let root = read_root_on_connection(connection, &submission.deployment_id)
@@ -1143,16 +1000,16 @@ impl RecoveryRootRepository {
                 // slot bound after challenge issuance blocks the recovery.
                 // Without this, a concurrent bind would be silently revoked
                 // by the break-glass commit below.
-                let active_count = sql_query(
-                    "SELECT COUNT(*) AS count FROM controller_registry_slots \
-                     WHERE deployment_id = $1 AND status = 'active' AND expires_at > $2",
+                let active = sql_query(
+                    "SELECT EXISTS(SELECT 1 FROM controller_registry_slots \
+                     WHERE deployment_id = $1 AND status = 'active' AND expires_at > $2) AS present",
                 )
                 .bind::<Varchar, _>(&submission.deployment_id)
                 .bind::<Timestamptz, _>(now)
-                .get_result::<CountRow>(connection)
+                .get_result::<ExistsRow>(connection)
                 .await
                 .map_err(transport)?;
-                if active_count.count > 0 {
+                if active.present {
                     return Err(RecoveryRootError::ControllersStillAdmitted(Vec::new()));
                 }
 
@@ -1236,18 +1093,6 @@ impl RecoveryRootRepository {
             }
             Err(error) => Err(error),
         }
-    }
-}
-
-fn contract_root(root: StoredRecoveryRoot) -> contract::StoredRecoveryRoot {
-    contract::StoredRecoveryRoot {
-        deployment_id: root.deployment_id,
-        recovery_kid: root.recovery_kid,
-        recovery_public_key: root.recovery_public_key,
-        kdf: root.kdf,
-        generation: root.generation,
-        created_at: root.created_at,
-        updated_at: root.updated_at,
     }
 }
 
@@ -1338,7 +1183,6 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
         Box::pin(async move {
             self.commit_rotation_owned(command, Some(audit))
                 .await
-                .map(contract_root)
                 .map_err(contract_rotation_error)
         })
     }
@@ -1353,7 +1197,6 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
         Box::pin(async move {
             RecoveryRootRepository::current_root(self, deployment_id)
                 .await
-                .map(|root| root.map(contract_root))
                 .map_err(contract_recovery_error)
         })
     }
@@ -1398,15 +1241,10 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
                 approval_token,
                 expected_deployment_id,
                 expected_action_sha256,
-                NewRecoveryRoot {
-                    deployment_id: root.deployment_id,
-                    kid: root.kid,
-                    public_key: root.public_key,
-                },
+                root,
                 now,
             )
             .await
-            .map(contract_root)
             .map_err(contract_rotation_error)
         })
     }
@@ -1420,28 +1258,9 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
         Result<contract::IssuedRecoveryChallenge, contract::RecoveryRootError>,
     > {
         Box::pin(async move {
-            RecoveryRootRepository::issue_recovery_challenge(
-                self,
-                NewRecoveryChallenge {
-                    deployment_id: challenge.deployment_id,
-                    controller_label: challenge.controller_label,
-                    controller_kid: challenge.controller_kid,
-                    controller_public_key: challenge.controller_public_key,
-                    recovery_kid: challenge.recovery_kid,
-                    recovery_public_key: challenge.recovery_public_key,
-                    allocation_nonce: challenge.allocation_nonce,
-                    allocation_signature: challenge.allocation_signature,
-                },
-                now,
-            )
-            .await
-            .map(|issued| contract::IssuedRecoveryChallenge {
-                challenge_id: issued.challenge_id,
-                deployment_id: issued.deployment_id,
-                nonce: issued.nonce,
-                expires_at: issued.expires_at,
-            })
-            .map_err(contract_recovery_error)
+            RecoveryRootRepository::issue_recovery_challenge(self, challenge, now)
+                .await
+                .map_err(contract_recovery_error)
         })
     }
 
@@ -1454,22 +1273,9 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
         Result<contract::RecoveredSlotCommit, contract::RecoveryRootError>,
     > {
         Box::pin(async move {
-            RecoveryRootRepository::submit_recovery_challenge(
-                self,
-                RecoverySubmission {
-                    deployment_id: submission.deployment_id,
-                    challenge_id: submission.challenge_id,
-                    nonce: submission.nonce,
-                    signature: submission.signature,
-                },
-                now,
-            )
-            .await
-            .map(|commit| contract::RecoveredSlotCommit {
-                slot: commit.slot,
-                recovery_generation: commit.recovery_generation,
-            })
-            .map_err(contract_recovery_error)
+            RecoveryRootRepository::submit_recovery_challenge(self, submission, now)
+                .await
+                .map_err(contract_recovery_error)
         })
     }
 }
