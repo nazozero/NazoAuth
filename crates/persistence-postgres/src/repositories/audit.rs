@@ -3,7 +3,7 @@ use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryD
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
     BackchannelLogoutDelivery, BackchannelLogoutOutboxPort, IdempotentBackchannelLogoutDelivery,
-    LogoutDependencyError, LogoutFuture, PendingBackchannelLogoutDelivery,
+    LogoutDependencyError, LogoutFuture,
 };
 use nazo_identity::ports::{RepositoryError, RepositoryFuture, ScimCredentialPort};
 use nazo_identity::scim::ScimTokenCredential;
@@ -17,10 +17,7 @@ use uuid::Uuid;
 use crate::{
     DbPool, get_conn,
     rows::auth::BackchannelLogoutDeliveryRow,
-    schema::{
-        backchannel_logout_deliveries, identity_security_events, runtime_module_state_events,
-        scim_tokens, users,
-    },
+    schema::{backchannel_logout_deliveries, runtime_module_state_events, scim_tokens},
 };
 
 #[derive(Clone)]
@@ -61,77 +58,12 @@ impl AuditRepository {
                     |(id, tenant_id, scopes, event_audience)| ScimTokenCredential {
                         id,
                         tenant_id,
-                        scopes: json_string_array(&scopes),
+                        scopes: json_string_array(scopes),
                         event_audience,
                     },
                 )
             })
             .map_err(map_error)
-    }
-
-    pub async fn enqueue_backchannel_logout(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        client_public_id: &str,
-        logout_uri: &str,
-        logout_token: &str,
-        expires_at: DateTime<Utc>,
-    ) -> Result<(), RepositoryError> {
-        self.enqueue_backchannel_logout_batch(&[PendingBackchannelLogoutDelivery {
-            tenant_id,
-            client_id,
-            client_public_id: client_public_id.to_owned(),
-            logout_uri: logout_uri.to_owned(),
-            logout_token: logout_token.to_owned(),
-            expires_at,
-        }])
-        .await
-    }
-
-    /// Atomically persists every notification produced by one OP logout.
-    /// A client FK or storage failure therefore cannot leave a partially queued fan-out.
-    pub async fn enqueue_backchannel_logout_batch(
-        &self,
-        deliveries: &[PendingBackchannelLogoutDelivery],
-    ) -> Result<(), RepositoryError> {
-        if deliveries.is_empty() {
-            return Ok(());
-        }
-        let tenant_ids: Vec<_> = deliveries.iter().map(|value| value.tenant_id).collect();
-        let client_ids: Vec<_> = deliveries.iter().map(|value| value.client_id).collect();
-        let public_ids: Vec<_> = deliveries
-            .iter()
-            .map(|value| value.client_public_id.as_str())
-            .collect();
-        let logout_uris: Vec<_> = deliveries
-            .iter()
-            .map(|value| value.logout_uri.as_str())
-            .collect();
-        let logout_tokens: Vec<_> = deliveries
-            .iter()
-            .map(|value| value.logout_token.as_str())
-            .collect();
-        let expires_at: Vec<_> = deliveries.iter().map(|value| value.expires_at).collect();
-        let mut connection = self.connection().await?;
-        diesel::sql_query(
-            r#"
-            INSERT INTO backchannel_logout_deliveries (
-                tenant_id, client_id, client_public_id, logout_uri, logout_token, expires_at
-            ) SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[],
-                                  $5::text[], $6::timestamptz[])
-            "#,
-        )
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(&tenant_ids)
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(&client_ids)
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&public_ids)
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&logout_uris)
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&logout_tokens)
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(&expires_at)
-        .execute(&mut connection)
-        .await
-        .map(|_| ())
-        .map_err(map_error)
     }
 
     /// Idempotently persists one complete logout fan-out in one atomic statement.
@@ -381,44 +313,52 @@ pub(super) async fn insert_identity_security_event(
     connection: &mut AsyncPgConnection,
     event: &IdentitySecurityEvent,
 ) -> Result<(), RepositoryError> {
-    if event.actor_id.is_some() || event.target_user_id.is_some() {
-        let user_ids = [event.actor_id, event.target_user_id]
-            .into_iter()
-            .flatten()
-            .map(nazo_identity::UserId::as_uuid);
-        let matching_users = users::table
-            .filter(users::id.eq_any(user_ids))
-            .filter(users::tenant_id.eq(event.tenant_id.as_uuid()))
-            .select(users::id)
-            .load::<Uuid>(&mut *connection)
-            .await
-            .map_err(map_error)?;
-        for (field, user_id) in [("actor", event.actor_id), ("target", event.target_user_id)] {
-            if let Some(user_id) = user_id
-                && !matching_users.contains(&user_id.as_uuid())
-            {
-                return Err(RepositoryError::Consistency(format!(
-                    "identity security event {field} tenant mismatch"
-                )));
-            }
+    #[derive(diesel::QueryableByName)]
+    struct Participants {
+        #[diesel(sql_type = diesel::sql_types::Bool)]
+        actor_ok: bool,
+        #[diesel(sql_type = diesel::sql_types::Bool)]
+        target_ok: bool,
+    }
+    let participants = diesel::sql_query(r#"
+        WITH participants AS MATERIALIZED (
+            SELECT id FROM users WHERE tenant_id = $1 AND id IN ($2, $3)
+        ), eligibility AS MATERIALIZED (
+            SELECT ($2::uuid IS NULL OR EXISTS(SELECT 1 FROM participants WHERE id = $2)) AS actor_ok,
+                   ($3::uuid IS NULL OR EXISTS(SELECT 1 FROM participants WHERE id = $3)) AS target_ok
+        ), inserted AS (
+            INSERT INTO identity_security_events (
+                tenant_id, actor_id, target_user_id, category, event_type,
+                outcome, reason_code, occurred_at
+            ) SELECT $1, $2, $3, $4, $5, $6, $7, $8
+              FROM eligibility WHERE actor_ok AND target_ok
+        ) SELECT actor_ok, target_ok FROM eligibility
+    "#)
+    .bind::<diesel::sql_types::Uuid, _>(event.tenant_id.as_uuid())
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Uuid>, _>(event.actor_id.map(nazo_identity::UserId::as_uuid))
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Uuid>, _>(event.target_user_id.map(nazo_identity::UserId::as_uuid))
+    .bind::<diesel::sql_types::Text, _>(security_category(event.event_type))
+    .bind::<diesel::sql_types::Text, _>(security_event_type(event.event_type))
+    .bind::<diesel::sql_types::Text, _>(security_outcome(event.outcome))
+    .bind::<diesel::sql_types::Text, _>(security_reason(event.reason))
+    .bind::<diesel::sql_types::Timestamptz, _>(DateTime::<Utc>::from(event.occurred_at))
+    // Drain the statement so an INSERT/trigger failure cannot be hidden by
+    // the eligibility row returned by the outer SELECT.
+    .load::<Participants>(connection).await.map_err(map_error)?;
+    let participants = participants
+        .into_iter()
+        .next()
+        .expect("eligibility SELECT returns one row");
+    for (field, admitted) in [
+        ("actor", participants.actor_ok),
+        ("target", participants.target_ok),
+    ] {
+        if !admitted {
+            return Err(RepositoryError::Consistency(format!(
+                "identity security event {field} tenant mismatch"
+            )));
         }
     }
-    diesel::insert_into(identity_security_events::table)
-        .values((
-            identity_security_events::tenant_id.eq(event.tenant_id.as_uuid()),
-            identity_security_events::category.eq(security_category(event.event_type)),
-            identity_security_events::event_type.eq(security_event_type(event.event_type)),
-            identity_security_events::outcome.eq(security_outcome(event.outcome)),
-            identity_security_events::actor_id
-                .eq(event.actor_id.map(nazo_identity::UserId::as_uuid)),
-            identity_security_events::target_user_id
-                .eq(event.target_user_id.map(nazo_identity::UserId::as_uuid)),
-            identity_security_events::reason_code.eq(security_reason(event.reason)),
-            identity_security_events::occurred_at.eq(DateTime::<Utc>::from(event.occurred_at)),
-        ))
-        .execute(connection)
-        .await
-        .map_err(map_error)?;
     Ok(())
 }
 
@@ -600,14 +540,26 @@ pub(super) fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
 }
 
-fn json_string_array(value: &serde_json::Value) -> Vec<String> {
-    value
-        .as_array()
+fn json_string_array(value: serde_json::Value) -> Vec<String> {
+    let serde_json::Value::Array(values) = value else {
+        return Vec::new();
+    };
+    values
         .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str().map(str::trim))
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+        .filter_map(|value| {
+            let serde_json::Value::String(mut text) = value else {
+                return None;
+            };
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let start = text.len() - text.trim_start().len();
+            let end = start + trimmed.len();
+            text.truncate(end);
+            text.drain(..start);
+            Some(text)
+        })
         .collect()
 }
 

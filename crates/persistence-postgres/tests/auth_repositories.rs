@@ -5,8 +5,8 @@ use diesel::{
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, AdminGrantRepositoryPort, CommitTokenIssuance,
-    CommitTokenIssuanceResult, NewRefreshToken, PendingBackchannelLogoutDelivery, RefreshContract,
-    RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
+    CommitTokenIssuanceResult, IdempotentBackchannelLogoutDelivery, NewRefreshToken,
+    RefreshContract, RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
     TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
 };
 use nazo_postgres::{
@@ -2241,14 +2241,15 @@ async fn audit_repository_reads_active_scim_credentials_and_drives_logout_outbox
 
     let logout_token = format!("logout-token-test-{}", Uuid::now_v7());
     repository
-        .enqueue_backchannel_logout(
+        .enqueue_idempotent_backchannel_logout_batch(&[IdempotentBackchannelLogoutDelivery {
             tenant_id,
-            fixture.client_id,
-            &fixture.client_public_id,
-            "https://client.example/backchannel-logout",
-            &logout_token,
-            chrono::Utc::now() + chrono::Duration::minutes(2),
-        )
+            client_id: fixture.client_id,
+            client_public_id: fixture.client_public_id.clone(),
+            logout_uri: "https://client.example/backchannel-logout".to_owned(),
+            logout_token: logout_token.clone(),
+            operation_key: format!("test-{}", Uuid::now_v7()),
+            expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+        }])
         .await
         .expect("backchannel delivery should enqueue");
     let claimed = repository
@@ -2284,21 +2285,23 @@ async fn backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid() {
     let marker = format!("logout-atomic-{}", Uuid::now_v7());
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(2);
     let result = repository
-        .enqueue_backchannel_logout_batch(&[
-            PendingBackchannelLogoutDelivery {
+        .enqueue_idempotent_backchannel_logout_batch(&[
+            IdempotentBackchannelLogoutDelivery {
                 tenant_id,
                 client_id: fixture.client_id,
                 client_public_id: fixture.client_public_id,
                 logout_uri: "https://client.example/backchannel-logout".to_owned(),
                 logout_token: marker.clone(),
+                operation_key: marker.clone(),
                 expires_at,
             },
-            PendingBackchannelLogoutDelivery {
+            IdempotentBackchannelLogoutDelivery {
                 tenant_id,
                 client_id: Uuid::now_v7(),
                 client_public_id: "missing-client".to_owned(),
                 logout_uri: "https://missing.example/backchannel-logout".to_owned(),
                 logout_token: format!("{marker}-invalid"),
+                operation_key: marker.clone(),
                 expires_at,
             },
         ])
@@ -2376,14 +2379,15 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
     let repository = AuditRepository::new(create_pool(&database_url, 4).unwrap());
     let logout_token = format!("logout-reclaim-token-{}", Uuid::now_v7());
     repository
-        .enqueue_backchannel_logout(
+        .enqueue_idempotent_backchannel_logout_batch(&[IdempotentBackchannelLogoutDelivery {
             tenant_id,
-            fixture.client_id,
-            &fixture.client_public_id,
-            "https://client.example/backchannel-logout",
-            &logout_token,
-            chrono::Utc::now() + chrono::Duration::minutes(2),
-        )
+            client_id: fixture.client_id,
+            client_public_id: fixture.client_public_id.clone(),
+            logout_uri: "https://client.example/backchannel-logout".to_owned(),
+            logout_token: logout_token.clone(),
+            operation_key: format!("test-{}", Uuid::now_v7()),
+            expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+        }])
         .await
         .expect("delivery should enqueue");
     let first = repository

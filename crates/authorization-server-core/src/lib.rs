@@ -212,9 +212,9 @@ pub use session_management::{
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE,
-    MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, PendingBackchannelLogoutDelivery,
-    RefreshContract, RefreshToken, RefreshTokenAuthenticationContext, RefreshTokenAuthority,
-    RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
+    MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, RefreshContract, RefreshToken,
+    RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
+    RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 pub use token_endpoint::{
     AdmittedTokenClient, AppliedSenderConstraint, PresentedSenderConstraint,

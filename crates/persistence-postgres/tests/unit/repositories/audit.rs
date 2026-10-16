@@ -3,7 +3,7 @@ use crate::repositories::query_counter;
 use diesel_async::AsyncConnection as _;
 
 #[tokio::test]
-async fn identity_event_checks_both_participants_in_one_query() {
+async fn identity_event_checks_both_participants_and_inserts_in_one_query() {
     let Ok(url) =
         std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL"))
     else {
@@ -40,10 +40,10 @@ async fn identity_event_checks_both_participants_in_one_query() {
     let counter = query_counter::QueryCounter::new();
     conn.set_instrumentation(counter.clone());
     for (actor_id, target_id, expected_queries) in [
-        (Some(actor), Some(target), 2),
-        (Some(actor), Some(actor), 2),
-        (Some(actor), None, 2),
-        (None, Some(target), 2),
+        (Some(actor), Some(target), 1),
+        (Some(actor), Some(actor), 1),
+        (Some(actor), None, 1),
+        (None, Some(target), 1),
         (None, None, 1),
     ] {
         event.actor_id = actor_id;
