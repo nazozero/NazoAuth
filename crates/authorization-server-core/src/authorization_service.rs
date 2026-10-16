@@ -6,11 +6,9 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeState, AuthorizationRequestError, AuthorizationResponsePolicyError,
-    ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError, NormalizedRequestObject,
-    OAuthClient, PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
-    RequestObjectClaims, RequestObjectPolicy, SignedJarmAuthorizationResponse,
-    ValidatedJwtBearerAssertion, authorization_details_empty,
-    authorization_request::{apply_request_object_plan, prepare_request_object},
+    ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError, OAuthClient,
+    PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
+    SignedJarmAuthorizationResponse, ValidatedJwtBearerAssertion, authorization_details_empty,
     canonical_authorization_details, high_risk_authorization_details,
 };
 
@@ -1001,34 +999,6 @@ where
         expires_at: i64,
     ) -> Result<bool, AuthorizationPortError> {
         self.state.consume_jar(client_id, jti, expires_at).await
-    }
-
-    /// Validates a verified request object and commits its replay marker only
-    /// after all pure claim and outer-parameter policy has succeeded.
-    pub async fn admit_request_object(
-        &self,
-        outer: &std::collections::HashMap<String, String>,
-        claims: &RequestObjectClaims,
-        policy: RequestObjectPolicy<'_>,
-    ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-        let mut outer = outer.clone();
-        self.admit_request_object_owned(&mut outer, claims, policy)
-            .await
-    }
-
-    /// Validates a verified request object while reusing the caller's outer
-    /// parameter map. Policy failures leave the map untouched.
-    pub async fn admit_request_object_owned(
-        &self,
-        outer: &mut std::collections::HashMap<String, String>,
-        claims: &RequestObjectClaims,
-        policy: RequestObjectPolicy<'_>,
-    ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-        let plan = prepare_request_object(outer, claims, policy)?;
-        if let Some(replay) = plan.replay() {
-            self.consume_request_object_replay(replay).await?;
-        }
-        Ok(apply_request_object_plan(outer, plan))
     }
 
     /// Commits the verified request object's replay claim at the application

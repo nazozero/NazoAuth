@@ -78,9 +78,9 @@ pub use authorization_request::{
     REQUEST_OBJECT_MAX_TTL_SECONDS, RawParAdmissionPolicy, RequestObjectClaims,
     RequestObjectJtiPolicy, RequestObjectPolicy, RequestObjectReplay,
     RequestObjectVerificationError, RequestObjectVerificationInput, VerifiedRequestObject,
-    normalize_request_object, normalize_request_object_owned,
-    unverified_signed_request_object_client_id, unverified_signed_request_object_kid,
-    validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
+    normalize_request_object, unverified_signed_request_object_client_id,
+    unverified_signed_request_object_kid, validate_expanded_par_admission,
+    validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
