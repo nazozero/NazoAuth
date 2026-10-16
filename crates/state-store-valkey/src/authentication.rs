@@ -56,7 +56,7 @@ impl AuthenticationStore {
         owner: &str,
         ttl: u64,
     ) -> Result<bool, Error> {
-        command::set_ex_nx_string(
+        command::set_ex_nx(
             &self.connection,
             keys::email_send(tenant_id, email),
             owner.to_owned(),
@@ -71,7 +71,7 @@ impl AuthenticationStore {
         owner: &str,
         ttl: u64,
     ) -> Result<bool, Error> {
-        command::set_ex_nx_string(
+        command::set_ex_nx(
             &self.connection,
             keys::email_peer_send(tenant_id, subject),
             owner.to_owned(),
@@ -251,7 +251,7 @@ impl AuthenticationStore {
         let raw = serde_json::to_string(value).map_err(|e| {
             Error::protocol(format!("failed to serialize authentication state: {e}"))
         })?;
-        command::set_ex_string(&self.connection, key, raw, ttl).await
+        command::set_ex(&self.connection, key, raw, ttl).await
     }
     async fn take_federation_value(
         &self,

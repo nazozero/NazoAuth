@@ -308,7 +308,7 @@ impl AuthorizationStore {
         started_at: i64,
         ttl_seconds: u64,
     ) -> Result<(), Error> {
-        command::set_ex_string(
+        command::set_ex(
             &self.connection,
             keys::reauth_nonce(nonce),
             format!("micros-v1:{started_at}"),
@@ -344,7 +344,7 @@ impl AuthorizationStore {
                 "failed to serialize authorization preparation: {error}"
             ))
         })?;
-        if command::set_ex_nx_string(&self.connection, key, raw, ttl_seconds).await? {
+        if command::set_ex_nx(&self.connection, key, raw, ttl_seconds).await? {
             Ok(AuthorizationPreparationWrite::Stored)
         } else {
             Ok(AuthorizationPreparationWrite::Conflict)
@@ -360,7 +360,7 @@ impl AuthorizationStore {
         let raw = serde_json::to_string(value).map_err(|error| {
             Error::protocol(format!("failed to serialize authorization state: {error}"))
         })?;
-        command::set_ex_string(&self.connection, key, raw, ttl_seconds).await
+        command::set_ex(&self.connection, key, raw, ttl_seconds).await
     }
 
     async fn load_json<T: serde::de::DeserializeOwned>(

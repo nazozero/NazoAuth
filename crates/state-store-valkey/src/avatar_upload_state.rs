@@ -355,7 +355,7 @@ impl AvatarUploadStatePort for AvatarUploadStateStore {
                     RepositoryError::Unexpected(format!("serialize avatar upload state: {error}"))
                 },
             )?;
-            command::set_ex_nx_string(
+            command::set_ex_nx(
                 &self.connection,
                 Self::key(&authorization.upload_id),
                 raw,

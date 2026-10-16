@@ -129,7 +129,7 @@ impl SessionStore {
         let raw = serde_json::to_string(&SessionWireRecord::from(record)).map_err(|error| {
             Error::protocol(format!("failed to serialize session record: {error}"))
         })?;
-        command::set_ex_string(
+        command::set_ex(
             &self.connection,
             keys::session(session_id),
             raw,
@@ -171,7 +171,7 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
                     "failed to serialize session record: {error}"
                 ))
             })?;
-            command::set_ex_nx_string(
+            command::set_ex_nx(
                 &self.connection,
                 keys::session(session_id),
                 raw,
@@ -274,11 +274,6 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                         "failed to serialize replacement session: {error}"
                     ))
                 })?;
-            let expected = std::str::from_utf8(expected.storage_bytes()).map_err(|error| {
-                nazo_identity::ports::RepositoryError::Unexpected(format!(
-                    "session storage revision is not valid UTF-8: {error}"
-                ))
-            })?;
             let reply = command::eval_string(
                 &self.connection,
                 ROTATE_SESSION_SCRIPT,
@@ -286,7 +281,11 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                     keys::session(old_session_id.as_str()),
                     keys::session(new_session_id.as_str()),
                 ],
-                vec![expected.to_owned(), replacement, ttl_seconds.to_string()],
+                vec![
+                    expected.storage_bytes().to_vec(),
+                    replacement.into_bytes(),
+                    ttl_seconds.to_string().into_bytes(),
+                ],
             )
             .await
             .map_err(crate::identity_repository_error)?;
@@ -314,16 +313,11 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                         "failed to serialize replacement session: {error}"
                     ))
                 })?;
-            let expected = std::str::from_utf8(expected.storage_bytes()).map_err(|error| {
-                nazo_identity::ports::RepositoryError::Unexpected(format!(
-                    "session storage revision is not valid UTF-8: {error}"
-                ))
-            })?;
             let reply = command::eval_string(
                 &self.connection,
                 COMPARE_AND_SET_SESSION_SCRIPT,
                 vec![keys::session(session_id.as_str())],
-                vec![expected.to_owned(), replacement],
+                vec![expected.storage_bytes().to_vec(), replacement.into_bytes()],
             )
             .await
             .map_err(crate::identity_repository_error)?;

@@ -45,7 +45,7 @@ async fn malformed_upload_state_cannot_be_claimed_or_published() {
     let store = AvatarUploadStateStore::new(&connection);
     let authorization = authorization();
     let key = AvatarUploadStateStore::key(&authorization.upload_id);
-    command::set_ex_string(&connection, key.clone(), "not-json".to_owned(), 60)
+    command::set_ex(&connection, key.clone(), "not-json".to_owned(), 60)
         .await
         .unwrap();
     let lease = Utc::now() + chrono::Duration::seconds(30);
@@ -87,7 +87,7 @@ async fn malformed_upload_state_cannot_be_claimed_or_published() {
     );
     let mut malformed = serde_json::to_value(AvatarUploadWireState::from(&authorization)).unwrap();
     malformed["tenant_id"] = serde_json::json!(Uuid::nil());
-    command::set_ex_string(&connection, key, malformed.to_string(), 60)
+    command::set_ex(&connection, key, malformed.to_string(), 60)
         .await
         .unwrap();
     assert_eq!(

@@ -3,8 +3,8 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_identity::{
-    SessionId, SessionRotationOutcome, SessionUpdateOutcome, UserId, ports::SessionStorePort,
-    session::SessionRecord,
+    SessionId, SessionRotationOutcome, SessionUpdateOutcome, SessionVersion, UserId,
+    ports::SessionStorePort, session::SessionRecord,
 };
 use nazo_valkey::SessionStore;
 
@@ -111,6 +111,36 @@ async fn session_compare_and_set_preserves_ttl_and_logged_in_rps() {
     );
     let after_ttl = inspector.ttl::<i64, _>(&key).await.unwrap();
     assert!(after_ttl > 0 && after_ttl <= before_ttl);
+
+    // The version is opaque bytes. A mismatch is a CAS conflict, not a decoding error.
+    let wrong_version = SessionVersion::from_storage(vec![0xff]);
+    assert_eq!(
+        SessionStorePort::compare_and_set(&store, &session_id, &wrong_version, &payload())
+            .await
+            .unwrap(),
+        SessionUpdateOutcome::Conflict
+    );
+    assert_eq!(
+        SessionStorePort::rotate(
+            &store,
+            &session_id,
+            &wrong_version,
+            &SessionId::new(format!("mismatch-{}", uuid::Uuid::now_v7())),
+            &payload(),
+            30,
+        )
+        .await
+        .unwrap(),
+        SessionRotationOutcome::Conflict
+    );
+    assert_eq!(
+        SessionStorePort::load(&store, &session_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .record(),
+        &replacement
+    );
 }
 
 #[tokio::test]
