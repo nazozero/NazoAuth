@@ -24,14 +24,14 @@ use uuid::Uuid;
 
 use crate::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
-    Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite,
-    OperatorManagedTrustAnchor, TenantResourceBinding, TenantResourceBindingDeactivate,
-    TenantResourceRepository, TenantResourceStateCas, UserInsert,
-    active_public_client_id_on_connection, append_fresh_security_audit_on_connection,
-    deactivate_client_on_connection, delete_operator_managed_dataset_on_connection,
-    disable_user_on_connection, insert_client_on_connection,
-    insert_operator_managed_trust_anchor_on_connection, insert_user_on_connection,
-    protect_dataset_claims, revoke_operator_managed_trust_anchor_on_connection,
+    Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite, OperatorManagedTrustAnchor,
+    TenantResourceBinding, TenantResourceBindingDeactivate, TenantResourceRepository,
+    TenantResourceStateCas, UserInsert, active_public_client_id_on_connection,
+    append_fresh_security_audit_on_connection, deactivate_client_on_connection,
+    delete_operator_managed_dataset_on_connection, disable_user_on_connection,
+    insert_client_on_connection, insert_operator_managed_trust_anchor_on_connection,
+    insert_user_on_connection, protect_dataset_claims,
+    revoke_operator_managed_trust_anchor_on_connection,
     upsert_operator_managed_dataset_on_connection,
 };
 
@@ -1140,9 +1140,9 @@ async fn revoke_resources(
 }
 
 #[derive(QueryableByName)]
-struct MtlsParentClientRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    client_id: Uuid,
+struct SurvivingDependencyRow {
+    #[diesel(sql_type = sql_types::Bool)]
+    has_dependency: bool,
 }
 
 async fn validate_revoke_dependency_closure(
@@ -1151,80 +1151,97 @@ async fn validate_revoke_dependency_closure(
     active: &BTreeMap<ResourceKey, TenantResourceBinding>,
     targets: &std::collections::BTreeSet<ResourceKey>,
 ) -> Result<(), ExecutorTransactionError> {
-    for (child_key, child) in active {
-        if targets.contains(child_key) {
+    let mut users = Vec::new();
+    let mut clients = Vec::new();
+    let mut policies = Vec::new();
+    for key in targets {
+        match key.kind {
+            TenantResourceKind::User => users.push(parse_uuid_locator(
+                &active[key].locator,
+                TenantResourceKind::User,
+            )?),
+            TenantResourceKind::OauthClient => clients.push(parse_uuid_locator(
+                &active[key].locator,
+                TenantResourceKind::OauthClient,
+            )?),
+            TenantResourceKind::Openid4vcTrustPolicy => policies.push(key.resource_id.as_str()),
+            TenantResourceKind::MtlsTrustAnchor | TenantResourceKind::Openid4vcDataset => {}
+        }
+    }
+    let mut surviving_anchors = Vec::new();
+    let mut surviving_clients = Vec::new();
+    for (key, binding) in active {
+        if targets.contains(key) {
             continue;
         }
-        let parent_locator = match child_key.kind {
-            TenantResourceKind::Openid4vcDataset => {
-                match parse_locator(&child.locator, TenantResourceKind::Openid4vcDataset)? {
-                    ResourceLocator::Dataset { subject_id, .. } => user_locator(subject_id),
-                    _ => unreachable!(),
+        match key.kind {
+            TenantResourceKind::Openid4vcDataset if !users.is_empty() => {
+                let ResourceLocator::Dataset { subject_id, .. } =
+                    parse_locator(&binding.locator, TenantResourceKind::Openid4vcDataset)?
+                else {
+                    unreachable!()
+                };
+                if users.contains(&subject_id) {
+                    return Err(TenantResourceExecutorError::Rejected.into());
                 }
             }
-            TenantResourceKind::MtlsTrustAnchor => {
-                let request_id =
-                    parse_uuid_locator(&child.locator, TenantResourceKind::MtlsTrustAnchor)?;
-                let parent = sql_query(
-                    "SELECT client_id
-                     FROM oauth_client_mtls_trust_anchor_requests
-                     WHERE tenant_id = $1 AND id = $2
-                       AND source = 'operator-managed' AND status = 1",
-                )
-                .bind::<sql_types::Uuid, _>(tenant_id)
-                .bind::<sql_types::Uuid, _>(request_id)
-                .get_result::<MtlsParentClientRow>(connection)
-                .await
-                .map_err(map_diesel_error)?;
-                oauth_client_locator(parent.client_id)
+            TenantResourceKind::MtlsTrustAnchor if !clients.is_empty() => {
+                surviving_anchors.push(parse_uuid_locator(
+                    &binding.locator,
+                    TenantResourceKind::MtlsTrustAnchor,
+                )?);
             }
-            TenantResourceKind::OauthClient => {
-                let client_id =
-                    parse_uuid_locator(&child.locator, TenantResourceKind::OauthClient)?;
-                let public_client =
-                    active_public_client_id_on_connection(connection, tenant_id, client_id)
-                        .await
-                        .map_err(ExecutorTransactionError::Repository)?
-                        .ok_or_else(|| transaction_conflict("oauth_client_dependency"))?;
-                match TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-                    connection,
-                    tenant_id,
-                    &public_client,
-                )
-                .await
-                .map_err(ExecutorTransactionError::Repository)?
-                {
-                    Openid4vcTrustPolicyForClient::Active(policy)
-                        if targets.contains(&ResourceKey::new(
-                            TenantResourceKind::Openid4vcTrustPolicy,
-                            &policy.resource_id,
-                        )) =>
-                    {
-                        return Err(ExecutorTransactionError::Executor(
-                            TenantResourceExecutorError::Rejected,
-                        ));
-                    }
-                    Openid4vcTrustPolicyForClient::Active(_)
-                    | Openid4vcTrustPolicyForClient::BoundInactive
-                    | Openid4vcTrustPolicyForClient::Unbound => {}
-                }
-                continue;
+            TenantResourceKind::OauthClient if !policies.is_empty() => {
+                surviving_clients.push(parse_uuid_locator(
+                    &binding.locator,
+                    TenantResourceKind::OauthClient,
+                )?);
             }
-            TenantResourceKind::Openid4vcTrustPolicy | TenantResourceKind::User => continue,
-        };
-        let parent = active
-            .iter()
-            .find_map(|(key, binding)| (binding.locator == parent_locator).then_some(key));
-        let Some(parent) = parent else {
-            return Err(ExecutorTransactionError::Executor(
-                TenantResourceExecutorError::Unavailable,
-            ));
-        };
-        if targets.contains(parent) {
-            return Err(ExecutorTransactionError::Executor(
-                TenantResourceExecutorError::Rejected,
-            ));
+            _ => {}
         }
+    }
+    // The caller holds every target identity lock and commits through revision CAS.
+    // Only surviving children of those targets can invalidate this revoke.
+    if !surviving_anchors.is_empty()
+        && sql_query(
+            "SELECT EXISTS (
+                SELECT 1 FROM oauth_client_mtls_trust_anchor_requests
+                WHERE tenant_id = $1 AND id = ANY($2) AND client_id = ANY($3)
+                  AND source = 'operator-managed' AND status = 1
+            ) AS has_dependency",
+        )
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Array<sql_types::Uuid>, _>(&surviving_anchors)
+        .bind::<sql_types::Array<sql_types::Uuid>, _>(&clients)
+        .get_result::<SurvivingDependencyRow>(connection)
+        .await
+        .map_err(map_diesel_error)?
+        .has_dependency
+    {
+        return Err(TenantResourceExecutorError::Rejected.into());
+    }
+    if !surviving_clients.is_empty()
+        && sql_query(
+            "SELECT EXISTS (
+                SELECT 1 FROM openid4vc_trust_policy_clients AS binding
+                JOIN openid4vc_trust_policies AS policy
+                  ON policy.tenant_id = binding.tenant_id AND policy.id = binding.policy_id
+                JOIN oauth_clients AS client
+                  ON client.tenant_id = binding.tenant_id AND client.id = binding.oauth_client_id
+                WHERE binding.tenant_id = $1 AND binding.oauth_client_id = ANY($2)
+                  AND policy.resource_id = ANY($3)
+                  AND binding.active AND policy.active AND client.is_active
+            ) AS has_dependency",
+        )
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Array<sql_types::Uuid>, _>(&surviving_clients)
+        .bind::<sql_types::Array<sql_types::Text>, _>(&policies)
+        .get_result::<SurvivingDependencyRow>(connection)
+        .await
+        .map_err(map_diesel_error)?
+        .has_dependency
+    {
+        return Err(TenantResourceExecutorError::Rejected.into());
     }
     Ok(())
 }

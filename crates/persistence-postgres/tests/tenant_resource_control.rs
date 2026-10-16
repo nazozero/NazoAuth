@@ -155,6 +155,227 @@ async fn enumerate_and_revoke_commit_without_apply_preparation() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revoke_checks_surviving_children_only_for_targeted_parents() {
+    use chrono::{Duration, Utc};
+    use nazo_operator_protocol::{TenantResourceIdentity, TenantResourceKind};
+    use nazo_persistence::tenant_resources::PreparedTenantResource;
+    use nazo_postgres::{
+        NewStoredOpenid4vcTrustPolicy, Openid4vcTrustPolicyWrite, OperatorManagedTrustAnchor,
+        insert_operator_managed_trust_anchor_on_connection, protect_dataset_claims,
+        upsert_operator_managed_dataset_on_connection,
+    };
+
+    let fixture = fixture().await;
+    let tenant_id = fixture.tenant.tenant_id.as_uuid();
+    let user_id = Uuid::now_v7();
+    let client_id = Uuid::now_v7();
+    let digest = "a".repeat(64);
+    let mut connection = fixture.pool.get().await.unwrap();
+    sql_query(
+        "INSERT INTO users (id, tenant_id, realm_id, organization_id, username, email, password_hash)
+         VALUES ($1, $2, $3, $4, 'dependency-user', 'dependency@example.test', 'test-only')",
+    )
+    .bind::<sql_types::Uuid, _>(user_id)
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Uuid, _>(fixture.tenant.realm_id.as_uuid())
+    .bind::<sql_types::Uuid, _>(fixture.tenant.organization_id.as_uuid())
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sql_query(
+        "INSERT INTO oauth_clients
+         (id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+          redirect_uris, scopes, grant_types, token_endpoint_auth_method, require_mtls_bound_tokens,
+          security_policy)
+         VALUES ($1, $2, $3, $4, 'dependency-client', 'dependency', 'confidential',
+                 '[]', '[\"openid\"]', '[\"authorization_code\"]', 'private_key_jwt', TRUE, $5)",
+    )
+    .bind::<sql_types::Uuid, _>(client_id)
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Uuid, _>(fixture.tenant.realm_id.as_uuid())
+    .bind::<sql_types::Uuid, _>(fixture.tenant.organization_id.as_uuid())
+    .bind::<sql_types::Jsonb, _>(
+        serde_json::to_value(nazo_auth::ClientSecurityPolicy::default()).unwrap(),
+    )
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let Openid4vcTrustPolicyWrite::Applied(policy) =
+        TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
+            &mut connection,
+            NewStoredOpenid4vcTrustPolicy {
+                tenant_id,
+                resource_id: "policy",
+                resource_digest: &digest,
+                public_material: &json!({}),
+                wallet_origins: &[],
+            },
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("fresh policy must be applied")
+    };
+    TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
+        &mut connection,
+        tenant_id,
+        "policy",
+        &digest,
+        client_id,
+    )
+    .await
+    .unwrap();
+    let now = Utc::now();
+    let anchor_id = insert_operator_managed_trust_anchor_on_connection(
+        &mut connection,
+        OperatorManagedTrustAnchor {
+            tenant_id: fixture.tenant.tenant_id,
+            client_id,
+            certificate_pem: "-----BEGIN CERTIFICATE-----\ncHVibGlj\n-----END CERTIFICATE-----\n",
+            certificate_sha256: &digest,
+            subject_dn: "CN=dependency",
+            not_before: now - Duration::minutes(1),
+            not_after: now + Duration::hours(1),
+        },
+    )
+    .await
+    .unwrap();
+    let ciphertext = protect_dataset_claims(
+        &[1; 32],
+        tenant_id,
+        user_id,
+        "credential",
+        &json!({"given_name":"Nazo"}),
+    )
+    .unwrap();
+    upsert_operator_managed_dataset_on_connection(
+        &mut connection,
+        tenant_id,
+        user_id,
+        "credential",
+        ciphertext,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let entries = [
+        (TenantResourceKind::User, "user", format!("user/{user_id}")),
+        (
+            TenantResourceKind::OauthClient,
+            "oauth-client",
+            format!("oauth-client/{client_id}"),
+        ),
+        (
+            TenantResourceKind::Openid4vcTrustPolicy,
+            "openid4vc-trust-policy",
+            format!("openid4vc-trust-policy/{}", policy.id),
+        ),
+        (
+            TenantResourceKind::MtlsTrustAnchor,
+            "mtls-trust-anchor",
+            format!("mtls-trust-anchor/{anchor_id}"),
+        ),
+        (
+            TenantResourceKind::Openid4vcDataset,
+            "openid4vc-dataset",
+            format!("openid4vc-dataset/{user_id}/credential"),
+        ),
+    ];
+    let mut identities = Vec::new();
+    for (kind, name, locator) in entries {
+        let resource_id = if kind == TenantResourceKind::Openid4vcTrustPolicy {
+            "policy"
+        } else {
+            name
+        };
+        sql_query(
+            "INSERT INTO tenant_resource_bindings
+             (id, tenant_id, resource_kind, resource_id, resource_digest, active, locator)
+             VALUES ($1, $2, $3, $4, $5, TRUE, $6)",
+        )
+        .bind::<sql_types::Uuid, _>(Uuid::now_v7())
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(name)
+        .bind::<sql_types::Text, _>(resource_id)
+        .bind::<sql_types::Text, _>(&digest)
+        .bind::<sql_types::Text, _>(&locator)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        identities.push(TenantResourceIdentity {
+            kind,
+            resource_id: resource_id.to_owned(),
+            digest: digest.clone(),
+        });
+    }
+    drop(connection);
+    for parent in &identities[..3] {
+        let identity = fixture.identity();
+        let mut request = frame(&identity, TenantResourceAction::Revoke);
+        request.resources = vec![PreparedTenantResource {
+            identity: parent.clone(),
+            payload: None,
+        }];
+        assert_eq!(
+            fixture.executor.execute_control_operation(request).await,
+            Err(TenantResourceExecutorError::Rejected),
+            "surviving child must prevent revoking {:?}",
+            parent.kind,
+        );
+        assert_eq!(audit_count(&fixture, &identity).await, 0);
+    }
+    // An unrelated inactive client must not prevent revoking a dataset leaf.
+    let mut connection = fixture.pool.get().await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let identity = fixture.identity();
+    let mut request = frame(&identity, TenantResourceAction::Revoke);
+    request.resources = vec![PreparedTenantResource {
+        identity: identities.pop().unwrap(),
+        payload: None,
+    }];
+    fixture
+        .executor
+        .execute_control_operation(request)
+        .await
+        .unwrap();
+    assert_eq!(audit_count(&fixture, &identity).await, 1);
+
+    let mut connection = fixture.pool.get().await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = TRUE WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let identity = fixture.identity();
+    let mut request = frame(&identity, TenantResourceAction::Revoke);
+    request.resources = identities
+        .into_iter()
+        .map(|identity| PreparedTenantResource {
+            identity,
+            payload: None,
+        })
+        .collect();
+    let outcome = fixture
+        .executor
+        .execute_control_operation(request)
+        .await
+        .unwrap();
+    assert_eq!(outcome.resources.len(), 4);
+    assert_eq!(
+        outcome.resource_manifest_sha256,
+        nazo_persistence::tenant_resources::empty_manifest_sha256()
+    );
+    assert_eq!(audit_count(&fixture, &identity).await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn filtered_enumeration_keeps_the_complete_manifest_digest() {
     use nazo_operator_protocol::{
         TenantResourceIdentity, TenantResourceKind, TenantResourceSelector,
