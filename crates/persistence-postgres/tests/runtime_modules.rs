@@ -269,6 +269,67 @@ async fn guarded_desired_changes_are_serialized_across_database_connections() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_first_instance_writes_return_one_applied_and_one_stale() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    clear_module(&database_url, "token_exchange").await;
+    let repository = RuntimeModuleRepository::new(create_pool(&database_url, 4).unwrap());
+    let instance_id = format!("runtime-first-write-{}", Uuid::now_v7());
+    let mutation = || {
+        instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: instance(
+                    &instance_id,
+                    ModuleId::TokenExchange,
+                    ModuleState::Starting,
+                    1,
+                ),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        )
+    };
+    let (first, second) = tokio::join!(
+        repository.compare_and_set_instance(mutation()),
+        repository.compare_and_set_instance(mutation()),
+    );
+    let outcomes = [first.unwrap(), second.unwrap()];
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, CasOutcome::Applied(_)))
+            .count(),
+        1
+    );
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|outcome| matches!(outcome, CasOutcome::Stale { current: Some(_) }))
+            .count(),
+        1
+    );
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    assert_eq!(
+        event_type_count(&mut connection, "token_exchange", "transition_started").await,
+        1
+    );
+    assert_eq!(
+        event_type_count(
+            &mut connection,
+            "token_exchange",
+            "stale_transition_discarded"
+        )
+        .await,
+        1
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn registry_generated_transition_events_are_postgresql_compatible() {
     let Some(database_url) = database_url() else {
         return;

@@ -556,6 +556,24 @@ async fn concurrent_rate_counters_are_atomic_and_preserve_first_window_ttl() {
         blake3::hash(subject.as_bytes()).to_hex()
     ));
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
+    inspector.expire::<(), _>(&key, 10, None).await.unwrap();
+    assert_eq!(
+        store
+            .increment(RateDimension::Token, &subject, 30)
+            .await
+            .unwrap(),
+        21
+    );
+    assert!((1..=10).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
+    inspector.expire::<(), _>(&key, -1, None).await.unwrap();
+    assert_eq!(
+        store
+            .increment(RateDimension::Token, &subject, 30)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
 }
 
 #[tokio::test]

@@ -12,10 +12,7 @@ use crate::{
     schema::{runtime_module_desired_states, runtime_module_instance_states},
 };
 
-use super::{
-    RuntimeModuleRepository, mapping,
-    transaction::{RuntimeTransactionError, lock_key},
-};
+use super::{RuntimeModuleRepository, mapping, transaction::RuntimeTransactionError};
 
 pub(super) async fn read_instance(
     repository: &RuntimeModuleRepository,
@@ -66,13 +63,6 @@ pub(super) async fn compare_and_set_instance(
             async |connection| {
                 let change = mutation.change;
                 let mut event = mutation.event;
-                let key = format!(
-                    "{}:{}:{}",
-                    repository.tenant_id(),
-                    change.next.instance_id,
-                    module_id(change.next.module_id)
-                );
-                lock_key(connection, &key).await?;
                 let durable_desired_revision = runtime_module_desired_states::table
                     .find((repository.tenant_id(), module_id(change.next.module_id)))
                     .select(runtime_module_desired_states::revision)
@@ -137,18 +127,12 @@ pub(super) async fn compare_and_set_instance(
                     .map_err(RuntimeTransactionError::Repository)?;
                 let updated_at = DateTime::<Utc>::from(change.next.updated_at);
                 let drain_deadline = change.next.drain_deadline.map(DateTime::<Utc>::from);
-                if let Some(expected) = change.expected_revision {
-                    diesel::update(
-                        runtime_module_instance_states::table
-                            .find((
-                                repository.tenant_id(),
-                                change.next.instance_id.as_str(),
-                                module_id(change.next.module_id),
-                            ))
-                            .filter(runtime_module_instance_states::transition_revision.eq(
-                                revision(expected).map_err(RuntimeTransactionError::Repository)?,
-                            )),
-                    )
+                if change.expected_revision.is_some() {
+                    diesel::update(runtime_module_instance_states::table.find((
+                        repository.tenant_id(),
+                        change.next.instance_id.as_str(),
+                        module_id(change.next.module_id),
+                    )))
                     .set((
                         runtime_module_instance_states::actual_state
                             .eq(actual_state(change.next.state)),
