@@ -53,10 +53,7 @@ where
         transaction_id: uuid::Uuid,
         wallet_nonce: &'a str,
         now: DateTime<Utc>,
-    ) -> crate::PresentationStoreFuture<
-        'a,
-        Result<Option<PresentationTransaction>, PresentationStoreError>,
-    > {
+    ) -> crate::PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         self.as_ref()
             .bind_wallet_nonce(transaction_id, wallet_nonce, now)
     }
@@ -78,15 +75,10 @@ where
         now: DateTime<Utc>,
     ) -> crate::PresentationStoreFuture<
         'a,
-        Result<Option<crate::StoredPresentation>, PresentationStoreError>,
+        Result<Option<PresentationResult>, PresentationStoreError>,
     > {
         self.as_ref().result(transaction_id, now)
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct VerifiedPresentation {
-    pub credentials: Vec<VerifiedCredential>,
 }
 
 pub struct PresentationService<S, V> {

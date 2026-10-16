@@ -33,6 +33,20 @@ fn basic_credentials_are_parsed_once_and_secrets_are_redacted() {
 }
 
 #[test]
+fn basic_scheme_and_payload_whitespace_preserve_malformed_credentials() {
+    for authorization in ["Basic", "Basic   ", "Basic Y2xp ZW50OnNlY3JldA=="] {
+        let facts = facts(Some(authorization), TokenClientAuthForm::default());
+        assert!(facts.basic_challenge());
+        assert!(facts.credential_view(None, None).client_id.is_none());
+    }
+    let facts = facts(
+        Some("  bAsIc  Y2xpZW50OnNlY3JldA==  "),
+        TokenClientAuthForm::default(),
+    );
+    assert_eq!(facts.credential_view(None, None).client_id, Some("client"));
+}
+
+#[test]
 fn basic_credentials_decode_each_form_urlencoded_component() {
     let encoded = STANDARD.encode("client%3Aid%25%2B%E9%9B%AA:secret%3A%25%2B%E5%AF%86");
     let credentials = facts(

@@ -869,8 +869,14 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
         .unwrap()
         .unwrap();
     assert_eq!(loaded.response_encryption_private_key, Some(vec![7_u8; 32]));
+    assert!(
+        verifier
+            .bind_wallet_nonce(transaction_id, "wallet-nonce", now)
+            .await
+            .unwrap()
+    );
     let bound = verifier
-        .bind_wallet_nonce(transaction_id, "wallet-nonce", now)
+        .request(transaction_id, now)
         .await
         .unwrap()
         .unwrap();
@@ -892,6 +898,19 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
             .wallet_nonce
             .as_deref(),
         Some("wallet-nonce")
+    );
+    assert!(
+        verifier
+            .result(transaction_id, now)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        !verifier
+            .bind_wallet_nonce(transaction_id, "expired-nonce", transaction.expires_at)
+            .await
+            .unwrap()
     );
     let completed_at = Utc::now();
     let result = PresentationResult {
@@ -944,11 +963,10 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     );
 
     assert!(
-        other_verifier
+        !other_verifier
             .bind_wallet_nonce(transaction_id, "cross-tenant-wallet-nonce", now)
             .await
-            .unwrap()
-            .is_none(),
+            .unwrap(),
         "a cross-tenant wallet nonce bind must not update the source transaction"
     );
     assert!(
@@ -990,10 +1008,22 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
             .await
             .unwrap()
     );
+    assert!(
+        !verifier
+            .bind_wallet_nonce(transaction_id, "completed-nonce", now)
+            .await
+            .unwrap()
+    );
     let stored_result = verifier.result(transaction_id, now).await.unwrap().unwrap();
-    assert_eq!(stored_result.completed, Some(result));
+    assert_eq!(stored_result, result);
     assert_eq!(
-        stored_result.transaction.response_encryption_private_key, None,
+        verifier
+            .request(transaction_id, now)
+            .await
+            .unwrap()
+            .unwrap()
+            .response_encryption_private_key,
+        None,
         "successful completion must erase the no-longer-consumed ephemeral response key"
     );
     let mut late_transaction = transaction.clone();

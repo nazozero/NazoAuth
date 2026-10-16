@@ -105,7 +105,7 @@ pub use scim::{
 };
 pub use session::{
     SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,
-    profile_logout, session_lookup_error_response,
+    profile_logout,
 };
 pub use session_management::{
     CheckSessionStatusQuery, SessionManagementConfig, SessionManagementEndpoint,

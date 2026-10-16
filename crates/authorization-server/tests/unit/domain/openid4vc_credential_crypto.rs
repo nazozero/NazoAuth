@@ -1788,10 +1788,7 @@ impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
         _now: chrono::DateTime<Utc>,
     ) -> nazo_openid4vp::PresentationStoreFuture<
         'a,
-        Result<
-            Option<nazo_openid4vp::PresentationTransaction>,
-            nazo_openid4vp::PresentationStoreError,
-        >,
+        Result<bool, nazo_openid4vp::PresentationStoreError>,
     > {
         Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
     }
@@ -1816,7 +1813,7 @@ impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
         _now: chrono::DateTime<Utc>,
     ) -> nazo_openid4vp::PresentationStoreFuture<
         'a,
-        Result<Option<nazo_openid4vp::StoredPresentation>, nazo_openid4vp::PresentationStoreError>,
+        Result<Option<nazo_openid4vp::PresentationResult>, nazo_openid4vp::PresentationStoreError>,
     > {
         Box::pin(async { Err(nazo_openid4vp::PresentationStoreError::Unavailable) })
     }

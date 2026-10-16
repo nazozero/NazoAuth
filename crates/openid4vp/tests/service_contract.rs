@@ -12,7 +12,7 @@ use nazo_openid4vp::{
     AuthorizationRequest, AuthorizationResponse, ClientIdPrefix, ClientMetadata, PresentationError,
     PresentationResult, PresentationService, PresentationServiceError, PresentationStoreError,
     PresentationStoreFuture, PresentationStorePort, PresentationTransaction, RequestMethod,
-    ResponseMode, StoredPresentation,
+    ResponseMode,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -58,9 +58,8 @@ impl PresentationStorePort for RecordingStore {
         _transaction_id: Uuid,
         _wallet_nonce: &'a str,
         _now: chrono::DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
-    {
-        Box::pin(async { Ok(None) })
+    ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
+        Box::pin(async { Ok(false) })
     }
 
     fn complete<'a>(
@@ -83,7 +82,7 @@ impl PresentationStorePort for RecordingStore {
         &'a self,
         _transaction_id: Uuid,
         _now: chrono::DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<StoredPresentation>, PresentationStoreError>>
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>
     {
         Box::pin(async { Ok(None) })
     }

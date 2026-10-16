@@ -16,10 +16,10 @@ pub use model::{
     RequestMethod, ResponseMode, TransactionData, VerifierInfo,
 };
 pub use policy::{PresentationPolicy, PresentationPolicyError};
-pub use service::{PresentationService, PresentationServiceError, VerifiedPresentation};
+pub use service::{PresentationService, PresentationServiceError};
 pub use store::{
     PresentationCreateIdempotency, PresentationCreateOutcome, PresentationStoreError,
-    PresentationStoreFuture, PresentationStorePort, StoredPresentation,
+    PresentationStoreFuture, PresentationStorePort,
 };
 
 pub const VP_TOKEN_RESPONSE_TYPE: &str = "vp_token";

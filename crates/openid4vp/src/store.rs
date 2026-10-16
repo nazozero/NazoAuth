@@ -7,12 +7,6 @@ use crate::{PresentationResult, PresentationTransaction};
 
 pub type PresentationStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct StoredPresentation {
-    pub transaction: PresentationTransaction,
-    pub completed: Option<PresentationResult>,
-}
-
 /// Binding generated from an admitted, normalized create request.
 /// The caller owns input validation and canonicalization; stores compare the
 /// binding with the persisted request and enforce atomic create uniqueness.
@@ -47,12 +41,14 @@ pub trait PresentationStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
 
+    /// Update only the nonce on an active transaction already read by the caller.
+    /// Other request fields are immutable; false means it is no longer available.
     fn bind_wallet_nonce<'a>(
         &'a self,
         transaction_id: Uuid,
         wallet_nonce: &'a str,
         now: DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
+    ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>>;
 
     /// Accept exactly one completion under the current tenant, state and trust
     /// policy. `now` is the caller's reported verification time; it cannot stand
@@ -72,7 +68,7 @@ pub trait PresentationStorePort: Send + Sync {
         &'a self,
         transaction_id: Uuid,
         now: DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<StoredPresentation>, PresentationStoreError>>;
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

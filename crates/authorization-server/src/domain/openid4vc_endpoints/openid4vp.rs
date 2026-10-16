@@ -618,7 +618,7 @@ impl PresentationOperations for ServerPresentationOperations {
                             "wallet_nonce is required for POST request_uri retrieval.",
                         )
                     })?;
-                transaction = self
+                let bound = self
                     .store
                     .bind_wallet_nonce(transaction_id, nonce, Utc::now())
                     .await
@@ -628,15 +628,15 @@ impl PresentationOperations for ServerPresentationOperations {
                             "server_error",
                             "Presentation transaction state is unavailable.",
                         )
-                    })?
-                    .ok_or_else(|| {
-                        vp_error(
-                            404,
-                            "invalid_request_uri",
-                            "Presentation request URI is invalid.",
-                        )
                     })?;
-                validate_retained_request_profile(&transaction.request)?;
+                if !bound {
+                    return Err(vp_error(
+                        404,
+                        "invalid_request_uri",
+                        "Presentation request URI is invalid.",
+                    ));
+                }
+                transaction.request.wallet_nonce = Some(nonce.to_owned());
                 let lease = self.crypto.prepare_signing().map_err(|_| {
                     vp_error(503, "server_error", "Presentation request signing failed.")
                 })?;
@@ -807,7 +807,6 @@ impl PresentationOperations for ServerPresentationOperations {
                         "Presentation result state is unavailable.",
                     )
                 })?
-                .and_then(|stored| stored.completed)
                 .ok_or_else(|| vp_error(404, "not_found", "Presentation result is not available."))
         })
     }
