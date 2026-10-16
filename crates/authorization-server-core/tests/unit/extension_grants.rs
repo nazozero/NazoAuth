@@ -1,5 +1,6 @@
 use super::*;
 use crate::ConfirmationClaims;
+use serde_json::json;
 
 fn jwt_policy<'a>(scopes: &'a [String], audiences: &'a [String]) -> JwtBearerGrantPolicy<'a> {
     JwtBearerGrantPolicy {
@@ -108,7 +109,7 @@ fn empty_but_present_grant_tokens_reach_crypto_validation() {
     assert!(jwt.assertion.is_empty());
 
     let tenant_id = Uuid::nil();
-    let exchange = admit_token_exchange(
+    validate_token_exchange_grant_prerequisites(
         &TokenExchangeRequestInput {
             subject_token: Some(""),
             subject_token_type: Some(ACCESS_TOKEN_TYPE),
@@ -118,11 +119,10 @@ fn empty_but_present_grant_tokens_reach_crypto_validation() {
         exchange_policy(&scopes, &audiences, tenant_id),
     )
     .expect("an empty subject token is present but will fail token validation");
-    assert!(exchange.subject_token.is_empty());
 }
 
 #[test]
-fn token_exchange_type_scope_and_target_policy_is_explicit() {
+fn token_exchange_type_policy_is_explicit() {
     let scopes = vec!["read".to_owned(), "write".to_owned()];
     let audiences = vec!["https://api.example".to_owned()];
     let tenant_id = Uuid::now_v7();
@@ -132,17 +132,18 @@ fn token_exchange_type_scope_and_target_policy_is_explicit() {
         actor_token: None,
         actor_token_type: None,
         requested_token_type: Some(ACCESS_TOKEN_TYPE),
-        scope: Some("read"),
         audiences: &audiences,
     };
-    let admitted = admit_token_exchange(&request, exchange_policy(&scopes, &audiences, tenant_id))
-        .expect("valid exchange request");
-    assert_eq!(admitted.requested_scope, Some("read"));
+    validate_token_exchange_grant_prerequisites(
+        &request,
+        exchange_policy(&scopes, &audiences, tenant_id),
+    )
+    .expect("valid exchange request");
 
     let mut unsupported = request;
     unsupported.requested_token_type = Some("urn:example:unknown");
     assert_eq!(
-        admit_token_exchange(
+        validate_token_exchange_grant_prerequisites(
             &unsupported,
             exchange_policy(&scopes, &audiences, tenant_id)
         ),
@@ -166,16 +167,15 @@ fn token_exchange_multi_target_fails_closed_on_any_denied_target() {
         ..TokenExchangeRequestInput::default()
     };
 
-    let admitted = admit_token_exchange(&request, exchange_policy(&scopes, &audiences, tenant_id))
+    validate_token_exchange_target(&request, exchange_policy(&scopes, &audiences, tenant_id))
         .expect("every requested target is allowed");
-    assert_eq!(admitted.audiences, audiences);
 
     let mut denied = request;
     let mut denied_audiences = audiences.clone();
     denied_audiences.push("https://denied.example".to_owned());
     denied.audiences = &denied_audiences;
     assert_eq!(
-        admit_token_exchange(&denied, exchange_policy(&scopes, &audiences, tenant_id)),
+        validate_token_exchange_target(&denied, exchange_policy(&scopes, &audiences, tenant_id)),
         Err(TokenExchangeError::InvalidTarget)
     );
 }
@@ -214,7 +214,7 @@ fn verified_subject_limits_scope_and_preserves_sender_binding() {
             },
             policy,
         ),
-        Ok(TokenExchangeSenderBinding::Dpop("subject-jkt".to_owned()))
+        Ok(TokenExchangeSenderBinding::Dpop("subject-jkt"))
     );
 }
 
@@ -235,7 +235,7 @@ fn dual_subject_binding_and_sender_binding_conversion_fail_closed() {
     );
     assert_eq!(
         token_exchange_issuance_binding(
-            &TokenExchangeSenderBinding::MutualTls("mtls".to_owned()),
+            &TokenExchangeSenderBinding::MutualTls("mtls"),
             PresentedSenderConstraint {
                 dpop_jkt: None,
                 mtls_x5t_s256: None,
@@ -316,20 +316,20 @@ fn actor_claim_requires_same_client_and_rejects_sender_constraint() {
     let policy = exchange_policy(&scopes, &audiences, tenant_id);
     let mut actor = access_claims(tenant_id);
     actor.act = Some(json!({"sub": "previous"}));
-    let claim = token_exchange_actor_claim(&actor, policy).expect("valid actor");
+    let claim = token_exchange_actor_claim(actor.clone(), policy).expect("valid actor");
     assert_eq!(claim["act"]["sub"], "previous");
     actor.cnf = Some(ConfirmationClaims {
         jkt: Some("jkt".to_owned()),
         x5t_s256: None,
     });
     assert_eq!(
-        token_exchange_actor_claim(&actor, policy),
+        token_exchange_actor_claim(actor, policy),
         Err(TokenExchangeError::InvalidGrant)
     );
 }
 
 #[test]
-fn admitted_raw_assertions_and_exchange_tokens_borrow_the_original_buffers() {
+fn admitted_raw_assertions_borrow_the_original_buffer() {
     let scopes = vec!["read".to_owned()];
     let audiences = vec!["https://api.example".to_owned()];
     let raw = "raw-jwt".repeat(4096);
@@ -341,26 +341,9 @@ fn admitted_raw_assertions_and_exchange_tokens_borrow_the_original_buffers() {
     )
     .unwrap();
     assert_eq!(jwt.assertion.as_ptr(), raw.as_ptr());
-    let actor = "actor-jwt".repeat(4096);
-    let request = TokenExchangeRequestInput {
-        subject_token: Some(&raw),
-        subject_token_type: Some(ACCESS_TOKEN_TYPE),
-        actor_token: Some(&actor),
-        actor_token_type: Some(ACCESS_TOKEN_TYPE),
-        scope: Some("read"),
-        audiences: &audiences,
-        ..TokenExchangeRequestInput::default()
-    };
-    let admitted = admit_token_exchange(
-        &request,
-        exchange_policy(&scopes, &audiences, Uuid::now_v7()),
-    )
-    .unwrap();
-    assert_eq!(admitted.subject_token.as_ptr(), raw.as_ptr());
-    assert_eq!(admitted.actor_token.unwrap().as_ptr(), actor.as_ptr());
     fn send<T: Send>(_: T) {}
     send(async move {
         std::future::ready(()).await;
-        admitted.subject_token.len()
+        jwt.assertion.len()
     });
 }

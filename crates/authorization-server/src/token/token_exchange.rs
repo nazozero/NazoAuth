@@ -31,9 +31,9 @@ use nazo_auth::DpopError;
 use nazo_auth::{
     Claims, PresentedSenderConstraint, TokenExchangeError, TokenExchangePolicy,
     TokenExchangeRequestInput, TokenExchangeSenderBinding, TokenExchangeSubjectIdentity,
-    TokenIssuanceMode, admit_token_exchange, parse_scope, token_exchange_actor_claim,
-    token_exchange_issuance_binding, validate_token_exchange_access_token,
-    validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
+    TokenIssuanceMode, parse_scope, token_exchange_actor_claim, token_exchange_issuance_binding,
+    validate_token_exchange_access_token, validate_token_exchange_grant_prerequisites,
+    validate_token_exchange_subject, validate_token_exchange_target,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -98,7 +98,6 @@ pub fn token_exchange_request(form: &TokenForm) -> TokenExchangeRequestInput<'_>
         actor_token: form.actor_token.as_deref(),
         actor_token_type: form.actor_token_type.as_deref(),
         requested_token_type: form.requested_token_type.as_deref(),
-        scope: form.scope.as_deref(),
         audiences: &form.audiences,
     }
 }
@@ -238,13 +237,11 @@ pub async fn validate_subject_sender_binding(
     facts: &TokenRequestFacts<'_>,
     client: &ClientRow,
     subject_token: &str,
-    subject_binding: &TokenExchangeSenderBinding,
+    subject_binding: &TokenExchangeSenderBinding<'_>,
 ) -> Result<ValidatedSenderConstraints, OAuthEndpointError> {
     let (expected_dpop, expected_mtls, token_for_ath) = match subject_binding {
-        TokenExchangeSenderBinding::Dpop(jkt) => (Some(jkt.as_str()), None, Some(subject_token)),
-        TokenExchangeSenderBinding::MutualTls(thumbprint) => {
-            (None, Some(thumbprint.as_str()), None)
-        }
+        TokenExchangeSenderBinding::Dpop(jkt) => (Some(*jkt), None, Some(subject_token)),
+        TokenExchangeSenderBinding::MutualTls(thumbprint) => (None, Some(*thumbprint), None),
         TokenExchangeSenderBinding::Bearer => (None, None, None),
     };
     validate_token_sender_constraints(
@@ -307,10 +304,10 @@ pub async fn validate_subject_sender_binding(
 
 pub fn token_exchange_issue_binding(
     client: &ClientRow,
-    subject_binding: &TokenExchangeSenderBinding,
+    subject_binding: &TokenExchangeSenderBinding<'_>,
     presented: &ValidatedSenderConstraints,
     policy: TokenExchangePolicy<'_>,
-) -> Result<TokenExchangeSenderBinding, OAuthEndpointError> {
+) -> Result<(), OAuthEndpointError> {
     token_exchange_issuance_binding(
         subject_binding,
         PresentedSenderConstraint {
@@ -319,6 +316,7 @@ pub fn token_exchange_issue_binding(
         },
         policy,
     )
+    .map(|_| ())
     .map_err(|_| match subject_binding {
         TokenExchangeSenderBinding::Dpop(_) if client.require_mtls_bound_tokens => {
             OAuthEndpointError::token(
@@ -340,16 +338,6 @@ pub fn token_exchange_issue_binding(
     })
 }
 
-fn token_exchange_binding_claims(
-    binding: TokenExchangeSenderBinding,
-) -> (Option<String>, Option<String>) {
-    match binding {
-        TokenExchangeSenderBinding::Bearer => (None, None),
-        TokenExchangeSenderBinding::Dpop(jkt) => (Some(jkt), None),
-        TokenExchangeSenderBinding::MutualTls(thumbprint) => (None, Some(thumbprint)),
-    }
-}
-
 pub async fn validate_actor_token(
     token_service: &ServerTokenService,
     issuer: &str,
@@ -363,9 +351,10 @@ pub async fn validate_actor_token(
     let actor = validate_exchange_access_token(token_service, issuer, client, actor_token, policy)
         .await
         .map_err(exchange_token_error_response)?;
-    match token_exchange_actor_claim(&actor, policy) {
+    let sender_constrained = actor.cnf.is_some();
+    match token_exchange_actor_claim(actor, policy) {
         Ok(claim) => Ok(Some(claim)),
-        Err(_) if actor.cnf.is_some() => Err(OAuthEndpointError::token(
+        Err(_) if sender_constrained => Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "sender-constrained actor tokens are not supported for token exchange.",
@@ -455,16 +444,16 @@ pub async fn token_exchange(
         Ok(presented) => presented,
         Err(response) => return Err(response),
     };
-    let issuance_binding = match token_exchange_issue_binding(
+    token_exchange_issue_binding(
         client,
         &validated_subject.sender_binding,
         &presented_sender,
         policy,
-    ) {
-        Ok(binding) => binding,
-        Err(response) => return Err(response),
-    };
-    let (dpop_jkt, mtls_x5t_s256) = token_exchange_binding_claims(issuance_binding);
+    )?;
+    let ValidatedSenderConstraints {
+        dpop_jkt,
+        mtls_x5t_s256,
+    } = presented_sender;
     let actor = match validate_actor_token(
         token_service,
         issuance.config.issuer(),
@@ -477,11 +466,12 @@ pub async fn token_exchange(
         Ok(actor) => actor,
         Err(response) => return Err(response),
     };
-    let admission = match admit_token_exchange(&request, policy) {
-        Ok(admission) => admission,
-        Err(error) => return Err(token_exchange_admission_error_response(error, form)),
-    };
-    let user_id = match validated_subject.identity {
+    validate_token_exchange_target(&request, policy)
+        .map_err(|error| token_exchange_admission_error_response(error, form))?;
+    let nazo_auth::ValidatedTokenExchangeSubject {
+        identity, scopes, ..
+    } = validated_subject;
+    let user_id = match identity {
         TokenExchangeSubjectIdentity::User {
             public_user_id: Some(user_id),
         } => Some(user_id),
@@ -521,10 +511,10 @@ pub async fn token_exchange(
             native_sso_source: None,
             user_id,
             prepared_subject: None,
-            subject: validated_subject.subject,
-            scopes: validated_subject.scopes,
+            subject: subject.sub,
+            scopes,
             authorization_details: json!([]),
-            audiences: admission.audiences,
+            audiences: form.audiences.clone(),
             nonce: None,
             auth_time: None,
             amr: Vec::new(),
@@ -543,13 +533,9 @@ pub async fn token_exchange(
             refresh_grant_audiences: None,
             authorization_code_hash: None,
             actor,
-            issued_token_type: Some(admission.issued_token_type),
+            issued_token_type: Some(nazo_auth::ACCESS_TOKEN_TYPE.to_owned()),
             native_sso: None,
         },
     )
     .await
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/token/token_exchange.rs"]
-mod tests;

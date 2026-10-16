@@ -163,13 +163,13 @@ pub use error::{ProtocolError, ProtocolErrorCode};
 pub use extension_grants::{
     ACCESS_TOKEN_TYPE, JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS, JWT_BEARER_ASSERTION_MAX_JTI_BYTES,
     JWT_BEARER_ASSERTION_MAX_TTL_SECONDS, JwtBearerAssertionClaims, JwtBearerGrantAdmission,
-    JwtBearerGrantError, JwtBearerGrantPolicy, TokenExchangeAdmission, TokenExchangeError,
-    TokenExchangePolicy, TokenExchangeRequestInput, TokenExchangeSenderBinding,
-    TokenExchangeSubjectIdentity, ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject,
-    admit_jwt_bearer_grant, admit_token_exchange, token_exchange_actor_claim,
-    token_exchange_issuance_binding, token_exchange_scopes, validate_jwt_bearer_assertion_claims,
-    validate_jwt_bearer_grant_prerequisites, validate_token_exchange_access_token,
-    validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
+    JwtBearerGrantError, JwtBearerGrantPolicy, TokenExchangeError, TokenExchangePolicy,
+    TokenExchangeRequestInput, TokenExchangeSenderBinding, TokenExchangeSubjectIdentity,
+    ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject, admit_jwt_bearer_grant,
+    token_exchange_actor_claim, token_exchange_issuance_binding, token_exchange_scopes,
+    validate_jwt_bearer_assertion_claims, validate_jwt_bearer_grant_prerequisites,
+    validate_token_exchange_access_token, validate_token_exchange_grant_prerequisites,
+    validate_token_exchange_subject, validate_token_exchange_target,
 };
 pub use grant::{GrantType, UnsupportedGrantType};
 pub use logout_service::{

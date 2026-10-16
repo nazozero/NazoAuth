@@ -6,10 +6,10 @@ use nazo_auth::Claims;
 use nazo_auth::TokenExchangeError;
 use nazo_auth::TokenExchangePolicy;
 use nazo_auth::TokenExchangeSenderBinding;
-use nazo_auth::admit_token_exchange;
 use nazo_auth::token_exchange_actor_claim;
 use nazo_auth::validate_token_exchange_grant_prerequisites;
 use nazo_auth::validate_token_exchange_subject;
+use nazo_auth::validate_token_exchange_target;
 use nazo_oauth_server::contracts::token_forms::TokenForm;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::services::ServerTokenService;
@@ -257,23 +257,19 @@ fn token_exchange_requires_explicit_allowed_target() {
     let mut no_target = form();
     no_target.audiences.clear();
     assert_eq!(
-        admit_token_exchange(&token_exchange_request(&no_target), policy(&client)),
+        validate_token_exchange_target(&token_exchange_request(&no_target), policy(&client)),
         Err(TokenExchangeError::InvalidTarget)
     );
 
     let mut forbidden = form();
     forbidden.audiences = vec!["https://other.example/api".to_owned()];
     assert_eq!(
-        admit_token_exchange(&token_exchange_request(&forbidden), policy(&client)),
+        validate_token_exchange_target(&token_exchange_request(&forbidden), policy(&client)),
         Err(TokenExchangeError::InvalidTarget)
     );
 
-    assert_eq!(
-        admit_token_exchange(&token_exchange_request(&form()), policy(&client))
-            .expect("target is registered")
-            .audiences,
-        vec!["https://backend.example/api"]
-    );
+    validate_token_exchange_target(&token_exchange_request(&form()), policy(&client))
+        .expect("target is registered");
 }
 
 #[test]
@@ -338,7 +334,7 @@ fn token_exchange_actor_claim_preserves_current_and_prior_actor_context() {
     actor.act = Some(json!({"sub": "service-77"}));
 
     assert_eq!(
-        token_exchange_actor_claim(&actor, policy(&client)).expect("actor should be valid"),
+        token_exchange_actor_claim(actor, policy(&client)).expect("actor should be valid"),
         json!({
             "sub": "service-16",
             "client_id": "resource-server",
@@ -352,11 +348,11 @@ fn token_exchange_actor_claim_rejects_cross_client_and_cross_tenant_claims() {
     let client = client();
     let mut wrong_client = claims("other-client", json!("resource-server"), "read");
     wrong_client.sub = "service-16".to_owned();
-    assert!(token_exchange_actor_claim(&wrong_client, policy(&client)).is_err());
+    assert!(token_exchange_actor_claim(wrong_client, policy(&client)).is_err());
 
     let mut cross_tenant_actor = claims("resource-server", json!("resource-server"), "read");
     cross_tenant_actor.tenant_id = Uuid::from_u128(u128::MAX).to_string();
-    assert!(token_exchange_actor_claim(&cross_tenant_actor, policy(&client)).is_err());
+    assert!(token_exchange_actor_claim(cross_tenant_actor, policy(&client)).is_err());
 }
 
 #[actix_web::test]
@@ -368,36 +364,30 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
         };
 
     let bearer_client = client();
-    assert_eq!(
-        token_exchange_issue_binding(
-            &bearer_client,
-            &TokenExchangeSenderBinding::Bearer,
-            &presented(None, None),
-            policy(&bearer_client),
-        )
-        .map_err(nazo_http_actix::oauth_endpoint_error_response)
-        .expect("an unconstrained exchange may remain bearer"),
-        TokenExchangeSenderBinding::Bearer
-    );
+    token_exchange_issue_binding(
+        &bearer_client,
+        &TokenExchangeSenderBinding::Bearer,
+        &presented(None, None),
+        policy(&bearer_client),
+    )
+    .map_err(nazo_http_actix::oauth_endpoint_error_response)
+    .expect("an unconstrained exchange may remain bearer");
 
-    let dpop_subject = TokenExchangeSenderBinding::Dpop("dpop-jkt".to_owned());
-    assert_eq!(
-        token_exchange_issue_binding(
-            &bearer_client,
-            &dpop_subject,
-            &presented(Some("dpop-jkt"), None),
-            policy(&bearer_client),
-        )
-        .map_err(nazo_http_actix::oauth_endpoint_error_response)
-        .expect("matching DPoP proof must preserve the subject binding"),
-        dpop_subject
-    );
+    let dpop_subject = TokenExchangeSenderBinding::Dpop("dpop-jkt");
+    token_exchange_issue_binding(
+        &bearer_client,
+        &dpop_subject,
+        &presented(Some("dpop-jkt"), None),
+        policy(&bearer_client),
+    )
+    .map_err(nazo_http_actix::oauth_endpoint_error_response)
+    .expect("matching DPoP proof must preserve the subject binding");
 
     let mut mtls_required = client();
     mtls_required.require_mtls_bound_tokens = true;
     let response = token_exchange_issue_binding(
         &mtls_required,
-        &TokenExchangeSenderBinding::Dpop("dpop-jkt".to_owned()),
+        &TokenExchangeSenderBinding::Dpop("dpop-jkt"),
         &presented(Some("dpop-jkt"), None),
         policy(&mtls_required),
     )
@@ -413,7 +403,7 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
     dpop_required.require_dpop_bound_tokens = true;
     let response = token_exchange_issue_binding(
         &dpop_required,
-        &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint".to_owned()),
+        &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint"),
         &presented(None, Some("mtls-thumbprint")),
         policy(&dpop_required),
     )
@@ -427,7 +417,7 @@ async fn token_exchange_issue_binding_preserves_or_rejects_sender_constraints() 
 
     let response = token_exchange_issue_binding(
         &bearer_client,
-        &TokenExchangeSenderBinding::Dpop("dpop-jkt".to_owned()),
+        &TokenExchangeSenderBinding::Dpop("dpop-jkt"),
         &presented(Some("different-jkt"), None),
         policy(&bearer_client),
     )
@@ -469,7 +459,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
         ),
         &dpop_required,
         "subject-token",
-        &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint".to_owned()),
+        &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint"),
     )
     .await
     .map_err(nazo_http_actix::oauth_endpoint_error_response)
@@ -490,7 +480,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
         ),
         &mtls_required_for_dpop,
         "subject-token",
-        &TokenExchangeSenderBinding::Dpop("dpop-jkt".to_owned()),
+        &TokenExchangeSenderBinding::Dpop("dpop-jkt"),
     )
     .await
     .map_err(nazo_http_actix::oauth_endpoint_error_response)
@@ -511,7 +501,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
         ),
         &mtls_subject_required,
         "subject-token",
-        &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint".to_owned()),
+        &TokenExchangeSenderBinding::MutualTls("mtls-thumbprint"),
     )
     .await
     .map_err(nazo_http_actix::oauth_endpoint_error_response)
@@ -552,7 +542,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
         ),
         &bearer_client,
         "subject-token",
-        &TokenExchangeSenderBinding::Dpop("dpop-jkt".to_owned()),
+        &TokenExchangeSenderBinding::Dpop("dpop-jkt"),
     )
     .await
     .map_err(nazo_http_actix::oauth_endpoint_error_response)
