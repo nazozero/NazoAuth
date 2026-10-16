@@ -301,7 +301,6 @@ pub enum IssuanceDisposition {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CredentialIssuance {
     pub configuration_id: String,
-    pub configuration: CredentialConfiguration,
     pub disposition: IssuanceDisposition,
     pub status: Option<Value>,
     pub expires_at: DateTime<Utc>,
@@ -325,18 +324,10 @@ pub enum IssuanceCommit {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct IssuanceIdentity {
-    pub issuance_id: Uuid,
-    pub request_digest: String,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PendingCredentialIssuance {
     pub response: CredentialResponse,
     pub commit: IssuanceCommit,
-    pub issuance_id: Uuid,
-    pub request_digest: String,
 }
 
 pub struct CredentialIssuerService<S, P, D, K> {
@@ -382,9 +373,9 @@ where
         &self,
         access: &CredentialAccess,
         request: &CredentialRequest,
-        issuance: &CredentialIssuance,
+        issuance: CredentialIssuance,
+        configuration: &CredentialConfiguration,
         expected_nonce: &str,
-        identity: IssuanceIdentity,
         now: DateTime<Utc>,
     ) -> Result<PendingCredentialIssuance, CredentialIssuanceError> {
         request.validate_identifier()?;
@@ -402,13 +393,12 @@ where
             return Err(CredentialIssuanceError::Unauthorized);
         }
         let mut nonce_claim = None;
-        let holder_bindings = if issuance.configuration.proof_types_supported.is_empty() {
+        let holder_bindings = if configuration.proof_types_supported.is_empty() {
             if request
                 .proofs
                 .as_ref()
                 .is_some_and(|proofs| proofs.0.values().any(|values| !values.is_empty()))
-                || !issuance
-                    .configuration
+                || !configuration
                     .cryptographic_binding_methods_supported
                     .is_empty()
             {
@@ -434,13 +424,9 @@ where
                     CredentialError::InvalidProof,
                 ));
             }
-            let proof_metadata = issuance
-                .configuration
-                .proof_types_supported
-                .get(proof_type)
-                .ok_or(CredentialIssuanceError::Credential(
-                    CredentialError::InvalidProof,
-                ))?;
+            let proof_metadata = configuration.proof_types_supported.get(proof_type).ok_or(
+                CredentialIssuanceError::Credential(CredentialError::InvalidProof),
+            )?;
             let validated = self
                 .proofs
                 .validate(
@@ -494,6 +480,7 @@ where
             .prepare_after_nonce_claim(
                 access,
                 issuance,
+                configuration,
                 selection,
                 holder_bindings,
                 &mut nonce_claim,
@@ -501,12 +488,7 @@ where
             )
             .await;
         match result {
-            Ok((response, commit)) => Ok(PendingCredentialIssuance {
-                response,
-                commit,
-                issuance_id: identity.issuance_id,
-                request_digest: identity.request_digest,
-            }),
+            Ok((response, commit)) => Ok(PendingCredentialIssuance { response, commit }),
             Err(error) => {
                 if let Some(claim) = nonce_claim {
                     let _ = self
@@ -519,86 +501,38 @@ where
         }
     }
 
+    /// Commit the prepared state together with the application's exact wire response.
     pub async fn commit_pending(
         &self,
-        pending: &PendingCredentialIssuance,
-        now: DateTime<Utc>,
-    ) -> Result<(), CredentialIssuanceError> {
-        self.commit_pending_internal(pending, None, now).await
-    }
-
-    pub async fn commit_pending_with_response(
-        &self,
-        pending: &PendingCredentialIssuance,
+        commit: &IssuanceCommit,
         response: &StoredCredentialResponse,
         now: DateTime<Utc>,
     ) -> Result<(), CredentialIssuanceError> {
-        let expected_token_id = match &pending.commit {
-            IssuanceCommit::Immediate {
-                notification_handle,
-                ..
-            } => notification_handle.token_id,
-            IssuanceCommit::Deferred { credential, .. } => credential.access.token_id,
-        };
-        if response.issuance_id != pending.issuance_id
-            || response.request_digest != pending.request_digest
-            || response.token_id != expected_token_id
-        {
-            return Err(CredentialIssuanceError::Store(
-                crate::CredentialStoreError::InvalidTransition,
-            ));
-        }
-        self.commit_pending_internal(pending, Some(response), now)
-            .await
-    }
-
-    async fn commit_pending_internal(
-        &self,
-        pending: &PendingCredentialIssuance,
-        response: Option<&StoredCredentialResponse>,
-        now: DateTime<Utc>,
-    ) -> Result<(), CredentialIssuanceError> {
-        match &pending.commit {
+        match commit {
             IssuanceCommit::Immediate {
                 notification_handle,
                 nonce_claim,
             } => {
                 if let Some(claim) = nonce_claim {
-                    let committed = if let Some(response) = response {
-                        self.store
-                            .finalize_nonce_with_notification_and_response(
-                                &claim.nonce_hash,
-                                &claim.claim_id,
-                                notification_handle,
-                                response,
-                                now,
-                            )
-                            .await?
-                    } else {
-                        self.store
-                            .finalize_nonce_with_notification(
-                                &claim.nonce_hash,
-                                &claim.claim_id,
-                                notification_handle,
-                                now,
-                            )
-                            .await?
-                    };
-                    if !committed {
+                    if !self
+                        .store
+                        .finalize_nonce_with_notification_and_response(
+                            &claim.nonce_hash,
+                            &claim.claim_id,
+                            notification_handle,
+                            response,
+                            now,
+                        )
+                        .await?
+                    {
                         return Err(CredentialIssuanceError::Store(
                             crate::CredentialStoreError::InvalidTransition,
                         ));
                     }
                 } else {
-                    if let Some(response) = response {
-                        self.store
-                            .store_response_with_notification(notification_handle, response, now)
-                            .await?;
-                    } else {
-                        self.store
-                            .issue_notification_handle(notification_handle)
-                            .await?;
-                    }
+                    self.store
+                        .store_response_with_notification(notification_handle, response, now)
+                        .await?;
                 }
             }
             IssuanceCommit::Deferred {
@@ -606,34 +540,19 @@ where
                 nonce_claim,
             } => {
                 if let Some(claim) = nonce_claim {
-                    if let Some(response) = response {
-                        self.store
-                            .store_deferred_and_finalize_nonce_with_response(
-                                credential,
-                                &claim.nonce_hash,
-                                &claim.claim_id,
-                                response,
-                                now,
-                            )
-                            .await?;
-                    } else {
-                        self.store
-                            .store_deferred_and_finalize_nonce(
-                                credential,
-                                &claim.nonce_hash,
-                                &claim.claim_id,
-                                now,
-                            )
-                            .await?;
-                    }
+                    self.store
+                        .store_deferred_and_finalize_nonce_with_response(
+                            credential,
+                            &claim.nonce_hash,
+                            &claim.claim_id,
+                            response,
+                            now,
+                        )
+                        .await?;
                 } else {
-                    if let Some(response) = response {
-                        self.store
-                            .store_deferred_with_response(credential, response, now)
-                            .await?;
-                    } else {
-                        self.store.store_deferred(credential).await?;
-                    }
+                    self.store
+                        .store_deferred_with_response(credential, response, now)
+                        .await?;
                 }
             }
         }
@@ -642,10 +561,10 @@ where
 
     pub async fn rollback_pending(
         &self,
-        pending: &PendingCredentialIssuance,
+        commit: &IssuanceCommit,
         now: DateTime<Utc>,
     ) -> Result<(), CredentialIssuanceError> {
-        let claim = match &pending.commit {
+        let claim = match commit {
             IssuanceCommit::Immediate { nonce_claim, .. }
             | IssuanceCommit::Deferred { nonce_claim, .. } => nonce_claim.as_ref(),
         };
@@ -657,10 +576,12 @@ where
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn prepare_after_nonce_claim(
         &self,
         access: &CredentialAccess,
-        issuance: &CredentialIssuance,
+        issuance: CredentialIssuance,
+        configuration: &CredentialConfiguration,
         selection: crate::CredentialSelection,
         holder_bindings: Vec<Value>,
         nonce_claim: &mut Option<IssuanceClaim>,
@@ -676,20 +597,19 @@ where
                 let mut input = CredentialSignInput {
                     payload: CredentialPayload {
                         issuer: self.issuer.clone(),
-                        format: issuance.configuration.format,
-                        configuration_id: issuance.configuration_id.clone(),
-                        credential_type: issuance
-                            .configuration
+                        format: configuration.format,
+                        configuration_id: issuance.configuration_id,
+                        credential_type: configuration
                             .vct
                             .clone()
-                            .or_else(|| issuance.configuration.doctype.clone())
+                            .or_else(|| configuration.doctype.clone())
                             .ok_or(CredentialIssuanceError::InvalidConfiguration)?,
                         subject_claims: dataset,
                         holder_binding: None,
                     },
                     issued_at: batch_privacy_claim_time(now),
                     expires_at: batch_privacy_claim_time(issuance.expires_at),
-                    status: issuance.status.clone(),
+                    status: issuance.status,
                 };
                 for holder_binding in holder_bindings {
                     input.payload.holder_binding = serde_json::from_value(holder_binding).ok();
@@ -722,7 +642,7 @@ where
                 let transaction_id = Uuid::now_v7().to_string();
                 let protected = DeferredPayload {
                     dataset,
-                    status: issuance.status.clone(),
+                    status: issuance.status,
                     issued_at: now,
                     expires_at: issuance.expires_at,
                 };
@@ -731,8 +651,8 @@ where
                     id: Uuid::now_v7(),
                     transaction_hash: blake3::hash(transaction_id.as_bytes()).to_hex().to_string(),
                     access: access.clone(),
-                    configuration_id: issuance.configuration_id.clone(),
-                    format: issuance.configuration.format,
+                    configuration_id: issuance.configuration_id,
+                    format: configuration.format,
                     holder_bindings,
                     payload: protected,
                     ready_at,

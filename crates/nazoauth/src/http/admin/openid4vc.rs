@@ -48,7 +48,7 @@ pub(crate) async fn admin_put_credential_dataset(
             admin.tenant.tenant_id.as_uuid(),
             admin.user_id.as_uuid(),
             subject_id,
-            configuration_id.clone(),
+            configuration_id,
             payload,
         )
         .await
@@ -105,7 +105,7 @@ pub(crate) async fn admin_delete_credential_dataset(
             admin.tenant.tenant_id.as_uuid(),
             admin.user_id.as_uuid(),
             subject_id,
-            configuration_id.clone(),
+            configuration_id,
         )
         .await
     {

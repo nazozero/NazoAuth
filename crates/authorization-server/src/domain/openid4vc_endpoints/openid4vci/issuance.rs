@@ -56,17 +56,13 @@ impl ServerCredentialIssuerOperations {
             let dpop_nonce =
                 next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
                     .await?;
-            let configuration = self
-                .configurations
-                .get(&configuration_id)
-                .cloned()
-                .ok_or_else(|| {
-                    vci_error(
-                        400,
-                        "unknown_credential_configuration",
-                        "Credential configuration is unknown.",
-                    )
-                })?;
+            let configuration = self.configurations.get(&configuration_id).ok_or_else(|| {
+                vci_error(
+                    400,
+                    "unknown_credential_configuration",
+                    "Credential configuration is unknown.",
+                )
+            })?;
             let nonce = if configuration.proof_types_supported.is_empty() {
                 None
             } else {
@@ -88,30 +84,29 @@ impl ServerCredentialIssuerOperations {
                 .issue_pending(
                     &access,
                     &request,
-                    &CredentialIssuance {
+                    CredentialIssuance {
                         configuration_id,
-                        configuration,
                         disposition,
                         status: None,
                         expires_at: intent_expires_at,
                     },
+                    configuration,
                     nonce.as_deref().unwrap_or(""),
-                    nazo_openid4vci::IssuanceIdentity {
-                        issuance_id,
-                        request_digest: request_digest.clone(),
-                    },
                     now,
                 )
                 .await
                 .map_err(map_issuance_error)?;
             let status = CredentialResponseStatus::for_response(&pending.response);
             let body = match finish_response(
-                pending.response.clone(),
+                pending.response,
                 request.credential_response_encryption.as_ref(),
             ) {
                 Ok(body) => body,
                 Err(error) => {
-                    let _ = self.service.rollback_pending(&pending, Utc::now()).await;
+                    let _ = self
+                        .service
+                        .rollback_pending(&pending.commit, Utc::now())
+                        .await;
                     return Err(error);
                 }
             };
@@ -127,10 +122,13 @@ impl ServerCredentialIssuerOperations {
             response_record.selection = selection;
             if let Err(error) = self
                 .service
-                .commit_pending_with_response(&pending, &response_record, Utc::now())
+                .commit_pending(&pending.commit, &response_record, Utc::now())
                 .await
             {
-                let _ = self.service.rollback_pending(&pending, Utc::now()).await;
+                let _ = self
+                    .service
+                    .rollback_pending(&pending.commit, Utc::now())
+                    .await;
                 return Err(map_issuance_error(error));
             }
             Ok(CredentialEndpointResponse {

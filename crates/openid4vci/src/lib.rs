@@ -30,8 +30,7 @@ pub use offer::{
 pub use proof::{ProofError, ProofValidatorPort, ValidatedProof};
 pub use service::{
     CredentialDatasetPort, CredentialIssuance, CredentialIssuanceError, CredentialIssuerService,
-    DeferredPayload, IssuanceClaim, IssuanceCommit, IssuanceDisposition, IssuanceIdentity,
-    PendingCredentialIssuance,
+    DeferredPayload, IssuanceClaim, IssuanceCommit, IssuanceDisposition, PendingCredentialIssuance,
 };
 pub use store::{
     AuthorizationOfferPort, CredentialAccess, CredentialAuthorization, CredentialProofOrigin,
