@@ -96,7 +96,7 @@ async fn session_compare_and_set_preserves_ttl_and_logged_in_rps() {
     replacement.add_logged_in_client("rp-b");
 
     assert_eq!(
-        SessionStorePort::compare_and_set(&store, &session_id, &snapshot, &replacement)
+        SessionStorePort::compare_and_set(&store, &session_id, snapshot.version(), &replacement)
             .await
             .unwrap(),
         SessionUpdateOutcome::Applied
@@ -138,7 +138,7 @@ async fn concurrent_session_rotation_has_exactly_one_winner_and_no_partial_state
         SessionStorePort::rotate(
             &store,
             &old_session_id,
-            &stored,
+            stored.version(),
             &first_session_id,
             &replacement,
             30
@@ -146,7 +146,7 @@ async fn concurrent_session_rotation_has_exactly_one_winner_and_no_partial_state
         SessionStorePort::rotate(
             &store,
             &old_session_id,
-            &stored,
+            stored.version(),
             &second_session_id,
             &replacement,
             30

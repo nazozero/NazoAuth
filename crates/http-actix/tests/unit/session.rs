@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use actix_web::{body::to_bytes, cookie::Cookie, http::header, test::TestRequest, web::Data};
 use nazo_identity::{
-    PublicAccount, SessionRotationOutcome, SessionSnapshot, TenantId, UserId,
+    PublicAccount, SessionRotationOutcome, SessionSnapshot, SessionVersion, TenantId, UserId,
     ports::{RepositoryError, RepositoryFuture, SessionAccountPort, SessionStorePort},
 };
 use serde_json::{Value, json};
@@ -39,7 +39,7 @@ impl SessionStorePort for RecordingStore {
     fn rotate<'a>(
         &'a self,
         _old_session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _new_session_id: &'a SessionId,
         _replacement: &'a nazo_identity::session::SessionRecord,
         _ttl_seconds: u64,
@@ -50,7 +50,7 @@ impl SessionStorePort for RecordingStore {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _replacement: &'a nazo_identity::session::SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
         Box::pin(async { Ok(nazo_identity::SessionUpdateOutcome::Conflict) })

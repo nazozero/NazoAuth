@@ -486,7 +486,7 @@ impl SessionStorePort for Ports {
     fn rotate<'a>(
         &'a self,
         _old_session_id: &'a nazo_identity::session::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
+        _expected: &'a nazo_identity::session::SessionVersion,
         _new_session_id: &'a nazo_identity::session::SessionId,
         _replacement: &'a nazo_identity::session::SessionRecord,
         _ttl_seconds: u64,
@@ -496,7 +496,7 @@ impl SessionStorePort for Ports {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
-        expected: &'a nazo_identity::session::SessionSnapshot,
+        expected: &'a nazo_identity::session::SessionVersion,
         replacement: &'a nazo_identity::session::SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::session::SessionUpdateOutcome> {
         self.record("session_compare_and_set");
@@ -514,7 +514,7 @@ impl SessionStorePort for Ports {
             let Some(current) = stored.as_ref() else {
                 return Ok(SessionUpdateOutcome::Missing);
             };
-            if current.version() != expected.version() {
+            if current.version() != expected {
                 return Ok(SessionUpdateOutcome::Conflict);
             }
             *stored = Some(SessionSnapshot::new(

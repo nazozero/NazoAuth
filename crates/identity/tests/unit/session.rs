@@ -68,7 +68,7 @@ impl SessionStorePort for FakeStore {
     fn rotate<'a>(
         &'a self,
         old_session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         new_session_id: &'a SessionId,
         replacement: &'a SessionRecord,
         ttl_seconds: u64,
@@ -87,7 +87,7 @@ impl SessionStorePort for FakeStore {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a SessionId,
-        expected: &'a SessionSnapshot,
+        expected: &'a SessionVersion,
         replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
         Box::pin(async move {
@@ -99,7 +99,7 @@ impl SessionStorePort for FakeStore {
                 return Ok(outcome);
             }
             let mut snapshot = self.snapshot.lock().unwrap();
-            if snapshot.as_ref() != Some(expected) {
+            if snapshot.as_ref().map(SessionSnapshot::version) != Some(expected) {
                 return Ok(SessionUpdateOutcome::Conflict);
             }
             *snapshot = Some(SessionSnapshot::new(

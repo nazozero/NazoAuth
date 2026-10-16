@@ -333,14 +333,14 @@ impl SessionStorePort for MemorySessions {
     fn rotate<'a>(
         &'a self,
         old: &'a SessionId,
-        expected: &'a SessionSnapshot,
+        expected: &'a SessionVersion,
         new: &'a SessionId,
         replacement: &'a SessionRecord,
         _ttl: u64,
     ) -> RepositoryFuture<'a, SessionRotationOutcome> {
         Box::pin(async move {
             let mut records = self.records.lock().unwrap();
-            if records.get(old.as_str()) != Some(expected) {
+            if records.get(old.as_str()).map(SessionSnapshot::version) != Some(expected) {
                 return Ok(SessionRotationOutcome::Conflict);
             }
             records.remove(old.as_str());
@@ -358,12 +358,12 @@ impl SessionStorePort for MemorySessions {
     fn compare_and_set<'a>(
         &'a self,
         id: &'a SessionId,
-        expected: &'a SessionSnapshot,
+        expected: &'a SessionVersion,
         replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
         Box::pin(async move {
             let mut records = self.records.lock().unwrap();
-            if records.get(id.as_str()) != Some(expected) {
+            if records.get(id.as_str()).map(SessionSnapshot::version) != Some(expected) {
                 return Ok(SessionUpdateOutcome::Conflict);
             }
             records.insert(

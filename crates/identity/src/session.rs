@@ -276,19 +276,16 @@ impl SessionService {
             let Some(snapshot) = self.load_fail_closed(session_id).await? else {
                 return Ok(false);
             };
-            if snapshot
-                .record()
-                .logged_in_client_ids()
-                .iter()
-                .any(|id| id == client_id)
-            {
+            let SessionSnapshot {
+                mut record,
+                version,
+            } = snapshot;
+            if !record.add_logged_in_client(client_id) {
                 return Ok(true);
             }
-            let mut replacement = snapshot.record().clone();
-            replacement.add_logged_in_client(client_id);
             match self
                 .sessions
-                .compare_and_set(session_id, &snapshot, &replacement)
+                .compare_and_set(session_id, &version, &record)
                 .await?
             {
                 SessionUpdateOutcome::Applied => return Ok(true),
@@ -359,7 +356,10 @@ impl SessionService {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(None);
         };
-        let mut replacement = snapshot.record().clone();
+        let SessionSnapshot {
+            record: mut replacement,
+            version,
+        } = snapshot;
         if !valid_authentication_metadata(
             replacement.auth_time(),
             replacement.amr(),
@@ -379,7 +379,7 @@ impl SessionService {
             .sessions
             .rotate(
                 session_id,
-                &snapshot,
+                &version,
                 &new_session_id,
                 &replacement,
                 ttl_seconds,
@@ -509,14 +509,16 @@ impl SessionRecord {
         &self.logged_in_client_ids
     }
 
-    pub fn add_logged_in_client(&mut self, client_id: impl AsRef<str> + Into<String>) {
-        if !self
+    pub fn add_logged_in_client(&mut self, client_id: impl AsRef<str> + Into<String>) -> bool {
+        if self
             .logged_in_client_ids
             .iter()
             .any(|id| id == client_id.as_ref())
         {
-            self.logged_in_client_ids.push(client_id.into());
+            return false;
         }
+        self.logged_in_client_ids.push(client_id.into());
+        true
     }
 
     /// Record an authentication event without losing ordering within an OIDC second.

@@ -96,13 +96,6 @@ impl TryFrom<SessionWireRecord<'_>> for SessionRecord {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SessionRotationResult {
-    Applied,
-    Conflict,
-    Collision,
-}
-
 #[derive(Clone, Debug)]
 pub struct StoredSession {
     value: SessionRecord,
@@ -112,10 +105,6 @@ pub struct StoredSession {
 impl StoredSession {
     pub fn value(&self) -> &SessionRecord {
         &self.value
-    }
-
-    pub fn into_value(self) -> SessionRecord {
-        self.value
     }
 }
 
@@ -166,35 +155,6 @@ impl SessionStore {
 
     pub async fn delete(&self, session_id: &str) -> Result<i64, Error> {
         command::delete(&self.connection, keys::session(session_id)).await
-    }
-
-    pub async fn rotate(
-        &self,
-        old_session_id: &str,
-        expected: &StoredSession,
-        new_session_id: &str,
-        replacement: &SessionRecord,
-        ttl_seconds: u64,
-    ) -> Result<SessionRotationResult, Error> {
-        let replacement =
-            serde_json::to_string(&SessionWireRecord::from(replacement)).map_err(|error| {
-                Error::protocol(format!("failed to serialize replacement session: {error}"))
-            })?;
-        let reply = command::eval_string(
-            &self.connection,
-            ROTATE_SESSION_SCRIPT,
-            vec![keys::session(old_session_id), keys::session(new_session_id)],
-            vec![expected.raw.clone(), replacement, ttl_seconds.to_string()],
-        )
-        .await?;
-        match reply.as_str() {
-            "ok" => Ok(SessionRotationResult::Applied),
-            "conflict" => Ok(SessionRotationResult::Conflict),
-            "collision" => Ok(SessionRotationResult::Collision),
-            other => Err(Error::unexpected(format!(
-                "unexpected session rotation reply {other:?}"
-            ))),
-        }
     }
 }
 
@@ -302,7 +262,7 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
     fn rotate<'a>(
         &'a self,
         old_session_id: &'a nazo_identity::SessionId,
-        expected: &'a nazo_identity::SessionSnapshot,
+        expected: &'a nazo_identity::SessionVersion,
         new_session_id: &'a nazo_identity::SessionId,
         replacement: &'a SessionRecord,
         ttl_seconds: u64,
@@ -314,12 +274,11 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                         "failed to serialize replacement session: {error}"
                     ))
                 })?;
-            let expected =
-                std::str::from_utf8(expected.version().storage_bytes()).map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Unexpected(format!(
-                        "session storage revision is not valid UTF-8: {error}"
-                    ))
-                })?;
+            let expected = std::str::from_utf8(expected.storage_bytes()).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "session storage revision is not valid UTF-8: {error}"
+                ))
+            })?;
             let reply = command::eval_string(
                 &self.connection,
                 ROTATE_SESSION_SCRIPT,
@@ -345,7 +304,7 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
     fn compare_and_set<'a>(
         &'a self,
         session_id: &'a nazo_identity::SessionId,
-        expected: &'a nazo_identity::SessionSnapshot,
+        expected: &'a nazo_identity::SessionVersion,
         replacement: &'a SessionRecord,
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
         Box::pin(async move {
@@ -355,12 +314,11 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                         "failed to serialize replacement session: {error}"
                     ))
                 })?;
-            let expected =
-                std::str::from_utf8(expected.version().storage_bytes()).map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Unexpected(format!(
-                        "session storage revision is not valid UTF-8: {error}"
-                    ))
-                })?;
+            let expected = std::str::from_utf8(expected.storage_bytes()).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "session storage revision is not valid UTF-8: {error}"
+                ))
+            })?;
             let reply = command::eval_string(
                 &self.connection,
                 COMPARE_AND_SET_SESSION_SCRIPT,

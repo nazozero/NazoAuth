@@ -51,7 +51,7 @@ pub(crate) fn identity_repository_error(error: Error) -> nazo_identity::ports::R
 }
 pub use rate_limit::{LoginFailureDimension, RateDimension, RateLimitStore};
 pub use replay::ReplayStore;
-pub use session::{SessionRotationResult, SessionStore, StoredSession};
+pub use session::{SessionStore, StoredSession};
 pub use tenant_directory::TenantDirectoryCache;
 pub use token_issuance::TokenIssuanceStateAdapter;
 pub use token_state::TokenStateStore;

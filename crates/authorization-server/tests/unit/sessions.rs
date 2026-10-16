@@ -41,7 +41,7 @@ impl SessionStorePort for FakeSessionStore {
     fn rotate<'a>(
         &'a self,
         _old_session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _new_session_id: &'a SessionId,
         _replacement: &'a SessionRecord,
         _ttl_seconds: u64,
@@ -52,7 +52,7 @@ impl SessionStorePort for FakeSessionStore {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
         panic!("session lookup must not update sessions")

@@ -52,7 +52,7 @@ impl SessionStorePort for FixedSessionStore {
     fn rotate<'a>(
         &'a self,
         _old_session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _new_session_id: &'a SessionId,
         _replacement: &'a SessionRecord,
         _ttl_seconds: u64,
@@ -63,7 +63,7 @@ impl SessionStorePort for FixedSessionStore {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
         Box::pin(async { Ok(nazo_identity::SessionUpdateOutcome::Conflict) })

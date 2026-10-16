@@ -53,7 +53,7 @@ impl nazo_identity::ports::SessionStorePort for UnreachableProfileDependencies {
     fn rotate<'a>(
         &'a self,
         _old: &'a nazo_identity::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
+        _expected: &'a nazo_identity::session::SessionVersion,
         _new: &'a nazo_identity::SessionId,
         _record: &'a nazo_identity::session::SessionRecord,
         _ttl: u64,
@@ -64,7 +64,7 @@ impl nazo_identity::ports::SessionStorePort for UnreachableProfileDependencies {
     fn compare_and_set<'a>(
         &'a self,
         _id: &'a nazo_identity::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
+        _expected: &'a nazo_identity::session::SessionVersion,
         _record: &'a nazo_identity::session::SessionRecord,
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
         panic!("invalid CSRF must not mutate session")
