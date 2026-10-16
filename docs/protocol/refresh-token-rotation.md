@@ -77,9 +77,11 @@ requests remain valid, issue no replacement RT and add no spent proof.
 Contract keys identify durable references. New contracts use BLAKE3 deduplication;
 legacy SQL content keys remain unchanged through rotation. Content equality is
 checked independently, not by comparing a legacy key with newly serialized
-BLAKE3 bytes. A key is not an authentication MAC. The contract ensure operation
-locks an existing key and rejects different JSON content; its create/reclaim
-retry behavior is unchanged. No migration rewrites existing contracts or keys.
+BLAKE3 bytes. A key is not an authentication MAC. For a new family, the persistence
+adapter derives the key and payload together. The contract ensure operation
+locks an existing key without fetching its JSON again; table constraints validate
+a missing row on insertion. The lock and bounded retry protect against concurrent
+orphan reclamation. Existing contracts and keys are never rewritten.
 
 Primary references: [RFC 8707 §2.2](https://www.rfc-editor.org/rfc/rfc8707.html#section-2.2),
 [RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2),

@@ -4795,7 +4795,7 @@ async fn refresh_contract_reference_survives_last_reference_reclaim_race() {
 }
 
 #[tokio::test]
-async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
+async fn refresh_contract_ensure_rolls_back_with_caller_and_preserves_constraints() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -4828,16 +4828,22 @@ async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
         "a rolled-back ensure must not leave an orphan contract row"
     );
 
-    // Invalid arguments raise instead of silently referencing nothing.
-    let invalid = sql_query(
-        "SELECT public.nazo_oauth_refresh_contract_ensure($1, '\\x01'::bytea, '{}'::jsonb)",
-    )
-    .bind::<SqlUuid, _>(tenant_id)
-    .execute(&mut connection)
-    .await;
+    // The table constraint rejects an invalid new content key.
+    let invalid =
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, '\\x01'::bytea, $2)")
+            .bind::<SqlUuid, _>(tenant_id)
+            .bind::<diesel::sql_types::Jsonb, _>(&contract_json)
+            .execute(&mut connection)
+            .await;
     let error = invalid.expect_err("a short digest must be rejected");
     assert!(
-        error.to_string().contains("arguments are invalid"),
+        matches!(
+            error,
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::CheckViolation,
+                _
+            )
+        ),
         "unexpected ensure error classification: {error}"
     );
 }

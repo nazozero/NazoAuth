@@ -876,58 +876,33 @@ async fn family_contract_lookup_preserves_per_family_lock_scope() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn contract_reference_reuses_equal_payload_and_rejects_same_key_different_payload() {
+async fn new_families_deduplicate_equal_contracts_and_keep_distinct_numeric_content() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
-    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    let before = state(&mut connection, source.token_family_id).await;
-    let same = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(source.contract_key.to_vec())
-        .bind::<sql_types::Jsonb, _>(before.contract.clone())
-        .execute(&mut connection)
-        .await;
-    assert!(
-        same.is_ok(),
-        "an equal existing payload is a reusable reference"
-    );
-    let mut different = before.contract.clone();
-    different["authentication_context"]["acr"] = json!("urn:example:different");
-    let mismatch = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(source.contract_key.to_vec())
-        .bind::<sql_types::Jsonb, _>(different)
-        .execute(&mut connection)
-        .await;
-    assert!(
-        mismatch.is_err(),
-        "the content key must never accept a different contract"
-    );
-    assert_eq!(state(&mut connection, source.token_family_id).await, before);
-    // JSONB's ordinary equality considers 1 and 1.0 equal. The reference
-    // contract must retain the stricter distinction used by serde_json.
-    let numeric_key = blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec();
-    let mut integer_contract = before.contract.clone();
-    integer_contract["authorization_details"] = json!([{"type": "numeric", "value": 1}]);
-    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(&numeric_key)
-        .bind::<sql_types::Jsonb, _>(&integer_contract)
-        .execute(&mut connection)
-        .await
-        .unwrap();
-    let mut float_contract = integer_contract;
-    float_contract["authorization_details"] = json!([{"type": "numeric", "value": 1.0}]);
-    assert!(
-        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-            .bind::<sql_types::Uuid, _>(tenant())
-            .bind::<sql_types::Binary, _>(&numeric_key)
-            .bind::<sql_types::Jsonb, _>(&float_contract)
-            .execute(&mut connection)
-            .await
-            .is_err()
-    );
+    let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
+    let mut keys = Vec::new();
+    for value in [json!(1), json!(1.0), json!(1)] {
+        let mut contract = contract(&fixture);
+        contract.authorization_details = json!([{ "type": "numeric", "value": value }]);
+        let token = new_token(&fixture, Utc::now());
+        let raw = token.raw_token.clone();
+        let expected = contract.clone();
+        assert_eq!(
+            repository
+                .commit_token_issuance(issuance(
+                    &fixture,
+                    RefreshTokenCommit::IssueNew { token, contract },
+                ))
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        let source = lookup(&url, &raw).await;
+        assert_eq!(source.contract, expected);
+        keys.push(source.contract_key);
+    }
+    assert_eq!(keys[0], keys[2], "equal contracts share their stored row");
+    assert_ne!(keys[0], keys[1], "1 and 1.0 retain distinct contract keys");
 }
 
 async fn apply_migration(connection: &mut AsyncPgConnection, path: &std::path::Path) {
