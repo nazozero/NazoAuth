@@ -145,6 +145,29 @@ fn profile_text_trims_blanks_and_enforces_byte_limit() {
 }
 
 #[test]
+fn profile_normalization_reuses_owned_text_and_scope_strings() {
+    let text = String::from("  阿丽丝\u{3000}");
+    let allocation = text.as_ptr();
+    let result = profile_text(Some(text), 32, "name").unwrap().unwrap();
+    assert_eq!(result, "阿丽丝");
+    assert_eq!(result.as_ptr(), allocation);
+    let scope = String::from("openid");
+    let allocation = scope.as_ptr();
+    let view = super::AuthorizedApplicationView::from(AuthorizedApplication {
+        client_id: "client".into(),
+        client_name: "Client".into(),
+        last_scopes: serde_json::Value::Array(vec![
+            serde_json::Value::String(scope),
+            serde_json::Value::Null,
+        ]),
+        last_authorized_at: Utc::now(),
+        authorization_count: 1,
+    });
+    assert_eq!(view.last_scopes, ["openid"]);
+    assert_eq!(view.last_scopes[0].as_ptr(), allocation);
+}
+
+#[test]
 fn profile_url_accepts_only_absolute_http_urls() {
     assert_eq!(
         normalize_profile_url(Some(" https://example.com/u ".into()), "profile_url").unwrap(),

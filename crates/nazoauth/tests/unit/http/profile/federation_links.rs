@@ -1,13 +1,13 @@
 use crate::test_support::DatabaseExternalIdentityFixture;
 
-use nazo_identity::{DEFAULT_TENANT_ID, ports::FederationLink};
+use nazo_identity::{DEFAULT_TENANT_ID, ports::FederationLinkSummary};
 
 use chrono::Utc;
 
 use super::*;
 
 #[test]
-fn federation_link_json_excludes_raw_provider_claims() {
+fn federation_link_document_excludes_raw_provider_claims() {
     let link = DatabaseExternalIdentityFixture {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
@@ -26,9 +26,15 @@ fn federation_link_json_excludes_raw_provider_claims() {
     };
 
     // 列表视图只返回绑定索引和展示字段；原始 claims 不进入前端响应。
-    let value = federation_link_json(link.federation_link().into());
+    let value = serde_json::to_value(PublicFederationLink::from(FederationLinkSummary::from(
+        link.federation_link(),
+    )))
+    .unwrap();
     assert_eq!(value["provider_id"], "google");
     assert_eq!(value["subject"], "provider-subject");
+    assert_eq!(value.as_object().unwrap().len(), 8);
+    assert!(value.get("tenant_id").is_none());
+    assert!(value.get("user_id").is_none());
     assert!(value.get("claims").is_none());
     assert!(value.get("access_token").is_none());
 }
@@ -94,11 +100,11 @@ impl nazo_identity::ports::SessionAccountPort for UnreachableProfileDependencies
 }
 
 impl nazo_identity::ports::FederationLinkRepositoryPort for UnreachableProfileDependencies {
-    fn list(
+    fn list_summaries(
         &self,
         _tenant: nazo_identity::TenantId,
         _user: nazo_identity::UserId,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<FederationLink>> {
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<FederationLinkSummary>> {
         panic!("invalid CSRF must not list links")
     }
     fn delete(
@@ -106,7 +112,7 @@ impl nazo_identity::ports::FederationLinkRepositoryPort for UnreachableProfileDe
         _tenant: nazo_identity::TenantId,
         _user: nazo_identity::UserId,
         _link: Uuid,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<FederationLink>> {
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<FederationLinkSummary>> {
         panic!("invalid CSRF must not delete links")
     }
 }

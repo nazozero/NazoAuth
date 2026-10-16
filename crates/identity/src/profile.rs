@@ -11,9 +11,8 @@ use crate::{
     UserProfile,
     ports::{
         AccessRequestRepositoryPort, AuthorizedApplication, AuthorizedApplicationRepositoryPort,
-        DeliveryConsume, DeliveryStorePort, FederationLink, FederationLinkRepositoryPort,
-        FederationLinkSummary, GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate,
-        RepositoryError,
+        DeliveryConsume, DeliveryStorePort, FederationLinkRepositoryPort, FederationLinkSummary,
+        GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate, RepositoryError,
     },
 };
 
@@ -171,14 +170,16 @@ impl From<AuthorizedApplication> for AuthorizedApplicationView {
         Self {
             client_id: application.client_id,
             client_name: application.client_name,
-            last_scopes: application
-                .last_scopes
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .collect(),
+            last_scopes: match application.last_scopes {
+                Value::Array(values) => values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        Value::String(scope) => Some(scope),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
             last_authorized_at: application.last_authorized_at,
             authorization_count: application.authorization_count,
         }
@@ -340,15 +341,21 @@ fn normalize_profile_patch(
     })
 }
 
+fn trim_text(mut value: String) -> String {
+    value.truncate(value.trim_end().len());
+    let start = value.len() - value.trim_start().len();
+    if start != 0 {
+        value.drain(..start);
+    }
+    value
+}
+
 fn profile_text(
     value: Option<String>,
     max_bytes: usize,
     field: &'static str,
 ) -> Result<Option<String>, ProfileValidationError> {
-    let Some(value) = value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(value) = value.map(trim_text).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     if value.len() > max_bytes {
@@ -433,7 +440,7 @@ fn required_access_request_text(
     max_bytes: usize,
     field: &'static str,
 ) -> Result<String, AccessRequestValidationError> {
-    let value = value.trim().to_owned();
+    let value = trim_text(value);
     if value.is_empty() {
         return Err(AccessRequestValidationError::Empty(field));
     }
@@ -706,15 +713,6 @@ impl FederationLinksService {
         Self { links }
     }
 
-    pub async fn list(
-        &self,
-        account: &PublicAccount,
-    ) -> Result<Vec<FederationLink>, RepositoryError> {
-        self.links
-            .list(account.tenant().tenant_id, account.user_id())
-            .await
-    }
-
     pub async fn list_summaries(
         &self,
         account: &PublicAccount,
@@ -728,7 +726,7 @@ impl FederationLinksService {
         &self,
         account: &PublicAccount,
         link_id: Uuid,
-    ) -> Result<Option<FederationLink>, RepositoryError> {
+    ) -> Result<Option<FederationLinkSummary>, RepositoryError> {
         self.links
             .delete(account.tenant().tenant_id, account.user_id(), link_id)
             .await

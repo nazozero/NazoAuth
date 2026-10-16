@@ -83,30 +83,18 @@ pub struct NewFederatedIdentity {
 }
 
 pub trait FederationLinkRepositoryPort: Send + Sync {
-    fn list(
-        &self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> RepositoryFuture<'_, Vec<FederationLink>>;
-
     fn list_summaries(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'_, Vec<FederationLinkSummary>> {
-        Box::pin(async move {
-            self.list(tenant_id, user_id)
-                .await
-                .map(|rows| rows.into_iter().map(FederationLinkSummary::from).collect())
-        })
-    }
+    ) -> RepositoryFuture<'_, Vec<FederationLinkSummary>>;
 
     fn delete(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
         link_id: Uuid,
-    ) -> RepositoryFuture<'_, Option<FederationLink>>;
+    ) -> RepositoryFuture<'_, Option<FederationLinkSummary>>;
 }
 
 pub trait FederationLoginRepositoryPort: Send + Sync {

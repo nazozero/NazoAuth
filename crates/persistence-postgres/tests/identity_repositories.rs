@@ -1567,13 +1567,24 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
         .unwrap();
     assert_eq!(stored.credential, corrupt_payload);
     drop(conn);
-    assert_eq!(
-        links.list(tenant.tenant_id, user_id).await.unwrap(),
-        vec![link]
-    );
+    let mut conn = get_conn(&pool).await.unwrap();
+    let stored = sql_query("SELECT claims AS credential FROM external_identity_links WHERE id=$1")
+        .bind::<diesel::sql_types::Uuid, _>(link.id)
+        .get_result::<StoredPayload>(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(stored.credential, link.claims);
+    drop(conn);
     let foreign_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     let foreign_user = UserId::new(Uuid::now_v7()).unwrap();
     for (tenant_id, scoped_user) in [(foreign_tenant, user_id), (tenant.tenant_id, foreign_user)] {
+        assert!(
+            link_port
+                .delete(tenant_id, scoped_user, link.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert!(
             passkey_port
                 .credential_ids(tenant_id, scoped_user)
@@ -1596,6 +1607,13 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
                 .is_empty()
         );
     }
+    assert_eq!(
+        link_port
+            .delete(tenant.tenant_id, user_id, link.id)
+            .await
+            .unwrap(),
+        Some(FederationLinkSummary::from(link))
+    );
     cleanup(&pool, user_id).await;
 }
 
