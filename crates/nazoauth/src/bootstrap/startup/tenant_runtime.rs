@@ -29,6 +29,7 @@ const DIRECTORY_DATABASE_RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 /// used as a request tenant or CORS policy.
 pub(super) struct ProcessRuntime {
     pub(super) config: ConfigSource,
+    pub(super) signing_key_wrapping_keys: nazo_key_management::SigningKeyWrappingKeyRing,
     /// The sole tenant allowed to reach deployment-global HTTP control routes.
     pub(super) control_tenant_id: nazo_identity::TenantId,
     pub(super) persistence: nazo_oauth_server::ports::persistence::ServerPersistenceBindings,
@@ -104,18 +105,17 @@ impl TenantRuntime {
                 .provider()
                 .ciba_ping_deliveries(),
             &assembly.startup.settings,
-            assembly.startup.runtime_modules.get_ref(),
         )?;
 
         let runtime_module_reconciler =
             RuntimeModules::spawn_reconciler(assembly.startup.runtime_modules.clone());
-        let key_lifecycle = background::spawn_key_lifecycle(
+        let key_lifecycle = crate::jobs::key_lifecycle::KeyLifecycleTask::start(
             assembly.startup.keyset.clone(),
             assembly.startup.settings.key_settings().prepublish_window,
         );
         lifecycle.runtime_module_reconciler = Some(runtime_module_reconciler);
         lifecycle.key_lifecycle = Some(key_lifecycle);
-        lifecycle.ciba_ping_worker = ciba_ping_worker;
+        lifecycle.ciba_ping_worker = Some(ciba_ping_worker);
         Ok(())
     }
 
@@ -251,23 +251,10 @@ async fn build_service_runtime(
     binding: TenantDirectoryBinding,
     settings: Arc<Settings>,
 ) -> anyhow::Result<Arc<TenantRuntime>> {
-    process
-        .persistence
-        .provider()
-        .active_tenant_boundary()
-        .preflight(settings.tenant.context)
-        .await
-        .map_err(|error| {
-            anyhow::anyhow!(
-                "active tenant boundary preflight failed for {}: {error}",
-                settings.tenant.context.tenant_id.as_uuid()
-            )
-        })?;
     let transient_state = process
         .state_backend
         .for_tenant(settings.tenant.context.tenant_id)
         .map_err(|error| anyhow::anyhow!("tenant transient state binding failed: {error}"))?;
-    let wrapping_keys = crate::settings::signing_key_wrapping_key_ring(&process.config)?;
     let keyset = nazo_key_management::KeyManager::load_or_create_database(
         settings.key_settings(),
         settings.external_key_signer(),
@@ -276,7 +263,7 @@ async fn build_service_runtime(
             .persistence
             .provider()
             .signing_key_repository(settings.tenant.context.tenant_id.as_uuid()),
-        wrapping_keys,
+        process.signing_key_wrapping_keys.clone(),
     )
     .await?;
     let avatar_storage = process

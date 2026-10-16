@@ -624,6 +624,11 @@ async fn one_active_binding_requires_each_boundary_and_never_returns_a_peer() {
             "inactive {table} must fail closed"
         );
         assert_eq!(
+            repository.load_active().await.unwrap().tenants,
+            vec![peer.binding.clone()],
+            "the startup snapshot must exclude inactive {table}",
+        );
+        assert_eq!(
             repository
                 .find_active_binding(peer.binding.tenant.tenant_id)
                 .await
@@ -641,6 +646,28 @@ async fn one_active_binding_requires_each_boundary_and_never_returns_a_peer() {
         drop(connection);
         assert_eq!(read().await.unwrap(), Some(target.binding.clone()));
     }
+    for (column, foreign_id) in [
+        ("realm_id", peer.realm.id.as_uuid()),
+        ("organization_id", peer.organization.id.as_uuid()),
+    ] {
+        let mut connection = pool.get().await.unwrap();
+        let error = sql_query(format!(
+            "UPDATE tenant_runtime_bindings SET {column} = $1 WHERE tenant_id = $2"
+        ))
+        .bind::<sql_types::Uuid, _>(foreign_id)
+        .bind::<sql_types::Uuid, _>(requested.as_uuid())
+        .execute(&mut connection)
+        .await
+        .expect_err("cross-tenant placements must be rejected by the stored boundary");
+        assert!(matches!(
+            error,
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::ForeignKeyViolation,
+                _
+            )
+        ));
+    }
+    assert_eq!(repository.load_active().await.unwrap().tenants.len(), 2);
     repository
         .remove_tenant_binding(repository.current_revision().await.unwrap(), requested)
         .await

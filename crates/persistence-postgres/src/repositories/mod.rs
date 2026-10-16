@@ -76,7 +76,7 @@ pub use scim::ScimRepository;
 pub use scim_events::ScimEventRepository;
 pub use security_state::SecurityStateMaintenanceRepository;
 pub use signing_keys::SigningKeysetRepository;
-pub use tenancy::{ActiveTenantBoundaryRepository, TenantDirectoryRepository};
+pub use tenancy::TenantDirectoryRepository;
 pub use tenant_resources::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite,

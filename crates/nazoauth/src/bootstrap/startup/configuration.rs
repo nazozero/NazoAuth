@@ -112,9 +112,11 @@ pub(super) async fn load(
             anyhow::anyhow!("avatar object-store deployment preflight failed: {error}")
         })?;
 
+    let signing_key_wrapping_keys = crate::settings::signing_key_wrapping_key_ring(&config)?;
     let directory_cache = state_backend.tenant_directory_cache();
     let process = Arc::new(ProcessRuntime {
         config,
+        signing_key_wrapping_keys,
         control_tenant_id,
         persistence,
         state_backend,

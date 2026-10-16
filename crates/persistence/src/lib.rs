@@ -385,23 +385,15 @@ pub trait DatabaseHealthPort: Send + Sync {
     fn check(&self) -> BoxFuture<'_, Result<(), DatabaseHealthError>>;
 }
 
-/// Startup admission check for the configured tenant, realm, and organization.
-/// The adapter must fail closed if any configured boundary is missing, inactive,
-/// or belongs to another tenant.
-pub trait ActiveTenantBoundaryStore: Send + Sync {
-    fn preflight(
-        &self,
-        context: nazo_identity::TenantContext,
-    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
-}
-
 /// Authoritative read side of the dynamic tenant directory.
 pub trait TenantDirectoryStore: Send + Sync {
     fn current_revision(&self) -> BoxFuture<'_, Result<u64, RepositoryError>>;
 
     /// Return the revision and all active bindings from one coherent storage
-    /// snapshot. Its revision may be newer than a preceding current_revision
-    /// read, but rows from different revisions must never be combined.
+    /// snapshot. Each binding must have active tenant, realm and organization
+    /// rows belonging to the same tenant. Its revision may be newer than a
+    /// preceding current_revision read, but rows from different revisions
+    /// must never be combined.
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<nazo_identity::TenantDirectorySnapshot, RepositoryError>>;

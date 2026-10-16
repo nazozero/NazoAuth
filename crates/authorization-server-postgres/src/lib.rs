@@ -4,14 +4,13 @@ use std::sync::Arc;
 
 use nazo_oauth_server::ports::persistence::ServerPersistenceProvider;
 use nazo_postgres::{
-    AccessRequestRepository, ActiveTenantBoundaryRepository, AuditLedgerRepository,
-    AuditRepository, AuthorizationFlowRepository, ControllerRegistryRepository, DbPool,
-    FederationRepository, GrantRepository, MfaRepository, MtlsTrustAnchorRepository,
-    OAuthClientRepository, Openid4vciDatasetRepository, Openid4vciRepository, Openid4vpRepository,
-    PasskeyRepository, PostgresHealthCheck, RecoveryRootRepository, RuntimeModuleRepository,
-    ScimEventRepository, ScimRepository, SecurityStateMaintenanceRepository,
-    TenantDirectoryRepository, TenantResourceRepository, TokenIssuanceRepository, TokenRepository,
-    UserRepository,
+    AccessRequestRepository, AuditLedgerRepository, AuditRepository, AuthorizationFlowRepository,
+    ControllerRegistryRepository, DbPool, FederationRepository, GrantRepository, MfaRepository,
+    MtlsTrustAnchorRepository, OAuthClientRepository, Openid4vciDatasetRepository,
+    Openid4vciRepository, Openid4vpRepository, PasskeyRepository, PostgresHealthCheck,
+    RecoveryRootRepository, RuntimeModuleRepository, ScimEventRepository, ScimRepository,
+    SecurityStateMaintenanceRepository, TenantDirectoryRepository, TenantResourceRepository,
+    TokenIssuanceRepository, TokenRepository, UserRepository,
 };
 
 #[derive(Clone)]
@@ -35,10 +34,6 @@ impl ServerPersistenceProvider for PostgresProvider {
             self.pool.clone(),
             tenant_id,
         ))
-    }
-
-    fn active_tenant_boundary(&self) -> Arc<dyn nazo_persistence::ActiveTenantBoundaryStore> {
-        Arc::new(ActiveTenantBoundaryRepository::new(self.pool.clone()))
     }
 
     fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore> {
