@@ -223,10 +223,6 @@ fn verification_errors_preserve_existing_oauth_contract() {
             "request object header 无效.",
         ),
         (
-            RequestObjectVerificationError::InvalidClaims,
-            "request object claims 无效.",
-        ),
-        (
             RequestObjectVerificationError::InvalidAlgorithm,
             "request object 签名算法无效.",
         ),

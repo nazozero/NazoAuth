@@ -364,6 +364,31 @@ fn unsigned_request_objects_are_rejected_for_every_client_profile() {
         Some("client")
     );
     assert_eq!(unverified_signed_request_object_client_id(&unsigned), None);
+    assert_eq!(
+        unverified_signed_request_object_kid(&signed).as_deref(),
+        Some("jar-key")
+    );
+    assert_eq!(unverified_signed_request_object_kid(&unsigned), None);
+}
+
+#[test]
+fn client_selection_hint_does_not_accept_invalid_signed_claims() {
+    let mut claims = signed_request_object_json(1_700_000_000);
+    claims["exp"] = json!("invalid");
+    let token = signed_request_object(&claims, json!({"alg": "EdDSA", "kid": "jar-key"}));
+    let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+    assert_eq!(
+        unverified_signed_request_object_client_id(&token).as_deref(),
+        Some("client")
+    );
+    assert_eq!(
+        verify_request_object(RequestObjectVerificationInput {
+            request_object: &token,
+            client: &client,
+            expected_signing_algorithm: None,
+        }),
+        Err(RequestObjectVerificationError::InvalidSignature)
+    );
 }
 
 #[test]

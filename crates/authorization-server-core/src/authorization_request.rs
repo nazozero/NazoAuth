@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use nazo_crypto::jwt::{Validation, decode, decode_header};
+use nazo_crypto::jwt::{Algorithm, Validation, decode};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -86,7 +86,6 @@ pub struct VerifiedRequestObject {
 pub enum RequestObjectVerificationError {
     InvalidCompact,
     InvalidHeader,
-    InvalidClaims,
     InvalidAlgorithm,
     MissingKeyId,
     InvalidKey,
@@ -96,6 +95,14 @@ pub enum RequestObjectVerificationError {
 #[derive(Deserialize)]
 struct RequestObjectHeader {
     alg: String,
+    kid: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RequestObjectClient {
+    client_id: String,
+    iss: Option<String>,
+    sub: Option<String>,
 }
 
 /// Parses and verifies a compact authorization Request Object.
@@ -108,13 +115,15 @@ pub fn verify_request_object(
 ) -> Result<VerifiedRequestObject, RequestObjectVerificationError> {
     let (header_part, payload_part, signature_part) = split_compact_jwt(input.request_object)
         .ok_or(RequestObjectVerificationError::InvalidCompact)?;
-    let decoded_header = decode_request_object_header(header_part)?;
-    if decoded_header.alg == "none" || payload_part.is_empty() || signature_part.is_empty() {
+    let header = decode_request_object_header(header_part)?;
+    if payload_part.is_empty() || signature_part.is_empty() {
         return Err(RequestObjectVerificationError::InvalidAlgorithm);
     }
-    let header = decode_header(input.request_object)
+    let algorithm: Algorithm = header
+        .alg
+        .parse()
         .map_err(|_| RequestObjectVerificationError::InvalidAlgorithm)?;
-    let Some(algorithm_name) = supported_client_jwt_algorithm_name(header.alg) else {
+    let Some(algorithm_name) = supported_client_jwt_algorithm_name(algorithm) else {
         return Err(RequestObjectVerificationError::InvalidAlgorithm);
     };
     if input
@@ -130,9 +139,9 @@ pub fn verify_request_object(
     if kid.trim().is_empty() || kid.trim() != kid {
         return Err(RequestObjectVerificationError::InvalidKey);
     }
-    let decoding_key = client_jwt_decoding_key(input.client, kid, header.alg)
+    let decoding_key = client_jwt_decoding_key(input.client, kid, algorithm)
         .ok_or(RequestObjectVerificationError::InvalidKey)?;
-    let mut validation = Validation::new(header.alg);
+    let mut validation = Validation::new(algorithm);
     validation.validate_aud = false;
     validation.validate_exp = false;
     validation.validate_nbf = false;
@@ -150,7 +159,8 @@ pub fn unverified_signed_request_object_client_id(request_object: &str) -> Optio
     if header.alg == "none" || signature.is_empty() {
         return None;
     }
-    let claims = decode_request_object_claims(payload).ok()?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let claims: RequestObjectClient = serde_json::from_slice(&bytes).ok()?;
     let issuer_matches = claims
         .iss
         .as_deref()
@@ -175,9 +185,8 @@ pub fn unverified_signed_request_object_kid(request_object: &str) -> Option<Stri
         return None;
     }
     let header = decode_request_object_header(header).ok()?;
-    (header.alg != "none")
-        .then(|| nazo_crypto::jwt::decode_header(request_object).ok()?.kid)
-        .flatten()
+    header.alg.parse::<Algorithm>().ok()?;
+    header.kid
 }
 
 fn split_compact_jwt(token: &str) -> Option<(&str, &str, &str)> {
@@ -198,15 +207,6 @@ fn decode_request_object_header(
         .decode(header)
         .map_err(|_| RequestObjectVerificationError::InvalidHeader)?;
     serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidHeader)
-}
-
-fn decode_request_object_claims(
-    payload: &str,
-) -> Result<RequestObjectClaims, RequestObjectVerificationError> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(payload)
-        .map_err(|_| RequestObjectVerificationError::InvalidClaims)?;
-    serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidClaims)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -329,7 +329,7 @@ pub(crate) fn prepare_request_object(
         return Err(AuthorizationRequestError::OuterAuthorizationParametersConflict);
     }
 
-    let replay = request_object_replay(claims, policy)?;
+    let replay = request_object_replay(claims);
     Ok(RequestObjectNormalizationPlan {
         request_parameters,
         replay,
@@ -371,11 +371,12 @@ fn request_object_audience_valid(
 ) -> bool {
     match &claims.aud {
         Some(Value::String(audience)) => {
-            audience == policy.issuer || audience == &format!("{}/authorize", policy.issuer)
+            audience == policy.issuer || audience.strip_suffix("/authorize") == Some(policy.issuer)
         }
         Some(Value::Array(audiences)) => audiences.iter().any(|audience| {
             audience.as_str().is_some_and(|audience| {
-                audience == policy.issuer || audience == format!("{}/authorize", policy.issuer)
+                audience == policy.issuer
+                    || audience.strip_suffix("/authorize") == Some(policy.issuer)
             })
         }),
         _ => false,
@@ -423,22 +424,15 @@ fn request_object_jti_valid(claims: &RequestObjectClaims, policy: RequestObjectP
     }
 }
 
-fn request_object_replay(
-    claims: &RequestObjectClaims,
-    policy: RequestObjectPolicy<'_>,
-) -> Result<Option<RequestObjectReplay>, AuthorizationRequestError> {
-    let Some(jti) = claims.jti.as_ref() else {
-        return Ok(None);
-    };
-    let expires_at = claims
-        .exp
-        .filter(|expiry| *expiry > policy.now)
-        .ok_or(AuthorizationRequestError::RequestObjectClaims)?;
-    Ok(Some(RequestObjectReplay {
+fn request_object_replay(claims: &RequestObjectClaims) -> Option<RequestObjectReplay> {
+    let jti = claims.jti.as_ref()?;
+    Some(RequestObjectReplay {
         client_id: claims.client_id.clone(),
         jti: jti.clone(),
-        expires_at,
-    }))
+        expires_at: claims
+            .exp
+            .expect("request object time policy already validated"),
+    })
 }
 
 fn request_object_parameters(

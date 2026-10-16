@@ -106,7 +106,7 @@ pub fn parse_token_form_with_pre_authorized(
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         match key.as_ref() {
             "resource" => {
-                let resource = parse_resource_indicators(&[value.into_owned()])
+                let resource = parse_resource_indicators(vec![value.into_owned()])
                     .map_err(|_| TokenFormError::InvalidResourceParameter)?
                     .into_iter()
                     .next()

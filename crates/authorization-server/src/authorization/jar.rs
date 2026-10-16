@@ -143,7 +143,6 @@ pub(crate) fn request_object_verification_error(
     let description = match error {
         RequestObjectVerificationError::InvalidCompact => "request object 无效.",
         RequestObjectVerificationError::InvalidHeader => "request object header 无效.",
-        RequestObjectVerificationError::InvalidClaims => "request object claims 无效.",
         RequestObjectVerificationError::InvalidAlgorithm => "request object 签名算法无效.",
         RequestObjectVerificationError::MissingKeyId => "request object 缺少 kid.",
         RequestObjectVerificationError::InvalidKey => "request object 签名密钥无效.",

@@ -71,11 +71,8 @@ fn parse_par_form(
         }
     };
     let mut params = HashMap::new();
-    let mut seen = std::collections::HashSet::new();
     let mut resource_values = Vec::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
-        let key = key.into_owned();
-        let value = value.into_owned();
         if key == "request_uri" {
             return Err(OAuthEndpointError::json(
                 http::StatusCode::BAD_REQUEST,
@@ -83,9 +80,9 @@ fn parse_par_form(
                 "PAR 请求不能包含 request_uri.",
             ));
         }
-        if !PAR_AUTHORIZATION_PARAMETERS.contains(&key.as_str())
+        if !PAR_AUTHORIZATION_PARAMETERS.contains(&key.as_ref())
             && !matches!(
-                key.as_str(),
+                key.as_ref(),
                 "client_secret" | "client_assertion_type" | "client_assertion"
             )
         {
@@ -97,17 +94,19 @@ fn parse_par_form(
             continue;
         }
         if key == "resource" {
-            resource_values.push(value);
+            resource_values.push(value.into_owned());
             continue;
         }
-        if !seen.insert(key.clone()) {
+        if params
+            .insert(key.into_owned(), value.into_owned())
+            .is_some()
+        {
             return Err(OAuthEndpointError::json(
                 http::StatusCode::BAD_REQUEST,
                 "invalid_request",
                 "PAR 参数不能重复.",
             ));
         }
-        params.insert(key, value);
     }
     if let Some(encoded) = encode_resource_indicators(&resource_values) {
         params.insert("resource".to_owned(), encoded);
