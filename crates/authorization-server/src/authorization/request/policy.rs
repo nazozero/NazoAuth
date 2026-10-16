@@ -1,6 +1,5 @@
 use crate::contracts::oauth_error::OAuthEndpointError;
 use http::StatusCode;
-use nazo_auth::parse_scope;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -60,7 +59,7 @@ pub(super) fn runtime_authorization_capability_error(
     }
     if parameters
         .get("scope")
-        .is_some_and(|scope| parse_scope(scope).iter().any(|value| value == "device_sso"))
+        .is_some_and(|scope| scope.split_whitespace().any(|value| value == "device_sso"))
         && !crate::authorization::accepts_module(context, nazo_runtime_modules::ModuleId::NativeSso)
     {
         return Some(OAuthEndpointError::json(

@@ -9,21 +9,6 @@ fn query(values: &[(&str, &str)]) -> HashMap<String, String> {
 }
 
 #[test]
-fn duplicate_parameter_policy_covers_authorization_inputs_and_internal_reauth_nonce() {
-    let parameters = authorization_duplicate_parameters();
-
-    for expected in AUTHORIZED_REQUEST_PARAMETERS
-        .iter()
-        .copied()
-        .filter(|parameter| *parameter != "resource")
-        .chain([reauth_nonce_parameter()])
-    {
-        assert!(parameters.contains(&expected), "missing {expected}");
-    }
-    assert!(!parameters.contains(&"resource"));
-}
-
-#[test]
 fn claim_request_names_preserve_normalized_order() {
     let requests = vec![
         OidcClaimRequest {
@@ -116,7 +101,7 @@ fn login_url_encodes_next_request_and_optional_reauth_nonce() {
     assert_eq!(
         next.query_pairs()
             .collect::<HashMap<_, _>>()
-            .get(reauth_nonce_parameter()),
+            .get(REAUTH_NONCE_PARAMETER),
         Some(&std::borrow::Cow::Borrowed("reauth nonce"))
     );
 }

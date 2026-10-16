@@ -6,7 +6,7 @@ use http::StatusCode;
 use std::collections::HashMap;
 
 use super::{
-    AuthorizationRequestContext, authorization_login_url_for_frontend, reauth_nonce_parameter,
+    AuthorizationRequestContext, REAUTH_NONCE_PARAMETER, authorization_login_url_for_frontend,
 };
 
 const REAUTH_NONCE_TTL_SECONDS: u64 = 600;
@@ -15,7 +15,7 @@ pub(super) async fn consume_reauth_nonce_with_context(
     context: &AuthorizationRequestContext<'_>,
     q: &mut HashMap<String, String>,
 ) -> Option<i64> {
-    let nonce = q.remove(reauth_nonce_parameter())?;
+    let nonce = q.remove(REAUTH_NONCE_PARAMETER)?;
     match context.service.take_reauth_nonce(&nonce).await {
         Ok(Some(started_at)) => (started_at > 0).then_some(started_at),
         Ok(None) => None,

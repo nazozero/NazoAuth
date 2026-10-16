@@ -729,9 +729,17 @@ fn authorization_policy_enforces_runtime_modules_and_extracts_credential_ids() {
         ),
     ] {
         let mut context = application.context();
-        context.modules.accepting.extend(required_modules);
+        assert!(std::sync::Arc::ptr_eq(
+            &context.modules,
+            &fixture.snapshots.load_full()
+        ));
+        std::sync::Arc::make_mut(&mut context.modules)
+            .accepting
+            .extend(required_modules);
         assert!(
-            context.modules.accepting.remove(&module),
+            std::sync::Arc::make_mut(&mut context.modules)
+                .accepting
+                .remove(&module),
             "{module:?} must be enabled by the test fixture"
         );
         let response = runtime_authorization_capability_error(&context, &parameters)
@@ -744,7 +752,9 @@ fn authorization_policy_enforces_runtime_modules_and_extracts_credential_ids() {
     }
 
     let mut context = application.context();
-    context.modules.accepting.extend(required_modules);
+    std::sync::Arc::make_mut(&mut context.modules)
+        .accepting
+        .extend(required_modules);
     assert!(runtime_authorization_capability_error(&context, &HashMap::new()).is_none());
 }
 
@@ -771,22 +781,20 @@ fn reauth_nonce_is_single_use_authorization_state() {
             .expect("next authorization request should parse as path and query");
         let nonce = next_url
             .query_pairs()
-            .find_map(|(key, value)| {
-                (key == reauth_nonce_parameter()).then_some(value.into_owned())
-            })
+            .find_map(|(key, value)| (key == REAUTH_NONCE_PARAMETER).then_some(value.into_owned()))
             .expect("reauthentication redirect should carry opaque nonce");
 
-        let mut resumed = query(&[(reauth_nonce_parameter(), nonce.as_str())]);
+        let mut resumed = query(&[(REAUTH_NONCE_PARAMETER, nonce.as_str())]);
         let first_started_at = consume_reauth_nonce_with_context(&context, &mut resumed).await;
         assert!(first_started_at.is_some());
-        assert!(!resumed.contains_key(reauth_nonce_parameter()));
+        assert!(!resumed.contains_key(REAUTH_NONCE_PARAMETER));
 
-        let mut replayed = query(&[(reauth_nonce_parameter(), nonce.as_str())]);
+        let mut replayed = query(&[(REAUTH_NONCE_PARAMETER, nonce.as_str())]);
         assert_eq!(
             consume_reauth_nonce_with_context(&context, &mut replayed).await,
             None
         );
-        assert!(!replayed.contains_key(reauth_nonce_parameter()));
+        assert!(!replayed.contains_key(REAUTH_NONCE_PARAMETER));
     });
 }
 
@@ -826,13 +834,13 @@ fn reauth_nonce_consume_failure_removes_untrusted_nonce() {
             .store(true, std::sync::atomic::Ordering::SeqCst);
         let application = fixture.make_application();
         let context = application.context();
-        let mut resumed = query(&[(reauth_nonce_parameter(), "opaque-nonce")]);
+        let mut resumed = query(&[(REAUTH_NONCE_PARAMETER, "opaque-nonce")]);
 
         assert_eq!(
             consume_reauth_nonce_with_context(&context, &mut resumed).await,
             None
         );
-        assert!(!resumed.contains_key(reauth_nonce_parameter()));
+        assert!(!resumed.contains_key(REAUTH_NONCE_PARAMETER));
     });
 }
 
@@ -1157,7 +1165,7 @@ fn protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonc
         let resumed_url = url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
         let resumed: HashMap<String, String> = resumed_url.query_pairs().into_owned().collect();
         let nonce = resumed
-            .get(reauth_nonce_parameter())
+            .get(REAUTH_NONCE_PARAMETER)
             .expect("fresh login must carry the existing completion nonce")
             .clone();
         assert!(
@@ -1203,7 +1211,7 @@ fn protocol_max_age_zero_application_uses_existing_one_use_reauthentication_nonc
         assert_eq!(url::Url::parse(&location).unwrap().path(), "/auth");
         let mut forged = parameters.clone();
         forged.insert(
-            reauth_nonce_parameter().into(),
+            REAUTH_NONCE_PARAMETER.into(),
             "untrusted-completion-nonce".into(),
         );
         let AuthorizationOutcome::Redirect { location } =
@@ -1302,7 +1310,7 @@ fn protocol_same_second_old_session_cannot_complete_reauthentication() {
                     url::Url::parse(&format!("https://issuer.example{next}")).unwrap();
                 let resumed: HashMap<String, String> =
                     resumed_url.query_pairs().into_owned().collect();
-                let nonce = &resumed[reauth_nonce_parameter()];
+                let nonce = &resumed[REAUTH_NONCE_PARAMETER];
                 let started = fixture.ports.reauth_nonces.lock().unwrap()[nonce];
                 if started / 1_000_000 == auth_time {
                     same_second = Some((old, resumed));

@@ -40,6 +40,15 @@ fn redirect_uri_policy_allows_only_oauth_bcp_exceptions() {
     assert!(validate_oauth_redirect_uri("public", "http://127.0.0.1:49152/cb").is_ok());
     assert!(validate_oauth_redirect_uri("public", "http://[::1]:49152/cb").is_ok());
     assert!(validate_oauth_redirect_uri("public", "com.example.app:/oauth2redirect").is_ok());
+    for scheme in [
+        "com.example_",
+        "1com.example",
+        "com.例子",
+        "com.example%20",
+        "com.example/",
+    ] {
+        assert!(validate_oauth_redirect_uri("public", &format!("{scheme}:/callback")).is_err());
+    }
     assert!(validate_oauth_redirect_uri("confidential", "http://127.0.0.1:49152/cb").is_err());
     assert!(validate_oauth_redirect_uri("public", "http://client.example/cb").is_err());
     assert!(validate_oauth_redirect_uri("public", "https://client.example/cb#frag").is_err());

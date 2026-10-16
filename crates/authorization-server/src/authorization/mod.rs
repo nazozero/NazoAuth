@@ -65,8 +65,8 @@ impl AuthorizationApplication {
             credential_authorization_offers,
         }
     }
-    pub fn duplicate_parameters() -> Vec<&'static str> {
-        request::authorization_duplicate_parameters()
+    pub fn duplicate_parameters() -> &'static [&'static str] {
+        request::AUTHORIZATION_DUPLICATE_PARAMETERS
     }
     pub async fn authorize(
         &self,
@@ -94,7 +94,7 @@ impl AuthorizationApplication {
             security_audit: self.security_audit.as_ref(),
             config: &self.config,
             sessions: &self.sessions,
-            modules: self.snapshots.load_full().as_ref().clone(),
+            modules: self.snapshots.load_full(),
             remote_client_documents: self.remote_client_documents.as_ref(),
             request_object_resolver: self.request_object_resolver.as_ref(),
             request_object_keys: &self.request_object_keys,
@@ -108,7 +108,7 @@ pub(crate) struct AuthorizationRequestContext<'a> {
     pub(crate) security_audit: &'a dyn SecurityAudit,
     pub(crate) config: &'a AuthorizationConfig,
     pub(crate) sessions: &'a SessionResolver,
-    pub(crate) modules: ActiveModuleSnapshot,
+    pub(crate) modules: Arc<ActiveModuleSnapshot>,
     pub(crate) remote_client_documents: &'a dyn RemoteJwksResolverPort,
     pub(crate) request_object_resolver: &'a dyn RemoteRequestObjectResolverPort,
     pub(crate) request_object_keys: &'a nazo_key_management::KeyManager,
