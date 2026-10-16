@@ -279,17 +279,16 @@ impl UserRepository {
         let result = diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
             guard.connection(), async move |connection| {
                 let tenant = new_user.tenant;
-                let principals = users::table
+                let principal = users::table
                     .filter(users::id.eq(actor_id.as_uuid()))
                     .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
                     .filter(users::realm_id.eq(tenant.realm_id.as_uuid()))
                     .filter(users::organization_id.eq(tenant.organization_id.as_uuid()))
                     .select(PrincipalRow::as_select()).for_update()
                     .load::<PrincipalRow>(connection).await?
-                    .into_iter().map(identity::principal_row)
-                    .collect::<Result<Vec<_>, _>>()
+                    .pop().map(identity::principal_row).transpose()
                     .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
-                if !principals.iter().any(|actor| actor.active
+                if !principal.is_some_and(|actor| actor.active
                     && actor.admin_level().is_some_and(|level| level > 0)) {
                     return Err(AdminAuthorizedUpdateError::Consistency(
                         "admin user creation actor is no longer authorized in the target context".to_owned()));
@@ -325,13 +324,12 @@ impl UserRepository {
             .await
             .map_err(map_error)?;
         let mut rows = row;
-        if rows.len() != 1 {
-            return Err(RepositoryError::Consistency(
-                "user insert did not return exactly one complete account".to_owned(),
-            ));
-        }
         rows.pop()
-            .expect("one completely received account")
+            .ok_or_else(|| {
+                RepositoryError::Consistency(
+                    "user insert did not return a complete account".to_owned(),
+                )
+            })?
             .try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
@@ -443,17 +441,6 @@ impl UserRepository {
             .map_err(|error| RepositoryError::Consistency(error.0))?;
         Ok(UserPage { total, users })
     }
-    pub async fn admin_update_authorized(
-        &self,
-        tenant_id: TenantId,
-        actor_id: UserId,
-        target_id: UserId,
-        update: AdminUserUpdate,
-    ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
-        self.admin_update_owned(tenant_id, actor_id, target_id, update, None)
-            .await
-    }
-
     pub async fn admin_update_with_required_audit(
         &self,
         tenant: TenantContext,
@@ -462,24 +449,7 @@ impl UserRepository {
         update: AdminUserUpdate,
         source_ip_hash: String,
     ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
-        self.admin_update_owned(
-            tenant.tenant_id,
-            actor_id,
-            target_id,
-            update,
-            Some((tenant, source_ip_hash)),
-        )
-        .await
-    }
-
-    async fn admin_update_owned(
-        &self,
-        tenant_id: TenantId,
-        actor_id: UserId,
-        target_id: UserId,
-        update: AdminUserUpdate,
-        required_audit: Option<(TenantContext, String)>,
-    ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
+        let tenant_id = tenant.tenant_id;
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
                 .await
@@ -505,18 +475,11 @@ impl UserRepository {
                         .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
                     let actor = accounts
                         .iter()
-                        .find(|account| account.id() == actor_id.as_uuid())
-                        .cloned();
-                    let target = accounts
-                        .iter_mut()
-                        .find(|account| account.id() == target_id.as_uuid())
-                        .cloned();
-                    let Some(actor) = actor.filter(|actor| {
-                        actor.tenant().tenant_id == tenant_id
-                            && required_audit
-                                .as_ref()
-                                .is_none_or(|(tenant, _)| actor.tenant() == *tenant)
-                    }) else {
+                        .find(|account| account.id() == actor_id.as_uuid());
+                    let target_index = accounts
+                        .iter()
+                        .position(|account| account.id() == target_id.as_uuid());
+                    let Some(actor) = actor.filter(|actor| actor.tenant() == tenant) else {
                         insert_identity_security_event(
                             connection,
                             &admin_event(
@@ -533,7 +496,7 @@ impl UserRepository {
                             AdminPolicyError::ActorNotAuthorized,
                         ));
                     };
-                    let Some(target) = target else {
+                    let Some(target_index) = target_index else {
                         insert_identity_security_event(
                             connection,
                             &admin_event(
@@ -548,10 +511,8 @@ impl UserRepository {
                         .map_err(AdminAuthorizedUpdateError::Repository)?;
                         return Ok(AdminUserUpdateOutcome::TargetNotFound);
                     };
-                    let decision = if required_audit
-                        .as_ref()
-                        .is_some_and(|(tenant, _)| target.tenant() != *tenant)
-                    {
+                    let target = &accounts[target_index];
+                    let decision = if target.tenant() != tenant {
                         Err(AdminPolicyError::CrossTenant)
                     } else {
                         authorize_admin_update(&actor.principal, &target.principal, &update)
@@ -591,17 +552,17 @@ impl UserRepository {
                         )
                         .await
                         .map_err(AdminAuthorizedUpdateError::Repository)?;
-                        if let Some((_, source_ip_hash)) = &required_audit {
-                            append_admin_user_audit(
-                                connection,
-                                "admin_user_updated",
-                                &target,
-                                actor_id,
-                                source_ip_hash,
-                            )
-                            .await?;
-                        }
-                        return Ok(AdminUserUpdateOutcome::Updated(Box::new(target)));
+                        append_admin_user_audit(
+                            connection,
+                            "admin_user_updated",
+                            target,
+                            actor_id,
+                            &source_ip_hash,
+                        )
+                        .await?;
+                        return Ok(AdminUserUpdateOutcome::Updated(Box::new(
+                            accounts.swap_remove(target_index),
+                        )));
                     }
                     let updated = diesel::update(users::table.find(target_id.as_uuid()))
                         .set((
@@ -614,14 +575,11 @@ impl UserRepository {
                         .load::<PublicAccountRow>(connection)
                         .await?;
                     let mut updated = updated;
-                    if updated.len() != 1 {
-                        return Err(AdminAuthorizedUpdateError::Consistency(
-                            "admin update did not return exactly one complete account".to_owned(),
-                        ));
-                    }
-                    let updated = updated
-                        .pop()
-                        .expect("one completely received updated account");
+                    let updated = updated.pop().ok_or_else(|| {
+                        AdminAuthorizedUpdateError::Consistency(
+                            "admin update did not return a complete account".to_owned(),
+                        )
+                    })?;
                     insert_identity_security_event(
                         connection,
                         &admin_event(
@@ -636,16 +594,14 @@ impl UserRepository {
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
                     let updated = PublicAccount::try_from(updated)
                         .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
-                    if let Some((_, source_ip_hash)) = &required_audit {
-                        append_admin_user_audit(
-                            connection,
-                            "admin_user_updated",
-                            &updated,
-                            actor_id,
-                            source_ip_hash,
-                        )
-                        .await?;
-                    }
+                    append_admin_user_audit(
+                        connection,
+                        "admin_user_updated",
+                        &updated,
+                        actor_id,
+                        &source_ip_hash,
+                    )
+                    .await?;
                     Ok(AdminUserUpdateOutcome::Updated(Box::new(updated)))
                 },
             )
@@ -1022,19 +978,6 @@ impl nazo_identity::ports::AdminUserRepositoryPort for UserRepository {
         offset: i64,
     ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::ports::UserPage> {
         Box::pin(async move { UserRepository::page(self, tenant_id, limit, offset).await })
-    }
-
-    fn update_authorized(
-        &self,
-        tenant_id: nazo_identity::TenantId,
-        actor_id: nazo_identity::UserId,
-        target_id: nazo_identity::UserId,
-        update: nazo_identity::ports::AdminUserUpdate,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::AdminUserUpdateOutcome> {
-        Box::pin(async move {
-            UserRepository::admin_update_authorized(self, tenant_id, actor_id, target_id, update)
-                .await
-        })
     }
 
     fn update_authorized_with_required_audit(

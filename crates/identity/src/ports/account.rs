@@ -41,27 +41,17 @@ pub struct UserPage {
 pub trait AdminUserRepositoryPort: Send + Sync {
     fn page(&self, tenant_id: TenantId, limit: i64, offset: i64) -> RepositoryFuture<'_, UserPage>;
 
-    fn update_authorized(
-        &self,
-        tenant_id: TenantId,
-        actor_id: UserId,
-        target_id: UserId,
-        update: AdminUserUpdate,
-    ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome>;
-
     /// The same hierarchy mutation owner also appends canonical Required
     /// evidence, binding the full current actor/target context through ACK.
     /// Preserve authorize_admin_update as the only hierarchy policy authority.
     fn update_authorized_with_required_audit(
         &self,
-        _tenant: TenantContext,
-        _actor_id: UserId,
-        _target_id: UserId,
-        _update: AdminUserUpdate,
-        _source_ip_hash: String,
-    ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
+        tenant: TenantContext,
+        actor_id: UserId,
+        target_id: UserId,
+        update: AdminUserUpdate,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome>;
 
     /// Explicit system-boundary operation for managing an administrator in a
     /// different tenant. Implementations must re-check both tenant bindings
@@ -69,19 +59,13 @@ pub trait AdminUserRepositoryPort: Send + Sync {
     #[allow(clippy::too_many_arguments)]
     fn set_tenant_admin_authorized(
         &self,
-        _control_tenant_id: TenantId,
-        _actor_id: UserId,
-        _target_tenant_id: TenantId,
-        _target_id: UserId,
-        _admin_level: i32,
-        _source_ip_hash: String,
-    ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome> {
-        Box::pin(async {
-            Ok(crate::AdminUserUpdateOutcome::Denied(
-                crate::AdminPolicyError::ActorNotAuthorized,
-            ))
-        })
-    }
+        control_tenant_id: TenantId,
+        actor_id: UserId,
+        target_tenant_id: TenantId,
+        target_id: UserId,
+        admin_level: i32,
+        source_ip_hash: String,
+    ) -> RepositoryFuture<'_, crate::AdminUserUpdateOutcome>;
 }
 
 pub trait UserRepositoryPort: Send + Sync {

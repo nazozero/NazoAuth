@@ -1876,8 +1876,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
 
     assert_eq!(
         repository
-            .admin_update_authorized(
-                tenant.tenant_id,
+            .admin_update_with_required_audit(
+                tenant,
                 actor_id,
                 user_id,
                 AdminUserUpdate {
@@ -1885,6 +1885,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                     admin_level: None,
                     active: None,
                 },
+                "fixture-source".to_owned(),
             )
             .await
             .unwrap(),
@@ -1899,8 +1900,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
     assert_eq!(unchanged.admin_level(), 0);
 
     let promoted = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             user_id,
             AdminUserUpdate {
@@ -1908,6 +1909,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                 admin_level: Some(5),
                 active: None,
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
@@ -1918,8 +1920,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
     assert_eq!(promoted.admin_level(), 5);
 
     let level_only = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             user_id,
             AdminUserUpdate {
@@ -1927,6 +1929,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                 admin_level: Some(7),
                 active: None,
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
@@ -1958,8 +1961,8 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
     let repository = UserRepository::new(pool.clone());
     let (foreign_tenant, foreign_user_id) = foreign_tenant_user_fixture(&pool).await;
     let cross_tenant = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             foreign_user_id,
             AdminUserUpdate {
@@ -1967,6 +1970,7 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: Some(1),
                 active: Some(false),
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
@@ -1983,8 +1987,8 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
     assert!(foreign.principal.active);
 
     let promoted = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             target_id,
             AdminUserUpdate {
@@ -1992,14 +1996,15 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: Some(5),
                 active: None,
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
     assert!(matches!(promoted, AdminUserUpdateOutcome::Updated(_)));
 
     let (higher_actor, lower_actor) = tokio::join!(
-        repository.admin_update_authorized(
-            tenant.tenant_id,
+        repository.admin_update_with_required_audit(
+            tenant,
             actor_id,
             target_id,
             AdminUserUpdate {
@@ -2007,9 +2012,10 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: Some(4),
                 active: None,
             },
+            "fixture-source".to_owned(),
         ),
-        repository.admin_update_authorized(
-            tenant.tenant_id,
+        repository.admin_update_with_required_audit(
+            tenant,
             target_id,
             actor_id,
             AdminUserUpdate {
@@ -2017,6 +2023,7 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: None,
                 active: Some(false),
             },
+            "fixture-source".to_owned(),
         )
     );
     assert!(matches!(
@@ -2069,7 +2076,11 @@ fn admin_user_page_is_tenant_scoped_at_the_query_boundary() {
     let page = source
         .split("pub async fn page(")
         .nth(1)
-        .and_then(|source| source.split("pub async fn admin_update_authorized(").next())
+        .and_then(|source| {
+            source
+                .split("pub async fn admin_update_with_required_audit(")
+                .next()
+        })
         .expect("page repository function remains present");
     assert_eq!(
         page.matches(".filter(users::tenant_id.eq(tenant_id.as_uuid()))")
