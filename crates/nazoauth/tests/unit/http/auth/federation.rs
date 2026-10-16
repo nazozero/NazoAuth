@@ -106,7 +106,7 @@ async fn federation_provider_response_limit_rejects_oversized_content_length() {
     assert!(error.to_string().contains("too large"));
 }
 
-fn normalize_federation_token(value: &str) -> Option<String> {
+fn normalize_federation_token(value: &str) -> Option<&str> {
     nazo_identity::federation::normalize_federation_token(value)
 }
 
@@ -156,11 +156,11 @@ async fn oidc_callback_after_rate_limit_for_provider(
 ) -> HttpResponse {
     super::oidc_callback_after_rate_limit_for_provider(
         crate::test_support::federation_service(&state),
-        crate::test_support::federation_http_config(&state),
+        &crate::test_support::federation_http_config(&state),
         crate::test_support::client_ip_config(&state),
         req,
         query,
-        provider,
+        &provider,
     )
     .await
 }
@@ -700,13 +700,10 @@ fn federation_token_trims_transport_whitespace_but_preserves_length_and_charset_
     let max = "b".repeat(256);
 
     assert_eq!(
-        normalize_federation_token(&format!(" \t{min}\n")).as_deref(),
+        normalize_federation_token(&format!(" \t{min}\n")),
         Some(min.as_str())
     );
-    assert_eq!(
-        normalize_federation_token(&max).as_deref(),
-        Some(max.as_str())
-    );
+    assert_eq!(normalize_federation_token(&max), Some(max.as_str()));
     assert!(
         normalize_federation_token(&"c".repeat(31)).is_none(),
         "state tokens shorter than 256 bits of base64url-like entropy must fail closed"

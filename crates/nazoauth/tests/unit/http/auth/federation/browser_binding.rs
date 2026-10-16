@@ -174,22 +174,22 @@ async fn missing_or_bad_cookie_calls_no_state_store_and_valid_cookie_preserves_o
             let response = if social {
                 super::super::social_callback_after_rate_limit(
                     service.clone(),
-                    config.clone(),
+                    &config,
                     client_ip.clone(),
                     req.to_http_request(),
                     callback_query(&"A".repeat(32)),
                     "social".to_owned(),
-                    custom_social_provider(),
+                    &custom_social_provider(),
                 )
                 .await
             } else {
                 super::super::oidc_callback_after_rate_limit_for_provider(
                     service.clone(),
-                    config.clone(),
+                    &config,
                     client_ip.clone(),
                     req.to_http_request(),
                     callback_query(&"A".repeat(32)),
-                    oidc_provider(),
+                    &oidc_provider(),
                 )
                 .await
             };
@@ -211,22 +211,22 @@ async fn missing_or_bad_cookie_calls_no_state_store_and_valid_cookie_preserves_o
         let response = if social {
             super::super::social_callback_after_rate_limit(
                 service.clone(),
-                config.clone(),
+                &config,
                 client_ip.clone(),
                 req,
                 callback_query(&"A".repeat(32)),
                 "social".to_owned(),
-                custom_social_provider(),
+                &custom_social_provider(),
             )
             .await
         } else {
             super::super::oidc_callback_after_rate_limit_for_provider(
                 service.clone(),
-                config.clone(),
+                &config,
                 client_ip.clone(),
                 req,
                 callback_query(&"A".repeat(32)),
-                oidc_provider(),
+                &oidc_provider(),
             )
             .await
         };
@@ -290,11 +290,11 @@ async fn oidc_attacker_code_and_state_in_another_browser_cannot_burn_owner_login
     for seed in [None, Some([0x91_u8; 32])] {
         let response = super::super::oidc_callback_after_rate_limit_for_provider(
             crate::test_support::federation_service(&fixture.state),
-            config.clone(),
+            &config,
             crate::test_support::client_ip_config(&fixture.state),
             binding_request(&config, seed.as_ref()),
             callback_query(&state_token),
-            provider.clone(),
+            &provider,
         )
         .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -315,11 +315,11 @@ async fn oidc_attacker_code_and_state_in_another_browser_cannot_burn_owner_login
     }
     let response = super::super::oidc_callback_after_rate_limit_for_provider(
         crate::test_support::federation_service(&fixture.state),
-        config.clone(),
+        &config,
         crate::test_support::client_ip_config(&fixture.state),
         binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
         callback_query(&state_token),
-        provider,
+        &provider,
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -380,12 +380,12 @@ async fn social_attacker_code_and_state_in_another_browser_preserves_owner_compl
     for seed in [None, Some([0x92_u8; 32])] {
         let response = super::super::social_callback_after_rate_limit(
             service.clone(),
-            config.clone(),
+            &config,
             crate::test_support::client_ip_config(&fixture.state),
             binding_request(&config, seed.as_ref()),
             callback_query(&start.state),
             "social".to_owned(),
-            provider.clone(),
+            &provider,
         )
         .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -406,12 +406,12 @@ async fn social_attacker_code_and_state_in_another_browser_preserves_owner_compl
     }
     let response = super::super::social_callback_after_rate_limit(
         service,
-        config.clone(),
+        &config,
         crate::test_support::client_ip_config(&fixture.state),
         binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
         callback_query(&start.state),
         "social".to_owned(),
-        provider,
+        &provider,
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -673,11 +673,11 @@ async fn simultaneous_cold_starts_fail_closed_when_last_set_cookie_displaces_the
     let before = raw_state_snapshot(&state, key.clone()).await;
     let response = super::super::oidc_callback_after_rate_limit_for_provider(
         service.clone(),
-        config.clone(),
+        &config,
         client_ip,
         binding_request(&config, Some(&second_seed)),
         callback_query(&first_state),
-        oidc_provider(),
+        &oidc_provider(),
     )
     .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);

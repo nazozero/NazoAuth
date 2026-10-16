@@ -254,7 +254,7 @@ fn email_policy_preserves_lettre_address_syntax_contract() {
 #[test]
 fn federation_callback_token_policy_is_exact() {
     let token = "abcdefghijklmnopqrstuvwxyzABCDEF0123456789-_";
-    assert_eq!(normalize_federation_token(token).as_deref(), Some(token));
+    assert_eq!(normalize_federation_token(token), Some(token));
     assert!(normalize_federation_token("short").is_none());
     assert!(normalize_federation_token(&format!("{}!", "x".repeat(31))).is_none());
 }
