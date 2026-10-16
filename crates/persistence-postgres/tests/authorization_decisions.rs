@@ -860,19 +860,8 @@ async fn verify_audit_lifetime(
         SecurityAuditBatchClaim::Empty
     ));
 
-    // Authoritative append API also rejects exported rows, not just its reader.
+    // The finalizer rejects exported rows even if called without the pending reader.
     let health = audit.anchor_health().await.unwrap();
-    assert!(
-        sql_query("SELECT public.nazo_append_security_audit_chain($1,$2,$3,$4)")
-            .bind::<sql_types::BigInt, _>(health.head_sequence)
-            .bind::<sql_types::Binary, _>(&health.head_hash)
-            .bind::<sql_types::Array<sql_types::Uuid>, _>(vec![retained.event_id])
-            .bind::<sql_types::Array<sql_types::Binary>, _>(vec![vec![7_u8; 32]])
-            .execute(connection)
-            .await
-            .is_err()
-    );
-    // The fused fresh-claim API shares that exported-event guard.
     assert!(
         sql_query(
             "SELECT public.nazo_finalize_security_audit_claim(\

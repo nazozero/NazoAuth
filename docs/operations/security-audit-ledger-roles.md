@@ -75,10 +75,8 @@ GRANT EXECUTE ON FUNCTION
     public.nazo_security_audit_chain_head_for_update(),
     public.nazo_security_audit_batch_members(),
     public.nazo_claim_security_audit_pending(bigint),
-    public.nazo_open_security_audit_batch(bigint, bigint, integer, bytea, integer),
     public.nazo_finalize_security_audit_claim(bigint, bytea, uuid[], bytea[], bigint, bigint, integer, bytea, integer),
     public.nazo_reclaim_security_audit_batch(bytea, integer),
-    public.nazo_append_security_audit_chain(bigint, bytea, uuid[], bytea[]),
     public.nazo_fail_security_audit_batch(bigint, timestamptz, text, boolean),
     public.nazo_observe_security_audit_anchor(text),
     public.nazo_security_audit_shared_anchor_health()
@@ -240,3 +238,5 @@ graphs, disabled SET edges, inherited privileges behind an assumed role, owner
 and superuser membership, and function identity/ACL/EXECUTE preservation.
 
 The pinned Diesel migration harness wraps migration-body SQL errors in a private type without a source chain. Those opaque errors retain the original boxed source and remain terminal; they are not classified from display text. Public typed connection/serialization errors and advisory-lock timeout paths retain their retry classification.
+
+新批次通过 `nazo_finalize_security_audit_claim` 一次提交链证明和批次租约。升级到迁移 `20261017000300` 时同步更新 exporter；旧的分步 append/open SQL 接口已移除。已有批次及其租约、ACK 和重领行为不变。

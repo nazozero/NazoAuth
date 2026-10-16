@@ -47,33 +47,6 @@ struct ExistsRow {
 async fn isolated_registry(
     case: &str,
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 21] = [
-        "20260805000100",
-        "20260905000100",
-        "20260909000100",
-        "20260919000100",
-        "20260919000200",
-        "20260920000100",
-        "20260923000100",
-        "20260924000100",
-        "20260925000100",
-        "20260927000100",
-        "20260927000200",
-        // These migrations target shared public audit state, not this schema.
-        "20260929000400",
-        "20261001000100",
-        "20261001000200",
-        "20261001000400",
-        // Public refresh-family cutover and trigger run once per database.
-        "20261001000500",
-        "20261002000300",
-        // Fixed public Required approval, observation, ACK and fresh-claim owners run once.
-        "20261003000400",
-        "20261003000500",
-        "20261006000100",
-        "20261006000200",
-    ];
-
     let base = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .ok()?;
@@ -118,7 +91,7 @@ async fn isolated_registry(
             .batch_execute(CREATE_MIGRATIONS_TABLE)
             .await
             .expect("isolated migration ledger should create");
-        for version in PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS {
+        for version in include_str!("../../../tests/fixtures/public_migrations.txt").lines() {
             sql_query(
                 "INSERT INTO __diesel_schema_migrations (version)
                  VALUES ($1)
