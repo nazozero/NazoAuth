@@ -1016,7 +1016,7 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
         )
         .await
         .unwrap();
-    assert_mutation(before, 3);
+    assert_mutation(before, 2);
     assert_eq!(
         repository.list_slots(deployment).await.unwrap(),
         vec![rotated.clone()]
@@ -1026,7 +1026,7 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
         .revoke_slot(deployment, &rotated.controller_id, at(2))
         .await
         .unwrap();
-    assert_mutation(before, 3);
+    assert_mutation(before, 2);
     assert_eq!(
         repository.list_slots(deployment).await.unwrap(),
         vec![revoked]
@@ -1094,8 +1094,15 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
                 .unwrap(),
             _ => unreachable!(),
         };
-        // Deployment lock, actor, approval read/consume, slot read/write, audit.
-        assert_mutation(before, 7);
+        // Creation needs the active-slot set; rotate/revoke return the UPDATE row.
+        assert_mutation(
+            before,
+            if action == ControllerIdentityAction::Add {
+                7
+            } else {
+                6
+            },
+        );
         current = Some(stored.controller_id.clone());
         assert!(
             repository

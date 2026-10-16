@@ -3,11 +3,11 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
-use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::result::Error as QueryError;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Binary, Nullable, SmallInt, Timestamptz, Varchar};
+use diesel::{ExpressionMethods as _, OptionalExtension, QueryDsl as _};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
@@ -254,28 +254,6 @@ pub(super) async fn lock_deployment_slots(
     Ok(())
 }
 
-async fn load_slot_for_update(
-    connection: &mut AsyncPgConnection,
-    deployment_id: &str,
-    controller_id: &str,
-) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    let row = sql_query(format!(
-        "SELECT {} FROM controller_registry_slots \
-         WHERE deployment_id = $1 AND controller_id = $2 FOR UPDATE",
-        slot_columns!()
-    ))
-    .bind::<Varchar, _>(deployment_id)
-    .bind::<Varchar, _>(controller_id)
-    .get_result::<SlotRow>(connection)
-    .await
-    .optional()
-    .map_err(transport)?
-    .map(StoredControllerSlot::try_from)
-    .transpose()
-    .map_err(transport)?;
-    row.ok_or(ControllerRegistryError::UnknownController)
-}
-
 async fn active_slots_on_connection(
     connection: &mut AsyncPgConnection,
     deployment_id: &str,
@@ -317,7 +295,7 @@ pub(crate) async fn insert_slot_on_connection(
         ));
     };
     let controller_id = Uuid::now_v7().to_string();
-    let rows = sql_query(format!(
+    let mut rows = sql_query(format!(
         "INSERT INTO controller_registry_slots
             (deployment_id, controller_id, label, kid, public_key, slot_index,
              issued_at, expires_at, status, revoked_at, created_at, updated_at)
@@ -336,21 +314,36 @@ pub(crate) async fn insert_slot_on_connection(
     .load::<SlotRow>(connection)
     .await
     .map_err(map_slot_conflict)?;
-    one_written_slot(rows)
-}
-
-fn one_written_slot(
-    mut rows: Vec<SlotRow>,
-) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    if rows.len() != 1 {
-        return Err(transport(anyhow::anyhow!(
-            "slot mutation returned an invalid authority row count"
-        )));
-    }
     rows.pop()
-        .expect("one fully received slot row")
+        .expect("one fully received inserted slot row")
         .try_into()
         .map_err(transport)
+}
+
+// The caller holds the deployment identity lock. A conditional UPDATE has
+// already rejected this target; only distinguish absence from terminal revoke.
+async fn written_slot_or_rejection(
+    connection: &mut AsyncPgConnection,
+    mut rows: Vec<SlotRow>,
+    deployment_id: &str,
+    controller_id: &str,
+) -> Result<StoredControllerSlot, ControllerRegistryError> {
+    if let Some(row) = rows.pop() {
+        return row.try_into().map_err(transport);
+    }
+    use crate::schema::controller_registry_slots as slots;
+    let present = diesel::select(diesel::dsl::exists(
+        slots::table
+            .filter(slots::deployment_id.eq(deployment_id))
+            .filter(slots::controller_id.eq(controller_id)),
+    ))
+    .get_result::<bool>(connection)
+    .await?;
+    Err(if present {
+        ControllerRegistryError::AlreadyRevoked
+    } else {
+        ControllerRegistryError::UnknownController
+    })
 }
 
 fn map_slot_conflict(error: QueryError) -> ControllerRegistryError {
@@ -369,17 +362,12 @@ pub(super) async fn rotate_slot_on_connection(
     rotation: &RotateControllerKey,
     now: DateTime<Utc>,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    let current =
-        load_slot_for_update(connection, &rotation.deployment_id, &rotation.controller_id).await?;
-    if current.status == ControllerSlotStatus::Revoked {
-        return Err(ControllerRegistryError::AlreadyRevoked);
-    }
     let rows = sql_query(format!(
         "UPDATE controller_registry_slots
          SET label = $3, kid = $4, public_key = $5,
              issued_at = $6, expires_at = $7,
              updated_at = $6
-         WHERE deployment_id = $1 AND controller_id = $2
+         WHERE deployment_id = $1 AND controller_id = $2 AND status = 'active'
          RETURNING {}",
         slot_columns!()
     ))
@@ -393,7 +381,13 @@ pub(super) async fn rotate_slot_on_connection(
     .load::<SlotRow>(connection)
     .await
     .map_err(map_slot_conflict)?;
-    one_written_slot(rows)
+    written_slot_or_rejection(
+        connection,
+        rows,
+        &rotation.deployment_id,
+        &rotation.controller_id,
+    )
+    .await
 }
 
 pub(super) async fn revoke_slot_on_connection(
@@ -402,14 +396,10 @@ pub(super) async fn revoke_slot_on_connection(
     controller_id: &str,
     now: DateTime<Utc>,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    let current = load_slot_for_update(connection, deployment_id, controller_id).await?;
-    if current.status == ControllerSlotStatus::Revoked {
-        return Err(ControllerRegistryError::AlreadyRevoked);
-    }
     let rows = sql_query(format!(
         "UPDATE controller_registry_slots
          SET status = 'revoked', revoked_at = $3, updated_at = $3
-         WHERE deployment_id = $1 AND controller_id = $2
+         WHERE deployment_id = $1 AND controller_id = $2 AND status = 'active'
          RETURNING {}",
         slot_columns!()
     ))
@@ -418,7 +408,7 @@ pub(super) async fn revoke_slot_on_connection(
     .bind::<Timestamptz, _>(now)
     .load::<SlotRow>(connection)
     .await?;
-    one_written_slot(rows)
+    written_slot_or_rejection(connection, rows, deployment_id, controller_id).await
 }
 
 impl ControllerRegistryRepository {
