@@ -113,20 +113,7 @@ impl ApprovalRequestBody {
         )
     }
 
-    fn slot_fields(&self) -> Result<(String, String, String), HttpResponse> {
-        let Some(label) = self.label.clone() else {
-            return Err(Self::missing("label"));
-        };
-        let Some(public_key) = self.public_key.clone() else {
-            return Err(Self::missing("public_key"));
-        };
-        let Some(kid) = self.kid.clone() else {
-            return Err(Self::missing("kid"));
-        };
-        Ok((label, public_key, kid))
-    }
-
-    fn change(&self) -> Result<IdentityChange, HttpResponse> {
+    fn change(self) -> Result<IdentityChange, HttpResponse> {
         match self.action.as_str() {
             "bind" | "add" => {
                 if self.controller_id.is_some() {
@@ -137,14 +124,16 @@ impl ApprovalRequestBody {
                 {
                     return Err(Self::unexpected("recovery_public_key/recovery_kid"));
                 }
-                let (label, public_key, kid) = self.slot_fields()?;
+                let label = self.label.ok_or_else(|| Self::missing("label"))?;
+                let public_key = self.public_key.ok_or_else(|| Self::missing("public_key"))?;
+                let kid = self.kid.ok_or_else(|| Self::missing("kid"))?;
                 let request = SlotChangeRequest {
-                    deployment_id: self.deployment_id.clone(),
+                    deployment_id: self.deployment_id,
                     label,
                     kid,
                     public_key,
-                    recovery_public_key: self.recovery_public_key.clone(),
-                    recovery_kid: self.recovery_kid.clone(),
+                    recovery_public_key: self.recovery_public_key,
+                    recovery_kid: self.recovery_kid,
                 };
                 Ok(if self.action == "bind" {
                     IdentityChange::Bind(request)
@@ -158,11 +147,12 @@ impl ApprovalRequestBody {
                 }
                 let controller_id = self
                     .controller_id
-                    .clone()
                     .ok_or_else(|| Self::missing("controller_id"))?;
-                let (label, public_key, kid) = self.slot_fields()?;
+                let label = self.label.ok_or_else(|| Self::missing("label"))?;
+                let public_key = self.public_key.ok_or_else(|| Self::missing("public_key"))?;
+                let kid = self.kid.ok_or_else(|| Self::missing("kid"))?;
                 Ok(IdentityChange::Rotate(RotateRequest {
-                    deployment_id: self.deployment_id.clone(),
+                    deployment_id: self.deployment_id,
                     controller_id,
                     label,
                     kid,
@@ -178,10 +168,9 @@ impl ApprovalRequestBody {
                 }
                 let controller_id = self
                     .controller_id
-                    .clone()
                     .ok_or_else(|| Self::missing("controller_id"))?;
                 Ok(IdentityChange::Revoke(RevokeRequest {
-                    deployment_id: self.deployment_id.clone(),
+                    deployment_id: self.deployment_id,
                     controller_id,
                 }))
             }
@@ -293,23 +282,26 @@ pub(crate) struct SlotCommitBody {
 }
 
 impl SlotCommitBody {
-    fn request(&self) -> SlotChangeRequest {
-        SlotChangeRequest {
-            deployment_id: self.deployment_id.clone(),
-            label: self.label.clone(),
-            kid: self.kid.clone(),
-            public_key: self.public_key.clone(),
-            recovery_public_key: self.recovery_public_key.clone(),
-            recovery_kid: self.recovery_kid.clone(),
-        }
-    }
-
-    fn action(&self) -> Result<ControllerIdentityAction, HttpResponse> {
-        match self.action.as_str() {
-            "bind" => Ok(ControllerIdentityAction::Bind),
-            "add" => Ok(ControllerIdentityAction::Add),
-            _ => Err(invalid_action()),
-        }
+    fn into_change(self) -> Result<(String, IdentityChange), HttpResponse> {
+        let action = match self.action.as_str() {
+            "bind" => ControllerIdentityAction::Bind,
+            "add" => ControllerIdentityAction::Add,
+            _ => return Err(invalid_action()),
+        };
+        let request = SlotChangeRequest {
+            deployment_id: self.deployment_id,
+            label: self.label,
+            kid: self.kid,
+            public_key: self.public_key,
+            recovery_public_key: self.recovery_public_key,
+            recovery_kid: self.recovery_kid,
+        };
+        let change = if action == ControllerIdentityAction::Bind {
+            IdentityChange::Bind(request)
+        } else {
+            IdentityChange::Add(request)
+        };
+        Ok((self.approval_token, change))
     }
 }
 
@@ -335,15 +327,14 @@ pub(crate) async fn admin_controller_slot_commit(
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
-    let action = match body.action() {
-        Ok(action) => action,
+    let (approval_token, change) = match body.into_change() {
+        Ok(change) => change,
         Err(response) => return response,
     };
     match registry
-        .commit_creation_with_required_audit(
-            &body.approval_token,
-            action,
-            &body.request(),
+        .commit_with_required_audit(
+            approval_token,
+            change,
             Utc::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
@@ -371,14 +362,17 @@ pub(crate) struct SlotRotateBody {
 }
 
 impl SlotRotateBody {
-    fn request(&self) -> RotateRequest {
-        RotateRequest {
-            deployment_id: self.deployment_id.clone(),
-            controller_id: self.controller_id.clone(),
-            label: self.label.clone(),
-            kid: self.kid.clone(),
-            public_key: self.public_key.clone(),
-        }
+    fn into_change(self) -> (String, IdentityChange) {
+        (
+            self.approval_token,
+            IdentityChange::Rotate(RotateRequest {
+                deployment_id: self.deployment_id,
+                controller_id: self.controller_id,
+                label: self.label,
+                kid: self.kid,
+                public_key: self.public_key,
+            }),
+        )
     }
 }
 
@@ -400,10 +394,11 @@ pub(crate) async fn admin_controller_slot_rotate(
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
+    let (approval_token, change) = body.into_change();
     match registry
-        .commit_rotation_with_required_audit(
-            &body.approval_token,
-            &body.request(),
+        .commit_with_required_audit(
+            approval_token,
+            change,
             Utc::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
@@ -428,11 +423,14 @@ pub(crate) struct SlotRevokeBody {
 }
 
 impl SlotRevokeBody {
-    fn request(&self) -> RevokeRequest {
-        RevokeRequest {
-            deployment_id: self.deployment_id.clone(),
-            controller_id: self.controller_id.clone(),
-        }
+    fn into_change(self) -> (String, IdentityChange) {
+        (
+            self.approval_token,
+            IdentityChange::Revoke(RevokeRequest {
+                deployment_id: self.deployment_id,
+                controller_id: self.controller_id,
+            }),
+        )
     }
 }
 
@@ -454,10 +452,11 @@ pub(crate) async fn admin_controller_slot_revoke(
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
+    let (approval_token, change) = body.into_change();
     match registry
-        .commit_revocation_with_required_audit(
-            &body.approval_token,
-            &body.request(),
+        .commit_with_required_audit(
+            approval_token,
+            change,
             Utc::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
