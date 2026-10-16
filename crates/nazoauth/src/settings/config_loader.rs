@@ -9,16 +9,8 @@ struct TenantOverride {
 impl TenantOverride {
     fn from_issuer(context: nazo_identity::TenantContext, issuer: String) -> anyhow::Result<Self> {
         let issuer = issuer.trim().to_owned();
-        validate_issuer_url(&issuer)?;
-        let parsed = Url::parse(&issuer)?;
-        let issuer_host = parsed
-            .host()
-            .ok_or_else(|| anyhow::anyhow!("tenant issuer must include a host"))?;
-        let host = match issuer_host {
-            url::Host::Domain(domain) => canonical_tenant_host(domain)?,
-            url::Host::Ipv4(address) => canonical_tenant_host(&address.to_string())?,
-            url::Host::Ipv6(address) => canonical_tenant_host(&format!("[{address}]"))?,
-        };
+        let parsed = validate_issuer_url(&issuer)?;
+        let host = nazo_identity::tenant_host_from_issuer(&parsed)?.to_owned();
         Ok(Self {
             context,
             issuer,
@@ -134,14 +126,15 @@ impl Settings {
             .as_ref()
             .map(|tenant| tenant.issuer.clone())
             .unwrap_or_else(|| config.string("PUBLIC_BASE_URL", "http://127.0.0.1:8000"));
-        validate_issuer_url(&public_base_url)?;
-        let public_origin = url_origin(&public_base_url)?;
+        let public_origin = validate_issuer_url(&public_base_url)?
+            .origin()
+            .ascii_serialization();
 
         let issuer = tenant_override
             .as_ref()
             .map(|tenant| tenant.issuer.clone())
             .unwrap_or_else(|| config.string("ISSUER", &public_base_url));
-        validate_issuer_url(&issuer)?;
+        let issuer_url = validate_issuer_url(&issuer)?;
         let transport_mode = TransportMode::from_config(config.get("TRANSPORT_MODE"), &issuer);
         let tenant = match tenant_override {
             Some(tenant) => TenantSettings {
@@ -155,12 +148,11 @@ impl Settings {
             && matches!(&transport_mode, Ok(TransportMode::DirectTls))
             && let Some(configured_mtls) = config.optional_string("MTLS_ENDPOINT_BASE_URL")
         {
-            validate_issuer_url(&configured_mtls)?;
-            let configured_mtls = Url::parse(&configured_mtls)?;
+            let configured_mtls = validate_issuer_url(&configured_mtls)?;
             if configured_mtls.scheme() != "https" {
                 bail!("direct-tls transport requires an HTTPS MTLS_ENDPOINT_BASE_URL");
             }
-            let mut tenant_mtls = Url::parse(&issuer)?;
+            let mut tenant_mtls = issuer_url;
             // The directory owns the tenant host; the deployment owns its
             // externally published mTLS listener port. Using the tenant's
             // ordinary HTTPS port would advertise a listener that never
@@ -176,7 +168,8 @@ impl Settings {
                 .optional_string("MTLS_ENDPOINT_BASE_URL")
                 .unwrap_or_else(|| issuer.clone())
         };
-        validate_issuer_url(&mtls_endpoint_base_url)?;
+        let mtls_endpoint_is_https =
+            validate_issuer_url(&mtls_endpoint_base_url)?.scheme() == "https";
         let frontend_base_url = if tenant_specific {
             format!("{}/ui/", public_base_url.trim_end_matches('/'))
         } else {
@@ -566,10 +559,7 @@ impl Settings {
                         MtlsCertificateSourceMode::Disabled
                     }
                     TransportMode::DirectTls => {
-                        if !Url::parse(&mtls_endpoint_base_url)?
-                            .scheme()
-                            .eq_ignore_ascii_case("https")
-                        {
+                        if !mtls_endpoint_is_https {
                             bail!("direct-tls transport requires an HTTPS MTLS_ENDPOINT_BASE_URL");
                         }
                         if !trusted_proxy_cidrs.is_empty() {

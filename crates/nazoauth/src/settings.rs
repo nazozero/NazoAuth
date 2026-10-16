@@ -10,7 +10,6 @@ use nazo_auth::{
     is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
     validate_protected_resource_identifier,
 };
-use url::Url;
 
 use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use crate::config::{ConfigSource, DEFAULT_DATA_DIR};
@@ -466,19 +465,6 @@ pub(crate) fn bounded_id_token_ttl_seconds(config: &ConfigSource) -> anyhow::Res
         );
     }
     Ok(ttl)
-}
-
-fn url_origin(value: &str) -> anyhow::Result<String> {
-    let url = Url::parse(value).map_err(|_| anyhow::anyhow!("PUBLIC_BASE_URL must be absolute"))?;
-    let Some(host) = url.host_str() else {
-        bail!("PUBLIC_BASE_URL must include host");
-    };
-    let mut origin = format!("{}://{}", url.scheme(), host);
-    if let Some(port) = url.port() {
-        origin.push(':');
-        origin.push_str(&port.to_string());
-    }
-    Ok(origin)
 }
 
 fn parse_signing_external_command(value: Option<String>) -> Vec<String> {

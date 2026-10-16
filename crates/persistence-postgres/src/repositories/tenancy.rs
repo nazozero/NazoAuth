@@ -541,7 +541,7 @@ fn validate_binding_routing_identity(
     issuer: &str,
     external_host: &str,
 ) -> Result<(), RepositoryError> {
-    nazo_auth::validate_issuer_url(issuer).map_err(|error| {
+    let issuer_url = nazo_auth::validate_issuer_url(issuer).map_err(|error| {
         RepositoryError::Consistency(format!("tenant issuer is invalid: {error}"))
     })?;
     let host = canonical_tenant_host(external_host).map_err(|error| {
@@ -552,18 +552,7 @@ fn validate_binding_routing_identity(
             "tenant external host is not canonical".to_owned(),
         ));
     }
-    let issuer_url = url::Url::parse(issuer).map_err(|error| {
-        RepositoryError::Consistency(format!("tenant issuer is invalid: {error}"))
-    })?;
-    let issuer_host = issuer_url.host().ok_or_else(|| {
-        RepositoryError::Consistency("tenant issuer must include a host".to_owned())
-    })?;
-    let issuer_host = match issuer_host {
-        url::Host::Domain(domain) => canonical_tenant_host(domain),
-        url::Host::Ipv4(address) => canonical_tenant_host(&address.to_string()),
-        url::Host::Ipv6(address) => canonical_tenant_host(&format!("[{address}]")),
-    }
-    .map_err(|error| {
+    let issuer_host = nazo_identity::tenant_host_from_issuer(&issuer_url).map_err(|error| {
         RepositoryError::Consistency(format!("tenant issuer host is invalid: {error}"))
     })?;
     if issuer_host != host {

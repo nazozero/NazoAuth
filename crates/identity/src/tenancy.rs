@@ -137,41 +137,31 @@ impl std::error::Error for TenantHostError {}
 
 /// Canonicalizes the host identity shared by routing and directory caches.
 pub fn canonical_tenant_host(host: &str) -> Result<String, TenantHostError> {
-    let host = host.trim();
-    if host.is_empty() {
-        return Err(TenantHostError("tenant host must not be empty"));
-    }
-    if host.starts_with('[') {
-        if !host.ends_with(']') {
-            return Err(TenantHostError("tenant host must be a host without a port"));
+    let parsed = url::Host::parse(host.trim())
+        .map_err(|_| TenantHostError("tenant host must be a valid host without a port"))?;
+    let canonical = match parsed {
+        url::Host::Domain(mut domain) => {
+            domain.truncate(domain.trim_end_matches('.').len());
+            domain
         }
-    } else if host.contains(':') {
-        return Err(TenantHostError("tenant host must not include a port"));
-    }
-
-    let parsed = Url::parse(&format!("https://{host}/"))
-        .map_err(|_| TenantHostError("tenant host is invalid"))?;
-    if !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.port().is_some()
-        || parsed.path() != "/"
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
-        return Err(TenantHostError(
-            "tenant host must be a host without userinfo, path, query, fragment, or port",
-        ));
-    }
-    let canonical = match parsed.host() {
-        Some(url::Host::Domain(domain)) => domain.trim_end_matches('.').to_ascii_lowercase(),
-        Some(url::Host::Ipv4(address)) => address.to_string(),
-        Some(url::Host::Ipv6(address)) => format!("[{address}]"),
-        None => return Err(TenantHostError("tenant host is invalid")),
+        url::Host::Ipv4(address) => address.to_string(),
+        url::Host::Ipv6(address) => format!("[{address}]"),
     };
     if canonical.is_empty() {
         return Err(TenantHostError("tenant host must not be empty"));
     }
     Ok(canonical)
+}
+
+/// Borrows the canonical routing host from an already validated issuer URL.
+pub fn tenant_host_from_issuer(issuer: &Url) -> Result<&str, TenantHostError> {
+    issuer
+        .host_str()
+        .map(|host| host.trim_end_matches('.'))
+        .filter(|host| !host.is_empty())
+        .ok_or(TenantHostError(
+            "tenant issuer must include a non-empty host",
+        ))
 }
 
 impl TenantContext {

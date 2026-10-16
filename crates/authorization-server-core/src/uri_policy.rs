@@ -9,7 +9,7 @@ pub enum RedirectUriError {
     Invalid,
 }
 
-pub fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
+pub fn validate_issuer_url(value: &str) -> anyhow::Result<Url> {
     let url = parse_url("issuer", value)?;
     if !url.has_host() {
         bail!("issuer 必须包含 host");
@@ -21,7 +21,8 @@ pub fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
     if url.query().is_some() || url.fragment().is_some() {
         bail!("issuer 不能包含 query 或 fragment");
     }
-    validate_https_or_loopback_http("issuer", &url)
+    validate_https_or_loopback_http("issuer", &url)?;
+    Ok(url)
 }
 
 pub fn validate_frontend_base_url(value: &str) -> anyhow::Result<()> {

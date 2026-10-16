@@ -659,18 +659,10 @@ fn validate_snapshot(snapshot: &TenantDirectorySnapshot) -> anyhow::Result<()> {
         if external_host != binding.external_host {
             anyhow::bail!("tenant directory external_host must be canonical");
         }
-        nazo_auth::validate_issuer_url(&binding.issuer)
+        let issuer = nazo_auth::validate_issuer_url(&binding.issuer)
             .map_err(|error| anyhow::anyhow!("tenant directory issuer is invalid: {error}"))?;
-        let issuer = url::Url::parse(&binding.issuer)?;
-        let issuer_host = issuer
-            .host()
-            .ok_or_else(|| anyhow::anyhow!("tenant directory issuer must include a host"))?;
-        let issuer_host = match issuer_host {
-            url::Host::Domain(domain) => canonical_tenant_host(domain),
-            url::Host::Ipv4(address) => canonical_tenant_host(&address.to_string()),
-            url::Host::Ipv6(address) => canonical_tenant_host(&format!("[{address}]")),
-        }
-        .map_err(|error| anyhow::anyhow!("tenant directory issuer host is invalid: {error}"))?;
+        let issuer_host = nazo_identity::tenant_host_from_issuer(&issuer)
+            .map_err(|error| anyhow::anyhow!("tenant directory issuer host is invalid: {error}"))?;
         if issuer_host != external_host {
             anyhow::bail!(
                 "tenant directory issuer host {issuer_host} does not match external_host {external_host}"
