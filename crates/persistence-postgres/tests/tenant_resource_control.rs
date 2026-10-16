@@ -208,7 +208,7 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
                 resource_id: "policy",
                 resource_digest: &digest,
                 public_material: &json!({}),
-                wallet_origins: &[],
+                wallet_origins: &["https://wallet.example/".to_owned()],
             },
         )
         .await

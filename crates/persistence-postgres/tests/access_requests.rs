@@ -1257,7 +1257,7 @@ async fn required_approval_rolls_back_and_recovers_only_the_committed_approval()
     let runtime_body = std::panic::AssertUnwindSafe(async {
         nazo_postgres::configure_runtime_role(&database_url, &role).await.unwrap();
         let mut role_url = url::Url::parse(&database_url).unwrap();
-        role_url.query_pairs_mut().append_pair("options", &format!("-c role={role}"));
+        role_url.query_pairs_mut().append_pair("options", &format!("-crole={role}"));
         let runtime_pool = create_pool(role_url.as_str(), 1).unwrap();
         let runtime_repository = AccessRequestRepository::new(runtime_pool.clone());
         assert!(runtime_repository.approved_delivery_with_required_audit_matches(

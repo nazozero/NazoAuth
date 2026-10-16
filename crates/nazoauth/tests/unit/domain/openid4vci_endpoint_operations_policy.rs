@@ -186,11 +186,19 @@ async fn live_access_reuses_matching_projection_and_still_backfills_legacy_bindi
         ..request_context()
     };
     let queries = Arc::new(AtomicUsize::new(0));
+    let upserts = Arc::new(AtomicUsize::new(0));
     let observed = queries.clone();
+    let observed_upserts = upserts.clone();
     let mut connection = nazo_postgres::get_conn(&store_pool).await.unwrap();
     connection.set_instrumentation(move |event: InstrumentationEvent<'_>| {
-        if matches!(event, InstrumentationEvent::FinishQuery { .. }) {
+        if let InstrumentationEvent::FinishQuery { query, .. } = event {
             observed.fetch_add(1, Ordering::Relaxed);
+            if query
+                .to_string()
+                .contains("INSERT INTO openid4vci_access_grants")
+            {
+                observed_upserts.fetch_add(1, Ordering::Relaxed);
+            }
         }
     });
     drop(connection);
@@ -198,9 +206,10 @@ async fn live_access_reuses_matching_projection_and_still_backfills_legacy_bindi
     fixture.issuer.access(&context).await.unwrap();
     assert_eq!(
         queries.swap(0, Ordering::Relaxed),
-        1,
-        "an exact live projection requires one read and no upsert or confirmation query"
+        2,
+        "one live projection read and one issuance-response replay lookup"
     );
+    assert_eq!(upserts.swap(0, Ordering::Relaxed), 0);
 
     let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
     sql_query("UPDATE openid4vci_access_grants SET mtls_x5t_s256 = NULL WHERE subject_id = $1")
@@ -212,15 +221,17 @@ async fn live_access_reuses_matching_projection_and_still_backfills_legacy_bindi
     fixture.issuer.access(&context).await.unwrap();
     assert_eq!(
         queries.swap(0, Ordering::Relaxed),
-        2,
-        "a legacy missing mTLS projection still requires the guarded write"
+        3,
+        "a legacy missing mTLS projection also requires the guarded write"
     );
+    assert_eq!(upserts.swap(0, Ordering::Relaxed), 1);
     fixture.issuer.access(&context).await.unwrap();
     assert_eq!(
         queries.swap(0, Ordering::Relaxed),
-        1,
-        "the repaired projection is reused on the next request"
+        2,
+        "the repaired projection is reused; the response replay lookup remains"
     );
+    assert_eq!(upserts.swap(0, Ordering::Relaxed), 0);
 
     let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
     sql_query(
