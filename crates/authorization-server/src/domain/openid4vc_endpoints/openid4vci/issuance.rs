@@ -214,7 +214,7 @@ impl ServerCredentialIssuerOperations {
                     let body = finish_response(
                         CredentialResponse {
                             credentials: None,
-                            transaction_id: Some(request.transaction_id.clone()),
+                            transaction_id: Some(request.transaction_id),
                             notification_id: None,
                             interval: Some(interval),
                         },
@@ -248,37 +248,35 @@ impl ServerCredentialIssuerOperations {
                             "Deferred credential configuration is unavailable.",
                         )
                     })?;
-                let mut credentials = Vec::new();
+                let mut credentials = Vec::with_capacity(deferred.holder_bindings.len());
+                let mut input = nazo_digital_credentials::CredentialSignInput {
+                    payload: nazo_digital_credentials::CredentialPayload {
+                        issuer: self.issuer.clone(),
+                        format: deferred.format,
+                        configuration_id: deferred.configuration_id,
+                        credential_type: configuration
+                            .vct
+                            .clone()
+                            .or_else(|| configuration.doctype.clone())
+                            .ok_or_else(|| {
+                                vci_error(
+                                    503,
+                                    "server_error",
+                                    "Deferred credential type is unavailable.",
+                                )
+                            })?,
+                        subject_claims: payload.dataset,
+                        holder_binding: None,
+                    },
+                    issued_at: payload.issued_at,
+                    expires_at: payload.expires_at,
+                    status: payload.status,
+                };
                 for holder_binding in deferred.holder_bindings {
-                    let credential = self
-                        .crypto
-                        .sign(&nazo_digital_credentials::CredentialSignInput {
-                            payload: nazo_digital_credentials::CredentialPayload {
-                                issuer: self.issuer.clone(),
-                                format: deferred.format,
-                                configuration_id: deferred.configuration_id.clone(),
-                                credential_type: configuration
-                                    .vct
-                                    .clone()
-                                    .or_else(|| configuration.doctype.clone())
-                                    .ok_or_else(|| {
-                                        vci_error(
-                                            503,
-                                            "server_error",
-                                            "Deferred credential type is unavailable.",
-                                        )
-                                    })?,
-                                subject_claims: payload.dataset.clone(),
-                                holder_binding: serde_json::from_value(holder_binding).ok(),
-                            },
-                            issued_at: payload.issued_at,
-                            expires_at: payload.expires_at,
-                            status: payload.status.clone(),
-                        })
-                        .await
-                        .map_err(|_| {
-                            vci_error(503, "server_error", "Deferred credential signing failed.")
-                        })?;
+                    input.payload.holder_binding = serde_json::from_value(holder_binding).ok();
+                    let credential = self.crypto.sign(&input).await.map_err(|_| {
+                        vci_error(503, "server_error", "Deferred credential signing failed.")
+                    })?;
                     credentials.push(nazo_openid4vci::IssuedCredential {
                         credential: Value::String(credential),
                     });
@@ -304,13 +302,13 @@ impl ServerCredentialIssuerOperations {
                 let mut response_record = stored_response(
                     issuance_id,
                     access.token_id,
-                    request_digest.clone(),
+                    request_digest,
                     &body,
                     CredentialResponseStatus::Issued,
                     dpop_nonce.clone(),
                     access.continuation_expires_at(payload.expires_at),
                 )?;
-                response_record.selection = deferred.selection.clone();
+                response_record.selection = deferred.selection;
                 let committed = self
                     .store
                     .finalize_deferred_with_notification_and_response(

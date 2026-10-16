@@ -424,18 +424,16 @@ where
                 .ok_or(CredentialIssuanceError::Credential(
                     CredentialError::InvalidProof,
                 ))?;
-            if proofs.count() == 0 || proofs.count() > self.max_batch_size || proofs.0.len() != 1 {
+            let Some((proof_type, values)) = proofs.0.first_key_value() else {
+                return Err(CredentialIssuanceError::Credential(
+                    CredentialError::InvalidProof,
+                ));
+            };
+            if proofs.0.len() != 1 || values.is_empty() || values.len() > self.max_batch_size {
                 return Err(CredentialIssuanceError::Credential(
                     CredentialError::InvalidProof,
                 ));
             }
-            let proof_type = proofs
-                .0
-                .first_key_value()
-                .map(|(proof_type, _)| proof_type)
-                .ok_or(CredentialIssuanceError::Credential(
-                    CredentialError::InvalidProof,
-                ))?;
             let proof_metadata = issuance
                 .configuration
                 .proof_types_supported
@@ -492,14 +490,13 @@ where
                 .map(|proof| proof.holder_binding)
                 .collect()
         };
-        let claim_for_rollback = nonce_claim.clone();
         let result = self
             .prepare_after_nonce_claim(
                 access,
                 issuance,
                 selection,
                 holder_bindings,
-                nonce_claim,
+                &mut nonce_claim,
                 now,
             )
             .await;
@@ -511,7 +508,7 @@ where
                 request_digest: identity.request_digest,
             }),
             Err(error) => {
-                if let Some(claim) = claim_for_rollback {
+                if let Some(claim) = nonce_claim {
                     let _ = self
                         .store
                         .release_nonce(&claim.nonce_hash, &claim.claim_id, now)
@@ -666,7 +663,7 @@ where
         issuance: &CredentialIssuance,
         selection: crate::CredentialSelection,
         holder_bindings: Vec<Value>,
-        nonce_claim: Option<IssuanceClaim>,
+        nonce_claim: &mut Option<IssuanceClaim>,
         now: DateTime<Utc>,
     ) -> Result<(CredentialResponse, IssuanceCommit), CredentialIssuanceError> {
         let dataset = self
@@ -717,7 +714,7 @@ where
                     },
                     IssuanceCommit::Immediate {
                         notification_handle,
-                        nonce_claim,
+                        nonce_claim: nonce_claim.take(),
                     },
                 ))
             }
@@ -750,7 +747,7 @@ where
                     },
                     IssuanceCommit::Deferred {
                         credential: Box::new(deferred),
-                        nonce_claim,
+                        nonce_claim: nonce_claim.take(),
                     },
                 ))
             }
