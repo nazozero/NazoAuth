@@ -104,7 +104,7 @@ pub fn admit_jwt_bearer_grant<'a>(
     } else {
         requested_audiences.to_vec()
     };
-    if audiences.is_empty() || !is_subset(&audiences, policy.allowed_audiences) {
+    if !is_subset(&audiences, policy.allowed_audiences) {
         return Err(JwtBearerGrantError::InvalidTarget);
     }
     Ok(JwtBearerGrantAdmission {
@@ -168,10 +168,7 @@ pub fn validate_jwt_bearer_assertion_claims(
         subject: claims.sub,
         jti: claims.jti,
         expires_at,
-        replay_ttl_seconds: claims
-            .exp
-            .saturating_sub(policy.now)
-            .clamp(1, JWT_BEARER_ASSERTION_MAX_TTL_SECONDS) as u64,
+        replay_ttl_seconds: (claims.exp - policy.now) as u64,
     })
 }
 

@@ -20,19 +20,18 @@ pub const NATIVE_SSO_DEVICE_SECRET_TYPE: &str = "urn:openid:params:token-type:de
 pub const NATIVE_SSO_ID_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:id_token";
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct NativeSsoDeviceSecretState {
+pub struct NativeSsoDeviceSecretState<S = String> {
     pub tenant_id: Uuid,
     pub user_id: Uuid,
-    pub subject: String,
-    pub sid: String,
-    pub source_client_id: String,
+    pub subject: S,
+    pub sid: S,
+    pub source_client_id: S,
     pub refresh_token_family_id: Uuid,
     pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Deserialize)]
 pub struct NativeSsoIdTokenClaims {
-    pub iss: String,
     pub sub: String,
     pub aud: Value,
     pub ds_hash: String,
@@ -85,13 +84,12 @@ pub async fn decode_native_sso_id_token_with_service(
     issuer: &str,
     token: &str,
 ) -> Result<Option<NativeSsoIdTokenClaims>, nazo_auth::TokenPortError> {
-    let claims = token_service
+    token_service
         .decode_id_token(issuer, token)
         .await?
         .map(serde_json::from_value)
         .transpose()
-        .map_err(|_| nazo_auth::TokenPortError::CorruptData)?;
-    Ok(claims.filter(|claims: &NativeSsoIdTokenClaims| claims.iss == issuer))
+        .map_err(|_| nazo_auth::TokenPortError::CorruptData)
 }
 
 pub async fn load_native_sso_device_secret_state(
@@ -196,9 +194,9 @@ pub async fn persist_native_sso_device_secret(
     let payload = NativeSsoDeviceSecretState {
         tenant_id: client.tenant_id,
         user_id,
-        subject: issue.subject.clone(),
-        sid: binding.sid.clone(),
-        source_client_id: client.client_id.clone(),
+        subject: issue.subject.as_str(),
+        sid: binding.sid.as_str(),
+        source_client_id: client.client_id.as_str(),
         refresh_token_family_id,
         expires_at,
     };
