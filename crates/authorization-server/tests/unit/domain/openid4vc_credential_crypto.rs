@@ -1417,7 +1417,7 @@ fn mdoc_assessment_and_holder_helpers_fail_closed() {
 
     let key = CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, vec![1; 32], vec![2; 32])
         .build();
-    let holder = mdoc_holder_key(Some(&key)).expect("holder key");
+    let holder = mdoc_holder_key(Some(key.clone())).expect("holder key");
     assert_eq!(
         URL_SAFE_NO_PAD
             .decode(holder["cose_key"].as_str().expect("encoded key"))
@@ -1911,7 +1911,7 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
         }
         .to_cbor_bytes()
         .unwrap();
-        let presentation = PresentedCredential {
+        let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
             expected_nonce: "another-transaction".into(),
@@ -1922,6 +1922,23 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
         assert_eq!(
             crypto.verify_mdoc(&presentation),
             Err(CredentialTrustError::InvalidSessionBinding)
+        );
+        let mut response = mdoc_rs::parser::parse(
+            &URL_SAFE_NO_PAD
+                .decode(presentation.encoded.as_bytes())
+                .unwrap(),
+        )
+        .unwrap();
+        let mut malformed = response.documents[0].clone();
+        malformed.issuer_signed.issuer_auth.cose_sign1.payload = Some(vec![0xff]);
+        response.documents.push(malformed);
+        presentation.encoded = URL_SAFE_NO_PAD
+            .encode(mdoc_rs::encoder::encode_device_response(&response).unwrap())
+            .into();
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::InvalidSessionBinding),
+            "a later malformed MSO must not hide the first document's session mismatch",
         );
     })
 }

@@ -89,36 +89,38 @@ pub(super) fn json_to_cbor(value: &Value) -> Result<ciborium::Value, CredentialT
     }
 }
 
-pub(super) fn cbor_to_json(value: &ciborium::Value) -> Result<Value, CredentialTrustError> {
+pub(super) fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTrustError> {
     match value {
         ciborium::Value::Null => Ok(Value::Null),
-        ciborium::Value::Bool(value) => Ok(Value::Bool(*value)),
+        ciborium::Value::Bool(value) => Ok(Value::Bool(value)),
         ciborium::Value::Integer(value) => {
-            let value: i128 = (*value).into();
+            let value: i128 = value.into();
             i64::try_from(value)
                 .map(|value| json!(value))
                 .or_else(|_| u64::try_from(value).map(|value| json!(value)))
                 .map_err(|_| CredentialTrustError::InvalidEncoding)
         }
-        ciborium::Value::Float(value) => serde_json::Number::from_f64(*value)
+        ciborium::Value::Float(value) => serde_json::Number::from_f64(value)
             .map(Value::Number)
             .ok_or(CredentialTrustError::InvalidEncoding),
         ciborium::Value::Bytes(value) => Ok(Value::String(URL_SAFE_NO_PAD.encode(value))),
-        ciborium::Value::Text(value) => Ok(Value::String(value.clone())),
+        ciborium::Value::Text(value) => Ok(Value::String(value)),
         ciborium::Value::Array(values) => values
-            .iter()
+            .into_iter()
             .map(cbor_to_json)
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
         ciborium::Value::Map(values) => values
-            .iter()
+            .into_iter()
             .map(|(key, value)| {
-                let key = key.as_text().ok_or(CredentialTrustError::InvalidEncoding)?;
-                Ok((key.to_owned(), cbor_to_json(value)?))
+                let ciborium::Value::Text(key) = key else {
+                    return Err(CredentialTrustError::InvalidEncoding);
+                };
+                Ok((key, cbor_to_json(value)?))
             })
             .collect::<Result<Map<_, _>, _>>()
             .map(Value::Object),
-        ciborium::Value::Tag(_, value) => cbor_to_json(value),
+        ciborium::Value::Tag(_, value) => cbor_to_json(*value),
         _ => Err(CredentialTrustError::InvalidEncoding),
     }
 }

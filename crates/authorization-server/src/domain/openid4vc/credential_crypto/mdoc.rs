@@ -3,14 +3,14 @@ use chrono::{DateTime, Utc};
 use coset::{AsCborValue, CborSerializable};
 use mdoc_rs::{
     builder::DocumentBuilder,
-    cbor::data_item::{encode_cbor_canonical, wrap_tag24},
-    model::types::ValidityInfo,
+    cbor::data_item::{TAG_ENCODED_CBOR, encode_cbor_canonical},
+    model::types::{Mso, ValidityInfo},
 };
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
 };
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::super::crypto_helpers::{cbor_to_json, json_to_cbor, jwk_to_cose_key};
@@ -18,6 +18,11 @@ use super::Openid4vcCredentialCrypto;
 
 const MDL_DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const MDL_NAMESPACE: &str = "org.iso.18013.5.1";
+
+struct MdocVerificationMaterial {
+    mso: Result<Mso, CredentialTrustError>,
+    certificates: Result<Vec<Vec<u8>>, CredentialTrustError>,
+}
 
 pub(super) async fn sign(
     crypto: &Openid4vcCredentialCrypto,
@@ -82,10 +87,20 @@ pub(super) async fn sign(
         .sign(builder, signing_material.lease, signing_material.leaf_der)
         .await?;
     let mut namespace_entries = Vec::new();
-    for (namespace, items) in &document.issuer_signed.name_spaces {
+    for (namespace, items) in document.issuer_signed.name_spaces {
         namespace_entries.push((
-            ciborium::Value::Text(namespace.clone()),
-            ciborium::Value::Array(items.iter().map(|item| wrap_tag24(&item.encoded)).collect()),
+            ciborium::Value::Text(namespace),
+            ciborium::Value::Array(
+                items
+                    .into_iter()
+                    .map(|item| {
+                        ciborium::Value::Tag(
+                            TAG_ENCODED_CBOR,
+                            Box::new(ciborium::Value::Bytes(item.encoded)),
+                        )
+                    })
+                    .collect(),
+            ),
         ));
     }
     let cose = document
@@ -169,7 +184,8 @@ pub(super) fn verify(
         .as_ref()
         .ok_or(CredentialTrustError::InvalidHolderBinding)?;
     let trust_anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
-    let verifier = mdoc_rs::Verifier::new(trust_anchors.clone());
+    // This build has no mdoc-rs TSP backend; the authenticated chain is checked below.
+    let verifier = mdoc_rs::Verifier::new(Vec::new());
     let verified = verifier
         .verify(
             &bytes,
@@ -184,10 +200,28 @@ pub(super) fn verify(
             tracing::warn!(%error, "OpenID4VP mdoc verifier could not process a credential");
             CredentialTrustError::InvalidEncoding
         })?;
+    // Keep parse results until their validation stage so an issuer encoding error cannot
+    // hide an earlier holder/session mismatch. Each document is decoded only once here.
+    let material: Vec<_> = verified
+        .mdoc
+        .documents
+        .iter()
+        .map(|document| {
+            let issuer_auth = &document.issuer_signed.issuer_auth;
+            MdocVerificationMaterial {
+                mso: issuer_auth
+                    .mso()
+                    .map_err(|_| CredentialTrustError::InvalidEncoding),
+                certificates: issuer_auth
+                    .certificate_chain_der()
+                    .map_err(|_| CredentialTrustError::InvalidEncoding),
+            }
+        })
+        .collect();
     let standard_device_authentication_valid =
-        verify_standard_mdoc_device_signatures(&verified, session_transcript)?;
+        verify_standard_mdoc_device_signatures(&verified, &material, session_transcript)?;
     let issuer_chain_valid = verify_mdoc_issuer_certificate_chains(
-        &verified,
+        &material,
         &trust_anchors,
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
@@ -221,46 +255,27 @@ pub(super) fn verify(
         );
         return Err(CredentialTrustError::InvalidSignature);
     }
-    let document = &verified.mdoc.documents[0];
-    let mso = document
-        .issuer_signed
-        .issuer_auth
-        .mso()
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    let document = verified.mdoc.documents.into_iter().next().unwrap();
+    let material = material.into_iter().next().unwrap();
+    let mso = material.mso.unwrap();
+    let certificates = material.certificates.unwrap();
     let holder_key = mdoc_holder_key(
         mso.device_key_info
-            .as_ref()
-            .map(|device_key_info| &device_key_info.device_key),
+            .map(|device_key_info| device_key_info.device_key),
     )?;
     let mut namespaces = Map::new();
-    for (namespace, items) in &document.issuer_signed.name_spaces {
+    for (namespace, items) in document.issuer_signed.name_spaces {
         let mut claims = Map::new();
         for item in items {
-            claims.insert(
-                item.element_identifier.clone(),
-                cbor_to_json(&item.element_value)?,
-            );
+            claims.insert(item.element_identifier, cbor_to_json(item.element_value)?);
         }
-        namespaces.insert(namespace.clone(), Value::Object(claims));
+        namespaces.insert(namespace, Value::Object(claims));
     }
     Ok(VerifiedCredential {
         format: CredentialFormat::MsoMdoc,
-        issuer: document
-            .issuer_signed
-            .issuer_auth
-            .certificate_der()
-            .map(|certificate| URL_SAFE_NO_PAD.encode(Sha256::digest(certificate)))
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?,
+        issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(&certificates[0])),
         issuer_chain_authority_key_identifiers:
-            super::certificates::issuer_authority_key_identifiers(
-                &document
-                    .issuer_signed
-                    .issuer_auth
-                    .certificate_chain_der()
-                    .map_err(|_| CredentialTrustError::InvalidEncoding)?
-                    .into_iter()
-                    .collect::<Vec<_>>(),
-            )?,
+            super::certificates::issuer_authority_key_identifiers(&certificates)?,
         credential_type: mso.doc_type,
         claims: Value::Object(namespaces),
         holder_key: Some(holder_key),
@@ -268,7 +283,7 @@ pub(super) fn verify(
         expires_at: Some(mso.validity_info.valid_until),
         status: mso
             .status
-            .map(|status| cbor_to_json(&status.raw))
+            .map(|status| cbor_to_json(status.raw))
             .transpose()?,
     })
 }
@@ -283,19 +298,22 @@ pub(crate) fn standard_device_authentication_bytes(
         doc_type,
         device_name_spaces,
     )?;
-    encode_cbor_canonical(&wrap_tag24(&device_authentication))
+    encode_cbor_canonical(&ciborium::Value::Tag(
+        TAG_ENCODED_CBOR,
+        Box::new(ciborium::Value::Bytes(device_authentication)),
+    ))
 }
 
 fn verify_standard_mdoc_device_signatures(
     verified: &mdoc_rs::verifier::VerifiedMDoc,
+    material: &[MdocVerificationMaterial],
     session_transcript: &[u8],
 ) -> Result<bool, CredentialTrustError> {
     if verified.mdoc.documents.is_empty() {
         return Ok(false);
     }
 
-    let mut verified_signatures = 0usize;
-    for document in &verified.mdoc.documents {
+    for (document, material) in verified.mdoc.documents.iter().zip(material) {
         let Some(device_signed) = document.device_signed.as_ref() else {
             return Ok(false);
         };
@@ -305,11 +323,7 @@ fn verify_standard_mdoc_device_signatures(
         ) {
             return Ok(false);
         }
-        let mso = document
-            .issuer_signed
-            .issuer_auth
-            .mso()
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        let mso = material.mso.as_ref().map_err(|error| *error)?;
         let device_key = mso
             .device_key_info
             .as_ref()
@@ -338,14 +352,13 @@ fn verify_standard_mdoc_device_signatures(
             // safely classified as an individually discardable nonce match.
             return Err(CredentialTrustError::InvalidSessionBinding);
         }
-        verified_signatures += 1;
     }
 
-    Ok(verified_signatures == verified.mdoc.documents.len())
+    Ok(true)
 }
 
 fn verify_mdoc_issuer_certificate_chains(
-    verified: &mdoc_rs::verifier::VerifiedMDoc,
+    material: &[MdocVerificationMaterial],
     trust_anchors: &[Vec<u8>],
     scoped_trust_anchors: &[Vec<u8>],
     revocation_policy: &nazo_digital_credentials::CertificateRevocationPolicy,
@@ -354,35 +367,28 @@ fn verify_mdoc_issuer_certificate_chains(
     // Avoid an unrelated RSA implementation in this ES256 mdoc path and perform
     // path, CA, signature, and signing-time validation with the AWS-LC-backed
     // X.509 verifier.
-    if verified.mdoc.documents.is_empty() {
+    if material.is_empty() {
         return Ok(false);
     }
-    for document in &verified.mdoc.documents {
-        let certificates = document
-            .issuer_signed
-            .issuer_auth
-            .certificate_chain_der()
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?
-            .into_iter()
-            .collect::<Vec<_>>();
+    for material in material {
+        let certificates = material.certificates.as_ref().map_err(|error| *error)?;
         if certificates.is_empty() {
             return Err(CredentialTrustError::UntrustedIssuer);
         }
-        let signed_at = document
-            .issuer_signed
-            .issuer_auth
-            .mso()
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?
+        let signed_at = material
+            .mso
+            .as_ref()
+            .map_err(|error| *error)?
             .validity_info
             .signed
             .timestamp();
         let direct_scoped_trust_anchor =
-            verify_direct_scoped_trust_anchor(&certificates, scoped_trust_anchors, signed_at)?;
+            verify_direct_scoped_trust_anchor(certificates, scoped_trust_anchors, signed_at)?;
         let scoped_anchor_authenticated = if direct_scoped_trust_anchor {
             true
         } else {
             let Some(anchor) = verify_certificate_chain_with_scoped_at(
-                &certificates,
+                certificates,
                 trust_anchors,
                 scoped_trust_anchors,
                 signed_at,
@@ -396,7 +402,7 @@ fn verify_mdoc_issuer_certificate_chains(
         };
         revocation_policy.check_chain_with_scoped_trust(
             None,
-            &certificates,
+            certificates,
             Utc::now(),
             scoped_anchor_authenticated,
         )?;
@@ -528,12 +534,14 @@ pub(crate) fn mdoc_failed_assessments_accepted<'a>(
 }
 
 pub(crate) fn mdoc_holder_key(
-    device_key: Option<&coset::CoseKey>,
+    device_key: Option<coset::CoseKey>,
 ) -> Result<Value, CredentialTrustError> {
     let encoded = device_key
         .ok_or(CredentialTrustError::InvalidHolderBinding)?
-        .clone()
         .to_vec()
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    Ok(json!({"cose_key": URL_SAFE_NO_PAD.encode(encoded)}))
+    Ok(Value::Object(Map::from_iter([(
+        "cose_key".to_owned(),
+        Value::String(URL_SAFE_NO_PAD.encode(encoded)),
+    )])))
 }
