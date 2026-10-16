@@ -398,8 +398,8 @@ impl UserinfoHandles {
         typ: &str,
         signing_alg: nazo_crypto::jwt::Algorithm,
     ) -> nazo_crypto::Result<String> {
-        let mut header = nazo_crypto::jwt::Header::new(signing_alg);
-        header.typ = Some(typ.to_owned());
-        self.keys.encode_jwt(purpose, &header, claims).await
+        self.keys
+            .encode_response_jwt(purpose, Some(signing_alg), typ, claims)
+            .await
     }
 }

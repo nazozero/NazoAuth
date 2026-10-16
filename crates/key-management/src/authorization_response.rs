@@ -26,16 +26,19 @@ impl AuthorizationResponseSignerPort for KeyManager {
                 Utc::now().timestamp(),
             );
             let algorithm = match input.signing_algorithm {
-                Some(name) => {
-                    signing_algorithm_from_name(name).ok_or(AuthorizationPortError::Unexpected)?
-                }
-                None => self.snapshot().active_alg,
+                Some(name) => Some(
+                    signing_algorithm_from_name(name).ok_or(AuthorizationPortError::Unexpected)?,
+                ),
+                None => None,
             };
-            let mut header = nazo_crypto::jwt::Header::new(algorithm);
-            header.typ = Some("oauth-authz-resp+jwt".to_owned());
-            self.encode_jwt(SigningPurpose::Jarm, &header, &Value::Object(claims))
-                .await
-                .map_err(|_| AuthorizationPortError::Unavailable)
+            self.encode_response_jwt(
+                SigningPurpose::Jarm,
+                algorithm,
+                "oauth-authz-resp+jwt",
+                &Value::Object(claims),
+            )
+            .await
+            .map_err(|_| AuthorizationPortError::Unavailable)
         })
     }
 }

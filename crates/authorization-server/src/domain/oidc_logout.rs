@@ -122,14 +122,11 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
                 },
                 issued_at.timestamp(),
             );
-            let snapshot = self.keys.snapshot();
-            let mut header = nazo_crypto::jwt::Header::new(snapshot.active_alg);
-            header.typ = Some("logout+jwt".to_owned());
-            header.kid = Some(snapshot.active_kid.clone());
             self.keys
-                .encode_jwt(
+                .encode_response_jwt(
                     nazo_auth::SigningPurpose::LogoutToken,
-                    &header,
+                    None,
+                    "logout+jwt",
                     &serde_json::Value::Object(claims),
                 )
                 .await

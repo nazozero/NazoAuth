@@ -311,6 +311,72 @@ async fn jwt_encoding_rejects_grace_and_retired_keys() {
 }
 
 #[tokio::test]
+async fn response_jwt_selects_default_algorithm_and_key_from_one_generation() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let claims =
+        serde_json::json!({"sub": "rotation-test", "exp": chrono::Utc::now().timestamp() + 60});
+    let pending =
+        manager.encode_response_jwt(SigningPurpose::LogoutToken, None, "logout+jwt", &claims);
+    let replacement = KeyManager::for_test(jsonwebtoken::Algorithm::RS256);
+    manager
+        .inner
+        .generation
+        .store(replacement.inner.generation.load_full());
+
+    let token = pending.await.unwrap();
+    let header = jsonwebtoken::decode_header(&token).unwrap();
+    let snapshot = replacement.snapshot();
+    assert_eq!(header.alg, snapshot.active_alg);
+    assert_eq!(header.kid.as_deref(), Some(snapshot.active_kid.as_str()));
+    assert_eq!(header.typ.as_deref(), Some("logout+jwt"));
+    let jwk: jsonwebtoken::jwk::Jwk = serde_json::from_value(
+        snapshot
+            .verification_key(&snapshot.active_kid)
+            .unwrap()
+            .public_jwk
+            .clone(),
+    )
+    .unwrap();
+    let decoded = jsonwebtoken::decode::<serde_json::Value>(
+        &token,
+        &jsonwebtoken::DecodingKey::from_jwk(&jwk).unwrap(),
+        &jsonwebtoken::Validation::new(header.alg),
+    )
+    .unwrap();
+    assert_eq!(decoded.claims, claims);
+}
+
+#[tokio::test]
+async fn response_jwt_preserves_explicit_algorithm_and_rejects_unavailable_algorithm() {
+    let manager = KeyManager::for_test_with_auxiliary(jsonwebtoken::Algorithm::ES256);
+    let claims = serde_json::json!({"sub": "explicit-algorithm"});
+    let token = manager
+        .encode_response_jwt(
+            SigningPurpose::Jarm,
+            Some(jsonwebtoken::Algorithm::ES256),
+            "oauth-authz-resp+jwt",
+            &claims,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        jsonwebtoken::decode_header(&token).unwrap().alg,
+        jsonwebtoken::Algorithm::ES256
+    );
+    assert!(
+        manager
+            .encode_response_jwt(
+                SigningPurpose::Jarm,
+                Some(jsonwebtoken::Algorithm::HS256),
+                "oauth-authz-resp+jwt",
+                &claims,
+            )
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn jwt_encoding_preserves_compact_wire_bytes() {
     let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
     let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);

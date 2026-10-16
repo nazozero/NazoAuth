@@ -1095,6 +1095,28 @@ impl KeyManager {
         Arc::clone(&self.inner.generation.load().snapshot)
     }
 
+    pub async fn encode_response_jwt<T: Serialize>(
+        &self,
+        purpose: SigningPurpose,
+        algorithm: Option<nazo_crypto::jwt::Algorithm>,
+        typ: &str,
+        claims: &T,
+    ) -> nazo_crypto::Result<String> {
+        let generation = self.inner.generation.load_full();
+        let mut header =
+            nazo_crypto::jwt::Header::new(algorithm.unwrap_or(generation.loaded.active_alg));
+        header.typ = Some(typ.to_owned());
+        encode_jwt_for_generation(
+            &generation,
+            &self.inner.health,
+            None,
+            purpose,
+            header,
+            claims,
+        )
+        .await
+    }
+
     pub async fn encode_jwt<T: Serialize>(
         &self,
         purpose: SigningPurpose,

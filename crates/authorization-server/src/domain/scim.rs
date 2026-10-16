@@ -247,11 +247,13 @@ impl EventSignerPort for ServerScimEventSigner {
         claims: &'a SecurityEventClaims,
     ) -> EventFuture<'a, Result<String, EventSigningError>> {
         Box::pin(async move {
-            let snapshot = self.keyset.snapshot();
-            let mut header = nazo_crypto::jwt::Header::new(snapshot.active_alg);
-            header.typ = Some(nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE.to_owned());
             self.keyset
-                .encode_jwt(nazo_auth::SigningPurpose::SecurityEvent, &header, claims)
+                .encode_response_jwt(
+                    nazo_auth::SigningPurpose::SecurityEvent,
+                    None,
+                    nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE,
+                    claims,
+                )
                 .await
                 .map_err(|_| EventSigningError::Unavailable)
         })
