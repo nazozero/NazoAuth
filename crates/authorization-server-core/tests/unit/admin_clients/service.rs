@@ -32,19 +32,23 @@ impl AdminClientRepositoryPort for CapturingRepository {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
 
-    fn insert<'a>(
+    fn insert_with_required_audit<'a>(
         &'a self,
         _client: &'a OAuthClient,
         _client_secret_hash: Option<&'a str>,
         _registration_access_token_blake3: Option<&'a str>,
+        _actor_id: Uuid,
+        _source_ip_hash: &'a str,
     ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
 
-    fn update<'a>(
+    fn update_with_required_audit<'a>(
         &'a self,
         _expected: &'a OAuthClient,
         _client: &'a OAuthClient,
+        _actor_id: Uuid,
+        _source_ip_hash: &'a str,
     ) -> AdminClientFuture<'a, OAuthClient> {
         Box::pin(async { Err(AdminClientPortError::Unexpected) })
     }
@@ -198,4 +202,74 @@ fn client_patch_keeps_subject_type_validation_in_the_core() {
     ))
     .unwrap();
     assert_eq!(retained, original);
+}
+
+impl ClientSecretDigesterPort for NoopCrypto {
+    fn client_secret_digest(&self, secret: &str, _pepper: &str, _salt: &str) -> String {
+        assert_eq!(
+            secret, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+            "rejected registration must not hash its secret"
+        );
+        "fixture-digest".to_owned()
+    }
+}
+
+#[test]
+fn registration_finishes_validation_before_generating_or_hashing_secrets() {
+    let service = AdminClientService::new(
+        CapturingRepository::default(),
+        NoopSectorIdentifierResolver,
+        NoopCrypto,
+        policy(),
+    );
+    let mut invalid = registration(Some("unsupported"));
+    invalid.client_type = "confidential".to_owned();
+    invalid.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    // NoopCrypto panics if asked to generate a secret for this rejected request.
+    assert!(matches!(
+        futures_executor::block_on(service.prepare_registration(invalid.clone())),
+        Err(AdminClientError::InvalidRequest(_))
+    ));
+    let secret =
+        SuppliedClientSecret::new("different-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap();
+    assert!(matches!(
+        futures_executor::block_on(service.prepare_registration_with_secret(invalid, secret)),
+        Err(AdminClientError::InvalidRequest(_))
+    ));
+
+    let mut valid = registration(Some("public"));
+    valid.client_type = "confidential".to_owned();
+    valid.token_endpoint_auth_method = "client_secret_basic".to_owned();
+    let secret = SuppliedClientSecret::new("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef").unwrap();
+    let prepared =
+        futures_executor::block_on(service.prepare_registration_with_secret(valid, secret))
+            .unwrap();
+    assert_eq!(
+        prepared.client_secret_hash.as_deref(),
+        Some("fixture-digest")
+    );
+    assert!(
+        prepared.issued_secret.is_none(),
+        "a supplied secret has no receipt consumer"
+    );
+}
+
+#[test]
+fn trimming_owned_metadata_preserves_unicode_and_omits_empty_values() {
+    use super::super::helpers::{trim_optional_string, trim_string_vec};
+    for (input, expected) in [
+        ("hello", Some("hello")),
+        (" \u{2003}你好\n", Some("你好")),
+        ("\u{2003} \n", None),
+        ("", None),
+    ] {
+        assert_eq!(
+            trim_optional_string(Some(input.to_owned())).as_deref(),
+            expected
+        );
+    }
+    assert_eq!(
+        trim_string_vec(vec![" a ".to_owned(), " ".to_owned(), "b".to_owned()]),
+        vec!["a", "b"]
+    );
 }

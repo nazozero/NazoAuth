@@ -59,28 +59,6 @@ where
             .ok_or(AdminClientError::NotFound)
     }
 
-    pub async fn create(
-        &self,
-        request: CreateClientRequest,
-    ) -> Result<CreatedClient, AdminClientError> {
-        let mut prepared = self.prepare_registration(request).await?.into_write();
-        let client = self
-            .repository
-            .insert(
-                &prepared.client,
-                prepared.client_secret_hash.as_deref(),
-                prepared.registration_access_token_blake3.as_deref(),
-            )
-            .await
-            .map_err(AdminClientError::Write)?;
-        validate_inserted_context(&prepared.client, &client)?;
-        let issued_secret = prepared.issued_secret.take_after_commit();
-        Ok(CreatedClient {
-            client,
-            issued_secret,
-        })
-    }
-
     /// Administrative HTTP creation uses the accepting owner that binds current
     /// actor authority and canonical Required outcome before exposing the secret.
     pub async fn create_with_required_audit(
@@ -102,7 +80,6 @@ where
             )
             .await
             .map_err(AdminClientError::Write)?;
-        validate_inserted_context(client, &inserted)?;
         Ok(CreatedClient {
             client: inserted,
             issued_secret: prepared.issued_secret.take_after_commit(),
@@ -124,18 +101,6 @@ where
             &self.crypto,
         )
         .await
-    }
-
-    pub async fn update(
-        &self,
-        client_id: &str,
-        request: PatchClientRequest,
-    ) -> Result<OAuthClient, AdminClientError> {
-        let (expected, updated) = self.prepare_update(client_id, request).await?;
-        self.repository
-            .update(&expected, &updated)
-            .await
-            .map_err(AdminClientError::Write)
     }
 
     pub async fn update_with_required_audit(
@@ -170,50 +135,6 @@ where
     }
 }
 
-pub async fn insert_prepared_client<R: AdminClientRepositoryPort>(
-    repository: &R,
-    prepared: &PreparedClientRegistration,
-) -> Result<OAuthClient, AdminClientError> {
-    let client = prepared_client(prepared);
-    let inserted = repository
-        .insert(
-            &client,
-            prepared.client_secret_hash.as_deref(),
-            prepared.registration_access_token_blake3.as_deref(),
-        )
-        .await
-        .map_err(AdminClientError::Write)?;
-    validate_inserted_context(&client, &inserted)?;
-    Ok(inserted)
-}
-
-fn prepared_client(prepared: &PreparedClientRegistration) -> OAuthClient {
-    OAuthClient {
-        id: Uuid::now_v7(),
-        tenant_id: prepared.tenant.tenant_id.as_uuid(),
-        realm_id: prepared.tenant.realm_id.as_uuid(),
-        organization_id: prepared.tenant.organization_id.as_uuid(),
-        registration: prepared.registration.clone(),
-        require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
-        is_active: true,
-    }
-}
-
-fn validate_inserted_context(
-    client: &OAuthClient,
-    inserted: &OAuthClient,
-) -> Result<(), AdminClientError> {
-    if inserted.tenant_id != client.tenant_id
-        || inserted.realm_id != client.realm_id
-        || inserted.organization_id != client.organization_id
-    {
-        return Err(AdminClientError::Consistency(
-            "客户端写入后租户边界不匹配".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 #[path = "../../tests/unit/admin_clients/service.rs"]
 mod tests;
@@ -233,33 +154,29 @@ where
         request: CreateClientRequest,
         secret: SuppliedClientSecret,
     ) -> Result<PreparedClientRegistration, AdminClientError> {
-        let requires_secret = request.client_type == "confidential"
-            && matches!(
-                request.token_endpoint_auth_method.as_str(),
-                "client_secret_basic" | "client_secret_post"
-            );
-        if !requires_secret {
+        if !request.requires_client_secret() {
             return Err(AdminClientError::InvalidRequest(
                 "supplied client secret is only valid for confidential client_secret auth"
                     .to_owned(),
             ));
         }
+        let mut prepared = super::registration::prepare_client_registration_metadata(
+            request,
+            &self.policy,
+            &self.sector_identifiers,
+            &self.crypto,
+        )
+        .await?;
         let secret = secret.as_str().map_err(|_| {
             AdminClientError::InvalidRequest("supplied client secret is not UTF-8".to_owned())
         })?;
         let salt =
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
-        let client_secret_hash =
-            self.crypto
-                .client_secret_digest(secret, &self.policy.client_secret_pepper, &salt);
-        super::registration::prepare_client_registration_with_material(
-            request,
-            &self.policy,
-            &self.sector_identifiers,
-            &self.crypto,
-            Some(secret.to_owned()),
-            Some(client_secret_hash),
-        )
-        .await
+        prepared.client_secret_hash = Some(self.crypto.client_secret_digest(
+            secret,
+            &self.policy.client_secret_pepper,
+            &salt,
+        ));
+        Ok(prepared)
     }
 }

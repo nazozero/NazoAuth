@@ -18,7 +18,7 @@ fn ciba_and_logout_callback_uri_lengths_share_one_bound() {
     let over_limit = format!("{at_limit}x");
     for result in [
         super::validate_ciba_notification_uri(&over_limit),
-        super::validate_logout_uri("frontchannel_logout_uri", &over_limit),
+        super::validate_logout_uri("frontchannel_logout_uri", &over_limit).map(|_| ()),
     ] {
         let error = result.expect_err("callback URI over the shared bound must fail");
         assert!(error.to_string().contains("2048"));

@@ -52,12 +52,15 @@ async fn client(
         .as_ref()
         .cloned()
         .expect("confidential client secret");
-    let client = nazo_auth::insert_prepared_client(
-        &nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-        &prepared,
-    )
-    .await
-    .expect("persist client");
+    let prepared = prepared.into_write();
+    let client = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(
+            &prepared.client,
+            prepared.client_secret_hash.as_deref(),
+            prepared.registration_access_token_blake3.as_deref(),
+        )
+        .await
+        .expect("persist client");
     (client, secret)
 }
 

@@ -258,10 +258,9 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         );
     }
     if !ciba_enabled
-        && (metadata
+        && metadata
             .backchannel_authentication_request_signing_alg
             .is_some()
-            || metadata.backchannel_user_code_parameter)
     {
         return invalid("CIBA 注册元数据只能用于启用 CIBA grant 的客户端");
     }
@@ -439,8 +438,8 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         validate_logout_uri("backchannel_logout_uri", uri)?;
     }
     if let Some(uri) = metadata.frontchannel_logout_uri {
-        validate_logout_uri("frontchannel_logout_uri", uri)?;
-        validate_frontchannel_logout_origin(uri, metadata.redirect_uris)?;
+        let logout = validate_logout_uri("frontchannel_logout_uri", uri)?;
+        validate_frontchannel_logout_origin(&logout, metadata.redirect_uris)?;
     }
     Ok(())
 }
@@ -599,16 +598,11 @@ fn validate_mtls_metadata<C: AdminClientCryptoPort + ?Sized>(
         }
     }
     for value in metadata.san_uri {
-        let parsed = url::Url::parse(value).map_err(|_| {
+        url::Url::parse(value).map_err(|_| {
             AdminClientError::InvalidRequest(format!(
                 "tls_client_auth_san_uri 必须是合法绝对 URI: {value}"
             ))
         })?;
-        if parsed.scheme().is_empty() {
-            return invalid(format!(
-                "tls_client_auth_san_uri 必须是合法绝对 URI: {value}"
-            ));
-        }
     }
     for value in metadata.san_ip {
         value.parse::<std::net::IpAddr>().map_err(|_| {
@@ -642,7 +636,7 @@ impl ClientMtlsMetadata<'_> {
     }
 }
 
-fn validate_logout_uri(field: &str, uri: &str) -> Result<(), AdminClientError> {
+fn validate_logout_uri(field: &str, uri: &str) -> Result<url::Url, AdminClientError> {
     validate_uri_length(field, uri)?;
     let parsed = url::Url::parse(uri)
         .map_err(|error| AdminClientError::InvalidRequest(error.to_string()))?;
@@ -653,13 +647,13 @@ fn validate_logout_uri(field: &str, uri: &str) -> Result<(), AdminClientError> {
         return invalid(format!("{field} 必须是无 userinfo 的绝对网络 URI"));
     }
     match parsed.scheme() {
-        "https" => Ok(()),
+        "https" => Ok(parsed),
         "http"
             if parsed.host_str().is_some_and(|host| {
                 matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost")
             }) =>
         {
-            Ok(())
+            Ok(parsed)
         }
         _ => invalid(format!("{field} 必须使用 https 或 loopback http")),
     }
@@ -673,11 +667,9 @@ fn validate_uri_length(field: &str, uri: &str) -> Result<(), AdminClientError> {
 }
 
 fn validate_frontchannel_logout_origin(
-    logout_uri: &str,
+    logout: &url::Url,
     redirect_uris: &[String],
 ) -> Result<(), AdminClientError> {
-    let logout = url::Url::parse(logout_uri)
-        .map_err(|error| AdminClientError::InvalidRequest(error.to_string()))?;
     let logout_origin = logout.origin();
     let matches_registered_redirect = redirect_uris.iter().any(|redirect_uri| {
         url::Url::parse(redirect_uri).is_ok_and(|redirect| {
@@ -695,12 +687,11 @@ fn validate_frontchannel_logout_origin(
 fn validate_unique_non_empty(name: &str, values: &[String]) -> Result<(), AdminClientError> {
     let mut seen = std::collections::HashSet::new();
     for value in values {
-        let trimmed = value.trim();
-        if trimmed.is_empty() || value != trimmed || trimmed.split_whitespace().count() != 1 {
+        if value.is_empty() || value.chars().any(char::is_whitespace) {
             return invalid(format!("{name} 不能为空或包含空白字符"));
         }
-        if !seen.insert(trimmed) {
-            return invalid(format!("{name} 不能重复: {trimmed}"));
+        if !seen.insert(value.as_str()) {
+            return invalid(format!("{name} 不能重复: {value}"));
         }
     }
     Ok(())

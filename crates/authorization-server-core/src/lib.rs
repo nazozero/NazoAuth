@@ -48,8 +48,7 @@ pub use admin_clients::{
     AdminClientPortError, AdminClientRepositoryPort, AdminClientService, CreateClientRequest,
     CreatedClient, PatchClientRequest, PendingClientSecret, PreparedClientRegistration,
     PreparedClientWrite, SectorIdentifierFuture, SectorIdentifierResolverPort,
-    SuppliedClientSecret, insert_prepared_client, prepare_client_patch,
-    prepare_client_registration,
+    SuppliedClientSecret, prepare_client_patch, prepare_client_registration,
 };
 pub use admin_grants::{
     AdminGrantFuture, AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation,

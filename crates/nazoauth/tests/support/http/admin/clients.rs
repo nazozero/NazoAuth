@@ -127,8 +127,15 @@ impl AdminClientCryptoPort for TestAdminClientCrypto<'_> {
 pub(crate) async fn insert_prepared_client(
     repository: &nazo_postgres::OAuthClientRepository,
     prepared: &PreparedClientRegistration,
-) -> Result<nazo_auth::OAuthClient, InsertClientError> {
-    nazo_auth::insert_prepared_client(repository, prepared).await
+) -> anyhow::Result<nazo_auth::OAuthClient> {
+    let prepared = prepared.clone().into_write();
+    Ok(repository
+        .insert(
+            &prepared.client,
+            prepared.client_secret_hash.as_deref(),
+            prepared.registration_access_token_blake3.as_deref(),
+        )
+        .await?)
 }
 
 pub(crate) async fn prepare_client_patch(

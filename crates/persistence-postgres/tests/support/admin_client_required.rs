@@ -7,10 +7,7 @@ use nazo_auth::{
     AdminClientRepositoryPort, AdminClientService, CreateClientRequest, PatchClientRequest,
     SectorIdentifierFuture, SectorIdentifierResolverPort,
 };
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::{Arc, Mutex};
 
 async fn actor(connection: &mut diesel_async::AsyncPgConnection) -> Uuid {
     let id = Uuid::now_v7();
@@ -217,21 +214,6 @@ impl AdminClientRepositoryPort for HiddenCommitAck {
     ) -> AdminClientFuture<'a, Option<OAuthClient>> {
         AdminClientRepositoryPort::by_client_id(&self.inner, tenant, id)
     }
-    fn insert<'a>(
-        &'a self,
-        client: &'a OAuthClient,
-        secret: Option<&'a str>,
-        token: Option<&'a str>,
-    ) -> AdminClientFuture<'a, OAuthClient> {
-        AdminClientRepositoryPort::insert(&self.inner, client, secret, token)
-    }
-    fn update<'a>(
-        &'a self,
-        expected: &'a OAuthClient,
-        client: &'a OAuthClient,
-    ) -> AdminClientFuture<'a, OAuthClient> {
-        AdminClientRepositoryPort::update(&self.inner, expected, client)
-    }
     fn insert_with_required_audit<'a>(
         &'a self,
         client: &'a OAuthClient,
@@ -372,61 +354,4 @@ async fn admin_client_required_hidden_committed_ack_withholds_secret_and_updated
     assert_eq!(after["audit"].as_array().unwrap().len(), 2);
     assert_eq!(*committed.lock().unwrap(), vec![id, id]);
     assert_ne!(before["fingerprint"], after["fingerprint"]);
-}
-
-struct BareOnly {
-    calls: AtomicUsize,
-}
-impl AdminClientRepositoryPort for BareOnly {
-    fn page(
-        &self,
-        _tenant: Uuid,
-        _offset: i64,
-        _limit: i64,
-    ) -> AdminClientFuture<'_, (Vec<OAuthClient>, i64)> {
-        Box::pin(async { Ok((Vec::new(), 0)) })
-    }
-    fn by_client_id<'a>(
-        &'a self,
-        _tenant: Uuid,
-        _id: &'a str,
-    ) -> AdminClientFuture<'a, Option<OAuthClient>> {
-        Box::pin(async { Ok(None) })
-    }
-    fn insert<'a>(
-        &'a self,
-        client: &'a OAuthClient,
-        _secret: Option<&'a str>,
-        _token: Option<&'a str>,
-    ) -> AdminClientFuture<'a, OAuthClient> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async move { Ok(client.clone()) })
-    }
-    fn update<'a>(
-        &'a self,
-        _expected: &'a OAuthClient,
-        client: &'a OAuthClient,
-    ) -> AdminClientFuture<'a, OAuthClient> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async move { Ok(client.clone()) })
-    }
-}
-
-#[tokio::test]
-async fn admin_client_required_ports_have_no_bare_repository_fallback() {
-    let repo = Arc::new(BareOnly {
-        calls: AtomicUsize::new(0),
-    });
-    let client = client(TenantContext::default_system());
-    assert!(matches!(
-        repo.insert_with_required_audit(&client, None, None, Uuid::now_v7(), "fixture-source")
-            .await,
-        Err(AdminClientPortError::Unavailable)
-    ));
-    assert!(matches!(
-        repo.update_with_required_audit(&client, &client, Uuid::now_v7(), "fixture-source")
-            .await,
-        Err(AdminClientPortError::Unavailable)
-    ));
-    assert_eq!(AtomicUsize::load(&repo.calls, Ordering::SeqCst), 0);
 }

@@ -337,10 +337,6 @@ fn admin_client_ports_and_errors_have_stable_operator_messages() {
     for (error, expected) in [
         (AdminClientError::NotFound, "admin client not found"),
         (
-            AdminClientError::Consistency("invariant".to_owned()),
-            "invariant",
-        ),
-        (
             AdminClientError::Repository(AdminClientPortError::Unavailable),
             "admin client repository unavailable",
         ),

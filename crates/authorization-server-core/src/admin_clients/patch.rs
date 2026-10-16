@@ -163,20 +163,20 @@ where
         client.is_active = value;
     }
 
-    let new_subject_type = request
-        .subject_type
-        .unwrap_or_else(|| client.subject_type.clone());
-    validate_subject_type(&new_subject_type)?;
-    let requested_sector_identifier_uri = match request.sector_identifier_uri {
-        Some(_) if client.sector_identifier_uri.is_some() => {
+    if let Some(subject_type) = request.subject_type {
+        client.subject_type = subject_type;
+    }
+    validate_subject_type(&client.subject_type)?;
+    let sector_uri_changed = request.sector_identifier_uri.is_some();
+    if let Some(uri) = request.sector_identifier_uri {
+        if client.sector_identifier_uri.is_some() {
             return Err(AdminClientError::InvalidRequest(
                 "已配置 pairwise 客户端的 sector_identifier_uri 不可修改".to_owned(),
             ));
         }
-        Some(uri) => Some(uri),
-        None => client.sector_identifier_uri.clone(),
-    };
-    if new_subject_type != "pairwise" {
+        client.sector_identifier_uri = Some(uri);
+    }
+    if client.subject_type != "pairwise" {
         client.sector_identifier_uri = None;
         client.sector_identifier_host = None;
     } else {
@@ -185,41 +185,33 @@ where
                 "pairwise 主题类型需要配置 PAIRWISE_SUBJECT_SECRET".to_owned(),
             ));
         }
-        let host = match &requested_sector_identifier_uri {
-            Some(uri)
+        match client.sector_identifier_uri.as_deref() {
+            Some(_)
                 if !redirect_uris_changed
-                    && client.sector_identifier_uri.as_deref() == Some(uri.as_str())
-                    && client.sector_identifier_host.is_some() =>
-            {
-                client.sector_identifier_host.clone().ok_or_else(|| {
-                    AdminClientError::Consistency(
-                        "pairwise 客户端缺少 sector_identifier_host".to_owned(),
-                    )
-                })?
-            }
+                    && !sector_uri_changed
+                    && client.sector_identifier_host.is_some() => {}
             Some(uri) => {
                 let uris = sector_identifiers.resolve(uri).await.map_err(|error| {
                     AdminClientError::InvalidRequest(format!(
                         "sector_identifier_uri 获取失败: {error}"
                     ))
                 })?;
-                sector_identifier_host_for_redirects(uri, &client.redirect_uris, &uris)?
+                client.sector_identifier_host = Some(sector_identifier_host_for_redirects(
+                    uri,
+                    &client.redirect_uris,
+                    &uris,
+                )?);
             }
-            None => client
-                .sector_identifier_host
-                .clone()
-                .or_else(|| all_same_host(&client.redirect_uris))
-                .ok_or_else(|| {
+            None if client.sector_identifier_host.is_none() => {
+                client.sector_identifier_host = Some(all_same_host(&client.redirect_uris).ok_or_else(|| {
                     AdminClientError::InvalidRequest(
-                        "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
-                            .to_owned(),
+                        "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host".to_owned(),
                     )
-                })?,
-        };
-        client.sector_identifier_uri = requested_sector_identifier_uri;
-        client.sector_identifier_host = Some(host);
+                })?);
+            }
+            None => {}
+        }
     }
-    client.subject_type = new_subject_type;
 
     validate_client_metadata(
         ClientMetadata::from_client(&client),
