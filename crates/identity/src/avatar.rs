@@ -197,7 +197,7 @@ impl AvatarDirectUploadService {
             );
         let authorization = AvatarUploadAuthorization {
             staging_object_id: upload_id.clone(),
-            upload_id: upload_id.clone(),
+            upload_id,
             tenant_id: account.tenant().tenant_id,
             user_id: account.user_id(),
             expected_avatar_url: account.profile.avatar_url.clone(),
@@ -217,7 +217,7 @@ impl AvatarDirectUploadService {
             .await
             .map_err(DirectAvatarUploadError::State)?;
         Ok(AvatarUploadStart {
-            upload_id,
+            upload_id: authorization.upload_id,
             expires_at,
             target,
         })
@@ -225,7 +225,7 @@ impl AvatarDirectUploadService {
 
     pub async fn complete_upload(
         &self,
-        account: &PublicAccount,
+        account: PublicAccount,
         upload_id: &str,
     ) -> Result<AccountOverview, DirectAvatarUploadError> {
         let lease_until = chrono::Utc::now()
@@ -327,7 +327,7 @@ impl AvatarDirectUploadService {
                     return if account.profile.avatar_url.as_deref()
                         == Some(&avatar_url(&final_object_id))
                     {
-                        self.overview(account.clone())
+                        self.overview(account)
                             .await
                             .map_err(DirectAvatarUploadError::Overview)
                     } else {
@@ -363,7 +363,7 @@ impl AvatarDirectUploadService {
                 .delete_staging(&authorization.staging_object_id)
                 .await;
             return self
-                .overview(account.clone())
+                .overview(account)
                 .await
                 .map_err(DirectAvatarUploadError::Overview);
         }
@@ -547,6 +547,7 @@ where
             .transpose()
             .map_err(|()| UploadAvatarError::InvalidCurrentReference)?;
         let version = Uuid::now_v7().to_string();
+        let avatar_url = avatar_url(&version);
         let mutation = self
             .storage
             .begin_replace(
@@ -555,12 +556,11 @@ where
                 AvatarObject {
                     bytes,
                     content_type,
-                    version: version.clone(),
+                    version,
                 },
             )
             .await
             .map_err(map_upload_storage_error)?;
-        let avatar_url = format!("{AVATAR_URL_PREFIX}{version}");
         let updated = self
             .avatars
             .compare_and_set_avatar(

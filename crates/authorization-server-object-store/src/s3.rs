@@ -177,12 +177,13 @@ impl S3AvatarObjectStore {
             .as_str()
             .parse()
             .map_err(unavailable)?;
-        let host = uri
+        let host: http::HeaderValue = uri
             .authority()
             .ok_or(AvatarStorageError::InvalidState)?
             .as_str()
-            .to_owned();
-        headers.insert(http::header::HOST, host.parse().map_err(unavailable)?);
+            .parse()
+            .map_err(unavailable)?;
+        headers.insert(http::header::HOST, host);
         let mut request = http::Request::builder()
             .method(method)
             .uri(uri)
@@ -241,19 +242,18 @@ impl S3AvatarObjectStore {
             .as_str()
             .parse()
             .map_err(unavailable)?;
-        let host = uri
+        let host: http::HeaderValue = uri
             .authority()
             .ok_or(AvatarStorageError::InvalidState)?
             .as_str()
-            .to_owned();
+            .parse()
+            .map_err(unavailable)?;
         let mut request = http::Request::builder()
             .method(http::Method::PUT)
             .uri(uri)
             .body(Vec::<u8>::new())
             .map_err(unavailable)?;
-        request
-            .headers_mut()
-            .insert(http::header::HOST, host.parse().map_err(unavailable)?);
+        request.headers_mut().insert(http::header::HOST, host);
         request.headers_mut().insert(
             http::header::CONTENT_LENGTH,
             content_length.to_string().parse().map_err(unavailable)?,

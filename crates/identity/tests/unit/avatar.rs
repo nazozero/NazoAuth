@@ -649,7 +649,7 @@ async fn direct_upload_fixes_validated_snapshot_before_database_cas() {
         .await
         .expect("authorization");
     let overview = service
-        .complete_upload(&account, &start.upload_id)
+        .complete_upload(account.clone(), &start.upload_id)
         .await
         .expect("completion");
     let (_, candidate) = state
@@ -700,7 +700,9 @@ async fn direct_upload_releases_pending_claim_after_invalid_staged_bytes() {
         .expect("authorization");
 
     assert_eq!(
-        service.complete_upload(&account, &start.upload_id).await,
+        service
+            .complete_upload(account.clone(), &start.upload_id)
+            .await,
         Err(DirectAvatarUploadError::UnsupportedContent)
     );
     assert_eq!(state.releases.load(Ordering::Relaxed), 1);
@@ -749,7 +751,7 @@ async fn direct_upload_retry_from_another_service_returns_the_selected_candidate
         .await
         .expect("authorization");
     let accepted = second
-        .complete_upload(&account, &start.upload_id)
+        .complete_upload(account.clone(), &start.upload_id)
         .await
         .expect("second instance completion");
     assert_eq!(
@@ -763,7 +765,7 @@ async fn direct_upload_retry_from_another_service_returns_the_selected_candidate
     let refreshed = account_store.lock().unwrap().clone();
 
     let retry = first
-        .complete_upload(&refreshed, &start.upload_id)
+        .complete_upload(refreshed.clone(), &start.upload_id)
         .await
         .expect("first instance retry recognizes completed candidate");
     assert_eq!(
@@ -875,7 +877,9 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
             _ => unreachable!(),
         };
         assert_eq!(
-            service.complete_upload(&account, "upload-scripted").await,
+            service
+                .complete_upload(account.clone(), "upload-scripted")
+                .await,
             Err(expected)
         );
     }
@@ -893,7 +897,9 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::Missing)
     );
     assert_eq!(releases.load(Ordering::Relaxed), 1);
@@ -909,7 +915,9 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::Expired)
     );
     assert_eq!(releases.load(Ordering::Relaxed), 1);
@@ -927,7 +935,9 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::State(RepositoryError::Unavailable))
     );
 }
@@ -952,7 +962,9 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::Storage(
             AvatarStorageError::Missing
         ))
@@ -972,7 +984,9 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::ConcurrentChange)
     );
 
@@ -1001,7 +1015,9 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::ConcurrentChange)
     );
 
@@ -1027,7 +1043,9 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::ConcurrentChange)
     );
 
@@ -1053,7 +1071,9 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::UnsupportedContent)
     );
 }
@@ -1082,7 +1102,9 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::Storage(
             AvatarStorageError::Unavailable("publish".to_owned())
         ))
@@ -1104,7 +1126,7 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
             repository_result.clone(),
         );
         let error = service
-            .complete_upload(&account, "upload-scripted")
+            .complete_upload(account.clone(), "upload-scripted")
             .await
             .expect_err("repository result must stop completion");
         assert!(matches!(
@@ -1132,7 +1154,9 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::State(RepositoryError::Unavailable))
     );
 
@@ -1147,7 +1171,9 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::Overview(
             RepositoryError::Unavailable
         ))
@@ -1173,7 +1199,9 @@ async fn direct_upload_recognizes_completed_and_already_recorded_candidates() {
         AvatarRepositoryResult::Update,
     );
     assert_eq!(
-        service.complete_upload(&account, "upload-scripted").await,
+        service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await,
         Err(DirectAvatarUploadError::ConcurrentChange)
     );
 
@@ -1193,7 +1221,7 @@ async fn direct_upload_recognizes_completed_and_already_recorded_candidates() {
     );
     assert!(
         service
-            .complete_upload(&account, "upload-scripted")
+            .complete_upload(account.clone(), "upload-scripted")
             .await
             .is_ok()
     );
@@ -1216,7 +1244,7 @@ async fn direct_upload_recognizes_completed_and_already_recorded_candidates() {
     );
     assert_eq!(
         service
-            .complete_upload(&mismatched_account, "upload-scripted")
+            .complete_upload(mismatched_account.clone(), "upload-scripted")
             .await,
         Err(DirectAvatarUploadError::ConcurrentChange)
     );
@@ -1400,7 +1428,9 @@ async fn pending_reads_once_and_keeps_validated_mime_while_candidate_failures_ne
             Ok(0),
             AvatarRepositoryResult::Update,
         );
-        let result = service.complete_upload(&account, "upload-scripted").await;
+        let result = service
+            .complete_upload(account.clone(), "upload-scripted")
+            .await;
         assert_eq!(reads.load(Ordering::Relaxed), 1);
         match recorded {
             Ok(true) => {
@@ -1437,7 +1467,7 @@ async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes
         let service = scripted_direct_service(&account, storage, state, Ok(0), outcome);
         assert!(
             service
-                .complete_upload(&account, "upload-scripted")
+                .complete_upload(account.clone(), "upload-scripted")
                 .await
                 .is_err()
         );

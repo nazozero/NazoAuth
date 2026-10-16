@@ -47,7 +47,7 @@ pub(crate) async fn avatar_upload_capability(
     avatars: Data<crate::bootstrap::AvatarProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
-    if let Err(response) = sessions.current_user_or_login_required(&req).await {
+    if let Err(response) = sessions.current_session_or_login_required(&req).await {
         return response;
     }
     let upload_mode = match avatars.get_ref() {
@@ -143,7 +143,7 @@ pub(crate) async fn complete_direct_avatar_upload(
         return avatar_storage_disabled_response();
     }
     match avatars
-        .complete_direct_upload(&user, upload_id.as_str())
+        .complete_direct_upload(user, upload_id.as_str())
         .await
     {
         Ok(overview) => json_response(auth_me_json_with_count(
