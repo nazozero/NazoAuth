@@ -1157,14 +1157,33 @@ impl nazo_identity::ports::LoginAccountRepositoryPort for UserRepository {
         )
     }
 
-    fn public_account_by_id(
+    fn login_state_by_id(
         &self,
         tenant_id: nazo_identity::TenantId,
         user_id: nazo_identity::UserId,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::PublicAccount>> {
-        Box::pin(
-            async move { UserRepository::public_account_by_id(self, tenant_id, user_id).await },
-        )
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::ports::LoginAccountState>>
+    {
+        Box::pin(async move {
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| RepositoryError::Unavailable)?;
+            users::table
+                .find(user_id.as_uuid())
+                .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+                .select((users::is_active, users::mfa_enabled))
+                .first::<(bool, bool)>(&mut connection)
+                .await
+                .optional()
+                .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+                .map(|state| {
+                    state.map(
+                        |(active, mfa_enabled)| nazo_identity::ports::LoginAccountState {
+                            active,
+                            mfa_enabled,
+                        },
+                    )
+                })
+        })
     }
 }
 

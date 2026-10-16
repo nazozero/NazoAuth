@@ -558,7 +558,8 @@ where
             if let Some(proof) = remembered_mfa.as_ref() {
                 self.remembered_mfa
                     .is_valid(
-                        &account,
+                        account.tenant().tenant_id,
+                        account.user_id(),
                         &proof.token_hash,
                         proof.user_agent_hash.as_deref(),
                         now,

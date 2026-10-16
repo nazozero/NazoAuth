@@ -106,15 +106,10 @@ pub struct AccountIdentity {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LoginIdentity {
-    pub account: AccountIdentity,
-    pub password_hash: PasswordHash,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthenticationIdentity {
-    pub principal: Principal,
-    pub login: LoginIdentity,
+    pub user_id: UserId,
+    pub active: bool,
+    pub password_hash: PasswordHash,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

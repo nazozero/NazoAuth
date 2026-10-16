@@ -1,6 +1,9 @@
 use super::MfaRepository;
 use crate::{get_conn, schema::user_mfa_remembered_devices};
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, dsl::now};
+use diesel::{
+    ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl,
+    dsl::{exists, now},
+};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{TenantId, UserId, ports::RepositoryError};
 
@@ -16,17 +19,20 @@ impl MfaRepository {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let stored_hash = user_mfa_remembered_devices::table
-            .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
-            .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()))
-            .filter(user_mfa_remembered_devices::token_hash.eq(token_hash))
-            .filter(user_mfa_remembered_devices::expires_at.gt(at))
-            .select(user_mfa_remembered_devices::user_agent_hash)
-            .first::<Option<String>>(&mut connection)
-            .await
-            .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
-        Ok(stored_hash.is_some_and(|stored_hash| stored_hash.as_deref() == user_agent_hash))
+        diesel::select(exists(
+            user_mfa_remembered_devices::table
+                .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()))
+                .filter(user_mfa_remembered_devices::token_hash.eq(token_hash))
+                .filter(user_mfa_remembered_devices::expires_at.gt(at))
+                .filter(
+                    user_mfa_remembered_devices::user_agent_hash
+                        .is_not_distinct_from(user_agent_hash),
+                ),
+        ))
+        .get_result::<bool>(&mut connection)
+        .await
+        .map_err(|error| RepositoryError::Unexpected(error.to_string()))
     }
     pub async fn remember_device(
         &self,
@@ -83,20 +89,15 @@ impl MfaRepository {
 impl nazo_identity::ports::RememberedMfaDevicePort for MfaRepository {
     fn is_valid<'a>(
         &'a self,
-        account: &'a nazo_identity::PublicAccount,
+        tenant_id: TenantId,
+        user_id: UserId,
         token_hash: &'a str,
         user_agent_hash: Option<&'a str>,
         at: chrono::DateTime<chrono::Utc>,
     ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
         Box::pin(async move {
-            self.remembered_device_valid(
-                account.tenant().tenant_id,
-                account.user_id(),
-                token_hash,
-                user_agent_hash,
-                at,
-            )
-            .await
+            self.remembered_device_valid(tenant_id, user_id, token_hash, user_agent_hash, at)
+                .await
         })
     }
 }

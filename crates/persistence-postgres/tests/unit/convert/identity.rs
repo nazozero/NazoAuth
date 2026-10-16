@@ -43,17 +43,8 @@ fn user_row() -> PublicAccountRow {
 fn authentication_row(row: PublicAccountRow) -> AuthenticationIdentityRow {
     AuthenticationIdentityRow {
         id: row.id,
-        tenant_id: row.tenant_id,
-        realm_id: row.realm_id,
-        organization_id: row.organization_id,
-        username: row.username,
-        email: row.email,
         password_hash: "hash".into(),
         is_active: row.is_active,
-        mfa_enabled: row.mfa_enabled,
-        email_verified: row.email_verified,
-        role: row.role,
-        admin_level: row.admin_level,
     }
 }
 

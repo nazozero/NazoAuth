@@ -92,6 +92,79 @@ fn mfa_repository(pool: nazo_postgres::DbPool) -> MfaRepository {
     MfaRepository::with_totp_key_ring(pool, Some(key_ring))
 }
 
+#[tokio::test]
+async fn password_login_projection_tracks_current_state_and_tenant() {
+    use nazo_identity::ports::{LoginAccountRepositoryPort, LoginAccountState};
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = UserRepository::new(pool.clone());
+    assert_eq!(
+        repository
+            .login_state_by_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        Some(LoginAccountState {
+            active: true,
+            mfa_enabled: false
+        })
+    );
+    assert!(
+        repository
+            .login_state_by_id(TenantId::new(Uuid::now_v7()).unwrap(), user_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let public = repository
+        .public_account_by_id(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let credential = repository
+        .authentication_by_email(tenant.tenant_id, &public.account.email)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(credential.user_id, user_id);
+    assert!(credential.active);
+    assert!(
+        repository
+            .authentication_by_email(
+                TenantId::new(Uuid::now_v7()).unwrap(),
+                &public.account.email
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET is_active = FALSE, mfa_enabled = TRUE WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    assert_eq!(
+        repository
+            .login_state_by_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        Some(LoginAccountState {
+            active: false,
+            mfa_enabled: true
+        })
+    );
+    cleanup(&pool, user_id).await;
+    assert!(
+        repository
+            .login_state_by_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
 async fn cleanup(pool: &nazo_postgres::DbPool, user_id: UserId) {
     if let Ok(mut connection) = get_conn(pool).await {
         let _ = sql_query(

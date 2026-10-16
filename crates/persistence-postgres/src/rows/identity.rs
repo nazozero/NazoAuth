@@ -95,17 +95,8 @@ pub(crate) struct SubjectClaimsRow {
 #[diesel(table_name = crate::schema::users)]
 pub(crate) struct AuthenticationIdentityRow {
     pub(crate) id: Uuid,
-    pub(crate) tenant_id: Uuid,
-    pub(crate) realm_id: Uuid,
-    pub(crate) organization_id: Uuid,
-    pub(crate) username: String,
-    pub(crate) email: String,
     pub(crate) password_hash: String,
     pub(crate) is_active: bool,
-    pub(crate) mfa_enabled: bool,
-    pub(crate) email_verified: bool,
-    pub(crate) role: String,
-    pub(crate) admin_level: i32,
 }
 
 impl std::fmt::Debug for AuthenticationIdentityRow {

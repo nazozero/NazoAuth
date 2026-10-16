@@ -1,8 +1,14 @@
 use chrono::{DateTime, Utc};
 
-use crate::{PasswordHash, PublicAccount, TenantId, UserId};
+use crate::{PasswordHash, TenantId, UserId};
 
 use super::common::{RepositoryFuture, SecretVerifyFuture};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LoginAccountState {
+    pub active: bool,
+    pub mfa_enabled: bool,
+}
 
 pub trait LoginAccountRepositoryPort: Send + Sync {
     fn authentication_by_email<'a>(
@@ -11,11 +17,11 @@ pub trait LoginAccountRepositoryPort: Send + Sync {
         email: &'a str,
     ) -> RepositoryFuture<'a, Option<crate::AuthenticationIdentity>>;
 
-    fn public_account_by_id(
+    fn login_state_by_id(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'_, Option<PublicAccount>>;
+    ) -> RepositoryFuture<'_, Option<LoginAccountState>>;
 }
 
 pub trait LoginThrottlePort: Send + Sync {
@@ -101,7 +107,8 @@ pub enum SecretVerifyError {
 pub trait RememberedMfaDevicePort: Send + Sync {
     fn is_valid<'a>(
         &'a self,
-        account: &'a PublicAccount,
+        tenant_id: TenantId,
+        user_id: UserId,
         token_hash: &'a str,
         user_agent_hash: Option<&'a str>,
         now: DateTime<Utc>,

@@ -4,9 +4,9 @@ use crate::rows::identity::{
     SubjectClaimsRow,
 };
 use nazo_identity::{
-    AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, OrganizationId,
-    PasswordHash, PostalAddress, Principal, PublicAccount, RealmId, SubjectClaims, TenantContext,
-    TenantId, UserId, UserProfile, UserRole,
+    AccountIdentity, AuthenticationIdentity, IdentityModelError, OrganizationId, PasswordHash,
+    PostalAddress, Principal, PublicAccount, RealmId, SubjectClaims, TenantContext, TenantId,
+    UserId, UserProfile, UserRole,
 };
 
 #[derive(Debug)]
@@ -63,26 +63,10 @@ pub(crate) fn principal_row(row: PrincipalRow) -> Result<Principal, ConversionEr
 pub(crate) fn authentication_identity(
     row: AuthenticationIdentityRow,
 ) -> Result<AuthenticationIdentity, ConversionError> {
-    let principal = principal_parts(
-        row.id,
-        row.tenant_id,
-        row.realm_id,
-        row.organization_id,
-        &row.role,
-        row.admin_level,
-        row.is_active,
-    )?;
     Ok(AuthenticationIdentity {
-        principal,
-        login: LoginIdentity {
-            account: AccountIdentity {
-                username: row.username,
-                email: row.email,
-                email_verified: row.email_verified,
-                mfa_enabled: row.mfa_enabled,
-            },
-            password_hash: PasswordHash::new(row.password_hash)?,
-        },
+        user_id: UserId::new(row.id)?,
+        active: row.is_active,
+        password_hash: PasswordHash::new(row.password_hash)?,
     })
 }
 
