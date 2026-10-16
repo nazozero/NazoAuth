@@ -337,22 +337,6 @@ impl CredentialStorePort for TransitionStore {
         })
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            Ok(Self::finalize_nonce_locked(
-                &mut self.state.lock().unwrap(),
-                nonce_hash,
-                claim_id,
-                now,
-            ))
-        })
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -501,34 +485,6 @@ impl CredentialStorePort for TransitionStore {
                     claim_id: claim_id.to_owned(),
                 },
             )))
-        })
-    }
-
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            let Some(deferred) = state
-                .deferred
-                .get_mut(&(transaction_hash.to_owned(), token_id))
-            else {
-                return Ok(false);
-            };
-            if deferred.consumed_at.is_some()
-                || deferred.credential.expires_at <= now
-                || deferred.claim_id.as_deref() != Some(claim_id)
-            {
-                return Ok(false);
-            }
-            deferred.consumed_at = Some(now);
-            deferred.claim_id = None;
-            deferred.claim_expires_at = None;
-            Ok(true)
         })
     }
 
@@ -683,6 +639,13 @@ fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
         .unwrap()
         .with_timezone(&Utc);
     let store = TransitionStore::default();
+    let response = response_fixture(Uuid::now_v7(), Uuid::now_v7(), now);
+    let handle = NotificationHandle {
+        selection: None,
+        notification_id: "nonce-completion".to_owned(),
+        token_id: response.token_id,
+        expires_at: response.expires_at,
+    };
     let hash = "nonce-hash";
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
@@ -693,8 +656,26 @@ fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
     assert!(!block_on(store.claim_nonce(hash, "claim-b", now + Duration::minutes(1))).unwrap());
     assert!(block_on(store.claim_nonce(hash, "claim-b", now + nonce_claim_ttl())).unwrap());
-    assert!(!block_on(store.finalize_nonce(hash, "claim-a", now + nonce_claim_ttl())).unwrap());
-    assert!(block_on(store.finalize_nonce(hash, "claim-b", now + nonce_claim_ttl())).unwrap());
+    assert!(
+        !block_on(store.finalize_nonce_with_notification_and_response(
+            hash,
+            "claim-a",
+            &handle,
+            &response,
+            now + nonce_claim_ttl()
+        ))
+        .unwrap()
+    );
+    assert!(
+        block_on(store.finalize_nonce_with_notification_and_response(
+            hash,
+            "claim-b",
+            &handle,
+            &response,
+            now + nonce_claim_ttl()
+        ))
+        .unwrap()
+    );
     assert!(!block_on(store.claim_nonce(hash, "claim-c", now + nonce_claim_ttl())).unwrap());
     assert!(store.nonce(hash).consumed_at.is_some());
 }
@@ -756,6 +737,14 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
     let deferred = deferred_fixture(now);
     let tx_hash = deferred.transaction_hash.clone();
     let token_id = deferred.access.token_id;
+    let mut completion_response = response_fixture(Uuid::now_v7(), token_id, now);
+    completion_response.request_digest = "deferred-completion".to_owned();
+    let handle = NotificationHandle {
+        selection: deferred.selection.clone(),
+        notification_id: "deferred-completion".to_owned(),
+        token_id,
+        expires_at: deferred.expires_at,
+    };
     let pending_response = response_fixture(Uuid::now_v7(), token_id, now);
     block_on(store.store_deferred_with_response(&deferred, &pending_response, now)).unwrap();
 
@@ -797,19 +786,23 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
         .is_some()
     );
     assert!(
-        !block_on(store.finalize_deferred(
+        !block_on(store.finalize_deferred_with_notification_and_response(
             &tx_hash,
             token_id,
             "claim-a",
+            &handle,
+            &completion_response,
             ready_at + nonce_claim_ttl(),
         ))
         .unwrap()
     );
     assert!(
-        block_on(store.finalize_deferred(
+        block_on(store.finalize_deferred_with_notification_and_response(
             &tx_hash,
             token_id,
             "claim-b",
+            &handle,
+            &completion_response,
             ready_at + nonce_claim_ttl(),
         ))
         .unwrap()

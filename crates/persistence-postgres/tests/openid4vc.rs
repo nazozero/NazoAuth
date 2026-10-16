@@ -32,6 +32,17 @@ use nazo_postgres::{
 };
 use uuid::Uuid;
 
+fn completion_notification(
+    response: &StoredCredentialResponse,
+) -> nazo_openid4vci::NotificationHandle {
+    nazo_openid4vci::NotificationHandle {
+        selection: response.selection.clone(),
+        notification_id: response.issuance_id.to_string(),
+        token_id: response.token_id,
+        expires_at: response.expires_at,
+    }
+}
+
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
@@ -722,9 +733,17 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
             .await
             .unwrap()
     );
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
     assert!(
         issuer
-            .finalize_nonce(&nonce_hash, "state-boundary", nonce_transition_at)
+            .finalize_nonce_with_notification_and_response(
+                &nonce_hash,
+                "state-boundary",
+                &completion_notification(&completion_response),
+                &completion_response,
+                nonce_transition_at,
+            )
             .await
             .unwrap()
     );
@@ -1261,23 +1280,47 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .await
             .unwrap()
     );
-    assert!(
-        !issuer
-            .finalize_nonce(&nonce_hash, "claim-a", nonce_now)
-            .await
-            .unwrap()
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
+    assert_eq!(
+        issuer
+            .finalize_nonce_with_notification_and_response(
+                &nonce_hash,
+                "claim-a",
+                &completion_notification(&completion_response),
+                &completion_response,
+                nonce_now,
+            )
+            .await,
+        Err(CredentialStoreError::Unavailable)
     );
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
     assert!(
         issuer
-            .finalize_nonce(&nonce_hash, "claim-b", nonce_now)
+            .finalize_nonce_with_notification_and_response(
+                &nonce_hash,
+                "claim-b",
+                &completion_notification(&completion_response),
+                &completion_response,
+                nonce_now,
+            )
             .await
             .unwrap()
     );
-    assert!(
-        !issuer
-            .finalize_nonce(&nonce_hash, "claim-b", nonce_now)
-            .await
-            .unwrap()
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
+    assert_eq!(
+        issuer
+            .finalize_nonce_with_notification_and_response(
+                &nonce_hash,
+                "claim-b",
+                &completion_notification(&completion_response),
+                &completion_response,
+                nonce_now,
+            )
+            .await,
+        Err(CredentialStoreError::Unavailable)
     );
 
     let reclaim_nonce_hash = blake3::hash(Uuid::now_v7().as_bytes()).to_hex().to_string();
@@ -1307,11 +1350,19 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap(),
         "a nonce lease must be reclaimable after claim_expires_at without sleeping"
     );
-    assert!(
-        !issuer
-            .finalize_nonce(&reclaim_nonce_hash, "expired-claim-a", reclaim_nonce_now)
-            .await
-            .unwrap()
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
+    assert_eq!(
+        issuer
+            .finalize_nonce_with_notification_and_response(
+                &reclaim_nonce_hash,
+                "expired-claim-a",
+                &completion_notification(&completion_response),
+                &completion_response,
+                reclaim_nonce_now,
+            )
+            .await,
+        Err(CredentialStoreError::Unavailable)
     );
     assert!(
         !issuer
@@ -1319,9 +1370,17 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .await
             .unwrap()
     );
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
     assert!(
         issuer
-            .finalize_nonce(&reclaim_nonce_hash, "expired-claim-b", reclaim_nonce_now)
+            .finalize_nonce_with_notification_and_response(
+                &reclaim_nonce_hash,
+                "expired-claim-b",
+                &completion_notification(&completion_response),
+                &completion_response,
+                reclaim_nonce_now,
+            )
             .await
             .unwrap()
     );
@@ -1488,27 +1547,43 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .await
             .unwrap()
     );
+    let completion_response = credential_response::response(
+        access.token_id,
+        deferred.selection.clone(),
+        deferred.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &deferred.transaction_hash,
                 access.token_id,
                 "deferred-b",
+                &completion_notification(&completion_response),
+                &completion_response,
                 deferred_ready_at,
             )
             .await
             .unwrap()
     );
-    assert!(
-        !issuer
-            .finalize_deferred(
+    let completion_response = credential_response::response(
+        access.token_id,
+        deferred.selection.clone(),
+        deferred.expires_at,
+        200,
+    );
+    assert_eq!(
+        issuer
+            .finalize_deferred_with_notification_and_response(
                 &deferred.transaction_hash,
                 access.token_id,
                 "deferred-b",
+                &completion_notification(&completion_response),
+                &completion_response,
                 now,
             )
-            .await
-            .unwrap()
+            .await,
+        Err(CredentialStoreError::Unavailable)
     );
     assert!(
         claim_payload(
@@ -1575,16 +1650,24 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         .is_some(),
         "a deferred lease must be reclaimable after claim_expires_at without sleeping"
     );
-    assert!(
-        !issuer
-            .finalize_deferred(
+    let completion_response = credential_response::response(
+        access.token_id,
+        reclaim_deferred.selection.clone(),
+        reclaim_deferred.expires_at,
+        200,
+    );
+    assert_eq!(
+        issuer
+            .finalize_deferred_with_notification_and_response(
                 &reclaim_deferred.transaction_hash,
                 access.token_id,
                 "expired-deferred-a",
+                &completion_notification(&completion_response),
+                &completion_response,
                 reclaim_deferred_now,
             )
-            .await
-            .unwrap()
+            .await,
+        Err(CredentialStoreError::Unavailable)
     );
     assert!(
         !issuer
@@ -1597,12 +1680,20 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .await
             .unwrap()
     );
+    let completion_response = credential_response::response(
+        access.token_id,
+        reclaim_deferred.selection.clone(),
+        reclaim_deferred.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &reclaim_deferred.transaction_hash,
                 access.token_id,
                 "expired-deferred-b",
+                &completion_notification(&completion_response),
+                &completion_response,
                 reclaim_deferred_now,
             )
             .await
@@ -1694,12 +1785,20 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
     )
     .unwrap();
     assert_eq!(atomic_claim.credential.payload, atomic_deferred.payload);
+    let completion_response = credential_response::response(
+        access.token_id,
+        atomic_deferred.selection.clone(),
+        atomic_deferred.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &atomic_deferred.transaction_hash,
                 access.token_id,
                 &atomic_claim.claim_id,
+                &completion_notification(&completion_response),
+                &completion_response,
                 atomic_deferred_ready_at,
             )
             .await
@@ -2038,9 +2137,17 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .await
             .unwrap()
     );
+    let completion_response =
+        credential_response::response(access.token_id, None, access.expires_at, 200);
     assert!(
         issuer
-            .finalize_nonce(&monotonic_nonce, "monotonic-owner", monotonic_transition_at,)
+            .finalize_nonce_with_notification_and_response(
+                &monotonic_nonce,
+                "monotonic-owner",
+                &completion_notification(&completion_response),
+                &completion_response,
+                monotonic_transition_at,
+            )
             .await
             .unwrap()
     );
@@ -2464,12 +2571,20 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     )
     .unwrap();
     assert_eq!(consumed_deferred.credential.payload, deferred.payload);
+    let completion_response = credential_response::response(
+        access.token_id,
+        deferred.selection.clone(),
+        deferred.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &deferred.transaction_hash,
                 access.token_id,
                 "boundary-owner",
+                &completion_notification(&completion_response),
+                &completion_response,
                 deferred_ready_at,
             )
             .await
@@ -2547,27 +2662,43 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         )
         .is_some()
     );
+    let completion_response = credential_response::response(
+        access.token_id,
+        lease_deferred.selection.clone(),
+        lease_deferred.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &lease_deferred.transaction_hash,
                 access.token_id,
                 "lease-owner-2",
+                &completion_notification(&completion_response),
+                &completion_response,
                 lease_deferred_ready_at - Duration::seconds(1),
             )
             .await
             .unwrap()
     );
-    assert!(
-        !issuer
-            .finalize_deferred(
+    let completion_response = credential_response::response(
+        access.token_id,
+        lease_deferred.selection.clone(),
+        lease_deferred.expires_at,
+        200,
+    );
+    assert_eq!(
+        issuer
+            .finalize_deferred_with_notification_and_response(
                 &lease_deferred.transaction_hash,
                 access.token_id,
                 "lease-owner-2",
+                &completion_notification(&completion_response),
+                &completion_response,
                 lease_deferred_ready_at,
             )
-            .await
-            .unwrap()
+            .await,
+        Err(CredentialStoreError::Unavailable)
     );
 
     let atomic_nonce = blake3::hash(Uuid::now_v7().as_bytes()).to_hex().to_string();
@@ -4559,12 +4690,20 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
         )
         .is_some()
     );
+    let completion_response = credential_response::response(
+        access.token_id,
+        consumed.selection.clone(),
+        consumed.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &consumed.transaction_hash,
                 access.token_id,
                 "consumer",
+                &completion_notification(&completion_response),
+                &completion_response,
                 consumed.ready_at,
             )
             .await
@@ -5468,12 +5607,20 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
     assert_eq!(after.claim_id, before.claim_id);
     assert_eq!(after.claim_expires_at, before.claim_expires_at);
     assert_eq!(after.consumed_at, before.consumed_at);
+    let completion_response = credential_response::response(
+        access.token_id,
+        deferred.selection.clone(),
+        deferred.expires_at,
+        200,
+    );
     assert!(
         issuer
-            .finalize_deferred(
+            .finalize_deferred_with_notification_and_response(
                 &deferred.transaction_hash,
                 access.token_id,
                 "owner",
+                &completion_notification(&completion_response),
+                &completion_response,
                 deferred.ready_at,
             )
             .await

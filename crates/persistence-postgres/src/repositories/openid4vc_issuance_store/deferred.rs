@@ -339,34 +339,6 @@ impl Openid4vciRepository {
         })
     }
 
-    pub(super) fn deferred_finalize<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let changed = sql_query(
-                "UPDATE openid4vci_deferred_transactions \
-                 SET consumed_at = GREATEST($4, ready_at), claim_id = NULL, claim_expires_at = NULL, claim_token_id = NULL \
-                 WHERE transaction_hash = $1 AND COALESCE(claim_token_id, token_id) = $2 AND claim_id = $3 \
-                   AND consumed_at IS NULL AND expires_at > $4",
-            )
-            .bind::<sql_types::Text, _>(transaction_hash)
-            .bind::<sql_types::Uuid, _>(token_id)
-            .bind::<sql_types::Text, _>(claim_id)
-            .bind::<sql_types::Timestamptz, _>(now)
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(changed == 1)
-        })
-    }
-
     pub(super) fn deferred_release<'a>(
         &'a self,
         transaction_hash: &'a str,

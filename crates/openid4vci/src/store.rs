@@ -260,13 +260,6 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -329,14 +322,6 @@ pub trait CredentialStorePort: Send + Sync {
         claim_id: &'a str,
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<DeferredClaimOutcome, CredentialStoreError>>;
-
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
     fn release_deferred<'a>(
         &'a self,

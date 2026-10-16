@@ -95,15 +95,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         self.inner.claim_nonce(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner.finalize_nonce(nonce_hash, claim_id, now)
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -191,17 +182,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
     > {
         self.inner
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner
-            .finalize_deferred(transaction_hash, token_id, claim_id, now)
     }
 
     fn release_deferred<'a>(

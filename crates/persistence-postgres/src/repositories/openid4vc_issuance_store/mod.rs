@@ -93,15 +93,6 @@ impl CredentialStorePort for Openid4vciRepository {
         self.nonce_claim(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.nonce_finalize(nonce_hash, claim_id, now)
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -172,16 +163,6 @@ impl CredentialStorePort for Openid4vciRepository {
         Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
     > {
         self.deferred_claim_ready(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.deferred_finalize(transaction_hash, token_id, claim_id, now)
     }
 
     fn release_deferred<'a>(

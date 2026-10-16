@@ -10,12 +10,12 @@
 //! Tests serialize their database fixtures. Production pool acquisition timing
 //! and counters are absent; checkout counts are not inferred or fabricated.
 
-// Other helpers in `support` serve sibling test binaries; this binary only
-// needs `query_counter`.
-#[allow(dead_code)]
 #[path = "support/credential_response.rs"]
 mod credential_response;
 
+// Other helpers in `support` serve sibling test binaries; this binary only
+// needs `query_counter`.
+#[allow(dead_code)]
 mod support;
 
 #[path = "support/password.rs"]

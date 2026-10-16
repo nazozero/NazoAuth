@@ -77,15 +77,6 @@ where
         self.as_ref().claim_nonce(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
-        self.as_ref().finalize_nonce(nonce_hash, claim_id, now)
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -179,17 +170,6 @@ where
     > {
         self.as_ref()
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
-        self.as_ref()
-            .finalize_deferred(transaction_hash, token_id, claim_id, now)
     }
 
     fn release_deferred<'a>(

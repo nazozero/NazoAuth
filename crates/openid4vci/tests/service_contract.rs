@@ -129,17 +129,6 @@ impl CredentialStorePort for RecordingStore {
             }
         })
     }
-    fn finalize_nonce<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a str,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            *self.nonce_finalized.lock().unwrap() += 1;
-            Ok(true)
-        })
-    }
 
     fn find_response<'a>(
         &'a self,
@@ -264,15 +253,7 @@ impl CredentialStorePort for RecordingStore {
     > {
         Box::pin(async { Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid) })
     }
-    fn finalize_deferred<'a>(
-        &'a self,
-        _: &'a str,
-        _: Uuid,
-        _: &'a str,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async { Ok(true) })
-    }
+
     fn release_deferred<'a>(
         &'a self,
         _: &'a str,
