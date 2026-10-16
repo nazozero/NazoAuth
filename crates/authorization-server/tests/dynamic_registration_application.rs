@@ -574,3 +574,47 @@ fn dynamic_registration_guard_preserves_fixed_window_threshold() {
         })
     );
 }
+
+#[test]
+fn configuration_update_keeps_administrator_policy_through_validation() {
+    block_on(async {
+        let store = Arc::new(Store::default());
+        let app = application(store.clone(), Arc::new(Guard::default()));
+        let created = create(&app).await;
+        assert!(
+            created
+                .client
+                .security_policy
+                .allow_confidential_oidc_without_pkce
+        );
+        {
+            let mut state = store.0.lock().unwrap();
+            let policy = &mut state.client.as_mut().unwrap().registration.security_policy;
+            policy.allow_confidential_oidc_without_pkce = false;
+            policy.introspection_audiences = vec!["https://resource.example".to_owned()];
+        }
+        let DynamicRegistrationResult::Updated(updated) = app
+            .update(
+                &created.client.client_id,
+                update_payload(&created.client, created.issued_secret.as_deref().unwrap()),
+                Some(&created.registration_access_token),
+                "203.0.113.77",
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("updated result")
+        };
+        assert!(
+            !updated
+                .client
+                .security_policy
+                .allow_confidential_oidc_without_pkce
+        );
+        assert_eq!(
+            updated.client.security_policy.introspection_audiences,
+            ["https://resource.example"]
+        );
+        assert_eq!(updated.response_types, ["code"]);
+    });
+}

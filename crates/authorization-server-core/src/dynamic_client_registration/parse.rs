@@ -33,7 +33,10 @@ pub fn parse_client_configuration_update(
     }
     let client_id = object
         .remove("client_id")
-        .and_then(|value| value.as_str().map(ToOwned::to_owned))
+        .and_then(|value| match value {
+            Value::String(value) => Some(value),
+            _ => None,
+        })
         .ok_or_else(|| {
             DynamicRegistrationError::invalid_client_metadata(
                 "client_id must be present in a client configuration update.",
