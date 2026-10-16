@@ -607,7 +607,7 @@ impl Settings {
                     cors_allowed_origins,
                     trusted_proxy_cidrs,
                     client_ip_header_mode: ClientIpHeaderMode::parse(
-                        &config.string("CLIENT_IP_HEADER_MODE", "none"),
+                        config.get("CLIENT_IP_HEADER_MODE").unwrap_or("none"),
                     )?,
                     transport_mode,
                     mtls_certificate_source,

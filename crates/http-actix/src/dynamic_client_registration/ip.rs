@@ -52,10 +52,10 @@ impl Error for ClientIpParseError {}
 
 impl ClientIpHeaderMode {
     pub fn parse(value: &str) -> Result<Self, ClientIpParseError> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "none" => Ok(Self::None),
-            "forwarded" => Ok(Self::Forwarded),
-            "x-forwarded-for" => Ok(Self::XForwardedFor),
+        match value.trim() {
+            value if value.eq_ignore_ascii_case("none") => Ok(Self::None),
+            value if value.eq_ignore_ascii_case("forwarded") => Ok(Self::Forwarded),
+            value if value.eq_ignore_ascii_case("x-forwarded-for") => Ok(Self::XForwardedFor),
             value => Err(ClientIpParseError(format!(
                 "CLIENT_IP_HEADER_MODE must be none, forwarded, or x-forwarded-for, got {value}"
             ))),
@@ -131,9 +131,9 @@ pub fn client_ip_with_context(
     let parsed = match header_mode {
         ClientIpHeaderMode::None => None,
         ClientIpHeaderMode::Forwarded => forwarded_ip_chain(request)
-            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, trusted_proxy_cidrs)),
+            .and_then(|chain| nearest_untrusted_hop(chain, trusted_proxy_cidrs)),
         ClientIpHeaderMode::XForwardedFor => x_forwarded_for_ip_chain(request)
-            .and_then(|chain| nearest_untrusted_hop(chain, peer_ip, trusted_proxy_cidrs)),
+            .and_then(|chain| nearest_untrusted_hop(chain, trusted_proxy_cidrs)),
     };
     parsed.unwrap_or(peer_ip).to_string()
 }
@@ -154,17 +154,15 @@ fn trusted_proxy_peer_ip(peer_ip: IpAddr, trusted_proxy_cidrs: &[IpCidr]) -> boo
         .any(|cidr| cidr.contains(peer_ip))
 }
 
-fn forwarded_ip_chain(request: &HttpRequest) -> Option<Vec<IpAddr>> {
+fn forwarded_ip_chain(
+    request: &HttpRequest,
+) -> Option<impl DoubleEndedIterator<Item = Option<IpAddr>> + '_> {
     let mut values = request.headers().get_all("forwarded");
     let raw = values.next()?.to_str().ok()?;
     if values.next().is_some() {
         return None;
     }
-    let mut chain = Vec::new();
-    for element in raw.split(',') {
-        if element.trim().is_empty() {
-            return None;
-        }
+    Some(raw.split(',').map(|element| {
         let mut forwarded_for = None;
         for parameter in element.split(';') {
             let (name, value) = parameter.trim().split_once('=')?;
@@ -175,9 +173,8 @@ fn forwarded_ip_chain(request: &HttpRequest) -> Option<Vec<IpAddr>> {
                 forwarded_for = Some(parse_forwarded_for_value(value.trim())?);
             }
         }
-        chain.push(forwarded_for?);
-    }
-    (!chain.is_empty()).then_some(chain)
+        forwarded_for
+    }))
 }
 
 #[must_use]
@@ -200,31 +197,34 @@ pub fn parse_forwarded_for_value(value: &str) -> Option<IpAddr> {
     host.unwrap_or(value).parse().ok()
 }
 
-fn x_forwarded_for_ip_chain(request: &HttpRequest) -> Option<Vec<IpAddr>> {
+fn x_forwarded_for_ip_chain(
+    request: &HttpRequest,
+) -> Option<impl DoubleEndedIterator<Item = Option<IpAddr>> + '_> {
     let mut values = request.headers().get_all("x-forwarded-for");
     let raw = values.next()?.to_str().ok()?;
     if values.next().is_some() {
         return None;
     }
-    let chain = raw
-        .split(',')
-        .map(str::trim)
-        .map(str::parse::<IpAddr>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    (!chain.is_empty()).then_some(chain)
+    Some(
+        raw.split(',')
+            .map(|value| value.trim().parse::<IpAddr>().ok()),
+    )
 }
 
 fn nearest_untrusted_hop(
-    chain: Vec<IpAddr>,
-    peer_ip: IpAddr,
+    chain: impl DoubleEndedIterator<Item = Option<IpAddr>>,
     trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<IpAddr> {
-    chain
-        .into_iter()
-        .chain(std::iter::once(peer_ip))
-        .rev()
-        .find(|ip| !trusted_proxy_peer_ip(*ip, trusted_proxy_cidrs))
+    let mut nearest = None;
+    // Parse the complete header even after selecting a hop: malformed earlier
+    // entries invalidate the chain. The socket peer was already checked.
+    for ip in chain.rev() {
+        let ip = ip?;
+        if nearest.is_none() && !trusted_proxy_peer_ip(ip, trusted_proxy_cidrs) {
+            nearest = Some(ip);
+        }
+    }
+    nearest
 }
 
 fn ipv4_prefix_value(ip: Ipv4Addr, prefix: u8) -> u32 {

@@ -122,6 +122,39 @@ fn malformed_proxy_chains_fail_closed_to_the_socket_peer() {
 }
 
 #[test]
+fn proxy_chain_validation_does_not_stop_after_selecting_an_untrusted_hop() {
+    for (mode, header, malformed, trusted_only) in [
+        (
+            ClientIpHeaderMode::Forwarded,
+            "forwarded",
+            "for=_hidden, for=203.0.113.8, for=192.0.2.11",
+            "for=192.0.2.11",
+        ),
+        (
+            ClientIpHeaderMode::XForwardedFor,
+            "x-forwarded-for",
+            "not-an-ip, 203.0.113.8, 192.0.2.11",
+            "192.0.2.11",
+        ),
+    ] {
+        let config = config(mode, "192.0.2.0/24");
+        for value in [malformed, trusted_only, ""] {
+            let request = TestRequest::default()
+                .peer_addr("192.0.2.10:49152".parse().unwrap())
+                .insert_header((header, value))
+                .to_http_request();
+            assert_eq!(client_ip_with_config(&request, &config), "192.0.2.10");
+        }
+        let request = TestRequest::default()
+            .peer_addr("192.0.2.10:49152".parse().unwrap())
+            .append_header((header, trusted_only))
+            .append_header((header, trusted_only))
+            .to_http_request();
+        assert_eq!(client_ip_with_config(&request, &config), "192.0.2.10");
+    }
+}
+
+#[test]
 fn missing_peer_address_is_unknown() {
     let config = config(ClientIpHeaderMode::XForwardedFor, "192.0.2.0/24");
     let request = TestRequest::default().to_http_request();
