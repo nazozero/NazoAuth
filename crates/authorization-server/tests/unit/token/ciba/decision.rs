@@ -80,7 +80,7 @@ fn ciba_decision_audit_is_emitted_only_for_committed_outcome() {
             complete_ciba_decision(
                 &audit,
                 Err(failure),
-                "auth-req-id",
+                &blake3_hex("auth-req-id"),
                 CibaDecisionSource::User,
                 Some("source-ip-hash".to_owned())
             )
@@ -97,7 +97,7 @@ fn ciba_decision_audit_is_emitted_only_for_committed_outcome() {
                 oidc_sid: Some("audit-session".into()),
             },
         ))),
-        "auth-req-id",
+        &blake3_hex("auth-req-id"),
         CibaDecisionSource::User,
         Some("source-ip-hash".to_owned()),
     );
@@ -113,7 +113,7 @@ fn ciba_audit_writer_failure_does_not_change_committed_response() {
     let result = complete_ciba_decision(
         &audit,
         Ok(committed_decision_fixture(CibaDecision::Deny)),
-        "auth-req-id",
+        &blake3_hex("auth-req-id"),
         CibaDecisionSource::User,
         None,
     );

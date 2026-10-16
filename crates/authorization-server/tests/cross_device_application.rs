@@ -159,13 +159,19 @@ impl SecurityAudit for Ports {
             Ok(())
         })
     }
-    fn record(&self, event: &str, _: Map<String, Value>) {
+    fn record(&self, event: &str, fields: Map<String, Value>) {
         assert!(matches!(
             event,
             "ciba_authorization_approved"
                 | "ciba_authorization_denied"
                 | "ciba_authorization_started"
         ));
+        let intents = self.intents.lock().unwrap();
+        let intent = intents.last().expect("result follows a required intent");
+        assert_eq!(fields["source_ip_hash"], intent["source_ip_hash"]);
+        if event != "ciba_authorization_started" {
+            assert_eq!(fields["auth_req_id_hash"], intent["auth_req_id_hash"]);
+        }
         self.record_call("audit_result");
     }
     fn record_required<'a>(
@@ -438,6 +444,10 @@ fn ciba_decision_persists_audit_intent_before_state_transition_and_result_audit(
         let intents = ports.intents.lock().unwrap();
         assert_eq!(intents[0]["expected_user_id"], json!(session.user.id()));
         assert_eq!(
+            intents[0]["auth_req_id_hash"],
+            app::crypto::blake3_hex("auth-request")
+        );
+        assert_eq!(
             intents[0]["source_ip_hash"],
             json!(app::crypto::blake3_hex("127.0.0.1"))
         );
@@ -501,3 +511,31 @@ fn ciba_invalid_decision_does_not_read_store_or_emit_audit() {
 
 #[path = "support/ciba_creation_application.rs"]
 mod ciba_creation;
+
+#[test]
+fn ciba_verification_reads_only_active_client_presentation() {
+    block_on(async {
+        for active in [true, false] {
+            let mut client = authorization_fixture::client(active);
+            client.client_name = "CIBA presentation".into();
+            let (application, ports, session, authorization) =
+                fixture_with_client(AuditFailure::None, client, false);
+            let view = application
+                .verification("auth-request", &session)
+                .await
+                .unwrap();
+            assert_eq!(ports.calls(), ["load"]);
+            assert_eq!(authorization.ports.calls(), ["client_presentation"]);
+            if active {
+                let view = view.unwrap();
+                assert_eq!(view.client_name, "CIBA presentation");
+                assert_eq!(view.client_id, "client-1");
+                assert_eq!(view.scopes, ["openid"]);
+                assert_eq!(view.audiences, ["resource://default"]);
+                assert_eq!(view.binding_message.as_deref(), Some("1234"));
+            } else {
+                assert!(view.is_none());
+            }
+        }
+    });
+}

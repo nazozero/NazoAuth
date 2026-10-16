@@ -112,7 +112,7 @@ fn assertion_basic_form_mtls_and_public_sources_have_fixed_precedence() {
             client_assertion: Some("assertion"),
         },
     );
-    let credentials = assertion.presented_credentials(Some("assertion-client".to_owned()), None);
+    let credentials = assertion.presented_credentials(Some("assertion-client"), None);
     assert_eq!(credentials.method, "private_key_jwt");
     assert_eq!(credentials.client_id.as_deref(), Some("assertion-client"));
     assert_eq!(credentials.client_assertion.as_deref(), Some("assertion"));
@@ -125,7 +125,7 @@ fn assertion_basic_form_mtls_and_public_sources_have_fixed_precedence() {
             ..TokenClientAuthForm::default()
         },
     )
-    .presented_credentials(None, Some("form".to_owned()));
+    .presented_credentials(None, Some("form"));
     assert_eq!(post.method, "client_secret_post");
 
     let mtls = facts(
@@ -135,7 +135,7 @@ fn assertion_basic_form_mtls_and_public_sources_have_fixed_precedence() {
             ..TokenClientAuthForm::default()
         },
     )
-    .presented_credentials(None, Some("mtls".to_owned()));
+    .presented_credentials(None, Some("mtls"));
     assert_eq!(mtls.method, "tls_client_auth");
 
     let public = facts(
@@ -163,7 +163,7 @@ fn assertion_fields_and_missing_form_client_mtls_are_preserved_as_facts() {
     assert_eq!(assertion.client_assertion(), Some("jwt"));
 
     let mtls = facts(None, TokenClientAuthForm::default())
-        .presented_credentials(None, Some("certificate-client".to_owned()));
+        .presented_credentials(None, Some("certificate-client"));
     assert_eq!(mtls.client_id.as_deref(), Some("certificate-client"));
     assert_eq!(mtls.method, "tls_client_auth");
 }

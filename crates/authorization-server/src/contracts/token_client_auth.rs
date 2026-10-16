@@ -192,10 +192,10 @@ impl TokenClientAuthTransportFacts {
     #[must_use]
     pub fn presented_credentials(
         &self,
-        assertion_client_id: Option<String>,
-        mtls_client_id: Option<String>,
+        assertion_client_id: Option<&str>,
+        mtls_client_id: Option<&str>,
     ) -> PresentedClientCredentials {
-        self.credential_view(assertion_client_id.as_deref(), mtls_client_id.as_deref())
+        self.credential_view(assertion_client_id, mtls_client_id)
             .into_owned()
     }
 }

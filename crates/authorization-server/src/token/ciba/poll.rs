@@ -42,10 +42,9 @@ struct CibaPollIssueRequest<'a, 'issuance> {
     client: &'a ClientRow,
     auth_req_id: &'a str,
     initial: nazo_auth::CibaStoredRequest<nazo_auth::CibaStateVersion>,
-    ciba_grant_key: String,
     dpop_jkt: Option<String>,
     mtls_x5t_s256: Option<String>,
-    client_assertion: Option<ValidatedClientAssertion>,
+    client_assertion: Option<&'a ValidatedClientAssertion>,
     tenant_id: uuid::Uuid,
 }
 
@@ -111,7 +110,6 @@ pub async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return Err(response),
     };
-    let ciba_grant_key = ciba_grant_key(auth_req_id);
     let Some(initial) = initial else {
         return Err(OAuthEndpointError::token(
             ProtocolStatusCode::BAD_REQUEST,
@@ -120,7 +118,6 @@ pub async fn token_ciba(
             false,
         ));
     };
-    let client_assertion = client_assertion.cloned();
     poll_and_issue_ciba(CibaPollIssueRequest {
         ciba_service,
         users,
@@ -129,7 +126,6 @@ pub async fn token_ciba(
         client,
         auth_req_id,
         initial,
-        ciba_grant_key,
         dpop_jkt,
         mtls_x5t_s256,
         client_assertion,
@@ -149,7 +145,6 @@ async fn poll_and_issue_ciba(
         client,
         auth_req_id,
         initial,
-        ciba_grant_key,
         dpop_jkt,
         mtls_x5t_s256,
         client_assertion,
@@ -158,7 +153,7 @@ async fn poll_and_issue_ciba(
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
-        client_assertion.as_ref(),
+        client_assertion,
         issuance.security_audit,
     )
     .await
@@ -311,7 +306,7 @@ async fn poll_and_issue_ciba(
         token_service,
         client,
         TokenIssuanceMode::SingleUse {
-            grant_key: ciba_grant_key,
+            grant_key: ciba_grant_key(auth_req_id),
             grant_expires_at,
         },
         issue,

@@ -61,9 +61,9 @@ impl CibaApplication {
             })
             .and_then(unverified_client_assertion_client_id);
         let credentials = transport.presented_credentials(
-            assertion_client_id,
+            assertion_client_id.as_deref(),
             if mtls_present {
-                form.client_id.clone()
+                form.client_id.as_deref()
             } else {
                 None
             },
@@ -273,6 +273,7 @@ impl CibaApplication {
                 "CIBA audit storage unavailable.",
             ));
         }
+        let source_ip_hash = blake3_hex(source_ip);
         if let Err(error) = security_audit
             .record_required(
                 "ciba_authorization_intent",
@@ -281,7 +282,7 @@ impl CibaApplication {
                     ("user_id", json!(user.id())),
                     ("scope", json!(scopes.join(" "))),
                     ("audience", json!([config.default_audience])),
-                    ("source_ip_hash", json!(blake3_hex(source_ip))),
+                    ("source_ip_hash", json!(source_ip_hash)),
                 ]),
             )
             .await
@@ -325,7 +326,7 @@ impl CibaApplication {
         let now = Utc::now().timestamp();
         let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
         let state_payload = CibaRequestState {
-            client_id: client.client_id.clone(),
+            client_id: client.registration.client_id,
             user_id: user.id(),
             scopes,
             audiences: vec![config.default_audience.to_string()],
@@ -338,12 +339,12 @@ impl CibaApplication {
             expires_at,
             retention_expires_at: ciba_retention_deadline(expires_at),
             last_poll_at: None,
-            ping_notification: if client.backchannel_token_delivery_mode == "ping" {
+            ping_notification: if client.registration.backchannel_token_delivery_mode == "ping" {
                 Some(CibaPingNotification {
                     auth_req_id: None,
                     endpoint: client
+                        .registration
                         .backchannel_client_notification_endpoint
-                        .clone()
                         .expect("validated ping clients have a notification endpoint"),
                     client_notification_token: form.client_notification_token,
                     status: CibaPingNotificationStatus::AwaitingDecision,
@@ -371,7 +372,7 @@ impl CibaApplication {
             })?;
         security_audit.record(
             "ciba_authorization_started",
-            ciba_start_audit_fields(&state_payload, &auth_req_id, Some(blake3_hex(source_ip))),
+            ciba_start_audit_fields(&state_payload, &auth_req_id, Some(source_ip_hash)),
         );
         Ok(CibaCreationResponse {
             auth_req_id,

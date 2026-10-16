@@ -205,8 +205,10 @@ impl<'a> PreparedParParameters<'a> {
                         == Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
                 })
                 .and_then(unverified_client_assertion_client_id);
-            transport
-                .presented_credentials(assertion_client_id, mtls_present.then(|| client_id.clone()))
+            transport.presented_credentials(
+                assertion_client_id.as_deref(),
+                mtls_present.then_some(client_id.as_str()),
+            )
         };
         if has_basic && credentials.method != "client_secret_basic" {
             return Err(OAuthEndpointError::json(
