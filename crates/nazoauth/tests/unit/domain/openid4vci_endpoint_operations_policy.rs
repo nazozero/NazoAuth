@@ -141,6 +141,102 @@ async fn retain_policy_credential_access(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_access_reuses_matching_projection_and_still_backfills_legacy_binding() {
+    use diesel::connection::InstrumentationEvent;
+    use diesel_async::AsyncConnection;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let Some(database_url) = std::env::var("NAZO_TEST_DATABASE_URL")
+        .ok()
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+    else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires a test database"
+        );
+        return;
+    };
+    // Instrument only the issuance store; other endpoint owners use the fixture pool.
+    let store_pool = nazo_postgres::create_pool(database_url, 1).unwrap();
+    let store = Arc::new(nazo_postgres::Openid4vciRepository::new(
+        store_pool.clone(),
+        [0x51; 32],
+        Arc::new(crate::bootstrap::LoginPasswordVerifier),
+    ));
+    let Some(fixture) = LiveEndpointFixture::new_with_overrides(
+        "unit-live-projection-reuse",
+        false,
+        Some(store),
+        None,
+    )
+    .await
+    else {
+        return;
+    };
+    let token = signed_mtls_access_token(
+        &fixture,
+        fixture.subject_id,
+        "unit-live-projection-reuse",
+        "unit-mtls",
+    )
+    .await;
+    let context = CredentialRequestContext {
+        bearer_token: token,
+        mtls_x5t_s256: Some("unit-mtls".to_owned()),
+        ..request_context()
+    };
+    let queries = Arc::new(AtomicUsize::new(0));
+    let observed = queries.clone();
+    let mut connection = nazo_postgres::get_conn(&store_pool).await.unwrap();
+    connection.set_instrumentation(move |event: InstrumentationEvent<'_>| {
+        if matches!(event, InstrumentationEvent::FinishQuery { .. }) {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+    drop(connection);
+
+    fixture.issuer.access(&context).await.unwrap();
+    assert_eq!(
+        queries.swap(0, Ordering::Relaxed),
+        1,
+        "an exact live projection requires one read and no upsert or confirmation query"
+    );
+
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    sql_query("UPDATE openid4vci_access_grants SET mtls_x5t_s256 = NULL WHERE subject_id = $1")
+        .bind::<SqlUuid, _>(fixture.subject_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    fixture.issuer.access(&context).await.unwrap();
+    assert_eq!(
+        queries.swap(0, Ordering::Relaxed),
+        2,
+        "a legacy missing mTLS projection still requires the guarded write"
+    );
+    fixture.issuer.access(&context).await.unwrap();
+    assert_eq!(
+        queries.swap(0, Ordering::Relaxed),
+        1,
+        "the repaired projection is reused on the next request"
+    );
+
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_access_grants SET revoked_at = CURRENT_TIMESTAMP WHERE subject_id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.subject_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    let error = fixture.issuer.access(&context).await.unwrap_err();
+    assert_eq!(error.status, 401, "a revoked grant is never reused");
+    fixture.cleanup().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-dpop-access", false).await else {
         return;

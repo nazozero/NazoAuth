@@ -476,7 +476,7 @@ impl ServerCredentialIssuerOperations {
                     "Credential proof provenance is unavailable.",
                 )
             })?;
-        let proof_origin = match retained_access {
+        let proof_origin = match retained_access.as_ref() {
             Some(retained)
                 if retained.token_id == token_id
                     && retained.tenant_id == tenant_id
@@ -522,16 +522,20 @@ impl ServerCredentialIssuerOperations {
                 vci_error(401, "invalid_token", "Access token expiry is invalid.")
             })?,
         };
-        self.store
-            .upsert_access(&token_hash, &access)
-            .await
-            .map_err(|_| {
-                vci_error(
-                    503,
-                    "server_error",
-                    "Credential access state is unavailable.",
-                )
-            })?;
+        // The live retained projection already proves an identical grant exists.
+        // Only a missing or changed projection needs the persistence transition.
+        if retained_access.as_ref() != Some(&access) {
+            self.store
+                .upsert_access(&token_hash, &access)
+                .await
+                .map_err(|_| {
+                    vci_error(
+                        503,
+                        "server_error",
+                        "Credential access state is unavailable.",
+                    )
+                })?;
+        }
         Ok(access)
     }
 }
