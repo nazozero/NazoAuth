@@ -3,6 +3,7 @@ use crate::test_support::DatabaseUserFixture;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use chrono::Utc;
+use serde_json::json;
 use uuid::Uuid;
 
 #[test]
@@ -55,7 +56,7 @@ fn pagination_rejects_non_positive_values_and_caps_page_size() {
 #[test]
 fn admin_user_json_omits_password_hash_and_tenant_context() {
     let user = user_row();
-    let value = admin_user_json(user.clone());
+    let value = serde_json::to_value(admin_user_json(&user)).unwrap();
 
     assert_eq!(value["id"], json!(user.id()));
     assert_eq!(value["email"], "user@example.com");
@@ -72,7 +73,7 @@ fn admin_user_json_omits_password_hash_and_tenant_context() {
 #[test]
 fn client_json_exposes_protocol_metadata_without_client_secret_hash() {
     let client = client_row();
-    let value = client_json(&client);
+    let value = serde_json::to_value(client_json(&client)).unwrap();
 
     assert_eq!(value["client_id"], "client-1");
     assert_eq!(value["client_name"], "Client One");
@@ -123,7 +124,7 @@ fn domain_client_string_arrays_are_preserved_in_admin_views() {
     let mut client = client_row();
     client.redirect_uris = vec!["https://client.example/callback".to_owned()];
 
-    let value = client_json(&client);
+    let value = serde_json::to_value(client_json(&client)).unwrap();
     assert_eq!(
         value["redirect_uris"],
         json!(["https://client.example/callback"]),

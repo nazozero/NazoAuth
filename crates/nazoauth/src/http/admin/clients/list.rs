@@ -6,7 +6,23 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use nazo_http_actix::{json_response, oauth_error};
-use serde_json::json;
+use serde::{Serialize, Serializer};
+
+#[derive(Serialize)]
+struct ClientsListResponse<'a> {
+    total: i64,
+    page: i32,
+    page_size: i32,
+    #[serde(serialize_with = "serialize_clients")]
+    items: &'a [nazo_auth::OAuthClient],
+}
+
+fn serialize_clients<S: Serializer>(
+    clients: &[nazo_auth::OAuthClient],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(clients.iter().map(client_json))
+}
 use std::collections::HashMap;
 
 pub(crate) async fn admin_clients(
@@ -38,12 +54,12 @@ fn clients_list_response(
     page_size: i32,
     clients: Vec<nazo_auth::OAuthClient>,
 ) -> HttpResponse {
-    json_response(json!({
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "items": clients.iter().map(client_json).collect::<Vec<_>>(),
-    }))
+    json_response(ClientsListResponse {
+        total,
+        page,
+        page_size,
+        items: &clients,
+    })
 }
 
 #[cfg(test)]

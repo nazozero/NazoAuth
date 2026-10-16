@@ -4,6 +4,7 @@ use actix_web::cookie::Cookie;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
