@@ -314,21 +314,19 @@ impl OAuthClientRepository {
     }
 }
 
-/// Resolve the public identifier for one active tenant-owned client while the
-/// caller retains transaction ownership.
-pub async fn active_public_client_id_on_connection(
+/// Resolve existing active tenant-owned clients in one transaction-owned read.
+pub async fn active_public_client_ids_on_connection(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
-    id: Uuid,
-) -> Result<Option<String>, RepositoryError> {
+    ids: &[Uuid],
+) -> Result<Vec<(Uuid, String)>, RepositoryError> {
     oauth_clients::table
-        .find(id)
+        .filter(oauth_clients::id.eq_any(ids))
         .filter(oauth_clients::tenant_id.eq(tenant_id))
         .filter(oauth_clients::is_active.eq(true))
-        .select(oauth_clients::client_id)
-        .first::<String>(connection)
+        .select((oauth_clients::id, oauth_clients::client_id))
+        .load(connection)
         .await
-        .optional()
         .map_err(map_error)
 }
 

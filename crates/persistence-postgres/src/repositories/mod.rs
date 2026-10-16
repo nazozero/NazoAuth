@@ -38,7 +38,7 @@ pub use audit_ledger::{
 pub use authorization::AuthorizationRepository;
 pub use authorization_flow::AuthorizationFlowRepository;
 pub use clients::{
-    OAuthClientRepository, active_public_client_id_on_connection, deactivate_client_on_connection,
+    OAuthClientRepository, active_public_client_ids_on_connection, deactivate_client_on_connection,
     insert_client_on_connection,
 };
 pub use controller_registry::{

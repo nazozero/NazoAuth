@@ -50,7 +50,7 @@ pub use repositories::{
     TenantDirectoryControlRepository, TenantDirectoryRepository, TenantProvisioningRequest,
     TenantResourceBinding, TenantResourceBindingDeactivate, TenantResourceRepository,
     TenantResourceState, TenantResourceStateCas, TenantRuntimeStatus, TokenIssuanceRepository,
-    TokenRepository, UserInsert, UserRepository, active_public_client_id_on_connection,
+    TokenRepository, UserInsert, UserRepository, active_public_client_ids_on_connection,
     append_fresh_security_audit_on_connection, deactivate_client_on_connection,
     delete_operator_managed_dataset_on_connection, disable_user_on_connection,
     insert_client_on_connection, insert_operator_managed_trust_anchor_on_connection,

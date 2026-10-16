@@ -26,7 +26,7 @@ use crate::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite, OperatorManagedTrustAnchor,
     TenantResourceBinding, TenantResourceBindingDeactivate, TenantResourceRepository,
-    TenantResourceStateCas, UserInsert, active_public_client_id_on_connection,
+    TenantResourceStateCas, UserInsert, active_public_client_ids_on_connection,
     append_fresh_security_audit_on_connection, deactivate_client_on_connection,
     delete_operator_managed_dataset_on_connection, disable_user_on_connection,
     insert_client_on_connection, insert_operator_managed_trust_anchor_on_connection,
@@ -743,6 +743,7 @@ async fn apply_resources(
             user_locator(id),
         );
     }
+    let mut new_clients = BTreeMap::new();
     for payload in payloads.iter().filter_map(|p| match p {
         PreparedApplyPayload::OauthClient(value) => Some(value),
         _ => None,
@@ -771,6 +772,7 @@ async fn apply_resources(
             ResourceKey::from_identity(&payload.identity),
             oauth_client_locator(client.id),
         );
+        new_clients.insert(client.id, client.client_id.as_str());
     }
     for payload in payloads.iter().filter_map(|p| match p {
         PreparedApplyPayload::Mtls(value) => Some(value),
@@ -981,7 +983,8 @@ async fn apply_resources(
     // only exposes User UUIDs and OAuth public client IDs; mTLS, dataset, and
     // trust-policy locators intentionally remain internal.
     let resource_mappings =
-        collect_apply_resource_mappings(connection, tenant_id, resources, &locators).await?;
+        collect_apply_resource_mappings(connection, tenant_id, resources, &locators, &new_clients)
+            .await?;
     Ok((result, resource_mappings, digest))
 }
 
@@ -990,8 +993,10 @@ async fn collect_apply_resource_mappings(
     tenant_id: Uuid,
     resources: &[PreparedTenantResource],
     locators: &BTreeMap<ResourceKey, String>,
+    new_clients: &BTreeMap<Uuid, &str>,
 ) -> Result<Vec<TenantResourceMapping>, ExecutorTransactionError> {
     let mut mappings = Vec::new();
+    let mut existing_clients = Vec::new();
     for resource in resources {
         let public_id = match resource.identity.kind {
             TenantResourceKind::User => {
@@ -1009,10 +1014,13 @@ async fn collect_apply_resource_mappings(
                         TenantResourceExecutorError::Rejected,
                     ))?;
                 let client_id = parse_uuid_locator(locator, TenantResourceKind::OauthClient)?;
-                active_public_client_id_on_connection(connection, tenant_id, client_id)
-                    .await
-                    .map_err(ExecutorTransactionError::Repository)?
-                    .ok_or_else(|| transaction_conflict("apply_oauth_client_mapping"))?
+                match new_clients.get(&client_id) {
+                    Some(public_id) => (*public_id).to_owned(),
+                    None => {
+                        existing_clients.push((client_id, &resource.identity));
+                        continue;
+                    }
+                }
             }
             TenantResourceKind::MtlsTrustAnchor
             | TenantResourceKind::Openid4vcDataset
@@ -1025,6 +1033,25 @@ async fn collect_apply_resource_mappings(
             resource_id: resource.identity.resource_id.clone(),
             public_id,
         });
+    }
+    if !existing_clients.is_empty() {
+        let ids: Vec<_> = existing_clients.iter().map(|(id, _)| *id).collect();
+        let public_ids: BTreeMap<_, _> =
+            active_public_client_ids_on_connection(connection, tenant_id, &ids)
+                .await
+                .map_err(ExecutorTransactionError::Repository)?
+                .into_iter()
+                .collect();
+        for (id, identity) in existing_clients {
+            let public_id = public_ids
+                .get(&id)
+                .ok_or_else(|| transaction_conflict("apply_oauth_client_mapping"))?;
+            mappings.push(TenantResourceMapping {
+                kind: identity.kind,
+                resource_id: identity.resource_id.clone(),
+                public_id: public_id.clone(),
+            });
+        }
     }
     mappings.sort_by(|left, right| {
         (kind_order(left.kind), left.resource_id.as_str())
@@ -1697,3 +1724,7 @@ impl TenantResourceExecutorPort for PostgresTenantResourceExecutor {
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/tenant_resource_executor.rs"]
+mod tests;
