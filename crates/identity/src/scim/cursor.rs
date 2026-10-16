@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -42,14 +44,16 @@ pub enum ScimCursorError {
     InvalidCount,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct ScimCursorPayload {
+#[derive(Serialize, Deserialize)]
+struct ScimCursorPayload<'a> {
     v: u8,
     tenant_id: Uuid,
-    actor: String,
-    filter: Option<String>,
+    #[serde(borrow)]
+    actor: Cow<'a, str>,
+    filter: Option<Cow<'a, str>>,
     count: i64,
-    sort: String,
+    #[serde(borrow)]
+    sort: Cow<'a, str>,
     last_created_at: DateTime<Utc>,
     last_id: Uuid,
     issued_at: i64,
@@ -69,10 +73,10 @@ pub fn build_scim_cursor_plaintext(
     serde_json::to_vec(&ScimCursorPayload {
         v: SCIM_CURSOR_VERSION,
         tenant_id: context.subject.tenant_id,
-        actor: context.subject.actor.clone(),
-        filter: context.filter.map(ToOwned::to_owned),
+        actor: Cow::Borrowed(&context.subject.actor),
+        filter: context.filter.map(Cow::Borrowed),
         count: context.count,
-        sort: SCIM_CURSOR_SORT.to_owned(),
+        sort: Cow::Borrowed(SCIM_CURSOR_SORT),
         last_created_at: context.last_created_at,
         last_id: context.last_id,
         issued_at: now.timestamp(),
@@ -86,13 +90,7 @@ pub fn encode_scim_cursor_envelope(protected: &[u8]) -> String {
 }
 
 pub fn decode_scim_cursor_envelope(encoded: &str) -> Result<Vec<u8>, ScimCursorError> {
-    if encoded.is_empty()
-        || encoded.len() > SCIM_CURSOR_MAX_ENCODED_LEN
-        || encoded.contains('=')
-        || !encoded
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    {
+    if encoded.len() > SCIM_CURSOR_MAX_ENCODED_LEN {
         return Err(ScimCursorError::Invalid);
     }
     let decoded = URL_SAFE_NO_PAD
