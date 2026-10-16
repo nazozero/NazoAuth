@@ -18,10 +18,9 @@ use diesel_async::RunQueryDsl;
 use nazo_identity::{
     AdminPolicyError, AdminUserUpdateOutcome, AuthenticationIdentity, IdentitySecurityEvent,
     IdentitySecurityEventType, IdentitySecurityOutcome, IdentitySecurityReason, Principal,
-    PublicAccount, SubjectClaims, TenantContext, TenantId, UserId, authorize_admin_update,
-    ports::{
-        AdminUserUpdate, NewUser, ProfileUpdate, RepositoryError, UserPage, UserRepositoryPort,
-    },
+    ProfilePatch, PublicAccount, SubjectClaims, TenantContext, TenantId, UserId,
+    authorize_admin_update,
+    ports::{AdminUserUpdate, NewUser, RepositoryError, UserPage, UserRepositoryPort},
 };
 use uuid::Uuid;
 
@@ -337,12 +336,12 @@ impl UserRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        update: ProfileUpdate,
+        update: ProfilePatch,
     ) -> Result<PublicAccount, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let profile = update.profile;
+        let profile = update;
         let row = diesel::update(
             users::table
                 .find(user_id.as_uuid())
@@ -361,12 +360,12 @@ impl UserRepository {
             users::birthdate.eq(profile.birthdate),
             users::zoneinfo.eq(profile.zoneinfo),
             users::locale.eq(profile.locale),
-            users::address_formatted.eq(profile.address.formatted),
-            users::address_street_address.eq(profile.address.street_address),
-            users::address_locality.eq(profile.address.locality),
-            users::address_region.eq(profile.address.region),
-            users::address_postal_code.eq(profile.address.postal_code),
-            users::address_country.eq(profile.address.country),
+            users::address_formatted.eq(profile.address_formatted),
+            users::address_street_address.eq(profile.address_street_address),
+            users::address_locality.eq(profile.address_locality),
+            users::address_region.eq(profile.address_region),
+            users::address_postal_code.eq(profile.address_postal_code),
+            users::address_country.eq(profile.address_country),
             users::phone_number.eq(profile.phone_number.as_deref()),
             users::phone_number_verified.eq(users::phone_number_verified
                 .and(users::phone_number.is_not_distinct_from(profile.phone_number.as_deref()))),
@@ -1028,7 +1027,7 @@ impl nazo_identity::ports::ProfileRepositoryPort for UserRepository {
         &'a self,
         tenant_id: nazo_identity::TenantId,
         user_id: nazo_identity::UserId,
-        update: nazo_identity::ports::ProfileUpdate,
+        update: nazo_identity::ProfilePatch,
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::PublicAccount> {
         Box::pin(
             async move { UserRepository::update_profile(self, tenant_id, user_id, update).await },

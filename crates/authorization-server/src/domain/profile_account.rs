@@ -16,13 +16,13 @@ impl ServerProfileAccountOperations {
     pub fn new(sessions: SessionService, profiles: AccountProfileService) -> Self {
         Self { sessions, profiles }
     }
-    async fn active_account(
+    async fn active_principal(
         &self,
         session_id: &SessionId,
-    ) -> Result<nazo_identity::PublicAccount, ProfileAccountError> {
+    ) -> Result<nazo_identity::Principal, ProfileAccountError> {
         match self
             .sessions
-            .current(session_id, chrono::Utc::now().timestamp())
+            .current_principal(session_id, chrono::Utc::now().timestamp())
             .await
         {
             Ok(SessionResolution::Present(session)) => Ok(session.into_user()),
@@ -71,9 +71,9 @@ impl ServerProfileAccountOperations {
         session_id: SessionId,
         patch: ProfilePatch,
     ) -> Result<AccountProfileView, ProfileAccountError> {
-        let account = self.active_account(&session_id).await?;
+        let principal = self.active_principal(&session_id).await?;
         self.profiles
-            .update(&account, patch)
+            .update(&principal, patch)
             .await
             .map(AccountProfileView::from)
             .map_err(|error| match error {
@@ -98,9 +98,9 @@ impl ServerProfileAccountOperations {
         &self,
         session_id: SessionId,
     ) -> Result<AuthorizedApplicationsView, ProfileAccountError> {
-        let account = self.active_account(&session_id).await?;
+        let principal = self.active_principal(&session_id).await?;
         self.profiles
-            .applications(&account)
+            .applications(&principal)
             .await
             .map(AuthorizedApplicationsView::from)
             .map_err(|error| {

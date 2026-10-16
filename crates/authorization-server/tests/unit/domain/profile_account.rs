@@ -7,8 +7,8 @@ use nazo_identity::{
     SessionService, TenantContext, TenantId, UserId, UserProfile, UserRole,
     ports::{
         AuthorizedApplication, AuthorizedApplicationRepositoryPort, GrantSummaryRepositoryPort,
-        ProfileRepositoryPort, ProfileUpdate, RepositoryError, RepositoryFuture,
-        SessionAccountPort, SessionStorePort,
+        ProfileRepositoryPort, RepositoryError, RepositoryFuture, SessionAccountPort,
+        SessionStorePort,
     },
     session::{SessionRecord, SessionRotationOutcome, SessionSnapshot, SessionVersion},
 };
@@ -62,19 +62,15 @@ impl SessionStorePort for FixedSessionStore {
 }
 
 #[derive(Clone)]
-struct FixedSessionAccounts(Option<PublicAccount>);
+struct FixedSessionAccounts(Option<PublicAccount>, bool);
 
 impl SessionAccountPort for FixedSessionAccounts {
     fn principal_by_id(
         &self,
-        tenant_id: nazo_identity::TenantId,
-        user_id: nazo_identity::UserId,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::Principal>> {
-        Box::pin(async move {
-            self.public_account_by_id(tenant_id, user_id)
-                .await
-                .map(|account| account.map(|account| account.principal))
-        })
+        _tenant_id: TenantId,
+        _user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<Principal>> {
+        Box::pin(async move { Ok(self.0.as_ref().map(|account| account.principal.clone())) })
     }
 
     fn public_account_by_id(
@@ -82,6 +78,7 @@ impl SessionAccountPort for FixedSessionAccounts {
         _tenant_id: TenantId,
         _user_id: UserId,
     ) -> RepositoryFuture<'_, Option<PublicAccount>> {
+        assert!(self.1, "this operation must use the principal projection");
         let account = self.0.clone();
         Box::pin(async move { Ok(account) })
     }
@@ -95,10 +92,35 @@ impl ProfileRepositoryPort for StoredProfile {
         &'a self,
         _tenant_id: TenantId,
         _user_id: UserId,
-        update: ProfileUpdate,
+        update: ProfilePatch,
     ) -> RepositoryFuture<'a, PublicAccount> {
         let mut account = self.0.clone();
-        account.profile = update.profile;
+        let phone_number_verified = account.profile.phone_number_verified
+            && account.profile.phone_number == update.phone_number;
+        account.profile = UserProfile {
+            display_name: update.display_name,
+            given_name: update.given_name,
+            family_name: update.family_name,
+            middle_name: update.middle_name,
+            nickname: update.nickname,
+            profile_url: update.profile_url,
+            website_url: update.website_url,
+            gender: update.gender,
+            birthdate: update.birthdate,
+            zoneinfo: update.zoneinfo,
+            locale: update.locale,
+            phone_number: update.phone_number,
+            avatar_url: account.profile.avatar_url.take(),
+            phone_number_verified,
+            address: nazo_identity::PostalAddress {
+                formatted: update.address_formatted,
+                street_address: update.address_street_address,
+                locality: update.address_locality,
+                region: update.address_region,
+                postal_code: update.address_postal_code,
+                country: update.address_country,
+            },
+        };
         Box::pin(async move { Ok(account) })
     }
 }
@@ -188,7 +210,7 @@ fn operations_with_loads(
     ServerProfileAccountOperations::new(
         SessionService::new(
             Arc::new(FixedSessionStore { load, loads }),
-            Arc::new(FixedSessionAccounts(Some(account.clone()))),
+            Arc::new(FixedSessionAccounts(Some(account.clone()), true)),
             account.tenant().tenant_id,
         ),
         AccountProfileService::new(
@@ -197,6 +219,44 @@ fn operations_with_loads(
             FixedApplications(applications),
         ),
     )
+}
+
+#[test]
+fn profile_update_and_application_list_only_load_the_session_principal() {
+    futures_executor::block_on(async {
+        let account = account();
+        let operations = ServerProfileAccountOperations::new(
+            SessionService::new(
+                Arc::new(FixedSessionStore {
+                    load: Ok(Some(snapshot(false))),
+                    loads: Arc::default(),
+                }),
+                Arc::new(FixedSessionAccounts(Some(account.clone()), false)),
+                account.tenant().tenant_id,
+            ),
+            AccountProfileService::new(
+                StoredProfile(account),
+                FixedGrantSummary(2),
+                FixedApplications(Vec::new()),
+            ),
+        );
+        let updated = operations
+            .update(
+                SessionId::new("active"),
+                ProfilePatch {
+                    display_name: Some(" Alice Updated ".into()),
+                    ..ProfilePatch::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated.display_name.as_deref(), Some("Alice Updated"));
+        let applications = operations
+            .applications(SessionId::new("active"))
+            .await
+            .unwrap();
+        assert_eq!(applications.total, 0);
+    });
 }
 
 #[test]

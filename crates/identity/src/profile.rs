@@ -7,12 +7,11 @@ use sha2::Sha256;
 use uuid::Uuid;
 
 use crate::{
-    AccessRequest, AccessRequestStatus, NewAccessRequest, PostalAddress, PublicAccount, UserId,
-    UserProfile,
+    AccessRequest, AccessRequestStatus, NewAccessRequest, Principal, PublicAccount, UserId,
     ports::{
         AccessRequestRepositoryPort, AuthorizedApplication, AuthorizedApplicationRepositoryPort,
         DeliveryConsume, DeliveryStorePort, FederationLinkRepositoryPort, FederationLinkSummary,
-        GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate, RepositoryError,
+        GrantSummaryRepositoryPort, ProfileRepositoryPort, RepositoryError,
     },
 };
 
@@ -261,18 +260,13 @@ impl AccountProfileService {
 
     pub async fn update(
         &self,
-        account: &PublicAccount,
+        principal: &Principal,
         patch: ProfilePatch,
     ) -> Result<AccountOverview, UpdateProfileError> {
-        let profile =
-            normalize_profile_patch(account, patch).map_err(UpdateProfileError::Validation)?;
+        let profile = normalize_profile_patch(patch).map_err(UpdateProfileError::Validation)?;
         let account = self
             .profiles
-            .update_profile(
-                account.tenant().tenant_id,
-                account.user_id(),
-                ProfileUpdate { profile },
-            )
+            .update_profile(principal.tenant.tenant_id, principal.user_id, profile)
             .await
             .map_err(UpdateProfileError::UpdateRepository)?;
         self.overview(account)
@@ -282,62 +276,38 @@ impl AccountProfileService {
 
     pub async fn applications(
         &self,
-        account: &PublicAccount,
+        principal: &Principal,
     ) -> Result<Vec<AuthorizedApplication>, RepositoryError> {
         self.applications
-            .applications_for_user(account.tenant().tenant_id, account.id())
+            .applications_for_user(principal.tenant.tenant_id, principal.user_id.as_uuid())
             .await
     }
 }
 
-fn normalize_profile_patch(
-    account: &PublicAccount,
-    patch: ProfilePatch,
-) -> Result<UserProfile, ProfileValidationError> {
-    let display_name = profile_text(patch.display_name, 80, "display_name")?;
-    let given_name = profile_text(patch.given_name, 80, "given_name")?;
-    let family_name = profile_text(patch.family_name, 80, "family_name")?;
-    let middle_name = profile_text(patch.middle_name, 80, "middle_name")?;
-    let nickname = profile_text(patch.nickname, 80, "nickname")?;
-    let profile_url = normalize_profile_url(patch.profile_url, "profile_url")?;
-    let website_url = normalize_profile_url(patch.website_url, "website_url")?;
-    let gender = profile_text(patch.gender, 40, "gender")?;
-    let birthdate = profile_text(patch.birthdate, 10, "birthdate")?;
-    let zoneinfo = profile_text(patch.zoneinfo, 64, "zoneinfo")?;
-    let locale = profile_text(patch.locale, 35, "locale")?;
-    let address_formatted = profile_text(patch.address_formatted, 512, "address_formatted")?;
-    let address_street_address =
-        profile_text(patch.address_street_address, 256, "address_street_address")?;
-    let address_locality = profile_text(patch.address_locality, 128, "address_locality")?;
-    let address_region = profile_text(patch.address_region, 128, "address_region")?;
-    let address_postal_code = profile_text(patch.address_postal_code, 64, "address_postal_code")?;
-    let address_country = profile_text(patch.address_country, 64, "address_country")?;
-    let phone_number = profile_text(patch.phone_number, 32, "phone_number")?;
-    let phone_number_verified =
-        account.profile.phone_number_verified && account.profile.phone_number == phone_number;
-    Ok(UserProfile {
-        display_name,
-        avatar_url: account.profile.avatar_url.clone(),
-        given_name,
-        family_name,
-        middle_name,
-        nickname,
-        profile_url,
-        website_url,
-        gender,
-        birthdate,
-        zoneinfo,
-        locale,
-        address: PostalAddress {
-            formatted: address_formatted,
-            street_address: address_street_address,
-            locality: address_locality,
-            region: address_region,
-            postal_code: address_postal_code,
-            country: address_country,
-        },
-        phone_number,
-        phone_number_verified,
+fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileValidationError> {
+    Ok(ProfilePatch {
+        display_name: profile_text(patch.display_name, 80, "display_name")?,
+        given_name: profile_text(patch.given_name, 80, "given_name")?,
+        family_name: profile_text(patch.family_name, 80, "family_name")?,
+        middle_name: profile_text(patch.middle_name, 80, "middle_name")?,
+        nickname: profile_text(patch.nickname, 80, "nickname")?,
+        profile_url: normalize_profile_url(patch.profile_url, "profile_url")?,
+        website_url: normalize_profile_url(patch.website_url, "website_url")?,
+        gender: profile_text(patch.gender, 40, "gender")?,
+        birthdate: profile_text(patch.birthdate, 10, "birthdate")?,
+        zoneinfo: profile_text(patch.zoneinfo, 64, "zoneinfo")?,
+        locale: profile_text(patch.locale, 35, "locale")?,
+        address_formatted: profile_text(patch.address_formatted, 512, "address_formatted")?,
+        address_street_address: profile_text(
+            patch.address_street_address,
+            256,
+            "address_street_address",
+        )?,
+        address_locality: profile_text(patch.address_locality, 128, "address_locality")?,
+        address_region: profile_text(patch.address_region, 128, "address_region")?,
+        address_postal_code: profile_text(patch.address_postal_code, 64, "address_postal_code")?,
+        address_country: profile_text(patch.address_country, 64, "address_country")?,
+        phone_number: profile_text(patch.phone_number, 32, "phone_number")?,
     })
 }
 

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use crate::{
-    Principal, PublicAccount, SubjectClaims, TenantContext, TenantId, UserId, UserProfile,
+    Principal, ProfilePatch, PublicAccount, SubjectClaims, TenantContext, TenantId, UserId,
 };
 
 use super::common::{PasswordHashInput, RepositoryError, RepositoryFuture};
@@ -13,11 +13,6 @@ pub struct NewUser {
     pub email: String,
     pub password_hash: PasswordHashInput,
     pub email_verified: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct ProfileUpdate {
-    pub profile: UserProfile,
 }
 
 #[derive(Clone, Debug)]
@@ -87,7 +82,7 @@ pub trait ProfileRepositoryPort: Send + Sync {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        update: ProfileUpdate,
+        update: ProfilePatch,
     ) -> RepositoryFuture<'a, PublicAccount>;
 }
 

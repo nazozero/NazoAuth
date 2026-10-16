@@ -6,11 +6,11 @@ use diesel::{
 use diesel_async::RunQueryDsl;
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::{
-    AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, RealmId, TenantContext, TenantId,
-    UserId, UserProfile,
+    AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, ProfilePatch, RealmId, TenantContext,
+    TenantId, UserId, UserProfile,
     ports::{
         AdminUserUpdate, EncodedSecretHash, FederationLogin, MfaRepositoryPort,
-        NewFederatedIdentity, NewFederationLink, ProfileUpdate, RepositoryError,
+        NewFederatedIdentity, NewFederationLink, RepositoryError,
     },
     scim::NormalizedScimUser,
 };
@@ -587,8 +587,10 @@ async fn profile_update_persists_only_the_typed_profile_projection() {
         .update_profile(
             tenant.tenant_id,
             user_id,
-            ProfileUpdate {
-                profile: profile.clone(),
+            ProfilePatch {
+                display_name: profile.display_name.clone(),
+                phone_number: profile.phone_number.clone(),
+                ..ProfilePatch::default()
             },
         )
         .await
@@ -3496,20 +3498,12 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
     .await
     .unwrap();
     drop(conn);
-    let snapshot = repo
-        .public_account_by_id(tenant.tenant_id, user)
-        .await
-        .unwrap()
-        .unwrap()
-        .profile;
+    let snapshot = ProfilePatch {
+        phone_number: Some("+15550000001".to_owned()),
+        ..ProfilePatch::default()
+    };
     let same = repo
-        .update_profile(
-            tenant.tenant_id,
-            user,
-            ProfileUpdate {
-                profile: snapshot.clone(),
-            },
-        )
+        .update_profile(tenant.tenant_id, user, snapshot.clone())
         .await
         .unwrap();
     assert!(
@@ -3539,7 +3533,7 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
         let mut stale = snapshot.clone();
         stale.nickname = Some("nickname-only-patch".to_owned());
         let result = repo
-            .update_profile(tenant.tenant_id, user, ProfileUpdate { profile: stale })
+            .update_profile(tenant.tenant_id, user, stale)
             .await
             .unwrap();
         assert!(
@@ -3548,12 +3542,12 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
         );
     }
     // Existing nullable phone semantics remain unchanged; NULL is never
-    // newly verified by the profile endpoint's supplied old snapshot flag.
+    // newly verified by a profile write.
     let mut empty = snapshot;
     empty.phone_number = None;
     assert!(
         !repo
-            .update_profile(tenant.tenant_id, user, ProfileUpdate { profile: empty })
+            .update_profile(tenant.tenant_id, user, empty)
             .await
             .unwrap()
             .profile
