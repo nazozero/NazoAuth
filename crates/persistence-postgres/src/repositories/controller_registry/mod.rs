@@ -67,10 +67,7 @@ use nazo_persistence::control_plane as contract;
 
 use crate::{DbPool, get_conn};
 
-use super::recovery_root::{
-    NewRecoveryRoot, RecoveryRootError, enroll_initial_root_on_connection,
-    read_root_on_connection_for_registry,
-};
+use super::recovery_root::{NewRecoveryRoot, RecoveryRootError, enroll_initial_root_on_connection};
 
 /// P0-3 failure text: a bind that carries an initial Recovery Root refuses to
 /// run when a root already exists (first binding initializes; it never
@@ -248,28 +245,20 @@ impl ControllerRegistryRepository {
                     now,
                 )
                 .await?;
-                if initial_root.is_some() {
-                    let existing =
-                        read_root_on_connection_for_registry(connection, &slot.deployment_id)
-                            .await
-                            .map_err(map_recovery_error)?;
-                    if existing.is_some() {
-                        return Err(CommitWithApprovalError::Mutation(
-                            ControllerRegistryError::InvalidIdentity(ROOT_ALREADY_PRESENT),
-                        ));
-                    }
+                // The root INSERT owns first-bind admission. A later slot or
+                // audit failure rolls the root, key history and approval back.
+                if let Some(root) = &initial_root
+                    && !enroll_initial_root_on_connection(connection, root, now)
+                        .await
+                        .map_err(map_recovery_error)?
+                {
+                    return Err(CommitWithApprovalError::Mutation(
+                        ControllerRegistryError::InvalidIdentity(ROOT_ALREADY_PRESENT),
+                    ));
                 }
                 let stored = insert_slot_on_connection(connection, &slot, now)
                     .await
                     .map_err(CommitWithApprovalError::Mutation)?;
-                // Same-transaction enrollment: any failure rolls the slot
-                // back too, so a first binding can never exist without its
-                // Recovery Root (and vice versa).
-                if let Some(root) = &initial_root {
-                    enroll_initial_root_on_connection(connection, root, now)
-                        .await
-                        .map_err(map_recovery_error)?;
-                }
                 if let Some(audit) = &audit {
                     required::append_slot(connection, "controller_slot_created", audit, &stored)
                         .await

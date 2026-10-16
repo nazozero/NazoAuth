@@ -616,9 +616,15 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
 /// completely (no new slot, root untouched).
 #[tokio::test]
 async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
-    let Some((url, repository)) = isolated_repository("atomic_bind").await else {
+    let Some((url, _fixture)) = isolated_repository("atomic_bind").await else {
         return;
     };
+    let pool = create_pool(url.clone(), 1).unwrap();
+    let counter = QueryCounter::new();
+    let mut connection = pool.get().await.unwrap();
+    connection.set_instrumentation(counter.clone());
+    drop(connection);
+    let repository = ControllerRegistryRepository::new(pool);
     let deployment = "deployment-atomic-bind";
     let admin = Uuid::now_v7();
     let digest = "a".repeat(64);
@@ -642,6 +648,7 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         kid: kid_of(&root_key),
         public_key: root_key,
     };
+    let before = counter.snapshot();
     let committed = repository
         .commit_slot_creation(
             &issued.token,
@@ -654,6 +661,11 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         .await
         .expect("atomic first bind should succeed");
     assert_eq!(committed.label, "first-bind");
+    assert_eq!(
+        counter.since(before).data_queries,
+        7,
+        "lock, approval read/write, root insert, key history, slots read/insert"
+    );
 
     // The Recovery Root exists in the same committed state.
     let recovery = nazo_postgres::RecoveryRootRepository::new(
@@ -703,6 +715,80 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         .await
         .expect("listing works");
     assert_eq!(slots.len(), 1, "the refused bind left no extra slot");
+
+    // Slot failure occurs after root admission. Retrying the same approval and
+    // root after freeing a slot proves all three writes rolled back together.
+    let full_deployment = "deployment-atomic-bind-full";
+    let mut full_slots = Vec::new();
+    for seed in 40..43 {
+        full_slots.push(
+            repository
+                .create_slot(slot_input(full_deployment, "occupied", seed), at(0))
+                .await
+                .unwrap(),
+        );
+    }
+    let approval = repository
+        .issue_identity_approval(
+            full_deployment,
+            ControllerIdentityAction::Bind,
+            &digest,
+            admin,
+            at(0),
+        )
+        .await
+        .unwrap();
+    let root = nazo_postgres::NewRecoveryRoot {
+        deployment_id: full_deployment.to_owned(),
+        kid: kid_of(&root_key),
+        public_key: root_key,
+    };
+    let error = repository
+        .commit_slot_creation(
+            &approval.token,
+            ControllerIdentityAction::Bind,
+            &digest,
+            slot_input(full_deployment, "new-bind", 44),
+            Some(root.clone()),
+            at(1),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CommitWithApprovalError::Mutation(ControllerRegistryError::SlotLimit(_))
+    ));
+    assert!(
+        recovery
+            .current_root(full_deployment)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    repository
+        .revoke_slot(full_deployment, &full_slots[0].controller_id, at(2))
+        .await
+        .unwrap();
+    repository
+        .commit_slot_creation(
+            &approval.token,
+            ControllerIdentityAction::Bind,
+            &digest,
+            slot_input(full_deployment, "new-bind", 44),
+            Some(root),
+            at(3),
+        )
+        .await
+        .expect("slot failure must preserve both approval and unused recovery key");
+    assert_eq!(
+        recovery
+            .current_root(full_deployment)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation,
+        1
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

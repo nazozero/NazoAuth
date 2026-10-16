@@ -361,46 +361,33 @@ async fn read_root_on_connection(
     .map_err(transport)
 }
 
-/// P0-3 sibling-module surface for the atomic first-bind commit: the registry
-/// checks root absence and enrolls generation 1 inside ITS transaction, so
-/// slot + root become one atomic unit.
-pub(crate) async fn read_root_on_connection_for_registry(
-    connection: &mut AsyncPgConnection,
-    deployment_id: &str,
-) -> Result<Option<StoredRecoveryRoot>, RecoveryRootError> {
-    read_root_on_connection(connection, deployment_id).await
-}
-
 /// Generation-1-only INSERT: unlike `replace_root_on_connection` this never
-/// bumps an existing row — the caller must have verified absence first.
+/// bumps an existing row. False means this deployment already has a root.
 pub(crate) async fn enroll_initial_root_on_connection(
     connection: &mut AsyncPgConnection,
     root: &NewRecoveryRoot,
     now: DateTime<Utc>,
-) -> Result<StoredRecoveryRoot, RecoveryRootError> {
-    let mut rows = sql_query(format!(
+) -> Result<bool, RecoveryRootError> {
+    let inserted = sql_query(
         "INSERT INTO controller_recovery_roots
             (deployment_id, recovery_kid, recovery_public_key, kdf, generation,
              created_at, updated_at)
          VALUES ($1, $2, $3, $4, 1, $5, $5)
-         RETURNING {ROOT_COLUMNS}"
-    ))
+         ON CONFLICT (deployment_id) DO NOTHING",
+    )
     .bind::<Varchar, _>(&root.deployment_id)
     .bind::<Varchar, _>(&root.kid)
     .bind::<Binary, _>(&root.public_key[..])
     .bind::<Varchar, _>(RECOVERY_KDF_ID)
     .bind::<Timestamptz, _>(now)
-    .load::<RecoveryRootRow>(connection)
+    .execute(connection)
     .await
     .map_err(transport)?;
-    if rows.len() != 1 {
-        return Err(transport(anyhow::anyhow!(
-            "initial root insert returned an invalid authority row count"
-        )));
+    if inserted == 0 {
+        return Ok(false);
     }
-    let row = rows.pop().expect("one fully received initial root row");
     record_fresh_root_key_on_connection(connection, root).await?;
-    Ok(StoredRecoveryRoot::from(row))
+    Ok(true)
 }
 
 async fn record_fresh_root_key_on_connection(
