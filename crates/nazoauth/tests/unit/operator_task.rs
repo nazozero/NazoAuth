@@ -122,71 +122,6 @@ fn presentation_rejects_malformed_requests_before_any_authority() {
 }
 
 #[test]
-fn resume_ownership_table_pins_every_closed_variant() {
-    // E05 decision point: which existing ledger makes re-entry safe.
-    let cases: Vec<(ControlOperationPayload, bool)> = vec![
-        // Diesel __diesel_schema_migrations deduplicates applied migrations.
-        (ControlOperationPayload::MigrateApply, true),
-        // Read-only operations have no side effect to duplicate.
-        (ControlOperationPayload::KeysList, true),
-        (ControlOperationPayload::KeysValidate, true),
-        // Local generation publishes one atomic database aggregate and reuses
-        // matching registrations. External registration is also idempotent.
-        (
-            ControlOperationPayload::KeysGenerateLocal {
-                alg: "ES256".to_owned(),
-                purposes: vec!["credential".to_owned()],
-            },
-            true,
-        ),
-        (
-            ControlOperationPayload::KeysRegisterExternal {
-                kid: "external-1".to_owned(),
-                alg: "ES256".to_owned(),
-                key_ref: "provider:key-1".to_owned(),
-                public_jwk_sha256: "a".repeat(64),
-            },
-            true,
-        ),
-        // Read-only authoritative state read.
-        (
-            ControlOperationPayload::TenantResourceEnumerate {
-                tenant_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90".to_owned(),
-                selectors: Vec::new(),
-            },
-            true,
-        ),
-        // The current ControlOperation replay ledger returns the exact typed
-        // outcome for an identical operation id and request hash.
-        (
-            ControlOperationPayload::TenantResourceApply {
-                tenant_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90".to_owned(),
-                resources: Vec::new(),
-            },
-            true,
-        ),
-        (
-            ControlOperationPayload::TenantResourceRevoke {
-                tenant_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90".to_owned(),
-                resources: Vec::new(),
-            },
-            true,
-        ),
-        // The recovery invalidation transaction persists the exact operation
-        // outcome before replay can return it.
-        (
-            ControlOperationPayload::RecoveryInvalidate {
-                state_epoch: "019c8ca2-30a6-7000-8000-00000000e001".to_owned(),
-            },
-            true,
-        ),
-    ];
-    for (payload, allowed) in cases {
-        assert_eq!(execution::resume_allowed(&payload), allowed, "{payload:?}");
-    }
-}
-
-#[test]
 fn recovery_authority_conflict_is_terminal_while_unavailable_database_is_retryable() {
     assert!(matches!(
         execution::map_recovery_persistence_error(nazo_identity::ports::RepositoryError::Conflict),
@@ -279,19 +214,13 @@ async fn tenant_resource_unavailable_does_not_publish_a_terminal_failure() {
         accepted_at: 1_000,
     };
 
-    let error = control_journal::run_journaled_operation(
-        &directory,
-        &tenant_operation,
-        &request_hash,
-        &snapshot,
-        execution::resume_allowed(&tenant_operation.operation),
-        &|_| {},
-        || async {
-            Err::<Option<nazo_operator_protocol::ControlResultData>, _>(
-                execution::map_engine_error(TenantResourceExecutorError::Unavailable),
-            )
-        },
-    )
+    let record =
+        control_journal::accept(&directory, &tenant_operation, &request_hash, snapshot).unwrap();
+    let error = control_journal::run_journaled_operation(&directory, record, &|_| {}, async |_| {
+        Err::<Option<nazo_operator_protocol::ControlResultData>, _>(execution::map_engine_error(
+            TenantResourceExecutorError::Unavailable,
+        ))
+    })
     .await
     .expect_err("transient tenant-resource unavailability must remain resumable");
     assert!(matches!(
@@ -721,24 +650,17 @@ async fn typed_owner_failure_keeps_executing_then_resumes_without_duplicate_muta
         accepted_at: 1_000,
     };
     let marker = directory.join("migration-owner-ledger");
-    let first = control_journal::run_journaled_operation(
-        &directory,
-        &operation,
-        &hash,
-        &snapshot,
-        true,
-        &|_| {},
-        || async {
-            // The owner committed, then its response was lost. Re-entry sees its ledger.
-            fs::write(&marker, b"committed").unwrap();
-            Err(execution::map_owned_persistence_error(
-                anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
-                    "response lost"
-                )))
-                .context("owner"),
-            ))
-        },
-    )
+    let record = control_journal::accept(&directory, &operation, &hash, snapshot).unwrap();
+    let first = control_journal::run_journaled_operation(&directory, record, &|_| {}, async |_| {
+        // The owner committed, then its response was lost. Re-entry sees its ledger.
+        fs::write(&marker, b"committed").unwrap();
+        Err(execution::map_owned_persistence_error(
+            anyhow::Error::new(nazo_persistence::MigrationUnavailable(anyhow::anyhow!(
+                "response lost"
+            )))
+            .context("owner"),
+        ))
+    })
     .await;
     assert!(matches!(
         first,
@@ -752,12 +674,11 @@ async fn typed_owner_failure_keeps_executing_then_resumes_without_duplicate_muta
     assert!(value["result"].is_null());
     let resumed = control_journal::run_journaled_operation(
         &directory,
-        &operation,
-        &hash,
-        &snapshot,
-        true,
+        control_journal::load_accepted(&directory, &operation.operation_id, &hash)
+            .unwrap()
+            .unwrap(),
         &|_| {},
-        || async {
+        async |_| {
             assert_eq!(fs::read(&marker).unwrap(), b"committed");
             Ok(None)
         },
@@ -776,12 +697,11 @@ async fn typed_owner_failure_keeps_executing_then_resumes_without_duplicate_muta
     );
     let recovered = control_journal::run_journaled_operation(
         &directory,
-        &operation,
-        &hash,
-        &snapshot,
-        true,
+        control_journal::load_accepted(&directory, &operation.operation_id, &hash)
+            .unwrap()
+            .unwrap(),
         &|_| {},
-        || async { panic!("completed owner must never run again") },
+        async |_| panic!("completed owner must never run again"),
     )
     .await
     .unwrap();
@@ -799,21 +719,15 @@ async fn permanent_owner_failure_is_terminal_and_never_rerun() {
         kid: operation.kid.clone(),
         accepted_at: 1_000,
     };
-    let failed = control_journal::run_journaled_operation(
-        &directory,
-        &operation,
-        &hash,
-        &snapshot,
-        true,
-        &|_| {},
-        || async {
+    let record = control_journal::accept(&directory, &operation, &hash, snapshot).unwrap();
+    let failed =
+        control_journal::run_journaled_operation(&directory, record, &|_| {}, async |_| {
             Err(execution::map_owned_persistence_error(anyhow::anyhow!(
                 "fixed revision mismatch"
             )))
-        },
-    )
-    .await
-    .unwrap();
+        })
+        .await
+        .unwrap();
     let failed_stdout = failed
         .into_stdout()
         .expect("terminal failure must encode its public result");
@@ -824,12 +738,11 @@ async fn permanent_owner_failure_is_terminal_and_never_rerun() {
     );
     let recovered = control_journal::run_journaled_operation(
         &directory,
-        &operation,
-        &hash,
-        &snapshot,
-        true,
+        control_journal::load_accepted(&directory, &operation.operation_id, &hash)
+            .unwrap()
+            .unwrap(),
         &|_| {},
-        || async { panic!("terminal journal must never retry") },
+        async |_| panic!("terminal journal must never retry"),
     )
     .await
     .unwrap();

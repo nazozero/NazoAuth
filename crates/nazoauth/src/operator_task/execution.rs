@@ -4,19 +4,19 @@
 //! No business logic lives here.  Every arm delegates to the engine that
 //! already owns the domain:
 //!
-//! | variant                     | engine                                   | resumable state owner (resume_allowed) |
+//! | variant                     | engine                                   | resumable state owner |
 //! |-----------------------------|------------------------------------------|----------------------------------------|
-//! | `migrate-apply`             | selected adapter migration runner       | the adapter's migration ledger deduplicates re-entry → `true` |
-//! | `keys-list`                 | `keyctl::operator_list`                  | read-only; no side effect to duplicate → `true` |
-//! | `keys-validate`             | `keyctl::operator_validate`              | read-only; no side effect to duplicate → `true` |
-//! | `keys-generate-local`       | `keyctl::operator_generate_local`        | complete tenant keyset is committed atomically; existing matching registration is reused → `true` |
-//! | `keys-register-external`    | `keyctl::operator_register_external`     | keyset store is documented idempotent for an identical kid/alg/key_ref/JWK registration and fails closed on drift → `true` |
-//! | `tenant-resource-*`         | shared tenant-resource CAS engine        | exact operation-id/request-hash outcome ledger → `true` |
+//! | `migrate-apply`             | selected adapter migration runner       | the adapter's migration ledger deduplicates re-entry |
+//! | `keys-list`                 | `keyctl::operator_list`                  | read-only; no side effect to duplicate |
+//! | `keys-validate`             | `keyctl::operator_validate`              | read-only; no side effect to duplicate |
+//! | `keys-generate-local`       | `keyctl::operator_generate_local`        | complete tenant keyset is committed atomically; existing matching registration is reused |
+//! | `keys-register-external`    | `keyctl::operator_register_external`     | keyset store is documented idempotent for an identical kid/alg/key_ref/JWK registration and fails closed on drift |
+//! | `tenant-resource-*`         | shared tenant-resource CAS engine        | exact operation-id/request-hash outcome ledger |
+//! | `tenant-directory-*`        | tenant directory engine                  | exact operation outcome or read-only description |
+//! | `recovery-invalidate`       | recovery invalidation transaction        | exact operation-id/request-hash receipt |
 //!
-//! The mapping table above is normative for [`resume_allowed`]: re-entering a
-//! checkpoint marked `true` is safe because its owner ledger provably
-//! deduplicates the mutation; everything else fails closed instead of
-//! guessing.  Output is only ever the journaled
+//! Every supported operation has an idempotent state owner. Re-entry resolves
+//! through that owner; output is only ever the journaled
 //! [`nazo_operator_protocol::ControlResult`] — engines' rich return values
 //! have exactly one wire channel, the closed typed
 //! [`nazo_operator_protocol::ControlResultData`].
@@ -59,27 +59,6 @@ pub(super) struct ExecutionContext<'a> {
     pub(super) kid: &'a str,
     /// Canonical request hash of the accepted operation.
     pub(super) request_hash: &'a str,
-}
-
-/// E05 resume ownership decision per closed variant (see module table).
-pub(super) fn resume_allowed(operation: &ControlOperationPayload) -> bool {
-    match operation {
-        ControlOperationPayload::MigrateApply => true,
-        ControlOperationPayload::KeysList | ControlOperationPayload::KeysValidate => true,
-        ControlOperationPayload::KeysGenerateLocal { .. } => true,
-        ControlOperationPayload::TenantKeysGenerateLocal { .. } => true,
-        ControlOperationPayload::KeysRegisterExternal { .. } => true,
-        ControlOperationPayload::TenantResourceApply { .. }
-        | ControlOperationPayload::TenantResourceEnumerate { .. }
-        | ControlOperationPayload::TenantResourceRevoke { .. }
-        | ControlOperationPayload::RecoveryInvalidate { .. }
-        | ControlOperationPayload::TenantDirectoryCreate { .. }
-        | ControlOperationPayload::TenantDirectoryUpdate { .. }
-        | ControlOperationPayload::TenantDirectoryDisable { .. }
-        | ControlOperationPayload::TenantDirectoryReload { .. }
-        | ControlOperationPayload::TenantDirectoryFinalize { .. }
-        | ControlOperationPayload::TenantDirectoryDescribe => true,
-    }
 }
 
 pub(super) async fn execute_with_persistence(

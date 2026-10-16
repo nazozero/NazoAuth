@@ -189,18 +189,12 @@ async fn execute_compact(
     // payload), so the operation resumes without any registry lookup,
     // signature check, or key lifecycle evaluation (05 §5).  A different hash
     // under the same id is the permanent OPERATION_ID_CONFLICT.
-    let snapshot =
-        control_journal::accepted_snapshot(state_directory, &operation.operation_id, &request_hash)
+    let accepted =
+        control_journal::load_accepted(state_directory, &operation.operation_id, &request_hash)
             .map_err(map_journal_error)?;
-    if let Some(snapshot) = snapshot {
-        return journaled_execution(
-            state_directory,
-            operation,
-            &request_hash,
-            &snapshot,
-            persistence,
-        )
-        .await;
+    if let Some(record) = accepted {
+        pause_control_journal("control-journal-before-accept");
+        return journaled_execution(state_directory, operation, record, persistence).await;
     }
 
     // (2)+(4) Registry authority: find the controller key for this deployment
@@ -262,42 +256,33 @@ async fn execute_compact(
         kid: admitted.kid,
         accepted_at: Utc::now().timestamp(),
     };
-    journaled_execution(
-        state_directory,
-        &verified,
-        &request_hash,
-        &snapshot,
-        persistence,
-    )
-    .await
+    pause_control_journal("control-journal-before-accept");
+    let record = control_journal::accept(state_directory, &verified, &request_hash, snapshot)
+        .map_err(map_journal_error)?;
+    journaled_execution(state_directory, &verified, record, persistence).await
 }
 
 /// Run one operation under journal discipline and print its durable result.
 async fn journaled_execution(
     state_directory: &Path,
     operation: &ControlOperation,
-    request_hash: &str,
-    snapshot: &control_journal::AuthorizationSnapshot,
+    record: control_journal::OperationJournalRecord,
     persistence: &dyn OperatorPersistence,
 ) -> anyhow::Result<()> {
-    let resume_allowed = execution::resume_allowed(&operation.operation);
-    let context = execution::ExecutionContext {
-        operation_id: &operation.operation_id,
-        deployment_id: &operation.deployment_id,
-        controller_id: &snapshot.controller_id,
-        kid: &snapshot.kid,
-        request_hash,
-    };
     let outcome = control_journal::run_journaled_operation(
         state_directory,
-        operation,
-        request_hash,
-        snapshot,
-        resume_allowed,
-        &|name| {
-            let _ = pause_at_test_failpoint(name);
+        record,
+        &pause_control_journal,
+        async |record| {
+            let context = execution::ExecutionContext {
+                operation_id: &operation.operation_id,
+                deployment_id: &operation.deployment_id,
+                controller_id: &record.controller_id,
+                kid: &record.kid,
+                request_hash: &record.request_hash,
+            };
+            execution::execute_with_persistence(&operation.operation, &context, persistence).await
         },
-        || execution::execute_with_persistence(&operation.operation, &context, persistence),
     )
     .await
     .map_err(map_journal_error)?;
@@ -309,14 +294,16 @@ async fn journaled_execution(
     Ok(())
 }
 
+fn pause_control_journal(name: &str) {
+    let _ = pause_at_test_failpoint(name);
+}
+
 fn map_journal_error(error: control_journal::JournalFlowError) -> anyhow::Error {
     match error {
         control_journal::JournalFlowError::OperationIdConflict => {
             rejection_line(RejectionClass::Conflict);
             anyhow::Error::new(error).context("operation id conflict")
         }
-        control_journal::JournalFlowError::UnknownOutcome => anyhow::Error::new(error)
-            .context("operator task may have executed without a durable result; refusing replay"),
         other => anyhow::Error::new(other),
     }
 }
