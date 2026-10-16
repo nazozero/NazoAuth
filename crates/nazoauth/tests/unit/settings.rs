@@ -8,6 +8,71 @@ const ATTESTATION_CREDENTIAL_CONFIGURATIONS: &str = r#"{"pid":{"format":"dc+sd-j
 const MDOC_CREDENTIAL_CONFIGURATIONS: &str = r#"{"mdl":{"format":"mso_mdoc","scope":"mdl","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"jwt":{"proof_signing_alg_values_supported":["ES256"]}},"doctype":"org.iso.18013.5.1.mDL"}}"#;
 
 #[test]
+fn persistence_totp_key_ring_validates_configuration_once_at_construction() {
+    assert!(
+        mfa_totp_key_ring(&ConfigSource::default())
+            .unwrap()
+            .is_none()
+    );
+    let current = URL_SAFE_NO_PAD.encode([1; 32]);
+    let previous = URL_SAFE_NO_PAD.encode([2; 32]);
+    let pairs = [
+        ("MFA_TOTP_ENCRYPTION_KEY", current.as_str()),
+        ("MFA_TOTP_ENCRYPTION_KEY_ID", "current"),
+        ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY", previous.as_str()),
+        ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID", "previous"),
+    ];
+    let ring = mfa_totp_key_ring(&ConfigSource::from_owned_pairs_for_test(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(ring.current().key(), &[1; 32]);
+    assert_eq!(ring.previous().unwrap().key(), &[2; 32]);
+    for omitted in 0..pairs.len() {
+        let config = ConfigSource::from_owned_pairs_for_test(
+            pairs
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != omitted)
+                .map(|(_, (key, value))| ((*key).to_owned(), (*value).to_owned())),
+        );
+        assert!(mfa_totp_key_ring(&config).is_err());
+    }
+    for (key, value) in [
+        ("MFA_TOTP_ENCRYPTION_KEY", "invalid-base64".to_owned()),
+        ("MFA_TOTP_ENCRYPTION_KEY", URL_SAFE_NO_PAD.encode([1; 31])),
+        ("MFA_TOTP_ENCRYPTION_KEY_ID", "x".repeat(129)),
+        ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID", "current".to_owned()),
+    ] {
+        let config =
+            ConfigSource::from_owned_pairs_for_test(pairs.iter().map(|(name, original)| {
+                (
+                    (*name).to_owned(),
+                    if *name == key {
+                        value.clone()
+                    } else {
+                        (*original).to_owned()
+                    },
+                )
+            }));
+        assert!(mfa_totp_key_ring(&config).is_err());
+    }
+    assert!(
+        mfa_totp_key_ring(&ConfigSource::from_owned_pairs_for_test([
+            ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY".to_owned(), previous),
+            (
+                "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID".to_owned(),
+                "previous".to_owned()
+            ),
+        ]))
+        .is_err()
+    );
+}
+
+#[test]
 fn mdoc_issuing_country_helper_is_required_and_validated_for_local_generation() {
     let missing = ConfigSource::from_pairs_for_test([(
         "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",

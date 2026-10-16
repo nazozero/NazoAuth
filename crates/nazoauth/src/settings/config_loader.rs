@@ -326,24 +326,25 @@ impl Settings {
                     .collect()
             })
             .unwrap_or_default();
-        let _ = mfa_totp_key_ring(config)?;
+        let enable_openid4vci_issuer = config.bool("ENABLE_OPENID4VCI_ISSUER", false)?;
         let enable_directory_openid4vci_issuer = config.bool(
             "ENABLE_DIRECTORY_OPENID4VCI_ISSUER",
-            config.bool("ENABLE_OPENID4VCI_ISSUER", false)?,
+            enable_openid4vci_issuer,
         )?;
         let enable_openid4vci_issuer = if tenant_specific {
             enable_directory_openid4vci_issuer
         } else {
-            config.bool("ENABLE_OPENID4VCI_ISSUER", false)?
+            enable_openid4vci_issuer
         };
+        let enable_openid4vp_verifier = config.bool("ENABLE_OPENID4VP_VERIFIER", false)?;
         let enable_directory_openid4vp_verifier = config.bool(
             "ENABLE_DIRECTORY_OPENID4VP_VERIFIER",
-            config.bool("ENABLE_OPENID4VP_VERIFIER", false)?,
+            enable_openid4vp_verifier,
         )?;
         let enable_openid4vp_verifier = if tenant_specific {
             enable_directory_openid4vp_verifier
         } else {
-            config.bool("ENABLE_OPENID4VP_VERIFIER", false)?
+            enable_openid4vp_verifier
         };
         let register_openid4vci_routes =
             enable_openid4vci_issuer || enable_directory_openid4vci_issuer;

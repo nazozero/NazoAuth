@@ -263,13 +263,13 @@ pub(crate) fn mfa_totp_key_ring(
     let previous_key_id = config.optional_string("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID");
     validate_mfa_totp_key_pair(
         "MFA_TOTP_ENCRYPTION_KEY",
-        current_key,
+        current_key.is_some(),
         "MFA_TOTP_ENCRYPTION_KEY_ID",
         current_key_id.as_deref(),
     )?;
     validate_mfa_totp_key_pair(
         "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",
-        previous_key,
+        previous_key.is_some(),
         "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID",
         previous_key_id.as_deref(),
     )?;
@@ -277,11 +277,6 @@ pub(crate) fn mfa_totp_key_ring(
         bail!(
             "MFA_TOTP_ENCRYPTION_KEY is required when a previous TOTP encryption key is configured"
         );
-    }
-    if let (Some(current), Some(previous)) = (current_key_id.as_deref(), previous_key_id.as_deref())
-        && current == previous
-    {
-        bail!("MFA_TOTP_ENCRYPTION_KEY_ID and MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID must differ");
     }
     let Some(current_key) = current_key else {
         return Ok(None);
@@ -344,15 +339,12 @@ fn parse_optional_32_byte_key(
 
 fn validate_mfa_totp_key_pair(
     key_name: &'static str,
-    key: Option<[u8; 32]>,
+    key_present: bool,
     id_name: &'static str,
     id: Option<&str>,
 ) -> anyhow::Result<()> {
-    if key.is_some() != id.is_some() {
+    if key_present != id.is_some() {
         bail!("{key_name} and {id_name} must be configured together");
-    }
-    if id.is_some_and(|value| value.len() > 128) {
-        bail!("{id_name} must be at most 128 bytes");
     }
     Ok(())
 }
