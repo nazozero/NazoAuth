@@ -25,7 +25,7 @@ pub(crate) async fn controller_recovery_challenge(
     recovery: Data<RecoveryRootService>,
     Json(body): Json<RecoveryChallengeRequest>,
 ) -> HttpResponse {
-    match recovery.issue_challenge(&body, Utc::now()).await {
+    match recovery.issue_challenge(body, Utc::now()).await {
         Ok(issued) => json_response(serde_json::json!({
             "challenge_id": issued.challenge_id.to_string(),
             "deployment_id": issued.deployment_id,
@@ -69,7 +69,7 @@ pub(crate) async fn controller_recovery_commit(
     recovery: Data<RecoveryRootService>,
     Json(body): Json<RecoveryAnswerRequest>,
 ) -> HttpResponse {
-    match recovery.recover(&body, Utc::now()).await {
+    match recovery.recover(body, Utc::now()).await {
         Ok(commit) => json_response(serde_json::json!({
             "slot": {
                 "deployment_id": commit.slot.deployment_id,
