@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::bail;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::{
-    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+    validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
     validate_protected_resource_identifier,
 };
 
@@ -65,8 +65,6 @@ pub(crate) struct Settings {
 /// The immutable tenant identity selected for this runtime snapshot.
 ///
 /// A directory binding creates one complete `Settings` value per tenant.
-/// Keeping the host beside the identity prevents request routing from consulting
-/// a second tenant registry after the snapshot has been selected.
 #[derive(Clone)]
 pub(crate) struct TenantSettings {
     pub(crate) context: nazo_identity::TenantContext,
@@ -96,21 +94,23 @@ pub(crate) enum TransportMode {
 }
 
 impl TransportMode {
-    fn from_config(value: Option<&str>, issuer: &str) -> anyhow::Result<Self> {
+    fn from_config(
+        value: Option<&str>,
+        issuer: &str,
+        issuer_is_loopback_http: bool,
+    ) -> anyhow::Result<Self> {
         match value.map(str::trim).filter(|value| !value.is_empty()) {
-            None if is_loopback_http_url(issuer) => Ok(Self::LoopbackHttp),
+            None if issuer_is_loopback_http => Ok(Self::LoopbackHttp),
             None => bail!(
                 "TRANSPORT_MODE is required for non-loopback issuers and must be direct-tls or trusted-proxy"
             ),
-            Some("loopback-http") if is_loopback_http_url(issuer) => Ok(Self::LoopbackHttp),
+            Some("loopback-http") if issuer_is_loopback_http => Ok(Self::LoopbackHttp),
             Some("loopback-http") => {
                 bail!("TRANSPORT_MODE=loopback-http requires a loopback HTTP issuer")
             }
             Some("direct-tls") if issuer.starts_with("https://") => Ok(Self::DirectTls),
             Some("direct-tls") => bail!("direct-tls transport requires an HTTPS issuer"),
-            Some("trusted-proxy")
-                if issuer.starts_with("https://") || is_loopback_http_url(issuer) =>
-            {
+            Some("trusted-proxy") if issuer.starts_with("https://") || issuer_is_loopback_http => {
                 Ok(Self::TrustedProxy)
             }
             Some("trusted-proxy") => {

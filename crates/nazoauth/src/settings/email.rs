@@ -36,7 +36,10 @@ pub(crate) enum SmtpTlsMode {
 }
 
 impl EmailSettings {
-    pub(super) fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
+    pub(super) fn from_config(
+        config: &ConfigSource,
+        issuer_is_loopback_http: bool,
+    ) -> anyhow::Result<Self> {
         let delivery = match config
             .string("EMAIL_DELIVERY", "disabled")
             .trim()
@@ -44,7 +47,10 @@ impl EmailSettings {
             .as_str()
         {
             "disabled" => EmailDelivery::Disabled,
-            "smtp" => EmailDelivery::Smtp(SmtpEmailSettings::from_config(config, issuer)?),
+            "smtp" => EmailDelivery::Smtp(SmtpEmailSettings::from_config(
+                config,
+                issuer_is_loopback_http,
+            )?),
             value => bail!("EMAIL_DELIVERY must be disabled or smtp, got {value}"),
         };
 
@@ -73,7 +79,7 @@ impl EmailSettings {
 }
 
 impl SmtpEmailSettings {
-    fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
+    fn from_config(config: &ConfigSource, issuer_is_loopback_http: bool) -> anyhow::Result<Self> {
         let username = config.optional_string("EMAIL_SMTP_USERNAME");
         let password = config.optional_string("EMAIL_SMTP_PASSWORD");
         if username.is_some() != password.is_some() {
@@ -87,9 +93,7 @@ impl SmtpEmailSettings {
 
         let host = config.required_string("EMAIL_SMTP_HOST")?;
         let tls = SmtpTlsMode::from_config(config)?;
-        if matches!(tls, SmtpTlsMode::None)
-            && (!super::is_loopback_http_url(issuer) || username.is_some())
-        {
+        if matches!(tls, SmtpTlsMode::None) && (!issuer_is_loopback_http || username.is_some()) {
             bail!("EMAIL_SMTP_TLS=none is restricted to credential-free loopback development");
         }
 

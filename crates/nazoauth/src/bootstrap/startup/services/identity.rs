@@ -10,7 +10,6 @@ use nazo_oauth_server::services::{
 /// Identity, session, administration, and local-login endpoints.  These
 /// adapters share session/cookie policy and are kept together so that the
 /// factory only has to register the already-composed handles.
-#[derive(Clone)]
 pub(super) struct IdentityServices {
     pub(super) profile_logout_endpoint: web::Data<SessionLogoutEndpoint>,
     pub(super) runtime_module_admin_endpoint: web::Data<RuntimeModuleAdminEndpoint>,

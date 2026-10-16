@@ -210,6 +210,16 @@ fn directory_tenant_uses_the_authoritative_host_and_tenant_storage_roots() {
         "https://AUTH.example.test:8443/issuer"
     );
     assert_eq!(
+        settings.endpoint.frontend_base_url,
+        "https://AUTH.example.test:8443/issuer/ui/"
+    );
+    assert_eq!(
+        settings.endpoint.cors_allowed_origins,
+        ["https://auth.example.test:8443"]
+    );
+    assert_eq!(settings.identity.passkey.origin, settings.endpoint.issuer);
+    assert_eq!(settings.identity.passkey.rp_id, "auth.example.test");
+    assert_eq!(
         settings.storage.avatar_storage_dir,
         data_dir.join("tenants/00000000-0000-0000-0000-000000000011/avatars")
     );
@@ -238,6 +248,25 @@ fn directory_direct_tls_advertises_the_deployment_mtls_port_for_each_tenant_host
                 format!("https://{host}{expected_port}/issuer")
             );
         }
+    }
+}
+
+#[test]
+fn explicit_endpoint_overrides_still_require_url_admission() {
+    for (key, value) in [
+        (
+            "FRONTEND_BASE_URL",
+            "https://user:password@example.test/ui/",
+        ),
+        ("CORS_ALLOWED_ORIGINS", "https://example.test/path"),
+        ("PASSKEY_ORIGIN", "https://example.test?query"),
+        ("MTLS_ENDPOINT_BASE_URL", "http://remote.example.test"),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        assert!(
+            Settings::from_config(&config).is_err(),
+            "{key} accepted {value}"
+        );
     }
 }
 

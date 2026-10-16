@@ -17,7 +17,6 @@ mod openid4vc;
 
 /// Request-facing protocol and OAuth service handles.  Each handle is built
 /// once outside the Actix worker factory and cloned into worker applications.
-#[derive(Clone)]
 pub(super) struct CoreServices {
     pub(super) security_audit: Arc<dyn nazo_oauth_server::ports::audit::SecurityAudit>,
     pub(super) metadata_handles: web::Data<nazo_http_actix::MetadataHandles>,
@@ -72,12 +71,6 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
         "loaded DPoP nonce policies"
     );
     let resource_server_http_data = {
-        let authorizer = Arc::new(ServerFapiResourceAuthorizer::from_port(
-            resource_server_config.clone(),
-            keyset.clone(),
-            persistence.access_token_revocations(),
-            transient_state.protected_resource_dpop_state(),
-        ));
         let mtls = Arc::new(ServerMtlsThumbprintExtractor::new(
             settings.endpoint.trusted_proxy_cidrs.clone(),
         ));
@@ -92,7 +85,12 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
             resource_server_config.issuer.clone(),
             resource_server_config.mtls_endpoint_base_url.clone(),
             resource_server_config.fapi_http_signature_max_age_seconds,
-            authorizer,
+            Arc::new(ServerFapiResourceAuthorizer::from_port(
+                resource_server_config,
+                keyset.clone(),
+                persistence.access_token_revocations(),
+                transient_state.protected_resource_dpop_state(),
+            )),
             mtls,
             signatures,
         ))

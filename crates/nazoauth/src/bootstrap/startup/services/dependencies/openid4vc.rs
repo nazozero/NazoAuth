@@ -42,25 +42,24 @@ pub(super) async fn build(
     } else {
         None
     };
-    let static_client_attestation =
-        settings
-            .openid4vc
-            .client_attestation_issuer
-            .as_ref()
-            .map(|issuer| {
-                (
-                    issuer.clone(),
-                    settings
-                        .openid4vc
-                        .client_attestation_jwks
-                        .clone()
-                        .expect("configured client attestation requires trust keys"),
-                )
-            });
     let client_attestation_validator = settings
         .modules
         .enable_openid4vci_issuer
         .then(|| {
+            let static_client_attestation = settings
+                .openid4vc
+                .client_attestation_issuer
+                .as_ref()
+                .map(|issuer| {
+                    (
+                        issuer.clone(),
+                        settings
+                            .openid4vc
+                            .client_attestation_jwks
+                            .clone()
+                            .expect("configured client attestation requires trust keys"),
+                    )
+                });
             Openid4vcClientAttestationValidator::with_trust_policies(
                 static_client_attestation,
                 trust_policy_store
@@ -148,10 +147,7 @@ pub(super) async fn build(
             Arc::new(ServerPresentationOperations::new(
                 presentation_store,
                 settings.tenant.context.tenant_id.as_uuid(),
-                openid4vc_crypto
-                    .as_ref()
-                    .expect("enabled OpenID4VP requires crypto")
-                    .clone(),
+                openid4vc_crypto.expect("enabled OpenID4VP requires crypto"),
                 runtime_registry.snapshot_store(),
                 trust_policy_store.expect("enabled OpenID4VP requires a trust policy store"),
                 PresentationVerifierConfig {
