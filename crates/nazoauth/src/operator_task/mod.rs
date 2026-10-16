@@ -143,16 +143,13 @@ pub async fn run(persistence: Arc<dyn OperatorPersistence>) -> anyhow::Result<()
     fs::create_dir_all(&state_directory)?;
     ensure_real_state_directory(&state_directory)?;
     let lock_path = state_directory.join("task.lock");
-    if state_path_present(&lock_path)? {
-        regular_state_file_present(&lock_path, "operator task lock")?;
-    }
+    regular_state_file_present(&lock_path, "operator task lock")?;
     let lock = OpenOptions::new()
         .create(true)
         .read(true)
         .write(true)
         .truncate(false)
         .open(&lock_path)?;
-    regular_state_file_present(&state_directory.join("task.lock"), "operator task lock")?;
     // Keep the OS lock held through admission, journal publication, and
     // execution so only one one-shot process ever drives one state directory.
     // A pre-admission lock timeout is transport failure, not an authoritative
@@ -261,8 +258,8 @@ async fn execute_compact(
     // execution with per-operation resume ownership (E05 mapping table in
     // execution.rs).
     let snapshot = control_journal::AuthorizationSnapshot {
-        controller_id: admitted.controller_id.clone(),
-        kid: admitted.kid.clone(),
+        controller_id: admitted.controller_id,
+        kid: admitted.kid,
         accepted_at: Utc::now().timestamp(),
     };
     journaled_execution(
@@ -308,7 +305,7 @@ async fn journaled_execution(
         outcome.into_stdout().map_err(anyhow::Error::new),
         RejectionClass::Request,
     )?;
-    print!("{}", String::from_utf8_lossy(&bytes));
+    std::io::stdout().lock().write_all(&bytes)?;
     Ok(())
 }
 
@@ -376,7 +373,7 @@ pub(super) fn configured_path(variable: &str, fallback: &str) -> PathBuf {
 
 pub(super) fn regular_state_file_present(path: &Path, description: &str) -> anyhow::Result<bool> {
     match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => Ok(true),
+        Ok(metadata) if metadata.is_file() => Ok(true),
         Ok(_) => bail!("{description} is not a regular non-symlink file"),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error).with_context(|| format!("failed to inspect {description}")),
@@ -398,7 +395,7 @@ pub(super) fn ensure_real_state_directory(path: &Path) -> anyhow::Result<()> {
             path.display()
         )
     })?;
-    if metadata.is_dir() && !metadata.file_type().is_symlink() {
+    if metadata.is_dir() {
         Ok(())
     } else {
         bail!("operator state directory is not a real non-symlink directory")

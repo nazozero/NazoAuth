@@ -376,24 +376,23 @@ fn checkpoint(record: OperationJournalRecord) -> JournalCheckpoint {
 /// publish; adopting it is safe when it does not move the record backwards.
 fn recover_temporary(path: &Path) -> Result<(), JournalFlowError> {
     let temporary = record_temporary_path(path);
-    if !state_path_present(&temporary).map_err(transport)? {
+    if !regular_state_file_present(&temporary, "control operation journal temporary")
+        .map_err(transport)?
+    {
         return Ok(());
     }
-    regular_state_file_present(&temporary, "control operation journal temporary")
-        .map_err(transport)?;
     let temporary_record = read_record(&temporary).map_err(transport)?;
     let parent = path
         .parent()
         .context("journal record has no parent directory");
     let parent = parent.map_err(transport)?;
-    if !state_path_present(path).map_err(transport)? {
+    if !regular_state_file_present(path, "control operation journal record").map_err(transport)? {
         // The publication itself was interrupted before any execution
         // boundary; finishing it cannot hide a side effect.
         fs::rename(&temporary, path).map_err(transport)?;
         sync_directory(parent).map_err(transport)?;
         return Ok(());
     }
-    regular_state_file_present(path, "control operation journal record").map_err(transport)?;
     let published = read_record(path).map_err(transport)?;
     if published.operation_id != temporary_record.operation_id
         || published.request_hash != temporary_record.request_hash
@@ -447,23 +446,12 @@ fn publish_accepted(
     ));
     let bytes = serde_json::to_vec(record).context("journal record serialization failed");
     let bytes = bytes.map_err(transport)?;
-    let mut file = match OpenOptions::new()
+    let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&temporary)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            // Astronomically unlikely random-name collision: behave like a
-            // racing publisher and observe the final record instead.
-            return Ok(false);
-        }
-        Err(error) => {
-            return Err(transport(
-                anyhow::Error::new(error).context("failed to create journal temporary"),
-            ));
-        }
-    };
+        .context("failed to create journal temporary")
+        .map_err(transport)?;
     if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
         return Err(transport(error));
     }
@@ -488,11 +476,6 @@ fn publish_accepted(
 /// (`write_lifecycle_atomic` pattern: fsynced temporary + rename).
 fn replace_record(path: &Path, record: &OperationJournalRecord) -> Result<(), JournalFlowError> {
     let temporary = record_temporary_path(path);
-    if state_path_present(&temporary).map_err(transport)? {
-        return Err(transport(anyhow::anyhow!(
-            "control operation journal has an incomplete durable transition; refusing recovery"
-        )));
-    }
     let bytes = serde_json::to_vec(record).context("journal record serialization failed");
     let bytes = bytes.map_err(transport)?;
     let mut file = OpenOptions::new()
@@ -550,8 +533,7 @@ pub(crate) fn accept(
         result: None,
     };
 
-    if state_path_present(&path).map_err(transport)? {
-        regular_state_file_present(&path, "control operation journal record").map_err(transport)?;
+    if regular_state_file_present(&path, "control operation journal record").map_err(transport)? {
         return observe_existing(&path, &record);
     }
     if publish_accepted(&path, &record)? {
@@ -591,10 +573,9 @@ pub(crate) fn accepted_snapshot(
     ensure_request_hash_shape(request_hash)?;
     let path = record_path(&control_journal_directory(state_directory), operation_id);
     recover_temporary(&path)?;
-    if !state_path_present(&path).map_err(transport)? {
+    if !regular_state_file_present(&path, "control operation journal record").map_err(transport)? {
         return Ok(None);
     }
-    regular_state_file_present(&path, "control operation journal record").map_err(transport)?;
     let record = read_record(&path).map_err(transport)?;
     if record.request_hash != request_hash {
         return Err(JournalFlowError::OperationIdConflict);
@@ -727,9 +708,6 @@ fn expired_cleanup_candidate(path: &Path, cutoff: i64) -> bool {
     }
     let read = || -> anyhow::Result<OperationJournalRecord> {
         let file = fs::File::open(path)?;
-        if file.metadata()?.len() > MAX_CLEANUP_RECORD_BYTES as u64 {
-            bail!("control journal cleanup record exceeds its read budget");
-        }
         let mut bytes = Vec::new();
         file.take((MAX_CLEANUP_RECORD_BYTES + 1) as u64)
             .read_to_end(&mut bytes)?;
@@ -763,7 +741,6 @@ fn delete_expired_cleanup_candidate(
         .write(true)
         .open(&lock_path)
         .map_err(transport)?;
-    regular_state_file_present(&lock_path, "operator task lock").map_err(transport)?;
     match lock.try_lock_exclusive() {
         Ok(()) => {}
         Err(error) if task_lock_is_contended(&error) => return Ok(false),

@@ -981,6 +981,13 @@ pub fn encode_control_result(result: &ControlResult) -> Result<Vec<u8>, Protocol
 pub fn validate_control_result_data_for_wire(
     data: &ControlResultData,
 ) -> Result<(), ProtocolError> {
+    #[derive(Serialize)]
+    struct BorrowedResult<'a> {
+        #[serde(flatten)]
+        envelope: ControlResult,
+        result: &'a ControlResultData,
+    }
+    validate_control_result_data(data)?;
     let envelope = ControlResult {
         schema: CONTROL_RESULT_SCHEMA,
         operation_id: "00000000-0000-7000-8000-000000000000".to_owned(),
@@ -989,9 +996,16 @@ pub fn validate_control_result_data_for_wire(
         error: None,
         accepted_at: i64::MIN,
         completed_at: Some(i64::MAX),
-        result: Some(data.clone()),
+        result: None,
     };
-    encode_control_result(&envelope).map(|_| ())
+    if crate::serialized_json_size(&BorrowedResult {
+        envelope,
+        result: data,
+    })? > MAX_CONTROL_RESULT_BYTES
+    {
+        return Err(ProtocolError::TooLarge);
+    }
+    Ok(())
 }
 
 /// Decode and validate a [`ControlResult`] received from a one-shot process

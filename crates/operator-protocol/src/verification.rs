@@ -251,8 +251,7 @@ pub fn validate_openid4vc_trust_policy(policy: &Openid4vcTrustPolicy) -> Result<
         &policy.credential_trust_anchor_pem,
         "invalid OpenID4VC trust policy credential anchor",
     )?;
-    let encoded = serde_json::to_vec(policy).map_err(|_| ProtocolError::Json)?;
-    if encoded.len() > 32 * 1024 {
+    if crate::serialized_json_size(policy)? > 32 * 1024 {
         return Err(ProtocolError::Policy(
             "OpenID4VC trust policy exceeds 32 KiB",
         ));
