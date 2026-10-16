@@ -287,6 +287,7 @@ impl TokenEndpointHandles {
             };
             let validated = match validator
                 .validate_for_client(
+                    &client.client_id,
                     attestation,
                     proof,
                     issuance_config.issuer(),
@@ -294,7 +295,7 @@ impl TokenEndpointHandles {
                 )
                 .await
             {
-                Ok(validated) if validated.client_id == client.client_id => validated,
+                Ok(validated) => validated,
                 _ => {
                     return Err(OAuthEndpointError::token(
                         StatusCode::UNAUTHORIZED,

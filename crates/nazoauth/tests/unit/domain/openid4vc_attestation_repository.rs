@@ -145,12 +145,24 @@ async fn client_attestation_trust_policy_constructor_and_lookup_fail_closed_with
     .expect("ordinary policy-only validator should configure");
     let (static_validator, attestation, proof, _, _, now) = valid_client_attestation_fixture();
     let error = dynamic
-        .validate_for_client(&attestation, &proof, "https://issuer.example", now)
+        .validate_for_client(
+            "wallet-client",
+            &attestation,
+            &proof,
+            "https://issuer.example",
+            now,
+        )
         .await
         .expect_err("unavailable ordinary policy database must fail closed");
     assert!(!format!("{error:#}").is_empty());
     let validated = static_validator
-        .validate_for_client(&attestation, &proof, "https://issuer.example", now)
+        .validate_for_client(
+            "wallet-client",
+            &attestation,
+            &proof,
+            "https://issuer.example",
+            now,
+        )
         .await
         .expect("static validator should remain observable through its public behavior");
     assert_eq!(validated.client_id, "wallet-client");
