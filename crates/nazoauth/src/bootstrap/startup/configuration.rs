@@ -26,7 +26,7 @@ pub(super) struct StartupRuntime {
     pub(super) process: Arc<ProcessRuntime>,
     pub(super) registry: TenantRuntimeRegistry,
     pub(super) refresher: Arc<TenantRuntimeRefresher>,
-    pub(super) backchannel_logout_worker: Option<tokio::task::JoinHandle<()>>,
+    pub(super) backchannel_logout_worker: tokio::task::JoinHandle<()>,
     pub(super) security_state_worker: tokio::task::JoinHandle<()>,
 }
 
@@ -147,7 +147,7 @@ pub(super) async fn load(
         process.persistence.provider().logout_delivery_store(),
         &process.route_settings,
     ) {
-        Ok(worker) => Some(worker),
+        Ok(worker) => worker,
         Err(error) => {
             refresher.shutdown().await;
             return Err(error);

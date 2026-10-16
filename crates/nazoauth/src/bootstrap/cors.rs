@@ -88,14 +88,18 @@ impl<'a> CorsPolicy<'a> {
 }
 
 pub(crate) fn canonical_request_host(request: &RequestHead) -> Option<String> {
-    let authority = request
-        .headers
-        .get(HOST)
-        .and_then(|value| value.to_str().ok())
-        .filter(|_| request.version < Version::HTTP_2)
-        .or_else(|| request.uri.authority().map(|authority| authority.as_str()))?
-        .parse::<Authority>()
-        .ok()?;
+    let header_authority;
+    let authority = if request.version < Version::HTTP_2
+        && let Some(value) = request
+            .headers
+            .get(HOST)
+            .and_then(|value| value.to_str().ok())
+    {
+        header_authority = value.parse::<Authority>().ok()?;
+        &header_authority
+    } else {
+        request.uri.authority()?
+    };
     if authority.as_str().contains('@') {
         return None;
     }

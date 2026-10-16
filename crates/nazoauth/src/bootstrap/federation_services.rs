@@ -48,9 +48,9 @@ impl TracingFederationAudit {
             } => (
                 "external_identity_relink_denied",
                 audit_fields([
-                    ("provider_type", json!(provider_type)),
-                    ("provider_id", json!(provider_id)),
-                    ("email_hash", json!(blake3_hex(&email))),
+                    ("provider_type", provider_type.into()),
+                    ("provider_id", provider_id.into()),
+                    ("email_hash", blake3_hex(&email).into()),
                 ]),
             ),
             nazo_identity::FederationAuditEvent::IdentityLinked {
@@ -61,8 +61,8 @@ impl TracingFederationAudit {
                 "external_identity_linked",
                 audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
-                    ("provider_type", json!(provider_type)),
-                    ("provider_id", json!(provider_id)),
+                    ("provider_type", provider_type.into()),
+                    ("provider_id", provider_id.into()),
                 ]),
             ),
             nazo_identity::FederationAuditEvent::LoginSuccess {
@@ -73,8 +73,8 @@ impl TracingFederationAudit {
                 "federation_login_success",
                 audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
-                    ("method", json!(method)),
-                    ("source_ip_hash", json!(blake3_hex(&source_ip))),
+                    ("method", method.into()),
+                    ("source_ip_hash", blake3_hex(&source_ip).into()),
                 ]),
             ),
             nazo_identity::FederationAuditEvent::ProviderMismatchRejected {
@@ -83,8 +83,8 @@ impl TracingFederationAudit {
             } => (
                 "federation_provider_mismatch_rejected",
                 audit_fields([
-                    ("expected_provider_id", json!(expected_provider_id)),
-                    ("actual_provider_id", json!(actual_provider_id)),
+                    ("expected_provider_id", expected_provider_id.into()),
+                    ("actual_provider_id", actual_provider_id.into()),
                 ]),
             ),
             nazo_identity::FederationAuditEvent::SamlReplayRejected => {
