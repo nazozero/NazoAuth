@@ -511,6 +511,12 @@ async fn configured_initial_access_token_keeps_oauth_only_client_pkce_policy() {
     .await;
 
     assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["client_secret"], "issued-secret");
+    assert_eq!(body["client_secret_expires_at"], 0);
+    assert!(body["client_id_issued_at"].is_i64());
+    assert!(body.get("jwks").is_none());
+    assert!(body.get("request_uris").is_none());
     let stored = store
         .client
         .lock()
@@ -857,6 +863,8 @@ async fn registration_and_management_methods_keep_wire_contracts() {
     let read: Value = test::read_body_json(read).await;
     assert_eq!(read["registration_access_token"], "registration-token");
     assert!(read.get("client_secret").is_none());
+    assert!(read.get("client_secret_expires_at").is_none());
+    assert!(read.get("client_id_issued_at").is_none());
     for selected in [
         "subject_type",
         "id_token_signed_response_alg",
