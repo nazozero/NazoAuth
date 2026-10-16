@@ -139,7 +139,6 @@ pub(crate) struct ProtocolSettings {
     pub(crate) id_token_ttl_seconds: i64,
     pub(crate) refresh_token_ttl_seconds: i64,
     pub(crate) client_secret_pepper: String,
-    pub(crate) subject_type: SubjectType,
     pub(crate) pairwise_subject_secret: Option<String>,
     pub(crate) par_ttl_seconds: u64,
     pub(crate) require_pushed_authorization_requests: bool,

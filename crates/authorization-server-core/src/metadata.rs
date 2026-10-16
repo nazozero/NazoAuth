@@ -6,8 +6,8 @@ mod document;
 
 pub use document::{
     AuthorizationServerMetadataInput, CibaMetadataProfile, MetadataAuthorizationServerProfile,
-    MetadataSigningAlgorithms, MetadataSubjectType, ProtectedResourceMetadataInput,
-    authorization_server_metadata, protected_resource_metadata,
+    MetadataSigningAlgorithms, ProtectedResourceMetadataInput, authorization_server_metadata,
+    protected_resource_metadata,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -181,8 +181,8 @@ pub use logout_service::{
 pub use metadata::{
     AuthorizationServerMetadataInput, CapabilityAdmission, CibaMetadataProfile,
     MetadataAuthorizationServerProfile, MetadataCapabilities, MetadataSigningAlgorithms,
-    MetadataSubjectType, ProtectedResourceMetadataInput, authorization_server_metadata,
-    module_admissible, protected_resource_metadata,
+    ProtectedResourceMetadataInput, authorization_server_metadata, module_admissible,
+    protected_resource_metadata,
 };
 pub use oauth_parameters::{
     has_duplicate_oauth_parameter, is_subset, parse_scope, string_array_values,

@@ -8,6 +8,7 @@ use nazo_auth::{
 use nazo_oauth_server::contracts::metadata::{
     MetadataEndpointConfig, MetadataSnapshot, MetadataSnapshotSource,
 };
+use nazo_runtime_modules::ActiveModuleSnapshot;
 use serde_json::Value;
 
 /// Focused Actix dependency for discovery, RFC 8414/RFC 9728 metadata, and JWKS.
@@ -31,7 +32,6 @@ impl MetadataHandles {
                 mtls_enabled: self.config.mtls_enabled,
                 profile: self.config.authorization_server_profile,
                 ciba_profile: self.config.ciba_profile,
-                subject_type: self.config.subject_type,
                 pairwise_subject_enabled: self.config.pairwise_subject_enabled,
                 protected_resource_identifier: &self.config.protected_resource_identifier,
                 additional_scopes_supported: &self.config.additional_scopes_supported,
@@ -49,14 +49,14 @@ impl MetadataHandles {
         )
     }
 
-    fn protected_resource_metadata(&self, snapshot: &MetadataSnapshot) -> Value {
+    fn protected_resource_metadata(&self, modules: &ActiveModuleSnapshot) -> Value {
         protected_resource_metadata(
             ProtectedResourceMetadataInput {
                 issuer: &self.config.issuer,
                 protected_resource_identifier: &self.config.protected_resource_identifier,
                 mtls_enabled: self.config.mtls_enabled,
             },
-            &snapshot.active_modules,
+            modules,
         )
     }
 }
@@ -75,7 +75,7 @@ pub async fn oauth_authorization_server_metadata(handles: Data<MetadataHandles>)
 
 /// RFC 9728 Protected Resource metadata.
 pub async fn oauth_protected_resource_metadata(handles: Data<MetadataHandles>) -> Json<Value> {
-    let snapshot = handles.snapshots.snapshot();
+    let snapshot = handles.snapshots.active_modules();
     Json(handles.protected_resource_metadata(&snapshot))
 }
 

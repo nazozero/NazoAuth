@@ -1,11 +1,11 @@
 use serde_json::{Value, json};
 
-use super::MetadataCapabilities;
+use super::{CapabilityAdmission, MetadataCapabilities, module_admissible};
 use crate::{
     SUPPORTED_AUTHORIZATION_DETAILS_TYPES, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
     SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
 };
-use nazo_runtime_modules::ActiveModuleSnapshot;
+use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
 const FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS: [&str; 3] = ["EdDSA", "ES256", "PS256"];
@@ -98,13 +98,6 @@ impl CibaMetadataProfile {
     }
 }
 
-/// OIDC subject identifier mode selected by configuration.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MetadataSubjectType {
-    Public,
-    Pairwise,
-}
-
 /// Signing algorithms made available by the current key snapshot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MetadataSigningAlgorithms<'a> {
@@ -124,7 +117,6 @@ pub struct AuthorizationServerMetadataInput<'a> {
     pub mtls_enabled: bool,
     pub profile: MetadataAuthorizationServerProfile,
     pub ciba_profile: CibaMetadataProfile,
-    pub subject_type: MetadataSubjectType,
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: &'a str,
     pub additional_scopes_supported: &'a [String],
@@ -328,7 +320,6 @@ pub fn protected_resource_metadata(
     input: ProtectedResourceMetadataInput<'_>,
     snapshot: &ActiveModuleSnapshot,
 ) -> Value {
-    let capabilities = MetadataCapabilities::from_snapshot(snapshot);
     let mut metadata = json!({
         "resource": input.protected_resource_identifier,
         "authorization_servers": [input.issuer],
@@ -343,7 +334,11 @@ pub fn protected_resource_metadata(
     if input.mtls_enabled {
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
     }
-    if capabilities.authorization_details {
+    if module_admissible(
+        snapshot,
+        ModuleId::AuthorizationDetails,
+        CapabilityAdmission::NewRequest,
+    ) {
         metadata["authorization_details_types_supported"] = json!(
             SUPPORTED_AUTHORIZATION_DETAILS_TYPES
                 .iter()
@@ -355,11 +350,11 @@ pub fn protected_resource_metadata(
     metadata
 }
 
-fn subject_types_supported(input: AuthorizationServerMetadataInput<'_>) -> Vec<&'static str> {
+fn subject_types_supported(input: AuthorizationServerMetadataInput<'_>) -> &'static [&'static str] {
     if input.pairwise_subject_enabled {
-        vec!["public", "pairwise"]
+        &["public", "pairwise"]
     } else {
-        vec!["public"]
+        &["public"]
     }
 }
 
@@ -386,24 +381,21 @@ fn token_endpoint_auth_methods_supported(
 
 fn token_endpoint_auth_signing_alg_values_supported(
     ciba_profile: CibaMetadataProfile,
-) -> Vec<&'static str> {
+) -> &'static [&'static str] {
     if ciba_profile.requires_fapi2_hardening() {
-        return FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS.to_vec();
+        return &FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS;
     }
-    SUPPORTED_CLIENT_JWT_SIGNING_ALGS.to_vec()
+    SUPPORTED_CLIENT_JWT_SIGNING_ALGS
 }
 
 fn request_object_signing_alg_values_supported<'a>(
     profile: MetadataAuthorizationServerProfile,
     active_signing_algs: &'a [&'a str],
-) -> Vec<&'a str> {
+) -> &'a [&'a str] {
     if profile.requires_signed_authorization_request() {
-        return active_signing_algs.to_vec();
+        return active_signing_algs;
     }
-    if profile.requires_fapi2_security() {
-        return SUPPORTED_CLIENT_JWT_SIGNING_ALGS.to_vec();
-    }
-    SUPPORTED_CLIENT_JWT_SIGNING_ALGS.to_vec()
+    SUPPORTED_CLIENT_JWT_SIGNING_ALGS
 }
 
 fn response_modes_supported(profile: MetadataAuthorizationServerProfile) -> Vec<&'static str> {

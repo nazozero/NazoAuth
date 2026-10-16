@@ -637,7 +637,6 @@ impl Settings {
                     "REFRESH_TOKEN_TTL_SECONDS",
                 )?,
                 client_secret_pepper,
-                subject_type,
                 pairwise_subject_secret,
                 par_ttl_seconds,
                 require_pushed_authorization_requests,

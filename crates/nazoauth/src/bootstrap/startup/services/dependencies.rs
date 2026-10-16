@@ -1,14 +1,14 @@
 use super::super::configuration::StartupConfiguration;
 use super::*;
 use crate::http::mtls::MtlsCertificateSourceMode;
-use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile};
 use nazo_oauth_server::domain::dynamic_registration::{
     DynamicRegistrationApplication, ServerDynamicRegistrationRequestGuard,
     ServerDynamicRegistrationTokens,
 };
 use nazo_oauth_server::domain::metadata::ApplicationMetadataSnapshotSource;
 use nazo_oauth_server::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
-use nazo_oauth_server::policy::{CibaSecurityProfile, SubjectType};
+use nazo_oauth_server::policy::CibaSecurityProfile;
 use nazo_oauth_server::services::{
     ServerAuthorizationService, ServerCibaService, ServerDeviceGrantService,
 };
@@ -312,10 +312,6 @@ fn metadata_config(settings: &Settings) -> MetadataConfig {
         ciba_security_profile: match protocol.ciba_security_profile {
             CibaSecurityProfile::FapiCibaId1 => CibaMetadataProfile::FapiCiba,
             CibaSecurityProfile::Fapi2Ciba => CibaMetadataProfile::Fapi2Ciba,
-        },
-        subject_type: match protocol.subject_type {
-            SubjectType::Public => MetadataSubjectType::Public,
-            SubjectType::Pairwise => MetadataSubjectType::Pairwise,
         },
         pairwise_subject_enabled: protocol.pairwise_subject_secret.is_some(),
         protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),
