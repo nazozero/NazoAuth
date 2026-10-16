@@ -11,12 +11,6 @@ use uuid::Uuid;
 
 use crate::{DbPool, get_conn};
 
-#[derive(QueryableByName)]
-struct PresentationCompletionId {
-    #[diesel(sql_type = sql_types::Uuid)]
-    id: Uuid,
-}
-
 #[derive(Clone)]
 pub struct Openid4vpRepository {
     pool: DbPool,
@@ -39,7 +33,6 @@ impl Openid4vpRepository {
         transaction: &PresentationTransaction,
         idempotency: PresentationCreateIdempotency<'_>,
     ) -> Result<PresentationCreateOutcome, PresentationStoreError> {
-        validate_create_idempotency(idempotency)?;
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -107,21 +100,14 @@ impl Openid4vpRepository {
         .bind::<sql_types::Timestamptz, _>(transaction.created_at)
         .execute(&mut connection)
         .await
-        .map_err(|error| match error {
-            diesel::result::Error::DatabaseError(
-                diesel::result::DatabaseErrorKind::UniqueViolation,
-                _,
-            ) => PresentationStoreError::Unavailable,
-            _ => PresentationStoreError::Unavailable,
-        })?;
-        match inserted {
-            1 => Ok(PresentationCreateOutcome::Created),
-            0 => self
-                .load_idempotent_create(&mut connection, idempotency)
+        .map_err(|_| PresentationStoreError::Unavailable)?;
+        if inserted == 1 {
+            Ok(PresentationCreateOutcome::Created)
+        } else {
+            self.load_idempotent_create(&mut connection, idempotency)
                 .await?
                 .map(|transaction| PresentationCreateOutcome::Existing(Box::new(transaction)))
-                .ok_or(PresentationStoreError::InvalidTransition),
-            _ => Err(PresentationStoreError::InvalidTransition),
+                .ok_or(PresentationStoreError::InvalidTransition)
         }
     }
 
@@ -166,7 +152,6 @@ impl PresentationStorePort for Openid4vpRepository {
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
     {
         Box::pin(async move {
-            validate_create_idempotency(idempotency)?;
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -273,9 +258,9 @@ impl PresentationStorePort for Openid4vpRepository {
                     .bind::<sql_types::Uuid, _>(transaction_id)
                     .bind::<sql_types::Uuid, _>(self.tenant_id)
                     .bind::<sql_types::Text, _>(state_hash)
-                    .load::<PresentationCompletionId>(connection)
+                    .execute(connection)
                     .await?;
-                    if !locked.iter().any(|row| row.id == transaction_id) {
+                    if locked == 0 {
                         return Ok(false);
                     }
                     let changed = sql_query(
@@ -512,34 +497,6 @@ async fn load_presentation_by_create_request(
     .get_result(connection)
     .await
     .optional()
-}
-
-fn validate_create_idempotency(
-    idempotency: PresentationCreateIdempotency<'_>,
-) -> Result<(), PresentationStoreError> {
-    nazo_operator_protocol::validate_openid4vp_create_request_jti(idempotency.request_jti)
-        .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    if idempotency.request_sha256.len() != 64
-        || !idempotency
-            .request_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        || idempotency.canonical_request.is_empty()
-        || idempotency.canonical_request.len()
-            > nazo_operator_protocol::MAX_OPENID4VP_NORMALIZED_CREATE_REQUEST_BYTES
-    {
-        return Err(PresentationStoreError::InvalidTransition);
-    }
-    let normalized: nazo_operator_protocol::Openid4vpNormalizedCreateRequest =
-        serde_json::from_str(idempotency.canonical_request)
-            .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    let (canonical, sha256) =
-        nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&normalized)
-            .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    if canonical != idempotency.canonical_request || sha256 != idempotency.request_sha256 {
-        return Err(PresentationStoreError::InvalidTransition);
-    }
-    Ok(())
 }
 
 fn parse_client_id_prefix(

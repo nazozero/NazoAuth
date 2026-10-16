@@ -364,7 +364,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 ),
             };
             let normalized_request = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
-                wallet_authorization_endpoint: wallet_authorization_endpoint.clone(),
+                wallet_authorization_endpoint,
                 dcql_query: serde_json::to_value(&input.dcql_query).map_err(|_| {
                     vp_error(400, "invalid_request", "DCQL query is not JSON encodable.")
                 })?,
@@ -372,11 +372,9 @@ impl PresentationOperations for ServerPresentationOperations {
                 client_id_prefix: prefix.as_str().to_owned(),
                 request_method: method.as_str().to_owned(),
                 response_mode: mode.as_str().to_owned(),
-                transaction_data: input.transaction_data.clone(),
-                openid4vc_trust_policy_resource_id: input
-                    .openid4vc_trust_policy_resource_id
-                    .clone(),
-                openid4vc_trust_policy_digest: input.openid4vc_trust_policy_digest.clone(),
+                transaction_data: input.transaction_data,
+                openid4vc_trust_policy_resource_id: input.openid4vc_trust_policy_resource_id,
+                openid4vc_trust_policy_digest: input.openid4vc_trust_policy_digest,
             };
             let (canonical_request, request_sha256) =
                 nazo_operator_protocol::canonical_openid4vp_normalized_create_request(
@@ -430,7 +428,11 @@ impl PresentationOperations for ServerPresentationOperations {
                     ));
                 }
             }
-            let trust_policy = if let Some((resource_id, digest)) = binding {
+            let trust_policy = if let Some((resource_id, digest)) = normalized_request
+                .openid4vc_trust_policy_resource_id
+                .as_deref()
+                .zip(normalized_request.openid4vc_trust_policy_digest.as_deref())
+            {
                 Some(
                     self.active_trust_policy(resource_id, &wallet_origin, digest)
                         .await?
@@ -467,7 +469,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 jwk["alg"] = json!("ECDH-ES");
                 json!({"keys":[jwk]})
             });
-            let transaction_data = input
+            let transaction_data = normalized_request
                 .transaction_data
                 .map(|values| {
                     values
@@ -489,10 +491,10 @@ impl PresentationOperations for ServerPresentationOperations {
                 })
                 .transpose()?;
             let request = AuthorizationRequest {
-                client_id: client_id.clone(),
+                client_id,
                 response_type: "vp_token".to_owned(),
                 response_mode: mode,
-                response_uri: response_uri.clone(),
+                response_uri,
                 nonce: random_urlsafe_token(),
                 state: random_urlsafe_token(),
                 dcql_query: input.dcql_query,
@@ -531,10 +533,10 @@ impl PresentationOperations for ServerPresentationOperations {
                 client_id_prefix: prefix,
                 request_method: method,
 
-                wallet_authorization_endpoint,
-                request: request.clone(),
+                wallet_authorization_endpoint: normalized_request.wallet_authorization_endpoint,
+                request,
                 request_object,
-                request_uri: request_uri.clone(),
+                request_uri,
                 openid4vc_trust_policy_binding_id: trust_policy.as_ref().map(|policy| policy.id),
                 openid4vc_trust_policy_resource_id: trust_policy
                     .as_ref()

@@ -15,13 +15,14 @@ use crate::test_support::valkey::valkey_set_ex;
 use actix_web::http::header;
 
 use chrono::Utc;
+use serde_json::{Value, json};
 
 use nazo_identity::AccessRequestStatus;
 
 fn my_access_requests_response(rows: Vec<nazo_identity::AccessRequest>) -> HttpResponse {
-    let items: Vec<Value> = rows
+    let items: Vec<UserAccessRequest> = rows
         .into_iter()
-        .map(|row| user_access_request_json(row, None))
+        .map(|row| user_access_request(row, None))
         .collect();
     access_request_items_response(items)
 }
@@ -231,9 +232,9 @@ fn access_request_row(status: AccessRequestStatus) -> nazo_identity::AccessReque
 }
 
 #[test]
-fn user_access_request_json_omits_request_owner_and_client_secret_material() {
+fn user_access_request_omits_request_owner_and_client_secret_material() {
     let row = access_request_row(AccessRequestStatus::Approved);
-    let value = user_access_request_json(row, None);
+    let value = serde_json::to_value(user_access_request(row, None)).unwrap();
 
     assert_eq!(value["site_name"], "Client App");
     assert_eq!(value["site_url"], "https://client.example");

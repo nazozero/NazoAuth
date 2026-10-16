@@ -13,6 +13,9 @@ pub struct StoredPresentation {
     pub completed: Option<PresentationResult>,
 }
 
+/// Binding generated from an admitted, normalized create request.
+/// The caller owns input validation and canonicalization; stores compare the
+/// binding with the persisted request and enforce atomic create uniqueness.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PresentationCreateIdempotency<'a> {
     pub request_jti: &'a str,

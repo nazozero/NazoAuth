@@ -310,6 +310,20 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
     );
 
     let enabled = operations(invalid_pool(), true).await;
+    for create_request_jti in ["", "not-a-uuid", "A0000000-0000-0000-0000-000000000000"] {
+        let error = enabled
+            .create(CreatePresentationRequest {
+                create_request_jti: create_request_jti.to_owned(),
+                ..create_input(None, None, None, false)
+            })
+            .await
+            .expect_err("invalid create JTI must fail before storage");
+        assert_eq!(error.status, 400);
+        assert_eq!(
+            error.description,
+            "create_request_jti must be a canonical lowercase UUID."
+        );
+    }
     let wallet_error = enabled
         .create(CreatePresentationRequest {
             wallet_authorization_endpoint: "http://wallet.example/authorize".to_owned(),

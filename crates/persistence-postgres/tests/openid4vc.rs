@@ -825,33 +825,6 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
             .expect_err("transaction primary-key conflicts must not masquerade as replay"),
         nazo_openid4vp::PresentationStoreError::Unavailable
     );
-    let invalid_binding_jti = Uuid::now_v7().to_string();
-    let invalid_binding_sha256 = "f".repeat(64);
-    assert_eq!(
-        verifier
-            .find_by_create_request(nazo_openid4vp::PresentationCreateIdempotency {
-                request_jti: &create_request_jti,
-                request_sha256: &invalid_binding_sha256,
-                canonical_request: &create_request,
-            })
-            .await
-            .expect_err("lookup must validate canonical JSON and digest at its public boundary"),
-        nazo_openid4vp::PresentationStoreError::InvalidTransition
-    );
-    assert_eq!(
-        verifier
-            .create(
-                &transaction,
-                nazo_openid4vp::PresentationCreateIdempotency {
-                    request_jti: &invalid_binding_jti,
-                    request_sha256: &invalid_binding_sha256,
-                    canonical_request: &create_request,
-                },
-            )
-            .await
-            .expect_err("canonical create JSON and digest must agree"),
-        nazo_openid4vp::PresentationStoreError::InvalidTransition
-    );
     let concurrent_jti = Uuid::now_v7().to_string();
     let mut concurrent_a = transaction.clone();
     concurrent_a.id = Uuid::now_v7();

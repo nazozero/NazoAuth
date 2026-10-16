@@ -80,7 +80,7 @@ pub trait Openid4vciDatasetStore: Send + Sync {
     ) -> BoxFuture<'a, Result<bool, CredentialStoreError>>;
 }
 
-/// Minimal subject projection required before creating offers or datasets.
+/// Minimal subject projection required before creating offers.
 pub trait Openid4vcSubjectStore: Send + Sync {
     fn is_active(
         &self,
