@@ -134,15 +134,7 @@ struct AdvisoryLockRow {
 }
 
 #[derive(QueryableByName)]
-struct CountRow {
-    #[diesel(sql_type = sql_types::BigInt)]
-    count: i64,
-}
-
-#[derive(QueryableByName)]
 struct OAuthClientStateRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    id: Uuid,
     #[diesel(sql_type = sql_types::Bool)]
     is_active: bool,
 }
@@ -604,52 +596,6 @@ impl TenantResourceRepository {
         .await
     }
 
-    pub async fn openid4vc_trust_policy_for_client_on_connection(
-        connection: &mut AsyncPgConnection,
-        tenant_id: Uuid,
-        public_client_id: &str,
-    ) -> Result<Openid4vcTrustPolicyForClient, RepositoryError> {
-        validate_openid4vc_trust_client_id(public_client_id)?;
-        let client = sql_query(
-            "SELECT id, is_active
-             FROM oauth_clients
-             WHERE tenant_id = $1 AND client_id = $2",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Varchar, _>(public_client_id)
-        .get_result::<OAuthClientStateRow>(connection)
-        .await
-        .optional()
-        .map_err(map_error)?;
-        let Some(client) = client else {
-            return Ok(Openid4vcTrustPolicyForClient::Unbound);
-        };
-        let binding_count = sql_query(
-            "SELECT COUNT(*)::BIGINT AS count
-             FROM openid4vc_trust_policy_clients
-             WHERE tenant_id = $1 AND oauth_client_id = $2",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Uuid, _>(client.id)
-        .get_result::<CountRow>(connection)
-        .await
-        .map_err(map_error)?;
-        if binding_count.count == 0 {
-            return Ok(Openid4vcTrustPolicyForClient::Unbound);
-        }
-        if !client.is_active {
-            return Ok(Openid4vcTrustPolicyForClient::BoundInactive);
-        }
-        match active_openid4vc_trust_policy_for_internal_client_on_connection(
-            connection, tenant_id, client.id,
-        )
-        .await?
-        {
-            Some(policy) => Ok(Openid4vcTrustPolicyForClient::Active(policy)),
-            None => Ok(Openid4vcTrustPolicyForClient::BoundInactive),
-        }
-    }
-
     pub async fn openid4vc_trust_policy_for_client(
         &self,
         tenant_id: Uuid,
@@ -658,7 +604,7 @@ impl TenantResourceRepository {
         validate_openid4vc_trust_client_id(public_client_id)?;
         let mut connection = self.connection().await?;
         // Request-time trust resolution is a single committed snapshot. Row
-        // locks belong to the management transaction's on_connection variant;
+        // locks belong to management writes;
         // a read lock here would end before proof verification even begins.
         let row = sql_query(
             "SELECT client.is_active AS client_active, \
@@ -791,7 +737,7 @@ impl TenantResourceRepository {
         )
         .await?;
         sql_query(
-            "SELECT id, is_active
+            "SELECT is_active
              FROM oauth_clients
              WHERE tenant_id = $1 AND id = $2
              FOR UPDATE",
@@ -938,34 +884,6 @@ async fn select_openid4vc_trust_policy_client_binding_on_connection(
     .await
     .optional()
     .map_err(map_error)
-}
-
-async fn active_openid4vc_trust_policy_for_internal_client_on_connection(
-    connection: &mut AsyncPgConnection,
-    tenant_id: Uuid,
-    oauth_client_id: Uuid,
-) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
-    sql_query(
-        "SELECT policy.id, policy.tenant_id, policy.resource_id,
-                policy.resource_digest, policy.public_material, policy.wallet_origins,
-                policy.active, policy.created_at, policy.updated_at, policy.revoked_at
-         FROM openid4vc_trust_policy_clients binding
-         JOIN openid4vc_trust_policies policy
-           ON policy.tenant_id = binding.tenant_id
-          AND policy.id = binding.policy_id
-          AND policy.active
-         WHERE binding.tenant_id = $1 AND binding.oauth_client_id = $2
-           AND binding.active
-         FOR UPDATE OF binding, policy",
-    )
-    .bind::<sql_types::Uuid, _>(tenant_id)
-    .bind::<sql_types::Uuid, _>(oauth_client_id)
-    .get_result::<Openid4vcTrustPolicyRow>(connection)
-    .await
-    .optional()
-    .map_err(map_error)?
-    .map(StoredOpenid4vcTrustPolicy::try_from)
-    .transpose()
 }
 
 impl Openid4vcTrustPolicyStore for TenantResourceRepository {

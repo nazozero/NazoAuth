@@ -606,13 +606,10 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     .await
     .expect("trust policy client should insert");
     assert_eq!(
-        TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-            &mut connection,
-            tenant_id,
-            &public_client_id,
-        )
-        .await
-        .expect("unbound trust client lookup should succeed"),
+        TenantResourceRepository::new(pool.clone())
+            .openid4vc_trust_policy_for_client(tenant_id, &public_client_id)
+            .await
+            .expect("unbound trust client lookup should succeed"),
         Openid4vcTrustPolicyForClient::Unbound
     );
 
@@ -666,17 +663,6 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 Openid4vcTrustPolicyClientBind::Replayed {
                     binding_id: replayed_id
                 } if replayed_id == binding_id
-            ));
-            assert!(matches!(
-                TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-                    connection,
-                    tenant_id,
-                    &public_client_id,
-                )
-                .await?,
-                Openid4vcTrustPolicyForClient::Active(ref policy)
-                    if policy.resource_id == "wallet-trust"
-                        && policy.resource_digest == first_digest
             ));
 
             let alternate = TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
@@ -771,15 +757,6 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                     "exact trust policy revoke did not revoke".to_owned(),
                 ));
             };
-            assert_eq!(
-                TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-                    connection,
-                    tenant_id,
-                    &public_client_id,
-                )
-                .await?,
-                Openid4vcTrustPolicyForClient::BoundInactive
-            );
             assert!(
                 TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
                     connection,
@@ -858,10 +835,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     connection
         .transaction::<(), TestTransactionError, _>(async |connection| {
             // Management keeps its policy/binding locks throughout this transaction.
-            TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
+            TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
                 connection,
                 tenant_id,
-                &public_client_id,
+                "wallet-trust",
+                &first_digest,
+                oauth_client_id,
             )
             .await?;
             let resolved = tokio::time::timeout(
