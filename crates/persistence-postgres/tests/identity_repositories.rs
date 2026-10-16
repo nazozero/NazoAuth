@@ -1533,6 +1533,13 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
     let link_port: &dyn FederationLinkRepositoryPort = &links;
     assert_eq!(
         passkey_port
+            .credential_ids(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        vec![credential.credential.id.clone()],
+    );
+    assert_eq!(
+        passkey_port
             .list_summaries(tenant.tenant_id, user_id)
             .await
             .unwrap(),
@@ -1567,6 +1574,13 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
     let foreign_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     let foreign_user = UserId::new(Uuid::now_v7()).unwrap();
     for (tenant_id, scoped_user) in [(foreign_tenant, user_id), (tenant.tenant_id, foreign_user)] {
+        assert!(
+            passkey_port
+                .credential_ids(tenant_id, scoped_user)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         assert!(
             passkey_port
                 .list_summaries(tenant_id, scoped_user)

@@ -775,7 +775,7 @@ async fn registration_finish_rejects_ceremony_user_mismatch_without_inserting_cr
 }
 
 #[actix_web::test]
-async fn registration_begin_rejects_malformed_stored_credential_before_new_ceremony() {
+async fn registration_begin_reads_only_scoped_credential_ids() {
     let Some(fixture) = LivePasskeyFixture::new().await else {
         return;
     };
@@ -784,13 +784,8 @@ async fn registration_begin_rejects_malformed_stored_credential_before_new_cerem
     let sid = format!("malformed-begin-{suffix}");
     let csrf = format!("csrf-{suffix}");
     fixture.store_session(&user, &sid).await;
-    fixture
-        .insert_passkey_credential(
-            &user,
-            "broken-credential",
-            json!({"unexpected": true}),
-            "Broken passkey",
-        )
+    let credential = fixture
+        .insert_passkey_credential(&user, "AQI", json!({"unexpected": true}), "Broken passkey")
         .await;
 
     let (status, body) = response_json(
@@ -803,6 +798,28 @@ async fn registration_begin_rejects_malformed_stored_credential_before_new_cerem
     )
     .await;
 
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["publicKey"]["excludeCredentials"][0]["id"],
+        credential.credential_id
+    );
+    fixture
+        .insert_passkey_credential(
+            &user,
+            "invalid!base64",
+            json!({"unexpected": true}),
+            "Bad identifier",
+        )
+        .await;
+    let (status, body) = response_json(
+        passkey_registration_begin(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            Json(PasskeyBeginRequest { label: None }),
+        )
+        .await,
+    )
+    .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
     assert_eq!(body["error_description"], "passkey state unavailable.");

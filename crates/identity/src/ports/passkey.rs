@@ -75,6 +75,12 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<PasskeyCredentialSummary>>;
 
+    fn credential_ids(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Vec<passkey_auth::CredentialId>>;
+
     fn by_credential_id<'a>(
         &'a self,
         tenant_id: TenantId,
