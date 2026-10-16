@@ -395,7 +395,7 @@ async fn t00_form_post_exact_document_and_security_headers_bind_observed_nonce()
         .expect("real authorization code input");
     assert!(!code.is_empty());
     let expected = format!(
-        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>Continue</title></head><body><form method=\"post\" action=\"https://client.example/callback\">\n<input type=\"hidden\" name=\"code\" value=\"{code}\">\n<input type=\"hidden\" name=\"state\" value=\"state&lt;&amp;&quot;&#x27;\">\n<input type=\"hidden\" name=\"iss\" value=\"https://issuer.example\">\n<noscript><button type=\"submit\">Continue</button></noscript></form><script nonce=\"{nonce}\">document.forms[0].submit();</script></body></html>"
+        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>Continue</title></head><body><form method=\"post\" action=\"https://client.example/callback\">\n<input type=\"hidden\" name=\"code\" value=\"{code}\">\n<input type=\"hidden\" name=\"state\" value=\"state&lt;&amp;&quot;&#39;\">\n<input type=\"hidden\" name=\"iss\" value=\"https://issuer.example\">\n<noscript><button type=\"submit\">Continue</button></noscript></form><script nonce=\"{nonce}\">document.forms[0].submit();</script></body></html>"
     );
     assert_eq!(body.as_ref(), expected.as_bytes());
 
@@ -412,7 +412,7 @@ async fn t00_form_post_exact_document_and_security_headers_bind_observed_nonce()
     let escaped_body = to_bytes(escaped.into_body()).await.unwrap();
     let escaped_expected = expected.replace(
         &format!("name=\"code\" value=\"{code}\""),
-        "name=\"code\" value=\"code&lt;&amp;&quot;&#x27;\"",
+        "name=\"code\" value=\"code&lt;&amp;&quot;&#39;\"",
     );
     assert_eq!(escaped_body.as_ref(), escaped_expected.as_bytes());
 }

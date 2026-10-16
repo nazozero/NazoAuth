@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use actix_web::{
     HttpRequest, HttpResponse,
     error::InternalError,
@@ -38,35 +40,40 @@ pub async fn mfa_method_not_allowed() -> HttpResponse {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ResourceAccessToken {
-    Present(AccessTokenAuthScheme, String),
+pub enum ResourceAccessToken<'a> {
+    Present(AccessTokenAuthScheme, Cow<'a, str>),
     Missing,
     InvalidRequest,
 }
 
-pub fn authorization_access_token(headers: &HeaderMap) -> Option<(AccessTokenAuthScheme, String)> {
+pub fn authorization_access_token(headers: &HeaderMap) -> Option<(AccessTokenAuthScheme, &str)> {
     let raw = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let mut parts = raw.splitn(2, char::is_whitespace);
     let scheme = parts.next()?.trim();
     let token = parts.next()?.trim();
-    if token.is_empty() || token.split_whitespace().count() != 1 {
+    if token.is_empty() || token.chars().any(char::is_whitespace) {
         return None;
     }
     if scheme.eq_ignore_ascii_case("DPoP") {
-        return Some((AccessTokenAuthScheme::DPoP, token.to_owned()));
+        return Some((AccessTokenAuthScheme::DPoP, token));
     }
     if scheme.eq_ignore_ascii_case("Bearer") {
-        return Some((AccessTokenAuthScheme::Bearer, token.to_owned()));
+        return Some((AccessTokenAuthScheme::Bearer, token));
     }
     None
 }
 
-pub fn resource_access_token(
-    request: &HttpRequest,
-    body: &[u8],
+pub fn resource_access_token<'a>(
+    request: &'a HttpRequest,
+    body: &'a [u8],
     forbid_form_body: bool,
-) -> ResourceAccessToken {
-    if request.headers().get_all(header::AUTHORIZATION).count() > 1 {
+) -> ResourceAccessToken<'a> {
+    if request
+        .headers()
+        .get_all(header::AUTHORIZATION)
+        .nth(1)
+        .is_some()
+    {
         return ResourceAccessToken::InvalidRequest;
     }
     let body_token = resource_form_body_access_token(request, body);
@@ -78,7 +85,7 @@ pub fn resource_access_token(
     let header_token = authorization_access_token(request.headers());
     let selected = match (header_token, body_token) {
         (Some(_), FormBodyAccessToken::Present(_)) => ResourceAccessToken::InvalidRequest,
-        (Some((scheme, token)), _) => ResourceAccessToken::Present(scheme, token),
+        (Some((scheme, token)), _) => ResourceAccessToken::Present(scheme, Cow::Borrowed(token)),
         (None, FormBodyAccessToken::Present(token)) => {
             ResourceAccessToken::Present(AccessTokenAuthScheme::Bearer, token)
         }
@@ -103,13 +110,16 @@ fn query_has_access_token(query: &str) -> bool {
     })
 }
 
-enum FormBodyAccessToken {
-    Present(String),
+enum FormBodyAccessToken<'a> {
+    Present(Cow<'a, str>),
     Missing,
     InvalidRequest,
 }
 
-fn resource_form_body_access_token(request: &HttpRequest, body: &[u8]) -> FormBodyAccessToken {
+fn resource_form_body_access_token<'a>(
+    request: &HttpRequest,
+    body: &'a [u8],
+) -> FormBodyAccessToken<'a> {
     if request.method() != Method::POST || body.is_empty() || !request_uses_form_urlencoded(request)
     {
         return FormBodyAccessToken::Missing;
@@ -120,9 +130,7 @@ fn resource_form_body_access_token(request: &HttpRequest, body: &[u8]) -> FormBo
         return FormBodyAccessToken::InvalidRequest;
     }
     match first {
-        Some((_, value)) if !value.trim().is_empty() => {
-            FormBodyAccessToken::Present(value.into_owned())
-        }
+        Some((_, value)) if !value.trim().is_empty() => FormBodyAccessToken::Present(value),
         _ => FormBodyAccessToken::Missing,
     }
 }
