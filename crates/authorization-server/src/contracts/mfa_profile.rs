@@ -9,7 +9,6 @@ pub type MfaProfileFuture<'a, T> =
 pub struct MfaRequestContext {
     pub session_id: String,
     pub source_ip: String,
-    pub user_agent_hash: Option<String>,
     pub now: i64,
 }
 
@@ -30,6 +29,7 @@ pub struct MfaChallengeCommand {
     pub context: MfaRequestContext,
     pub code: String,
     pub remember_device: bool,
+    pub user_agent_hash: Option<String>,
 }
 
 impl std::fmt::Debug for MfaChallengeCommand {
@@ -71,7 +71,7 @@ pub struct MfaTotpConfirmation {
 #[derive(Clone, Eq, PartialEq)]
 pub struct MfaChallengeSuccess {
     pub rotation: MfaSessionRotation,
-    pub method: String,
+    pub method: &'static str,
     pub remembered_device_token: Option<String>,
 }
 
@@ -84,7 +84,7 @@ impl std::fmt::Debug for MfaChallengeSuccess {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MfaStepUpSuccess {
     pub rotation: MfaSessionRotation,
-    pub method: String,
+    pub method: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -117,7 +117,6 @@ pub enum MfaProfileErrorKind {
 pub struct MfaProfileError {
     pub kind: MfaProfileErrorKind,
     pub retry_after_seconds: Option<u64>,
-    pub rotation: Option<MfaSessionRotation>,
     pub clear_session_cookies: bool,
 }
 
@@ -127,7 +126,6 @@ impl MfaProfileError {
         Self {
             kind,
             retry_after_seconds: None,
-            rotation: None,
             clear_session_cookies: false,
         }
     }
@@ -143,7 +141,6 @@ impl MfaProfileError {
             } => Self {
                 kind: MfaProfileErrorKind::RateLimited,
                 retry_after_seconds: Some(retry_after_seconds),
-                rotation: None,
                 clear_session_cookies: false,
             },
         }

@@ -150,7 +150,7 @@ pub async fn mfa_totp_begin(
             "period": MFA_TOTP_PERIOD_SECONDS,
             "digits": MFA_TOTP_DIGITS,
         })),
-        Err(error) => error_response(&endpoint, MfaAction::Begin, error),
+        Err(error) => error_response(&endpoint, error),
     }
 }
 
@@ -179,7 +179,7 @@ pub async fn mfa_totp_confirm(
             })),
             &success.rotation,
         ),
-        Err(error) => error_response(&endpoint, MfaAction::Confirm, error),
+        Err(error) => error_response(&endpoint, error),
     }
 }
 
@@ -192,17 +192,30 @@ pub async fn mfa_verify(
         Ok(context) => context,
         Err(response) => return response,
     };
+    let remember_device = payload.remember_device.unwrap_or(false);
+    let user_agent_hash = if remember_device {
+        request
+            .headers()
+            .get(header::USER_AGENT)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| blake3::hash(value.as_bytes()).to_hex().to_string())
+    } else {
+        None
+    };
     match endpoint
         .operations
         .verify_challenge(MfaChallengeCommand {
             context,
             code: payload.code,
-            remember_device: payload.remember_device.unwrap_or(false),
+            remember_device,
+            user_agent_hash,
         })
         .await
     {
         Ok(success) => {
-            let mut cookies = rotation_cookies(&endpoint, &success.rotation).to_vec();
+            let mut cookies = Vec::from(rotation_cookies(&endpoint, &success.rotation));
             if let Some(token) = success.remembered_device_token {
                 cookies.push(make_cookie(
                     &endpoint.config.remembered_mfa_cookie_name,
@@ -220,7 +233,7 @@ pub async fn mfa_verify(
                 &cookies,
             )
         }
-        Err(error) => error_response(&endpoint, MfaAction::Verify, error),
+        Err(error) => error_response(&endpoint, error),
     }
 }
 
@@ -249,7 +262,7 @@ pub async fn mfa_step_up(
             })),
             &success.rotation,
         ),
-        Err(error) => error_response(&endpoint, MfaAction::StepUp, error),
+        Err(error) => error_response(&endpoint, error),
     }
 }
 
@@ -275,7 +288,7 @@ pub async fn mfa_backup_codes_regenerate(
             json_response_no_store(json!({"backup_codes": success.backup_codes})),
             &success.rotation,
         ),
-        Err(error) => error_response(&endpoint, MfaAction::Regenerate, error),
+        Err(error) => error_response(&endpoint, error),
     }
 }
 
@@ -304,7 +317,7 @@ pub async fn mfa_disable(
             )],
         ),
         Ok(_) => json_response_no_store(json!({"mfa_enabled": false})),
-        Err(error) => error_response(&endpoint, MfaAction::Disable, error),
+        Err(error) => error_response(&endpoint, error),
     }
 }
 
@@ -326,56 +339,31 @@ fn request_context(
             authorization_error_response(StatusCode::UNAUTHORIZED, "login_required", "请求失败."),
         ));
     };
-    let user_agent_hash = request
-        .headers()
-        .get(header::USER_AGENT)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| blake3::hash(value.as_bytes()).to_hex().to_string());
     Ok(MfaRequestContext {
         session_id,
         source_ip: client_ip_with_config(request, &endpoint.client_ip),
-        user_agent_hash,
         now: Utc::now().timestamp(),
     })
 }
 
-#[derive(Clone, Copy)]
-enum MfaAction {
-    Begin,
-    Confirm,
-    Verify,
-    StepUp,
-    Regenerate,
-    Disable,
-}
-
-fn error_response(
-    endpoint: &MfaProfileEndpoint,
-    action: MfaAction,
-    error: MfaProfileError,
-) -> HttpResponse {
+fn error_response(endpoint: &MfaProfileEndpoint, error: MfaProfileError) -> HttpResponse {
     let mut response = match error.kind {
         MfaProfileErrorKind::SessionMissing => clear_session_cookies(
             endpoint,
-            authorization_error_response(
-                StatusCode::UNAUTHORIZED,
-                "login_required",
-                session_missing_description(action),
-            ),
+            authorization_error_response(StatusCode::UNAUTHORIZED, "login_required", "请求失败."),
         ),
-        MfaProfileErrorKind::ChallengeMissing => authorization_error_response(
-            StatusCode::UNAUTHORIZED,
-            "login_required",
-            session_missing_description(action),
-        ),
-        MfaProfileErrorKind::SessionUnavailable => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::RateLimitUnavailable => authorization_error_response(
+        MfaProfileErrorKind::ChallengeMissing => {
+            authorization_error_response(StatusCode::UNAUTHORIZED, "login_required", "请求失败.")
+        }
+        MfaProfileErrorKind::SessionUnavailable
+        | MfaProfileErrorKind::RateLimitUnavailable
+        | MfaProfileErrorKind::CredentialUnavailable
+        | MfaProfileErrorKind::HashUnavailable
+        | MfaProfileErrorKind::SessionWriteFailed
+        | MfaProfileErrorKind::RememberDeviceFailed
+        | MfaProfileErrorKind::BackupCodesFailed
+        | MfaProfileErrorKind::DisableFailed
+        | MfaProfileErrorKind::AuditUnavailable => authorization_error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
             "请求失败.",
@@ -386,67 +374,22 @@ fn error_response(
         MfaProfileErrorKind::AlreadyEnabled => {
             authorization_error_response(StatusCode::CONFLICT, "invalid_request", "请求失败.")
         }
-        MfaProfileErrorKind::EnrollmentMissing => {
+        MfaProfileErrorKind::EnrollmentMissing | MfaProfileErrorKind::MfaDisabled => {
             authorization_error_response(StatusCode::BAD_REQUEST, "invalid_request", "请求失败.")
         }
         MfaProfileErrorKind::InvalidCode => {
             authorization_error_response(StatusCode::BAD_REQUEST, "invalid_grant", "请求失败.")
         }
-        MfaProfileErrorKind::MfaDisabled => {
-            authorization_error_response(StatusCode::BAD_REQUEST, "invalid_request", "请求失败.")
-        }
-        MfaProfileErrorKind::CredentialUnavailable => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::HashUnavailable => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::SessionWriteFailed => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::RememberDeviceFailed => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::BackupCodesFailed => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::DisableFailed => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
-        MfaProfileErrorKind::AuditUnavailable => authorization_error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "请求失败.",
-        ),
     };
     if let Some(retry_after_seconds) = error.retry_after_seconds
         && let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string())
     {
         response.headers_mut().insert(header::RETRY_AFTER, value);
     }
-    if let Some(rotation) = error.rotation {
-        response = with_rotation(endpoint, response, &rotation);
-    }
     if error.clear_session_cookies {
         response = clear_session_cookies(endpoint, response);
     }
     response
-}
-
-const fn session_missing_description(_action: MfaAction) -> &'static str {
-    "请求失败."
 }
 
 fn with_rotation(

@@ -122,7 +122,6 @@ impl ServerMfaProfileOperations {
             } => Err(MfaProfileError {
                 kind: MfaProfileErrorKind::RateLimited,
                 retry_after_seconds: Some(retry_after_seconds),
-                rotation: None,
                 clear_session_cookies: false,
             }),
         }
@@ -324,7 +323,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                     .remember_device(
                         &account,
                         &method,
-                        command.context.user_agent_hash.clone(),
+                        command.user_agent_hash,
                         now + Duration::seconds(ttl),
                     )
                     .await
@@ -343,7 +342,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             tracing::info!(user_id = %account.id(), method = method.amr(), "MFA challenge completed");
             Ok(MfaChallengeSuccess {
                 rotation,
-                method: method.amr().to_owned(),
+                method: method.amr(),
                 remembered_device_token,
             })
         })
@@ -380,7 +379,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             tracing::info!(user_id = %account.id(), method = method.amr(), "MFA session stepped up");
             Ok(MfaStepUpSuccess {
                 rotation,
-                method: method.amr().to_owned(),
+                method: method.amr(),
             })
         })
     }
@@ -472,9 +471,10 @@ impl ServerMfaProfileOperations {
 }
 
 fn session_rotation(rotation: SessionRotation) -> MfaSessionRotation {
+    let (session_id, csrf_token) = rotation.into_tokens();
     MfaSessionRotation {
-        session_id: rotation.session_id().as_str().to_owned(),
-        csrf_token: rotation.csrf_token().to_owned(),
+        session_id,
+        csrf_token,
     }
 }
 

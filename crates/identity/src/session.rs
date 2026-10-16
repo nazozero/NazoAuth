@@ -222,6 +222,14 @@ impl std::fmt::Debug for SessionRotation {
 
 impl SessionRotation {
     #[must_use]
+    pub fn into_tokens(self) -> (String, String) {
+        (
+            self.session_id.0.into_string(),
+            self.csrf_token.into_string(),
+        )
+    }
+
+    #[must_use]
     pub fn session_id(&self) -> &SessionId {
         &self.session_id
     }
