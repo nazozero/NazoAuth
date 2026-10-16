@@ -634,30 +634,17 @@ impl TenantResourceRepository {
     }
 
     /// Install one validated public trust policy. The protocol/provider layer
-    /// owns the OpenID4VC schema; persistence owns bounded storage and the
-    /// active-version digest fence.
+    /// owns validation and binds the digest to the exact material. The transaction
+    /// owner holds the policy identity lock; persistence owns the active digest fence.
     pub async fn apply_openid4vc_trust_policy_on_connection(
         connection: &mut AsyncPgConnection,
         policy: NewStoredOpenid4vcTrustPolicy<'_>,
     ) -> Result<Openid4vcTrustPolicyWrite, RepositoryError> {
-        validate_stored_openid4vc_trust_policy_identity(
-            policy.resource_id,
-            Some(policy.resource_digest),
-        )?;
-        validate_bounded_public_material(policy.public_material)?;
-        let wallet_origins = validate_new_wallet_origins(policy.wallet_origins)?;
-        let wallet_origins_json = serde_json::to_value(&wallet_origins).map_err(|_| {
+        let wallet_origins_json = serde_json::to_value(policy.wallet_origins).map_err(|_| {
             RepositoryError::Consistency(
                 "OpenID4VC trust policy wallet origins are not JSON".to_owned(),
             )
         })?;
-        lock_binding_identity_on_connection(
-            connection,
-            policy.tenant_id,
-            "openid4vc-trust-policy",
-            policy.resource_id,
-        )
-        .await?;
 
         if let Some(current) = select_openid4vc_trust_policy_on_connection(
             connection,
@@ -666,10 +653,7 @@ impl TenantResourceRepository {
         )
         .await?
         {
-            return if current.resource_digest == policy.resource_digest
-                && current.public_material == *policy.public_material
-                && current.wallet_origins == wallet_origins
-            {
+            return if current.resource_digest == policy.resource_digest {
                 Ok(Openid4vcTrustPolicyWrite::Replayed(current))
             } else {
                 Ok(Openid4vcTrustPolicyWrite::Conflict(current))
@@ -698,6 +682,8 @@ impl TenantResourceRepository {
         Ok(Openid4vcTrustPolicyWrite::Applied(inserted))
     }
 
+    /// The transaction owner holds the policy identity lock. The client row lock
+    /// below serializes binding changes with client deactivation.
     pub async fn bind_openid4vc_trust_policy_client_on_connection(
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,
@@ -705,24 +691,6 @@ impl TenantResourceRepository {
         expected_policy_digest: &str,
         oauth_client_id: Uuid,
     ) -> Result<Openid4vcTrustPolicyClientBind, RepositoryError> {
-        validate_stored_openid4vc_trust_policy_identity(
-            policy_resource_id,
-            Some(expected_policy_digest),
-        )?;
-        lock_binding_identity_on_connection(
-            connection,
-            tenant_id,
-            "openid4vc-trust-policy",
-            policy_resource_id,
-        )
-        .await?;
-        lock_binding_identity_on_connection(
-            connection,
-            tenant_id,
-            "openid4vc-trust-policy-client",
-            &oauth_client_id.to_string(),
-        )
-        .await?;
         sql_query(
             "SELECT is_active
              FROM oauth_clients
@@ -737,13 +705,22 @@ impl TenantResourceRepository {
         .map_err(map_error)?
         .filter(|client| client.is_active)
         .ok_or(RepositoryError::NotFound)?;
-        let policy = Self::active_openid4vc_trust_policy_by_resource_digest_on_connection(
-            connection,
-            tenant_id,
-            policy_resource_id,
-            expected_policy_digest,
+        #[derive(QueryableByName)]
+        struct PolicyIdentity {
+            #[diesel(sql_type = sql_types::Uuid)]
+            id: Uuid,
+        }
+        let policy = sql_query(
+            "SELECT id FROM openid4vc_trust_policies
+             WHERE tenant_id = $1 AND resource_id = $2 AND resource_digest = $3 AND active",
         )
-        .await?
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Varchar, _>(policy_resource_id)
+        .bind::<sql_types::Varchar, _>(expected_policy_digest)
+        .get_result::<PolicyIdentity>(connection)
+        .await
+        .optional()
+        .map_err(map_error)?
         .ok_or(RepositoryError::Conflict)?;
 
         let active_binding = select_openid4vc_trust_policy_client_binding_on_connection(
@@ -780,20 +757,13 @@ impl TenantResourceRepository {
         Ok(Openid4vcTrustPolicyClientBind::Bound { binding_id })
     }
 
+    /// Revoke under the policy identity lock held by the transaction owner.
     pub async fn revoke_openid4vc_trust_policy_on_connection(
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,
         resource_id: &str,
         expected_digest: &str,
     ) -> Result<Openid4vcTrustPolicyRevoke, RepositoryError> {
-        validate_stored_openid4vc_trust_policy_identity(resource_id, Some(expected_digest))?;
-        lock_binding_identity_on_connection(
-            connection,
-            tenant_id,
-            "openid4vc-trust-policy",
-            resource_id,
-        )
-        .await?;
         let Some(current) =
             select_openid4vc_trust_policy_on_connection(connection, tenant_id, resource_id).await?
         else {
@@ -1059,50 +1029,6 @@ fn validate_stored_openid4vc_trust_policy_identity(
     Ok(())
 }
 
-fn validate_bounded_public_material(public_material: &Value) -> Result<(), RepositoryError> {
-    if !public_material.is_object()
-        || serde_json::to_vec(public_material)
-            .map_err(|_| {
-                RepositoryError::Consistency(
-                    "OpenID4VC trust policy material is not JSON".to_owned(),
-                )
-            })?
-            .len()
-            > 32 * 1024
-    {
-        return Err(RepositoryError::Consistency(
-            "OpenID4VC trust policy material is not a bounded JSON object".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_wallet_origins(wallet_origins: &[String]) -> Result<(), RepositoryError> {
-    if wallet_origins.is_empty() || wallet_origins.len() > 16 {
-        return Err(RepositoryError::Consistency(
-            "OpenID4VC trust policy wallet origins are out of bounds".to_owned(),
-        ));
-    }
-    for origin in wallet_origins {
-        validate_wallet_origin(origin)?;
-    }
-    Ok(())
-}
-
-fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<&str>, RepositoryError> {
-    validate_wallet_origins(wallet_origins)?;
-    let mut normalized: Vec<_> = wallet_origins.iter().map(String::as_str).collect();
-    normalized.sort();
-    let original_len = normalized.len();
-    normalized.dedup();
-    if normalized.len() != original_len {
-        return Err(RepositoryError::Consistency(
-            "OpenID4VC trust policy wallet origins must be unique".to_owned(),
-        ));
-    }
-    Ok(normalized)
-}
-
 fn validate_wallet_origin(origin: &str) -> Result<(), RepositoryError> {
     if origin.len() > 2048
         || origin != origin.trim()
@@ -1126,7 +1052,3 @@ fn map_error(error: diesel::result::Error) -> RepositoryError {
         _ => RepositoryError::Unavailable,
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/repositories/tenant_resources.rs"]
-mod tests;

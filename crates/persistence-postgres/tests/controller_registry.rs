@@ -1032,7 +1032,7 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
         vec![revoked]
     );
     let digest = "a".repeat(64);
-    let mut current = None;
+    let mut current: Option<String> = None;
     for action in [
         ControllerIdentityAction::Add,
         ControllerIdentityAction::Rotate,
@@ -1084,7 +1084,7 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
                         approval_token: approval.token.to_owned(),
                         deployment_id: deployment.to_owned(),
                         action_sha256: digest.to_owned(),
-                        controller_id: (current.as_deref().unwrap()).to_owned(),
+                        controller_id: current.as_deref().unwrap().to_owned(),
                         now: at(6),
                     },
                     identity_audit::audit(),

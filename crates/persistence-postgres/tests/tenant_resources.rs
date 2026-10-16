@@ -654,8 +654,20 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     let first_digest = "a".repeat(64);
     let second_digest = "b".repeat(64);
     let wallet_origins = vec!["https://wallet.example/".to_owned()];
+    let counter = query_counter::QueryCounter::new();
+    connection.set_instrumentation(counter.clone());
     connection
         .transaction::<(), TestTransactionError, _>(async |connection| {
+            for resource_id in ["alternate-trust", "wallet-trust"] {
+                TenantResourceRepository::lock_binding_identity_on_connection(
+                    connection,
+                    tenant_id,
+                    "openid4vc-trust-policy",
+                    resource_id,
+                )
+                .await?;
+            }
+            let before = counter.snapshot();
             let applied = TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
                 connection,
                 NewStoredOpenid4vcTrustPolicy {
@@ -669,6 +681,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
             .await?;
             assert!(matches!(applied, Openid4vcTrustPolicyWrite::Applied(_)));
 
+            assert_eq!(
+                counter.since(before).data_queries,
+                2,
+                "policy read and insert; no repeated lock or size query"
+            );
+            let before = counter.snapshot();
             let bound = TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
                 connection,
                 tenant_id,
@@ -677,6 +695,11 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 oauth_client_id,
             )
             .await?;
+            assert_eq!(
+                counter.since(before).data_queries,
+                4,
+                "client row lock, policy read, binding read and insert"
+            );
             let Openid4vcTrustPolicyClientBind::Bound { binding_id } = bound else {
                 return Err(TestTransactionError::Assertion(format!(
                     "initial trust client binding returned {bound:?}"
@@ -866,6 +889,13 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     connection
         .transaction::<(), TestTransactionError, _>(async |connection| {
             // Management keeps its policy/binding locks throughout this transaction.
+            TenantResourceRepository::lock_binding_identity_on_connection(
+                connection,
+                tenant_id,
+                "openid4vc-trust-policy",
+                "wallet-trust",
+            )
+            .await?;
             TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
                 connection,
                 tenant_id,
