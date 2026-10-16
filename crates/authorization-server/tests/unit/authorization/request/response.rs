@@ -10,7 +10,7 @@ use aws_lc_rs::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_executor::block_on;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap};
 
 use crate::test_support::authorization as authorization_fixture;
@@ -36,26 +36,28 @@ fn fixture() -> Fixture {
     fixture
 }
 
+#[derive(Default)]
+struct AuthorizationResponseProtection<'a> {
+    signing_alg: Option<&'a str>,
+    encryption_alg: Option<&'a str>,
+    encryption_enc: Option<&'a str>,
+    jwks: Option<&'a Value>,
+}
+
 async fn authorization_response_redirect_with_protection(
     fixture: &Fixture,
+    client_id: &str,
     input: AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
     let application = fixture.make_application();
-    authorization_response_redirect_with_protection_context(
-        &application.context(),
-        input,
-        protection,
-        60,
-    )
-    .await
-}
-async fn authorization_response_redirect(
-    fixture: &Fixture,
-    input: AuthorizationResponseRedirect<'_>,
-) -> Result<AuthorizationOutcome, OAuthEndpointError> {
-    let application = fixture.make_application();
-    authorization_response_redirect_with_context(&application.context(), input).await
+    let mut client = authorization_fixture::client(true);
+    client.client_id = client_id.to_owned();
+    client.authorization_signed_response_alg = protection.signing_alg.map(str::to_owned);
+    client.authorization_encrypted_response_alg = protection.encryption_alg.map(str::to_owned);
+    client.authorization_encrypted_response_enc = protection.encryption_enc.map(str::to_owned);
+    client.jwks = protection.jwks.cloned().map(std::sync::Arc::new);
+    authorization_response_redirect_with_context(&application.context(), &mut client, input).await
 }
 fn authorization_location(result: &Result<AuthorizationOutcome, OAuthEndpointError>) -> url::Url {
     let Ok(AuthorizationOutcome::Redirect { location }) = result else {
@@ -169,15 +171,15 @@ fn authorization_response_redirect_emits_signed_jarm_response() {
 
         let response = authorization_response_redirect_with_protection(
             &state,
+            "client-jarm",
             AuthorizationResponseRedirect {
                 redirect_uri: "https://client.example/callback?existing=1",
-                client_id: "client-jarm",
+
                 response_mode: Some("jwt"),
                 code: Some("code-123"),
                 error: None,
                 state: Some("state-123"),
                 oidc_sid: None,
-                client_policy: None,
             },
             AuthorizationResponseProtection::default(),
         )
@@ -210,54 +212,27 @@ fn authorization_response_redirect_emits_signed_jarm_response() {
 }
 
 #[test]
-fn authorization_response_policy_lookup_failure_never_emits_redirect_parameters() {
+fn response_uses_admitted_client_without_another_repository_query() {
     block_on(async {
         let state = fixture();
-
-        let response = authorization_response_redirect(
-            &state,
-            AuthorizationResponseRedirect {
-                redirect_uri: "https://client.example/callback",
-                client_id: "unavailable-client",
-                response_mode: None,
-                code: Some("must-not-leak"),
-                error: None,
-                state: Some("must-not-leak"),
-                oidc_sid: None,
-                client_policy: None,
-            },
-        )
-        .await;
-
-        assert_unavailable_without_redirect(response);
-    });
-}
-
-#[test]
-fn signed_response_with_precomputed_policy_still_requires_an_authoritative_client() {
-    block_on(async {
-        let state = fixture();
-
-        let response = authorization_response_redirect(
-            &state,
-            AuthorizationResponseRedirect {
-                redirect_uri: "https://client.example/callback",
-                client_id: "unavailable-jarm-client",
-                response_mode: Some("jwt"),
-                code: Some("must-not-leak"),
-                error: None,
-                state: Some("must-not-leak"),
-                oidc_sid: None,
-                client_policy: Some(AuthorizationResponseClientPolicy {
-                    signed_response_required: true,
-                    session_management_allowed: false,
-                    ttl_seconds: 60,
-                }),
-            },
-        )
-        .await;
-
-        assert_unavailable_without_redirect(response);
+        for mode in [None, Some("jwt")] {
+            let response = authorization_response_redirect_with_protection(
+                &state,
+                "client-admitted",
+                AuthorizationResponseRedirect {
+                    redirect_uri: "https://client.example/callback",
+                    response_mode: mode,
+                    code: None,
+                    error: Some("login_required"),
+                    state: Some("state"),
+                    oidc_sid: None,
+                },
+                AuthorizationResponseProtection::default(),
+            )
+            .await;
+            assert!(response.is_ok(), "{response:?}");
+        }
+        assert!(!state.ports.calls().contains(&"client"));
     });
 }
 
@@ -269,15 +244,15 @@ fn authorization_response_redirect_jarm_profile_signs_without_response_mode() {
 
         let response = authorization_response_redirect_with_protection(
             &state,
+            "client-jarm-profile",
             AuthorizationResponseRedirect {
                 redirect_uri: "https://client.example/callback",
-                client_id: "client-jarm-profile",
+
                 response_mode: None,
                 code: Some("code-456"),
                 error: None,
                 state: Some("state-456"),
                 oidc_sid: None,
-                client_policy: None,
             },
             AuthorizationResponseProtection::default(),
         )
@@ -318,15 +293,15 @@ fn authorization_response_redirect_signs_then_encrypts_jarm_for_client_policy() 
 
         let response = authorization_response_redirect_with_protection(
             &state,
+            "client-encrypted-jarm",
             AuthorizationResponseRedirect {
                 redirect_uri: "https://client.example/callback?existing=1",
-                client_id: "client-encrypted-jarm",
+
                 response_mode: Some("jwt"),
                 code: Some("encrypted-code"),
                 error: None,
                 state: Some("encrypted-state"),
                 oidc_sid: None,
-                client_policy: None,
             },
             AuthorizationResponseProtection {
                 signing_alg: Some("RS256"),
@@ -383,15 +358,15 @@ fn authorization_response_crypto_failure_never_falls_back_to_plain_query() {
         ] {
             let response = authorization_response_redirect_with_protection(
                 &state,
+                "client-failed-jarm",
                 AuthorizationResponseRedirect {
                     redirect_uri: "https://client.example/callback",
-                    client_id: "client-failed-jarm",
+
                     response_mode: Some("jwt"),
                     code: Some("must-not-leak"),
                     error: None,
                     state: Some("must-not-leak-state"),
                     oidc_sid: None,
-                    client_policy: None,
                 },
                 protection,
             )

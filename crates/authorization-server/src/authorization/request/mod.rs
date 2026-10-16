@@ -18,10 +18,7 @@ use policy::{credential_configuration_ids, runtime_authorization_capability_erro
 use prompt_none::issue_authorization_code_without_interaction_with_context;
 use pushed::authorization_oauth_error_redirect;
 use reauth::{authorization_login_url_with_context, consume_reauth_nonce_with_context};
-use response::{
-    AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
-    authorization_response_redirect_with_context,
-};
+use response::{AuthorizationResponseRedirect, authorization_response_redirect_with_context};
 
 #[cfg(test)]
 #[path = "../../../tests/unit/authorization/request.rs"]

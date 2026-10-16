@@ -1,7 +1,7 @@
 use super::AuthorizationOutcome;
 use crate::authorization::presentation::append_query;
 use crate::contracts::oauth_error::OAuthEndpointError;
-use crate::crypto::{blake3_hex, random_urlsafe_token};
+use crate::crypto::random_urlsafe_token;
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
 use crate::domain::client_policy::refresh_client_jwks_for_encryption;
 use crate::domain::rows::ClientRow;
@@ -11,77 +11,33 @@ use nazo_auth::{
     issue_oidc_session_state, plan_authorization_response,
 };
 
-use serde_json::Value;
-
 use super::AuthorizationRequestContext;
 
 pub(crate) struct AuthorizationResponseRedirect<'a> {
     pub(crate) redirect_uri: &'a str,
-    pub(crate) client_id: &'a str,
     pub(crate) response_mode: Option<&'a str>,
     pub(crate) code: Option<&'a str>,
     pub(crate) error: Option<&'a str>,
     pub(crate) state: Option<&'a str>,
     pub(crate) oidc_sid: Option<&'a str>,
-    pub(crate) client_policy: Option<AuthorizationResponseClientPolicy>,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct AuthorizationResponseClientPolicy {
-    pub(crate) signed_response_required: bool,
-    pub(crate) session_management_allowed: bool,
-    pub(crate) ttl_seconds: u64,
 }
 
 pub(crate) async fn authorization_response_redirect_with_context(
     context: &AuthorizationRequestContext<'_>,
+    client: &mut ClientRow,
     input: AuthorizationResponseRedirect<'_>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
-    let mut client = None;
-    let response_policy = if let Some(policy) = input.client_policy {
-        policy
+    let client_policy = &client.security_policy;
+    let ttl_seconds = if context.config.requires_fapi2_security(client_policy) {
+        context.config.auth_code_ttl_seconds.min(60)
     } else {
-        client = if input.client_id.is_empty() {
-            None
-        } else {
-            match context.service.client_by_id(input.client_id).await {
-                Ok(Some(client)) if client.is_active => Some(client),
-                Ok(_) => None,
-                Err(error) => {
-                    tracing::warn!(%error, client_id_hash = %blake3_hex(input.client_id), "failed to load authorization response client policy");
-                    return Err(OAuthEndpointError::json(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "authorization response policy is unavailable.",
-                    ));
-                }
-            }
-        };
-        let Some(client) = client.as_ref() else {
-            return Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "authorization response client policy is unavailable.",
-            ));
-        };
-        let client_policy = &client.security_policy;
-        AuthorizationResponseClientPolicy {
-            signed_response_required: context
-                .config
-                .requires_signed_authorization_response(client_policy),
-            session_management_allowed: client_policy.session_management,
-            ttl_seconds: if context.config.requires_fapi2_security(client_policy) {
-                context.config.auth_code_ttl_seconds.min(60)
-            } else {
-                context.config.auth_code_ttl_seconds
-            },
-        }
+        context.config.auth_code_ttl_seconds
     };
     let jarm_available = crate::authorization::permits_existing_module_transaction(
         context,
         nazo_runtime_modules::ModuleId::Jarm,
     );
-    let session_management_available = response_policy.session_management_allowed
+    let session_management_available = client_policy.session_management
         && crate::authorization::accepts_module(
             context,
             nazo_runtime_modules::ModuleId::SessionManagement,
@@ -89,13 +45,15 @@ pub(crate) async fn authorization_response_redirect_with_context(
     let plan = match plan_authorization_response(AuthorizationResponsePolicyInput {
         issuer: context.config.issuer.as_ref(),
         redirect_uri: input.redirect_uri,
-        client_id: input.client_id,
+        client_id: &client.client_id,
         response_mode: input.response_mode,
         code: input.code,
         error: input.error,
         state: input.state,
-        ttl_seconds: response_policy.ttl_seconds as i64,
-        signed_response_required: response_policy.signed_response_required,
+        ttl_seconds: ttl_seconds as i64,
+        signed_response_required: context
+            .config
+            .requires_signed_authorization_response(client_policy),
         jarm_available,
         session_management_available,
     }) {
@@ -124,36 +82,11 @@ pub(crate) async fn authorization_response_redirect_with_context(
             ));
         }
     };
-    if matches!(plan, AuthorizationResponsePlan::Jarm(_)) {
-        debug_assert!(jarm_available);
-        let client = match client {
-            Some(client) => Some(client),
-            None if input.client_id.is_empty() => None,
-            None => match context.service.client_by_id(input.client_id).await {
-                Ok(Some(client)) if client.is_active => Some(client),
-                Ok(_) => None,
-                Err(error) => {
-                    tracing::warn!(%error, client_id_hash = %blake3_hex(input.client_id), "failed to load JARM client");
-                    return Err(OAuthEndpointError::json(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "authorization response protection failed.",
-                    ));
-                }
-            },
-        };
-        let Some(mut client) = client else {
-            tracing::warn!(client_id_hash = %blake3_hex(input.client_id), "JARM client is missing or inactive");
-            return Err(OAuthEndpointError::json(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "authorization response protection failed.",
-            ));
-        };
+    if let AuthorizationResponsePlan::Jarm(jarm) = plan {
         let response_encryption_configured = client.authorization_encrypted_response_alg.is_some()
             || client.authorization_encrypted_response_enc.is_some();
         if let Err(error) = refresh_client_jwks_for_encryption(
-            &mut client,
+            client,
             context.remote_client_documents,
             response_encryption_configured,
         )
@@ -166,14 +99,8 @@ pub(crate) async fn authorization_response_redirect_with_context(
                 "authorization response protection failed.",
             ));
         }
-        let protection = AuthorizationResponseProtection::from(&client);
-        return authorization_response_redirect_with_protection_context(
-            context,
-            input,
-            protection,
-            response_policy.ttl_seconds as i64,
-        )
-        .await;
+        let result = protected_authorization_response_jwt(context, &jarm, client).await;
+        return authorization_response_jwt_result(&jarm.redirect_uri, result);
     }
     let (plain, form_post) = match plan {
         AuthorizationResponsePlan::Plain(plain) => (plain, false),
@@ -183,7 +110,7 @@ pub(crate) async fn authorization_response_redirect_with_context(
     let session_state = if plain.issue_session_state {
         input
             .oidc_sid
-            .and_then(|sid| issue_oidc_session_state(input.client_id, input.redirect_uri, sid))
+            .and_then(|sid| issue_oidc_session_state(&client.client_id, input.redirect_uri, sid))
     } else {
         None
     };
@@ -200,59 +127,28 @@ pub(crate) async fn authorization_response_redirect_with_context(
     })
 }
 
-#[derive(Clone, Copy, Default)]
-pub(super) struct AuthorizationResponseProtection<'a> {
-    pub(super) signing_alg: Option<&'a str>,
-    pub(super) encryption_alg: Option<&'a str>,
-    pub(super) encryption_enc: Option<&'a str>,
-    pub(super) jwks: Option<&'a Value>,
-}
-
-impl<'a> From<&'a ClientRow> for AuthorizationResponseProtection<'a> {
-    fn from(client: &'a ClientRow) -> Self {
-        Self {
-            signing_alg: client.authorization_signed_response_alg.as_deref(),
-            encryption_alg: client.authorization_encrypted_response_alg.as_deref(),
-            encryption_enc: client.authorization_encrypted_response_enc.as_deref(),
-            jwks: client.jwks.as_deref(),
-        }
-    }
-}
-
-pub(super) async fn authorization_response_redirect_with_protection_context(
-    context: &AuthorizationRequestContext<'_>,
-    input: AuthorizationResponseRedirect<'_>,
-    protection: AuthorizationResponseProtection<'_>,
-    ttl_seconds: i64,
-) -> Result<AuthorizationOutcome, OAuthEndpointError> {
-    let result =
-        protected_authorization_response_jwt(context, &input, protection, ttl_seconds).await;
-    authorization_response_jwt_result(input.redirect_uri, result)
-}
-
 async fn protected_authorization_response_jwt(
     context: &AuthorizationRequestContext<'_>,
-    input: &AuthorizationResponseRedirect<'_>,
-    protection: AuthorizationResponseProtection<'_>,
-    ttl_seconds: i64,
+    input: &nazo_auth::JarmAuthorizationResponse,
+    client: &ClientRow,
 ) -> anyhow::Result<String> {
     let signed = context
         .service
         .sign_authorization_response(nazo_auth::AuthorizationResponseSignInput {
-            issuer: context.config.issuer.as_ref(),
-            client_id: input.client_id,
-            code: input.code,
-            error: input.error,
-            state: input.state,
-            ttl: ttl_seconds,
-            signing_algorithm: protection.signing_alg,
+            issuer: &input.issuer,
+            client_id: &input.client_id,
+            code: input.code.as_deref(),
+            error: input.error.as_deref(),
+            state: input.state.as_deref(),
+            ttl: input.ttl_seconds,
+            signing_algorithm: client.authorization_signed_response_alg.as_deref(),
         })
         .await
         .map_err(|error| anyhow::anyhow!("authorization response signing failed: {error:?}"))?;
     match client_jwe_key(
-        protection.jwks,
-        protection.encryption_alg,
-        protection.encryption_enc,
+        client.jwks.as_deref(),
+        client.authorization_encrypted_response_alg.as_deref(),
+        client.authorization_encrypted_response_enc.as_deref(),
         "authorization response",
     )? {
         Some(key) => Ok(encrypt_compact_jwe(

@@ -1020,6 +1020,15 @@ fn attested_clients_enforce_their_pushed_request_policy_before_login() {
             assert_eq!(response["state"], "wallet-state");
             assert!(!response.contains_key("code"));
             assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+            assert_eq!(
+                fixture
+                    .ports
+                    .calls()
+                    .iter()
+                    .filter(|call| **call == "client")
+                    .count(),
+                1
+            );
         }
     });
 }

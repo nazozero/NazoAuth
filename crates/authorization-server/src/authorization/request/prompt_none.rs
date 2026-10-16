@@ -1,13 +1,13 @@
 use crate::authorization::AuthorizationRequestContext;
 use crate::authorization::request::{
-    AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
-    authorization_response_redirect_with_context,
+    AuthorizationResponseRedirect, authorization_response_redirect_with_context,
 };
 use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
 use crate::contracts::oauth_error::OAuthEndpointError;
 use crate::crypto::blake3_hex;
 use crate::crypto::random_urlsafe_token;
 use crate::domain::oauth::ConsentPayload;
+use crate::domain::rows::ClientRow;
 use crate::ports::audit::audit_fields;
 use chrono::{DateTime, Utc};
 use http::StatusCode;
@@ -20,27 +20,15 @@ use uuid::Uuid;
 
 pub(super) async fn issue_authorization_code_without_interaction_with_context(
     context: &AuthorizationRequestContext<'_>,
+    client: &mut ClientRow,
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
     pushed_request_expires_at: Option<DateTime<Utc>>,
     pushed_request_version: Option<&str>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
-    let (Some(signed_response_required), Some(session_management_allowed), Some(ttl_seconds)) = (
-        payload.signed_authorization_response_required,
-        payload.session_management_allowed,
-        payload.authorization_code_ttl_seconds,
-    ) else {
-        return Err(OAuthEndpointError::json(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "authorization request has no current client security policy.",
-        ));
-    };
-    let response_policy = AuthorizationResponseClientPolicy {
-        signed_response_required,
-        session_management_allowed,
-        ttl_seconds,
-    };
+    let ttl_seconds = payload
+        .authorization_code_ttl_seconds
+        .expect("prompt-none uses the freshly admitted authorization request");
     context
         .security_audit
         .ensure_transactional_ready()
@@ -103,7 +91,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     let now = Utc::now();
     let event_id = Uuid::now_v7();
     let code = random_urlsafe_token();
-    let oidc_sid = payload.oidc_sid.clone();
+    let requests_openid = payload.scopes.iter().any(|scope| scope == "openid");
     let prepared = prepare_authorization_code(AuthorizationApprovalInput {
         consent: &payload,
         code_hash: &blake3_hex(&code),
@@ -127,9 +115,9 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 event_id,
                 occurred_at: now,
                 audit_fields: Value::Object(intent_fields),
-                scopes: payload.scopes.clone(),
-                resource_indicators: payload.resource_indicators.clone(),
-                authorization_details: payload.authorization_details.clone(),
+                scopes: payload.scopes,
+                resource_indicators: payload.resource_indicators,
+                authorization_details: payload.authorization_details,
             },
             Some(prepared),
         )
@@ -157,15 +145,14 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         };
         return authorization_response_redirect_with_context(
             context,
+            client,
             AuthorizationResponseRedirect {
                 redirect_uri: &payload.redirect_uri,
-                client_id: &payload.client_id,
                 response_mode: payload.response_mode.as_deref(),
                 code: None,
                 error: Some(error),
                 state: payload.state.as_deref(),
                 oidc_sid: None,
-                client_policy: Some(response_policy),
             },
         )
         .await;
@@ -185,7 +172,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
             "failed to discard committed prompt-none preparation"
         );
     }
-    if payload.scopes.iter().any(|scope| scope == "openid") {
+    if requests_openid {
         let bound = match facts.session_id {
             Some(session_id) => context
                 .sessions
@@ -204,15 +191,14 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         if !bound {
             return authorization_response_redirect_with_context(
                 context,
+                client,
                 AuthorizationResponseRedirect {
                     redirect_uri: &payload.redirect_uri,
-                    client_id: &payload.client_id,
                     response_mode: payload.response_mode.as_deref(),
                     code: None,
                     error: Some("login_required"),
                     state: payload.state.as_deref(),
                     oidc_sid: None,
-                    client_policy: Some(response_policy),
                 },
             )
             .await;
@@ -220,15 +206,14 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     }
     authorization_response_redirect_with_context(
         context,
+        client,
         AuthorizationResponseRedirect {
             redirect_uri: &payload.redirect_uri,
-            client_id: &payload.client_id,
             response_mode: payload.response_mode.as_deref(),
             code: Some(&code),
             error: None,
             state: payload.state.as_deref(),
-            oidc_sid: oidc_sid.as_deref(),
-            client_policy: Some(response_policy),
+            oidc_sid: payload.oidc_sid.as_deref(),
         },
     )
     .await

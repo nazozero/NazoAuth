@@ -194,7 +194,6 @@ fn prompt_none_payload() -> ConsentPayload {
 
 #[test]
 fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
-    use super::issue_authorization_code_without_interaction_with_context;
     use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
     use crate::test_support::authorization::Fixture;
     use std::sync::atomic::Ordering;
@@ -334,16 +333,15 @@ fn prompt_none_commit_preserves_original_expiry_and_changed_cleanup_snapshot() {
         session_id: Some(&session_id),
         user_agent: None,
     };
-    let outcome = futures_executor::block_on(
-        super::issue_authorization_code_without_interaction_with_context(
+    let outcome =
+        futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
             &application.context(),
             &facts,
             payload.clone(),
             Some(par_expires_at),
             Some(&version),
-        ),
-    )
-    .unwrap();
+        ))
+        .unwrap();
     let crate::authorization::AuthorizationOutcome::Redirect { location } = outcome else {
         panic!("query response must redirect")
     };
@@ -375,14 +373,14 @@ fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
     };
     let (first, second) = futures_executor::block_on(async {
         futures_util::join!(
-            super::issue_authorization_code_without_interaction_with_context(
+            issue_authorization_code_without_interaction_with_context(
                 &context,
                 &facts,
                 payload.clone(),
                 Some(par_expires_at),
                 Some(&version)
             ),
-            super::issue_authorization_code_without_interaction_with_context(
+            issue_authorization_code_without_interaction_with_context(
                 &context,
                 &facts,
                 payload.clone(),
@@ -457,15 +455,13 @@ fn issue_prompt_none_for_session(
         session_id: Some(session_id),
         user_agent: None,
     };
-    futures_executor::block_on(
-        super::issue_authorization_code_without_interaction_with_context(
-            &application.context(),
-            &facts,
-            payload,
-            None,
-            None,
-        ),
-    )
+    futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
+        &application.context(),
+        &facts,
+        payload,
+        None,
+        None,
+    ))
 }
 
 fn assert_prompt_none_error(
@@ -724,16 +720,15 @@ fn prompt_none_oidc_without_session_id_does_not_return_a_code() {
         session_id: None,
         user_agent: None,
     };
-    let outcome = futures_executor::block_on(
-        super::issue_authorization_code_without_interaction_with_context(
+    let outcome =
+        futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
             &application.context(),
             &facts,
             payload,
             None,
             None,
-        ),
-    )
-    .unwrap();
+        ))
+        .unwrap();
     assert_prompt_none_returns_login_required(outcome);
     assert_eq!(
         fixture.ports.calls(),
@@ -794,28 +789,26 @@ fn prompt_none_cleanup_failure_preserves_success_and_durable_replay_fence() {
         session_id: Some(&session_id),
         user_agent: None,
     };
-    let first = futures_executor::block_on(
-        super::issue_authorization_code_without_interaction_with_context(
+    let first =
+        futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
             &application.context(),
             &facts,
             payload.clone(),
             Some(par_expires_at),
             Some(&version),
-        ),
-    )
-    .unwrap();
+        ))
+        .unwrap();
     assert_prompt_none_returns_code(first);
     assert_eq!(fixture.ports.stored_par.lock().unwrap().len(), 1);
-    let second = futures_executor::block_on(
-        super::issue_authorization_code_without_interaction_with_context(
+    let second =
+        futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
             &application.context(),
             &facts,
             payload,
             Some(par_expires_at),
             Some(&version),
-        ),
-    )
-    .unwrap();
+        ))
+        .unwrap();
     let crate::authorization::AuthorizationOutcome::Redirect { location } = second else {
         panic!("replay must redirect with an error")
     };
@@ -836,4 +829,28 @@ fn prompt_none_cleanup_failure_preserves_success_and_durable_replay_fence() {
             .count(),
         1
     );
+}
+
+async fn issue_authorization_code_without_interaction_with_context(
+    context: &crate::authorization::AuthorizationRequestContext<'_>,
+    facts: &crate::authorization::AuthorizationRequestFacts<'_>,
+    payload: ConsentPayload,
+    pushed_request_expires_at: Option<chrono::DateTime<Utc>>,
+    pushed_request_version: Option<&str>,
+) -> Result<
+    crate::authorization::AuthorizationOutcome,
+    crate::contracts::oauth_error::OAuthEndpointError,
+> {
+    let mut client = crate::test_support::authorization::client(true);
+    client.client_id = payload.client_id.clone();
+    client.security_policy.session_management = false;
+    super::issue_authorization_code_without_interaction_with_context(
+        context,
+        &mut client,
+        facts,
+        payload,
+        pushed_request_expires_at,
+        pushed_request_version,
+    )
+    .await
 }
