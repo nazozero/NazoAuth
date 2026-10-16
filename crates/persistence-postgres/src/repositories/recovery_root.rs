@@ -59,7 +59,7 @@ use super::controller_registry::{
 use super::controller_registry::{
     ControllerIdentityAction, ControllerRegistryError, ControllerRegistryRepository,
     IdentityApprovalError, consume_approval_on_connection, insert_slot_on_connection,
-    validate_deployment_id, validate_kid, validate_kid_binding, validate_label,
+    validate_deployment_id,
 };
 use crate::{DbPool, get_conn};
 
@@ -470,25 +470,6 @@ async fn replace_root_on_connection(
     Ok(StoredRecoveryRoot::from(row))
 }
 
-fn validate_challenge_input(challenge: &NewRecoveryChallenge) -> Result<(), RecoveryRootError> {
-    validate_deployment_id(&challenge.deployment_id)
-        .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
-    validate_label(&challenge.controller_label)
-        .map_err(|_| RecoveryRootError::InvalidIdentity("controller label is invalid"))?;
-    for (kid, key) in [
-        (&challenge.controller_kid, &challenge.controller_public_key),
-        (&challenge.recovery_kid, &challenge.recovery_public_key),
-    ] {
-        validate_kid(kid).map_err(|_| {
-            RecoveryRootError::InvalidIdentity("kid must be unpadded base64url SHA-256")
-        })?;
-        validate_kid_binding(kid, key).map_err(|_| {
-            RecoveryRootError::InvalidIdentity("kid does not match the proposed key material")
-        })?;
-    }
-    Ok(())
-}
-
 fn recovery_proposal(challenge: &NewRecoveryChallenge) -> nazo_operator_protocol::RecoveryProposal {
     nazo_operator_protocol::RecoveryProposal {
         deployment_id: challenge.deployment_id.clone(),
@@ -552,29 +533,11 @@ impl RecoveryRootRepository {
     ) -> Result<StoredRecoveryRoot, RecoveryRotationError> {
         let contract::RecoveryRotationCommand {
             approval_token,
-            deployment_id,
             action_sha256,
             root,
             now,
         } = command;
         let approval_token = approval_token.as_str();
-        let expected_deployment_id = deployment_id.as_str();
-
-        validate_deployment_id(expected_deployment_id)
-            .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
-        validate_deployment_id(&root.deployment_id)
-            .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
-        validate_kid(&root.kid).map_err(|_| {
-            RecoveryRootError::InvalidIdentity("kid must be unpadded base64url SHA-256")
-        })?;
-        validate_kid_binding(&root.kid, &root.public_key).map_err(|_| {
-            RecoveryRootError::InvalidIdentity("kid does not match the recovery public key")
-        })?;
-        if root.deployment_id != expected_deployment_id {
-            return Err(RecoveryRotationError::Approval(
-                IdentityApprovalError::ActionMismatch,
-            ));
-        }
         let token_hash = blake3::hash(approval_token.as_bytes()).to_hex().to_string();
         let expected_action_sha256 = action_sha256;
         let mut guard = crate::pool::DiscardOnDrop(Some(
@@ -637,7 +600,6 @@ impl RecoveryRootRepository {
         challenge: NewRecoveryChallenge,
         now: DateTime<Utc>,
     ) -> Result<IssuedRecoveryChallenge, RecoveryRootError> {
-        validate_challenge_input(&challenge)?;
         let mut connection = get_conn(&self.pool).await.map_err(transport)?;
         connection
             .transaction::<_, RecoveryRootError, _>(async move |connection| {

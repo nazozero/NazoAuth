@@ -94,3 +94,42 @@ fn deployment_binding_accepts_local_and_rejects_foreign_callers() {
     assert!(ensure_local_deployment("deployment-a", "deployment-a").is_ok());
     assert!(ensure_local_deployment("deployment-a", "deployment-b").is_err());
 }
+
+#[test]
+fn rotation_validates_key_binding_before_constructing_the_storage_command() {
+    let mut request = RecoveryRootChangeRequest {
+        deployment_id: "deployment-a".to_owned(),
+        recovery_public_key: key_text(1),
+        kid: kid_text(1),
+    };
+    assert!(super::validate_rotation_request(request.clone()).is_ok());
+    request.kid = kid_text(2);
+    assert!(super::validate_rotation_request(request.clone()).is_err());
+    request.kid = kid_text(1);
+    request.deployment_id = "../foreign".to_owned();
+    assert!(super::validate_rotation_request(request).is_err());
+}
+
+#[test]
+fn challenge_validates_both_key_bindings_and_label_before_storage() {
+    let request = RecoveryChallengeRequest {
+        deployment_id: "deployment-a".to_owned(),
+        label: "recovered".to_owned(),
+        controller_public_key: key_text(1),
+        kid: kid_text(1),
+        recovery_public_key: key_text(2),
+        recovery_kid: kid_text(2),
+        allocation_nonce: URL_SAFE_NO_PAD.encode([3u8; 32]),
+        allocation_signature: URL_SAFE_NO_PAD.encode([4u8; 64]),
+    };
+    assert!(super::validate_challenge_request(request.clone()).is_ok());
+    let mut invalid = request.clone();
+    invalid.kid = kid_text(2);
+    assert!(super::validate_challenge_request(invalid).is_err());
+    let mut invalid = request.clone();
+    invalid.recovery_kid = kid_text(1);
+    assert!(super::validate_challenge_request(invalid).is_err());
+    let mut invalid = request;
+    invalid.label.clear();
+    assert!(super::validate_challenge_request(invalid).is_err());
+}

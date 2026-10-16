@@ -210,8 +210,13 @@ source come from locked account facts; the HTTP adapter supplies only the
 source IP hash. Tenant-local identity events omit a cross-tenant actor, while
 the atomic ledger retains the complete actor and target attribution. The HTTP
 handler preserves the audit preflight and does not append the outcome again.
-Recovery Root approval and rotation retain their registered Required evidence
-paths; their separate transactions are not made atomic by event registration.
+Controller identity and Recovery Root services validate decoded request shapes,
+key identifiers and key material before constructing persistence commands. Each
+rotation carries its deployment once, in the proposed identity. Persistence
+rechecks current actor authority and consumes the bound approval under the
+deployment lock, then commits the mutation and canonical audit event in one
+transaction. Recovery allocation and challenge signatures are checked against
+the current root inside that same state-serialization boundary.
 
 PAR and consent are immutable preparation material. Their cache deletion is
 post-commit cleanup, not authorization or cancellation authority. Explicit

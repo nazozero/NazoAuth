@@ -51,12 +51,9 @@ pub use slots::{
 };
 use slots::{
     contract_registry_error, lock_deployment_slots, revoke_slot_on_connection,
-    rotate_slot_on_connection, validate_controller_id, validate_slot_input,
+    rotate_slot_on_connection,
 };
-pub(crate) use slots::{
-    insert_slot_on_connection, validate_deployment_id, validate_kid, validate_kid_binding,
-    validate_label,
-};
+pub(crate) use slots::{insert_slot_on_connection, validate_deployment_id};
 
 use diesel::result::Error as QueryError;
 use diesel_async::AsyncConnection as _;
@@ -90,13 +87,6 @@ impl CommitWithApprovalError {
         E: Into<anyhow::Error>,
     {
         Self::Transport(error.into())
-    }
-
-    fn approval<E>(error: E) -> Self
-    where
-        E: Into<IdentityApprovalError>,
-    {
-        Self::Approval(error.into())
     }
 }
 
@@ -177,12 +167,6 @@ impl ControllerRegistryRepository {
         let expected_action_sha256 = action_sha256;
         let approval_token = approval_token.as_str();
 
-        validate_slot_input(
-            &slot.deployment_id,
-            &slot.label,
-            &slot.kid,
-            &slot.public_key,
-        )?;
         let token_hash = approval_token_digest(approval_token);
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
@@ -242,27 +226,13 @@ impl ControllerRegistryRepository {
     ) -> Result<StoredControllerSlot, CommitWithApprovalError> {
         let contract::SlotRotationCommand {
             approval_token,
-            deployment_id,
             action_sha256,
             rotation,
             now,
         } = command;
         let approval_token = approval_token.as_str();
-        let expected_deployment_id = deployment_id;
         let expected_action_sha256 = action_sha256;
 
-        validate_controller_id(&rotation.controller_id)?;
-        validate_slot_input(
-            &rotation.deployment_id,
-            &rotation.label,
-            &rotation.kid,
-            &rotation.public_key,
-        )?;
-        if rotation.deployment_id != expected_deployment_id {
-            return Err(CommitWithApprovalError::approval(
-                IdentityApprovalError::ActionMismatch,
-            ));
-        }
         let token_hash = approval_token_digest(approval_token);
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
@@ -320,8 +290,6 @@ impl ControllerRegistryRepository {
         let expected_deployment_id = deployment_id;
         let expected_action_sha256 = action_sha256;
 
-        validate_deployment_id(&expected_deployment_id)?;
-        validate_controller_id(&controller_id)?;
         let token_hash = approval_token_digest(approval_token);
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)

@@ -1070,7 +1070,6 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
                 .commit_slot_rotation_with_required_audit(
                     contract::SlotRotationCommand {
                         approval_token: approval.token.to_owned(),
-                        deployment_id: deployment.to_owned(),
                         action_sha256: digest.to_owned(),
                         rotation: rotation_input(deployment, current.as_deref().unwrap(), 103),
                         now: at(5),

@@ -183,7 +183,6 @@ impl RecoveryRootService {
             .commit_rotation_with_required_audit(
                 nazo_persistence::control_plane::RecoveryRotationCommand {
                     approval_token,
-                    deployment_id: rotation.deployment_id.clone(),
                     action_sha256,
                     root: NewRecoveryRoot {
                         deployment_id: rotation.deployment_id,

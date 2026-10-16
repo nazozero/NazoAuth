@@ -237,7 +237,6 @@ async fn enroll_root(
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: issued.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: material.root_input(deployment),
                 now,
@@ -292,7 +291,6 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: ("unused").to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: "a".repeat(64),
                 root: second.root_input(deployment),
                 now: at(1),
@@ -334,7 +332,6 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: issued.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(3),
@@ -371,7 +368,6 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: issued.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(4),
@@ -412,7 +408,6 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: same_approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (same_rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(6),
@@ -443,7 +438,6 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: stale.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (stale_rotation.action_sha256()).to_owned(),
                 root: first.root_input(deployment),
                 now: at(7) + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS + 60),
@@ -484,7 +478,6 @@ async fn rotated_away_recovery_keys_can_never_be_installed_again() {
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: second_approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (second_rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(2),
@@ -511,7 +504,6 @@ async fn rotated_away_recovery_keys_can_never_be_installed_again() {
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: reuse_approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (reuse_rotation.action_sha256()).to_owned(),
                 root: first.root_input(deployment),
                 now: at(4),
@@ -571,7 +563,6 @@ async fn concurrent_rotations_cannot_install_one_recovery_key_twice() {
     let first_commit = repository.commit_rotation_with_required_audit(
         contract::RecoveryRotationCommand {
             approval_token: first_approval.token.to_owned(),
-            deployment_id: deployment.to_owned(),
             action_sha256: action_sha256.to_owned(),
             root: second.root_input(deployment),
             now: at(2),
@@ -581,7 +572,6 @@ async fn concurrent_rotations_cannot_install_one_recovery_key_twice() {
     let second_commit = repository.commit_rotation_with_required_audit(
         contract::RecoveryRotationCommand {
             approval_token: second_approval.token.to_owned(),
-            deployment_id: deployment.to_owned(),
             action_sha256: action_sha256.to_owned(),
             root: second.root_input(deployment),
             now: at(2),
@@ -1311,7 +1301,6 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(3),
@@ -1341,7 +1330,6 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(4),
@@ -1395,7 +1383,6 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(2),
@@ -1422,7 +1409,6 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
         .commit_rotation_with_required_audit(
             contract::RecoveryRotationCommand {
                 approval_token: approval.token.to_owned(),
-                deployment_id: deployment.to_owned(),
                 action_sha256: (rotation.action_sha256()).to_owned(),
                 root: second.root_input(deployment),
                 now: at(3),
@@ -1475,7 +1461,6 @@ async fn root_enrollment_and_replacement_return_rows_in_eight_data_queries() {
             .commit_rotation_with_required_audit(
                 contract::RecoveryRotationCommand {
                     approval_token: approval.token.to_owned(),
-                    deployment_id: deployment.to_owned(),
                     action_sha256: (rotation.action_sha256()).to_owned(),
                     root: material.root_input(deployment),
                     now,

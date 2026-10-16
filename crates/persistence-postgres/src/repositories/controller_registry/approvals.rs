@@ -16,7 +16,6 @@ use nazo_persistence::control_plane as contract;
 use crate::get_conn;
 
 use super::ControllerRegistryRepository;
-use super::slots::validate_deployment_id;
 
 pub use contract::{
     ControllerIdentityAction, IDENTITY_APPROVAL_TTL_SECONDS, IssuedIdentityApproval,
@@ -147,20 +146,6 @@ impl ControllerRegistryRepository {
         now: DateTime<Utc>,
         audit: contract::AdminIdentityAudit,
     ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
-        if validate_deployment_id(deployment_id).is_err() {
-            return Err(approval_transport(anyhow::anyhow!(
-                "approval deployment_id is invalid"
-            )));
-        }
-        if action_sha256.len() != 64
-            || !action_sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(approval_transport(anyhow::anyhow!(
-                "approval action digest is not lowercase sha256 hex"
-            )));
-        }
         let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
         let token_hash = approval_token_digest(&token);
         let approval_id = Uuid::now_v7();

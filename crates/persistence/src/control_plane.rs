@@ -377,7 +377,6 @@ pub struct SlotCreationCommand {
 #[derive(Clone)]
 pub struct SlotRotationCommand {
     pub approval_token: String,
-    pub deployment_id: String,
     pub action_sha256: String,
     pub rotation: RotateControllerKey,
     pub now: DateTime<Utc>,
@@ -402,12 +401,13 @@ pub struct RecoveryApprovalCommand {
 #[derive(Clone)]
 pub struct RecoveryRotationCommand {
     pub approval_token: String,
-    pub deployment_id: String,
     pub action_sha256: String,
     pub root: NewRecoveryRoot,
     pub now: DateTime<Utc>,
 }
 
+/// Stores identity commands validated by the application service. The adapter
+/// owns current actor admission, approval consumption, mutation and audit commit.
 pub trait ControllerRegistryPort: Send + Sync {
     fn issue_identity_approval_with_required_audit(
         &self,
@@ -447,6 +447,8 @@ pub trait ControllerRegistryPort: Send + Sync {
     ) -> BoxFuture<'a, Result<Option<AdmittedController>, ControllerRegistryError>>;
 }
 
+/// Stores decoded recovery inputs validated by the application service. The
+/// adapter verifies proofs against the current root and serializes state changes.
 pub trait RecoveryRootPort: Send + Sync {
     fn issue_rotation_approval_with_required_audit(
         &self,

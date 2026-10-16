@@ -114,7 +114,6 @@ impl Fixture {
     fn rotation(&self, token: &str, controller: &str) -> SlotRotationCommand {
         SlotRotationCommand {
             approval_token: token.to_owned(),
-            deployment_id: self.deployment.clone(),
             action_sha256: digest(),
             rotation: RotateControllerKey {
                 deployment_id: self.deployment.clone(),
@@ -138,7 +137,6 @@ impl Fixture {
     fn root_rotation(&self, token: &str) -> RecoveryRotationCommand {
         RecoveryRotationCommand {
             approval_token: token.to_owned(),
-            deployment_id: self.deployment.clone(),
             action_sha256: digest(),
             root: NewRecoveryRoot {
                 deployment_id: self.deployment.clone(),

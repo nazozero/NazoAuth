@@ -433,7 +433,6 @@ impl ControllerRegistryService {
                     .commit_slot_rotation_with_required_audit(
                         nazo_persistence::control_plane::SlotRotationCommand {
                             approval_token,
-                            deployment_id: request.deployment_id.clone(),
                             action_sha256,
                             rotation: RotateControllerKey {
                                 deployment_id: request.deployment_id,
