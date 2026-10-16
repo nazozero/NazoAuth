@@ -311,7 +311,7 @@ fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileV
     })
 }
 
-fn trim_text(mut value: String) -> String {
+pub(crate) fn trim_text(mut value: String) -> String {
     value.truncate(value.trim_end().len());
     let start = value.len() - value.trim_start().len();
     if start != 0 {

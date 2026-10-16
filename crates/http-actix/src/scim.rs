@@ -21,7 +21,7 @@ use nazo_identity::{
     },
 };
 use nazo_scim_events::{EventPollerPort, MutationContext, PollRequest, ValidatedPollRequest};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use nazo_oauth_server::contracts::scim::{
     ScimAuthenticationFacts, ScimAuthorizationError, ScimAuthorizedRequest,
@@ -146,7 +146,7 @@ pub async fn scim_poll_security_events(
             // extracted transport facts, but obtain fresh authority before release.
             let fresh = match endpoint
                 .authorizer
-                .authorize(facts.clone(), ScimRequiredScope::Events)
+                .authorize(facts, ScimRequiredScope::Events)
                 .await
             {
                 Ok(fresh) => fresh,
@@ -171,10 +171,7 @@ pub async fn scim_poll_security_events(
             }
             // Durable processing of caller-supplied dispositions is not rolled
             // back by a rejected HTTP response, and is not an ACK of these SETs.
-            return json_response(json!({
-                "sets": response.sets,
-                "moreAvailable": response.more_available,
-            }));
+            return json_response(response);
         }
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         current = ValidatedPollRequest {
@@ -272,7 +269,7 @@ async fn list_users(
         .await
     {
         Ok(page) => page,
-        Err(error) => return repository_error("load SCIM users", error),
+        Err(_) => return backend_unavailable(),
     };
     let total = page.total;
     let mut users = page.users;
@@ -343,7 +340,7 @@ pub async fn scim_create_user(
     {
         Ok(user) => json_response_status(StatusCode::CREATED, scim_user_document(&user)),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
-        Err(error) => repository_error("create SCIM user", error),
+        Err(_) => backend_unavailable(),
     }
 }
 
@@ -362,7 +359,7 @@ pub async fn scim_get_user(
     match endpoint.service.user(credential.tenant, user_id).await {
         Ok(Some(user)) => json_response(scim_user_document(&user)),
         Ok(None) => user_not_found(),
-        Err(error) => repository_error("load SCIM user", error),
+        Err(_) => backend_unavailable(),
     }
 }
 
@@ -396,7 +393,7 @@ pub async fn scim_replace_user(
         Ok(user) => json_response(scim_user_document(&user)),
         Err(RepositoryError::NotFound) => user_not_found(),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
-        Err(error) => repository_error("replace SCIM user", error),
+        Err(_) => backend_unavailable(),
     }
 }
 
@@ -433,7 +430,7 @@ pub async fn scim_patch_user(
         Ok(user) => json_response(scim_user_document(&user)),
         Err(RepositoryError::NotFound) => user_not_found(),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
-        Err(error) => repository_error("patch SCIM user", error),
+        Err(_) => backend_unavailable(),
     }
 }
 
@@ -456,7 +453,7 @@ pub async fn scim_delete_user(
     {
         Ok(true) => empty_response(StatusCode::NO_CONTENT),
         Ok(false) => user_not_found(),
-        Err(error) => repository_error("delete SCIM user", error),
+        Err(_) => backend_unavailable(),
     }
 }
 
@@ -547,9 +544,11 @@ fn authorization_error(error: ScimAuthorizationError) -> HttpResponse {
                 "tooMany",
                 "SCIM denial rate limit exceeded",
             );
-            if let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string()) {
-                response.headers_mut().insert(header::RETRY_AFTER, value);
-            }
+            response.headers_mut().insert(
+                header::RETRY_AFTER,
+                header::HeaderValue::from_str(&retry_after_seconds.to_string())
+                    .expect("decimal seconds are valid HTTP header text"),
+            );
             return response;
         }
     };
@@ -628,11 +627,6 @@ fn backend_unavailable() -> HttpResponse {
         "server_error",
         "backend unavailable",
     )
-}
-
-fn repository_error(operation: &str, error: RepositoryError) -> HttpResponse {
-    let _ = (operation, error);
-    backend_unavailable()
 }
 
 fn core_error(status: StatusCode, error: &nazo_identity::scim::ScimError) -> HttpResponse {

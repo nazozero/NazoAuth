@@ -398,9 +398,6 @@ pub fn normalize_scim_user_payload(
     let user_name_email = match user_name {
         Some(value) => normalize_email_address(&value)
             .map_err(|_| ScimError::new("invalidValue", "userName must be an email address"))?,
-        None if require_identity => {
-            return Err(ScimError::new("invalidValue", "userName required"));
-        }
         None => String::new(),
     };
     let email = primary_email(payload.emails, require_identity)?;
@@ -410,29 +407,17 @@ pub fn normalize_scim_user_payload(
             "primary email must match userName",
         ));
     }
-    let name = payload.name;
+    let (formatted, given_name, family_name) = payload
+        .name
+        .map(|name| (name.formatted, name.given_name, name.family_name))
+        .unwrap_or_default();
     Ok(NormalizedScimUser {
         user_name: user_name_email,
         email,
         active: payload.active.unwrap_or(true),
-        display_name: normalize_scim_string(
-            name.as_ref().and_then(|name| name.formatted.clone()),
-            80,
-            "name.formatted",
-            false,
-        )?,
-        given_name: normalize_scim_string(
-            name.as_ref().and_then(|name| name.given_name.clone()),
-            80,
-            "name.givenName",
-            false,
-        )?,
-        family_name: normalize_scim_string(
-            name.as_ref().and_then(|name| name.family_name.clone()),
-            80,
-            "name.familyName",
-            false,
-        )?,
+        display_name: normalize_scim_string(formatted, 80, "name.formatted", false)?,
+        given_name: normalize_scim_string(given_name, 80, "name.givenName", false)?,
+        family_name: normalize_scim_string(family_name, 80, "name.familyName", false)?,
     })
 }
 
@@ -592,7 +577,7 @@ pub fn normalize_scim_string(
     required: bool,
 ) -> Result<Option<String>, ScimError> {
     let value = value
-        .map(|value| value.trim().to_owned())
+        .map(crate::profile::trim_text)
         .filter(|value| !value.is_empty());
     match value {
         Some(value) if value.len() <= max_bytes => Ok(Some(value)),
@@ -607,8 +592,8 @@ pub fn required_string_value(value: Value, field: &str) -> Result<String, ScimEr
         Value::String(value) => Some(value),
         _ => None,
     };
-    normalize_scim_string(value, 120, field, true)?
-        .ok_or_else(|| ScimError::new("invalidValue", "value required"))
+    Ok(normalize_scim_string(value, 120, field, true)?
+        .expect("required SCIM string is present after normalization"))
 }
 
 pub fn required_email_value(value: Value, field: &str) -> Result<String, ScimError> {
@@ -625,5 +610,7 @@ pub fn required_bool_value(value: Value, field: &str) -> Result<bool, ScimError>
 
 #[must_use]
 pub fn normalize_scim_path(value: &str) -> String {
-    value.trim().replace(' ', "").to_ascii_lowercase()
+    let mut path = value.trim().replace(' ', "");
+    path.make_ascii_lowercase();
+    path
 }

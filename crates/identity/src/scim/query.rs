@@ -12,12 +12,18 @@ pub struct ScimListRequest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ScimPagination {
-    Index { start_index: i64, count: i64 },
-    Cursor { encoded: Option<String>, count: i64 },
+pub enum ScimPagination<'a> {
+    Index {
+        start_index: i64,
+        count: i64,
+    },
+    Cursor {
+        encoded: Option<&'a str>,
+        count: i64,
+    },
 }
 
-impl ScimPagination {
+impl ScimPagination<'_> {
     #[must_use]
     pub fn repository_window(&self) -> (i64, i64) {
         match self {
@@ -77,7 +83,7 @@ pub fn parse_scim_list_query(raw_query: &str) -> Result<ScimListRequest, ScimErr
     Ok(query)
 }
 
-pub fn select_scim_pagination(query: &ScimListRequest) -> Result<ScimPagination, ScimError> {
+pub fn select_scim_pagination(query: &ScimListRequest) -> Result<ScimPagination<'_>, ScimError> {
     if let Some(cursor) = &query.cursor {
         if query.start_index.is_some() {
             return Err(ScimError::new(
@@ -93,7 +99,7 @@ pub fn select_scim_pagination(query: &ScimListRequest) -> Result<ScimPagination,
             ));
         }
         return Ok(ScimPagination::Cursor {
-            encoded: (!cursor.is_empty()).then(|| cursor.clone()),
+            encoded: (!cursor.is_empty()).then_some(cursor.as_str()),
             count,
         });
     }

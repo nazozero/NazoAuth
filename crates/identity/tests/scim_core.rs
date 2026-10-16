@@ -99,12 +99,13 @@ fn list_query_parser_preserves_wire_names_and_exact_error_types() {
 #[test]
 fn pagination_is_total_and_bounded_across_boundary_values() {
     for count in [-10, -1, 0, 1, 100, 199, 200, 201, i64::MAX] {
-        let index = select_scim_pagination(&ScimListRequest {
+        let query = ScimListRequest {
             start_index: Some(i64::MIN),
             count: Some(count),
             ..ScimListRequest::default()
-        })
-        .expect("index pagination clamps all integer inputs");
+        };
+        let index =
+            select_scim_pagination(&query).expect("index pagination clamps all integer inputs");
         let ScimPagination::Index { start_index, count } = index else {
             panic!("index request selected cursor pagination");
         };
@@ -122,11 +123,12 @@ fn pagination_is_total_and_bounded_across_boundary_values() {
         (200, Ok(200)),
         (201, Err("invalidCount")),
     ] {
-        let result = select_scim_pagination(&ScimListRequest {
+        let query = ScimListRequest {
             count: Some(count),
             cursor: Some(String::new()),
             ..ScimListRequest::default()
-        });
+        };
+        let result = select_scim_pagination(&query);
         match expected {
             Ok(expected_count) => {
                 assert_eq!(

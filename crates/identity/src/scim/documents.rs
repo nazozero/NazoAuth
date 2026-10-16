@@ -118,13 +118,14 @@ pub fn scim_resource_types_document() -> Value {
 
 #[must_use]
 pub fn scim_index_list_document(total: i64, start_index: i64, users: &[PublicAccount]) -> Value {
-    json!({
+    let mut document = json!({
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": total,
         "startIndex": start_index,
         "itemsPerPage": users.len(),
-        "Resources": users.iter().map(scim_user_document).collect::<Vec<_>>()
-    })
+    });
+    document["Resources"] = Value::Array(users.iter().map(scim_user_document).collect());
+    document
 }
 
 #[must_use]
@@ -137,8 +138,8 @@ pub fn scim_cursor_list_document(
         "schemas": [SCIM_LIST_SCHEMA],
         "totalResults": total,
         "itemsPerPage": users.len(),
-        "Resources": users.iter().map(scim_user_document).collect::<Vec<_>>()
     });
+    document["Resources"] = Value::Array(users.iter().map(scim_user_document).collect());
     if let Some(cursor) = next_cursor {
         document["nextCursor"] = json!(cursor);
     }
