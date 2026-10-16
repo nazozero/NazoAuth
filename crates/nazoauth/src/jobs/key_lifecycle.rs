@@ -63,10 +63,7 @@ const MIN_FAILURE_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_FAILURE_BACKOFF: Duration = Duration::from_secs(60);
 
 fn next_failure_backoff(current: Duration) -> Duration {
-    current
-        .checked_mul(2)
-        .unwrap_or(MAX_FAILURE_BACKOFF)
-        .min(MAX_FAILURE_BACKOFF)
+    (current * 2).min(MAX_FAILURE_BACKOFF)
 }
 
 fn refresh_interval(prepublish_window: chrono::Duration) -> Duration {

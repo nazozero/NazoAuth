@@ -32,17 +32,8 @@ pub(crate) async fn parse_backchannel_authentication_form(
     let mut form = BackchannelAuthenticationForm::default();
     let mut seen = HashSet::new();
     for (key, value) in url::form_urlencoded::parse(&body) {
-        let value = value.into_owned();
-        let key = key.into_owned();
-        if !seen.insert(key.clone()) {
-            return Err(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "CIBA parameters must not repeat.",
-            ));
-        }
         if matches!(
-            key.as_str(),
+            key.as_ref(),
             "scope"
                 | "login_hint"
                 | "id_token_hint"
@@ -54,23 +45,32 @@ pub(crate) async fn parse_backchannel_authentication_form(
         ) {
             form.authentication_parameters_present = true;
         }
-        match key.as_str() {
-            "request" => form.request = Some(value.trim().to_owned()),
-            "scope" => form.scope = non_empty(value),
-            "login_hint" => form.login_hint = non_empty(value),
-            "id_token_hint" => form.id_token_hint = non_empty(value),
-            "login_hint_token" => form.login_hint_token = non_empty(value),
-            "binding_message" => form.binding_message = non_empty(value),
-            "client_notification_token" => form.client_notification_token = non_empty(value),
-            "acr_values" => form.acr_values = non_empty(value),
+        match key.as_ref() {
+            "request" => form.request = Some(trim_value(value.into_owned())),
+            "scope" => form.scope = non_empty(value.into_owned()),
+            "login_hint" => form.login_hint = non_empty(value.into_owned()),
+            "id_token_hint" => form.id_token_hint = non_empty(value.into_owned()),
+            "login_hint_token" => form.login_hint_token = non_empty(value.into_owned()),
+            "binding_message" => form.binding_message = non_empty(value.into_owned()),
+            "client_notification_token" => {
+                form.client_notification_token = non_empty(value.into_owned())
+            }
+            "acr_values" => form.acr_values = non_empty(value.into_owned()),
             "requested_expiry" => {
                 form.requested_expiry_seconds = parse_requested_expiry_string(&value)
             }
-            "client_id" => form.client_id = non_empty(value),
-            "client_secret" => form.client_secret = non_empty(value),
-            "client_assertion_type" => form.client_assertion_type = non_empty(value),
-            "client_assertion" => form.client_assertion = non_empty(value),
+            "client_id" => form.client_id = non_empty(value.into_owned()),
+            "client_secret" => form.client_secret = non_empty(value.into_owned()),
+            "client_assertion_type" => form.client_assertion_type = non_empty(value.into_owned()),
+            "client_assertion" => form.client_assertion = non_empty(value.into_owned()),
             _ => {}
+        }
+        if !seen.insert(key) {
+            return Err(oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "CIBA parameters must not repeat.",
+            ));
         }
     }
     if form.request.is_some() && form.has_outer_authentication_parameters() {
@@ -84,6 +84,13 @@ pub(crate) async fn parse_backchannel_authentication_form(
 }
 
 fn non_empty(value: String) -> Option<String> {
-    let value = value.trim().to_owned();
+    let value = trim_value(value);
     (!value.is_empty()).then_some(value)
+}
+
+fn trim_value(mut value: String) -> String {
+    value.truncate(value.trim_end().len());
+    let leading_whitespace = value.len() - value.trim_start().len();
+    value.drain(..leading_whitespace);
+    value
 }

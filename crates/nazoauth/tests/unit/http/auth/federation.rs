@@ -1,4 +1,5 @@
 use super::*;
+use hmac::Mac;
 use nazo_identity::PublicAccount;
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
@@ -2148,4 +2149,20 @@ async fn federation_response_exposes_pending_mfa_and_matching_cookie_lifetime() 
         assert_eq!(body["mfa_required"], pending);
         assert_eq!(body["expires_in"], expected_ttl);
     }
+}
+
+pub(super) fn saml_gateway_signature(
+    secret: &str,
+    issuer: &str,
+    audience: &str,
+    subject: &str,
+    email: &str,
+    iat: i64,
+    exp: i64,
+) -> String {
+    URL_SAFE_NO_PAD.encode(
+        saml_gateway_mac(secret, issuer, audience, subject, email, iat, exp)
+            .finalize()
+            .into_bytes(),
+    )
 }
