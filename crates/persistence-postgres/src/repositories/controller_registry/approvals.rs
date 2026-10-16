@@ -139,37 +139,13 @@ pub(crate) async fn consume_approval_on_connection(
 }
 
 impl ControllerRegistryRepository {
-    /// Issue one single-use approval bound to `(deployment_id, action,
-    /// action_sha256)` and to the approving administrator.  Freshness of the
-    /// administrator's MFA is enforced at the HTTP boundary before this call;
-    /// here the record itself gets its fixed 10-minute life.
-    pub async fn issue_identity_approval(
-        &self,
-        deployment_id: &str,
-        action: ControllerIdentityAction,
-        action_sha256: &str,
-        admin_user_id: Uuid,
-        now: DateTime<Utc>,
-    ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
-        self.issue_identity_approval_owned(
-            deployment_id,
-            action,
-            action_sha256,
-            admin_user_id,
-            now,
-            None,
-        )
-        .await
-    }
-
     pub(crate) async fn issue_identity_approval_owned(
         &self,
         deployment_id: &str,
         action: ControllerIdentityAction,
         action_sha256: &str,
-        admin_user_id: Uuid,
         now: DateTime<Utc>,
-        audit: Option<contract::AdminIdentityAudit>,
+        audit: contract::AdminIdentityAudit,
     ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
         if validate_deployment_id(deployment_id).is_err() {
             return Err(approval_transport(anyhow::anyhow!(
@@ -192,48 +168,68 @@ impl ControllerRegistryRepository {
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool).await.map_err(approval_transport)?,
         ));
-        let result = guard.connection().transaction::<_, IdentityApprovalError, _>(async move |connection| {
-            if let Some(audit) = &audit {
-                super::slots::lock_deployment_slots(connection,deployment_id).await.map_err(approval_transport)?;
-                super::required::authorize_actor(connection,audit).await.map_err(approval_transport)?;
-            }
-        let mut rows = sql_query(
-            "INSERT INTO controller_identity_approvals
+        let result = guard
+            .connection()
+            .transaction::<_, IdentityApprovalError, _>(async move |connection| {
+                super::slots::lock_deployment_slots(connection, deployment_id)
+                    .await
+                    .map_err(approval_transport)?;
+                super::required::authorize_actor(connection, &audit)
+                    .await
+                    .map_err(approval_transport)?;
+
+                let mut rows = sql_query(
+                    "INSERT INTO controller_identity_approvals
                 (approval_id, deployment_id, action, action_sha256,
                  admin_user_id, token_hash, expires_at, consumed_at, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8)
              RETURNING expires_at",
-        )
-        .bind::<DieselUuid, _>(approval_id)
-        .bind::<Varchar, _>(deployment_id)
-        .bind::<Varchar, _>(action.as_str())
-        .bind::<Varchar, _>(action_sha256)
-        .bind::<DieselUuid, _>(admin_user_id)
-        .bind::<Varchar, _>(&token_hash)
-        .bind::<Timestamptz, _>(expires_at)
-        .bind::<Timestamptz, _>(now)
-        .load::<IssuedApprovalRow>(connection)
-        .await
-        .map_err(approval_transport)?;
-        // Drain the INSERT result before publishing the approval; PostgreSQL
-        // stores timestamps at microsecond precision.
-        let row = rows.pop().expect("one fully received approval row");
-        let issued = IssuedIdentityApproval {
-            approval_id,
-            action,
-            action_sha256: action_sha256.to_owned(),
-            token,
-            expires_at: row.expires_at,
-        };
-        if let Some(audit) = &audit {
-            let event = if action == ControllerIdentityAction::RecoveryRootRotate { "controller_recovery_root_rotation_approved" } else { "controller_identity_approval_issued" };
-            super::required::append_outcome(connection,event,audit,serde_json::json!({
-                "approval_id":issued.approval_id,"deployment_id":deployment_id,
-                "action":issued.action.as_str(),"action_sha256":issued.action_sha256,"expires_at":issued.expires_at.to_rfc3339()
-            })).await.map_err(approval_transport)?;
-        }
-        Ok(issued)
-        }).await;
+                )
+                .bind::<DieselUuid, _>(approval_id)
+                .bind::<Varchar, _>(deployment_id)
+                .bind::<Varchar, _>(action.as_str())
+                .bind::<Varchar, _>(action_sha256)
+                .bind::<DieselUuid, _>(audit.actor_user_id)
+                .bind::<Varchar, _>(&token_hash)
+                .bind::<Timestamptz, _>(expires_at)
+                .bind::<Timestamptz, _>(now)
+                .load::<IssuedApprovalRow>(connection)
+                .await
+                .map_err(approval_transport)?;
+                // Drain the INSERT result before publishing the approval; PostgreSQL
+                // stores timestamps at microsecond precision.
+                let row = rows.pop().expect("one fully received approval row");
+                let issued = IssuedIdentityApproval {
+                    approval_id,
+                    action,
+                    action_sha256: action_sha256.to_owned(),
+                    token,
+                    expires_at: row.expires_at,
+                };
+
+                let event = if action == ControllerIdentityAction::RecoveryRootRotate {
+                    "controller_recovery_root_rotation_approved"
+                } else {
+                    "controller_identity_approval_issued"
+                };
+                super::required::append_outcome(
+                    connection,
+                    event,
+                    &audit,
+                    serde_json::json!({
+                        "approval_id": issued.approval_id,
+                        "deployment_id": deployment_id,
+                        "action": issued.action.as_str(),
+                        "action_sha256": issued.action_sha256,
+                        "expires_at": issued.expires_at.to_rfc3339(),
+                    }),
+                )
+                .await
+                .map_err(approval_transport)?;
+
+                Ok(issued)
+            })
+            .await;
         if result.is_ok() {
             guard.return_to_pool();
         }

@@ -20,15 +20,19 @@ use nazo_operator_protocol::{
 };
 use nazo_postgres::{
     CONTROLLER_KEY_TTL_SECONDS, ControllerRegistryError, ControllerRegistryRepository,
-    ControllerSlotStatus, IdentityApprovalError, IssuedIdentityApproval,
-    MAX_RECOVERY_CHALLENGE_ATTEMPTS, NewControllerSlot, NewRecoveryChallenge, NewRecoveryRoot,
-    RECOVERY_CHALLENGE_TTL_SECONDS, RecoveredSlotCommit, RecoveryRootError, RecoveryRootRepository,
-    RecoveryRotationError, RecoverySubmission, create_pool,
+    ControllerSlotStatus, IssuedIdentityApproval, MAX_RECOVERY_CHALLENGE_ATTEMPTS,
+    NewControllerSlot, NewRecoveryChallenge, NewRecoveryRoot, RECOVERY_CHALLENGE_TTL_SECONDS,
+    RecoveredSlotCommit, RecoveryRootError, RecoveryRootRepository, RecoverySubmission,
+    create_pool,
 };
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 mod support;
+
+#[path = "support/identity_audit.rs"]
+mod identity_audit;
+use nazo_persistence::control_plane::{self as contract, RecoveryRootPort as _};
 
 use support::{
     query_counter::QueryCounter, run_isolated_application_migrations, schema_database_url,
@@ -63,6 +67,7 @@ async fn isolated_with_pool_size(
         .expect("isolated schema should create");
     let isolated_url = schema_database_url(&database_url, &schema);
     run_isolated_application_migrations(&isolated_url).await;
+    identity_audit::seed_actor(&isolated_url).await;
     Some((
         isolated_url.clone(),
         RecoveryRootRepository::new(
@@ -218,16 +223,26 @@ async fn enroll_root(
 ) -> IssuedIdentityApproval {
     let rotation = material.rotation(deployment);
     let issued = repository
-        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), now)
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                now,
+            },
+            identity_audit::audit(),
+        )
         .await
         .expect("approval issuance should succeed");
     repository
-        .commit_rotation(
-            &issued.token,
-            deployment,
-            &rotation.action_sha256(),
-            material.root_input(deployment),
-            now,
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: issued.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: material.root_input(deployment),
+                now,
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("root enrollment should succeed in fixtures");
@@ -274,18 +289,21 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
 
     // An unknown token cannot commit.
     let unknown = repository
-        .commit_rotation(
-            "unused",
-            deployment,
-            &"a".repeat(64),
-            second.root_input(deployment),
-            at(1),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: ("unused").to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: "a".repeat(64),
+                root: second.root_input(deployment),
+                now: at(1),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("unknown token must fail");
     assert!(matches!(
         unknown,
-        RecoveryRotationError::Approval(IdentityApprovalError::UnknownToken)
+        contract::RecoveryRotationError::Approval(contract::IdentityApprovalError::UnknownToken)
     ));
 
     // A valid old-root allocation may be in flight when an administrator
@@ -302,16 +320,26 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
     // Approved rotation bumps exactly one generation and replaces material.
     let rotation = second.rotation(deployment);
     let issued = repository
-        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(2))
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                now: at(2),
+            },
+            identity_audit::audit(),
+        )
         .await
         .expect("issuance should succeed");
     let rotated = repository
-        .commit_rotation(
-            &issued.token,
-            deployment,
-            &rotation.action_sha256(),
-            second.root_input(deployment),
-            at(3),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: issued.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("approved rotation should commit");
@@ -340,18 +368,21 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
 
     // Replay of the consumed token fails and changes nothing.
     let replay = repository
-        .commit_rotation(
-            &issued.token,
-            deployment,
-            &rotation.action_sha256(),
-            second.root_input(deployment),
-            at(4),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: issued.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(4),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("replay must fail");
     assert!(matches!(
         replay,
-        RecoveryRotationError::Approval(IdentityApprovalError::Replayed)
+        contract::RecoveryRotationError::Approval(contract::IdentityApprovalError::Replayed)
     ));
     assert_eq!(
         repository
@@ -367,53 +398,63 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
     // from before a nominal rotation would still verify afterwards.
     let same_rotation = second.rotation(deployment);
     let same_approval = repository
-        .issue_rotation_approval(
-            deployment,
-            &same_rotation.action_sha256(),
-            Uuid::now_v7(),
-            at(5),
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (same_rotation.action_sha256()).to_owned(),
+                now: at(5),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("approval issuance is independent of current root material");
     let same_key = repository
-        .commit_rotation(
-            &same_approval.token,
-            deployment,
-            &same_rotation.action_sha256(),
-            second.root_input(deployment),
-            at(6),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: same_approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (same_rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(6),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("rotation to identical recovery material must fail");
     assert!(matches!(
         same_key,
-        RecoveryRotationError::Mutation(RecoveryRootError::InvalidIdentity(_))
+        contract::RecoveryRotationError::Mutation(contract::RecoveryRootError::InvalidIdentity(_))
     ));
 
     // An unconsumed but expired approval cannot commit either.
     let stale_rotation = first.rotation(deployment);
     let stale = repository
-        .issue_rotation_approval(
-            deployment,
-            &stale_rotation.action_sha256(),
-            Uuid::now_v7(),
-            at(7),
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (stale_rotation.action_sha256()).to_owned(),
+                now: at(7),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("issuance should succeed");
     let expired = repository
-        .commit_rotation(
-            &stale.token,
-            deployment,
-            &stale_rotation.action_sha256(),
-            first.root_input(deployment),
-            at(7) + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS + 60),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: stale.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (stale_rotation.action_sha256()).to_owned(),
+                root: first.root_input(deployment),
+                now: at(7) + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS + 60),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("expired approval must fail");
     assert!(matches!(
         expired,
-        RecoveryRotationError::Approval(IdentityApprovalError::Expired)
+        contract::RecoveryRotationError::Approval(contract::IdentityApprovalError::Expired)
     ));
 }
 
@@ -429,21 +470,26 @@ async fn rotated_away_recovery_keys_can_never_be_installed_again() {
 
     let second_rotation = second.rotation(deployment);
     let second_approval = repository
-        .issue_rotation_approval(
-            deployment,
-            &second_rotation.action_sha256(),
-            Uuid::now_v7(),
-            at(1),
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (second_rotation.action_sha256()).to_owned(),
+                now: at(1),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("approval should issue");
     let rotated = repository
-        .commit_rotation(
-            &second_approval.token,
-            deployment,
-            &second_rotation.action_sha256(),
-            second.root_input(deployment),
-            at(2),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: second_approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (second_rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(2),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("fresh key should rotate");
@@ -451,27 +497,32 @@ async fn rotated_away_recovery_keys_can_never_be_installed_again() {
 
     let reuse_rotation = first.rotation(deployment);
     let reuse_approval = repository
-        .issue_rotation_approval(
-            deployment,
-            &reuse_rotation.action_sha256(),
-            Uuid::now_v7(),
-            at(3),
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (reuse_rotation.action_sha256()).to_owned(),
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("approval should issue");
     let reuse = repository
-        .commit_rotation(
-            &reuse_approval.token,
-            deployment,
-            &reuse_rotation.action_sha256(),
-            first.root_input(deployment),
-            at(4),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: reuse_approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (reuse_rotation.action_sha256()).to_owned(),
+                root: first.root_input(deployment),
+                now: at(4),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("historical key reuse must fail");
     assert!(matches!(
         reuse,
-        RecoveryRotationError::Mutation(RecoveryRootError::InvalidIdentity(_))
+        contract::RecoveryRotationError::Mutation(contract::RecoveryRootError::InvalidIdentity(_))
     ));
 
     let root = repository
@@ -495,27 +546,47 @@ async fn concurrent_rotations_cannot_install_one_recovery_key_twice() {
     let rotation = second.rotation(deployment);
     let action_sha256 = rotation.action_sha256();
     let first_approval = repository
-        .issue_rotation_approval(deployment, &action_sha256, Uuid::now_v7(), at(1))
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: action_sha256.to_owned(),
+                now: at(1),
+            },
+            identity_audit::audit(),
+        )
         .await
         .unwrap();
     let second_approval = repository
-        .issue_rotation_approval(deployment, &action_sha256, Uuid::now_v7(), at(1))
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: action_sha256.to_owned(),
+                now: at(1),
+            },
+            identity_audit::audit(),
+        )
         .await
         .unwrap();
 
-    let first_commit = repository.commit_rotation(
-        &first_approval.token,
-        deployment,
-        &action_sha256,
-        second.root_input(deployment),
-        at(2),
+    let first_commit = repository.commit_rotation_with_required_audit(
+        contract::RecoveryRotationCommand {
+            approval_token: first_approval.token.to_owned(),
+            deployment_id: deployment.to_owned(),
+            action_sha256: action_sha256.to_owned(),
+            root: second.root_input(deployment),
+            now: at(2),
+        },
+        identity_audit::audit(),
     );
-    let second_commit = repository.commit_rotation(
-        &second_approval.token,
-        deployment,
-        &action_sha256,
-        second.root_input(deployment),
-        at(2),
+    let second_commit = repository.commit_rotation_with_required_audit(
+        contract::RecoveryRotationCommand {
+            approval_token: second_approval.token.to_owned(),
+            deployment_id: deployment.to_owned(),
+            action_sha256: action_sha256.to_owned(),
+            root: second.root_input(deployment),
+            now: at(2),
+        },
+        identity_audit::audit(),
     );
     let (first_result, second_result) = tokio::join!(first_commit, second_commit);
     let failure = match (first_result, second_result) {
@@ -527,7 +598,7 @@ async fn concurrent_rotations_cannot_install_one_recovery_key_twice() {
     };
     assert!(matches!(
         failure,
-        RecoveryRotationError::Mutation(RecoveryRootError::InvalidIdentity(_))
+        contract::RecoveryRotationError::Mutation(contract::RecoveryRootError::InvalidIdentity(_))
     ));
 
     let root = repository.current_root(deployment).await.unwrap().unwrap();
@@ -1218,7 +1289,14 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         .unwrap();
     let rotation = second.rotation(deployment);
     let approval = repository
-        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(2))
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                now: at(2),
+            },
+            identity_audit::audit(),
+        )
         .await
         .unwrap();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
@@ -1230,18 +1308,21 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         .await
         .unwrap();
     let error = repository
-        .commit_rotation(
-            &approval.token,
-            deployment,
-            &rotation.action_sha256(),
-            second.root_input(deployment),
-            at(3),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("failed history insertion must abort the complete rotation");
     assert!(matches!(
         error,
-        RecoveryRotationError::Mutation(RecoveryRootError::Transport(_))
+        contract::RecoveryRotationError::Mutation(contract::RecoveryRootError::Transport(_))
     ));
     assert_eq!(
         repository.current_root(deployment).await.unwrap().unwrap(),
@@ -1257,12 +1338,15 @@ async fn history_failure_rolls_back_root_approval_and_pending_challenge() {
         .await
         .unwrap();
     let replaced = repository
-        .commit_rotation(
-            &approval.token,
-            deployment,
-            &rotation.action_sha256(),
-            second.root_input(deployment),
-            at(4),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(4),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("failed history insertion must also roll back approval consumption");
@@ -1297,22 +1381,32 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
     let before = repository.current_root(deployment).await.unwrap().unwrap();
     let rotation = second.rotation(deployment);
     let approval = repository
-        .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), at(1))
+        .issue_rotation_approval_with_required_audit(
+            contract::RecoveryApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                now: at(1),
+            },
+            identity_audit::audit(),
+        )
         .await
         .unwrap();
     let error = repository
-        .commit_rotation(
-            &approval.token,
-            deployment,
-            &rotation.action_sha256(),
-            second.root_input(deployment),
-            at(2),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(2),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("generation overflow must fail closed");
     assert!(matches!(
         error,
-        RecoveryRotationError::Mutation(RecoveryRootError::Transport(_))
+        contract::RecoveryRotationError::Mutation(contract::RecoveryRootError::Transport(_))
     ));
     assert_eq!(
         repository.current_root(deployment).await.unwrap().unwrap(),
@@ -1325,12 +1419,15 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
         .await
         .unwrap();
     let replaced = repository
-        .commit_rotation(
-            &approval.token,
-            deployment,
-            &rotation.action_sha256(),
-            second.root_input(deployment),
-            at(3),
+        .commit_rotation_with_required_audit(
+            contract::RecoveryRotationCommand {
+                approval_token: approval.token.to_owned(),
+                deployment_id: deployment.to_owned(),
+                action_sha256: (rotation.action_sha256()).to_owned(),
+                root: second.root_input(deployment),
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("overflow must leave both approval and fresh key available for retry");
@@ -1345,7 +1442,7 @@ async fn generation_exhaustion_rolls_back_the_root_and_approval() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn root_enrollment_and_replacement_return_rows_in_six_data_queries() {
+async fn root_enrollment_and_replacement_return_rows_in_eight_data_queries() {
     let Some((url, _fixture)) = isolated("root_rows").await else {
         return;
     };
@@ -1363,22 +1460,32 @@ async fn root_enrollment_and_replacement_return_rows_in_six_data_queries() {
         let rotation = material.rotation(deployment);
         let now = at(i64::from(generation));
         let approval = repository
-            .issue_rotation_approval(deployment, &rotation.action_sha256(), Uuid::now_v7(), now)
+            .issue_rotation_approval_with_required_audit(
+                contract::RecoveryApprovalCommand {
+                    deployment_id: deployment.to_owned(),
+                    action_sha256: (rotation.action_sha256()).to_owned(),
+                    now,
+                },
+                identity_audit::audit(),
+            )
             .await
             .unwrap();
         let before = counter.snapshot();
         let root = repository
-            .commit_rotation(
-                &approval.token,
-                deployment,
-                &rotation.action_sha256(),
-                material.root_input(deployment),
-                now,
+            .commit_rotation_with_required_audit(
+                contract::RecoveryRotationCommand {
+                    approval_token: approval.token.to_owned(),
+                    deployment_id: deployment.to_owned(),
+                    action_sha256: (rotation.action_sha256()).to_owned(),
+                    root: material.root_input(deployment),
+                    now,
+                },
+                identity_audit::audit(),
             )
             .await
             .unwrap();
         let evidence = counter.since(before);
-        assert_eq!(evidence.data_queries, 6);
+        assert_eq!(evidence.data_queries, 8);
         assert_eq!(evidence.begins, 1);
         assert_eq!(evidence.commits, 1);
         assert_eq!(evidence.rollbacks, 0);

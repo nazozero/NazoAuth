@@ -7,14 +7,18 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, SimpleAsyncConnection as _};
 use nazo_postgres::{
-    CONTROLLER_KEY_TTL_SECONDS, CommitWithApprovalError, ControllerIdentityAction,
-    ControllerRegistryError, ControllerRegistryRepository, ControllerSlotStatus,
-    IDENTITY_APPROVAL_TTL_SECONDS, NewControllerSlot, RotateControllerKey, create_pool,
+    CONTROLLER_KEY_TTL_SECONDS, ControllerIdentityAction, ControllerRegistryError,
+    ControllerRegistryRepository, ControllerSlotStatus, IDENTITY_APPROVAL_TTL_SECONDS,
+    NewControllerSlot, RotateControllerKey, create_pool,
 };
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 mod support;
+
+#[path = "support/identity_audit.rs"]
+mod identity_audit;
+use nazo_persistence::control_plane::{self as contract, ControllerRegistryPort as _};
 
 use support::{
     query_counter::QueryCounter, run_isolated_application_migrations, schema_database_url,
@@ -67,6 +71,7 @@ async fn isolated_repository(case: &str) -> Option<(String, ControllerRegistryRe
         .expect("isolated schema should create");
     let isolated_url = schema_database_url(&database_url, &schema);
     run_isolated_application_migrations(&isolated_url).await;
+    identity_audit::seed_actor(&isolated_url).await;
     Some((
         isolated_url.clone(),
         ControllerRegistryRepository::new(
@@ -403,16 +408,17 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
         return;
     };
     let deployment = "deployment-approve";
-    let admin = Uuid::now_v7();
     let action_sha256 = "a".repeat(64);
 
     let issued = repository
-        .issue_identity_approval(
-            deployment,
-            ControllerIdentityAction::Bind,
-            &action_sha256,
-            admin,
-            at(0),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: action_sha256.to_owned(),
+                now: at(0),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("issuance should succeed");
@@ -427,47 +433,60 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
 
     // Wrong action digest cannot consume.
     let wrong_digest = repository
-        .commit_slot_creation(
-            &issued.token,
-            ControllerIdentityAction::Bind,
-            &"b".repeat(64),
-            slot_input(deployment, "bind-target", 1),
-            None,
-            at(1),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: issued.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: "b".repeat(64),
+                slot: slot_input(deployment, "bind-target", 1),
+                initial_root: None,
+                now: at(1),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("digest mismatch must refuse commit");
     assert!(matches!(
         wrong_digest,
-        CommitWithApprovalError::Approval(nazo_postgres::IdentityApprovalError::ActionMismatch)
+        contract::CommitWithApprovalError::Approval(
+            contract::IdentityApprovalError::ActionMismatch
+        )
     ));
 
     // Wrong action kind cannot consume.
     let wrong_action = repository
-        .commit_slot_creation(
-            &issued.token,
-            ControllerIdentityAction::Add,
-            &action_sha256,
-            slot_input(deployment, "add-target", 1),
-            None,
-            at(2),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: issued.token.to_owned(),
+                action: ControllerIdentityAction::Add,
+                action_sha256: action_sha256.to_owned(),
+                slot: slot_input(deployment, "add-target", 1),
+                initial_root: None,
+                now: at(2),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("action mismatch must refuse commit");
     assert!(matches!(
         wrong_action,
-        CommitWithApprovalError::Approval(nazo_postgres::IdentityApprovalError::ActionMismatch)
+        contract::CommitWithApprovalError::Approval(
+            contract::IdentityApprovalError::ActionMismatch
+        )
     ));
 
     // First correct commit consumes and enrolls atomically.
     let committed = repository
-        .commit_slot_creation(
-            &issued.token,
-            ControllerIdentityAction::Bind,
-            &action_sha256,
-            slot_input(deployment, "bind-target", 1),
-            None,
-            at(3),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: issued.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: action_sha256.to_owned(),
+                slot: slot_input(deployment, "bind-target", 1),
+                initial_root: None,
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("atomic commit should succeed");
@@ -475,19 +494,22 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
 
     // Replay fails and enrolls nothing further.
     let replay = repository
-        .commit_slot_creation(
-            &issued.token,
-            ControllerIdentityAction::Bind,
-            &action_sha256,
-            slot_input(deployment, "bind-target", 1),
-            None,
-            at(4),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: issued.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: action_sha256.to_owned(),
+                slot: slot_input(deployment, "bind-target", 1),
+                initial_root: None,
+                now: at(4),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("replay must fail");
     assert!(matches!(
         replay,
-        CommitWithApprovalError::Approval(nazo_postgres::IdentityApprovalError::Replayed)
+        contract::CommitWithApprovalError::Approval(contract::IdentityApprovalError::Replayed)
     ));
     let slots = repository
         .list_slots(deployment)
@@ -497,58 +519,68 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
 
     // Unknown tokens fail closed.
     let unknown = repository
-        .commit_slot_creation(
-            &URL_SAFE_NO_PAD.encode([0u8; 32]),
-            ControllerIdentityAction::Add,
-            &action_sha256,
-            slot_input(deployment, "unknown", 6),
-            None,
-            at(5),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: (URL_SAFE_NO_PAD.encode([0u8; 32])).to_owned(),
+                action: ControllerIdentityAction::Add,
+                action_sha256: action_sha256.to_owned(),
+                slot: slot_input(deployment, "unknown", 6),
+                initial_root: None,
+                now: at(5),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("unknown token must fail");
     assert!(matches!(
         unknown,
-        CommitWithApprovalError::Approval(nazo_postgres::IdentityApprovalError::UnknownToken)
+        contract::CommitWithApprovalError::Approval(contract::IdentityApprovalError::UnknownToken)
     ));
 
     // Expiry: an unconsumed approval past its fixed window cannot commit.
     let stale = repository
-        .issue_identity_approval(
-            deployment,
-            ControllerIdentityAction::Add,
-            &"c".repeat(64),
-            admin,
-            at(0),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action: ControllerIdentityAction::Add,
+                action_sha256: "c".repeat(64),
+                now: at(0),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("issuance should succeed");
     let expired_commit = repository
-        .commit_slot_creation(
-            &stale.token,
-            ControllerIdentityAction::Add,
-            &"c".repeat(64),
-            slot_input(deployment, "late", 7),
-            None,
-            expected_expiry,
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: stale.token.to_owned(),
+                action: ControllerIdentityAction::Add,
+                action_sha256: "c".repeat(64),
+                slot: slot_input(deployment, "late", 7),
+                initial_root: None,
+                now: expected_expiry,
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("expired approval must refuse commit");
     assert!(matches!(
         expired_commit,
-        CommitWithApprovalError::Approval(nazo_postgres::IdentityApprovalError::Expired)
+        contract::CommitWithApprovalError::Approval(contract::IdentityApprovalError::Expired)
     ));
 
     // Concurrent double-consumption race: the token is offered twice with two
     // different payloads; exactly one racer may commit, the loser must observe
     // a typed replay rejection, and exactly one slot exists afterwards.
     let racing = repository
-        .issue_identity_approval(
-            deployment,
-            ControllerIdentityAction::Add,
-            &"d".repeat(64),
-            admin,
-            at(20),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action: ControllerIdentityAction::Add,
+                action_sha256: "d".repeat(64),
+                now: at(20),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("issuance should succeed");
@@ -560,24 +592,30 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
     let digest_b = "d".repeat(64);
     let first = tokio::spawn(async move {
         pool_repository
-            .commit_slot_creation(
-                &token_a,
-                ControllerIdentityAction::Add,
-                &digest_a,
-                slot_input(&deployment_clone, "race-a", 21),
-                None,
-                at(21),
+            .commit_slot_creation_with_required_audit(
+                contract::SlotCreationCommand {
+                    approval_token: token_a.to_owned(),
+                    action: ControllerIdentityAction::Add,
+                    action_sha256: digest_a.to_owned(),
+                    slot: slot_input(&deployment_clone, "race-a", 21),
+                    initial_root: None,
+                    now: at(21),
+                },
+                identity_audit::audit(),
             )
             .await
     });
     let second_outcome = repository
-        .commit_slot_creation(
-            &token_b,
-            ControllerIdentityAction::Add,
-            &digest_b,
-            slot_input(deployment, "race-b", 22),
-            None,
-            at(21),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: token_b.to_owned(),
+                action: ControllerIdentityAction::Add,
+                action_sha256: digest_b.to_owned(),
+                slot: slot_input(deployment, "race-b", 22),
+                initial_root: None,
+                now: at(21),
+            },
+            identity_audit::audit(),
         )
         .await;
     let first_outcome = first.await.expect("racing task should not panic");
@@ -591,7 +629,9 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
         .filter(|error| {
             matches!(
                 error,
-                CommitWithApprovalError::Approval(nazo_postgres::IdentityApprovalError::Replayed)
+                contract::CommitWithApprovalError::Approval(
+                    contract::IdentityApprovalError::Replayed
+                )
             )
         })
         .count();
@@ -626,15 +666,16 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
     drop(connection);
     let repository = ControllerRegistryRepository::new(pool);
     let deployment = "deployment-atomic-bind";
-    let admin = Uuid::now_v7();
     let digest = "a".repeat(64);
     let issued = repository
-        .issue_identity_approval(
-            deployment,
-            ControllerIdentityAction::Bind,
-            &digest,
-            admin,
-            at(0),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: digest.to_owned(),
+                now: at(0),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("approval issuance should succeed");
@@ -650,21 +691,24 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
     };
     let before = counter.snapshot();
     let committed = repository
-        .commit_slot_creation(
-            &issued.token,
-            ControllerIdentityAction::Bind,
-            &digest,
-            slot_input(deployment, "first-bind", 30),
-            Some(root),
-            at(1),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: issued.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: digest.to_owned(),
+                slot: slot_input(deployment, "first-bind", 30),
+                initial_root: Some(root),
+                now: at(1),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("atomic first bind should succeed");
     assert_eq!(committed.label, "first-bind");
     assert_eq!(
         counter.since(before).data_queries,
-        7,
-        "lock, approval read/write, root insert, key history, slots read/insert"
+        9,
+        "lock, actor, approval read/write, root insert, key history, slots read/insert, audit"
     );
 
     // The Recovery Root exists in the same committed state.
@@ -681,33 +725,40 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
 
     // A second bind over the existing root is refused and rolls back.
     let second_issued = repository
-        .issue_identity_approval(
-            deployment,
-            ControllerIdentityAction::Bind,
-            &"b".repeat(64),
-            admin,
-            at(2),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: deployment.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: "b".repeat(64),
+                now: at(2),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("second approval issuance should succeed");
     let refused = repository
-        .commit_slot_creation(
-            &second_issued.token,
-            ControllerIdentityAction::Bind,
-            &"b".repeat(64),
-            slot_input(deployment, "second-bind", 31),
-            Some(nazo_postgres::NewRecoveryRoot {
-                deployment_id: deployment.to_owned(),
-                kid: kid_of(&[0x33u8; 32]),
-                public_key: [0x33u8; 32],
-            }),
-            at(3),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: second_issued.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: "b".repeat(64),
+                slot: slot_input(deployment, "second-bind", 31),
+                initial_root: Some(nazo_postgres::NewRecoveryRoot {
+                    deployment_id: deployment.to_owned(),
+                    kid: kid_of(&[0x33u8; 32]),
+                    public_key: [0x33u8; 32],
+                }),
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect_err("bind over an existing root must refuse");
     assert!(matches!(
         refused,
-        CommitWithApprovalError::Mutation(ControllerRegistryError::InvalidIdentity(_))
+        contract::CommitWithApprovalError::Mutation(
+            contract::ControllerRegistryError::InvalidIdentity(_)
+        )
     ));
     // The refusal consumed nothing and enrolled nothing.
     let slots = repository
@@ -729,12 +780,14 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         );
     }
     let approval = repository
-        .issue_identity_approval(
-            full_deployment,
-            ControllerIdentityAction::Bind,
-            &digest,
-            admin,
-            at(0),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: full_deployment.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: digest.to_owned(),
+                now: at(0),
+            },
+            identity_audit::audit(),
         )
         .await
         .unwrap();
@@ -744,19 +797,24 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         public_key: root_key,
     };
     let error = repository
-        .commit_slot_creation(
-            &approval.token,
-            ControllerIdentityAction::Bind,
-            &digest,
-            slot_input(full_deployment, "new-bind", 44),
-            Some(root.clone()),
-            at(1),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: approval.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: digest.to_owned(),
+                slot: slot_input(full_deployment, "new-bind", 44),
+                initial_root: Some(root.clone()),
+                now: at(1),
+            },
+            identity_audit::audit(),
         )
         .await
         .unwrap_err();
     assert!(matches!(
         error,
-        CommitWithApprovalError::Mutation(ControllerRegistryError::SlotLimit(_))
+        contract::CommitWithApprovalError::Mutation(contract::ControllerRegistryError::SlotLimit(
+            _
+        ))
     ));
     assert!(
         recovery
@@ -770,13 +828,16 @@ async fn atomic_first_bind_enrolls_root_and_refuses_a_second() {
         .await
         .unwrap();
     repository
-        .commit_slot_creation(
-            &approval.token,
-            ControllerIdentityAction::Bind,
-            &digest,
-            slot_input(full_deployment, "new-bind", 44),
-            Some(root),
-            at(3),
+        .commit_slot_creation_with_required_audit(
+            contract::SlotCreationCommand {
+                approval_token: approval.token.to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: digest.to_owned(),
+                slot: slot_input(full_deployment, "new-bind", 44),
+                initial_root: Some(root),
+                now: at(3),
+            },
+            identity_audit::audit(),
         )
         .await
         .expect("slot failure must preserve both approval and unused recovery key");
@@ -971,7 +1032,6 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
         vec![revoked]
     );
     let digest = "a".repeat(64);
-    let admin = Uuid::now_v7();
     let mut current = None;
     for action in [
         ControllerIdentityAction::Add,
@@ -979,46 +1039,63 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
         ControllerIdentityAction::Revoke,
     ] {
         let approval = repository
-            .issue_identity_approval(deployment, action, &digest, admin, at(3))
+            .issue_identity_approval_with_required_audit(
+                contract::IdentityApprovalCommand {
+                    deployment_id: deployment.to_owned(),
+                    action,
+                    action_sha256: digest.to_owned(),
+                    now: at(3),
+                },
+                identity_audit::audit(),
+            )
             .await
             .unwrap();
         let before = counter.snapshot();
         let stored = match action {
             ControllerIdentityAction::Add => repository
-                .commit_slot_creation(
-                    &approval.token,
-                    action,
-                    &digest,
-                    slot_input(deployment, "approved", 102),
-                    None,
-                    at(4),
+                .commit_slot_creation_with_required_audit(
+                    contract::SlotCreationCommand {
+                        approval_token: approval.token.to_owned(),
+                        action,
+                        action_sha256: digest.to_owned(),
+                        slot: slot_input(deployment, "approved", 102),
+                        initial_root: None,
+                        now: at(4),
+                    },
+                    identity_audit::audit(),
                 )
                 .await
                 .unwrap(),
             ControllerIdentityAction::Rotate => repository
-                .commit_slot_rotation(
-                    &approval.token,
-                    deployment,
-                    &digest,
-                    rotation_input(deployment, current.as_deref().unwrap(), 103),
-                    at(5),
+                .commit_slot_rotation_with_required_audit(
+                    contract::SlotRotationCommand {
+                        approval_token: approval.token.to_owned(),
+                        deployment_id: deployment.to_owned(),
+                        action_sha256: digest.to_owned(),
+                        rotation: rotation_input(deployment, current.as_deref().unwrap(), 103),
+                        now: at(5),
+                    },
+                    identity_audit::audit(),
                 )
                 .await
                 .unwrap(),
             ControllerIdentityAction::Revoke => repository
-                .commit_slot_revocation(
-                    &approval.token,
-                    deployment,
-                    &digest,
-                    current.as_deref().unwrap(),
-                    at(6),
+                .commit_slot_revocation_with_required_audit(
+                    contract::SlotRevocationCommand {
+                        approval_token: approval.token.to_owned(),
+                        deployment_id: deployment.to_owned(),
+                        action_sha256: digest.to_owned(),
+                        controller_id: (current.as_deref().unwrap()).to_owned(),
+                        now: at(6),
+                    },
+                    identity_audit::audit(),
                 )
                 .await
                 .unwrap(),
             _ => unreachable!(),
         };
-        // One deployment lock, approval read/consume, slot read/write.
-        assert_mutation(before, 5);
+        // Deployment lock, actor, approval read/consume, slot read/write, audit.
+        assert_mutation(before, 7);
         current = Some(stored.controller_id.clone());
         assert!(
             repository
@@ -1038,31 +1115,36 @@ async fn reclaimed_expired_approval_still_cannot_authorize_a_controller() {
     let now = Utc::now();
     let digest = "a".repeat(64);
     let issued = repository
-        .issue_identity_approval(
-            "reclaimed",
-            ControllerIdentityAction::Bind,
-            &digest,
-            Uuid::now_v7(),
-            now - Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS + 1),
+        .issue_identity_approval_with_required_audit(
+            contract::IdentityApprovalCommand {
+                deployment_id: ("reclaimed").to_owned(),
+                action: ControllerIdentityAction::Bind,
+                action_sha256: digest.to_owned(),
+                now: now - Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS + 1),
+            },
+            identity_audit::audit(),
         )
         .await
         .unwrap();
     let attempt = async || {
         repository
-            .commit_slot_creation(
-                &issued.token,
-                ControllerIdentityAction::Bind,
-                &digest,
-                slot_input("reclaimed", "must-not-exist", 31),
-                None,
-                now,
+            .commit_slot_creation_with_required_audit(
+                contract::SlotCreationCommand {
+                    approval_token: issued.token.to_owned(),
+                    action: ControllerIdentityAction::Bind,
+                    action_sha256: digest.to_owned(),
+                    slot: slot_input("reclaimed", "must-not-exist", 31),
+                    initial_root: None,
+                    now,
+                },
+                identity_audit::audit(),
             )
             .await
     };
     assert!(matches!(
         attempt().await,
-        Err(CommitWithApprovalError::Approval(
-            nazo_postgres::IdentityApprovalError::Expired
+        Err(contract::CommitWithApprovalError::Approval(
+            contract::IdentityApprovalError::Expired
         ))
     ));
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
@@ -1072,8 +1154,8 @@ async fn reclaimed_expired_approval_still_cannot_authorize_a_controller() {
         .unwrap();
     assert!(matches!(
         attempt().await,
-        Err(CommitWithApprovalError::Approval(
-            nazo_postgres::IdentityApprovalError::UnknownToken
+        Err(contract::CommitWithApprovalError::Approval(
+            contract::IdentityApprovalError::UnknownToken
         ))
     ));
 }

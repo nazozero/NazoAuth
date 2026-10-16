@@ -58,9 +58,8 @@ use super::controller_registry::{
 };
 use super::controller_registry::{
     ControllerIdentityAction, ControllerRegistryError, ControllerRegistryRepository,
-    IdentityApprovalError, IssuedIdentityApproval, consume_approval_on_connection,
-    insert_slot_on_connection, validate_deployment_id, validate_kid, validate_kid_binding,
-    validate_label,
+    IdentityApprovalError, consume_approval_on_connection, insert_slot_on_connection,
+    validate_deployment_id, validate_kid, validate_kid_binding, validate_label,
 };
 use crate::{DbPool, get_conn};
 
@@ -546,65 +545,10 @@ impl RecoveryRootRepository {
         read_root_on_connection(&mut connection, deployment_id).await
     }
 
-    /// Issue one single-use fresh-2FA approval bound to the exact
-    /// `recovery-root-rotate` payload (D12 step 4).  Freshness of the
-    /// administrator's MFA is enforced at the HTTP boundary; this call only
-    /// validates shapes and delegates to the shared D05 machinery so the
-    /// approval table keeps one authoritative implementation.
-    pub async fn issue_rotation_approval(
-        &self,
-        deployment_id: &str,
-        action_sha256: &str,
-        admin_user_id: Uuid,
-        now: DateTime<Utc>,
-    ) -> Result<IssuedIdentityApproval, RecoveryRotationError> {
-        use super::controller_registry::ControllerIdentityAction;
-        validate_deployment_id(deployment_id)
-            .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
-        Ok(self
-            .registry
-            .issue_identity_approval(
-                deployment_id,
-                ControllerIdentityAction::RecoveryRootRotate,
-                action_sha256,
-                admin_user_id,
-                now,
-            )
-            .await?)
-    }
-
-    /// Consume one `recovery-root-rotate` approval and replace the root in the
-    /// same transaction (D12 step 5).  A missing root is enrolled at
-    /// generation 1 through the identical path, so first enrollment and later
-    /// rotations cannot diverge.  Replay/expiry/binding-mismatch aborts the
-    /// whole transaction: a consumed approval can never exist without its
-    /// replacement having committed, and no replacement can exist without its
-    /// approval having been consumed.
-    pub async fn commit_rotation(
-        &self,
-        approval_token: &str,
-        expected_deployment_id: &str,
-        expected_action_sha256: &str,
-        root: NewRecoveryRoot,
-        now: DateTime<Utc>,
-    ) -> Result<StoredRecoveryRoot, RecoveryRotationError> {
-        self.commit_rotation_owned(
-            contract::RecoveryRotationCommand {
-                approval_token: approval_token.to_owned(),
-                deployment_id: expected_deployment_id.to_owned(),
-                action_sha256: expected_action_sha256.to_owned(),
-                root,
-                now,
-            },
-            None,
-        )
-        .await
-    }
-
     async fn commit_rotation_owned(
         &self,
         command: contract::RecoveryRotationCommand,
-        audit: Option<contract::AdminIdentityAudit>,
+        audit: contract::AdminIdentityAudit,
     ) -> Result<StoredRecoveryRoot, RecoveryRotationError> {
         let contract::RecoveryRotationCommand {
             approval_token,
@@ -638,10 +582,13 @@ impl RecoveryRootRepository {
                 .await
                 .map_err(RecoveryRotationError::Transport)?,
         ));
-        let result=guard.connection()
+        let result = guard
+            .connection()
             .transaction::<_, RecoveryRotationError, _>(async move |connection| {
                 lock_deployment_recovery(connection, &root.deployment_id).await?;
-                if let Some(audit)=&audit { super::controller_registry::required::authorize_actor(connection,audit).await.map_err(RecoveryRotationError::Transport)?; }
+                super::controller_registry::required::authorize_actor(connection, &audit)
+                    .await
+                    .map_err(RecoveryRotationError::Transport)?;
                 consume_approval_on_connection(
                     connection,
                     &token_hash,
@@ -651,12 +598,24 @@ impl RecoveryRootRepository {
                     now,
                 )
                 .await?;
-                let written=replace_root_on_connection(connection,&root,now).await.map_err(RecoveryRotationError::Mutation)?;
-                if let Some(audit)=&audit {
-                    super::controller_registry::required::append_outcome(connection,"controller_recovery_root_rotated",audit,serde_json::json!({
-                        "deployment_id":written.deployment_id,"generation":written.generation,"recovery_kid":written.recovery_kid,"kdf":written.kdf
-                    })).await.map_err(RecoveryRotationError::Transport)?;
-                }
+                let written = replace_root_on_connection(connection, &root, now)
+                    .await
+                    .map_err(RecoveryRotationError::Mutation)?;
+
+                super::controller_registry::required::append_outcome(
+                    connection,
+                    "controller_recovery_root_rotated",
+                    &audit,
+                    serde_json::json!({
+                        "deployment_id": written.deployment_id,
+                        "generation": written.generation,
+                        "recovery_kid": written.recovery_kid,
+                        "kdf": written.kdf,
+                    }),
+                )
+                .await
+                .map_err(RecoveryRotationError::Transport)?;
+
                 Ok(written)
             })
             .await;
@@ -1147,9 +1106,8 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
                     &command.deployment_id,
                     ControllerIdentityAction::RecoveryRootRotate,
                     &command.action_sha256,
-                    audit.actor_user_id,
                     command.now,
-                    Some(audit),
+                    audit,
                 )
                 .await
                 .map_err(|error| {
@@ -1168,7 +1126,7 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
         Result<contract::StoredRecoveryRoot, contract::RecoveryRotationError>,
     > {
         Box::pin(async move {
-            self.commit_rotation_owned(command, Some(audit))
+            self.commit_rotation_owned(command, audit)
                 .await
                 .map_err(contract_rotation_error)
         })
@@ -1185,54 +1143,6 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
             RecoveryRootRepository::current_root(self, deployment_id)
                 .await
                 .map_err(contract_recovery_error)
-        })
-    }
-
-    fn issue_rotation_approval<'a>(
-        &'a self,
-        deployment_id: &'a str,
-        action_sha256: &'a str,
-        admin_user_id: Uuid,
-        now: DateTime<Utc>,
-    ) -> futures_util::future::BoxFuture<
-        'a,
-        Result<contract::IssuedIdentityApproval, contract::RecoveryRotationError>,
-    > {
-        Box::pin(async move {
-            RecoveryRootRepository::issue_rotation_approval(
-                self,
-                deployment_id,
-                action_sha256,
-                admin_user_id,
-                now,
-            )
-            .await
-            .map_err(contract_rotation_error)
-        })
-    }
-
-    fn commit_rotation<'a>(
-        &'a self,
-        approval_token: &'a str,
-        expected_deployment_id: &'a str,
-        expected_action_sha256: &'a str,
-        root: contract::NewRecoveryRoot,
-        now: DateTime<Utc>,
-    ) -> futures_util::future::BoxFuture<
-        'a,
-        Result<contract::StoredRecoveryRoot, contract::RecoveryRotationError>,
-    > {
-        Box::pin(async move {
-            RecoveryRootRepository::commit_rotation(
-                self,
-                approval_token,
-                expected_deployment_id,
-                expected_action_sha256,
-                root,
-                now,
-            )
-            .await
-            .map_err(contract_rotation_error)
         })
     }
 
