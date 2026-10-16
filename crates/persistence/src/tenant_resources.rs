@@ -159,7 +159,7 @@ struct UserManifestPayload {
     password: String,
     email_verified: bool,
     #[serde(default)]
-    profile: Option<UserProfileFields>,
+    profile: Option<serde_json::Map<String, Value>>,
 }
 
 #[derive(Deserialize)]
@@ -366,9 +366,13 @@ fn validate_text(value: &str, max_bytes: usize) -> Result<(), TenantResourceExec
 }
 
 fn normalize_user_profile(
-    value: Option<UserProfileFields>,
+    value: Option<serde_json::Map<String, Value>>,
 ) -> Result<UserProfileFields, TenantResourceExecutorError> {
-    let fields = value.unwrap_or_default();
+    let fields: UserProfileFields = value
+        .map(|object| serde_json::from_value(Value::Object(object)))
+        .transpose()
+        .map_err(|_| TenantResourceExecutorError::InvalidPayload("invalid user profile"))?
+        .unwrap_or_default();
     macro_rules! text {
         ($name:ident, $max:expr) => {
             if let Some(text) = &fields.$name {

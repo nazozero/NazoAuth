@@ -198,7 +198,11 @@ fn user_profile_decodes_owned_fields_and_preserves_closed_bounds() {
         serde_json::json!({"phone_number_verified": null}),
         serde_json::json!([]),
     ] {
-        assert!(decode(profile).is_err());
+        let description = profile.to_string();
+        assert!(
+            decode(profile).is_err(),
+            "accepted invalid profile: {description}"
+        );
     }
     let TenantResourcePayload::User(user) = decode(serde_json::Value::Null).unwrap() else {
         panic!("expected user payload")
