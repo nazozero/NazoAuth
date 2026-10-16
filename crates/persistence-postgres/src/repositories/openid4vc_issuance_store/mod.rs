@@ -149,13 +149,6 @@ impl CredentialStorePort for Openid4vciRepository {
         self.access_resolve(token_hash, now)
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.deferred_store(credential)
-    }
-
     fn store_deferred_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -256,13 +249,6 @@ impl CredentialStorePort for Openid4vciRepository {
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.notification_record(notification)
-    }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.notification_issue_handle(handle)
     }
 }
 

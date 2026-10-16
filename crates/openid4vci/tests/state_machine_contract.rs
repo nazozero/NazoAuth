@@ -463,35 +463,6 @@ impl CredentialStorePort for TransitionStore {
         Box::pin(async { Ok(None) })
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let key = (
-                credential.transaction_hash.clone(),
-                credential.access.token_id,
-            );
-            let mut state = self.state.lock().unwrap();
-            if state
-                .deferred
-                .insert(
-                    key,
-                    DeferredState {
-                        credential: credential.clone(),
-                        consumed_at: None,
-                        claim_id: None,
-                        claim_expires_at: None,
-                    },
-                )
-                .is_some()
-            {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            Ok(())
-        })
-    }
-
     fn store_deferred_and_finalize_nonce<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -729,15 +700,6 @@ impl CredentialStorePort for TransitionStore {
             Ok(true)
         })
     }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(
-            async move { Self::store_notification_locked(&mut self.state.lock().unwrap(), handle) },
-        )
-    }
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
@@ -861,7 +823,8 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
     let deferred = deferred_fixture(now);
     let tx_hash = deferred.transaction_hash.clone();
     let token_id = deferred.access.token_id;
-    block_on(store.store_deferred(&deferred)).unwrap();
+    let pending_response = response_fixture(Uuid::now_v7(), token_id, now);
+    block_on(store.store_deferred_with_response(&deferred, &pending_response, now)).unwrap();
 
     assert!(
         claim_payload(
@@ -1030,7 +993,9 @@ fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
         expires_at: now + Duration::minutes(10),
     };
     let first = response_fixture(Uuid::now_v7(), token_id, now);
-    block_on(store.issue_notification_handle(&handle)).unwrap();
+    let mut seed = response_fixture(Uuid::now_v7(), token_id, now);
+    seed.request_digest = "seed-request".to_owned();
+    block_on(store.store_response_with_notification(&handle, &seed, now)).unwrap();
     let mut second = response_fixture(Uuid::now_v7(), token_id, now);
     second.request_digest = "request-digest-2".to_owned();
 
@@ -1038,20 +1003,20 @@ fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
         block_on(store.store_response_with_notification(&handle, &second, now)),
         Err(CredentialStoreError::InvalidTransition)
     );
-    assert_eq!(store.response_count(), 0);
+    assert_eq!(store.response_count(), 1);
 
     let retry_handle = NotificationHandle {
         notification_id: "notification-retry".to_owned(),
         ..handle
     };
     block_on(store.store_response_with_notification(&retry_handle, &first, now)).unwrap();
-    assert_eq!(store.response_count(), 1);
+    assert_eq!(store.response_count(), 2);
     let second_retry_handle = NotificationHandle {
         notification_id: "notification-retry-2".to_owned(),
         ..retry_handle
     };
     block_on(store.store_response_with_notification(&second_retry_handle, &second, now)).unwrap();
-    assert_eq!(store.response_count(), 2);
+    assert_eq!(store.response_count(), 3);
 }
 
 #[test]
@@ -1103,7 +1068,8 @@ fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the
         token_id,
         expires_at: now + Duration::minutes(1),
     };
-    block_on(store.issue_notification_handle(&handle)).unwrap();
+    let response = response_fixture(Uuid::now_v7(), token_id, now);
+    block_on(store.store_response_with_notification(&handle, &response, now)).unwrap();
     let notification = IssuanceNotification {
         notification_id: handle.notification_id.clone(),
         token_id,

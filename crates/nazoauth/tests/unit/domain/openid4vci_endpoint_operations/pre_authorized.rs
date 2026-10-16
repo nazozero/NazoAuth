@@ -167,13 +167,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         self.inner.resolve_access(token_hash, now)
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.inner.store_deferred(credential)
-    }
-
     fn store_deferred_and_finalize_nonce<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -285,13 +278,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.record_notification(notification)
-    }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.inner.issue_notification_handle(handle)
     }
 }
 

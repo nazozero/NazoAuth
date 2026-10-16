@@ -451,29 +451,6 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }
-
-    pub(super) fn notification_issue_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            sql_query(
-                "INSERT INTO openid4vci_notifications \
-                 (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
-            )
-            .bind::<sql_types::Text, _>(&handle.notification_id)
-            .bind::<sql_types::Uuid, _>(handle.token_id)
-            .bind::<sql_types::Timestamptz, _>(handle.expires_at)
-            .bind::<sql_types::Jsonb, _>(serde_json::json!(handle.selection))
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(())
-        })
-    }
 }
 
 #[derive(diesel::QueryableByName)]

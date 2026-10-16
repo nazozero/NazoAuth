@@ -16,46 +16,6 @@ use super::{
 use crate::{get_conn, pool::DiscardOnDrop};
 
 impl Openid4vciRepository {
-    pub(super) fn deferred_store<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let protected_payload = protect_payload(
-                &self.data_key,
-                credential.id,
-                &serde_json::to_vec(&credential.payload)
-                    .map_err(|_| CredentialStoreError::Unavailable)?,
-            )?;
-            sql_query(
-                "INSERT INTO openid4vci_deferred_transactions \
-                 (id, transaction_hash, token_id, credential_configuration_id, credential_format, \
-                  holder_bindings, payload_ciphertext, ready_at, expires_at, authorization_id, credential_selection) \
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-            )
-            .bind::<sql_types::Uuid, _>(credential.id)
-            .bind::<sql_types::Text, _>(&credential.transaction_hash)
-            .bind::<sql_types::Uuid, _>(credential.access.token_id)
-            .bind::<sql_types::Text, _>(&credential.configuration_id)
-            .bind::<sql_types::Text, _>(credential.format.as_str())
-            .bind::<sql_types::Jsonb, _>(serde_json::Value::Array(
-                credential.holder_bindings.clone(),
-            ))
-            .bind::<sql_types::Binary, _>(protected_payload)
-            .bind::<sql_types::Timestamptz, _>(credential.ready_at)
-            .bind::<sql_types::Timestamptz, _>(credential.expires_at)
-            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(credential.access.authorization_id)
-            .bind::<sql_types::Jsonb, _>(serde_json::json!(credential.selection))
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(())
-        })
-    }
-
     pub(super) fn deferred_store_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,

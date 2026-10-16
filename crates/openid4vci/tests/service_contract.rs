@@ -226,18 +226,6 @@ impl CredentialStorePort for RecordingStore {
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async { Ok(None) })
     }
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.deferred_exists(credential) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            self.deferred.lock().unwrap().push(credential.clone());
-            Ok(())
-        })
-    }
     fn store_deferred_and_finalize_nonce<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -368,18 +356,6 @@ impl CredentialStorePort for RecordingStore {
         _: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async { Ok(true) })
-    }
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.notification_exists(handle) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            self.notifications.lock().unwrap().push(handle.clone());
-            Ok(())
-        })
     }
 }
 

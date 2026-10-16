@@ -13,6 +13,9 @@
 // Other helpers in `support` serve sibling test binaries; this binary only
 // needs `query_counter`.
 #[allow(dead_code)]
+#[path = "support/credential_response.rs"]
+mod credential_response;
+
 mod support;
 
 #[path = "support/password.rs"]
@@ -1561,8 +1564,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
         ready_at,
         expires_at: ready_at + Duration::minutes(5),
     };
-    issuer
-        .store_deferred(&deferred)
+    credential_response::persist_deferred(&issuer, &deferred)
         .await
         .expect("deferred transaction should persist");
     // Persist a valid future schedule, then model preparation already elapsed.

@@ -1,3 +1,6 @@
+#[path = "support/credential_response.rs"]
+mod credential_response;
+
 use argon2::{Argon2, PasswordHasher};
 #[path = "support/password.rs"]
 mod password;
@@ -1417,7 +1420,9 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         ready_at: deferred_ready_at,
         expires_at: deferred_ready_at + Duration::minutes(5),
     };
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut deferred).await;
     let first_claim = claim_payload(
         issuer
@@ -1535,7 +1540,9 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         ready_at: reclaim_deferred_ready_at,
         expires_at: reclaim_deferred_ready_at + Duration::minutes(30),
     };
-    issuer.store_deferred(&reclaim_deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &reclaim_deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut reclaim_deferred).await;
     assert!(
         claim_payload(
@@ -2310,7 +2317,16 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
     issuer
-        .issue_notification_handle(&failure_handle)
+        .store_response_with_notification(
+            &failure_handle,
+            &credential_response::response(
+                failure_handle.token_id,
+                failure_handle.selection.clone(),
+                failure_handle.expires_at,
+                200,
+            ),
+            Utc::now(),
+        )
         .await
         .unwrap();
     let failure_notification = IssuanceNotification {
@@ -2339,7 +2355,16 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
     issuer
-        .issue_notification_handle(&deleted_handle)
+        .store_response_with_notification(
+            &deleted_handle,
+            &credential_response::response(
+                deleted_handle.token_id,
+                deleted_handle.selection.clone(),
+                deleted_handle.expires_at,
+                200,
+            ),
+            Utc::now(),
+        )
         .await
         .unwrap();
     assert!(
@@ -2361,7 +2386,16 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
     issuer
-        .issue_notification_handle(&expired_handle)
+        .store_response_with_notification(
+            &expired_handle,
+            &credential_response::response(
+                expired_handle.token_id,
+                expired_handle.selection.clone(),
+                expired_handle.expires_at,
+                200,
+            ),
+            Utc::now(),
+        )
         .await
         .unwrap();
     assert!(
@@ -2391,7 +2425,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         ready_at: deferred_ready_at,
         expires_at: deferred_ready_at + Duration::minutes(10),
     };
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     assert!(
         claim_payload(
             issuer
@@ -2461,7 +2497,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         ready_at: lease_deferred_ready_at,
         expires_at: lease_deferred_ready_at + Duration::minutes(10),
     };
-    issuer.store_deferred(&lease_deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &lease_deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut lease_deferred).await;
     let lease_claim = claim_payload(
         issuer
@@ -2734,7 +2772,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: notification_deferred.ready_at + Duration::minutes(10),
         ..notification_deferred
     };
-    issuer.store_deferred(&notification_deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &notification_deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut notification_deferred).await;
     claim_payload(
         issuer
@@ -2797,8 +2837,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: deferred_response_notification.ready_at + Duration::minutes(10),
         ..deferred_response_notification
     };
-    issuer
-        .store_deferred(&deferred_response_notification)
+    credential_response::persist_deferred(&issuer, &deferred_response_notification)
         .await
         .unwrap();
     mark_fixture_deferred_ready(&pool, &mut deferred_response_notification).await;
@@ -4275,7 +4314,9 @@ async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
         Duration::seconds(1),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
     let claim_now = Utc::now();
@@ -4363,7 +4404,9 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
         Duration::seconds(30),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&unready).await.unwrap();
+    credential_response::persist_deferred(&issuer, &unready)
+        .await
+        .unwrap();
     assert!(
         claim_payload(
             issuer
@@ -4390,7 +4433,9 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
         Duration::seconds(1),
         Duration::seconds(10),
     );
-    issuer.store_deferred(&expired).await.unwrap();
+    credential_response::persist_deferred(&issuer, &expired)
+        .await
+        .unwrap();
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query(
         "UPDATE openid4vci_deferred_transactions \
@@ -4429,7 +4474,9 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
         Duration::seconds(1),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&leased).await.unwrap();
+    credential_response::persist_deferred(&issuer, &leased)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut leased).await;
     assert!(
         claim_payload(
@@ -4470,7 +4517,9 @@ async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
         Duration::seconds(1),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&consumed).await.unwrap();
+    credential_response::persist_deferred(&issuer, &consumed)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut consumed).await;
     assert!(
         claim_payload(
@@ -4553,7 +4602,9 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
         Duration::seconds(1),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
     let claim_now = Utc::now();
@@ -4719,7 +4770,9 @@ async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
         Duration::seconds(1),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
     let mut connection = get_conn(&pool).await.unwrap();
@@ -4788,7 +4841,9 @@ async fn deferred_claim_supports_grants_without_dpop_binding() {
         Duration::seconds(1),
         Duration::minutes(30),
     );
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     mark_fixture_deferred_ready(&pool, &mut deferred).await;
 
     let claim = claim_payload(
@@ -5183,7 +5238,19 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
         token_id: access.token_id,
         expires_at: now + Duration::minutes(5),
     };
-    issuer.issue_notification_handle(&handle).await.unwrap();
+    issuer
+        .store_response_with_notification(
+            &handle,
+            &credential_response::response(
+                handle.token_id,
+                handle.selection.clone(),
+                handle.expires_at,
+                200,
+            ),
+            Utc::now(),
+        )
+        .await
+        .unwrap();
     let first = IssuanceNotification {
         notification_id: handle.notification_id.clone(),
         token_id: access.token_id,
@@ -5315,7 +5382,9 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
         Duration::seconds(30),
         Duration::minutes(5),
     );
-    issuer.store_deferred(&deferred).await.unwrap();
+    credential_response::persist_deferred(&issuer, &deferred)
+        .await
+        .unwrap();
     let early = deferred.ready_at - Duration::seconds(1);
     let pending = issuer
         .claim_ready_deferred(&deferred.transaction_hash, access.token_id, "early", early)
@@ -5677,7 +5746,9 @@ async fn refreshed_access_continues_only_its_original_credential_intent_after_so
             legacy.selection = Some(selection.clone());
         }
         legacy.expires_at = Utc::now() + Duration::minutes(5);
-        issuer.store_deferred(&legacy).await.unwrap();
+        credential_response::persist_deferred(&issuer, &legacy)
+            .await
+            .unwrap();
         mark_fixture_deferred_ready(&pool, &mut legacy).await;
         assert!(matches!(
             issuer
@@ -5976,7 +6047,7 @@ async fn deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled
                 Duration::seconds(1), Duration::minutes(5));
             deferred.selection = Some(nazo_openid4vci::CredentialSelection {
                 configuration_id: "pid".to_owned(), credential_identifier: None });
-            issuer.store_deferred(&deferred).await.unwrap();
+            credential_response::persist_deferred(&issuer, &deferred).await.unwrap();
             mark_fixture_deferred_ready(&pool, &mut deferred).await;
             let untouched = deferred_lease_row(&pool, deferred.id).await;
             let blocker_name = format!("df01-blocker-{}", Uuid::now_v7());
@@ -6118,7 +6189,9 @@ async fn deferred_reverse_grant_pairs_wait_on_the_sorted_first_lock_and_both_com
             configuration_id: "pid".to_owned(),
             credential_identifier: None,
         });
-        issuer.store_deferred(deferred).await.unwrap();
+        credential_response::persist_deferred(&issuer, deferred)
+            .await
+            .unwrap();
         mark_fixture_deferred_ready(&pool, deferred).await;
     }
     let blocker_name = format!("df01-order-blocker-{}", Uuid::now_v7());

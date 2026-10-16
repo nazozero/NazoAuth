@@ -154,13 +154,6 @@ where
         self.as_ref().resolve_access(token_hash, now)
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a crate::DeferredCredential,
-    ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
-        self.as_ref().store_deferred(credential)
-    }
-
     fn store_deferred_and_finalize_nonce<'a>(
         &'a self,
         credential: &'a crate::DeferredCredential,
@@ -274,13 +267,6 @@ where
         notification: &'a crate::IssuanceNotification,
     ) -> crate::CredentialStoreFuture<'a, Result<bool, crate::CredentialStoreError>> {
         self.as_ref().record_notification(notification)
-    }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a crate::NotificationHandle,
-    ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
-        self.as_ref().issue_notification_handle(handle)
     }
 }
 

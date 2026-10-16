@@ -316,11 +316,6 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>>;
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
-
     /// Persist a deferred transaction and finalize its proof nonce as one
     /// state transition. Implementations must own this transition in one
     /// transaction rather than composing the lower-level operations.
@@ -401,11 +396,6 @@ pub trait CredentialStorePort: Send + Sync {
         &'a self,
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
