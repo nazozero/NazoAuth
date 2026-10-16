@@ -42,6 +42,13 @@ struct PromptNoneStore {
     reached: Arc<AtomicUsize>,
 }
 impl AuthorizationRepositoryPort for GrantFailureRepository {
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        self.live.active_client_presentation(client_id)
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,

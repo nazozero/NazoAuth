@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeState, AuthorizationRequestError, AuthorizationResponsePolicyError,
-    ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError, OAuthClient,
-    PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
+    ClientPresentation, ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError,
+    OAuthClient, PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
     SignedJarmAuthorizationResponse, ValidatedJwtBearerAssertion, authorization_details_empty,
     canonical_authorization_details, high_risk_authorization_details,
 };
@@ -320,6 +320,10 @@ pub trait AuthorizationRepositoryPort: Send + Sync {
         &'a self,
         client_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<OAuthClient>>;
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<ClientPresentation>>;
     fn client_authentication_snapshot<'a>(
         &'a self,
         client_id: &'a str,
@@ -691,6 +695,13 @@ where
         client_id: &str,
     ) -> Result<Option<OAuthClient>, AuthorizationPortError> {
         self.repository.client_by_id(client_id).await
+    }
+
+    pub async fn active_client_presentation(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<ClientPresentation>, AuthorizationPortError> {
+        self.repository.active_client_presentation(client_id).await
     }
 
     pub async fn client_authentication_snapshot(

@@ -113,7 +113,7 @@ async fn missing_and_inactive_clients_have_the_same_non_enumerating_shape() {
             .uri("/authorize/client?client_id=client-1")
             .to_http_request();
         let response = authorize_client_presentation(Data::new(endpoint), request).await;
-        assert_eq!(fixture.ports.calls(), ["client"]);
+        assert_eq!(fixture.ports.calls(), ["client_presentation"]);
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         assert_eq!(
             response.headers().get(header::CACHE_CONTROL).unwrap(),

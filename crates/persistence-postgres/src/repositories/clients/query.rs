@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use nazo_auth::OAuthClient;
+use nazo_auth::{ClientPresentation, OAuthClient};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -38,6 +38,47 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for ClientSecretSalt {
 }
 
 impl OAuthClientRepository {
+    pub async fn active_client_presentation(
+        &self,
+        tenant_id: Uuid,
+        client_id: &str,
+    ) -> Result<Option<ClientPresentation>, RepositoryError> {
+        let client_id = client_id.to_owned();
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    oauth_clients::table
+                        .filter(oauth_clients::tenant_id.eq(tenant_id))
+                        .filter(oauth_clients::client_id.eq(client_id))
+                        .filter(oauth_clients::is_active.eq(true))
+                        .select((
+                            oauth_clients::client_name,
+                            oauth_clients::logo_uri,
+                            oauth_clients::policy_uri,
+                            oauth_clients::tos_uri,
+                        ))
+                        .first::<(String, Option<String>, Option<String>, Option<String>)>(
+                            connection,
+                        )
+                        .await
+                        .optional()
+                })
+            })
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?
+            .map_err(map_error)
+            .map(|row| {
+                row.map(
+                    |(client_name, logo_uri, policy_uri, tos_uri)| ClientPresentation {
+                        client_name,
+                        logo_uri,
+                        policy_uri,
+                        tos_uri,
+                    },
+                )
+            })
+    }
+
     pub async fn by_client_id(
         &self,
         tenant_id: Uuid,

@@ -164,6 +164,13 @@ impl TokenStateStorePort for HolderFixture {
 
 #[allow(unused_variables)]
 impl AuthorizationRepositoryPort for HolderFixture {
+    fn active_client_presentation<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        panic!("unexpected AuthorizationRepositoryPort::active_client_presentation call")
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,

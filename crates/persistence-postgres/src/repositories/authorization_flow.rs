@@ -160,6 +160,18 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
         })
     }
 
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        Box::pin(async move {
+            self.clients
+                .active_client_presentation(self.tenant_id, client_id)
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,

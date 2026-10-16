@@ -154,6 +154,13 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
     let shared_protocol_id = format!("tenant-boundary-{}", Uuid::now_v7());
     default_client.client_id = shared_protocol_id.clone();
     other_client.client_id = shared_protocol_id.clone();
+    default_client.client_name = "Default tenant client".to_owned();
+    default_client.presentation = nazo_auth::ClientPresentationMetadata {
+        logo_uri: Some("https://client.example/logo.svg".to_owned()),
+        policy_uri: Some("https://client.example/privacy".to_owned()),
+        tos_uri: Some("https://client.example/terms".to_owned()),
+    };
+    other_client.client_name = "Other tenant client".to_owned();
     let secret_hash = "client-secret-v1:tenant-salt:tenant-digest";
     repository
         .insert(&default_client, Some(secret_hash), None)
@@ -176,6 +183,44 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
         .unwrap();
     assert_eq!(default_lookup.id, default_client.id);
     assert_eq!(other_lookup.id, other_client.id);
+    assert_eq!(
+        repository
+            .active_client_presentation(default_client.tenant_id, &shared_protocol_id)
+            .await
+            .unwrap(),
+        Some(nazo_auth::ClientPresentation {
+            client_name: "Default tenant client".to_owned(),
+            logo_uri: Some("https://client.example/logo.svg".to_owned()),
+            policy_uri: Some("https://client.example/privacy".to_owned()),
+            tos_uri: Some("https://client.example/terms".to_owned()),
+        })
+    );
+    assert_eq!(
+        repository
+            .active_client_presentation(other_client.tenant_id, &shared_protocol_id)
+            .await
+            .unwrap(),
+        Some(nazo_auth::ClientPresentation {
+            client_name: "Other tenant client".to_owned(),
+            logo_uri: None,
+            policy_uri: None,
+            tos_uri: None,
+        })
+    );
+    assert!(
+        repository
+            .active_client_presentation(Uuid::now_v7(), &shared_protocol_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        repository
+            .active_client_presentation(default_client.tenant_id, "missing-presentation-client")
+            .await
+            .unwrap()
+            .is_none()
+    );
     assert!(
         repository
             .by_id(other_client.tenant_id, default_client.id)
@@ -251,6 +296,18 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
     );
 
     let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
+        .bind::<SqlUuid, _>(default_client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .active_client_presentation(default_client.tenant_id, &shared_protocol_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
     sql_query("DELETE FROM user_client_grants WHERE user_id = $1")
         .bind::<SqlUuid, _>(user_id)
         .execute(&mut connection)

@@ -1,17 +1,8 @@
 //! Public client display metadata and authorization redirect query construction.
 
-use nazo_auth::ClientPresentationMetadata;
-use serde::Serialize;
+pub use nazo_auth::ClientPresentation;
 
 use super::AuthorizationRequestContext;
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ClientPresentation {
-    pub client_name: String,
-    pub logo_uri: Option<String>,
-    pub policy_uri: Option<String>,
-    pub tos_uri: Option<String>,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClientPresentationError {
@@ -23,32 +14,15 @@ pub(crate) async fn client_presentation_with_context(
     context: &AuthorizationRequestContext<'_>,
     client_id: &str,
 ) -> Result<ClientPresentation, ClientPresentationError> {
-    let client = context
+    context
         .service
-        .client_by_id(client_id)
+        .active_client_presentation(client_id)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to load client presentation metadata");
             ClientPresentationError::Unavailable
-        })?;
-    let client = client.ok_or(ClientPresentationError::NotFound)?;
-    active_client_presentation(client.is_active, &client.client_name, &client.presentation)
-}
-
-fn active_client_presentation(
-    is_active: bool,
-    client_name: &str,
-    presentation: &ClientPresentationMetadata,
-) -> Result<ClientPresentation, ClientPresentationError> {
-    if !is_active {
-        return Err(ClientPresentationError::NotFound);
-    }
-    Ok(ClientPresentation {
-        client_name: client_name.to_owned(),
-        logo_uri: presentation.logo_uri.clone(),
-        policy_uri: presentation.policy_uri.clone(),
-        tos_uri: presentation.tos_uri.clone(),
-    })
+        })?
+        .ok_or(ClientPresentationError::NotFound)
 }
 
 pub(crate) fn append_query(base: &str, pairs: &[(&str, &str)]) -> String {

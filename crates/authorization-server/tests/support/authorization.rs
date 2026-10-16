@@ -90,6 +90,29 @@ impl Ports {
     }
 }
 impl AuthorizationRepositoryPort for Ports {
+    fn active_client_presentation<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        self.record("client_presentation");
+        Box::pin(async {
+            self.client
+                .as_ref()
+                .map(|client| {
+                    client
+                        .as_ref()
+                        .filter(|client| client.is_active)
+                        .map(|client| nazo_auth::ClientPresentation {
+                            client_name: client.client_name.clone(),
+                            logo_uri: client.presentation.logo_uri.clone(),
+                            policy_uri: client.presentation.policy_uri.clone(),
+                            tos_uri: client.presentation.tos_uri.clone(),
+                        })
+                })
+                .map_err(|error| *error)
+        })
+    }
+
     fn client_by_id<'a>(
         &'a self,
         _client_id: &'a str,

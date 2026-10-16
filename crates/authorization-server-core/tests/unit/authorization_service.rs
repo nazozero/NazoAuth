@@ -46,6 +46,13 @@ impl AuthorizationRepositoryPort for FakeRepository {
         Box::pin(async { Ok(String::new()) })
     }
 
+    fn active_client_presentation<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<crate::ClientPresentation>> {
+        panic!("unexpected AuthorizationRepositoryPort::active_client_presentation call")
+    }
+
     fn client_by_id<'a>(
         &'a self,
         _client_id: &'a str,
