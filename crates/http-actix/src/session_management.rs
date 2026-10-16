@@ -1,3 +1,7 @@
+use std::fmt::Write as _;
+
+use crate::html::JsString;
+
 use nazo_oauth_server::contracts::session_management::{
     SessionManagementError, SessionManagementOperations,
 };
@@ -133,20 +137,7 @@ fn session_management_iframe_document(status_endpoint: &str) -> String {
     let tail = include_str!("session_management_iframe.tail.html");
     let mut document = String::with_capacity(head.len() + status_endpoint.len() + tail.len());
     document.push_str(head);
-    for ch in status_endpoint.chars() {
-        match ch {
-            '\\' => document.push_str("\\\\"),
-            '\r' => document.push_str("\\r"),
-            '\n' => document.push_str("\\n"),
-            '\'' => document.push_str("\\'"),
-            '<' => document.push_str("\\u003c"),
-            '>' => document.push_str("\\u003e"),
-            '&' => document.push_str("\\u0026"),
-            '\u{2028}' => document.push_str("\\u2028"),
-            '\u{2029}' => document.push_str("\\u2029"),
-            _ => document.push(ch),
-        }
-    }
+    write!(document, "{}", JsString(status_endpoint)).expect("String formatting is infallible");
     document.push_str(tail);
     document
 }

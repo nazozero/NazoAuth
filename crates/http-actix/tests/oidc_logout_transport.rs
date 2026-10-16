@@ -255,7 +255,9 @@ async fn invalid_rp_parameters_are_not_preserved_and_confirmation_errors_do_not_
 #[actix_web::test]
 async fn frontchannel_document_escapes_urls_and_redirect_and_clears_cookies() {
     let operations = operations(Ok(OidcLogoutSuccess {
-        redirect_uri: Some("https://client.example/after?x='</script>&".to_owned()),
+        redirect_uri: Some(
+            "https://client.example/after?x='</script>&\r\n\u{2028}\u{2029}\\".to_owned(),
+        ),
         frontchannel_logout_urls: vec!["https://client.example/front?x=\"<&".to_owned()],
     }));
     let app = test::init_service(
@@ -280,8 +282,9 @@ async fn frontchannel_document_escapes_urls_and_redirect_and_clears_cookies() {
     assert_eq!(cookies, 2);
     assert!(body.contains("&quot;&lt;&amp;"));
     assert!(body.contains("\\'\\u003c/script\\u003e\\u0026"));
+    assert!(body.contains("\\r\\n\\u2028\\u2029\\\\"));
     assert!(body.contains("id=\"nazo-frontchannel-logout-continue\""));
-    assert!(body.contains("href=\"https://client.example/after?x=&#39;&lt;/script&gt;&amp;\""));
+    assert!(body.contains("href=\"https://client.example/after?x=&#39;&lt;/script&gt;&amp;"));
     assert!(!body.contains("'</script>"));
 }
 

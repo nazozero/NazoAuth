@@ -2,7 +2,9 @@ use nazo_oauth_server::contracts::oidc_logout::{
     OidcLogoutCommand, OidcLogoutError, OidcLogoutOperations, OidcLogoutRequest, OidcLogoutSuccess,
 };
 
-use std::sync::Arc;
+use std::{borrow::Cow, fmt::Write as _, sync::Arc};
+
+use crate::html::{HtmlAttribute, JsString};
 
 use crate::{
     clear_cookie, cookie_value, csrf_error, has_valid_csrf_token_for_cookies, oauth_error,
@@ -150,13 +152,13 @@ fn merge_logout_pairs(
 ) -> Result<(), HttpResponse> {
     for (key, value) in url::form_urlencoded::parse(raw) {
         match key.as_ref() {
-            "id_token_hint" => set_once(&mut parsed.request.id_token_hint, &value)?,
-            "client_id" => set_once(&mut parsed.request.client_id, &value)?,
+            "id_token_hint" => set_once(&mut parsed.request.id_token_hint, value)?,
+            "client_id" => set_once(&mut parsed.request.client_id, value)?,
             "post_logout_redirect_uri" => {
-                set_once(&mut parsed.request.post_logout_redirect_uri, &value)?;
+                set_once(&mut parsed.request.post_logout_redirect_uri, value)?;
             }
-            "state" => set_once(&mut parsed.request.state, &value)?,
-            "_nazo_csrf" => set_once(&mut parsed.csrf_token, &value)?,
+            "state" => set_once(&mut parsed.request.state, value)?,
+            "_nazo_csrf" => set_once(&mut parsed.csrf_token, value)?,
             "_nazo_logout_confirm" => {
                 if parsed.user_confirmed || value != "true" {
                     return Err(invalid_logout_request("invalid logout confirmation."));
@@ -173,7 +175,7 @@ fn invalid_logout_request(description: &'static str) -> HttpResponse {
     oauth_error(StatusCode::BAD_REQUEST, "invalid_request", description)
 }
 
-fn set_once(field: &mut Option<String>, value: &str) -> Result<(), HttpResponse> {
+fn set_once(field: &mut Option<String>, value: Cow<'_, str>) -> Result<(), HttpResponse> {
     if field.is_some() {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -181,7 +183,7 @@ fn set_once(field: &mut Option<String>, value: &str) -> Result<(), HttpResponse>
             "duplicate logout parameter.",
         ));
     }
-    field.replace(value.to_owned());
+    field.replace(value.into_owned());
     Ok(())
 }
 
@@ -311,52 +313,51 @@ fn logout_confirmation_response(
     csrf_token: &str,
     request: Option<&OidcLogoutRequest>,
 ) -> HttpResponse {
-    let preserved_fields = request.map_or_else(String::new, logout_request_hidden_fields);
+    let mut document = format!(
+        concat!(
+            "<!doctype html><html><head><meta charset=\"utf-8\">",
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
+            "<meta http-equiv=\"cache-control\" content=\"no-store\">",
+            "<title>Confirm sign out</title></head><body>",
+            "<main id=\"nazo-logout-confirmation\"><h1>Sign out?</h1>",
+            "<p>The requesting application could not be bound to this session. ",
+            "Confirm to sign out of the OpenID Provider without using its redirect data.</p>",
+            "<form method=\"post\" action=\"/logout\">",
+            "<input type=\"hidden\" name=\"_nazo_logout_confirm\" value=\"true\">",
+            "<input type=\"hidden\" name=\"_nazo_csrf\" value=\"{}\">"
+        ),
+        HtmlAttribute(csrf_token),
+    );
+    if let Some(request) = request {
+        for (name, value) in [
+            ("id_token_hint", request.id_token_hint.as_deref()),
+            ("client_id", request.client_id.as_deref()),
+            (
+                "post_logout_redirect_uri",
+                request.post_logout_redirect_uri.as_deref(),
+            ),
+            ("state", request.state.as_deref()),
+        ] {
+            if let Some(value) = value {
+                write!(
+                    document,
+                    "<input type=\"hidden\" name=\"{name}\" value=\"{}\">",
+                    HtmlAttribute(value)
+                )
+                .expect("String formatting is infallible");
+            }
+        }
+    }
+    document.push_str(concat!(
+        "<button id=\"nazo-logout-confirm\" type=\"submit\">Sign out</button>",
+        "<a id=\"nazo-logout-cancel\" href=\"/\">Cancel</a>",
+        "</form></main></body></html>"
+    ));
     HttpResponse::Ok()
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .insert_header((header::PRAGMA, "no-cache"))
         .content_type("text/html; charset=utf-8")
-        .body(format!(
-            concat!(
-                "<!doctype html><html><head><meta charset=\"utf-8\">",
-                "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
-                "<meta http-equiv=\"cache-control\" content=\"no-store\">",
-                "<title>Confirm sign out</title></head><body>",
-                "<main id=\"nazo-logout-confirmation\"><h1>Sign out?</h1>",
-                "<p>The requesting application could not be bound to this session. ",
-                "Confirm to sign out of the OpenID Provider without using its redirect data.</p>",
-                "<form method=\"post\" action=\"/logout\">",
-                "<input type=\"hidden\" name=\"_nazo_logout_confirm\" value=\"true\">",
-                "<input type=\"hidden\" name=\"_nazo_csrf\" value=\"{}\">{}",
-                "<button id=\"nazo-logout-confirm\" type=\"submit\">Sign out</button>",
-                "<a id=\"nazo-logout-cancel\" href=\"/\">Cancel</a>",
-                "</form></main></body></html>"
-            ),
-            escape_html_attribute(csrf_token),
-            preserved_fields,
-        ))
-}
-
-fn logout_request_hidden_fields(request: &OidcLogoutRequest) -> String {
-    [
-        ("id_token_hint", request.id_token_hint.as_deref()),
-        ("client_id", request.client_id.as_deref()),
-        (
-            "post_logout_redirect_uri",
-            request.post_logout_redirect_uri.as_deref(),
-        ),
-        ("state", request.state.as_deref()),
-    ]
-    .into_iter()
-    .filter_map(|(name, value)| {
-        value.map(|value| {
-            format!(
-                "<input type=\"hidden\" name=\"{name}\" value=\"{}\">",
-                escape_html_attribute(value)
-            )
-        })
-    })
-    .collect()
+        .body(document)
 }
 
 fn logout_success_response() -> HttpResponse {
@@ -379,24 +380,25 @@ fn logout_success_document() -> &'static str {
 }
 
 fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&str>) -> String {
-    let iframe_count = frontchannel_urls.len();
-    let iframe_onload = if redirect.is_some() {
-        " onload=\"nazoFrontchannelLogoutFrameDone(this)\""
-    } else {
-        ""
-    };
-    let iframes = frontchannel_urls
-        .iter()
-        .map(|url| {
-            format!(
-                "<iframe title=\"OIDC Front-Channel Logout\" src=\"{}\"{}></iframe>",
-                escape_html_attribute(url),
-                iframe_onload
-            )
-        })
-        .collect::<String>();
-    let redirect_script = redirect.map_or_else(String::new, |location| {
-        format!(
+    let mut document = String::from(concat!(
+        "<!doctype html><html><head><meta charset=\"utf-8\">",
+        "<meta http-equiv=\"cache-control\" content=\"no-store\">",
+        "<style>iframe{display:none;width:0;height:0;border:0}</style>",
+        "</head><body><main id=\"nazo-logout-success\">",
+        "<h1>You are signed out.</h1>"
+    ));
+    if let Some(location) = redirect {
+        write!(
+            document,
+            "<p><a id=\"nazo-frontchannel-logout-continue\" href=\"{}\">Continue after sign-out</a></p>",
+            HtmlAttribute(location)
+        )
+        .expect("String formatting is infallible");
+    }
+    document.push_str("</main>");
+    if let Some(location) = redirect {
+        write!(
+            document,
             concat!(
                 "<script>",
                 "(function(){{",
@@ -418,48 +420,24 @@ fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&
                 "}})();",
                 "</script>"
             ),
-            iframe_count = iframe_count,
-            location = escape_js_string(location)
+            iframe_count = frontchannel_urls.len(),
+            location = JsString(location)
         )
-    });
-    let redirect_fallback = redirect.map_or_else(String::new, |location| {
-        format!(
-            concat!(
-                "<p><a id=\"nazo-frontchannel-logout-continue\" href=\"{}\">",
-                "Continue after sign-out</a></p>"
-            ),
-            escape_html_attribute(location)
+        .expect("String formatting is infallible");
+    }
+    let iframe_onload = if redirect.is_some() {
+        " onload=\"nazoFrontchannelLogoutFrameDone(this)\""
+    } else {
+        ""
+    };
+    for url in frontchannel_urls {
+        write!(
+            document,
+            "<iframe title=\"OIDC Front-Channel Logout\" src=\"{}\"{iframe_onload}></iframe>",
+            HtmlAttribute(url)
         )
-    });
-    format!(
-        concat!(
-            "<!doctype html><html><head><meta charset=\"utf-8\">",
-            "<meta http-equiv=\"cache-control\" content=\"no-store\">",
-            "<style>iframe{{display:none;width:0;height:0;border:0}}</style>",
-            "</head><body><main id=\"nazo-logout-success\">",
-            "<h1>You are signed out.</h1>{redirect_fallback}</main>",
-            "{redirect_script}{iframes}</body></html>"
-        ),
-        iframes = iframes,
-        redirect_script = redirect_script,
-        redirect_fallback = redirect_fallback,
-    )
-}
-
-fn escape_html_attribute(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
-fn escape_js_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('\'', "\\'")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026")
+        .expect("String formatting is infallible");
+    }
+    document.push_str("</body></html>");
+    document
 }
