@@ -697,17 +697,13 @@ pub fn protect_dataset_claims(
         serde_json::to_vec(claims).map_err(|_| CredentialStoreError::InvalidTransition)?;
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    let mut protected = nonce.to_vec();
-    protected.extend_from_slice(
-        &nazo_crypto::aead::encrypt(
-            key,
-            &nonce,
-            &dataset_aad(tenant_id, subject_id, credential_configuration_id),
-            &plaintext,
-        )
-        .map_err(|_| CredentialStoreError::Unavailable)?,
-    );
-    Ok(protected)
+    nazo_crypto::aead::encrypt_nonce_prefixed(
+        key,
+        &nonce,
+        &dataset_aad(tenant_id, subject_id, credential_configuration_id),
+        &plaintext,
+    )
+    .map_err(|_| CredentialStoreError::Unavailable)
 }
 
 /// Decrypts a dataset read through a caller-owned connection.  Keeping this
@@ -723,18 +719,12 @@ pub fn unprotect_dataset_claims(
     let (nonce, ciphertext) = protected
         .split_at_checked(12)
         .ok_or(CredentialStoreError::InvalidTransition)?;
-    let nonce: &[u8; 12] = nonce
-        .try_into()
-        .map_err(|_| CredentialStoreError::InvalidTransition)?;
     let plaintext = nazo_crypto::aead::decrypt(
         key,
         nonce,
         &dataset_aad(tenant_id, subject_id, credential_configuration_id),
         ciphertext,
     )
-    .map_err(|error| match error {
-        nazo_crypto::CryptoError::InvalidKey => CredentialStoreError::Unavailable,
-        _ => CredentialStoreError::InvalidTransition,
-    })?;
+    .map_err(|_| CredentialStoreError::InvalidTransition)?;
     serde_json::from_slice(&plaintext).map_err(|_| CredentialStoreError::InvalidTransition)
 }

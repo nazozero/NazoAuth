@@ -570,17 +570,13 @@ fn protect_payload(
 ) -> Result<Vec<u8>, PresentationStoreError> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    let mut protected = nonce.to_vec();
-    protected.extend_from_slice(
-        &nazo_crypto::aead::encrypt(
-            key,
-            &nonce,
-            &payload_aad(domain, tenant_id, transaction_id),
-            plaintext,
-        )
-        .map_err(|_| PresentationStoreError::Unavailable)?,
-    );
-    Ok(protected)
+    nazo_crypto::aead::encrypt_nonce_prefixed(
+        key,
+        &nonce,
+        &payload_aad(domain, tenant_id, transaction_id),
+        plaintext,
+    )
+    .map_err(|_| PresentationStoreError::Unavailable)
 }
 
 fn unprotect_payload(
@@ -593,12 +589,7 @@ fn unprotect_payload(
     let (nonce, ciphertext) = protected
         .split_at_checked(12)
         .ok_or(PresentationStoreError::InvalidTransition)?;
-    let nonce: &[u8; 12] = nonce
-        .try_into()
-        .map_err(|_| PresentationStoreError::InvalidTransition)?;
     let aad = payload_aad(domain, tenant_id, transaction_id);
-    nazo_crypto::aead::decrypt(key, nonce, &aad, ciphertext).map_err(|error| match error {
-        nazo_crypto::CryptoError::InvalidKey => PresentationStoreError::Unavailable,
-        _ => PresentationStoreError::InvalidTransition,
-    })
+    nazo_crypto::aead::decrypt(key, nonce, &aad, ciphertext)
+        .map_err(|_| PresentationStoreError::InvalidTransition)
 }
