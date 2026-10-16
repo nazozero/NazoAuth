@@ -32,7 +32,6 @@ pub(crate) async fn run_worker<R>(
 where
     R: SecurityAuditExporter,
 {
-    config.validate()?;
     repository
         .check_available()
         .await
@@ -119,10 +118,9 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
         }
         *last_anchored = Some(exported);
     } else if snapshot.head_sequence == 0 {
-        let expected_hash = super::protocol::encode_hash(&snapshot.head_hash);
-        let genesis_is_current = last_anchored
-            .as_ref()
-            .is_some_and(|checkpoint| checkpoint.sequence == 0 && checkpoint.hash == expected_hash);
+        let genesis_is_current = last_anchored.as_ref().is_some_and(|checkpoint| {
+            checkpoint.sequence == 0 && checkpoint.hash == snapshot.head_hash
+        });
         if !genesis_is_current {
             match send_genesis_checkpoint(client, config, &snapshot.head_hash).await {
                 Ok(PushOutcome::Accepted { .. }) => {
@@ -133,7 +131,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
                         tracing::warn!(target: "audit.anchor", error_kind = %error_kind(&error), "audit anchor genesis was not confirmed in the database");
                         return IterationOutcome::Retry(retry_delay(1));
                     }
-                    *last_anchored = Some(AnchorCheckpoint::genesis(expected_hash));
+                    *last_anchored = Some(AnchorCheckpoint::genesis(snapshot.head_hash));
                 }
                 Ok(PushOutcome::Rejected { reason, .. }) => {
                     tracing::warn!(
@@ -293,11 +291,9 @@ async fn release_lease<R: AuditAnchorRepository + ?Sized>(
     reason: &str,
     blocked: bool,
 ) {
-    let available_at = Utc::now()
-        + ChronoDuration::from_std(delay).unwrap_or_else(|_| ChronoDuration::seconds(300));
-    let bounded_reason: String = reason.chars().take(128).collect();
+    let available_at = Utc::now() + ChronoDuration::seconds(delay.as_secs() as i64);
     if let Err(error) = repository
-        .fail_batch(batch.generation, available_at, &bounded_reason, blocked)
+        .fail_batch(batch.generation, available_at, reason, blocked)
         .await
     {
         tracing::warn!(
@@ -314,7 +310,7 @@ pub(super) fn retry_delay(attempts: i32) -> Duration {
     let seconds = 2_u64
         .saturating_pow(exponent)
         .min(MAX_RETRY_DELAY.as_secs());
-    Duration::from_secs(seconds.max(1))
+    Duration::from_secs(seconds)
 }
 
 pub(super) fn batch_lag_seconds(batch: &SecurityAuditBatch) -> i64 {

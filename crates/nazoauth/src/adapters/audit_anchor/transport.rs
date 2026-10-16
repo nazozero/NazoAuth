@@ -133,7 +133,7 @@ async fn bounded_receipt_body(
         .await
         .map_err(|_| AnchorPushError::Transport)?
     {
-        if chunk.len() > limit.saturating_sub(body.len()) {
+        if chunk.len() > limit - body.len() {
             return Err(AnchorPushError::InvalidReceipt);
         }
         body.extend_from_slice(&chunk);

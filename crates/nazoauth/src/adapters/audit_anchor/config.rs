@@ -134,7 +134,6 @@ pub(crate) fn preflight_config_from_source(
         freshness: Duration::from_secs(source.parse("AUDIT_ANCHOR_FRESHNESS_SECONDS", 120_u64)?),
         max_lag: Duration::from_secs(source.parse("AUDIT_ANCHOR_MAX_LAG_SECONDS", 300_u64)?),
     };
-    config.validate()?;
     Ok(config)
 }
 
@@ -182,25 +181,30 @@ pub(crate) fn worker_config_from_source(
 }
 
 fn parse_receipt_verify_key(value: &str) -> anyhow::Result<VerifyingKey> {
-    let decoded = URL_SAFE_NO_PAD
-        .decode(value.trim())
-        .or_else(|_| hex_decode(value.trim()))
-        .map_err(|_| anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must be base64 or hex"))?;
-    let bytes: [u8; 32] = decoded
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must be 32 bytes"))?;
+    let value = value.trim();
+    let mut bytes = [0; 32];
+    match value.len() {
+        43 => {
+            URL_SAFE_NO_PAD
+                .decode_slice(value, &mut bytes)
+                .map_err(|_| {
+                    anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must be base64 or hex")
+                })?;
+        }
+        64 => {
+            for (output, pair) in bytes.iter_mut().zip(value.as_bytes().as_chunks::<2>().0) {
+                let high = char::from(pair[0]).to_digit(16);
+                let low = char::from(pair[1]).to_digit(16);
+                let (Some(high), Some(low)) = (high, low) else {
+                    bail!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must be base64 or hex");
+                };
+                *output = (high * 16 + low) as u8;
+            }
+        }
+        _ => bail!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must encode 32 bytes as base64 or hex"),
+    }
     VerifyingKey::from_bytes(&bytes)
         .map_err(|_| anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY is not a valid Ed25519 key"))
-}
-
-fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
-    if !value.len().is_multiple_of(2) || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(());
-    }
-    (0..value.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).map_err(|_| ()))
-        .collect()
 }
 
 pub(super) fn validate_deployment_id(value: &str) -> anyhow::Result<()> {
