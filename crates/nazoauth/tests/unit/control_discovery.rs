@@ -34,7 +34,7 @@ fn identity_is_stable_and_online_statement_is_nonce_bound() {
     let public_key = decode_instance_public_key(&response.instance_public_key).unwrap();
     let statement = verify_discovery_statement(
         &response.statement,
-        &endpoint.identity.key_id,
+        &endpoint.identity.deployment.instance_key_id,
         &public_key,
         &nonce,
         Utc::now().timestamp(),
@@ -51,15 +51,21 @@ fn identity_is_stable_and_online_statement_is_nonce_bound() {
         "https://auth.example",
     )
     .unwrap();
-    assert_eq!(endpoint.identity.key_id, reloaded.identity.key_id);
+    assert_eq!(
+        endpoint.identity.deployment.instance_key_id,
+        reloaded.identity.deployment.instance_key_id
+    );
     let offline = fs::read_to_string(
         root.join(INSTANCE_DIRECTORY)
             .join(DEPLOYMENT_STATEMENT_FILE),
     )
     .unwrap();
-    let offline =
-        verify_deployment_statement(offline.trim(), &reloaded.identity.key_id, &public_key)
-            .unwrap();
+    let offline = verify_deployment_statement(
+        offline.trim(),
+        &reloaded.identity.deployment.instance_key_id,
+        &public_key,
+    )
+    .unwrap();
     assert_eq!(offline.deployment_id, statement.deployment_id);
     assert_eq!(offline.runtime_instance_id, statement.runtime_instance_id);
     fs::remove_dir_all(root).unwrap();
@@ -94,7 +100,10 @@ fn replicas_can_share_deployment_id_without_sharing_instance_keys() {
         first.identity.deployment.runtime_instance_id,
         second.identity.deployment.runtime_instance_id
     );
-    assert_ne!(first.identity.key_id, second.identity.key_id);
+    assert_ne!(
+        first.identity.deployment.instance_key_id,
+        second.identity.deployment.instance_key_id
+    );
     fs::remove_dir_all(root).unwrap();
 }
 
@@ -399,7 +408,7 @@ fn changed_public_deployment_claim_replaces_signed_statement_and_cleans_temporar
     let current = fs::read_to_string(identity_dir.join(DEPLOYMENT_STATEMENT_FILE)).unwrap();
     let current = verify_deployment_statement(
         current.trim(),
-        &second.identity.key_id,
+        &second.identity.deployment.instance_key_id,
         &second.identity.signing_key.verifying_key(),
     )
     .unwrap();
@@ -418,5 +427,19 @@ fn changed_public_deployment_claim_replaces_signed_statement_and_cleans_temporar
         0
     );
     assert_eq!(fs::read_dir(&identity_dir).unwrap().count(), 5);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn failed_statement_replacement_preserves_target_and_cleans_temporary_files() {
+    let root = temporary_root();
+    fs::create_dir_all(&root).unwrap();
+    let path = root.join("statement");
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("existing"), b"keep").unwrap();
+
+    assert!(publish_replaceable_file(&path, b"new").is_err());
+    assert_eq!(fs::read(path.join("existing")).unwrap(), b"keep");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
     fs::remove_dir_all(root).unwrap();
 }
