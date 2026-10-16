@@ -78,4 +78,8 @@ COPY --chmod=0555 deploy/compose/initialize-postgres.sh /docker-entrypoint-initd
 
 FROM development-runtime AS perf-runtime
 
+USER 0:0
+RUN install -d -o 10001 -g 10001 /var/lib/nazo_oauth
+USER 10001:10001
+
 COPY perf/env.yaml /app/.env.yaml

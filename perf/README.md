@@ -106,7 +106,7 @@ read-only at `/workspace`, writable evidence at `/evidence`, and the work volume
 at `/workspace/perf-results`. The controller image needs the existing runner
 Python dependencies, Docker/Compose, Git and a C compiler. The public
 `/evidence/requests/manifest.json` binds `project`, `source_sha`, `runner_image`,
-`app_image`, `helpers` (keyset/receiver), `cpus`, `harness_file_sha256`, and each
+`app_image`, `helpers` (receiver), `cpus`, `harness_file_sha256`, and each
 `requests` entry's exact `path` and `sha256`. Requests retain the normal harness
 parameters and gates; the controller verifies their hashes and does not change
 rates, VUs, windows, CPU widths, pool size, audit or durability settings.
@@ -288,6 +288,10 @@ The report normalizes observed throughput by NazoAuth service CPU usage:
 `100%` Docker CPU is treated as one effective CPU core. This avoids claiming
 capacity only from raw RPS when the service is consuming many cores.
 
+Each isolated point starts with fresh database and runtime volumes. Signing
+keys belong to that point's database; the harness does not establish that
+different points use identical signing key material.
+
 For strict App CPU tests, `perf/run_capacity.sh` also supports:
 
 | Variable | Meaning |
@@ -295,7 +299,7 @@ For strict App CPU tests, `perf/run_capacity.sh` also supports:
 | `PERF_APP_CPUS` | Docker CPU quota for the NazoAuth service, for example `1`, `2`, or `4`. |
 | `PERF_APP_TASKSET` | Process-level CPU affinity for NazoAuth. This is the effective limiter in nested Docker environments where CPU quota is not enforced reliably. |
 | `PERF_APP_CPUSET` | Optional CPU set for NazoAuth. |
-| `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, keyset, migrate, and perf runner. |
+| `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, migrate, and perf runner. |
 | `SINGLE_INSTANCE_MAX_DURATION` | Duration per point for `single_instance_full_flow_max.sh`, default `2m`. |
 | `SINGLE_INSTANCE_MAX_RATES` | Comma-separated fixed arrival rates for the full-flow max test, default `16,32,64,96,128,192,256,384,512`. |
 | `SINGLE_INSTANCE_MAX_MAX_VUS` | k6 maximum VUs for the full-flow max test, default `4096`. |

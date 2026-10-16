@@ -29,17 +29,6 @@ from blackbox_contract import (CONTRACT, audit_queue_unverified, require_externa
                                unavailable_dimension, unverified_gates)
 
 
-KEYSET_VOLUME = "sisprsa-confirm-keys"
-
-
-# Optional callable executed by stack_up_pinned AFTER the infra services
-# (postgres/migrate/keyset/valkey) are healthy and BEFORE the nazoauth
-# container starts. Drivers use it for DB-side experiment settings that
-# must be in place before the app's pool sessions open. Returns a JSON-
-# serialisable evidence dict stored under stack["pre_app"]. Keep it None
-# outside single-variable A/B tasks.
-
-
 def image_binary_sha(image: str) -> str | None:
     """sha256 of the nazoauth binary inside an image — run before any
     load; identical hashes for A and B mean the build cache produced the
@@ -441,35 +430,12 @@ def _ensure_pinset_binary() -> None:
     os.chmod(path, 0o755)
 
 
-def keyset_fingerprint() -> dict:
-    """sha256 of every file in the key dir inside the running app
-    container (key PEMs are root:600, so exec as root) — proves all
-    points ran with the same RS256/PS256 key material, not merely
-    'an RSA2048 key'. Also records the volume mounted at the key dir."""
-    proc = sis.dc("exec", "-u", "0", sis.APP, "sh", "-c",
-                  "sha256sum /var/lib/nazo_oauth/keys/*", check=False)
-    files = {}
-    if proc.returncode == 0:
-        for line in proc.stdout.splitlines():
-            parts = line.split()
-            if len(parts) == 2:
-                files[parts[1]] = parts[0]
-    mount = sis.dc("inspect", sis.APP, "--format",
-                   "{{range .Mounts}}{{if eq .Destination "
-                   "\"/var/lib/nazo_oauth\"}}{{.Source}}{{end}}{{end}}",
-                   check=False)
-    return {"files": files, "collected": bool(files),
-            "key_dir_volume": (mount.stdout or "").strip()}
-
-
 def stack_up_pinned(point: dict) -> dict:
     """stack_up variant for this experiment: the app container is started
     through the existing pinset 'pin self then exec' wrapper so the CPU
     affinity is applied BEFORE Tokio/Actix spawn any threads. Infra
-    containers keep the existing post-start pinning. The key material
-    lives on an EXTERNAL volume (not removed by `down -v`) so every point
-    of the confirmation shares one controlled keyset while postgres /
-    valkey / audit state still get fresh volumes per point."""
+    containers keep the existing post-start pinning. Database and runtime
+    volumes are fresh for each point, including database-managed keys."""
     sis.reset_audit_schema_cache()
     evidence: dict = {"point": point["name"], "image": point["image"]}
     for svc in ("nazoauth", "migrate", "audit-worker"):
@@ -477,12 +443,9 @@ def stack_up_pinned(point: dict) -> dict:
 
     _ensure_pinset_binary()
     app_cpus = sis.format_cpu_list(point["app_cpus"])
-    infra_cpus = sis.format_cpu_list(point["infra_cpus"])
     # One override for every compose invocation of this point:
     #   * nazoauth entrypoint = pinset CPULIST (affinity before exec,
     #     before any Tokio/Actix thread exists);
-    #   * keyset/nazoauth/migrate mount the external shared key volume
-    #     instead of the per-point perf_runtime volume.
     # Optional per-point process-env overrides for the app container
     # (e.g. DATABASE_MAX_CONNECTIONS). Process env takes precedence over
     # the baked /app/.env.yaml (ConfigSource: env > file > generated), so
@@ -495,29 +458,18 @@ def stack_up_pinned(point: dict) -> dict:
     override = sis.RESULTS / f"confirm-override-{point['name']}.yml"
     override.write_text(
         "services:\n"
-        "  keyset:\n"
-        "    volumes:\n"
-        f"      - {KEYSET_VOLUME}:/var/lib/nazo_oauth\n"
-        "  migrate:\n"
-        "    volumes:\n"
-        f"      - {KEYSET_VOLUME}:/var/lib/nazo_oauth\n"
         "  nazoauth:\n"
         f"    entrypoint: [\"/pinbin/pinset\", \"{app_cpus}\"]\n"
         f"{env_block}"
         "    volumes:\n"
-        f"      - {KEYSET_VOLUME}:/var/lib/nazo_oauth\n"
-        f"      - {sis.BIN_DIR}:/pinbin:ro\n"
-        "volumes:\n"
-        f"  {KEYSET_VOLUME}:\n"
-        "    external: true\n")
+        f"      - {sis.BIN_DIR}:/pinbin:ro\n")
     up_args = ("compose", "-f", sis.COMPOSE_FILE, "-f", str(override),
                "-p", sis.PROJECT)
     sis.dc(*up_args, "up", "-d", "--no-build",
-           "postgres", "valkey", "postgres-init", "keyset", "migrate")
+           "postgres", "valkey", "postgres-init", "migrate")
     evidence["healthy"] = {
         "postgres": sis.wait_healthy(sis.POSTGRES),
         "valkey": sis.wait_healthy(sis.VALKEY),
-        "keyset": sis.wait_healthy(sis.KEYSET),
         "migrate": sis.wait_healthy(sis.MIGRATE),
     }
     if not all(evidence["healthy"].values()):
@@ -528,7 +480,6 @@ def stack_up_pinned(point: dict) -> dict:
     evidence["healthy"]["nazoauth"] = sis.wait_app_ready()
     if not evidence["healthy"]["nazoauth"]:
         raise RuntimeError("app not ready after pinned exec start")
-    evidence["keyset"] = keyset_fingerprint()
     evidence["app_binary_sha256"] = image_binary_sha_in_container(
         sis.APP)
 
@@ -541,7 +492,6 @@ def stack_up_pinned(point: dict) -> dict:
             point.get("postgres_cpus", point["infra_cpus"]))),
         "valkey": sis.pin_container(sis.VALKEY, sis.format_cpu_list(
             point.get("valkey_cpus", point["infra_cpus"]))),
-        "keyset": sis.pin_container(sis.KEYSET, infra_cpus),
         "pg_verified": sis.verify_pin(sis.POSTGRES, sis.format_cpu_list(
             point.get("postgres_cpus", point["infra_cpus"])), "postgres"),
     }
