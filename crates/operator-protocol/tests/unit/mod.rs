@@ -678,3 +678,88 @@ fn openid4vp_create_request_jti_requires_canonical_versioned_uuid() {
         assert!(validate_openid4vp_create_request_jti(malformed).is_err());
     }
 }
+
+#[test]
+fn manifest_digest_keeps_fixed_encoding_and_rejects_duplicate_identity_with_new_digest() {
+    let mut resources = vec![
+        TenantResourceIdentity {
+            kind: TenantResourceKind::User,
+            resource_id: "user-1".to_owned(),
+            digest: "d".repeat(64),
+        },
+        TenantResourceIdentity {
+            kind: TenantResourceKind::OauthClient,
+            resource_id: "app".to_owned(),
+            digest: "e".repeat(64),
+        },
+        TenantResourceIdentity {
+            kind: TenantResourceKind::User,
+            resource_id: "user-2".to_owned(),
+            digest: "f".repeat(64),
+        },
+    ];
+    // Independent length-prefixed SHA-256 fixture, not computed by this implementation.
+    let expected = "338dcfd2758d4033cfecf9a1e963d13b65f37be906f6f19a7d8d64fa8ba5efa1";
+    assert_eq!(
+        canonical_tenant_resource_manifest_sha256(&resources).unwrap(),
+        expected
+    );
+    resources.reverse();
+    assert_eq!(
+        canonical_tenant_resource_manifest_sha256(&resources).unwrap(),
+        expected
+    );
+    resources.push(TenantResourceIdentity {
+        kind: TenantResourceKind::User,
+        resource_id: "user-1".to_owned(),
+        digest: "a".repeat(64),
+    });
+    assert!(canonical_tenant_resource_manifest_sha256(&resources).is_err());
+}
+
+#[test]
+fn discovery_rejects_overflowing_validity_windows() {
+    let key = SigningKey::from_bytes(&[17; 32]);
+    for (issued_at, expires_at) in [(i64::MIN, i64::MAX), (i64::MAX, i64::MIN)] {
+        let statement = DiscoveryStatement {
+            issued_at,
+            expires_at,
+            ..discovery_statement()
+        };
+        assert!(sign_discovery_statement(&statement, "instance-1", &key).is_err());
+        let compact =
+            sign_compact(&statement, "instance-1", CONTROL_DISCOVERY_JWS_TYPE, &key).unwrap();
+        assert!(
+            verify_discovery_statement(
+                &compact,
+                "instance-1",
+                &key.verifying_key(),
+                &statement.nonce,
+                1_000
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn fixed_public_key_and_nonce_decoders_preserve_bounds() {
+    let key = SigningKey::from_bytes(&[17; 32]).verifying_key();
+    assert_eq!(
+        decode_instance_public_key(&encode_instance_public_key(&key))
+            .unwrap()
+            .to_bytes(),
+        key.to_bytes()
+    );
+    for bytes in [vec![], vec![0; 31], vec![0; 33]] {
+        assert!(decode_instance_public_key(&URL_SAFE_NO_PAD.encode(bytes)).is_err());
+    }
+    let mut request = DiscoveryRequest {
+        schema: CONTROL_DISCOVERY_SCHEMA,
+        nonce: discovery_statement().nonce,
+    };
+    assert!(validate_discovery_request(&request).is_ok());
+    request.nonce.pop();
+    request.nonce.push('9'); // Same length but nonzero trailing pad bits.
+    assert!(validate_discovery_request(&request).is_err());
+}

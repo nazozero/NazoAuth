@@ -1127,13 +1127,7 @@ pub fn sign_control_operation(
     }
     let protected = encode_protected_header(&operation.kid)?;
     let request_hash = control_operation_request_hash(&canonical);
-    let payload = URL_SAFE_NO_PAD.encode(canonical);
-    let signing_input = format!("{protected}.{payload}");
-    let signature = key.sign(signing_input.as_bytes());
-    let compact = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
-    if compact.len() > MAX_COMPACT_JWS_BYTES {
-        return Err(ProtocolError::TooLarge);
-    }
+    let compact = crate::signing::sign_payload(protected, &canonical, key)?;
     Ok((compact, request_hash))
 }
 

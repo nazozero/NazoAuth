@@ -50,12 +50,14 @@ pub fn encode_instance_public_key(key: &VerifyingKey) -> String {
 }
 
 pub fn decode_instance_public_key(encoded: &str) -> Result<VerifyingKey, ProtocolError> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(encoded)
-        .map_err(|_| ProtocolError::Base64)?;
-    let bytes: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| ProtocolError::Policy("invalid instance public key"))?;
+    let mut bytes = [0_u8; 32];
+    match URL_SAFE_NO_PAD.decode_slice(encoded, &mut bytes) {
+        Ok(32) => {}
+        Ok(_) | Err(base64::DecodeSliceError::OutputSliceTooSmall) => {
+            return Err(ProtocolError::Policy("invalid instance public key"));
+        }
+        Err(_) => return Err(ProtocolError::Base64),
+    }
     VerifyingKey::from_bytes(&bytes)
         .map_err(|_| ProtocolError::Policy("invalid instance public key"))
 }
@@ -89,16 +91,10 @@ pub fn canonical_tenant_resource_manifest_sha256(
             "tenant resource identities are out of bounds",
         ));
     }
-    let mut seen = std::collections::BTreeSet::new();
     let mut entries = Vec::with_capacity(resources.len());
     for resource in resources {
         validate_file_identifier(&resource.resource_id)?;
         validate_lower_hex(&resource.digest, 64)?;
-        if !seen.insert((resource.kind, resource.resource_id.as_str())) {
-            return Err(ProtocolError::Policy(
-                "tenant resource identities must be unique",
-            ));
-        }
         entries.push((
             tenant_resource_kind_wire_label(resource.kind),
             resource.resource_id.as_str(),
@@ -106,15 +102,23 @@ pub fn canonical_tenant_resource_manifest_sha256(
         ));
     }
     entries.sort_unstable();
-    let mut encoded = Vec::new();
-    append_len_prefixed(&mut encoded, b"nazoauth:tenant-resource-manifest:v1");
-    encoded.extend_from_slice(&(entries.len() as u64).to_be_bytes());
-    for (kind, resource_id, digest) in entries {
-        append_len_prefixed(&mut encoded, kind.as_bytes());
-        append_len_prefixed(&mut encoded, resource_id.as_bytes());
-        append_len_prefixed(&mut encoded, digest.as_bytes());
+    if entries
+        .windows(2)
+        .any(|pair| pair[0].0 == pair[1].0 && pair[0].1 == pair[1].1)
+    {
+        return Err(ProtocolError::Policy(
+            "tenant resource identities must be unique",
+        ));
     }
-    Ok(hex_sha256(&encoded))
+    let mut digest = Sha256::new();
+    hash_len_prefixed(&mut digest, b"nazoauth:tenant-resource-manifest:v1");
+    digest.update((entries.len() as u64).to_be_bytes());
+    for (kind, resource_id, resource_digest) in entries {
+        hash_len_prefixed(&mut digest, kind.as_bytes());
+        hash_len_prefixed(&mut digest, resource_id.as_bytes());
+        hash_len_prefixed(&mut digest, resource_digest.as_bytes());
+    }
+    Ok(hex::encode(digest.finalize()))
 }
 
 fn tenant_resource_kind_wire_label(kind: TenantResourceKind) -> &'static str {
@@ -127,9 +131,9 @@ fn tenant_resource_kind_wire_label(kind: TenantResourceKind) -> &'static str {
     }
 }
 
-fn append_len_prefixed(encoded: &mut Vec<u8>, value: &[u8]) {
-    encoded.extend_from_slice(&(value.len() as u64).to_be_bytes());
-    encoded.extend_from_slice(value);
+fn hash_len_prefixed(digest: &mut Sha256, value: &[u8]) {
+    digest.update((value.len() as u64).to_be_bytes());
+    digest.update(value);
 }
 
 pub fn compact_sha256(compact: &str) -> String {
@@ -157,13 +161,24 @@ pub(crate) fn sign_compact<T: Serialize>(
         typ: expected_type.to_owned(),
     };
     let protected = encode_json(&header)?;
-    let payload = encode_json(claims)?;
-    let signing_input = format!("{protected}.{payload}");
-    let signature = key.sign(signing_input.as_bytes());
-    let compact = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
-    if compact.len() > MAX_COMPACT_JWS_BYTES {
+    let payload = serde_json::to_vec(claims).map_err(|_| ProtocolError::Json)?;
+    sign_payload(protected, &payload, key)
+}
+
+pub(crate) fn sign_payload(
+    mut compact: String,
+    payload: &[u8],
+    key: &SigningKey,
+) -> Result<String, ProtocolError> {
+    compact.push('.');
+    URL_SAFE_NO_PAD.encode_string(payload, &mut compact);
+    // Ed25519 adds a dot and 86 unpadded base64url signature characters.
+    if compact.len() > MAX_COMPACT_JWS_BYTES - 87 {
         return Err(ProtocolError::TooLarge);
     }
+    let signature = key.sign(compact.as_bytes());
+    compact.push('.');
+    URL_SAFE_NO_PAD.encode_string(signature, &mut compact);
     Ok(compact)
 }
 
@@ -187,10 +202,7 @@ pub(crate) fn compact_segments(compact: &str) -> Result<(&str, &str, &str), Prot
 
 pub(crate) fn decode_protected_header(protected: &str) -> Result<ProtectedHeader, ProtocolError> {
     let header: ProtectedHeader = decode_json(protected).map_err(|_| ProtocolError::Header)?;
-    if header.alg != FixedAlgorithm::EdDSA
-        || validate_file_identifier(&header.kid).is_err()
-        || validate_identifier(&header.typ).is_err()
-    {
+    if validate_file_identifier(&header.kid).is_err() || validate_identifier(&header.typ).is_err() {
         return Err(ProtocolError::Header);
     }
     Ok(header)
