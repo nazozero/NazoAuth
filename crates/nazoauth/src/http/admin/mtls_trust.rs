@@ -64,12 +64,7 @@ pub(crate) async fn admin_mtls_trust_requests(
         },
     };
     match service
-        .page(
-            admin.tenant.tenant_id,
-            status,
-            i64::from(page_size),
-            i64::from(offset),
-        )
+        .page(admin.tenant.tenant_id, status, i64::from(page_size), offset)
         .await
     {
         Ok(result) => json_response_no_store(serde_json::json!({

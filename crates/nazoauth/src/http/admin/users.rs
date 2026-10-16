@@ -35,7 +35,7 @@ pub(crate) async fn admin_users(
     };
     let (page, page_size, offset) = pagination(&q);
     let (total, user_rows) = match users
-        .page(admin.tenant.tenant_id, page_size as i64, offset as i64)
+        .page(admin.tenant.tenant_id, page_size as i64, offset)
         .await
     {
         Ok(page) => (page.total, page.users),

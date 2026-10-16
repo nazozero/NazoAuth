@@ -32,7 +32,7 @@ pub(crate) async fn admin_grants(
         .page(
             admin.tenant.tenant_id.as_uuid(),
             i64::from(page_size),
-            i64::from(offset),
+            offset,
         )
         .await
     {

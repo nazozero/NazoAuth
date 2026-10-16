@@ -54,6 +54,33 @@ fn pagination_rejects_non_positive_values_and_caps_page_size() {
 }
 
 #[test]
+fn pagination_uses_database_width_before_multiplying() {
+    let query = HashMap::from([
+        ("page".to_owned(), i32::MAX.to_string()),
+        ("page_size".to_owned(), "100".to_owned()),
+    ]);
+    assert_eq!(pagination(&query), (i32::MAX, 100, 214_748_364_600));
+}
+
+#[test]
+fn account_views_keep_their_distinct_public_fields() {
+    let user = user_row();
+    let mut overview = serde_json::to_value(auth_me_json_with_count(&user, 7)).unwrap();
+    let mut admin = serde_json::to_value(admin_user_json(&user)).unwrap();
+    let overview = overview.as_object_mut().unwrap();
+    let admin = admin.as_object_mut().unwrap();
+    assert_eq!(
+        overview.remove("avatar_url"),
+        Some(json!("https://cdn.example/avatar.png"))
+    );
+    assert_eq!(overview.remove("authorized_app_count"), Some(json!(7)));
+    assert_eq!(admin.remove("is_active"), Some(json!(true)));
+    assert_eq!(admin.remove("created_at"), Some(json!(user.created_at)));
+    assert_eq!(overview, admin);
+    assert_eq!(overview.len(), 24);
+}
+
+#[test]
 fn admin_user_json_omits_password_hash_and_tenant_context() {
     let user = user_row();
     let value = serde_json::to_value(admin_user_json(&user)).unwrap();

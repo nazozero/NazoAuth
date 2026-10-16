@@ -35,7 +35,7 @@ pub(crate) async fn admin_clients(
         return response;
     }
     let (page, page_size, offset) = pagination(&query);
-    match service.page(offset as i64, page_size as i64).await {
+    match service.page(offset, page_size as i64).await {
         Ok((clients, total)) => clients_list_response(total, page, page_size, clients),
         Err(error) => {
             tracing::warn!(%error, "failed to load oauth clients");

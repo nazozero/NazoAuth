@@ -22,34 +22,8 @@ impl Serialize for AccountOverviewView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let Self { user, count } = self;
         let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("id", &user.id())?;
-        map.serialize_entry("email", &user.account.email)?;
-        map.serialize_entry("display_name", &user.profile.display_name)?;
+        serialize_account_fields(&mut map, user)?;
         map.serialize_entry("avatar_url", &user.profile.avatar_url)?;
-        map.serialize_entry("given_name", &user.profile.given_name)?;
-        map.serialize_entry("family_name", &user.profile.family_name)?;
-        map.serialize_entry("middle_name", &user.profile.middle_name)?;
-        map.serialize_entry("nickname", &user.profile.nickname)?;
-        map.serialize_entry("profile_url", &user.profile.profile_url)?;
-        map.serialize_entry("website_url", &user.profile.website_url)?;
-        map.serialize_entry("gender", &user.profile.gender)?;
-        map.serialize_entry("birthdate", &user.profile.birthdate)?;
-        map.serialize_entry("zoneinfo", &user.profile.zoneinfo)?;
-        map.serialize_entry("locale", &user.profile.locale)?;
-        map.serialize_entry("address_formatted", &user.profile.address.formatted)?;
-        map.serialize_entry(
-            "address_street_address",
-            &user.profile.address.street_address,
-        )?;
-        map.serialize_entry("address_locality", &user.profile.address.locality)?;
-        map.serialize_entry("address_region", &user.profile.address.region)?;
-        map.serialize_entry("address_postal_code", &user.profile.address.postal_code)?;
-        map.serialize_entry("address_country", &user.profile.address.country)?;
-        map.serialize_entry("phone_number", &user.profile.phone_number)?;
-        map.serialize_entry("phone_number_verified", &user.profile.phone_number_verified)?;
-        map.serialize_entry("mfa_enabled", &user.account.mfa_enabled)?;
-        map.serialize_entry("role", &user.role_name())?;
-        map.serialize_entry("admin_level", &user.admin_level())?;
         map.serialize_entry("authorized_app_count", &count)?;
         map.end()
     }
@@ -73,37 +47,45 @@ impl Serialize for AdminUserView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let user = self.0;
         let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("id", &user.id())?;
-        map.serialize_entry("email", &user.account.email)?;
-        map.serialize_entry("display_name", &user.profile.display_name)?;
-        map.serialize_entry("given_name", &user.profile.given_name)?;
-        map.serialize_entry("family_name", &user.profile.family_name)?;
-        map.serialize_entry("middle_name", &user.profile.middle_name)?;
-        map.serialize_entry("nickname", &user.profile.nickname)?;
-        map.serialize_entry("profile_url", &user.profile.profile_url)?;
-        map.serialize_entry("website_url", &user.profile.website_url)?;
-        map.serialize_entry("gender", &user.profile.gender)?;
-        map.serialize_entry("birthdate", &user.profile.birthdate)?;
-        map.serialize_entry("zoneinfo", &user.profile.zoneinfo)?;
-        map.serialize_entry("locale", &user.profile.locale)?;
-        map.serialize_entry("address_formatted", &user.profile.address.formatted)?;
-        map.serialize_entry(
-            "address_street_address",
-            &user.profile.address.street_address,
-        )?;
-        map.serialize_entry("address_locality", &user.profile.address.locality)?;
-        map.serialize_entry("address_region", &user.profile.address.region)?;
-        map.serialize_entry("address_postal_code", &user.profile.address.postal_code)?;
-        map.serialize_entry("address_country", &user.profile.address.country)?;
-        map.serialize_entry("phone_number", &user.profile.phone_number)?;
-        map.serialize_entry("phone_number_verified", &user.profile.phone_number_verified)?;
-        map.serialize_entry("mfa_enabled", &user.account.mfa_enabled)?;
+        serialize_account_fields(&mut map, user)?;
         map.serialize_entry("is_active", &user.principal.active)?;
-        map.serialize_entry("role", &user.role_name())?;
-        map.serialize_entry("admin_level", &user.admin_level())?;
         map.serialize_entry("created_at", &user.created_at)?;
         map.end()
     }
+}
+
+fn serialize_account_fields<M: SerializeMap>(
+    map: &mut M,
+    user: &PublicAccount,
+) -> Result<(), M::Error> {
+    map.serialize_entry("id", &user.id())?;
+    map.serialize_entry("email", &user.account.email)?;
+    map.serialize_entry("display_name", &user.profile.display_name)?;
+    map.serialize_entry("given_name", &user.profile.given_name)?;
+    map.serialize_entry("family_name", &user.profile.family_name)?;
+    map.serialize_entry("middle_name", &user.profile.middle_name)?;
+    map.serialize_entry("nickname", &user.profile.nickname)?;
+    map.serialize_entry("profile_url", &user.profile.profile_url)?;
+    map.serialize_entry("website_url", &user.profile.website_url)?;
+    map.serialize_entry("gender", &user.profile.gender)?;
+    map.serialize_entry("birthdate", &user.profile.birthdate)?;
+    map.serialize_entry("zoneinfo", &user.profile.zoneinfo)?;
+    map.serialize_entry("locale", &user.profile.locale)?;
+    map.serialize_entry("address_formatted", &user.profile.address.formatted)?;
+    map.serialize_entry(
+        "address_street_address",
+        &user.profile.address.street_address,
+    )?;
+    map.serialize_entry("address_locality", &user.profile.address.locality)?;
+    map.serialize_entry("address_region", &user.profile.address.region)?;
+    map.serialize_entry("address_postal_code", &user.profile.address.postal_code)?;
+    map.serialize_entry("address_country", &user.profile.address.country)?;
+    map.serialize_entry("phone_number", &user.profile.phone_number)?;
+    map.serialize_entry("phone_number_verified", &user.profile.phone_number_verified)?;
+    map.serialize_entry("mfa_enabled", &user.account.mfa_enabled)?;
+    map.serialize_entry("role", &user.role_name())?;
+    map.serialize_entry("admin_level", &user.admin_level())?;
+    Ok(())
 }
 
 pub(crate) struct ClientView<'a>(&'a ClientRow);
@@ -266,7 +248,7 @@ impl Serialize for ClientView<'_> {
     }
 }
 
-pub(crate) fn pagination(q: &HashMap<String, String>) -> (i32, i32, i32) {
+pub(crate) fn pagination(q: &HashMap<String, String>) -> (i32, i32, i64) {
     let page = q
         .get("page")
         .and_then(|v| v.parse().ok())
@@ -278,7 +260,7 @@ pub(crate) fn pagination(q: &HashMap<String, String>) -> (i32, i32, i32) {
         .filter(|v| *v > 0)
         .unwrap_or(20)
         .min(100);
-    let offset = (page - 1) * page_size;
+    let offset = i64::from(page - 1) * i64::from(page_size);
     (page, page_size, offset)
 }
 

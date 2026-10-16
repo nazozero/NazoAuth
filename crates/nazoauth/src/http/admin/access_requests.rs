@@ -69,7 +69,7 @@ pub(crate) async fn admin_access_requests(
         .page(
             admin.tenant.tenant_id,
             i64::from(page_size),
-            i64::from(offset),
+            offset,
             search,
             status,
         )
