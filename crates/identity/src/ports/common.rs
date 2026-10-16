@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use crate::{IdentityModelError, PasswordHash};
+use crate::IdentityModelError;
 
 pub type RepositoryFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RepositoryError>> + Send + 'a>>;
@@ -61,6 +61,11 @@ impl EncodedSecretHash {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    #[must_use]
+    pub fn into_persistence_value(self) -> String {
+        self.0
+    }
 }
 
 /// Write-side password verifier material.
@@ -68,7 +73,7 @@ impl EncodedSecretHash {
 /// This capability is accepted only by new-identity commands. Authentication
 /// projections return PasswordHash, which deliberately has no extraction API.
 #[derive(Clone, Eq, PartialEq)]
-pub struct PasswordHashInput(String);
+pub struct PasswordHashInput(EncodedSecretHash);
 
 impl std::fmt::Debug for PasswordHashInput {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,13 +83,11 @@ impl std::fmt::Debug for PasswordHashInput {
 
 impl PasswordHashInput {
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityModelError> {
-        let value = value.into();
-        PasswordHash::new(value.clone())?;
-        Ok(Self(value))
+        EncodedSecretHash::new(value).map(Self)
     }
 
     #[must_use]
     pub fn into_persistence_value(self) -> String {
-        self.0
+        self.0.into_persistence_value()
     }
 }

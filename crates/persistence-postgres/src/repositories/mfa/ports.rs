@@ -41,7 +41,7 @@ impl MfaRepositoryPort for MfaRepository {
                 timestamp,
                 hashes
                     .into_iter()
-                    .map(|hash| hash.as_str().to_owned())
+                    .map(EncodedSecretHash::into_persistence_value)
                     .collect(),
             )
             .await
@@ -64,7 +64,10 @@ impl MfaRepositoryPort for MfaRepository {
                 user_id,
                 code,
                 timestamp,
-                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                hashes
+                    .into_iter()
+                    .map(EncodedSecretHash::into_persistence_value)
+                    .collect(),
                 source_ip_hash,
             )
             .await
@@ -137,7 +140,7 @@ impl MfaRepositoryPort for MfaRepository {
                 credential_id,
                 hashes
                     .into_iter()
-                    .map(|hash| hash.as_str().to_owned())
+                    .map(EncodedSecretHash::into_persistence_value)
                     .collect(),
             )
             .await
@@ -157,7 +160,10 @@ impl MfaRepositoryPort for MfaRepository {
                 tenant_id,
                 user_id,
                 credential_id,
-                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                hashes
+                    .into_iter()
+                    .map(EncodedSecretHash::into_persistence_value)
+                    .collect(),
                 source_ip_hash,
             )
             .await
