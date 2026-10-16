@@ -108,6 +108,7 @@ struct DirectTlsGeneration {
     revision: u64,
     material_sha256: [u8; 32],
     server_key: Arc<CertifiedKey>,
+    validity: x509_parser::certificate::Validity,
 }
 
 impl fmt::Debug for DirectTlsGeneration {
@@ -149,7 +150,8 @@ impl DirectTlsSnapshotStore {
         paths: DirectTlsMaterialPaths,
         endpoint_names: Arc<[String]>,
     ) -> anyhow::Result<Arc<Self>> {
-        let initial = load_generation(&paths, &endpoint_names, 1)?;
+        let material = read_tls_material(&paths)?;
+        let initial = load_generation(material, &paths, &endpoint_names, 1)?;
         Ok(Arc::new(Self {
             current: ArcSwap::from_pointee(initial),
             paths,
@@ -167,12 +169,21 @@ impl DirectTlsSnapshotStore {
 
     pub(super) fn reload(&self) -> anyhow::Result<DirectTlsReload> {
         let current = self.current.load_full();
-        let candidate = load_generation(&self.paths, &self.endpoint_names, current.revision + 1)?;
-        if candidate.material_sha256 == current.material_sha256 {
+        let material = read_tls_material(&self.paths)?;
+        if material.sha256 == current.material_sha256 {
+            if !current.validity.is_valid() {
+                anyhow::bail!("TLS certificate chain is not currently valid");
+            }
             return Ok(DirectTlsReload::Unchanged {
                 revision: current.revision,
             });
         }
+        let candidate = load_generation(
+            material,
+            &self.paths,
+            &self.endpoint_names,
+            current.revision + 1,
+        )?;
 
         let candidate_revision = candidate.revision;
         let previous = self.current.compare_and_swap(&current, Arc::new(candidate));
@@ -322,13 +333,37 @@ pub(super) fn spawn_direct_tls_reloader(
     })
 }
 
+struct TlsMaterial {
+    certificate_bytes: Vec<u8>,
+    private_key_bytes: Vec<u8>,
+    sha256: [u8; 32],
+}
+
+fn read_tls_material(paths: &DirectTlsMaterialPaths) -> anyhow::Result<TlsMaterial> {
+    let certificate_bytes = read_bounded(&paths.certificate, "TLS certificate chain", false)?;
+    let private_key_bytes = read_bounded(&paths.private_key, "TLS private key", true)?;
+    let sha256 = material_digest(&[
+        ("certificate", &certificate_bytes),
+        ("private-key", &private_key_bytes),
+    ]);
+    Ok(TlsMaterial {
+        certificate_bytes,
+        private_key_bytes,
+        sha256,
+    })
+}
+
 fn load_generation(
+    material: TlsMaterial,
     paths: &DirectTlsMaterialPaths,
     endpoint_names: &[String],
     revision: u64,
 ) -> anyhow::Result<DirectTlsGeneration> {
-    let certificate_bytes = read_bounded(&paths.certificate, "TLS certificate chain", false)?;
-    let private_key_bytes = read_bounded(&paths.private_key, "TLS private key", true)?;
+    let TlsMaterial {
+        certificate_bytes,
+        private_key_bytes,
+        sha256,
+    } = material;
 
     let certificates = CertificateDer::pem_slice_iter(&certificate_bytes)
         .collect::<Result<Vec<_>, _>>()
@@ -351,7 +386,7 @@ fn load_generation(
             paths.certificate.display()
         );
     }
-    validate_tls_server_chain(&certificates, &paths.certificate)?;
+    let validity = validate_tls_server_chain(leaf, &certificates[1..], &paths.certificate)?;
     validate_tls_server_names(
         &certificates[0],
         &paths.certificate,
@@ -372,11 +407,9 @@ fn load_generation(
 
     Ok(DirectTlsGeneration {
         revision,
-        material_sha256: material_digest(&[
-            ("certificate", &certificate_bytes),
-            ("private-key", &private_key_bytes),
-        ]),
+        material_sha256: sha256,
         server_key,
+        validity,
     })
 }
 
@@ -401,13 +434,14 @@ fn parse_tls_certificate<'a>(
     Ok(certificate)
 }
 
-fn validate_tls_server_chain(
-    certificates: &[CertificateDer<'_>],
+fn validate_tls_server_chain<'a>(
+    mut child: x509_parser::certificate::X509Certificate<'a>,
+    issuers: &'a [CertificateDer<'_>],
     path: &Path,
-) -> anyhow::Result<()> {
-    for (index, pair) in certificates.windows(2).enumerate() {
-        let child = parse_tls_certificate(&pair[0], path, "chain child")?;
-        let issuer = parse_tls_certificate(&pair[1], path, "chain issuer")?;
+) -> anyhow::Result<x509_parser::certificate::Validity> {
+    let mut validity = child.validity().clone();
+    for (index, certificate) in issuers.iter().enumerate() {
+        let issuer = parse_tls_certificate(certificate, path, "chain issuer")?;
         if !issuer.is_ca()
             || !issuer.validity().is_valid()
             || child.issuer() != issuer.subject()
@@ -420,8 +454,11 @@ fn validate_tls_server_chain(
                 index + 2
             );
         }
+        validity.not_before = validity.not_before.max(issuer.validity().not_before);
+        validity.not_after = validity.not_after.min(issuer.validity().not_after);
+        child = issuer;
     }
-    Ok(())
+    Ok(validity)
 }
 
 pub(super) fn load_client_verifier(

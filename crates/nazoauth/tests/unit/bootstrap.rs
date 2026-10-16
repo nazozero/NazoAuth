@@ -855,6 +855,24 @@ fn direct_tls_generation_rejects_partial_material_and_retains_last_known_good() 
         listeners.snapshots.reload().unwrap(),
         DirectTlsReload::Unchanged { revision: 2 }
     );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(
+            &material.private_key_path,
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        assert!(
+            listeners
+                .snapshots
+                .reload()
+                .unwrap_err()
+                .to_string()
+                .contains("owner-only")
+        );
+        assert_eq!(listeners.snapshots.revision(), 2);
+    }
     std::fs::remove_dir_all(root).unwrap();
 }
 
