@@ -131,6 +131,17 @@ async fn pool_health_and_connection_execute_real_async_round_trips() {
 }
 
 #[tokio::test]
+async fn invalid_pool_configuration_fails_before_acquisition() {
+    let error = create_pool("postgres://127.0.0.1:not-a-port/database", 1)
+        .err()
+        .expect("invalid connection settings must fail pool construction");
+    assert!(matches!(
+        error.downcast_ref::<diesel::ConnectionError>(),
+        Some(diesel::ConnectionError::InvalidConnectionUrl(_))
+    ));
+}
+
+#[tokio::test]
 async fn failed_pool_acquisition_returns_an_error() {
     // Port 1 refuses immediately; pool construction is lazy so only the
     // acquisition attempt inside `get_conn` can fail.

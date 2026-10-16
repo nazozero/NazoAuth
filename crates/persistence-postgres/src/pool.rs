@@ -8,7 +8,7 @@ use diesel_async::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use futures_util::FutureExt as _;
-use std::{str::FromStr as _, time::Duration};
+use std::{str::FromStr as _, sync::Arc, time::Duration};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
@@ -107,7 +107,7 @@ pub fn create_pool(
     max_connections: usize,
 ) -> anyhow::Result<DbPool> {
     let runtime = tokio::runtime::Handle::try_current()?;
-    let manager = connection_manager(database_url.into(), runtime.clone());
+    let manager = connection_manager(database_url.into(), runtime.clone())?;
     Ok(DbPool {
         connections: Pool::builder(manager).max_size(max_connections).build()?,
         runtime,
@@ -117,15 +117,19 @@ pub fn create_pool(
 fn connection_manager(
     database_url: String,
     runtime: tokio::runtime::Handle,
-) -> AsyncDieselConnectionManager<AsyncPgConnection> {
+) -> diesel::ConnectionResult<AsyncDieselConnectionManager<AsyncPgConnection>> {
+    let connection_config = Arc::new(parse_connection_config(&database_url)?);
     let mut config = ManagerConfig::default();
     config.recycling_method = RecyclingMethod::Fast;
-    config.custom_setup = Box::new(move |url| {
-        let url = url.to_owned();
+    config.custom_setup = Box::new(move |_url| {
+        let connection_config = connection_config.clone();
         // A shared pool's connection drivers belong to its owning runtime.
         // JoinSet aborts an in-flight setup when its borrower is cancelled.
         let mut setup = tokio::task::JoinSet::new();
-        setup.spawn_on(async move { establish_connection(&url).await }, &runtime);
+        setup.spawn_on(
+            async move { establish_configured_connection(&connection_config).await },
+            &runtime,
+        );
         async move {
             setup
                 .join_next()
@@ -135,12 +139,24 @@ fn connection_manager(
         }
         .boxed()
     });
-    AsyncDieselConnectionManager::new_with_config(database_url, config)
+    Ok(AsyncDieselConnectionManager::new_with_config(
+        database_url,
+        config,
+    ))
+}
+
+fn parse_connection_config(database_url: &str) -> diesel::ConnectionResult<tokio_postgres::Config> {
+    tokio_postgres::Config::from_str(database_url)
+        .map_err(|error| ConnectionError::InvalidConnectionUrl(error.to_string()))
 }
 
 async fn establish_connection(database_url: &str) -> diesel::ConnectionResult<AsyncPgConnection> {
-    let config = tokio_postgres::Config::from_str(database_url)
-        .map_err(|error| ConnectionError::InvalidConnectionUrl(error.to_string()))?;
+    establish_configured_connection(&parse_connection_config(database_url)?).await
+}
+
+async fn establish_configured_connection(
+    config: &tokio_postgres::Config,
+) -> diesel::ConnectionResult<AsyncPgConnection> {
     if config.get_ssl_mode() == tokio_postgres::config::SslMode::Disable {
         let (client, connection) = config
             .connect(tokio_postgres::NoTls)
@@ -331,18 +347,18 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
     // statements without changing the server-wide PostgreSQL policy.
     connection
         .batch_execute(&format!(
-            "SET SESSION lock_timeout = '25s'; SET SESSION statement_timeout = '{MIGRATION_STATEMENT_TIMEOUT}';"
+            "SET SESSION lock_timeout = '{}s'; SET SESSION statement_timeout = '{MIGRATION_STATEMENT_TIMEOUT}';",
+            MIGRATION_LOCK_TIMEOUT.as_secs(),
         ))
         .await.map_err(crate::unavailable::migration_query)?;
 
     let deadline = tokio::time::Instant::now() + MIGRATION_LOCK_TIMEOUT;
     loop {
-        let status = diesel::sql_query(format!(
-            "SELECT pg_try_advisory_lock({MIGRATION_ADVISORY_LOCK}) AS acquired"
-        ))
-        .get_result::<AdvisoryLockStatus>(&mut connection)
-        .await
-        .map_err(crate::unavailable::migration_query)?;
+        let status = diesel::sql_query("SELECT pg_try_advisory_lock($1) AS acquired")
+            .bind::<diesel::sql_types::BigInt, _>(MIGRATION_ADVISORY_LOCK)
+            .get_result::<AdvisoryLockStatus>(&mut connection)
+            .await
+            .map_err(crate::unavailable::migration_query)?;
         if status.acquired {
             break;
         }
@@ -364,18 +380,18 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
         .map(|applied| !applied.is_empty())
         .map_err(crate::unavailable::migration_harness);
     let mut connection = harness.into_inner();
-    let unlock_result: anyhow::Result<()> = match diesel::sql_query(format!(
-        "SELECT pg_advisory_unlock({MIGRATION_ADVISORY_LOCK}) AS acquired"
-    ))
-    .get_result::<AdvisoryLockStatus>(&mut connection)
-    .await
-    {
-        Ok(status) if status.acquired => Ok(()),
-        Ok(_) => Err(anyhow::anyhow!(
-            "migration advisory lock release returned false"
-        )),
-        Err(error) => Err(crate::unavailable::migration_query(error)),
-    };
+    let unlock_result: anyhow::Result<()> =
+        match diesel::sql_query("SELECT pg_advisory_unlock($1) AS acquired")
+            .bind::<diesel::sql_types::BigInt, _>(MIGRATION_ADVISORY_LOCK)
+            .get_result::<AdvisoryLockStatus>(&mut connection)
+            .await
+        {
+            Ok(status) if status.acquired => Ok(()),
+            Ok(_) => Err(anyhow::anyhow!(
+                "migration advisory lock release returned false"
+            )),
+            Err(error) => Err(crate::unavailable::migration_query(error)),
+        };
 
     crate::unavailable::migration_outcome(migration_result, unlock_result)
 }

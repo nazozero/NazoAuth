@@ -187,7 +187,7 @@ reactivation never resets it. Online token validation combines individual JTI
 revocation with current principal activity and signed epoch checks in one read.
 The offline signature verifier retains its existing offline-only guarantee.
 
-`DbPool` records its creating runtime as the connection I/O owner. The issuance
+`DbPool` parses its immutable connection settings once at construction; malformed settings fail before checkout, while network connections remain lazy. New physical connections still load the current platform TLS roots. `DbPool` records its creating runtime as the connection I/O owner. The issuance
 transaction executes on that same runtime, so its sequential statements do not
 repeatedly wake the HTTP worker runtime. Pure contract preparation still happens
 before checkout. The request owns the transaction task through `JoinSet`:
