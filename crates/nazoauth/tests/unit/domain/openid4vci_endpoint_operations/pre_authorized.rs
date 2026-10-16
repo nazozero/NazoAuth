@@ -113,17 +113,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         self.inner.release_nonce(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner
-            .finalize_nonce_with_notification(nonce_hash, claim_id, handle, now)
-    }
-
     fn find_response<'a>(
         &'a self,
         issuance_id: Uuid,
@@ -165,17 +154,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         now: chrono::DateTime<chrono::Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         self.inner.resolve_access(token_hash, now)
-    }
-
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.inner
-            .store_deferred_and_finalize_nonce(credential, nonce_hash, claim_id, now)
     }
 
     fn store_deferred_and_finalize_nonce_with_response<'a>(
@@ -235,23 +213,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner
             .release_deferred(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner.finalize_deferred_with_notification(
-            transaction_hash,
-            token_id,
-            claim_id,
-            handle,
-            now,
-        )
     }
 
     fn finalize_deferred_with_notification_and_response<'a>(

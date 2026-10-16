@@ -2098,12 +2098,19 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
     };
+    let notification_response = credential_response::response(
+        notification_handle.token_id,
+        notification_handle.selection.clone(),
+        notification_handle.expires_at,
+        200,
+    );
     assert_eq!(
         issuer
-            .finalize_nonce_with_notification(
+            .finalize_nonce_with_notification_and_response(
                 &notification_nonce,
                 "wrong-owner",
                 &notification_handle,
+                &notification_response,
                 Utc::now(),
             )
             .await,
@@ -2112,10 +2119,11 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
     assert!(
         issuer
-            .finalize_nonce_with_notification(
+            .finalize_nonce_with_notification_and_response(
                 &notification_nonce,
                 "notification-owner",
                 &notification_handle,
+                &notification_response,
                 Utc::now(),
             )
             .await
@@ -2595,22 +2603,30 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         expires_at: atomic_deferred.ready_at + Duration::minutes(10),
         ..atomic_deferred
     };
+    let atomic_pending_response = credential_response::response(
+        atomic_deferred.access.token_id,
+        atomic_deferred.selection.clone(),
+        atomic_deferred.expires_at,
+        202,
+    );
     assert_eq!(
         issuer
-            .store_deferred_and_finalize_nonce(
+            .store_deferred_and_finalize_nonce_with_response(
                 &atomic_deferred,
                 &atomic_nonce,
                 "wrong-owner",
+                &atomic_pending_response,
                 Utc::now(),
             )
             .await,
         Err(CredentialStoreError::Unavailable)
     );
     issuer
-        .store_deferred_and_finalize_nonce(
+        .store_deferred_and_finalize_nonce_with_response(
             &atomic_deferred,
             &atomic_nonce,
             "atomic-owner",
+            &atomic_pending_response,
             atomic_deferred.ready_at,
         )
         .await
@@ -2794,13 +2810,20 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         token_id: access.token_id,
         expires_at: Utc::now() + Duration::minutes(10),
     };
+    let deferred_notification_response = credential_response::response(
+        deferred_handle.token_id,
+        deferred_handle.selection.clone(),
+        deferred_handle.expires_at,
+        200,
+    );
     assert_eq!(
         issuer
-            .finalize_deferred_with_notification(
+            .finalize_deferred_with_notification_and_response(
                 &notification_deferred.transaction_hash,
                 access.token_id,
                 "wrong-owner",
                 &deferred_handle,
+                &deferred_notification_response,
                 Utc::now(),
             )
             .await,
@@ -2808,11 +2831,12 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     );
     assert!(
         issuer
-            .finalize_deferred_with_notification(
+            .finalize_deferred_with_notification_and_response(
                 &notification_deferred.transaction_hash,
                 access.token_id,
                 "notification-deferred-owner",
                 &deferred_handle,
+                &deferred_notification_response,
                 Utc::now(),
             )
             .await

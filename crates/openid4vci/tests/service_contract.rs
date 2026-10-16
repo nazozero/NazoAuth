@@ -140,22 +140,7 @@ impl CredentialStorePort for RecordingStore {
             Ok(true)
         })
     }
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a str,
-        handle: &'a NotificationHandle,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.notification_exists(handle) {
-                return Ok(false);
-            }
-            *self.nonce_finalized.lock().unwrap() += 1;
-            self.notifications.lock().unwrap().push(handle.clone());
-            Ok(true)
-        })
-    }
+
     fn find_response<'a>(
         &'a self,
         _: Uuid,
@@ -225,22 +210,6 @@ impl CredentialStorePort for RecordingStore {
         _: chrono::DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async { Ok(None) })
-    }
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        _: &'a str,
-        _: &'a str,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.deferred_exists(credential) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            self.deferred.lock().unwrap().push(credential.clone());
-            *self.nonce_finalized.lock().unwrap() += 1;
-            Ok(())
-        })
     }
 
     fn store_deferred_and_finalize_nonce_with_response<'a>(
@@ -312,22 +281,6 @@ impl CredentialStorePort for RecordingStore {
         _: chrono::DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async { Ok(true) })
-    }
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        _: &'a str,
-        _: Uuid,
-        _: &'a str,
-        handle: &'a NotificationHandle,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.notification_exists(handle) {
-                return Ok(false);
-            }
-            self.notifications.lock().unwrap().push(handle.clone());
-            Ok(true)
-        })
     }
 
     fn finalize_deferred_with_notification_and_response<'a>(

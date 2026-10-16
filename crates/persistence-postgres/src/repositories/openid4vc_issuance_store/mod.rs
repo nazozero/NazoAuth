@@ -111,16 +111,6 @@ impl CredentialStorePort for Openid4vciRepository {
         self.nonce_release(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.notification_finalize_nonce(nonce_hash, claim_id, handle, now)
-    }
-
     fn finalize_nonce_with_notification_and_response<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -156,16 +146,6 @@ impl CredentialStorePort for Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.deferred_store_with_response(credential, response, now)
-    }
-
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.deferred_store_and_finalize_nonce(credential, nonce_hash, claim_id, now)
     }
 
     fn store_deferred_and_finalize_nonce_with_response<'a>(
@@ -212,17 +192,6 @@ impl CredentialStorePort for Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.deferred_release(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.notification_finalize_deferred(transaction_hash, token_id, claim_id, handle, now)
     }
 
     fn finalize_deferred_with_notification_and_response<'a>(
