@@ -634,31 +634,29 @@ impl UserRepository {
         diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
             &mut connection,
             async move |connection| {
-                let accounts = users::table
+                let principals = users::table
                     .filter(users::id.eq_any([actor_id.as_uuid(), target_id.as_uuid()]))
                     .order(users::id.asc())
-                    .select(PublicAccountRow::as_select())
+                    .select(PrincipalRow::as_select())
                     .for_update()
-                    .load::<PublicAccountRow>(connection)
+                    .load::<PrincipalRow>(connection)
                     .await?
                     .into_iter()
-                    .map(PublicAccount::try_from)
+                    .map(identity::principal_row)
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
-                let actor = accounts
+                let actor = principals
                     .iter()
-                    .find(|account| account.id() == actor_id.as_uuid());
+                    .find(|account| account.user_id == actor_id);
                 let authorized = actor.is_some_and(|actor| {
-                    actor.tenant().tenant_id == control_tenant_id
-                        && actor.principal.active
-                        && actor
-                            .principal
-                            .admin_level()
+                    actor.tenant.tenant_id == control_tenant_id
+                        && actor.active
+                        && actor.admin_level()
                             .is_some_and(|level| level >= 2)
                 });
                 let (outcome, reason) = if !authorized {
                     let persisted_actor = actor
-                        .filter(|account| account.tenant().tenant_id == control_tenant_id)
+                        .filter(|account| account.tenant.tenant_id == control_tenant_id)
                         .map(|_| actor_id);
                     insert_identity_security_event(
                         connection,
@@ -673,14 +671,14 @@ impl UserRepository {
                     .await
                     .map_err(AdminAuthorizedUpdateError::Repository)?;
                     (AdminUserUpdateOutcome::Denied(AdminPolicyError::ActorNotAuthorized), "actor_not_authorized")
-                } else if let Some(target) = accounts.iter().find(|account| {
-                    account.id() == target_id.as_uuid()
-                        && account.tenant().tenant_id == target_tenant_id
+                } else if let Some(target) = principals.iter().find(|account| {
+                    account.user_id == target_id
+                        && account.tenant.tenant_id == target_tenant_id
                 }) {
                     let (role, level) = if admin_level == 0 { ("user", 0) } else { ("admin", admin_level) };
                     let updated = diesel::update(
                         users::table
-                            .filter(users::id.eq(target.id()))
+                            .filter(users::id.eq(target.user_id.as_uuid()))
                             .filter(users::tenant_id.eq(target_tenant_id.as_uuid())),
                     )
                     .set((users::role.eq(role), users::admin_level.eq(level), users::updated_at.eq(diesel::dsl::now)))
@@ -715,7 +713,7 @@ impl UserRepository {
                     payload: serde_json::json!({
                         "tenant_id": target_tenant_id.as_uuid(),
                         "control_tenant_id": control_tenant_id.as_uuid(),
-                        "actor_tenant_id": actor.map(|account| account.tenant().tenant_id.as_uuid()),
+                        "actor_tenant_id": actor.map(|account| account.tenant.tenant_id.as_uuid()),
                         "actor_user_id": actor_id.as_uuid(),
                         "target_tenant_id": target_tenant_id.as_uuid(),
                         "target_user_id": target_id.as_uuid(),

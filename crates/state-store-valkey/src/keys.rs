@@ -8,16 +8,16 @@ pub(crate) fn fapi_http_signature_replay(tenant_id: TenantId, fingerprint: &[u8;
     )
 }
 
-fn blake3_hex(value: &str) -> String {
-    blake3::hash(value.as_bytes()).to_hex().to_string()
+fn digest(value: &str) -> blake3::Hash {
+    blake3::hash(value.as_bytes())
 }
 
 pub(crate) fn dpop_replay(jkt: &str, jti: &str) -> String {
-    format!("oauth:dpop:jti:{jkt}:{}", blake3_hex(jti))
+    format!("oauth:dpop:jti:{jkt}:{}", digest(jti))
 }
 
 pub(crate) fn dpop_nonce(nonce: &str) -> String {
-    format!("oauth:dpop:nonce:{}", blake3_hex(nonce))
+    format!("oauth:dpop:nonce:{}", digest(nonce))
 }
 
 pub(crate) fn client_attestation_replay(client_id: &str, jti: &str) -> String {
@@ -28,8 +28,8 @@ pub(crate) fn client_attestation_replay(client_id: &str, jti: &str) -> String {
 pub(crate) fn private_key_jwt_replay(client_id: &str, jti: &str) -> String {
     format!(
         "oauth:client_assertion:jti:{}:{}",
-        blake3_hex(client_id),
-        blake3_hex(jti)
+        digest(client_id),
+        digest(jti)
     )
 }
 
@@ -38,26 +38,18 @@ pub(crate) fn private_key_jwt_replay(client_id: &str, jti: &str) -> String {
 mod tests;
 
 pub(crate) fn jar_replay(client_id: &str, jti: &str) -> String {
-    format!(
-        "oauth:jar:jti:{}:{}",
-        blake3_hex(client_id),
-        blake3_hex(jti)
-    )
+    format!("oauth:jar:jti:{}:{}", digest(client_id), digest(jti))
 }
 
 pub(crate) fn jwt_bearer_replay(client_id: &str, jti: &str) -> String {
-    format!(
-        "oauth:jwt_bearer:jti:{}:{}",
-        blake3_hex(client_id),
-        blake3_hex(jti)
-    )
+    format!("oauth:jwt_bearer:jti:{}:{}", digest(client_id), digest(jti))
 }
 
 pub(crate) fn ciba_request_object_replay(client_id: &str, jti: &str) -> String {
     format!(
         "oauth:ciba:request_object:jti:{}:{}",
-        blake3_hex(client_id),
-        blake3_hex(jti)
+        digest(client_id),
+        digest(jti)
     )
 }
 
@@ -74,7 +66,7 @@ pub(crate) fn consent(request_id: &str) -> String {
 }
 
 pub(crate) fn par(request_uri: &str) -> String {
-    format!("oauth:par:{}", blake3_hex(request_uri))
+    format!("oauth:par:{}", digest(request_uri))
 }
 
 pub(crate) fn authorization_code_hash(code_hash: &str) -> String {
@@ -82,19 +74,19 @@ pub(crate) fn authorization_code_hash(code_hash: &str) -> String {
 }
 
 pub(crate) fn authorization_code(code: &str) -> String {
-    authorization_code_hash(&blake3_hex(code))
+    authorization_code_hash(&digest(code).to_hex())
 }
 
 pub(crate) fn reauth_nonce(nonce: &str) -> String {
-    format!("oauth:authorization:reauth:{}", blake3_hex(nonce))
+    format!("oauth:authorization:reauth:{}", digest(nonce))
 }
 
 pub(crate) fn ciba(auth_req_id: &str) -> String {
-    ciba_from_hash(&blake3_hex(auth_req_id))
+    ciba_from_hash(&digest(auth_req_id).to_hex())
 }
 
 pub(crate) fn ciba_hash(auth_req_id: &str) -> String {
-    blake3_hex(auth_req_id)
+    digest(auth_req_id).to_hex().to_string()
 }
 
 pub(crate) fn ciba_from_hash(auth_req_id_hash: &str) -> String {
@@ -106,7 +98,7 @@ pub(crate) fn ciba_ping_queue() -> String {
 }
 
 pub(crate) fn device_code(device_code: &str) -> String {
-    device_code_hash(&blake3_hex(device_code))
+    device_code_hash(&digest(device_code).to_hex())
 }
 
 pub(crate) fn device_code_hash(device_code_hash: &str) -> String {
@@ -117,14 +109,14 @@ pub(crate) fn normalize_user_code(value: &str) -> String {
     value
         .chars()
         .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_uppercase)
+        .map(|character| character.to_ascii_uppercase())
         .collect()
 }
 
 pub(crate) fn device_user_code(user_code: &str) -> String {
     format!(
         "oauth:device:user_code:{}",
-        blake3_hex(&normalize_user_code(user_code))
+        digest(&normalize_user_code(user_code))
     )
 }
 
@@ -132,21 +124,21 @@ pub(crate) fn email_send(tenant_id: TenantId, email: &str) -> String {
     format!(
         "oauth:email_verify:{}:send:{}",
         tenant_id.as_uuid(),
-        blake3_hex(email)
+        digest(email)
     )
 }
 pub(crate) fn email_peer_send(tenant_id: TenantId, subject: &str) -> String {
     format!(
         "oauth:email_verify:{}:peer_send:{}",
         tenant_id.as_uuid(),
-        blake3_hex(subject)
+        digest(subject)
     )
 }
 pub(crate) fn email_code(tenant_id: TenantId, email: &str) -> String {
     format!(
         "oauth:email_verify:{}:code:{}",
         tenant_id.as_uuid(),
-        blake3_hex(email)
+        digest(email)
     )
 }
 pub(crate) fn passkey_registration(ceremony_id: &str) -> String {
@@ -156,31 +148,28 @@ pub(crate) fn passkey_authentication(ceremony_id: &str) -> String {
     format!("oauth:passkey:authentication:{ceremony_id}")
 }
 pub(crate) fn oidc_federation(state: &str) -> String {
-    format!("oauth:federation:oidc:state:{}", blake3_hex(state))
+    format!("oauth:federation:oidc:state:{}", digest(state))
 }
 pub(crate) fn social_federation(state: &str) -> String {
-    format!("oauth:federation:social:state:{}", blake3_hex(state))
+    format!("oauth:federation:social:state:{}", digest(state))
 }
 pub(crate) fn saml_federation_replay(signature: &str) -> String {
-    format!("oauth:federation:saml:replay:{}", blake3_hex(signature))
+    format!("oauth:federation:saml:replay:{}", digest(signature))
 }
 pub(crate) fn rate(dimension: &str, subject: &str) -> String {
-    format!("oauth:rate:{dimension}:{}", blake3_hex(subject.trim()))
+    format!("oauth:rate:{dimension}:{}", digest(subject.trim()))
 }
 pub(crate) fn login_failure(dimension: &str, subject: &str) -> String {
-    format!(
-        "oauth:login_failure:{dimension}:{}",
-        blake3_hex(subject.trim())
-    )
+    format!("oauth:login_failure:{dimension}:{}", digest(subject.trim()))
 }
 
 pub(crate) fn mfa_failure(subject: &str) -> String {
-    format!("oauth:mfa_failure:{}", blake3_hex(subject.trim()))
+    format!("oauth:mfa_failure:{}", digest(subject.trim()))
 }
 pub(crate) fn native_sso(secret: &str) -> String {
-    format!("oauth:native_sso:device_secret:{}", blake3_hex(secret))
+    format!("oauth:native_sso:device_secret:{}", digest(secret))
 }
 
 pub(crate) fn avatar_upload(upload_id: &str) -> String {
-    format!("oauth:avatar:upload:{}", blake3_hex(upload_id))
+    format!("oauth:avatar:upload:{}", digest(upload_id))
 }
