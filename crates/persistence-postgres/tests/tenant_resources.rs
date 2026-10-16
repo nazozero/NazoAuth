@@ -14,6 +14,9 @@ use nazo_postgres::{
 use serde_json::json;
 use uuid::Uuid;
 
+#[path = "support/query_counter.rs"]
+mod query_counter;
+
 #[derive(QueryableByName)]
 struct CountRow {
     #[diesel(sql_type = sql_types::BigInt)]
@@ -81,6 +84,13 @@ async fn upsert_binding_in_transaction(
 ) -> Result<TenantResourceBinding, TestTransactionError> {
     connection
         .transaction::<_, TestTransactionError, _>(async move |connection| {
+            TenantResourceRepository::lock_binding_identity_on_connection(
+                connection,
+                tenant_id,
+                resource_kind,
+                resource_id,
+            )
+            .await?;
             Ok(TenantResourceRepository::upsert_binding_on_connection(
                 connection,
                 NewTenantResourceBinding {
@@ -106,6 +116,13 @@ async fn deactivate_binding_in_transaction(
 ) -> Result<TenantResourceBindingDeactivate, TestTransactionError> {
     connection
         .transaction::<_, TestTransactionError, _>(async move |connection| {
+            TenantResourceRepository::lock_binding_identity_on_connection(
+                connection,
+                tenant_id,
+                resource_kind,
+                resource_id,
+            )
+            .await?;
             Ok(TenantResourceRepository::deactivate_binding_on_connection(
                 connection,
                 tenant_id,
@@ -389,6 +406,9 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
         .await
         .expect("tenant should insert");
 
+    let counter = query_counter::QueryCounter::new();
+    connection.set_instrumentation(counter.clone());
+    let before = counter.snapshot();
     let inserted = upsert_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -399,6 +419,11 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
     )
     .await
     .expect("first binding should insert");
+    assert_eq!(
+        counter.since(before).data_queries,
+        2,
+        "one lock and one insert"
+    );
     let replayed = upsert_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -425,6 +450,7 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
         Err(TestTransactionError::Repository(RepositoryError::Conflict))
     ));
 
+    let before = counter.snapshot();
     let deactivated = deactivate_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -434,6 +460,11 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
     )
     .await
     .expect("first binding should deactivate");
+    assert_eq!(
+        counter.since(before).data_queries,
+        2,
+        "one lock and one update"
+    );
     assert!(matches!(
         deactivated,
         TenantResourceBindingDeactivate::Deactivated(_)

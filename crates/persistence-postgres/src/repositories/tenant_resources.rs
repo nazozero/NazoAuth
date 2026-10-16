@@ -128,12 +128,6 @@ struct BindingRow {
 }
 
 #[derive(QueryableByName)]
-struct AdvisoryLockRow {
-    #[diesel(sql_type = sql_types::Bool)]
-    locked: bool,
-}
-
-#[derive(QueryableByName)]
 struct OAuthClientStateRow {
     #[diesel(sql_type = sql_types::Bool)]
     is_active: bool,
@@ -367,17 +361,11 @@ impl TenantResourceRepository {
         lock_binding_identity_on_connection(connection, tenant_id, resource_kind, resource_id).await
     }
 
+    /// Mutate under the identity lock already acquired by the transaction owner.
     pub async fn upsert_binding_on_connection(
         connection: &mut AsyncPgConnection,
         binding: NewTenantResourceBinding<'_>,
     ) -> Result<TenantResourceBinding, RepositoryError> {
-        lock_binding_identity_on_connection(
-            connection,
-            binding.tenant_id,
-            binding.resource_kind,
-            binding.resource_id,
-        )
-        .await?;
         let id = Uuid::now_v7();
         let inserted = sql_query(
             "INSERT INTO tenant_resource_bindings
@@ -469,7 +457,8 @@ impl TenantResourceRepository {
     /// Deactivate exactly one active binding, fenced by its current digest.
     /// A stale digest never changes the row and returns the current active
     /// binding (when one exists), so the caller can emit a failed receipt
-    /// without conflating a missing resource with a stale version.
+    /// without conflating a missing resource with a stale version. The transaction
+    /// owner must already hold this binding's identity lock.
     pub async fn deactivate_binding_on_connection(
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,
@@ -477,8 +466,6 @@ impl TenantResourceRepository {
         resource_id: &str,
         expected_digest: &str,
     ) -> Result<TenantResourceBindingDeactivate, RepositoryError> {
-        lock_binding_identity_on_connection(connection, tenant_id, resource_kind, resource_id)
-            .await?;
         let changed = sql_query(
             "UPDATE tenant_resource_bindings
              SET active = FALSE, updated_at = CURRENT_TIMESTAMP
@@ -989,15 +976,11 @@ async fn lock_advisory_key_on_connection(
     connection: &mut AsyncPgConnection,
     key: String,
 ) -> Result<(), RepositoryError> {
-    let lock = sql_query(
-        "SELECT TRUE AS locked
-         FROM pg_advisory_xact_lock(hashtextextended($1, 8706))",
-    )
-    .bind::<sql_types::Text, _>(key)
-    .get_result::<AdvisoryLockRow>(connection)
-    .await
-    .map_err(map_error)?;
-    debug_assert!(lock.locked);
+    sql_query("SELECT pg_advisory_xact_lock(hashtextextended($1, 8706))")
+        .bind::<sql_types::Text, _>(key)
+        .execute(connection)
+        .await
+        .map_err(map_error)?;
     Ok(())
 }
 
@@ -1030,15 +1013,11 @@ async fn lock_binding_identity_on_connection(
         resource_kind.len(),
         resource_id.len(),
     );
-    let lock = sql_query(
-        "SELECT TRUE AS locked
-         FROM pg_advisory_xact_lock(hashtextextended($1, 8707))",
-    )
-    .bind::<sql_types::Text, _>(key)
-    .get_result::<AdvisoryLockRow>(connection)
-    .await
-    .map_err(map_error)?;
-    debug_assert!(lock.locked);
+    sql_query("SELECT pg_advisory_xact_lock(hashtextextended($1, 8707))")
+        .bind::<sql_types::Text, _>(key)
+        .execute(connection)
+        .await
+        .map_err(map_error)?;
     Ok(())
 }
 

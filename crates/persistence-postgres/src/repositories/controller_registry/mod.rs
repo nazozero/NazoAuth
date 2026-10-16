@@ -55,6 +55,7 @@ use slots::{
 };
 pub(crate) use slots::{insert_slot_on_connection, validate_deployment_id};
 
+use chrono::{DateTime, Utc};
 use diesel::result::Error as QueryError;
 use diesel_async::AsyncConnection as _;
 
