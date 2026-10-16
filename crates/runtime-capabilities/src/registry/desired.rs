@@ -22,14 +22,8 @@ where
         changed_at: std::time::SystemTime,
     ) -> Result<CasOutcome<DesiredStateRecord>, RegistryError<R::Error>> {
         let _policy_guard = self.desired_policy_lock.lock().await;
-        let spec = self
-            .catalog
-            .spec(module_id)
-            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
-        let disable_policy = self
-            .catalog
-            .effective_disable_policy(module_id)
-            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        let spec = self.catalog.spec(module_id);
+        let disable_policy = self.catalog.effective_disable_policy(module_id);
         let enabling = mode.is_enabled();
         if enabling && !self.catalog.is_available(module_id) {
             return Err(RegistryError::ServiceNotConstructed(module_id));

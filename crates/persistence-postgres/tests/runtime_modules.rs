@@ -302,8 +302,7 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
         session: short,
         presentation_transaction: short,
         scim_security_events: short,
-    })
-    .expect("fixed module catalog should be valid");
+    });
     let registry = RuntimeModuleRegistry::new(
         Arc::clone(&repository),
         Arc::new(NoopModuleLifecycle),

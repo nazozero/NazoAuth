@@ -405,8 +405,7 @@ fn management(
         session: Duration::from_secs(600),
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
-    })
-    .unwrap();
+    });
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
         Arc::new(NoopModuleLifecycle),
@@ -470,7 +469,6 @@ fn fixed_catalog() -> ModuleCatalog {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
 }
 
 fn registry(
@@ -951,7 +949,6 @@ fn management_view_reports_the_security_profiles_effective_disable_policy() {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
     .with_runtime_disable_blocked([ModuleId::Ciba]);
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
@@ -1041,7 +1038,6 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
     .with_dependencies(ModuleId::Jarm, [ModuleId::RequestObjects])
     .unwrap();
     let initial_snapshot = ActiveModuleSnapshot {
@@ -1149,8 +1145,7 @@ fn snapshot_revision_exhaustion_returns_instead_of_spinning() {
         session: Duration::from_secs(600),
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
-    })
-    .unwrap();
+    });
     let registry = RuntimeModuleRegistry::new(
         repository,
         Arc::new(NoopModuleLifecycle),
@@ -1202,7 +1197,6 @@ fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
     .with_dependencies(ModuleId::Jarm, [ModuleId::RequestObjects])
     .unwrap();
     let (entered_tx, entered_rx) = mpsc::sync_channel(1);

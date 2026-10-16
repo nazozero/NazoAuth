@@ -8,14 +8,11 @@ fn catalog_keeps_static_module_dependencies() {
     let catalog = module_catalog(&settings).expect("module catalog should be valid");
 
     assert_eq!(
-        catalog
-            .spec(ModuleId::ScimSecurityEvents)
-            .unwrap()
-            .dependencies,
+        catalog.spec(ModuleId::ScimSecurityEvents).dependencies,
         BTreeSet::from([ModuleId::Scim])
     );
     assert_eq!(
-        catalog.spec(ModuleId::NativeSso).unwrap().dependencies,
+        catalog.spec(ModuleId::NativeSso).dependencies,
         BTreeSet::from([ModuleId::TokenExchange])
     );
 }
@@ -59,21 +56,17 @@ fn vp_drain_horizon_uses_the_constructed_transaction_ttl_instead_of_session_ttl(
     let catalog = module_catalog(&settings).unwrap();
     assert_eq!(
         catalog.effective_disable_policy(ModuleId::Openid4vpVerifier),
-        Some(
-            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
-                max_duration: Duration::from_secs(300)
-            }
-        )
+        nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+            max_duration: Duration::from_secs(300)
+        }
     );
     settings.openid4vc.transaction_ttl_seconds = 1;
     let catalog = module_catalog(&settings).unwrap();
     assert_eq!(
         catalog.effective_disable_policy(ModuleId::Openid4vpVerifier),
-        Some(
-            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
-                max_duration: Duration::from_secs(30)
-            }
-        )
+        nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+            max_duration: Duration::from_secs(30)
+        }
     );
 }
 

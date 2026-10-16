@@ -168,10 +168,7 @@ where
         current: Option<InstanceStateRecord>,
         initialized: &mut bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let disable_policy = self
-            .catalog
-            .effective_disable_policy(module_id)
-            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        let disable_policy = self.catalog.effective_disable_policy(module_id);
         if current
             .as_ref()
             .is_none_or(|instance| instance.state == ModuleState::Disabled)
@@ -206,7 +203,6 @@ where
                 CasOutcome::Stale { .. } => Ok(ReconcileOutcome::StaleDiscarded),
             };
         }
-        let prior_generation = self.snapshot().revision;
         let drain_deadline = match disable_policy {
             DisablePolicy::DrainStoredTransactions { max_duration } => current
                 .as_ref()
@@ -278,9 +274,7 @@ where
             ) {
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
-            self.leases
-                .wait_until_zero(module_id, prior_generation)
-                .await;
+            self.leases.wait_until_zero(module_id).await;
             if matches!(
                 disable_policy,
                 DisablePolicy::DrainStoredTransactions { .. }

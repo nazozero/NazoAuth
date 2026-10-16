@@ -14,10 +14,7 @@ where
         &self,
         module_id: ModuleId,
     ) -> Result<Option<ModuleId>, RegistryError<R::Error>> {
-        let spec = self
-            .catalog
-            .spec(module_id)
-            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        let spec = self.catalog.spec(module_id);
         if spec.dependencies.is_empty() {
             return Ok(None);
         }

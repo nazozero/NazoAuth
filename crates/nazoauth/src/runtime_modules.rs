@@ -349,13 +349,10 @@ fn map_management_error(
             | RegistryError::ActiveDependent { .. }
             | RegistryError::DependencyUnavailable { .. },
         ) => RuntimeModuleAdminError::PolicyConflict,
-        RuntimeModuleManagementError::Registry(
-            RegistryError::MissingDesiredState(_) | RegistryError::MissingCatalogSpec(_),
-        )
+        RuntimeModuleManagementError::Registry(RegistryError::MissingDesiredState(_))
         | RuntimeModuleManagementError::Registry(
             RegistryError::RevisionExhausted(_) | RegistryError::SnapshotRevisionExhausted,
         )
-        | RuntimeModuleManagementError::MissingCatalogSpec(_)
         | RuntimeModuleManagementError::MissingDesiredState(_) => {
             tracing::error!(?error, "runtime module catalog is inconsistent");
             RuntimeModuleAdminError::CatalogInconsistent
@@ -379,7 +376,7 @@ fn module_catalog(settings: &Settings) -> anyhow::Result<ModuleCatalog> {
             settings.openid4vc.transaction_ttl_seconds.max(30),
         ),
         scim_security_events: Duration::from_secs(settings.storage.scim_event_retention_seconds),
-    })?;
+    });
     catalog = catalog.with_constructed_availability([
         (
             ModuleId::Openid4vciIssuer,
@@ -444,8 +441,8 @@ async fn load_explicit_desired_states(
             && state.instance.as_ref().is_some_and(|instance| {
                 matches!(instance.state, ModuleState::Enabled | ModuleState::Draining)
                     && matches!(
-                        catalog.spec(module_id).map(|spec| spec.disable_policy),
-                        Some(nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { .. })
+                        catalog.spec(module_id).disable_policy,
+                        nazo_runtime_modules::DisablePolicy::DrainStoredTransactions { .. }
                     )
             })
         {

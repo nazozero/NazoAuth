@@ -29,7 +29,7 @@ pub struct RuntimeModuleRegistry<R, L> {
     snapshots: Arc<SnapshotStore>,
     leases: RequestLeaseTracker,
     desired_policy_lock: futures_util::lock::Mutex<()>,
-    transition_locks: BTreeMap<ModuleId, Arc<futures_util::lock::Mutex<()>>>,
+    transition_locks: BTreeMap<ModuleId, futures_util::lock::Mutex<()>>,
 }
 
 impl<R, L> RuntimeModuleRegistry<R, L>
@@ -61,7 +61,7 @@ where
             desired_policy_lock: futures_util::lock::Mutex::new(()),
             transition_locks: ModuleId::ALL
                 .into_iter()
-                .map(|module_id| (module_id, Arc::new(futures_util::lock::Mutex::new(()))))
+                .map(|module_id| (module_id, futures_util::lock::Mutex::new(())))
                 .collect(),
         }
     }

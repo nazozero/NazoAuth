@@ -327,7 +327,6 @@ fn catalog() -> ModuleCatalog {
         presentation_transaction: Duration::from_secs(30),
         scim_security_events: Duration::from_secs(30),
     })
-    .unwrap()
 }
 
 fn registry(

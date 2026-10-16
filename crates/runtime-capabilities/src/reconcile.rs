@@ -67,7 +67,6 @@ pub enum RegistryError<E> {
         compensation: Box<RegistryError<E>>,
     },
     MissingDesiredState(ModuleId),
-    MissingCatalogSpec(ModuleId),
     RuntimeDisableBlocked(ModuleId),
     ServiceNotConstructed(ModuleId),
     ActiveDependent {
