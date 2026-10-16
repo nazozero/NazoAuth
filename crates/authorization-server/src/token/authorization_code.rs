@@ -302,11 +302,11 @@ pub struct AuthorizationCodeIssueInput {
 pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> TokenIssue {
     // RFC 8707 section 2.2: a code may mint a narrower AT, while a returned
     // refresh token retains the full original resource grant.
-    let refresh_grant_audiences = (!input.payload.resource_indicators.is_empty())
-        .then(|| input.payload.resource_indicators.clone());
     let native_sso = native_sso_requested(&input.payload.scopes)
         .then(|| new_native_sso_token_binding(input.payload.oidc_sid.as_deref()))
         .flatten();
+    let refresh_grant_audiences = (!input.payload.resource_indicators.is_empty())
+        .then_some(input.payload.resource_indicators);
     TokenIssue {
         native_sso_source: None,
         user_id: Some(input.payload.user_id),
@@ -362,10 +362,10 @@ fn authorization_code_audiences_with_default(
 pub fn refresh_token_dpop_binding(
     client: &ClientRow,
     payload: &CodePayload,
-    dpop_jkt: Option<String>,
+    dpop_jkt: Option<&str>,
 ) -> Option<String> {
     if client.client_type == "public" || payload.dpop_jkt.is_some() {
-        dpop_jkt
+        dpop_jkt.map(ToOwned::to_owned)
     } else {
         None
     }
@@ -458,17 +458,17 @@ pub async fn token_authorization_code_with_service(
     };
     let expected_dpop_jkt = expected_payload
         .as_ref()
-        .and_then(|payload| payload.dpop_jkt.clone());
+        .and_then(|payload| payload.dpop_jkt.as_deref());
     let expected_mtls_x5t_s256 = expected_payload
         .as_ref()
-        .and_then(|payload| payload.mtls_x5t_s256.clone());
+        .and_then(|payload| payload.mtls_x5t_s256.as_deref());
     let sender = match validate_token_sender_constraints(
         issuance,
         facts,
         client,
         None,
-        expected_dpop_jkt.as_deref(),
-        expected_mtls_x5t_s256.as_deref(),
+        expected_dpop_jkt,
+        expected_mtls_x5t_s256,
     )
     .await
     {
@@ -703,7 +703,7 @@ pub async fn token_authorization_code_with_service(
             false,
         ));
     }
-    let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
+    let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.as_deref());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
     // begin only yields Consuming from a Pending state, so the pure audience
     // facts computed before the sender proof must exist here.  Subject
