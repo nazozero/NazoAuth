@@ -12,15 +12,15 @@ use serde_json::{Value, json};
 #[test]
 fn oauth_error_description_enforces_rfc_allowed_ascii() {
     assert_eq!(
-        oauth_error_description("Authorization code has already been used.").as_ref(),
+        oauth_error_description("Authorization code has already been used."),
         "Authorization code has already been used."
     );
     assert_eq!(
-        oauth_error_description("授权码已被使用.").as_ref(),
+        oauth_error_description("授权码已被使用."),
         "Request failed."
     );
     assert_eq!(
-        oauth_error_description("invalid\\request").as_ref(),
+        oauth_error_description("invalid\\request"),
         "Request failed."
     );
 }
@@ -160,8 +160,8 @@ proptest! {
     ) {
         let allowed_description = oauth_error_description(&allowed);
         let disallowed_description = oauth_error_description(&disallowed);
-        prop_assert_eq!(allowed_description.as_ref(), allowed.as_str());
-        prop_assert_eq!(disallowed_description.as_ref(), "Request failed.");
+        prop_assert_eq!(allowed_description, allowed.as_str());
+        prop_assert_eq!(disallowed_description, "Request failed.");
     }
 
     #[test]

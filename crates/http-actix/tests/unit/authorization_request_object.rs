@@ -19,7 +19,7 @@ async fn assert_error(response: HttpResponse, status: StatusCode, code: &str, de
     assert_eq!(body["error"], code);
     assert_eq!(
         body["error_description"],
-        oauth_error_description(description).as_ref()
+        oauth_error_description(description)
     );
 }
 
