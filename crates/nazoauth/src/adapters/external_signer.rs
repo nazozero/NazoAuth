@@ -9,7 +9,7 @@ use process_wrap::tokio::{
     ChildWrapper as ProcessChildWrapper, CommandWrap as ProcessCommandWrap,
     CommandWrapper as ProcessCommandWrapper, KillOnDrop as ProcessKillOnDrop,
 };
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Semaphore;
 use tokio::time;
@@ -17,6 +17,7 @@ use tokio::time;
 use nazo_auth::{SignError, Signature};
 use nazo_key_management::{ExternalKeySigner, ExternalSignRequest, signing_algorithm_name};
 use std::{
+    borrow::Cow,
     future::Future,
     io::{Error, ErrorKind},
     pin::Pin,
@@ -32,7 +33,22 @@ const EXTERNAL_SIGNER_REAP_TIMEOUT: std::time::Duration = std::time::Duration::f
 static EXTERNAL_SIGNER_SLOTS: LazyLock<Semaphore> =
     LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_EXTERNAL_SIGNERS));
 
-struct AbortTasksOnDrop(Vec<tokio::task::AbortHandle>);
+struct AbortTasksOnDrop([tokio::task::AbortHandle; 2]);
+
+#[derive(Serialize)]
+struct SignerRequest<'a> {
+    version: u8,
+    kid: &'a str,
+    alg: &'a str,
+    key_ref: &'a str,
+    signing_input: &'a str,
+}
+
+#[derive(Deserialize)]
+struct SignerResponse<'a> {
+    #[serde(borrow)]
+    signature: Cow<'a, str>,
+}
 
 #[derive(Debug)]
 enum ExternalSignerRequestWriteError {
@@ -162,16 +178,13 @@ impl ProcessChildWrapper for KillProcessTreeChild {
 
 /// Runs the configured signer command under the Native process lifetime policy.
 pub(crate) struct CommandExternalKeySigner {
-    command: Arc<Vec<String>>,
+    command: Vec<String>,
     timeout: std::time::Duration,
 }
 
 impl CommandExternalKeySigner {
     pub(crate) fn new(command: Vec<String>, timeout: std::time::Duration) -> Self {
-        Self {
-            command: Arc::new(command),
-            timeout,
-        }
+        Self { command, timeout }
     }
 }
 
@@ -199,13 +212,13 @@ async fn sign_external_jwt_input(
 ) -> anyhow::Result<Signature> {
     let alg_name = signing_algorithm_name(alg)
         .ok_or_else(|| anyhow::anyhow!("unsupported signing algorithm"))?;
-    let request = json!({
-        "version": 1,
-        "kid": kid,
-        "alg": alg_name,
-        "key_ref": key_ref,
-        "signing_input": signing_input
-    });
+    let request = SignerRequest {
+        version: 1,
+        kid,
+        alg: alg_name,
+        key_ref,
+        signing_input,
+    };
     let deadline = time::Instant::now() + external.timeout;
     let _slot = time::timeout_at(deadline, EXTERNAL_SIGNER_SLOTS.acquire())
         .await
@@ -252,9 +265,9 @@ async fn sign_external_jwt_input(
     let mut stdout_task = tokio::spawn(read_limited(stdout, MAX_EXTERNAL_SIGNER_STDOUT_BYTES));
     let mut stderr_task = tokio::spawn(read_limited(stderr, MAX_EXTERNAL_SIGNER_STDERR_BYTES));
     let _reader_abort_guard =
-        AbortTasksOnDrop(vec![stdout_task.abort_handle(), stderr_task.abort_handle()]);
-    let request_body = serde_json::to_string(&request)?;
-    match write_external_signer_request(&mut stdin, request_body.as_bytes(), deadline).await {
+        AbortTasksOnDrop([stdout_task.abort_handle(), stderr_task.abort_handle()]);
+    let request_body = serde_json::to_vec(&request)?;
+    match write_external_signer_request(&mut stdin, &request_body, deadline).await {
         Ok(()) => {}
         Err(ExternalSignerRequestWriteError::Io(error)) => {
             stdout_task.abort();
@@ -338,23 +351,14 @@ async fn sign_external_jwt_input(
             "external signer exited with status {status}"
         ));
     }
-    let response: Value = match serde_json::from_slice(&stdout) {
+    let response: SignerResponse<'_> = match serde_json::from_slice(&stdout) {
         Ok(response) => response,
         Err(error) => {
             terminate_process_tree(&mut child, &armed).await;
             return Err(error.into());
         }
     };
-    let signature = match response.get("signature").and_then(Value::as_str) {
-        Some(signature) => signature,
-        None => {
-            terminate_process_tree(&mut child, &armed).await;
-            return Err(anyhow::anyhow!(
-                "external signer response missing signature",
-            ));
-        }
-    };
-    let decoded = match URL_SAFE_NO_PAD.decode(signature) {
+    let decoded = match URL_SAFE_NO_PAD.decode(response.signature.as_bytes()) {
         Ok(decoded) => decoded,
         Err(error) => {
             terminate_process_tree(&mut child, &armed).await;

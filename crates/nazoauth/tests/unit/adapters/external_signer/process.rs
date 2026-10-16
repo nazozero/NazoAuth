@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -500,7 +501,7 @@ async fn external_signing_requires_signature_member() {
         .expect_err("external signer response without a signature must fail closed");
 
     assert!(
-        format!("{error}").contains("missing signature"),
+        format!("{error}").contains("missing field `signature`"),
         "unexpected error: {error}"
     );
 }
@@ -514,6 +515,19 @@ async fn external_signing_rejects_non_base64url_signature() {
     assert!(
         format!("{error}").contains("invalid signature"),
         "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn external_signing_accepts_escaped_signature_and_ignores_extension_fields() {
+    let signature = sign_with_command(signer_stdout_command(
+        r#"{"signature":"\u0063MvD\u0033w","extension":{"unused":[1,2,3]}}"#,
+    ))
+    .await
+    .expect("JSON string escapes and extension fields remain accepted");
+    assert_eq!(
+        signature.as_bytes(),
+        URL_SAFE_NO_PAD.decode("cMvD3w").unwrap()
     );
 }
 
