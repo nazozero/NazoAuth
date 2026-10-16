@@ -933,6 +933,9 @@ async fn openid4vc_revoked_active_leaf_cannot_prepare_signing() {
         )
         .await
         .unwrap();
+    manager
+        .prepare_openid4vc_signing()
+        .expect("good active DS can sign");
     let expected = manager.database_openid4vc_state().await.unwrap();
     let mut revoked = fixture.material;
     revoked.public.revocation_snapshot.as_mut().unwrap().entries[0].status =

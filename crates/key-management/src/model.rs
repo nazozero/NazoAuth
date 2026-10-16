@@ -415,6 +415,7 @@ pub(crate) struct KeyGeneration {
     openid4vc_public: Option<Arc<Openid4vcPublicMaterial>>,
     openid4vc_revocation:
         Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>,
+    openid4vc_signing_revoked: bool,
     expires_at: Option<Instant>,
 }
 
@@ -476,13 +477,12 @@ impl HttpSigningLease {
 pub struct Openid4vcSigningLease {
     generation: Arc<KeyGeneration>,
     health: Arc<LifecycleHealth>,
-    kid: String,
 }
 
 impl Openid4vcSigningLease {
     #[must_use]
     pub fn kid(&self) -> &str {
-        &self.kid
+        &self.material().signing_kid
     }
 
     #[must_use]
@@ -505,7 +505,7 @@ impl Openid4vcSigningLease {
         encode_jwt_for_generation(
             &self.generation,
             &self.health,
-            Some(&self.kid),
+            Some(self.kid()),
             purpose,
             header,
             claims,
@@ -534,7 +534,7 @@ impl Signer for Openid4vcSigningLease {
             .generation
             .loaded
             .selected_key(request.purpose, algorithm)
-            .filter(|selected| selected.kid == self.kid)
+            .filter(|selected| selected.kid == self.kid())
             .ok_or(SignError::KeyUnavailable)?;
         sign_selected(&selected, &self.generation.snapshot, request.signing_input).await
     }
@@ -627,7 +627,7 @@ pub(crate) fn parse_openid4vc_certificate_chain(
                     block.tag()
                 );
             }
-            let der = block.contents().to_vec();
+            let der = block.into_contents();
             let (rest, _) = x509_parser::parse_x509_certificate(&der).map_err(|error| {
                 anyhow::anyhow!("failed to parse OpenID4VC {description} certificate: {error}")
             })?;
@@ -699,15 +699,22 @@ pub(crate) fn openid4vc_material_is_revoked(material: &Openid4vcMaterial) -> any
     let Some(snapshot) = material.public.revocation_snapshot.as_ref() else {
         return Ok(false);
     };
+    let mut revoked = snapshot
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.status == nazo_digital_credentials::CertificateRevocationStatus::Revoked
+        })
+        .peekable();
+    if revoked.peek().is_none() {
+        return Ok(false);
+    }
     let certificates = parse_openid4vc_certificate_chain(
         &material.public.certificate_chain_pem,
         "certificate chain",
     )?;
     let identity = nazo_digital_credentials::certificate_identity(&certificates[0]);
-    Ok(snapshot.entries.iter().any(|entry| {
-        entry.certificate == identity
-            && entry.status == nazo_digital_credentials::CertificateRevocationStatus::Revoked
-    }))
+    Ok(revoked.any(|entry| entry.certificate == identity))
 }
 
 impl KeyManager {
@@ -870,14 +877,12 @@ impl KeyManager {
                 "OpenID4VC signing certificate does not match one credential and presentation-request ES256 key"
             );
         }
-        if openid4vc_material_is_revoked(material)? {
+        if generation.openid4vc_signing_revoked {
             anyhow::bail!("OpenID4VC signing certificate is revoked");
         }
-        let kid = credential.kid.to_owned();
         Ok(Openid4vcSigningLease {
             generation,
             health: Arc::clone(&self.inner.health),
-            kid,
         })
     }
 
@@ -1294,11 +1299,18 @@ impl KeyGeneration {
                     )),
                 )
             });
+        let openid4vc_signing_revoked = loaded
+            .openid4vc_material
+            .as_ref()
+            .map(openid4vc_material_is_revoked)
+            .transpose()?
+            .unwrap_or(false);
         Ok(Self {
             loaded,
             snapshot,
             openid4vc_public,
             openid4vc_revocation,
+            openid4vc_signing_revoked,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),
         })
     }
