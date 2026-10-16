@@ -178,7 +178,7 @@ pub(crate) fn der_to_pem(der: &[u8], label: &str) -> String {
     let encoded = STANDARD.encode(der);
     let mut pem = format!("-----BEGIN {label}-----\n");
     for chunk in encoded.as_bytes().chunks(64) {
-        pem.push_str(std::str::from_utf8(chunk).unwrap_or_default());
+        pem.push_str(std::str::from_utf8(chunk).expect("base64 output is ASCII"));
         pem.push('\n');
     }
     pem.push_str(&format!("-----END {label}-----\n"));

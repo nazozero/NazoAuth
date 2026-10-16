@@ -38,9 +38,7 @@ impl KeyManager {
     /// key purposes and make rotation or external signing unsafe.
     pub fn decrypt_request_object(&self, compact: &str) -> anyhow::Result<String> {
         let mut segments = compact.split('.');
-        let protected = segments
-            .next()
-            .ok_or_else(|| anyhow!("missing protected header"))?;
+        let protected = segments.next().expect("split always yields a segment");
         let encrypted_key = segments
             .next()
             .ok_or_else(|| anyhow!("missing encrypted key"))?;
@@ -85,20 +83,25 @@ impl KeyManager {
             ));
         }
 
-        let iv = URL_SAFE_NO_PAD.decode(iv).context("invalid iv encoding")?;
+        let mut decoded_iv = [0_u8; 12];
+        let iv_len = URL_SAFE_NO_PAD
+            .decode_slice(iv, &mut decoded_iv)
+            .context("invalid iv encoding or length")?;
         let ciphertext = URL_SAFE_NO_PAD
             .decode(ciphertext)
             .context("invalid ciphertext encoding")?;
-        let tag = URL_SAFE_NO_PAD
-            .decode(tag)
-            .context("invalid tag encoding")?;
-        if iv.len() != 12 || tag.len() != 16 {
+        let mut decoded_tag = [0_u8; 16];
+        let tag_len = URL_SAFE_NO_PAD
+            .decode_slice(tag, &mut decoded_tag)
+            .context("invalid tag encoding or length")?;
+        if iv_len != decoded_iv.len() || tag_len != decoded_tag.len() {
             return Err(anyhow!("invalid A256GCM iv or tag length"));
         }
         let mut combined = ciphertext;
-        combined.extend_from_slice(&tag);
-        let plaintext = nazo_crypto::aead::decrypt(&cek, &iv, protected.as_bytes(), &combined)
-            .context("request object authentication failed")?;
+        combined.extend_from_slice(&decoded_tag);
+        let plaintext =
+            nazo_crypto::aead::decrypt(&cek, &decoded_iv, protected.as_bytes(), &combined)
+                .context("request object authentication failed")?;
         String::from_utf8(plaintext).context("request object plaintext is not UTF-8")
     }
 }

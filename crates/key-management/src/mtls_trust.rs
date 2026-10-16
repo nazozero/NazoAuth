@@ -49,9 +49,6 @@ pub fn validate_mtls_trust_anchor(
         .strip_prefix(BEGIN_CERTIFICATE)
         .and_then(|value| value.strip_suffix(END_CERTIFICATE))
         .ok_or(MtlsTrustAnchorError::InvalidPem)?;
-    if body.contains(BEGIN_CERTIFICATE) || body.contains(END_CERTIFICATE) {
-        return Err(MtlsTrustAnchorError::InvalidPem);
-    }
     let encoded = body
         .chars()
         .filter(|character| !character.is_ascii_whitespace())
@@ -89,19 +86,12 @@ pub fn validate_mtls_trust_anchor(
         _ => return Err(MtlsTrustAnchorError::WeakOrUnsupportedKey),
     }
 
-    let canonical_body = STANDARD.encode(&der);
-    let canonical_body = canonical_body
-        .as_bytes()
-        .chunks(64)
-        .map(|chunk| std::str::from_utf8(chunk).expect("base64 output is ASCII"))
-        .collect::<Vec<_>>()
-        .join("\n");
     let not_before = DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
         .ok_or(MtlsTrustAnchorError::InvalidPem)?;
     let not_after = DateTime::from_timestamp(certificate.validity().not_after.timestamp(), 0)
         .ok_or(MtlsTrustAnchorError::InvalidPem)?;
     Ok(ValidatedMtlsTrustAnchor {
-        certificate_pem: format!("{BEGIN_CERTIFICATE}\n{canonical_body}\n{END_CERTIFICATE}\n"),
+        certificate_pem: crate::serialization::der_to_pem(&der, "CERTIFICATE"),
         certificate_sha256: hex::encode(Sha256::digest(&der)),
         subject_dn: certificate.subject().to_string(),
         not_before,
