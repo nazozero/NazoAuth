@@ -17,7 +17,7 @@ use crate::{
     token::client_auth::{
         ClientAuthRequestFacts, TokenManagementClientAuthError,
         authenticate_client_with_dependencies,
-        consume_token_management_client_assertion_with_authorization_service,
+        consume_token_client_assertion_with_authorization_service,
     },
 };
 use chrono::{Duration, Utc};
@@ -455,7 +455,7 @@ impl PreparedParClient<'_> {
                 context: DpopErrorContext::TokenEndpoint,
             });
         }
-        if let Err(error) = consume_token_management_client_assertion_with_authorization_service(
+        if let Err(error) = consume_token_client_assertion_with_authorization_service(
             context.service,
             &client,
             client_assertion.as_ref(),

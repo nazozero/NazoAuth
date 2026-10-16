@@ -311,7 +311,10 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVer
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let mut bytes = [0_u8; 32];
+            if URL_SAFE_NO_PAD.decode_slice(x, &mut bytes).ok()? != bytes.len() {
+                return None;
+            }
             Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         SupportedClientJwtAlgorithm::Rsa => {
@@ -338,8 +341,13 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVer
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
-            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            let mut x_bytes = [0_u8; 32];
+            let mut y_bytes = [0_u8; 32];
+            if URL_SAFE_NO_PAD.decode_slice(x, &mut x_bytes).ok()? != x_bytes.len()
+                || URL_SAFE_NO_PAD.decode_slice(y, &mut y_bytes).ok()? != y_bytes.len()
+            {
+                return None;
+            }
             Some(JwtVerificationKey::from_p256_coordinates(
                 &x_bytes, &y_bytes,
             ))

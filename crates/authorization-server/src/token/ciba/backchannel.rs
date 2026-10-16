@@ -26,7 +26,7 @@ use crate::{
     token::client_auth::{
         ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
         authenticate_client_with_dependencies,
-        consume_token_management_client_assertion_with_authorization_service,
+        consume_token_client_assertion_with_authorization_service,
     },
 };
 use chrono::Utc;
@@ -293,7 +293,7 @@ impl CibaApplication {
                 "CIBA authorization audit unavailable.",
             ));
         }
-        consume_token_management_client_assertion_with_authorization_service(
+        consume_token_client_assertion_with_authorization_service(
             authorization_service,
             &client,
             assertion.as_ref(),

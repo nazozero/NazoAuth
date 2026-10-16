@@ -2,7 +2,7 @@
 use super::client_auth::{
     ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
     authenticate_client_with_dependencies,
-    consume_token_management_client_assertion_with_authorization_service,
+    consume_token_client_assertion_with_authorization_service,
 };
 use super::{DEVICE_CODE_GRANT_TYPE, device_config::DeviceConfig};
 use crate::contracts::{
@@ -464,7 +464,7 @@ async fn authenticate_device_authorization_client(
     )
     .await
     .map_err(token_management_auth_error)?;
-    consume_token_management_client_assertion_with_authorization_service(
+    consume_token_client_assertion_with_authorization_service(
         authorization_service,
         client,
         assertion.as_ref(),

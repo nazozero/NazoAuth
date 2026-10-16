@@ -114,7 +114,7 @@ pub async fn authenticate_introspection_client_with_dependencies<'credential>(
         secret_salt,
     )
     .await?;
-    consume_token_management_client_assertion_with_authorization_service(
+    consume_token_client_assertion_with_authorization_service(
         service,
         client,
         assertion.as_ref(),
@@ -147,7 +147,7 @@ pub async fn authenticate_revocation_client_with_dependencies<'credential>(
         secret_salt,
     )
     .await?;
-    consume_token_management_client_assertion_with_authorization_service(
+    consume_token_client_assertion_with_authorization_service(
         service,
         client,
         assertion.as_ref(),
@@ -307,22 +307,6 @@ fn log_client_auth_rejection(
         client.token_endpoint_auth_method,
         credentials.method
     );
-}
-
-pub async fn consume_token_management_client_assertion_with_authorization_service(
-    service: &crate::services::ServerAuthorizationService,
-    client: &ClientRow,
-    assertion: Option<&ValidatedClientAssertion>,
-    audit: &dyn crate::ports::audit::SecurityAudit,
-) -> Result<(), TokenManagementClientAuthError> {
-    let Some(assertion) = assertion else {
-        return Ok(());
-    };
-    crate::security::client_assertion::consume_private_key_jwt_with_authorization_service(
-        service, client, assertion, audit,
-    )
-    .await
-    .map_err(token_management_client_assertion_error)
 }
 
 fn token_management_client_assertion_error(

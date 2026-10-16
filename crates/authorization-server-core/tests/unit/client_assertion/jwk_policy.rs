@@ -101,3 +101,23 @@ fn shared_jwk_policy_rejects_private_material_and_ambiguous_key_ids() {
     };
     assert!(client_jwt_decoding_key(&client, "key", Algorithm::EdDSA).is_none());
 }
+
+#[test]
+fn fixed_curve_components_require_exactly_32_decoded_bytes() {
+    for size in [31, 32, 33] {
+        let coordinate = URL_SAFE_NO_PAD.encode(vec![7; size]);
+        let ed = json!({"kty": "OKP", "crv": "Ed25519", "x": coordinate});
+        assert_eq!(
+            jwt_decoding_key_from_jwk(&ed, Algorithm::EdDSA).is_some(),
+            size == 32
+        );
+        for component in ["x", "y"] {
+            let mut ec = json!({"kty": "EC", "crv": "P-256", "x": URL_SAFE_NO_PAD.encode([7; 32]), "y": URL_SAFE_NO_PAD.encode([9; 32])});
+            ec[component] = json!(coordinate);
+            assert_eq!(
+                jwt_decoding_key_from_jwk(&ec, Algorithm::ES256).is_some(),
+                size == 32
+            );
+        }
+    }
+}

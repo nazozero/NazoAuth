@@ -350,14 +350,46 @@ fn hash_client_secret(secret: &str, pepper: &str) -> String {
     client_secret_digest(secret, pepper, &salt)
 }
 
-fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
+/// Persisted client-secret verifier used by registration and authentication.
+pub fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
+    let mac = client_secret_mac(secret, pepper, salt)
+        .finalize()
+        .into_bytes();
+    let digest = base64::display::Base64Display::new(&mac, &URL_SAFE_NO_PAD);
+    format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{digest}")
+}
+
+/// Check a delivered secret against the stored issuance generation.
+pub fn client_secret_matches_digest(secret: &str, pepper: &str, encoded: &str) -> bool {
+    let mut parts = encoded.split(':');
+    if parts.next() != Some(CLIENT_SECRET_HASH_VERSION) {
+        return false;
+    }
+    let Some(salt) = parts.next().filter(|salt| !salt.is_empty()) else {
+        return false;
+    };
+    let Some(encoded_mac) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    let mut mac = [0_u8; 32];
+    if URL_SAFE_NO_PAD.decode_slice(encoded_mac, &mut mac) != Ok(mac.len()) {
+        return false;
+    }
+    client_secret_mac(secret, pepper, salt)
+        .verify_slice(&mac)
+        .is_ok()
+}
+
+fn client_secret_mac(secret: &str, pepper: &str, salt: &str) -> Hmac<Sha256> {
     let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(pepper.as_bytes())
         .expect("HMAC accepts any key");
     mac.update(salt.as_bytes());
     mac.update(b":");
     mac.update(secret.as_bytes());
-    let digest = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
-    format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{digest}")
+    mac
 }
 
 #[cfg(test)]

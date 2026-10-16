@@ -1,14 +1,12 @@
 use crate::domain::rows::ClientRow;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, KeyInit, Mac};
 use nazo_auth::{Claims, rsa_public_key_components_are_safe};
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
+pub use nazo_key_management::{client_secret_digest, client_secret_matches_digest};
 use nazo_openid4vci::ProofError;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
-type HmacSha256 = Hmac<Sha256>;
-const CLIENT_SECRET_HASH_VERSION: &str = "client-secret-v1";
 
 enum SupportedClientJwtAlgorithm {
     EdDsa,
@@ -26,41 +24,8 @@ pub fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
-pub fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
-    let mac = client_secret_mac(secret, pepper, salt);
-    format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{mac}")
-}
-
-/// Verify an issued secret against its complete versioned digest without
-/// disclosing the stored verifier or reimplementing the MAC at the caller.
-pub fn client_secret_matches_digest(secret: &str, pepper: &str, encoded: &str) -> bool {
-    let mut parts = encoded.split(':');
-    if parts.next() != Some(CLIENT_SECRET_HASH_VERSION) {
-        return false;
-    }
-    let Some(salt) = parts.next().filter(|salt| !salt.is_empty()) else {
-        return false;
-    };
-    let Some(mac) = parts.next().filter(|mac| !mac.is_empty()) else {
-        return false;
-    };
-    if parts.next().is_some() {
-        return false;
-    }
-    let candidate = client_secret_mac(secret, pepper, salt);
-    constant_time_eq(candidate.as_bytes(), mac.as_bytes())
-}
-
 pub fn access_delivery_token(secret: &str, user_id: Uuid, request_id: Uuid) -> String {
     nazo_identity::access_delivery_token(secret, user_id, request_id)
-}
-
-fn client_secret_mac(secret: &str, pepper: &str, salt: &str) -> String {
-    let mut mac = HmacSha256::new_from_slice(pepper.as_bytes()).expect("HMAC accepts any key");
-    mac.update(salt.as_bytes());
-    mac.update(b":");
-    mac.update(secret.as_bytes());
-    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
 }
 
 pub fn blake3_hex(value: &str) -> String {
@@ -114,7 +79,10 @@ pub fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerif
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let mut bytes = [0_u8; 32];
+            if URL_SAFE_NO_PAD.decode_slice(x, &mut bytes).ok()? != bytes.len() {
+                return None;
+            }
             Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         SupportedClientJwtAlgorithm::Rsa => {
@@ -140,8 +108,13 @@ pub fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerif
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
-            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            let mut x_bytes = [0_u8; 32];
+            let mut y_bytes = [0_u8; 32];
+            if URL_SAFE_NO_PAD.decode_slice(x, &mut x_bytes).ok()? != x_bytes.len()
+                || URL_SAFE_NO_PAD.decode_slice(y, &mut y_bytes).ok()? != y_bytes.len()
+            {
+                return None;
+            }
             Some(JwtVerificationKey::from_p256_coordinates(
                 &x_bytes, &y_bytes,
             ))
