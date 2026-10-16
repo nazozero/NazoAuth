@@ -507,7 +507,7 @@ impl Openid4vcSigningLease {
             &self.health,
             Some(self.kid()),
             purpose,
-            header,
+            header.clone(),
             claims,
         )
         .await
@@ -641,7 +641,7 @@ pub(crate) fn parse_openid4vc_certificate_chain(
         .collect()
 }
 
-pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow::Result<[u8; 65]> {
     let object = jwk
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("{description} public JWK must be an object"))?;
@@ -652,47 +652,39 @@ pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow
     {
         anyhow::bail!("{description} public JWK must be an ES256 signing key");
     }
-    let x = URL_SAFE_NO_PAD
-        .decode(
-            object
-                .get("x")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow::anyhow!("{description} public JWK is missing x"))?,
-        )
-        .map_err(|error| anyhow::anyhow!("{description} public JWK x is invalid: {error}"))?;
-    let y = URL_SAFE_NO_PAD
-        .decode(
-            object
-                .get("y")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow::anyhow!("{description} public JWK is missing y"))?,
-        )
-        .map_err(|error| anyhow::anyhow!("{description} public JWK y is invalid: {error}"))?;
-    if x.len() != 32 || y.len() != 32 {
-        anyhow::bail!("{description} public JWK coordinates must be 32 bytes");
+    let mut point = [0_u8; 65];
+    point[0] = 4;
+    let (x, y) = point[1..].split_at_mut(32);
+    for (name, coordinate) in [("x", x), ("y", y)] {
+        let encoded = object
+            .get(name)
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("{description} public JWK is missing {name}"))?;
+        let length = URL_SAFE_NO_PAD
+            .decode_slice(encoded, coordinate)
+            .map_err(|error| {
+                anyhow::anyhow!("{description} public JWK {name} is invalid: {error}")
+            })?;
+        if length != 32 {
+            anyhow::bail!("{description} public JWK coordinates must be 32 bytes");
+        }
     }
-    let mut point = Vec::with_capacity(1 + x.len() + y.len());
-    point.push(4);
-    point.extend_from_slice(&x);
-    point.extend_from_slice(&y);
-    Ok(nazo_crypto::ec::normalize_p256_public_key(&point)
-        .map_err(|error| anyhow::anyhow!("{description} public JWK point is invalid: {error}"))?
-        .to_vec())
+    nazo_crypto::ec::normalize_p256_public_key(&point)
+        .map_err(|error| anyhow::anyhow!("{description} public JWK point is invalid: {error}"))
 }
 
 pub(crate) fn p256_public_key_from_certificate(
     der: &[u8],
     description: &str,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<[u8; 65]> {
     let (rest, certificate) = x509_parser::parse_x509_certificate(der)
         .map_err(|error| anyhow::anyhow!("failed to parse {description}: {error}"))?;
     if !rest.is_empty() {
         anyhow::bail!("{description} contains trailing bytes after a certificate");
     }
     let point = certificate.public_key().subject_public_key.data.as_ref();
-    Ok(nazo_crypto::ec::normalize_p256_public_key(point)
-        .map_err(|error| anyhow::anyhow!("{description} is not an ES256 certificate: {error}"))?
-        .to_vec())
+    nazo_crypto::ec::normalize_p256_public_key(point)
+        .map_err(|error| anyhow::anyhow!("{description} is not an ES256 certificate: {error}"))
 }
 
 pub(crate) fn openid4vc_material_is_revoked(material: &Openid4vcMaterial) -> anyhow::Result<bool> {
@@ -1115,7 +1107,7 @@ impl KeyManager {
             &self.inner.health,
             None,
             purpose,
-            header,
+            header.clone(),
             claims,
         )
         .await
@@ -1168,7 +1160,7 @@ pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     health: &LifecycleHealth,
     expected_kid: Option<&str>,
     purpose: SigningPurpose,
-    header: &nazo_crypto::jwt::Header,
+    mut header: nazo_crypto::jwt::Header,
     claims: &T,
 ) -> nazo_crypto::Result<String> {
     if generation.is_expired() || !health.snapshot().is_healthy() {
@@ -1194,8 +1186,9 @@ pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     {
         return Err(nazo_crypto::CryptoError::UnsupportedAlgorithm);
     }
-    let mut header = header.clone();
-    header.kid = Some(selected.kid.to_owned());
+    if header.kid.is_none() {
+        header.kid = Some(selected.kid.to_owned());
+    }
     let header_json =
         serde_json::to_vec(&header).map_err(|_| nazo_crypto::CryptoError::InvalidInput)?;
     let claims_json =
