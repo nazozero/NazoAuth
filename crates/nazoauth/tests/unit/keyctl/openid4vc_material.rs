@@ -446,6 +446,39 @@ async fn operator_generation_result_stays_on_its_applied_generation_after_concur
 }
 
 #[tokio::test]
+async fn rotation_returns_its_committed_revision_after_a_concurrent_rotation() {
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let tenant_id = Uuid::now_v7();
+    let manager = database_manager(repository.clone(), tenant_id).await;
+    let profile = managed_profile("tenant.example");
+    generate_local_with_database_manager(&manager, Some(&profile), managed_options())
+        .await
+        .unwrap();
+    let barrier = repository.pause_next_openid4vc_commit();
+    let (result, revisions) = tokio::join!(rotate_managed_material(&manager, &profile), async {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            barrier.applied.notified(),
+        )
+        .await
+        .expect("rotation reached the applied CAS barrier");
+        let concurrent = database_manager(repository.clone(), tenant_id).await;
+        let applied = concurrent
+            .database_openid4vc_state()
+            .await
+            .unwrap()
+            .revision;
+        let newer = rotate_managed_material(&concurrent, &profile)
+            .await
+            .unwrap();
+        barrier.release.notify_one();
+        (applied, newer)
+    });
+    assert_eq!(result.unwrap(), revisions.0.to_string());
+    assert!(revisions.1.parse::<i64>().unwrap() > revisions.0);
+}
+
+#[tokio::test]
 async fn failed_managed_cas_does_not_leave_partial_material() {
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let manager = database_manager(repository.clone(), Uuid::now_v7()).await;
@@ -1253,7 +1286,8 @@ fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
         .unwrap();
         let material = bundle.mdoc_material.unwrap();
         let (_, leaf) = x509_parser::parse_x509_certificate(&material.leaf_der).unwrap();
-        let (_, ca) = x509_parser::parse_x509_certificate(&material.ca_der).unwrap();
+        let ca_der = parse_certificates(&bundle.ca_pem).remove(0);
+        let (_, ca) = x509_parser::parse_x509_certificate(ca_der.as_ref()).unwrap();
         let expected = now.date().midnight().assume_utc().unix_timestamp();
         for (certificate, lifetime) in [(&leaf, 457), (&ca, 3650)] {
             assert_eq!(certificate.validity().not_before.timestamp(), expected);
