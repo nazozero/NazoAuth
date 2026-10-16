@@ -53,21 +53,6 @@ impl CibaPingDeliveryPort for ValkeyCibaPingDelivery {
             self.store
                 .claim_due_ping(now, lock_until, limit)
                 .await
-                .map(|batch| CibaPingClaimBatch {
-                    scanned: batch.scanned,
-                    deliveries: batch
-                        .deliveries
-                        .into_iter()
-                        .map(|delivery| CibaPingDelivery {
-                            auth_req_id_hash: delivery.auth_req_id_hash,
-                            auth_req_id: delivery.auth_req_id,
-                            endpoint: delivery.endpoint,
-                            client_notification_token: delivery.client_notification_token,
-                            attempts: delivery.attempts,
-                            expires_at: delivery.expires_at,
-                        })
-                        .collect(),
-                })
                 .map_err(map_transient_state_error)
         })
     }
@@ -78,29 +63,9 @@ impl CibaPingDeliveryPort for ValkeyCibaPingDelivery {
         outcome: CibaPingFinishOutcome,
     ) -> TransientStateFuture<'a, CibaPingFinishResult> {
         Box::pin(async move {
-            let adapter_delivery = nazo_valkey::CibaPingDelivery {
-                auth_req_id_hash: delivery.auth_req_id_hash.clone(),
-                auth_req_id: delivery.auth_req_id.clone(),
-                endpoint: delivery.endpoint.clone(),
-                client_notification_token: delivery.client_notification_token.clone(),
-                attempts: delivery.attempts,
-                expires_at: delivery.expires_at,
-            };
-            let adapter_outcome = match outcome {
-                CibaPingFinishOutcome::Delivered => nazo_valkey::CibaPingFinishOutcome::Delivered,
-                CibaPingFinishOutcome::RetryAt(at) => {
-                    nazo_valkey::CibaPingFinishOutcome::RetryAt(at)
-                }
-                CibaPingFinishOutcome::Failed => nazo_valkey::CibaPingFinishOutcome::Failed,
-            };
             self.store
-                .finish_ping(&adapter_delivery, adapter_outcome)
+                .finish_ping(delivery, outcome)
                 .await
-                .map(|result| match result {
-                    nazo_valkey::CibaPingFinishResult::Applied => CibaPingFinishResult::Applied,
-                    nazo_valkey::CibaPingFinishResult::Missing => CibaPingFinishResult::Missing,
-                    nazo_valkey::CibaPingFinishResult::Conflict => CibaPingFinishResult::Conflict,
-                })
                 .map_err(map_transient_state_error)
         })
     }

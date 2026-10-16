@@ -24,9 +24,7 @@ pub use authentication::AuthenticationStore;
 pub use authorization::{AuthorizationPreparationWrite, AuthorizationStore};
 pub use authorization_state::AuthorizationStateAdapter;
 pub use avatar_upload_state::AvatarUploadStateStore;
-pub use ciba::{
-    CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult, CibaStore,
-};
+pub use ciba::CibaStore;
 pub use connection::{ValkeyClient, ValkeyConnection};
 pub use delivery::DeliveryStore;
 pub use device::DeviceStore;

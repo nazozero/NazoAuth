@@ -5,8 +5,13 @@ use nazo_oauth_server::{
     ports::transient_state::CibaPingDelivery, workers::ciba_ping::CibaPingSender,
 };
 use reqwest::header;
-use serde_json::json;
+use serde::Serialize;
 use std::{collections::HashSet, net::SocketAddr, time::Duration};
+
+#[derive(Serialize)]
+struct CibaPingBody<'a> {
+    auth_req_id: &'a str,
+}
 
 const DELIVERY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -66,7 +71,9 @@ impl CibaPingHttpSender {
                 ciba_ping_idempotency_key(&delivery.auth_req_id_hash),
             )
             .bearer_auth(&delivery.client_notification_token)
-            .json(&json!({"auth_req_id": delivery.auth_req_id}))
+            .json(&CibaPingBody {
+                auth_req_id: &delivery.auth_req_id,
+            })
             .send()
             .await
             .context("CIBA ping request failed")?;

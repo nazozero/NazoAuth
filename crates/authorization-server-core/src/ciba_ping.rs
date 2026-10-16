@@ -50,3 +50,41 @@ pub const fn next_ciba_ping_retry_at(attempts: u32, now: i64, expires_at: i64) -
     let next = now.saturating_add(delay);
     if next < expires_at { Some(next) } else { None }
 }
+
+#[derive(Clone, serde::Deserialize, Eq, PartialEq)]
+pub struct CibaPingDelivery {
+    pub auth_req_id_hash: String,
+    pub auth_req_id: String,
+    pub endpoint: String,
+    pub client_notification_token: String,
+    pub attempts: u32,
+    pub expires_at: i64,
+}
+
+impl std::fmt::Debug for CibaPingDelivery {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CibaPingDelivery([REDACTED])")
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CibaPingFinishOutcome {
+    Delivered,
+    RetryAt(i64),
+    Failed,
+}
+
+/// One bounded queue scan; expired or missing entries count as scanned even
+/// when they produce no delivery. Hosts use this to detect a possible backlog.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CibaPingClaimBatch {
+    pub scanned: usize,
+    pub deliveries: Vec<CibaPingDelivery>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CibaPingFinishResult {
+    Applied,
+    Missing,
+    Conflict,
+}

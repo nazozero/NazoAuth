@@ -101,6 +101,7 @@ pub use ciba::{
     evaluate_ciba_decision, evaluate_ciba_poll,
 };
 pub use ciba_ping::{
+    CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult,
     CibaPingResponseAction, MAX_CIBA_LOGOUT_URI_BYTES, classify_ciba_ping_status,
     next_ciba_ping_retry_at, validate_ciba_notification_endpoint,
 };

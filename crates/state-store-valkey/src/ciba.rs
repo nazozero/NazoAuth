@@ -1,9 +1,9 @@
 use fred::prelude::LuaInterface;
 use nazo_auth::{
-    CibaAtomicResult, CibaPingNotificationStatus, CibaRequestState, CibaStatePortError,
+    CibaAtomicResult, CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome,
+    CibaPingFinishResult, CibaPingNotificationStatus, CibaRequestState, CibaStatePortError,
     CibaStateStorePort, CibaStateVersion, CibaStoredRequest,
 };
-use serde::Deserialize;
 
 use crate::{Error, ValkeyConnection, command, keys};
 
@@ -162,34 +162,6 @@ pub struct CibaStore {
     connection: ValkeyConnection,
 }
 
-#[derive(Clone, Deserialize, Eq, PartialEq)]
-pub struct CibaPingDelivery {
-    pub auth_req_id_hash: String,
-    pub auth_req_id: String,
-    pub endpoint: String,
-    pub client_notification_token: String,
-    pub attempts: u32,
-    pub expires_at: i64,
-}
-
-impl std::fmt::Debug for CibaPingDelivery {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("CibaPingDelivery([REDACTED])")
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CibaPingClaimBatch {
-    pub scanned: usize,
-    pub deliveries: Vec<CibaPingDelivery>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CibaPingFinishResult {
-    Applied,
-    Missing,
-    Conflict,
-}
 impl CibaStore {
     pub fn new(connection: &ValkeyConnection) -> Self {
         Self {
@@ -408,13 +380,6 @@ impl CibaStore {
             ))),
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CibaPingFinishOutcome {
-    Delivered,
-    RetryAt(i64),
-    Failed,
 }
 
 impl CibaStateStorePort for CibaStore {

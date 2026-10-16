@@ -4,6 +4,9 @@
 //! statically selected launcher owns the concrete client, namespace, scripts,
 //! topology restrictions, and tenant binding.
 
+pub use nazo_auth::{
+    CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult,
+};
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use nazo_auth::{
@@ -41,44 +44,6 @@ impl std::error::Error for TransientStateError {}
 
 pub trait TransientStateHealthPort: Send + Sync {
     fn check(&self) -> TransientStateFuture<'_, ()>;
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct CibaPingDelivery {
-    pub auth_req_id_hash: String,
-    pub auth_req_id: String,
-    pub endpoint: String,
-    pub client_notification_token: String,
-    pub attempts: u32,
-    pub expires_at: i64,
-}
-
-impl std::fmt::Debug for CibaPingDelivery {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("CibaPingDelivery([REDACTED])")
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CibaPingFinishOutcome {
-    Delivered,
-    RetryAt(i64),
-    Failed,
-}
-
-/// One bounded queue scan; expired or missing entries count as scanned even
-/// when they produce no delivery. Hosts use this to detect a possible backlog.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CibaPingClaimBatch {
-    pub scanned: usize,
-    pub deliveries: Vec<CibaPingDelivery>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CibaPingFinishResult {
-    Applied,
-    Missing,
-    Conflict,
 }
 
 pub trait CibaPingDeliveryPort: Send + Sync {
