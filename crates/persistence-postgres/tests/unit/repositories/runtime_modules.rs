@@ -104,8 +104,8 @@ async fn related_revision_guards_share_one_query_and_keep_stale_changes_uncommit
     );
     assert_eq!(
         counter.since(baseline).data_queries,
-        one_guard + 1,
-        "the extra module requires one advisory lock, not another revision query"
+        one_guard,
+        "target and guard rows are locked and read together regardless of guard count"
     );
     let result = repository
         .compare_and_set_desired_guarded(

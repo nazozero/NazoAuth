@@ -1050,7 +1050,11 @@ fn worker_source_rejects_insecure_endpoint_before_database_configuration() {
 
 #[tokio::test]
 async fn worker_outer_rejects_repository_preflight_failure() {
-    let pool = nazo_postgres::create_pool("not a postgres url", 1).unwrap();
+    let pool = nazo_postgres::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .unwrap();
     let repository = AuditLedgerRepository::new(pool);
     let config = iteration_config(Url::parse("https://anchor.example.test/checkpoint").unwrap());
 
@@ -1782,8 +1786,12 @@ fn retry_delay_and_batch_lag_are_monotonic_and_bounded() {
 }
 
 #[tokio::test]
-async fn repository_adapter_forwards_invalid_pool_calls_without_panicking() {
-    let pool = nazo_postgres::create_pool("not a postgres url", 1).unwrap();
+async fn repository_adapter_forwards_connection_failures_without_panicking() {
+    let pool = nazo_postgres::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .unwrap();
     let repository = AuditLedgerRepository::new(pool);
 
     assert!(

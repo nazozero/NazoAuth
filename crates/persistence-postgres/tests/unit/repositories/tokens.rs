@@ -213,7 +213,11 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
 
 #[tokio::test]
 async fn ownership_public_uuid_boundary_rejects_before_connection() {
-    let pool = crate::create_pool("not-a-database-url", 1).unwrap();
+    let pool = crate::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .unwrap();
     let repo = TokenRepository::new(pool.clone());
     for tenant_id in ["", "not-a-uuid", "00000000-0000-0000-0000-00000000000g"] {
         let result = repo
