@@ -1531,7 +1531,7 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn grants_upsert_cover_and_revoke_tokens_atomically() {
+async fn grants_ensure_updates_authorization_idempotently_and_revokes_tokens_atomically() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1540,18 +1540,18 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
     let repository = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     repository
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
-            &["openid".to_owned(), "offline_access".to_owned()],
-            &["resource://default".to_owned()],
-            &json!([]),
+            &["openid".to_owned()],
+            &[],
+            &json!([{"type": "previous"}]),
         )
         .await
         .expect("grant should insert");
     repository
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
@@ -1588,7 +1588,24 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
         .await
         .expect("grant should load")
         .expect("grant should exist");
-    assert_eq!(stored.authorization_count, 2);
+    assert_eq!(stored.authorization_count, 1);
+    assert_eq!(stored.scopes, json!(["openid", "offline_access"]));
+    assert_eq!(stored.resource_indicators, json!(["resource://default"]));
+    assert_eq!(stored.authorization_details, json!([]));
+    assert_eq!(
+        repository
+            .authorized_client_count(tenant_id, fixture.user_id)
+            .await
+            .unwrap(),
+        1,
+    );
+    assert_eq!(
+        repository
+            .authorized_client_count(tenant_id, Uuid::now_v7())
+            .await
+            .unwrap(),
+        0,
+    );
 
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
@@ -1642,7 +1659,7 @@ async fn grant_revoke_skips_already_revoked_family_lock() {
     );
     let grants = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     grants
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
@@ -1728,7 +1745,7 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
 
     let grants = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     grants
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,

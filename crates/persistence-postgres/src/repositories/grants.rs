@@ -1,7 +1,5 @@
 use chrono::{DateTime, Utc};
-use diesel::{
-    AggregateExpressionMethods, BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl,
-};
+use diesel::{BoolExpressionMethods, ExpressionMethods, JoinOnDsl, QueryDsl, upsert::excluded};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
     AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation, AdminGrantRevokeError,
@@ -47,13 +45,16 @@ impl From<GrantRecord> for AdminGrantView {
             client_name: record.client_name,
             last_authorized_at: record.last_authorized_at,
             authorization_count: record.authorization_count,
-            last_scopes: record
-                .last_scopes
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|value| value.as_str().map(ToOwned::to_owned))
-                .collect(),
+            last_scopes: match record.last_scopes {
+                Value::Array(scopes) => scopes
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        Value::String(scope) => Some(scope),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
             last_authorization_details: record.last_authorization_details,
         }
     }
@@ -119,51 +120,6 @@ impl GrantRepository {
         })
     }
 
-    pub async fn upsert(
-        &self,
-        tenant_id: Uuid,
-        user_id: Uuid,
-        client_id: Uuid,
-        scopes: &[String],
-        resource_indicators: &[String],
-        authorization_details: &Value,
-    ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        let now = Utc::now();
-        diesel::insert_into(user_client_grants::table)
-            .values((
-                user_client_grants::tenant_id.eq(tenant_id),
-                user_client_grants::user_id.eq(user_id),
-                user_client_grants::client_id.eq(client_id),
-                user_client_grants::first_authorized_at.eq(now),
-                user_client_grants::last_authorized_at.eq(now),
-                user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
-                user_client_grants::last_resource_indicators
-                    .eq(serde_json::json!(resource_indicators)),
-                user_client_grants::last_authorization_details.eq(authorization_details),
-                user_client_grants::authorization_count.eq(1),
-            ))
-            .on_conflict((
-                user_client_grants::tenant_id,
-                user_client_grants::user_id,
-                user_client_grants::client_id,
-            ))
-            .do_update()
-            .set((
-                user_client_grants::last_authorized_at.eq(now),
-                user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
-                user_client_grants::last_resource_indicators
-                    .eq(serde_json::json!(resource_indicators)),
-                user_client_grants::last_authorization_details.eq(authorization_details),
-                user_client_grants::authorization_count
-                    .eq(user_client_grants::authorization_count + 1),
-            ))
-            .execute(&mut connection)
-            .await
-            .map_err(map_error)?;
-        Ok(())
-    }
-
     /// Ensures that a device-authorization grant exists without counting a
     /// retry as a second user authorization. Approval state recovery can
     /// replay this write after a worker crashes between the database write and
@@ -199,11 +155,13 @@ impl GrantRepository {
             ))
             .do_update()
             .set((
-                user_client_grants::last_authorized_at.eq(now),
-                user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
+                user_client_grants::last_authorized_at
+                    .eq(excluded(user_client_grants::last_authorized_at)),
+                user_client_grants::last_scopes.eq(excluded(user_client_grants::last_scopes)),
                 user_client_grants::last_resource_indicators
-                    .eq(serde_json::json!(resource_indicators)),
-                user_client_grants::last_authorization_details.eq(authorization_details),
+                    .eq(excluded(user_client_grants::last_resource_indicators)),
+                user_client_grants::last_authorization_details
+                    .eq(excluded(user_client_grants::last_authorization_details)),
             ))
             .execute(&mut connection)
             .await
@@ -257,7 +215,7 @@ impl GrantRepository {
         user_client_grants::table
             .filter(user_client_grants::tenant_id.eq(tenant_id))
             .filter(user_client_grants::user_id.eq(user_id))
-            .select(diesel::dsl::count(user_client_grants::client_id).aggregate_distinct())
+            .select(diesel::dsl::count_star())
             .first::<i64>(&mut connection)
             .await
             .map_err(map_error)

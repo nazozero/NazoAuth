@@ -383,7 +383,7 @@ impl PromptNoneFixture {
             .expect("client read")
             .expect("client exists");
         GrantRepository::new(live.state.diesel_db.clone())
-            .upsert(
+            .ensure(
                 DEFAULT_TENANT_ID,
                 user.id,
                 client.id,
