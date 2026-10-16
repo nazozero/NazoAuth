@@ -75,24 +75,16 @@ impl AdminClientCryptoPort for NoopCrypto {
         unreachable!("page and public registration do not issue client secrets")
     }
 
-    fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
+    fn inspect_jwks(
+        &self,
+        _jwks: &Value,
+        _certificate_auth: bool,
+    ) -> Result<crate::ClientJwksCapabilities, String> {
         Err("unexpected JWKS validation".to_owned())
     }
 
     fn validate_rfc4514_dn(&self, _value: &str) -> Result<(), String> {
         Err("unexpected distinguished name validation".to_owned())
-    }
-
-    fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {
-        0
-    }
-
-    fn contains_signing_key(&self, _jwks: &Value) -> bool {
-        false
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &Value) -> bool {
-        false
     }
 }
 

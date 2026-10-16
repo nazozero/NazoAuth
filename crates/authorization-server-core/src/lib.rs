@@ -45,10 +45,11 @@ mod uri_policy;
 
 pub use admin_clients::{
     AdminClientCryptoPort, AdminClientError, AdminClientFuture, AdminClientPolicy,
-    AdminClientPortError, AdminClientRepositoryPort, AdminClientService, CreateClientRequest,
-    CreatedClient, PatchClientRequest, PendingClientSecret, PreparedClientRegistration,
-    PreparedClientWrite, SectorIdentifierFuture, SectorIdentifierResolverPort,
-    SuppliedClientSecret, prepare_client_patch, prepare_client_registration,
+    AdminClientPortError, AdminClientRepositoryPort, AdminClientService, ClientJwksCapabilities,
+    CreateClientRequest, CreatedClient, PatchClientRequest, PendingClientSecret,
+    PreparedClientRegistration, PreparedClientWrite, SectorIdentifierFuture,
+    SectorIdentifierResolverPort, SuppliedClientSecret, prepare_client_patch,
+    prepare_client_registration,
 };
 pub use admin_grants::{
     AdminGrantFuture, AdminGrantPage, AdminGrantRepositoryPort, AdminGrantRevocation,

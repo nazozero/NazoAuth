@@ -211,26 +211,28 @@ impl AdminClientCryptoPort for FakeSecurity {
         ("issued-secret".to_owned(), "stored-secret-hash".to_owned())
     }
 
-    fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
-        Ok(())
+    fn inspect_jwks(
+        &self,
+        _jwks: &Value,
+        _certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        Ok(nazo_auth::ClientJwksCapabilities {
+            signing_algorithms: nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+                .iter()
+                .copied()
+                .collect(),
+            encryption_key_counts: nazo_auth::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+                .iter()
+                .map(|alg| (*alg, 1))
+                .collect(),
+            has_current_mtls_certificate: true,
+        })
     }
 
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         (!value.trim().is_empty() && value.contains('='))
             .then_some(())
             .ok_or_else(|| "invalid RFC 4514 DN".to_owned())
-    }
-
-    fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {
-        1
-    }
-
-    fn contains_signing_key(&self, _jwks: &Value) -> bool {
-        true
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &Value) -> bool {
-        true
     }
 }
 

@@ -266,20 +266,15 @@ impl AdminClientCryptoPort for FixtureCrypto {
             "client-secret-v1:fixture-salt:fixture-digest".to_owned(),
         )
     }
-    fn validate_jwks(&self, _jwks: &serde_json::Value) -> Result<(), String> {
-        Ok(())
+    fn inspect_jwks(
+        &self,
+        _jwks: &serde_json::Value,
+        _certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        Ok(nazo_auth::ClientJwksCapabilities::default())
     }
     fn validate_rfc4514_dn(&self, _value: &str) -> Result<(), String> {
         Ok(())
-    }
-    fn matching_encryption_key_count(&self, _jwks: &serde_json::Value, _algorithm: &str) -> usize {
-        0
-    }
-    fn contains_signing_key(&self, _jwks: &serde_json::Value) -> bool {
-        false
-    }
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &serde_json::Value) -> bool {
-        false
     }
 }
 

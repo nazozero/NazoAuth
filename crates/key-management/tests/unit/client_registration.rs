@@ -54,19 +54,11 @@ fn client_jwks_accept_supported_ecdh_encryption_keys() {
         ]
     });
 
-    validate_client_jwks(&jwks).expect("supported ECDH encryption keys should be accepted");
-    assert_eq!(
-        client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES"),
-        1
-    );
-    assert_eq!(
-        client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES+A128KW"),
-        1
-    );
-    assert_eq!(
-        client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES+A256KW"),
-        1
-    );
+    let keys =
+        validate_client_jwks(&jwks).expect("supported ECDH encryption keys should be accepted");
+    assert_eq!(keys.encryption_key_counts["ECDH-ES"], 1);
+    assert_eq!(keys.encryption_key_counts["ECDH-ES+A128KW"], 1);
+    assert_eq!(keys.encryption_key_counts["ECDH-ES+A256KW"], 1);
 }
 
 #[test]
@@ -74,24 +66,62 @@ fn algorithm_specific_signing_key_selection_requires_matching_public_material() 
     let signing = p256_signing_jwk("signing", "ES256");
     let jwks = json!({"keys": [signing]});
 
-    assert!(client_jwks_contains_signing_key_for_algorithm(
-        &jwks, "ES256"
-    ));
-    assert!(!client_jwks_contains_signing_key_for_algorithm(
-        &jwks, "RS256"
-    ));
-    assert!(!client_jwks_contains_signing_key_for_algorithm(
+    let keys = validate_client_jwks(&jwks).unwrap();
+    assert!(keys.signing_algorithms.contains("ES256"));
+    assert!(!keys.signing_algorithms.contains("RS256"));
+    let keys = inspect_client_jwks(
         &json!({"keys": [p256_encryption_jwk("enc", "ECDH-ES")]}),
-        "ECDH-ES"
-    ));
-    assert!(!client_jwks_contains_signing_key_for_algorithm(
-        &json!({"keys": [{"use": "sig", "alg": "none"}]}),
-        "none"
-    ));
-    assert!(!client_jwks_contains_signing_key_for_algorithm(
-        &json!({"not_keys": []}),
-        "ES256"
-    ));
+        true,
+    )
+    .unwrap();
+    assert!(keys.signing_algorithms.is_empty());
+    for jwks in [
+        json!({"keys": [{"use": "sig", "alg": "none"}]}),
+        json!({"not_keys": []}),
+    ] {
+        assert!(
+            inspect_client_jwks(&jwks, true)
+                .unwrap()
+                .signing_algorithms
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn certificate_auth_only_advertises_usable_jose_keys_and_preserves_ambiguity() {
+    let jwks = json!({"keys": [
+        p256_signing_jwk("signing", "ES256"),
+        p256_encryption_jwk("enc-a", "ECDH-ES"),
+        p256_encryption_jwk("enc-b", "ECDH-ES"),
+        {"use": "sig", "alg": "RS256", "kty": "RSA", "n": "invalid", "e": "AQAB"},
+        {"x5c": ["invalid"]}
+    ]});
+    let keys = inspect_client_jwks(&jwks, true).unwrap();
+    assert_eq!(
+        keys.signing_algorithms.into_iter().collect::<Vec<_>>(),
+        ["ES256"]
+    );
+    assert_eq!(keys.encryption_key_counts["ECDH-ES"], 2);
+    assert!(!keys.has_current_mtls_certificate);
+    assert!(validate_client_jwks(&jwks).is_err());
+}
+
+#[test]
+fn signing_coordinates_reject_wrong_length_and_invalid_base64() {
+    for invalid in [
+        URL_SAFE_NO_PAD.encode([1_u8; 31]),
+        URL_SAFE_NO_PAD.encode([1_u8; 33]),
+        "invalid!".to_owned(),
+    ] {
+        for coordinate in ["x", "y"] {
+            let mut key = p256_signing_jwk("signing", "ES256");
+            key[coordinate] = json!(invalid);
+            assert!(validate_client_jwks(&json!({"keys": [key]})).is_err());
+        }
+        let key = json!({"kty": "OKP", "crv": "Ed25519", "alg": "EdDSA", "x": invalid});
+        assert!(validate_client_jwks(&json!({"keys": [key]})).is_err());
+    }
 }
 
 #[test]

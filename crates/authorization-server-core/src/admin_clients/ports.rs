@@ -133,13 +133,21 @@ pub trait AdminClientCryptoPort: Send + Sync {
         self.response_signing_algorithms()
     }
     fn issue_client_secret(&self, pepper: &str) -> (String, String);
-    fn validate_jwks(&self, jwks: &Value) -> Result<(), String>;
+    /// Inspect key material once. Certificate-only entries are allowed only for
+    /// self_signed_tls_client_auth; signing/encryption capabilities still require
+    /// usable public JWK material.
+    fn inspect_jwks(
+        &self,
+        jwks: &Value,
+        certificate_auth: bool,
+    ) -> Result<ClientJwksCapabilities, String>;
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String>;
-    fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize;
-    fn contains_signing_key(&self, jwks: &Value) -> bool;
-    fn contains_signing_key_for_algorithm(&self, jwks: &Value, algorithm: &str) -> bool {
-        let _ = algorithm;
-        self.contains_signing_key(jwks)
-    }
-    fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool;
+}
+
+/// Facts derived by the crypto adapter, reused by registration metadata and policy.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct ClientJwksCapabilities {
+    pub signing_algorithms: std::collections::BTreeSet<&'static str>,
+    pub encryption_key_counts: std::collections::BTreeMap<&'static str, usize>,
+    pub has_current_mtls_certificate: bool,
 }

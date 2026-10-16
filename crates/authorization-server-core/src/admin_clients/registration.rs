@@ -49,7 +49,7 @@ where
         .security_policy
         .validate()
         .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?;
-    validate_client_metadata(
+    let keys = validate_client_metadata(
         ClientMetadata::from_create(&request),
         &crypto.id_token_signing_algorithms(),
         &crypto.response_signing_algorithms(),
@@ -63,9 +63,8 @@ where
             require_dpop_bound_tokens: request.require_dpop_bound_tokens,
             require_mtls_bound_tokens: request.require_mtls_bound_tokens,
             jwks_uri: request.jwks_uri.as_deref(),
-            jwks: request.jwks.as_ref(),
+            has_signing_key: !keys.signing_algorithms.is_empty(),
         },
-        crypto,
     )?;
     let subject_type = request.subject_type.unwrap_or_else(|| "public".to_owned());
     validate_subject_type(&subject_type)?;

@@ -1,7 +1,7 @@
 use crate::domain::client_policy::{refresh_client_jwks, refresh_client_jwks_for_encryption};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
-use nazo_key_management::{validate_client_jwks, validate_self_signed_mtls_jwks};
+use nazo_key_management::{inspect_client_jwks, validate_client_jwks};
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use serde_json::json;
 use std::sync::{
@@ -25,7 +25,11 @@ fn test_x5c(common_name: &str, not_before_offset: i64, not_after_offset: i64) ->
 #[test]
 fn self_signed_mtls_jwks_requires_a_current_parseable_x5c_certificate() {
     let invalid = json!({ "keys": [{ "kid": "invalid", "x5c": ["not-a-certificate"] }] });
-    assert!(!validate_self_signed_mtls_jwks(&invalid));
+    assert!(
+        !inspect_client_jwks(&invalid, true)
+            .unwrap()
+            .has_current_mtls_certificate
+    );
 
     let current = json!({
         "keys": [{
@@ -33,7 +37,11 @@ fn self_signed_mtls_jwks_requires_a_current_parseable_x5c_certificate() {
             "x5c": [test_x5c("client-current", -60, 3600)]
         }]
     });
-    assert!(validate_self_signed_mtls_jwks(&current));
+    assert!(
+        inspect_client_jwks(&current, true)
+            .unwrap()
+            .has_current_mtls_certificate
+    );
 
     let expired = json!({
         "keys": [{
@@ -41,7 +49,11 @@ fn self_signed_mtls_jwks_requires_a_current_parseable_x5c_certificate() {
             "x5c": [test_x5c("client-expired", -7200, -3600)]
         }]
     });
-    assert!(!validate_self_signed_mtls_jwks(&expired));
+    assert!(
+        !inspect_client_jwks(&expired, true)
+            .unwrap()
+            .has_current_mtls_certificate
+    );
 }
 
 #[test]

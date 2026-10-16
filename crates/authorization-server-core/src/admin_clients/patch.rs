@@ -213,7 +213,7 @@ where
         }
     }
 
-    validate_client_metadata(
+    let keys = validate_client_metadata(
         ClientMetadata::from_client(&client),
         &crypto.id_token_signing_algorithms(),
         &crypto.response_signing_algorithms(),
@@ -227,9 +227,8 @@ where
             require_dpop_bound_tokens: client.require_dpop_bound_tokens,
             require_mtls_bound_tokens: client.require_mtls_bound_tokens,
             jwks_uri: client.jwks_uri.as_deref(),
-            jwks: client.jwks.as_deref(),
+            has_signing_key: !keys.signing_algorithms.is_empty(),
         },
-        crypto,
     )?;
     Ok(client)
 }
