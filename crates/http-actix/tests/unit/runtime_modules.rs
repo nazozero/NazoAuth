@@ -289,7 +289,7 @@ async fn patch_changes_only_desired_state_and_returns_pending_revision() {
         Json(RuntimeModulePatch {
             desired_state: DesiredMode::Disabled,
             expected_revision: 7,
-            reason: "  maintenance  ".to_owned(),
+            reason: "\u{2003} maintenance \u{3000}".to_owned(),
             cascade: false,
         }),
     )
@@ -408,6 +408,55 @@ async fn stale_revision_is_a_non_cacheable_conflict() {
     let body = response_json(response).await;
     assert_eq!(body["error"], "revision_conflict");
     assert_eq!(body["current_revision"], 11);
+}
+
+#[actix_web::test]
+async fn event_page_preserves_the_public_field_contract() {
+    let administration = administration();
+    *administration.events.lock().unwrap() = Ok(ModuleEventPage {
+        total: 1,
+        events: vec![ModuleEventRecord {
+            event_id: "event-1".to_owned(),
+            module_id: ModuleId::Ciba,
+            event_type: ModuleEventType::TransitionCompleted,
+            revision: ModuleRevision::new(7),
+            instance_id: Some("instance-1".to_owned()),
+            actor_id: None,
+            reason: Some("maintenance".to_owned()),
+            before: Some(ModuleEventState::Actual(ModuleState::Starting)),
+            after: Some(ModuleEventState::Actual(ModuleState::Enabled)),
+            outcome_code: None,
+            occurred_at: UNIX_EPOCH,
+        }],
+    });
+    let response = admin_runtime_module_events(
+        endpoint(
+            administration,
+            2,
+            NOW_SECONDS as i64,
+            vec!["pwd".to_owned()],
+        ),
+        authenticated_request(),
+        Query(RuntimeModuleEventPageQuery {
+            page: None,
+            page_size: None,
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_no_store(&response);
+    assert_eq!(
+        response_json(response).await,
+        json!({
+            "total": 1, "page": 1, "page_size": 20,
+            "items": [{
+                "event_id": "event-1", "module_id": "ciba", "event_type": "transition_completed",
+                "revision": 7, "instance_id": "instance-1", "actor_id": null,
+                "reason": "maintenance", "before_state": "starting", "after_state": "enabled",
+                "outcome_code": null, "created_at": "1970-01-01T00:00:00+00:00"
+            }]
+        })
+    );
 }
 
 #[actix_web::test]
@@ -572,7 +621,8 @@ async fn static_routes_lock_cors_security_method_and_preflight_contracts() {
 #[test]
 fn module_identifiers_and_event_names_are_exhaustive() {
     for module_id in ModuleId::ALL {
-        assert_eq!(parse_module_id(module_id_name(module_id)), Some(module_id));
+        let name = serde_json::to_value(module_id).unwrap();
+        assert_eq!(parse_module_id(name.as_str().unwrap()), Some(module_id));
         assert!(!module_description(module_id).is_empty());
     }
     for event_type in ModuleEventType::ALL {
