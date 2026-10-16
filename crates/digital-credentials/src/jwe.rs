@@ -181,7 +181,7 @@ fn decrypt_ecdh_es(
     recipient: &P256SecretKey,
     expected_kid: Option<&str>,
 ) -> Result<Vec<u8>, JweError> {
-    let parts = crate::jose::compact_jwe_parts(compact).ok_or(JweError::Malformed)?;
+    let parts = compact_jwe_parts(compact).ok_or(JweError::Malformed)?;
     if !parts[1].is_empty() {
         return Err(JweError::Malformed);
     }
@@ -346,4 +346,16 @@ fn concat_kdf(
     digest.update(apv);
     digest.update(key_bits.to_be_bytes());
     digest.finalize()[..(key_bits / 8) as usize].to_vec()
+}
+
+fn compact_jwe_parts(input: &str) -> Option<[&str; 5]> {
+    let mut segments = input.split('.');
+    let parts = [
+        segments.next()?,
+        segments.next()?,
+        segments.next()?,
+        segments.next()?,
+        segments.next()?,
+    ];
+    segments.next().is_none().then_some(parts)
 }

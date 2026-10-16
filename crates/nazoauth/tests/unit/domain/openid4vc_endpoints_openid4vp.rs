@@ -817,9 +817,10 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     historical.expires_at = historical.created_at + chrono::Duration::seconds(300);
     let original_object = historical.request_object.as_ref().unwrap();
     let header = nazo_crypto::jwt::decode_header(original_object).unwrap();
-    let mut claims = nazo_digital_credentials::decode_compact_jwt(original_object)
-        .unwrap()
-        .claims;
+    let mut claims =
+        nazo_crypto::jwt::dangerous::insecure_decode::<serde_json::Value>(original_object)
+            .unwrap()
+            .claims;
     claims["dcql_query"] = serde_json::to_value(&historical.request.dcql_query).unwrap();
     claims["state"] = json!(historical.request.state);
     claims["jti"] = json!(Uuid::now_v7());

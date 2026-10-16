@@ -139,13 +139,18 @@ pub(super) fn resolve_configuration_id(
 
 pub(super) fn extract_proof_nonce(proofs: Option<&nazo_openid4vci::Proofs>) -> Option<String> {
     let encoded = proofs?.0.values().next()?.first()?.as_str()?;
-    let claims = nazo_digital_credentials::decode_compact_jwt(encoded)
-        .ok()?
-        .claims;
-    claims
-        .get("nonce")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
+    #[derive(serde::Deserialize)]
+    struct Nonce {
+        nonce: String,
+    }
+    // This is only the expected value; issue_pending verifies every proof
+    // before claiming the single-use nonce.
+    Some(
+        nazo_crypto::jwt::dangerous::insecure_decode::<Nonce>(encoded)
+            .ok()?
+            .claims
+            .nonce,
+    )
 }
 
 /// Build the retry key from the canonical request model. The proof JWT is

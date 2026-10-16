@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_digital_credentials::{
     EphemeralEncryptionKey, JweError, encrypt_ecdh_es, encrypt_ecdh_es_a128,
-    encrypt_ecdh_es_deflate, parse_compact_jwe,
+    encrypt_ecdh_es_deflate,
 };
 
 #[test]
@@ -36,16 +36,16 @@ fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
     )
     .expect("encrypt");
 
-    let parsed = parse_compact_jwe(&compact).expect("parse compact JWE");
-    assert!(parsed.encrypted_key.is_empty());
-    assert!(!parsed.protected.is_empty());
-    assert!(!parsed.initialization_vector.is_empty());
-    assert!(!parsed.ciphertext.is_empty());
-    assert!(!parsed.authentication_tag.is_empty());
+    let parts: Vec<_> = compact.split('.').collect();
+    assert_eq!(parts.len(), 5);
+    assert!(parts[1].is_empty());
+    for index in [0, 2, 3, 4] {
+        assert!(!parts[index].is_empty());
+    }
 
     let protected: serde_json::Value = serde_json::from_slice(
         &URL_SAFE_NO_PAD
-            .decode(&parsed.protected)
+            .decode(parts[0])
             .expect("decode protected header"),
     )
     .expect("protected header JSON");
@@ -75,10 +75,6 @@ fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
         "a.b.c..e",
         "a.b.c.d.",
     ] {
-        assert!(
-            parse_compact_jwe(malformed).is_err(),
-            "malformed compact JWE should be rejected: {malformed}"
-        );
         assert_eq!(recipient.decrypt(malformed), Err(JweError::Malformed));
     }
 }
