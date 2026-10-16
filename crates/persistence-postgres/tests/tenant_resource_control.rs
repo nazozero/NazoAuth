@@ -155,6 +155,71 @@ async fn enumerate_and_revoke_commit_without_apply_preparation() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn filtered_enumeration_keeps_the_complete_manifest_digest() {
+    use nazo_operator_protocol::{
+        TenantResourceIdentity, TenantResourceKind, TenantResourceSelector,
+        canonical_tenant_resource_manifest_sha256,
+    };
+
+    let fixture = fixture().await;
+    let resources = ["first", "second"].map(|name| TenantResourceIdentity {
+        kind: TenantResourceKind::User,
+        resource_id: name.to_owned(),
+        digest: "a".repeat(64),
+    });
+    let digest = canonical_tenant_resource_manifest_sha256(&resources).unwrap();
+    let mut connection = fixture.pool.get().await.unwrap();
+    for resource in &resources {
+        sql_query(
+            "INSERT INTO tenant_resource_bindings
+             (id, tenant_id, resource_kind, resource_id, resource_digest, active, locator)
+             VALUES ($1, $2, 'user', $3, $4, TRUE, $5)",
+        )
+        .bind::<sql_types::Uuid, _>(Uuid::now_v7())
+        .bind::<sql_types::Uuid, _>(fixture.tenant.tenant_id.as_uuid())
+        .bind::<sql_types::Text, _>(&resource.resource_id)
+        .bind::<sql_types::Text, _>(&resource.digest)
+        .bind::<sql_types::Text, _>(format!("user/{}", Uuid::now_v7()))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    sql_query(
+        "INSERT INTO tenant_resource_states (tenant_id, revision, resource_manifest_sha256)
+         VALUES ($1, 1, $2)",
+    )
+    .bind::<sql_types::Uuid, _>(fixture.tenant.tenant_id.as_uuid())
+    .bind::<sql_types::Text, _>(&digest)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+
+    let identity = fixture.identity();
+    let selectors = [TenantResourceSelector {
+        kind: TenantResourceKind::User,
+        resource_id: "second".to_owned(),
+    }];
+    let mut request = frame(&identity, TenantResourceAction::Enumerate);
+    request.selectors = &selectors;
+    let outcome = fixture
+        .executor
+        .execute_control_operation(request)
+        .await
+        .unwrap();
+    assert_eq!(outcome.resources, [resources[1].clone()]);
+    assert_eq!(outcome.resource_manifest_sha256, digest);
+    assert_eq!(outcome.revision, 1);
+    assert_eq!(
+        fixture
+            .receipt(&identity, TenantResourceAction::Enumerate)
+            .await
+            .unwrap(),
+        Some(outcome),
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exact_receipt_survives_real_tenant_disable_and_rejects_identity_drift() {
     let fixture = fixture().await;
     let identity = fixture.identity();

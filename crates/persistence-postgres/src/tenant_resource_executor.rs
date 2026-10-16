@@ -84,7 +84,7 @@ impl PostgresTenantResourceExecutor {
 impl PostgresTenantResourceExecutor {
     async fn prepare_apply_payloads(
         &self,
-        resources: &[PreparedTenantResource],
+        resources: &mut [PreparedTenantResource],
     ) -> Result<Vec<PreparedApplyPayload>, TenantResourceExecutorError> {
         let preparation = self
             .preparation
@@ -92,13 +92,13 @@ impl PostgresTenantResourceExecutor {
             .ok_or(TenantResourceExecutorError::Rejected)?;
         let mut prepared = Vec::with_capacity(resources.len());
         for resource in resources {
-            let Some(payload) = resource.payload.clone() else {
+            let Some(payload) = resource.payload.take() else {
                 return Err(TenantResourceExecutorError::Rejected);
             };
             let payload = match payload {
                 TenantResourcePayload::User(value) => {
                     let password_hash = preparation
-                        .hash_user_password(value.password.clone())
+                        .hash_user_password(value.password)
                         .await
                         .map_err(map_preparation_error)?;
                     PreparedApplyPayload::User(Box::new(PreparedUser {
@@ -182,7 +182,7 @@ impl PostgresTenantResourceExecutor {
             actor,
             operation,
             tenant_id,
-            resources,
+            mut resources,
             selectors,
         } = frame;
         if tenant_id != self.tenant.tenant_id.as_uuid().to_string()
@@ -205,8 +205,8 @@ impl PostgresTenantResourceExecutor {
             return Ok(outcome);
         }
         let prepared_payloads = match operation {
-            TenantResourceAction::Apply => Some(self.prepare_apply_payloads(&resources).await?),
-            _ => None,
+            TenantResourceAction::Apply => self.prepare_apply_payloads(&mut resources).await?,
+            _ => Vec::new(),
         };
         let mut connection = self
             .repository
@@ -216,9 +216,6 @@ impl PostgresTenantResourceExecutor {
         let tenant_uuid = self.tenant.tenant_id.as_uuid();
         let configured_tenant = self.tenant;
         let data_key = self.data_key;
-        let deployment_id = deployment_id.to_owned();
-        let actor = actor.clone();
-        let selectors = selectors.to_vec();
 
         connection
             .transaction::<ControlTenantResourceOutcome, ExecutorTransactionError, _>(
@@ -227,7 +224,7 @@ impl PostgresTenantResourceExecutor {
                     // transaction for one accepted operation identity.
                     TenantResourceRepository::lock_operation_identity_on_connection(
                         connection,
-                        &deployment_id,
+                        deployment_id,
                         tenant_uuid,
                         jti,
                     )
@@ -256,18 +253,12 @@ impl PostgresTenantResourceExecutor {
                     let frame = match operation {
                         TenantResourceAction::Apply => ResourceFrame::Apply {
                             resources: &resources,
-                            payloads: prepared_payloads.as_deref().ok_or(
-                                ExecutorTransactionError::Executor(
-                                    TenantResourceExecutorError::Rejected,
-                                ),
-                            )?,
+                            payloads: &prepared_payloads,
                         },
                         TenantResourceAction::Revoke => ResourceFrame::Revoke {
                             resources: &resources,
                         },
-                        TenantResourceAction::Enumerate => ResourceFrame::Enumerate {
-                            selectors: &selectors,
-                        },
+                        TenantResourceAction::Enumerate => ResourceFrame::Enumerate { selectors },
                     };
                     let frame = run_resource_frame(
                         connection,
@@ -285,11 +276,11 @@ impl PostgresTenantResourceExecutor {
                             ));
                         }
                         let audit_event = tenant_resource_audit_event(
-                            &deployment_id,
+                            deployment_id,
                             &tenant_uuid.to_string(),
                             jti,
                             request_sha256,
-                            &actor,
+                            actor,
                             operation,
                             current_revision,
                             &frame.manifest_sha256,
@@ -338,11 +329,11 @@ impl PostgresTenantResourceExecutor {
                         }
                     }
                     let audit_event = tenant_resource_audit_event(
-                        &deployment_id,
+                        deployment_id,
                         &tenant_uuid.to_string(),
                         jti,
                         request_sha256,
-                        &actor,
+                        actor,
                         operation,
                         current_revision,
                         &frame.manifest_sha256,
@@ -626,12 +617,8 @@ async fn run_resource_frame(
             })
         }
         ResourceFrame::Enumerate { selectors } => {
-            let (selected, complete) =
+            let (selected, manifest_sha256) =
                 enumerate_resources(connection, tenant_id, selectors).await?;
-            let manifest_sha256 =
-                canonical_tenant_resource_manifest_sha256(&complete).map_err(|_| {
-                    ExecutorTransactionError::Executor(TenantResourceExecutorError::Unavailable)
-                })?;
             Ok(MutationFrameResult {
                 resources: selected,
                 resource_mappings: Vec::new(),
@@ -666,18 +653,13 @@ async fn apply_resources(
         .keys()
         .cloned()
         .collect::<std::collections::BTreeSet<_>>();
-    available_keys.extend(delta_keys.iter().cloned());
+    available_keys.extend(delta_keys);
     validate_desired_dependencies(payloads, &available_keys)?;
 
     // Every identity lock is acquired in one global order before either the
     // dependency-ordered creation phase or the revision CAS.  This keeps a
     // delta apply from racing a revoke/apply for an existing identity.
-    let mut locked_keys = active
-        .keys()
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    locked_keys.extend(delta_keys.iter().cloned());
-    for key in locked_keys {
+    for key in available_keys {
         TenantResourceRepository::lock_binding_identity_on_connection(
             connection,
             tenant_id,
@@ -938,7 +920,10 @@ async fn apply_resources(
         let client_id = parse_uuid_locator(client_locator, TenantResourceKind::OauthClient)?;
         let policy_digest = resources
             .iter()
-            .find(|resource| ResourceKey::from_identity(&resource.identity) == policy_key)
+            .find(|resource| {
+                resource.identity.kind == policy_key.kind
+                    && resource.identity.resource_id == policy_key.resource_id
+            })
             .map(|resource| resource.identity.digest.as_str())
             .or_else(|| {
                 active
@@ -988,17 +973,7 @@ async fn apply_resources(
         .map_err(map_repository_error)?;
     }
     let result = sort_identities(resources.iter().map(|r| r.identity.clone()).collect());
-    let active_after = active_binding_map(connection, tenant_id).await?;
-    let active_after = active_after
-        .values()
-        .filter_map(|binding| {
-            parse_kind(&binding.resource_kind).map(|kind| TenantResourceIdentity {
-                kind,
-                resource_id: binding.resource_id.clone(),
-                digest: binding.resource_digest.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
+    let active_after = active_identities(connection, tenant_id).await?;
     let digest = canonical_tenant_resource_manifest_sha256(&active_after)
         .map_err(|_| ExecutorTransactionError::Executor(TenantResourceExecutorError::Rejected))?;
 
@@ -1064,28 +1039,22 @@ fn validate_desired_dependencies(
 ) -> Result<(), ExecutorTransactionError> {
     for payload in payloads {
         let dependencies = match payload {
-            PreparedApplyPayload::OauthClient(value) => value
-                .trust_policy_resource_id
-                .as_ref()
-                .map(|resource_id| {
+            PreparedApplyPayload::OauthClient(value) => {
+                value.trust_policy_resource_id.as_ref().map(|resource_id| {
                     ResourceKey::new(TenantResourceKind::Openid4vcTrustPolicy, resource_id)
                 })
-                .into_iter()
-                .collect::<Vec<_>>(),
-            PreparedApplyPayload::Mtls(value) => vec![ResourceKey::new(
+            }
+            PreparedApplyPayload::Mtls(value) => Some(ResourceKey::new(
                 TenantResourceKind::OauthClient,
                 &value.client_resource_id,
-            )],
-            PreparedApplyPayload::Dataset(value) => vec![ResourceKey::new(
+            )),
+            PreparedApplyPayload::Dataset(value) => Some(ResourceKey::new(
                 TenantResourceKind::User,
                 &value.user_resource_id,
-            )],
-            PreparedApplyPayload::TrustPolicy(_) | PreparedApplyPayload::User(_) => Vec::new(),
+            )),
+            PreparedApplyPayload::TrustPolicy(_) | PreparedApplyPayload::User(_) => None,
         };
-        if dependencies
-            .iter()
-            .any(|dependency| !available_keys.contains(dependency))
-        {
+        if dependencies.is_some_and(|dependency| !available_keys.contains(&dependency)) {
             return Err(ExecutorTransactionError::Executor(
                 TenantResourceExecutorError::Rejected,
             ));
@@ -1164,17 +1133,7 @@ async fn revoke_resources(
         .into_iter()
         .map(|(identity, _)| identity)
         .collect::<Vec<_>>();
-    let active_after = active_binding_map(connection, tenant_id).await?;
-    let remaining = active_after
-        .values()
-        .filter_map(|binding| {
-            parse_kind(&binding.resource_kind).map(|kind| TenantResourceIdentity {
-                kind,
-                resource_id: binding.resource_id.clone(),
-                digest: binding.resource_digest.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
+    let remaining = active_identities(connection, tenant_id).await?;
     let digest = canonical_tenant_resource_manifest_sha256(&remaining)
         .map_err(|_| ExecutorTransactionError::Executor(TenantResourceExecutorError::Rejected))?;
     Ok((sort_identities(revoked), digest))
@@ -1328,7 +1287,7 @@ async fn revoke_locator(
                 connection,
                 tenant_id,
                 subject_id,
-                &configuration_id,
+                configuration_id,
             )
             .await
             .map_err(map_diesel_error)?
@@ -1372,51 +1331,66 @@ fn is_operator_locator(locator: &str, kind: TenantResourceKind) -> bool {
     parse_locator(locator, kind).is_ok()
 }
 
+#[derive(QueryableByName)]
+struct IdentityRow {
+    #[diesel(sql_type = sql_types::Varchar)]
+    resource_kind: String,
+    #[diesel(sql_type = sql_types::Varchar)]
+    resource_id: String,
+    #[diesel(sql_type = sql_types::Varchar)]
+    resource_digest: String,
+}
+
+async fn active_identities(
+    connection: &mut AsyncPgConnection,
+    tenant_id: Uuid,
+) -> Result<Vec<TenantResourceIdentity>, ExecutorTransactionError> {
+    sql_query(
+        "SELECT resource_kind, resource_id, resource_digest
+         FROM tenant_resource_bindings WHERE tenant_id = $1 AND active",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .load::<IdentityRow>(connection)
+    .await
+    .map_err(map_diesel_error)?
+    .into_iter()
+    .map(|row| {
+        Ok(TenantResourceIdentity {
+            kind: parse_kind(&row.resource_kind).ok_or(ExecutorTransactionError::Executor(
+                TenantResourceExecutorError::Unavailable,
+            ))?,
+            resource_id: row.resource_id,
+            digest: row.resource_digest,
+        })
+    })
+    .collect()
+}
+
 /// Authoritative read-only enumeration.  Returns the selector-filtered,
-/// sorted identity set plus the complete active set so callers can assert
-/// manifest consistency without a second read.
+/// sorted identity set plus the complete active set's digest, without a
+/// second read or a duplicate identity vector.
 async fn enumerate_resources(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     selectors: &[TenantResourceSelector],
-) -> Result<(Vec<TenantResourceIdentity>, Vec<TenantResourceIdentity>), ExecutorTransactionError> {
-    let active = TenantResourceRepository::active_bindings_on_connection(connection, tenant_id)
-        .await
-        .map_err(map_repository_error)?;
-    let selected = |binding: &TenantResourceBinding| {
-        selectors.is_empty()
-            || selectors.iter().any(|selector| {
-                kind_name(selector.kind) == binding.resource_kind
-                    && selector.resource_id == binding.resource_id
-            })
-    };
-    let mut result = Vec::new();
-    let mut complete = Vec::new();
-    for binding in active.into_iter() {
-        let kind = parse_kind(&binding.resource_kind).ok_or(ExecutorTransactionError::Executor(
-            TenantResourceExecutorError::Unavailable,
-        ))?;
-        complete.push(TenantResourceIdentity {
-            kind,
-            resource_id: binding.resource_id.clone(),
-            digest: binding.resource_digest.clone(),
-        });
-        if selected(&binding) {
-            result.push(TenantResourceIdentity {
-                kind,
-                resource_id: binding.resource_id,
-                digest: binding.resource_digest,
-            });
-        }
-        if complete.len() > nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES
-            || result.len() > nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES
-        {
-            return Err(ExecutorTransactionError::Executor(
-                TenantResourceExecutorError::TooLarge,
-            ));
-        }
+) -> Result<(Vec<TenantResourceIdentity>, String), ExecutorTransactionError> {
+    let mut result = active_identities(connection, tenant_id).await?;
+    if result.len() > nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES {
+        return Err(ExecutorTransactionError::Executor(
+            TenantResourceExecutorError::TooLarge,
+        ));
     }
-    Ok((sort_identities(result), sort_identities(complete)))
+    let digest = canonical_tenant_resource_manifest_sha256(&result).map_err(|_| {
+        ExecutorTransactionError::Executor(TenantResourceExecutorError::Unavailable)
+    })?;
+    if !selectors.is_empty() {
+        result.retain(|identity| {
+            selectors.iter().any(|selector| {
+                selector.kind == identity.kind && selector.resource_id == identity.resource_id
+            })
+        });
+    }
+    Ok((sort_identities(result), digest))
 }
 
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -1458,22 +1432,22 @@ async fn active_binding_map(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum ResourceLocator {
+enum ResourceLocator<'a> {
     User(Uuid),
     OauthClient(Uuid),
     Mtls(Uuid),
     TrustPolicy(Uuid),
     Dataset {
         subject_id: Uuid,
-        configuration_id: String,
+        configuration_id: &'a str,
     },
 }
 
 fn parse_locator(
     locator: &str,
     expected_kind: TenantResourceKind,
-) -> Result<ResourceLocator, ExecutorTransactionError> {
-    let mut parts = locator.split('/');
+) -> Result<ResourceLocator<'_>, ExecutorTransactionError> {
+    let mut parts = locator.splitn(3, '/');
     let prefix = parts.next().unwrap_or_default();
     let value = parts.next().unwrap_or_default();
     let result = match (prefix, expected_kind) {
@@ -1496,7 +1470,7 @@ fn parse_locator(
                 .map(ResourceLocator::TrustPolicy)
         }
         ("openid4vc-dataset", TenantResourceKind::Openid4vcDataset) => {
-            let configuration = parts.collect::<Vec<_>>().join("/");
+            let configuration = parts.next().unwrap_or_default();
             Uuid::parse_str(value).ok().and_then(|subject_id| {
                 (!configuration.is_empty()).then_some(ResourceLocator::Dataset {
                     subject_id,
