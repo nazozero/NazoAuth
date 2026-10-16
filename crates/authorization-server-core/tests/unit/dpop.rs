@@ -100,7 +100,7 @@ fn verifies_public_jwk_and_protocol_claims() {
 
     assert_eq!(verified.jti, "proof-jti");
     assert_eq!(verified.jkt.len(), 43);
-    assert_eq!(verified.audit.jti_hash.len(), 64);
+    assert_eq!(verified.key_id, None);
 }
 
 #[test]
@@ -348,7 +348,9 @@ fn concurrent_replay_consumption_has_exactly_one_winner() {
 
 async fn concurrent_replay_consumption_has_exactly_one_winner_async() {
     let state = AtomicDpopState::default();
-    let proof = proof(public_jwk(), json!({}));
+    let mut jwk = public_jwk();
+    jwk["kid"] = json!("audit-key");
+    let proof = proof(jwk, json!({}));
     let request = request(Some(&proof), None);
 
     let (left, right) = futures_util::join!(
@@ -357,13 +359,19 @@ async fn concurrent_replay_consumption_has_exactly_one_winner_async() {
     );
     let results = [left, right];
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    let audits: Vec<_> = results
+        .iter()
+        .filter_map(|result| match result {
+            Err(DpopError::ReplayDetected(audit)) => Some(audit),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(audits.len(), 1);
     assert_eq!(
-        results
-            .iter()
-            .filter(|result| matches!(result, Err(DpopError::ReplayDetected(_))))
-            .count(),
-        1
+        audits[0].jti_hash,
+        blake3::hash(b"proof-jti").to_hex().as_str()
     );
+    assert_eq!(audits[0].key_id.as_deref(), Some("audit-key"));
 }
 
 #[test]
@@ -708,10 +716,7 @@ fn dpop_replay_scope_preserves_exact_method() {
         jkt: "jkt".to_owned(),
         jti: "proof-jti".to_owned(),
         nonce: None,
-        audit: DpopReplayAudit {
-            jti_hash: "hash".to_owned(),
-            key_id: None,
-        },
+        key_id: None,
     };
     let scope_for = |method: &'static str| {
         let req = DpopProofRequest {

@@ -134,8 +134,7 @@ fn encrypt_compact_jwe_with_cek(
 ) -> anyhow::Result<String> {
     let iv = rand::random::<[u8; 12]>();
     let ciphertext_and_tag = nazo_crypto::aead::encrypt(cek, &iv, protected.as_bytes(), plaintext)?;
-    let (ciphertext, tag) =
-        ciphertext_and_tag.split_at(ciphertext_and_tag.len().saturating_sub(16));
+    let (ciphertext, tag) = ciphertext_and_tag.split_at(ciphertext_and_tag.len() - 16);
     Ok(format!(
         "{}.{}.{}.{}.{}",
         protected,

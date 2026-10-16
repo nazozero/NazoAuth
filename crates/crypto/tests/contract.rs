@@ -124,15 +124,24 @@ mod jose {
         }
     }
 
-    /// The public-side VerificationKey matching a generated private key.
+    /// Raw component constructors must interoperate with the independent
+    /// jsonwebtoken oracle above, including both RSA signature paddings.
     fn verification_key(algorithm: Algorithm, private_der: &[u8]) -> VerificationKey {
-        let parts = public_components(algorithm, private_der);
+        let parts: Vec<Vec<u8>> = public_components(algorithm, private_der)
+            .iter()
+            .map(|part| URL_SAFE_NO_PAD.decode(part).unwrap())
+            .collect();
         match algorithm {
-            Algorithm::EdDSA => VerificationKey::from_ed_components(&parts[0]).unwrap(),
-            Algorithm::RS256 | Algorithm::PS256 => {
-                VerificationKey::from_rsa_components(&parts[0], &parts[1]).unwrap()
+            Algorithm::EdDSA => {
+                VerificationKey::from_ed25519_bytes(parts[0].as_slice().try_into().unwrap())
             }
-            Algorithm::ES256 => VerificationKey::from_ec_components(&parts[0], &parts[1]).unwrap(),
+            Algorithm::RS256 | Algorithm::PS256 => {
+                VerificationKey::from_rsa_raw_components(&parts[0], &parts[1])
+            }
+            Algorithm::ES256 => VerificationKey::from_p256_coordinates(
+                parts[0].as_slice().try_into().unwrap(),
+                parts[1].as_slice().try_into().unwrap(),
+            ),
             _ => unreachable!(),
         }
     }

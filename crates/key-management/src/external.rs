@@ -83,10 +83,8 @@ pub(super) fn decoding_key_from_public_jwk(
                 return None;
             }
             let x = key.get("x")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256 => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -94,13 +92,14 @@ pub(super) fn decoding_key_from_public_jwk(
             }
             let modulus = key.get("n")?.as_str()?;
             let exponent = key.get("e")?.as_str()?;
-            if !nazo_auth::rsa_public_key_components_are_safe(
-                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
-                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
-            ) {
+            let modulus = URL_SAFE_NO_PAD.decode(modulus).ok()?;
+            let exponent = URL_SAFE_NO_PAD.decode(exponent).ok()?;
+            if !nazo_auth::rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
-            JwtVerificationKey::from_rsa_components(modulus, exponent).ok()
+            Some(JwtVerificationKey::from_rsa_raw_components(
+                &modulus, &exponent,
+            ))
         }
         nazo_crypto::jwt::Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -110,17 +109,14 @@ pub(super) fn decoding_key_from_public_jwk(
             }
             let x = key.get("x")?.as_str()?;
             let y = key.get("y")?.as_str()?;
-            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?;
-            if x_bytes.len() != 32 || y_bytes.len() != 32 {
-                return None;
-            }
+            let x_bytes: [u8; 32] = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let y_bytes: [u8; 32] = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
             let mut point = [0_u8; 65];
             point[0] = 4;
             point[1..33].copy_from_slice(&x_bytes);
             point[33..].copy_from_slice(&y_bytes);
             nazo_crypto::ec::normalize_p256_public_key(&point).ok()?;
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            Some(JwtVerificationKey::from_ec_sec1(&point))
         }
         _ => None,
     }

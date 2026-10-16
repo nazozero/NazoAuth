@@ -74,10 +74,12 @@ pub fn rsa_oaep256_encrypt(n: &[u8], e: &[u8], plaintext: &[u8]) -> crate::Resul
         .map_err(|_| CryptoError::InvalidKey)?;
     let public = OaepPublicEncryptingKey::new(public).map_err(|_| CryptoError::InvalidKey)?;
     let mut ciphertext = vec![0; public.ciphertext_size()];
-    Ok(public
+    let len = public
         .encrypt(&OAEP_SHA256_MGF1SHA256, plaintext, &mut ciphertext, None)
         .map_err(|_| CryptoError::OperationFailed)?
-        .to_vec())
+        .len();
+    ciphertext.truncate(len);
+    Ok(ciphertext)
 }
 
 /// Prepared RSA-OAEP-256 recipient key. The backend and private material stay
@@ -96,11 +98,13 @@ impl RsaOaep256PrivateKey {
 
     pub fn decrypt(&self, ciphertext: &[u8]) -> crate::Result<Vec<u8>> {
         let mut plaintext = vec![0; self.inner.min_output_size()];
-        Ok(self
+        let len = self
             .inner
             .decrypt(&OAEP_SHA256_MGF1SHA256, ciphertext, &mut plaintext, None)
             .map_err(|_| CryptoError::AuthenticationFailed)?
-            .to_vec())
+            .len();
+        plaintext.truncate(len);
+        Ok(plaintext)
     }
 }
 
@@ -114,9 +118,11 @@ pub fn aes_wrap(kek: &[u8], plaintext: &[u8]) -> crate::Result<Vec<u8>> {
         return Err(CryptoError::InvalidInput);
     }
     let mut output = vec![0_u8; plaintext.len() + 8];
-    let wrapped = AesKek::new(cipher, kek)
+    let len = AesKek::new(cipher, kek)
         .map_err(|_| CryptoError::InvalidKey)?
         .wrap(plaintext, &mut output)
-        .map_err(|_| CryptoError::OperationFailed)?;
-    Ok(wrapped.to_vec())
+        .map_err(|_| CryptoError::OperationFailed)?
+        .len();
+    output.truncate(len);
+    Ok(output)
 }

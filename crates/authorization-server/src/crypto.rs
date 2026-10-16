@@ -114,11 +114,8 @@ pub fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerif
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            if bytes.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         SupportedClientJwtAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -131,7 +128,9 @@ pub fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerif
             if !rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
-            JwtVerificationKey::from_rsa_components(n, e).ok()
+            Some(JwtVerificationKey::from_rsa_raw_components(
+                &modulus, &exponent,
+            ))
         }
         SupportedClientJwtAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -141,12 +140,11 @@ pub fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerif
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?;
-            if x_bytes.len() != 32 || y_bytes.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_p256_coordinates(
+                &x_bytes, &y_bytes,
+            ))
         }
     }
 }

@@ -133,7 +133,6 @@ pub fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
         .and_then(Value::as_array)
         .is_some_and(|keys| {
             keys.iter().any(|key| {
-                let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
                 let Some(algorithm) = key
                     .get("alg")
                     .and_then(Value::as_str)
@@ -141,7 +140,7 @@ pub fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
                 else {
                     return false;
                 };
-                public_key_use == "sig" && jwt_decoding_key_from_jwk(key, algorithm).is_some()
+                jwt_decoding_key_from_jwk(key, algorithm).is_some()
             })
         })
 }
@@ -152,14 +151,12 @@ pub fn client_jwks_contains_signing_key_for_algorithm(jwks: &Value, expected: &s
         .and_then(Value::as_array)
         .is_some_and(|keys| {
             keys.iter().any(|key| {
-                let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
                 let algorithm_name = key.get("alg").and_then(Value::as_str);
                 let Some(algorithm) = algorithm_name.and_then(client_jwt_algorithm_from_name)
                 else {
                     return false;
                 };
-                public_key_use == "sig"
-                    && algorithm_name == Some(expected)
+                algorithm_name == Some(expected)
                     && jwt_decoding_key_from_jwk(key, algorithm).is_some()
             })
         })
@@ -201,9 +198,7 @@ pub fn validate_client_jwks(jwks: &Value) -> Result<(), String> {
             .get("alg")
             .and_then(Value::as_str)
             .ok_or_else(|| "jwks 公钥必须声明 alg".to_owned())?;
-        if kid.is_none()
-            && !unidentified_key_classes.insert((public_key_use.to_owned(), alg.to_owned()))
-        {
+        if kid.is_none() && !unidentified_key_classes.insert((public_key_use, alg)) {
             return Err("省略 kid 时，相同 use 与 alg 的公钥必须唯一".to_owned());
         }
         match public_key_use {
@@ -325,9 +320,8 @@ fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerificat
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            (URL_SAFE_NO_PAD.decode(x).ok()?.len() == 32)
-                .then(|| JwtVerificationKey::from_ed_components(x).ok())
-                .flatten()
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         Algorithm::RS256 | Algorithm::PS256 => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -335,12 +329,14 @@ fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerificat
             }
             let n = key.get("n").and_then(Value::as_str)?;
             let e = key.get("e").and_then(Value::as_str)?;
-            if URL_SAFE_NO_PAD.decode(n).ok()?.len() < 256
-                || URL_SAFE_NO_PAD.decode(e).ok()?.is_empty()
-            {
+            let modulus = URL_SAFE_NO_PAD.decode(n).ok()?;
+            let exponent = URL_SAFE_NO_PAD.decode(e).ok()?;
+            if modulus.len() < 256 || exponent.is_empty() {
                 return None;
             }
-            JwtVerificationKey::from_rsa_components(n, e).ok()
+            Some(JwtVerificationKey::from_rsa_raw_components(
+                &modulus, &exponent,
+            ))
         }
         Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -350,12 +346,11 @@ fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerificat
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
-                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
-            {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_p256_coordinates(
+                &x_bytes, &y_bytes,
+            ))
         }
         _ => None,
     }

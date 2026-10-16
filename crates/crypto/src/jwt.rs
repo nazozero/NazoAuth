@@ -38,6 +38,30 @@ impl VerificationKey {
             .map_err(|_| CryptoError::InvalidKey)
     }
 
+    /// Reuses RSA components already decoded for the caller's key policy.
+    #[must_use]
+    pub fn from_rsa_raw_components(n: &[u8], e: &[u8]) -> Self {
+        Self {
+            inner: jsonwebtoken::DecodingKey::from_rsa_raw_components(n, e),
+        }
+    }
+
+    #[must_use]
+    pub fn from_ed25519_bytes(bytes: &[u8; 32]) -> Self {
+        Self {
+            inner: jsonwebtoken::DecodingKey::from_ed_der(bytes),
+        }
+    }
+
+    #[must_use]
+    pub fn from_p256_coordinates(x: &[u8; 32], y: &[u8; 32]) -> Self {
+        let mut point = [0_u8; 65];
+        point[0] = 4;
+        point[1..33].copy_from_slice(x);
+        point[33..].copy_from_slice(y);
+        Self::from_ec_sec1(&point)
+    }
+
     /// Builds a verification key from a certificate's raw SEC1 public point.
     #[must_use]
     pub fn from_ec_sec1(bytes: &[u8]) -> Self {

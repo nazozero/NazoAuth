@@ -5,7 +5,7 @@ use thiserror::Error;
 use url::Url;
 
 use crate::digest::digest_matches;
-use crate::request::is_reserved_signature_field;
+use crate::request::{is_reserved_signature_field, is_token_byte, signature_base};
 use crate::verify::{
     fingerprint, integer_parameter, signature_bytes, string_parameter, top_level_member_count,
     top_level_parameter_count, validate_parameters, validate_time,
@@ -84,15 +84,8 @@ pub fn prepare_response_with_digests(
     let params = signature_input
         .strip_prefix(&format!("{SIGNATURE_NAME}="))
         .expect("serializer emitted the response signature label");
-    let mut base = components
-        .iter()
-        .map(component_line)
-        .collect::<Vec<_>>()
-        .join("\n");
-    base.push_str("\n\"@signature-params\": ");
-    base.push_str(params);
     Ok(PreparedSignature::new(
-        base.into_bytes(),
+        signature_base(&components, params),
         signature_input,
         SIGNATURE_NAME,
     ))
@@ -165,17 +158,11 @@ pub fn parse_response_for_verification(
         .strip_prefix(SIGNATURE_NAME)
         .and_then(|value| value.strip_prefix('='))
         .ok_or(VerifyError::MalformedSignature)?;
-    let mut base = expected_components
-        .iter()
-        .map(component_line)
-        .collect::<Vec<_>>()
-        .join("\n");
-    base.push_str("\n\"@signature-params\": ");
-    base.push_str(signature_params);
-    let replay_fingerprint = fingerprint(base.as_bytes(), keyid.as_bytes());
+    let base = signature_base(&expected_components, signature_params);
+    let replay_fingerprint = fingerprint(&base, keyid.as_bytes());
 
     Ok(ParsedSignatureInput::new(
-        base.into_bytes(),
+        base,
         signature,
         keyid.to_owned(),
         algorithm.to_owned(),
@@ -291,10 +278,11 @@ fn append_extra_headers(
         }
         let value = unique_header(headers, &name)?
             .ok_or_else(|| invalid(format!("missing additional covered header: {name}")))?;
+        let value = normalize_field(&name, value)?;
         components.push(Component {
-            name: name.clone(),
+            name,
             source,
-            value: normalize_field(&name, value)?,
+            value,
         });
     }
     Ok(())
@@ -386,7 +374,7 @@ fn received_response_components(
             }
             (name, _)
                 if name.is_empty()
-                    || name != name.to_ascii_lowercase()
+                    || name.bytes().any(|byte| byte.is_ascii_uppercase())
                     || !name.bytes().all(is_token_byte) =>
             {
                 return Err(VerifyError::MissingComponent);
@@ -438,13 +426,15 @@ fn unique_header_for_verification(
     normalize_field(wanted, value).map_err(|_| VerifyError::MissingComponent)
 }
 
-fn component_line(component: &Component) -> String {
-    let req = if component.source == Source::Request {
-        ";req"
-    } else {
-        ""
-    };
-    format!("\"{}\"{req}: {}", component.name, component.value)
+impl std::fmt::Display for Component {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let req = if self.source == Source::Request {
+            ";req"
+        } else {
+            ""
+        };
+        write!(formatter, "\"{}\"{req}: {}", self.name, self.value)
+    }
 }
 
 fn validate_original_digest(
@@ -565,27 +555,6 @@ fn unique_header_verify<'a>(
         return Err(VerifyError::DigestMismatch);
     }
     Ok(first)
-}
-
-fn is_token_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric()
-        || matches!(
-            byte,
-            b'!' | b'#'
-                | b'$'
-                | b'%'
-                | b'&'
-                | b'\''
-                | b'*'
-                | b'+'
-                | b'-'
-                | b'.'
-                | b'^'
-                | b'_'
-                | b'`'
-                | b'|'
-                | b'~'
-        )
 }
 
 fn key(value: &str) -> &KeyRef {

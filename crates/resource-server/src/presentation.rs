@@ -67,7 +67,7 @@ pub(super) fn presented_authorization_token<'a>(
     let Some(scheme) = parts.next() else {
         return Err(ResourceServerRequestError::MissingToken);
     };
-    let Some(token) = parts.next().filter(|token| !token.trim().is_empty()) else {
+    let Some(token) = parts.next() else {
         return Err(ResourceServerRequestError::MissingToken);
     };
     if parts.next().is_some() {

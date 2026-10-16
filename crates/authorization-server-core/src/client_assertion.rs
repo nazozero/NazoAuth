@@ -152,12 +152,9 @@ pub fn verify_private_key_jwt(
     {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     }
-    let (kid, decoding_key) = client_assertion_decoding_key(
-        input.client,
-        header.kid.as_deref().filter(|kid| !kid.trim().is_empty()),
-        header.alg,
-    )
-    .ok_or(ClientAssertionValidationError::KeyNotFound)?;
+    let kid = header.kid.filter(|kid| !kid.trim().is_empty());
+    let decoding_key = client_assertion_decoding_key(input.client, kid.as_deref(), header.alg)
+        .ok_or(ClientAssertionValidationError::KeyNotFound)?;
 
     let mut validation = Validation::new(header.alg);
     validation.validate_aud = false;
@@ -172,12 +169,19 @@ pub fn verify_private_key_jwt(
     }
     if !audience_matches(
         &claims.aud,
-        &client_assertion_audience_candidates(
-            input.issuer,
-            input.endpoint_path,
-            !require_fapi2 && input.client.allow_client_assertion_endpoint_audience,
-            input.endpoint_audience_aliases,
-        ),
+        |audience| {
+            audience == input.issuer
+                || (!require_fapi2
+                    && input.client.allow_client_assertion_endpoint_audience
+                    && std::iter::once(input.issuer)
+                        .chain(input.endpoint_audience_aliases.iter().copied())
+                        .any(|origin| {
+                            let path = audience.strip_prefix(origin);
+                            path == Some(input.endpoint_path)
+                                || (matches!(input.endpoint_path, "/par" | "/bc-authorize")
+                                    && path == Some("/token"))
+                        }))
+        },
         !require_fapi2 && input.client.allow_client_assertion_audience_array,
     ) {
         return Err(ClientAssertionValidationError::Audience);
@@ -197,27 +201,6 @@ pub fn verify_private_key_jwt(
     })
 }
 
-fn client_assertion_audience_candidates(
-    issuer: &str,
-    endpoint_path: &str,
-    allow_endpoint_audience: bool,
-    endpoint_audience_aliases: &[&str],
-) -> Vec<String> {
-    let mut candidates = vec![issuer.to_owned()];
-    if !allow_endpoint_audience {
-        return candidates;
-    }
-
-    for endpoint_origin in std::iter::once(issuer).chain(endpoint_audience_aliases.iter().copied())
-    {
-        candidates.push(format!("{endpoint_origin}{endpoint_path}"));
-        if matches!(endpoint_path, "/par" | "/bc-authorize") {
-            candidates.push(format!("{endpoint_origin}/token"));
-        }
-    }
-    candidates
-}
-
 fn client_assertion_decode_error(
     error: nazo_crypto::CryptoError,
 ) -> ClientAssertionValidationError {
@@ -232,15 +215,18 @@ fn client_assertion_decode_error(
     }
 }
 
-fn audience_matches(audience: &Value, expected: &[String], allow_array: bool) -> bool {
+fn audience_matches(audience: &Value, expected: impl Fn(&str) -> bool, allow_array: bool) -> bool {
     match audience {
-        Value::String(value) => expected.iter().any(|candidate| candidate == value),
+        Value::String(value) => expected(value),
         Value::Array(values) if allow_array => {
-            values.iter().all(Value::is_string)
-                && values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .any(|value| expected.iter().any(|candidate| candidate == value))
+            let mut matches = false;
+            for value in values {
+                let Some(value) = value.as_str() else {
+                    return false;
+                };
+                matches |= expected(value);
+            }
+            matches
         }
         _ => false,
     }
@@ -274,15 +260,14 @@ fn client_assertion_decoding_key(
     client: &OAuthClient,
     kid: Option<&str>,
     algorithm: Algorithm,
-) -> Option<(Option<String>, JwtVerificationKey)> {
+) -> Option<JwtVerificationKey> {
     if let Some(kid) = kid {
-        return client_jwt_decoding_key(client, kid, algorithm)
-            .map(|decoding_key| (Some(kid.to_owned()), decoding_key));
+        return client_jwt_decoding_key(client, kid, algorithm);
     }
     let keys = client.jwks.as_deref()?.get("keys")?.as_array()?;
-    let mut matching = keys.iter().filter_map(|key| {
-        jwt_decoding_key_from_jwk(key, algorithm).map(|decoding_key| (None, decoding_key))
-    });
+    let mut matching = keys
+        .iter()
+        .filter_map(|key| jwt_decoding_key_from_jwk(key, algorithm));
     let selected = matching.next()?;
     matching.next().is_none().then_some(selected)
 }
@@ -326,8 +311,8 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVer
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            (URL_SAFE_NO_PAD.decode(x).ok()?.len() == 32)
-                .then(|| JwtVerificationKey::from_ed_components(x).ok())?
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         SupportedClientJwtAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -340,11 +325,10 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVer
             if !rsa_public_key_components_are_safe(&modulus, &exponent_bytes) {
                 return None;
             }
-            JwtVerificationKey::from_rsa_components(
-                key.get("n").and_then(Value::as_str)?,
-                key.get("e").and_then(Value::as_str)?,
-            )
-            .ok()
+            Some(JwtVerificationKey::from_rsa_raw_components(
+                &modulus,
+                &exponent_bytes,
+            ))
         }
         SupportedClientJwtAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -354,12 +338,11 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVer
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
-                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
-            {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_p256_coordinates(
+                &x_bytes, &y_bytes,
+            ))
         }
     }
 }

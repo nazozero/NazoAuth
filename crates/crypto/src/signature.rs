@@ -108,12 +108,13 @@ pub fn verify(
         Algorithm::EdDSA | Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 => {}
         _ => return Err(CryptoError::UnsupportedAlgorithm),
     }
-    let encoded = URL_SAFE_NO_PAD.encode(signature);
-    match jsonwebtoken::crypto::verify(&encoded, message, &key.inner, algorithm) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(CryptoError::InvalidSignature),
-        Err(_) => Err(CryptoError::InvalidInput),
-    }
+    let verifier =
+        (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.verifier_factory)(&algorithm, &key.inner)
+            .map_err(|_| CryptoError::InvalidInput)?;
+    // The provider requires Vec, but raw signatures need no Base64 round trip.
+    verifier
+        .verify(message, &signature.to_vec())
+        .map_err(|_| CryptoError::InvalidSignature)
 }
 
 pub fn generate_private_key(algorithm: Algorithm) -> crate::Result<Vec<u8>> {
@@ -159,13 +160,12 @@ pub fn public_jwk(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<ser
             let jwk = jsonwebtoken::jwk::Jwk::from_encoding_key(&key, algorithm)
                 .map_err(|_| CryptoError::InvalidKey)?;
             let value = serde_json::to_value(jwk).map_err(|_| CryptoError::OperationFailed)?;
-            let object = value.as_object().ok_or(CryptoError::OperationFailed)?;
-            let mut public = serde_json::Map::new();
-            for member in ["kty", "n", "e", "crv", "x", "y"] {
-                if let Some(value) = object.get(member) {
-                    public.insert(member.to_owned(), value.clone());
-                }
-            }
+            let serde_json::Value::Object(mut public) = value else {
+                return Err(CryptoError::OperationFailed);
+            };
+            public.retain(|member, _| {
+                matches!(member.as_str(), "kty" | "n" | "e" | "crv" | "x" | "y")
+            });
             Ok(serde_json::Value::Object(public))
         }
         _ => Err(CryptoError::UnsupportedAlgorithm),

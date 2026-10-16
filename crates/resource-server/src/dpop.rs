@@ -139,8 +139,7 @@ impl DpopProofVerifier {
         access_token: &str,
         now: i64,
     ) -> Result<DpopProofVerification, DpopProofVerifierError> {
-        let header = nazo_crypto::jwt::decode_header(proof_jwt)
-            .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+        let (header, public_jwk) = decode_dpop_header(proof_jwt)?;
         if !header
             .typ
             .as_deref()
@@ -151,7 +150,7 @@ impl DpopProofVerifier {
         if !self.config.allowed_algs.contains(&header.alg) {
             return Err(DpopProofVerifierError::UnsupportedAlgorithm);
         }
-        let public_jwk = dpop_header_jwk(proof_jwt)?;
+        let public_jwk = public_jwk.ok_or(DpopProofVerifierError::MissingPublicJwk)?;
         let decoding_key = dpop_jwk_decoding_key(&public_jwk, header.alg)
             .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
         let claims = decode_and_verify_dpop_proof(proof_jwt, &decoding_key, header.alg)?;
@@ -186,12 +185,13 @@ impl DpopProofVerifier {
         }
         let actual_htu =
             normalize_dpop_htu(&claims.htu).ok_or(DpopProofVerifierError::MalformedProof)?;
-        let normalized_targets = target_uris
-            .iter()
-            .map(|target_uri| normalize_dpop_htu(target_uri))
-            .collect::<Option<Vec<_>>>()
-            .ok_or(DpopProofVerifierError::UriMismatch)?;
-        if normalized_targets.is_empty() || !normalized_targets.contains(&actual_htu) {
+        let mut matched = false;
+        for target_uri in target_uris {
+            let target =
+                normalize_dpop_htu(target_uri).ok_or(DpopProofVerifierError::UriMismatch)?;
+            matched |= target == actual_htu;
+        }
+        if !matched {
             return Err(DpopProofVerifierError::UriMismatch);
         }
         if claims.ath.as_deref() != Some(access_token_hash(access_token).as_str()) {
@@ -257,7 +257,9 @@ impl DpopProofVerifier {
     }
 }
 
-fn dpop_header_jwk(proof_jwt: &str) -> Result<Value, DpopProofVerifierError> {
+fn decode_dpop_header(
+    proof_jwt: &str,
+) -> Result<(nazo_crypto::jwt::Header, Option<Value>), DpopProofVerifierError> {
     let encoded_header = proof_jwt
         .split('.')
         .next()
@@ -266,12 +268,15 @@ fn dpop_header_jwk(proof_jwt: &str) -> Result<Value, DpopProofVerifierError> {
     let header = URL_SAFE_NO_PAD
         .decode(encoded_header)
         .map_err(|_| DpopProofVerifierError::MalformedProof)?;
-    let header = serde_json::from_slice::<Value>(&header)
+    let parsed = serde_json::from_slice::<nazo_crypto::jwt::Header>(&header)
         .map_err(|_| DpopProofVerifierError::MalformedProof)?;
-    header
-        .get("jwk")
-        .cloned()
-        .ok_or(DpopProofVerifierError::MissingPublicJwk)
+    // Keep the raw JWK members: the typed header discards private-key fields.
+    let mut header = serde_json::from_slice::<Value>(&header)
+        .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+    let jwk = header
+        .as_object_mut()
+        .and_then(|header| header.remove("jwk"));
+    Ok((parsed, jwk))
 }
 
 fn normalize_dpop_htu(value: &str) -> Option<String> {
@@ -367,11 +372,8 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVe
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            if bytes.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         SupportedDpopAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -384,7 +386,9 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVe
             if !rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
-            JwtVerificationKey::from_rsa_components(n, e).ok()
+            Some(JwtVerificationKey::from_rsa_raw_components(
+                &modulus, &exponent,
+            ))
         }
         SupportedDpopAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -394,12 +398,11 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVe
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?;
-            if x_bytes.len() != 32 || y_bytes.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_p256_coordinates(
+                &x_bytes, &y_bytes,
+            ))
         }
     }
 }
