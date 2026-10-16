@@ -17,13 +17,6 @@ $ErrorActionPreference = 'Stop'
 if ($SshHost -notmatch '^[A-Za-z0-9._-]+$') {
     throw 'SshHost must be a configured SSH host alias'
 }
-if ($Config -notmatch '^/[A-Za-z0-9._/-]+$') {
-    throw 'Config must be a safe absolute remote path'
-}
-if ($Version -and $Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$') {
-    throw 'Version must be an immutable semantic tag'
-}
-
 function ConvertTo-ShellWord {
     param([string]$Value)
 
