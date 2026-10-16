@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use actix_web::{HttpRequest, HttpResponse, http::header, web};
+use nazo_openid4vci::NotificationRequest;
 use nazo_openid4vci::application::{
     AccessTokenScheme, CreateCredentialOfferRequest, CredentialEndpointResponse,
     CredentialHttpError, CredentialIssuerOperations, CredentialRequestBody,
     CredentialRequestContext, CredentialResponseBody, PreAuthorizedTokenRequest,
     PreAuthorizedTokenResponse,
 };
-use nazo_openid4vci::{CredentialRequest, DeferredCredentialRequest, NotificationRequest};
 use serde::Serialize;
 
 type ClientCertificateExtractor = dyn Fn(&HttpRequest) -> Option<String> + Send + Sync;
@@ -154,7 +154,7 @@ pub async fn credential(
         Ok(context) => context,
         Err(error) => return credential_error(error),
     };
-    let body = match credential_body(&request, &body) {
+    let body = match parse_body(&request, &body) {
         Ok(body) => body,
         Err(error) => return credential_error(error),
     };
@@ -177,7 +177,7 @@ pub async fn deferred_credential(
         Ok(context) => context,
         Err(error) => return credential_error(error),
     };
-    let body = match deferred_body(&request, &body) {
+    let body = match parse_body(&request, &body) {
         Ok(body) => body,
         Err(error) => return credential_error(error),
     };
@@ -238,9 +238,9 @@ fn protected_context(
             description: "A Bearer or DPoP access token is required.",
             dpop_nonce: None,
         })?;
-    let dpop_proofs = request.headers().get_all("DPoP");
-    let dpop_proof_count = dpop_proofs.count();
-    if dpop_proof_count > 1 {
+    let mut dpop_proofs = request.headers().get_all("DPoP");
+    let dpop_proof = dpop_proofs.next();
+    if dpop_proofs.next().is_some() {
         return Err(CredentialHttpError {
             status: 401,
             error: "invalid_dpop_proof",
@@ -248,9 +248,7 @@ fn protected_context(
             dpop_nonce: None,
         });
     }
-    let dpop_proof = request
-        .headers()
-        .get("DPoP")
+    let dpop_proof = dpop_proof
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
 
@@ -308,20 +306,6 @@ fn accepts_signed_metadata(request: &HttpRequest) -> bool {
                 .map(|item| item.split(';').next().unwrap_or("").trim())
                 .any(|mime| mime.eq_ignore_ascii_case("application/jwt"))
         })
-}
-
-fn credential_body(
-    request: &HttpRequest,
-    body: &[u8],
-) -> Result<CredentialRequestBody<CredentialRequest>, CredentialHttpError> {
-    parse_body(request, body)
-}
-
-fn deferred_body(
-    request: &HttpRequest,
-    body: &[u8],
-) -> Result<CredentialRequestBody<DeferredCredentialRequest>, CredentialHttpError> {
-    parse_body(request, body)
 }
 
 fn parse_body<T: serde::de::DeserializeOwned>(

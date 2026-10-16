@@ -406,7 +406,7 @@ where
             if request
                 .proofs
                 .as_ref()
-                .is_some_and(|proofs| proofs.count() != 0)
+                .is_some_and(|proofs| proofs.0.values().any(|values| !values.is_empty()))
                 || !issuance
                     .configuration
                     .cryptographic_binding_methods_supported

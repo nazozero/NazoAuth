@@ -372,8 +372,7 @@ impl ServerCredentialIssuerOperations {
         };
         let (dpop_jkt, mtls_x5t_s256) = claims
             .cnf
-            .as_ref()
-            .map_or((None, None), |cnf| (cnf.jkt.clone(), cnf.x5t_s256.clone()));
+            .map_or((None, None), |cnf| (cnf.jkt, cnf.x5t_s256));
         match (
             dpop_jkt.as_deref(),
             mtls_x5t_s256.as_deref(),

@@ -11,13 +11,6 @@ pub struct CredentialIdentifier(pub String);
 #[serde(transparent)]
 pub struct Proofs(pub BTreeMap<String, Vec<Value>>);
 
-impl Proofs {
-    #[must_use]
-    pub fn count(&self) -> usize {
-        self.0.values().map(Vec::len).sum()
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialResponseEncryption {
