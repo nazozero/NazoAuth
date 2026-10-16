@@ -2014,9 +2014,9 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
 // ID-01: active subject lookup
 // ---------------------------------------------------------------------------
 
-/// ID-01: `active_subject_id_by_tenant_id` is one read-only SELECT over users.
+/// ID-01: `active_subject_id` is one read-only SELECT over users.
 #[tokio::test]
-async fn id01_active_subject_id_by_tenant_id_is_single_read() {
+async fn id01_active_subject_id_is_single_read() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -2027,13 +2027,14 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = UserRepository::new(pool);
+    let repository = nazo_postgres::TokenIssuanceRepository::new(pool);
 
     let (result, delta) = measure(
         &counter,
-        repository.active_subject_id_by_tenant_id(
-            TenantId::new(tenant.tenant_id.as_uuid()).expect("tenant id"),
-            UserId::new(seed.user_id).expect("user id"),
+        nazo_auth::TokenRepositoryPort::active_subject_id(
+            &repository,
+            tenant.tenant_id.as_uuid(),
+            seed.user_id,
         ),
     )
     .await;
@@ -2043,8 +2044,7 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
         Some(seed.user_id),
         "the seeded active user must resolve"
     );
-    // 1 data statement: SELECT user principal row WHERE (id, tenant_id,
-    // is_active) — the subject id projection is computed in the same read.
+    // One existence query scoped by user, tenant, and active status.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_clean(delta);

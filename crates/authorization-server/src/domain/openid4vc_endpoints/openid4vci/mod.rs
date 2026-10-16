@@ -332,8 +332,7 @@ impl ServerCredentialIssuerOperations {
             Some(value) => {
                 // Directly identified subjects (including standalone
                 // pre-authorized issuance without a Generic issuance row)
-                // keep the explicit active-subject read; only the narrow
-                // principal projection is needed here.
+                // keep the explicit tenant-scoped active-subject check.
                 if self
                     .token_service
                     .active_subject_id(tenant_id, value)

@@ -903,8 +903,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let tenant_id = TenantId::new(tenant_id).map_err(|_| TokenPortError::CorruptData)?;
             let user_id = UserId::new(user_id).map_err(|_| TokenPortError::CorruptData)?;
             self.users
-                .active_subject_id_by_tenant_id(tenant_id, user_id)
+                .is_active_by_tenant_id(tenant_id, user_id)
                 .await
+                .map(|active| active.then_some(user_id.as_uuid()))
                 .map_err(map_repository_error)
         })
     }
