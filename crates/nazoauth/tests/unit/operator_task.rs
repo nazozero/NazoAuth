@@ -366,23 +366,32 @@ fn apply_change_sets_are_digest_bound_to_the_signed_identities() {
     });
     let raw_manifest = serde_json::to_vec(&manifest).unwrap();
 
-    let prepared =
-        execution::prepare_change_set_material(&raw_manifest, std::slice::from_ref(&identity))
-            .expect("digest-bound change set");
+    let prepared = nazo_persistence::tenant_resources::decode_change_set_payloads(
+        &raw_manifest,
+        std::slice::from_ref(&identity),
+    )
+    .expect("digest-bound change set");
     assert_eq!(prepared.len(), 1);
     assert_eq!(prepared[0].identity, identity);
 
     // Any drift between the mounted bytes and the signed digests is refused.
     assert!(
-        execution::prepare_change_set_material(b"{}", std::slice::from_ref(&identity)).is_err(),
+        nazo_persistence::tenant_resources::decode_change_set_payloads(
+            b"{}",
+            std::slice::from_ref(&identity)
+        )
+        .is_err(),
         "an empty manifest cannot satisfy a non-empty signed delta"
     );
     let mut other = manifest.clone();
     other["resources"][0]["payload_base64url"] =
         serde_json::json!(URL_SAFE_NO_PAD.encode(b"drift"));
     assert!(
-        execution::prepare_change_set_material(&serde_json::to_vec(&other).unwrap(), &[identity])
-            .is_err()
+        nazo_persistence::tenant_resources::decode_change_set_payloads(
+            &serde_json::to_vec(&other).unwrap(),
+            &[identity]
+        )
+        .is_err()
     );
 }
 
@@ -655,60 +664,6 @@ async fn task_lock_acquisition_is_bounded() {
     assert!(started.elapsed() < Duration::from_secs(1));
     drop(holder);
     fs::remove_dir_all(directory).unwrap();
-}
-
-#[tokio::test]
-async fn dispatch_maps_precondition_failures_to_engine_errors_without_a_database() {
-    let context = execution::ExecutionContext {
-        operation_id: "019c8ca2-30a6-7000-8000-000000000005",
-        deployment_id: "deployment-test",
-        controller_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90",
-        kid: "kid-controller-test-key-0000000000000000000",
-        request_hash: &"a".repeat(64),
-    };
-    // Unsupported signing parameters fail inside the existing engine before
-    // any durable state changes.
-    let generated = execution::execute_inner(
-        &ControlOperationPayload::KeysGenerateLocal {
-            alg: "unsupported-algorithm".to_owned(),
-            purposes: vec!["credential".to_owned()],
-        },
-        &context,
-        None,
-    )
-    .await;
-    assert!(generated.is_err());
-
-    let external = execution::execute_inner(
-        &ControlOperationPayload::KeysRegisterExternal {
-            kid: "external-1".to_owned(),
-            alg: "ES256".to_owned(),
-            key_ref: "provider:key-1".to_owned(),
-            public_jwk_sha256: "a".repeat(64),
-        },
-        &context,
-        None,
-    )
-    .await;
-    assert!(external.is_err());
-
-    // The apply delta cannot proceed without its mounted change-set material.
-    let apply = execution::execute_inner(
-        &ControlOperationPayload::TenantResourceApply {
-            tenant_id: "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90".to_owned(),
-            resources: Vec::new(),
-        },
-        &context,
-        None,
-    )
-    .await;
-    assert!(apply.is_err());
-
-    // Read-only local keyset dispatches map their typed errors without a
-    // database connection; their outcome depends on ambient configuration so
-    // only the Ok/Err totality is pinned here.
-    let _ = execution::execute_inner(&ControlOperationPayload::KeysList, &context, None).await;
-    let _ = execution::execute_inner(&ControlOperationPayload::KeysValidate, &context, None).await;
 }
 
 #[test]

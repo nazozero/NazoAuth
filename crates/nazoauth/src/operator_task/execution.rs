@@ -87,24 +87,14 @@ pub(super) async fn execute_with_persistence(
     context: &ExecutionContext<'_>,
     persistence: &dyn OperatorPersistence,
 ) -> Result<Option<ControlResultData>, SideEffectError> {
-    execute_inner(operation, context, Some(persistence)).await
-}
-
-pub(super) async fn execute_inner(
-    operation: &ControlOperationPayload,
-    context: &ExecutionContext<'_>,
-    persistence: Option<&dyn OperatorPersistence>,
-) -> Result<Option<ControlResultData>, SideEffectError> {
     match operation {
         ControlOperationPayload::MigrateApply => {
-            let persistence = require_persistence(persistence)?;
             Ok(super::migrate_and_initialize_tenant_directory(persistence)
                 .await
                 .map(|_| None)
                 .map_err(map_owned_persistence_error)?)
         }
         ControlOperationPayload::KeysList | ControlOperationPayload::KeysValidate => {
-            let persistence = require_persistence(persistence)?;
             let config = crate::config::ConfigSource::load()?;
             let binding = system_tenant_binding(persistence).await?;
             Ok(
@@ -115,7 +105,6 @@ pub(super) async fn execute_inner(
             )
         }
         ControlOperationPayload::KeysGenerateLocal { alg, purposes } => {
-            let persistence = require_persistence(persistence)?;
             let config = crate::config::ConfigSource::load()?;
             let binding = system_tenant_binding(persistence).await?;
             Ok(crate::keyctl::operator_generate_local_database_for_tenant(
@@ -134,8 +123,8 @@ pub(super) async fn execute_inner(
             alg,
             purposes,
         } => {
-            let persistence = require_persistence(persistence)?;
-            let binding = active_tenant_binding(persistence, tenant_id).await?;
+            let binding =
+                active_tenant_binding(persistence, parse_control_tenant_id(tenant_id)?).await?;
             let config = crate::config::ConfigSource::load()?;
             let (kid, keyset_revision, certificate_chain_pem) =
                 crate::keyctl::operator_generate_local_database_for_tenant(
@@ -168,7 +157,6 @@ pub(super) async fn execute_inner(
             // its bytes must hash exactly to the signed `public_jwk_sha256`
             // claim before registration proceeds.
             let public_jwk = verify_public_jwk(public_jwk_sha256)?;
-            let persistence = require_persistence(persistence)?;
             let config = crate::config::ConfigSource::load()?;
             let binding = system_tenant_binding(persistence).await?;
             Ok(
@@ -190,7 +178,6 @@ pub(super) async fn execute_inner(
             tenant_id,
             selectors,
         } => {
-            let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Enumerate,
                 tenant_id,
@@ -208,7 +195,6 @@ pub(super) async fn execute_inner(
             tenant_id,
             resources,
         } => {
-            let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Apply,
                 tenant_id,
@@ -226,7 +212,6 @@ pub(super) async fn execute_inner(
             tenant_id,
             resources,
         } => {
-            let persistence = require_persistence(persistence)?;
             let outcome = run_tenant_resource_operation(
                 TenantResourceAction::Revoke,
                 tenant_id,
@@ -241,7 +226,6 @@ pub(super) async fn execute_inner(
             ))
         }
         ControlOperationPayload::RecoveryInvalidate { state_epoch } => {
-            let persistence = require_persistence(persistence)?;
             run_recovery_invalidation(state_epoch, context, persistence)
                 .await
                 .map(Some)
@@ -311,7 +295,6 @@ pub(super) async fn execute_inner(
                     external_host: external_host.clone(),
                 },
             };
-            let persistence = require_persistence(persistence)?;
             run_directory_control_operation(
                 DirectoryControlAction::Create {
                     expected_revision: *expected_revision,
@@ -328,58 +311,48 @@ pub(super) async fn execute_inner(
             tenant_id,
             issuer,
             external_host,
-        } => {
-            let persistence = require_persistence(persistence)?;
-            run_directory_control_operation(
-                DirectoryControlAction::Update {
-                    expected_revision: *expected_revision,
-                    tenant_id: parse_control_tenant_id(tenant_id)?,
-                    issuer: issuer.clone(),
-                    external_host: external_host.clone(),
-                },
-                context,
-                persistence,
-            )
-            .await
-            .map(Some)
-        }
+        } => run_directory_control_operation(
+            DirectoryControlAction::Update {
+                expected_revision: *expected_revision,
+                tenant_id: parse_control_tenant_id(tenant_id)?,
+                issuer: issuer.clone(),
+                external_host: external_host.clone(),
+            },
+            context,
+            persistence,
+        )
+        .await
+        .map(Some),
         ControlOperationPayload::TenantDirectoryDisable {
             expected_revision,
             tenant_id,
-        } => {
-            let persistence = require_persistence(persistence)?;
-            run_directory_control_operation(
-                DirectoryControlAction::Disable {
-                    expected_revision: *expected_revision,
-                    tenant_id: parse_control_tenant_id(tenant_id)?,
-                },
-                context,
-                persistence,
-            )
-            .await
-            .map(Some)
-        }
+        } => run_directory_control_operation(
+            DirectoryControlAction::Disable {
+                expected_revision: *expected_revision,
+                tenant_id: parse_control_tenant_id(tenant_id)?,
+            },
+            context,
+            persistence,
+        )
+        .await
+        .map(Some),
         ControlOperationPayload::TenantDirectoryReload {
             expected_revision,
             tenant_id,
-        } => {
-            let persistence = require_persistence(persistence)?;
-            run_directory_control_operation(
-                DirectoryControlAction::Reload {
-                    expected_revision: *expected_revision,
-                    tenant_id: parse_control_tenant_id(tenant_id)?,
-                },
-                context,
-                persistence,
-            )
-            .await
-            .map(Some)
-        }
+        } => run_directory_control_operation(
+            DirectoryControlAction::Reload {
+                expected_revision: *expected_revision,
+                tenant_id: parse_control_tenant_id(tenant_id)?,
+            },
+            context,
+            persistence,
+        )
+        .await
+        .map(Some),
         ControlOperationPayload::TenantDirectoryFinalize {
             expected_revision,
             tenant_id,
         } => {
-            let persistence = require_persistence(persistence)?;
             let tenant_id = parse_control_tenant_id(tenant_id)?;
             let outcome = run_directory_control_operation(
                 DirectoryControlAction::Finalize {
@@ -402,7 +375,6 @@ pub(super) async fn execute_inner(
             Ok(Some(outcome))
         }
         ControlOperationPayload::TenantDirectoryDescribe => {
-            let persistence = require_persistence(persistence)?;
             run_directory_control_operation(DirectoryControlAction::Describe, context, persistence)
                 .await
                 .map(Some)
@@ -479,16 +451,6 @@ pub(super) fn map_directory_control_error(error: TenantDirectoryControlError) ->
     }
 }
 
-fn require_persistence(
-    persistence: Option<&dyn OperatorPersistence>,
-) -> Result<&dyn OperatorPersistence, SideEffectError> {
-    persistence.ok_or_else(|| {
-        SideEffectError::Retryable(anyhow::anyhow!(
-            "operator persistence adapter is unavailable"
-        ))
-    })
-}
-
 /// The state epoch is selected before the candidate starts; this operation
 /// durably records the post-restore boundary in that restored database and
 /// revokes all its refresh tokens. It never claims to revoke stateless JWTs:
@@ -500,7 +462,9 @@ async fn run_recovery_invalidation(
 ) -> Result<ControlResultData, SideEffectError> {
     let config = crate::config::ConfigSource::load_for_migrations()?;
     let configured_epoch = config.transient_state_epoch()?;
-    if configured_epoch.is_nil() || configured_epoch.to_string() != state_epoch {
+    if configured_epoch
+        != Uuid::parse_str(state_epoch).context("recovery state epoch is invalid")?
+    {
         return Err(anyhow::anyhow!(
             "recovery operation state epoch does not match the running candidate"
         )
@@ -511,10 +475,9 @@ async fn run_recovery_invalidation(
     let completed_at = Utc::now();
     let not_before = completed_at
         + Duration::seconds(
-            access_token_ttl
-                .max(id_token_ttl)
-                .saturating_add(crate::settings::RECOVERY_ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
-                .saturating_add(1),
+            access_token_ttl.max(id_token_ttl)
+                + crate::settings::RECOVERY_ACCESS_TOKEN_CLOCK_SKEW_SECONDS
+                + 1,
         );
     let outcome = persistence
         .recovery_invalidations()
@@ -597,7 +560,7 @@ async fn run_tenant_resource_operation(
         return Ok(outcome);
     }
     // A missing receipt still requires fresh active-tenant admission.
-    let binding = active_tenant_binding(persistence, tenant_id).await?;
+    let binding = active_tenant_binding(persistence, parsed_tenant).await?;
     let (resources, executor) = match operation {
         TenantResourceAction::Apply => {
             let resources = prepare_apply_change_set(resources)?;
@@ -656,9 +619,8 @@ async fn run_tenant_resource_operation(
 
 async fn active_tenant_binding(
     persistence: &dyn OperatorPersistence,
-    tenant_id: &str,
+    tenant_id: nazo_identity::TenantId,
 ) -> Result<nazo_identity::TenantDirectoryBinding, SideEffectError> {
-    let tenant_id = parse_control_tenant_id(tenant_id)?;
     persistence
         .tenant_directory()
         .find_active_binding(tenant_id)
@@ -674,11 +636,11 @@ async fn active_tenant_binding(
 async fn system_tenant_binding(
     persistence: &dyn OperatorPersistence,
 ) -> Result<nazo_identity::TenantDirectoryBinding, SideEffectError> {
-    let tenant_id = nazo_identity::TenantContext::default_system()
-        .tenant_id
-        .as_uuid()
-        .to_string();
-    active_tenant_binding(persistence, &tenant_id).await
+    active_tenant_binding(
+        persistence,
+        nazo_identity::TenantContext::default_system().tenant_id,
+    )
+    .await
 }
 
 pub(super) fn map_tenant_directory_read_error(
@@ -743,30 +705,9 @@ fn prepare_apply_change_set(
 ) -> anyhow::Result<Vec<PreparedTenantResource>> {
     let path = configured_change_set_path();
     let raw = read_regular_bounded_file(&path)?;
-    prepare_change_set_material(&raw, identities).map_err(|error| {
+    decode_change_set_payloads(&raw, identities).map_err(|error| {
         anyhow::anyhow!("mounted change set {} is unusable: {error}", path.display())
     })
-}
-
-/// Pure digest binding of already-read change-set bytes against the signed
-/// identity set.
-pub(super) fn prepare_change_set_material(
-    raw_manifest: &[u8],
-    identities: &[TenantResourceIdentity],
-) -> anyhow::Result<Vec<PreparedTenantResource>> {
-    let mut authorized = std::collections::BTreeMap::new();
-    for identity in identities {
-        if authorized
-            .insert(
-                (identity.kind, identity.resource_id.clone()),
-                identity.clone(),
-            )
-            .is_some()
-        {
-            bail!("signed resource identities must be unique");
-        }
-    }
-    decode_change_set_payloads(raw_manifest, &authorized).map_err(anyhow::Error::new)
 }
 
 pub(super) fn read_regular_bounded_file(path: &std::path::Path) -> anyhow::Result<Vec<u8>> {
@@ -780,21 +721,15 @@ fn read_regular_file_bounded(
 ) -> anyhow::Result<Vec<u8>> {
     let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("failed to inspect {}", path.display()))?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
+    if !metadata.is_file() {
         bail!("{material} must be a regular non-symlink file");
     }
     if metadata.len() > max_bytes as u64 {
         bail!("{material} exceeds the maximum size");
     }
     let file = File::open(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let opened_metadata = file
-        .metadata()
-        .with_context(|| format!("failed to inspect opened file {}", path.display()))?;
-    if !opened_metadata.is_file() || opened_metadata.len() > max_bytes as u64 {
-        bail!("{material} is not a bounded regular file");
-    }
-    let mut raw = Vec::with_capacity((opened_metadata.len() as usize).min(max_bytes));
-    file.take(max_bytes.saturating_add(1) as u64)
+    let mut raw = Vec::with_capacity(metadata.len() as usize);
+    file.take((max_bytes + 1) as u64)
         .read_to_end(&mut raw)
         .with_context(|| format!("failed to read {}", path.display()))?;
     if raw.is_empty() || raw.len() > max_bytes {

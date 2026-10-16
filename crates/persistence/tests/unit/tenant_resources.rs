@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use nazo_operator_protocol::{
     MAX_TENANT_RESOURCE_IDENTITIES, TenantResourceIdentity, TenantResourceKind,
@@ -39,17 +37,15 @@ fn change_set_decoder_requires_the_exact_signed_identity_set() {
         }]
     }))
     .unwrap();
-    let authorized = BTreeMap::from([(
-        (identity.kind, identity.resource_id.clone()),
-        identity.clone(),
-    )]);
+    let authorized = [identity.clone()];
 
+    assert!(decode_change_set_payloads(&manifest, &[identity.clone(), identity.clone()]).is_err());
     let decoded = decode_change_set_payloads(&manifest, &authorized).unwrap();
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].identity, identity);
 
     let mut drifted = authorized;
-    drifted.values_mut().next().unwrap().digest = "0".repeat(64);
+    drifted[0].digest = "0".repeat(64);
     assert!(decode_change_set_payloads(&manifest, &drifted).is_err());
 }
 
@@ -78,10 +74,7 @@ fn change_set_identity_is_unique_by_kind_and_resource_id() {
         resource_id: "shared".to_owned(),
         digest: digest(&dataset_payload),
     };
-    let authorized = BTreeMap::from([
-        ((user.kind, user.resource_id.clone()), user),
-        ((dataset.kind, dataset.resource_id.clone()), dataset),
-    ]);
+    let authorized = [user, dataset];
     let resource = |kind: &str, payload: &[u8]| {
         serde_json::json!({
             "kind": kind,
@@ -173,4 +166,43 @@ fn current_action_names_are_closed() {
     assert_eq!(operation_name(TenantResourceAction::Apply), "apply");
     assert_eq!(operation_name(TenantResourceAction::Enumerate), "enumerate");
     assert_eq!(operation_name(TenantResourceAction::Revoke), "revoke");
+}
+
+#[test]
+fn user_profile_decodes_owned_fields_and_preserves_closed_bounds() {
+    let decode = |profile| {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "username": "alice", "email": "alice@example.com",
+            "password": "correct horse battery staple", "email_verified": true,
+            "profile": profile,
+        }))
+        .unwrap();
+        decode_payload(TenantResourceKind::User, &payload)
+    };
+    let TenantResourcePayload::User(user) = decode(serde_json::json!({
+        "display_name": "张三", "given_name": null,
+        "phone_number": "+8613800000000", "phone_number_verified": true,
+    }))
+    .unwrap() else {
+        panic!("expected user payload")
+    };
+    assert_eq!(user.profile.display_name.as_deref(), Some("张三"));
+    assert_eq!(user.profile.given_name, None);
+    assert!(user.profile.phone_number_verified);
+    for profile in [
+        serde_json::json!({"is_admin": true}),
+        serde_json::json!({"display_name": "x".repeat(81)}),
+        serde_json::json!({"display_name": ""}),
+        serde_json::json!({"display_name": "name\n"}),
+        serde_json::json!({"display_name": 42}),
+        serde_json::json!({"phone_number_verified": null}),
+        serde_json::json!([]),
+    ] {
+        assert!(decode(profile).is_err());
+    }
+    let TenantResourcePayload::User(user) = decode(serde_json::Value::Null).unwrap() else {
+        panic!("expected user payload")
+    };
+    assert!(user.profile.display_name.is_none());
+    assert!(!user.profile.phone_number_verified);
 }
