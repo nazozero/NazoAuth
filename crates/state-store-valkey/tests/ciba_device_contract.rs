@@ -812,8 +812,8 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
         .unwrap()
         .unwrap();
     let (first, second) = tokio::join!(
-        service.deny(first_prepared, || now),
-        service.deny(second_prepared, || now)
+        service.deny(&first_prepared, || now),
+        service.deny(&second_prepared, || now)
     );
 
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
@@ -970,9 +970,8 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
     .unwrap() else {
         panic!("recorded CAS must succeed")
     };
-    assert_eq!(written.state(), &recorded);
     assert_eq!(
-        written.version().comparison_token(),
+        written.comparison_token(),
         inspector.get::<String, _>(&device_key).await.unwrap()
     );
     assert_eq!(
@@ -1000,7 +999,7 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
             &store,
             &device_hash,
             &user_code,
-            written.version(),
+            &written,
             &approved
         )
         .await

@@ -76,9 +76,7 @@ impl DeviceStore {
         state: &DeviceAuthorizationState,
         ttl_seconds: u64,
     ) -> Result<DeviceCreateResult, Error> {
-        let raw = serde_json::to_string(state).map_err(|error| {
-            Error::protocol(format!("failed to serialize device state: {error}"))
-        })?;
+        let raw = serialize_state(state)?;
         let device_hash = blake3::hash(device_code.as_bytes()).to_hex().to_string();
         let reply = command::eval_string(
             &self.connection,
@@ -153,14 +151,11 @@ impl DeviceStore {
         &self,
         key: String,
         expected: &DeviceStateVersion,
-        replacement: &DeviceAuthorizationState,
+        replacement: String,
         user_code_mapping: Option<(&str, &str)>,
-    ) -> Result<(DeviceAtomicResult, String), Error> {
-        let raw = serde_json::to_string(replacement).map_err(|error| {
-            Error::protocol(format!("failed to serialize device state: {error}"))
-        })?;
+    ) -> Result<DeviceAtomicResult, Error> {
         let mut keys = vec![key];
-        let mut arguments = vec![expected.comparison_token().to_owned(), raw.clone()];
+        let mut arguments = vec![expected.comparison_token().to_owned(), replacement];
         if let Some((user_code, device_hash)) = user_code_mapping {
             keys.push(keys::device_user_code(user_code));
             arguments.push(device_hash.to_owned());
@@ -168,7 +163,7 @@ impl DeviceStore {
         let reply =
             command::eval_string(&self.connection, COMPARE_SET_DEVICE_SCRIPT, keys, arguments)
                 .await?;
-        Ok((parse_atomic_result(&reply)?, raw))
+        parse_atomic_result(&reply)
     }
 
     async fn complete_decision_snapshot(
@@ -178,9 +173,7 @@ impl DeviceStore {
         expected: &DeviceStateVersion,
         replacement: &DeviceAuthorizationState,
     ) -> Result<DeviceAtomicResult, Error> {
-        let replacement = serde_json::to_string(replacement).map_err(|error| {
-            Error::protocol(format!("failed to serialize device state: {error}"))
-        })?;
+        let replacement = serialize_state(replacement)?;
         let reply = command::eval_string(
             &self.connection,
             COMPLETE_DEVICE_DECISION_SCRIPT,
@@ -256,10 +249,14 @@ impl DeviceStateStorePort for DeviceStore {
         replacement: &'a DeviceAuthorizationState,
     ) -> nazo_auth::DeviceStateFuture<'a, DeviceAtomicResult> {
         Box::pin(async move {
-            self.replace_snapshot(keys::device_code(device_code), version, replacement, None)
-                .await
-                .map(|(result, _)| result)
-                .map_err(port_error)
+            self.replace_snapshot(
+                keys::device_code(device_code),
+                version,
+                serialize_state(replacement).map_err(port_error)?,
+                None,
+            )
+            .await
+            .map_err(port_error)
         })
     }
 
@@ -270,21 +267,19 @@ impl DeviceStateStorePort for DeviceStore {
         replacement: &'a DeviceAuthorizationState,
     ) -> nazo_auth::DeviceStateFuture<'a, DeviceStateReplacement<Self::Version>> {
         Box::pin(async move {
-            let (result, raw) = self
+            let raw = serialize_state(replacement).map_err(port_error)?;
+            let result = self
                 .replace_snapshot(
                     keys::device_code_hash(device_hash),
                     version,
-                    replacement,
+                    raw.clone(),
                     None,
                 )
                 .await
                 .map_err(port_error)?;
             Ok(match result {
                 DeviceAtomicResult::Applied => {
-                    DeviceStateReplacement::Applied(Box::new(StoredDeviceAuthorization::new(
-                        replacement.clone(),
-                        DeviceStateVersion::new(raw),
-                    )))
+                    DeviceStateReplacement::Applied(DeviceStateVersion::new(raw))
                 }
                 DeviceAtomicResult::Conflict => DeviceStateReplacement::Conflict,
                 DeviceAtomicResult::DeadlineElapsed => DeviceStateReplacement::DeadlineElapsed,
@@ -303,11 +298,10 @@ impl DeviceStateStorePort for DeviceStore {
             self.replace_snapshot(
                 keys::device_code_hash(device_hash),
                 version,
-                replacement,
+                serialize_state(replacement).map_err(port_error)?,
                 Some((user_code, device_hash)),
             )
             .await
-            .map(|(result, _)| result)
             .map_err(port_error)
         })
     }
@@ -343,6 +337,11 @@ impl DeviceStateStorePort for DeviceStore {
             .and_then(|reply| parse_atomic_result(&reply).map_err(port_error))
         })
     }
+}
+
+fn serialize_state(state: &DeviceAuthorizationState) -> Result<String, Error> {
+    serde_json::to_string(state)
+        .map_err(|error| Error::protocol(format!("failed to serialize device state: {error}")))
 }
 
 fn parse_atomic_result(reply: &str) -> Result<DeviceAtomicResult, Error> {

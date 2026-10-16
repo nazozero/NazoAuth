@@ -82,7 +82,6 @@ pub async fn token_device_code_with_service(
                 return Err(sender_constraint_multiple_error());
             }
         };
-    let device_grant_key = device_grant_key(device_code);
     if let Err(error) = consume_token_client_assertion_with_authorization_service(
         issuance.authorization,
         client,
@@ -135,7 +134,7 @@ pub async fn token_device_code_with_service(
                 token_service,
                 client,
                 TokenIssuanceMode::SingleUse {
-                    grant_key: device_grant_key,
+                    grant_key: device_grant_key(device_code),
                     grant_expires_at: payload.expires_at,
                 },
                 TokenIssue {

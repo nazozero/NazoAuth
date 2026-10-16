@@ -158,7 +158,7 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
         last_poll_at: None,
         slow_down_count: 0,
     };
-    let DevicePollTransition::AuthorizationPending(next) = evaluate_device_poll(&first_poll, now)
+    let DevicePollTransition::AuthorizationPending(next) = evaluate_device_poll(first_poll, now)
     else {
         panic!("first poll should remain pending without slowing down");
     };
@@ -173,7 +173,7 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
         last_poll_at: Some(now - Duration::seconds(1)),
         slow_down_count: 0,
     };
-    let DevicePollTransition::SlowDown(next) = evaluate_device_poll(&too_early, now) else {
+    let DevicePollTransition::SlowDown(next) = evaluate_device_poll(too_early, now) else {
         panic!("polling before the interval must slow the client down");
     };
     assert!(matches!(next, DeviceAuthorizationState::Pending {
@@ -190,7 +190,7 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
         started_at: now,
     };
     assert_eq!(
-        evaluate_device_poll(&approving, now),
+        evaluate_device_poll(approving, now),
         DevicePollTransition::AuthorizationPendingUnchanged
     );
 
@@ -200,7 +200,7 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
         approved_at: now,
     };
     assert_eq!(
-        evaluate_device_poll(&approved, now),
+        evaluate_device_poll(approved, now),
         DevicePollTransition::Approved {
             payload: payload.clone(),
             approval: approval.clone()
@@ -212,16 +212,16 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
         denied_at: now,
     };
     assert_eq!(
-        evaluate_device_poll(&denied, now),
+        evaluate_device_poll(denied, now),
         DevicePollTransition::AccessDenied
     );
 
     let consumed = DeviceAuthorizationState::Consumed { consumed_at: now };
+    assert_eq!(device_authorization_payload(&consumed), None);
     assert_eq!(
-        evaluate_device_poll(&consumed, now),
+        evaluate_device_poll(consumed, now),
         DevicePollTransition::Consumed
     );
-    assert_eq!(device_authorization_payload(&consumed), None);
 
     let expired = DeviceAuthorizationState::Pending {
         payload: DeviceAuthorizationPayload {
@@ -232,7 +232,7 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
         slow_down_count: 0,
     };
     assert_eq!(
-        evaluate_device_poll(&expired, now),
+        evaluate_device_poll(expired, now),
         DevicePollTransition::Expired
     );
 }

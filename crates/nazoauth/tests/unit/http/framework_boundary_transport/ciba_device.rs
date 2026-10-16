@@ -498,7 +498,7 @@ mod ciba_device_contract {
         let device_code = format!("golden-device-code-{}", Uuid::now_v7());
         let user_code = format!("GOLDEN{}", Uuid::now_v7().simple()).to_uppercase();
         let (_, code) = service
-            .create_unique(&payload, 600, || device_code.clone(), || user_code.clone())
+            .create_unique(payload, 600, || device_code.clone(), || user_code.clone())
             .await
             .expect("device persisted");
         let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
