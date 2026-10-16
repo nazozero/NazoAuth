@@ -315,7 +315,7 @@ impl TokenEndpointHandles {
                     false,
                 ));
             }
-            client_attestation_jkt = Some(validated.client_instance_key_thumbprint.clone());
+            client_attestation_jkt = Some(validated.client_instance_key_thumbprint);
             match authorization_service
                 .consume_client_attestation_proof(
                     &validated.client_id,
@@ -453,7 +453,7 @@ impl TokenEndpointHandles {
                     &issuance,
                     &facts,
                     &client,
-                    &form,
+                    form,
                     client_assertion.as_ref(),
                 )
                 .await
@@ -526,7 +526,7 @@ impl TokenEndpointHandles {
                 execute_pre_authorized(
                     endpoint.as_ref(),
                     pre_authorized,
-                    Some(client.client_id.clone()),
+                    Some(client.registration.client_id),
                     sender.dpop_jkt,
                     sender.mtls_x5t_s256,
                 )

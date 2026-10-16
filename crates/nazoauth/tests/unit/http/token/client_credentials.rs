@@ -31,7 +31,7 @@ use uuid::Uuid;
 pub(super) fn client_credentials_issue_request(
     settings: &Settings,
     client: &ClientRow,
-    form: &TokenForm,
+    form: TokenForm,
 ) -> Result<ClientCredentialsIssue, HttpResponse> {
     client_credentials_issue_request_with_default_audience(
         &settings.protocol.default_audience,
@@ -45,7 +45,7 @@ pub(crate) async fn token_client_credentials(
     state: &TestInfrastructure,
     req: &HttpRequest,
     client: &ClientRow,
-    form: &TokenForm,
+    form: TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
     let connection = state.valkey_connection();
@@ -222,7 +222,7 @@ fn client_credentials_defaults_to_allowed_scopes_and_default_audience() {
     let settings = settings(AuthorizationServerProfile::Oauth2Baseline);
     let client = client();
 
-    let issue = client_credentials_issue_request(&settings, &client, &form(None, &[]))
+    let issue = client_credentials_issue_request(&settings, &client, form(None, &[]))
         .expect("confidential client may use client_credentials");
 
     assert_eq!(
@@ -240,7 +240,7 @@ async fn client_credentials_scope_request_may_only_narrow_registered_scopes() {
     let issue = client_credentials_issue_request(
         &settings,
         &client,
-        &form(Some("payments accounts"), &["https://api.example.com"]),
+        form(Some("payments accounts"), &["https://api.example.com"]),
     )
     .expect("subset scopes and registered audience should be accepted");
 
@@ -250,7 +250,7 @@ async fn client_credentials_scope_request_may_only_narrow_registered_scopes() {
     );
     assert_eq!(issue.audiences, vec!["https://api.example.com".to_owned()]);
 
-    let response = client_credentials_issue_request(&settings, &client, &form(Some("admin"), &[]))
+    let response = client_credentials_issue_request(&settings, &client, form(Some("admin"), &[]))
         .expect_err("client_credentials must reject scope privilege expansion");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(response).await, "invalid_scope");
@@ -262,13 +262,13 @@ async fn client_credentials_rejects_openid_scope_even_if_registered() {
     let mut client = client();
     client.scopes = vec!["accounts".to_owned(), "openid".to_owned()];
 
-    let default_response = client_credentials_issue_request(&settings, &client, &form(None, &[]))
+    let default_response = client_credentials_issue_request(&settings, &client, form(None, &[]))
         .expect_err("client_credentials must not inherit openid from legacy client metadata");
     assert_eq!(default_response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(default_response).await, "invalid_scope");
 
     let explicit_response =
-        client_credentials_issue_request(&settings, &client, &form(Some("openid"), &[]))
+        client_credentials_issue_request(&settings, &client, form(Some("openid"), &[]))
             .expect_err("client_credentials must not accept explicit openid scope");
     assert_eq!(explicit_response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(explicit_response).await, "invalid_scope");
@@ -305,7 +305,7 @@ async fn client_credentials_rejects_unregistered_audience() {
     let response = client_credentials_issue_request(
         &settings,
         &client,
-        &form(Some("accounts"), &["https://evil.example.com"]),
+        form(Some("accounts"), &["https://evil.example.com"]),
     )
     .expect_err("client_credentials access token audience must be client-registered");
 
@@ -321,7 +321,7 @@ async fn token_client_credentials_rejects_public_clients_at_endpoint_boundary() 
     client.token_endpoint_auth_method = "none".to_owned();
 
     let response =
-        token_client_credentials(&state, &token_request(), &client, &form(None, &[]), None).await;
+        token_client_credentials(&state, &token_request(), &client, form(None, &[]), None).await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(response).await, "unauthorized_client");
@@ -337,7 +337,7 @@ async fn token_client_credentials_requires_configured_sender_constraints() {
         &state,
         &token_request(),
         &dpop_client,
-        &form(None, &[]),
+        form(None, &[]),
         None,
     )
     .await;
@@ -350,7 +350,7 @@ async fn token_client_credentials_requires_configured_sender_constraints() {
         &state,
         &token_request(),
         &mtls_client,
-        &form(None, &[]),
+        form(None, &[]),
         None,
     )
     .await;
@@ -390,7 +390,7 @@ async fn token_client_credentials_accepts_verified_mtls_then_fails_closed_withou
     );
     // The fixture deliberately has no database. Valid mTLS passes the
     // sender check, then the pre-signing principal read fails closed.
-    let response = token_client_credentials(&state, &req, &client, &form(None, &[]), None).await;
+    let response = token_client_credentials(&state, &req, &client, form(None, &[]), None).await;
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = actix_web::body::to_bytes(response.into_body())
@@ -415,7 +415,7 @@ async fn token_client_credentials_accepts_verified_mtls_then_fails_closed_withou
     // ignored and a retry is an ordinary fresh request, so it hits the same
     // principal-store failure.
     let retry_response =
-        token_client_credentials(&state, &retry_request, &client, &form(None, &[]), None).await;
+        token_client_credentials(&state, &retry_request, &client, form(None, &[]), None).await;
     assert_eq!(retry_response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let body = actix_web::body::to_bytes(retry_response.into_body())
         .await
@@ -434,7 +434,7 @@ async fn token_client_credentials_rejects_invalid_scope_before_issuing_token() {
         &state,
         &token_request(),
         &client,
-        &form(Some("admin"), &[]),
+        form(Some("admin"), &[]),
         None,
     )
     .await;
