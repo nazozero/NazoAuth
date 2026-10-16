@@ -537,17 +537,18 @@ results follow the transaction ACK. A missing required capability fails closed
 before any clear. The ordinary repository clear remains available for fixture
 setup/cleanup and is not the profile operation's accepting contract. PostgreSQL regressions cover append rollback, committed-but-unknown responses and rejection of old proofs after new enrollment.
 
-Access-request approval and rejection use neutral purpose ports whose default
-is Unavailable before any effect. The PG owner locks Pending and the current
+Access-request approval and rejection use neutral purpose ports. The PG owner
+locks Pending and the current
 tenant/realm/organization principals, checks the active administrator, commits
 the client/request change and canonical Required outcome together, and returns
 the committed view only after the full ACK. Its connection is discarded on
 error/cancellation. Approval records the canonical event UUID on the business
-row in the same transaction; the reference holds no copied payload or secret.
-Historical approvals without that reference cannot activate a staged delivery.
-The precise recovery predicate is a restricted SECURITY DEFINER boolean API
-joining that exact reference, tenant/requester/request/client, approver, active
-client and secret generation. Runtime audit-table reads remain forbidden.
+row in the same transaction. This commit marker holds no copied payload or
+secret and survives reclamation of the delivered audit event. Historical
+approvals without the marker cannot activate a staged delivery. Recovery checks
+that marker, tenant/requester/request/client ownership, active client and current
+secret generation directly on the business rows. It does not reread delivered
+audit payloads; runtime audit-table reads remain forbidden.
 Normal publication follows the Required transaction ACK. An Unknown response
 retains the same stage and original expiry; recovery checks the same owner and
 does not create another client, secret or audit event. Valkey stage/publish is

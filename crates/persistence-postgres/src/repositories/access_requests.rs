@@ -282,17 +282,27 @@ impl AccessRequestRepository {
             matched: bool,
         }
         let mut connection = self.connection().await?;
-        // Runtime receives only this exact business predicate, never SELECT
-        // on canonical audit tables or a caller-selected event identifier.
-        diesel::sql_query("SELECT public.nazo_access_request_required_approval_matches($1,$2,$3,$4,$5,$6) AS matched")
-            .bind::<diesel::sql_types::Uuid, _>(tenant_id.as_uuid())
-            .bind::<diesel::sql_types::Uuid, _>(user_id.as_uuid())
-            .bind::<diesel::sql_types::Uuid, _>(request_id)
-            .bind::<diesel::sql_types::Uuid, _>(approved_client_id)
-            .bind::<diesel::sql_types::Text, _>(client_id)
-            .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(secret_binding)
-            .get_result::<Evidence>(&mut connection).await
-            .map(|evidence| evidence.matched).map_err(map_error)
+        // Approval and its Required event commit together. The business row
+        // keeps that marker after the receiver reclaims the delivered event.
+        diesel::sql_query(
+            "SELECT EXISTS (SELECT 1 FROM client_access_requests AS request \
+             JOIN oauth_clients AS client \
+               ON client.id=request.approved_client_id AND client.tenant_id=request.tenant_id \
+             WHERE request.tenant_id=$1 AND request.user_id=$2 AND request.id=$3 \
+               AND request.status=1 AND request.required_approval_event_id IS NOT NULL \
+               AND client.id=$4 AND client.client_id=$5 AND client.is_active \
+               AND client.client_secret_hash IS NOT DISTINCT FROM $6) AS matched",
+        )
+        .bind::<diesel::sql_types::Uuid, _>(tenant_id.as_uuid())
+        .bind::<diesel::sql_types::Uuid, _>(user_id.as_uuid())
+        .bind::<diesel::sql_types::Uuid, _>(request_id)
+        .bind::<diesel::sql_types::Uuid, _>(approved_client_id)
+        .bind::<diesel::sql_types::Text, _>(client_id)
+        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(secret_binding)
+        .get_result::<Evidence>(&mut connection)
+        .await
+        .map(|evidence| evidence.matched)
+        .map_err(map_error)
     }
 
     pub async fn approve_with_required_audit(

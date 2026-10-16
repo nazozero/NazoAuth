@@ -300,7 +300,6 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
                          public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
                          public.nazo_cleanup_authorization_decisions(), \
-                         public.nazo_access_request_required_approval_matches(UUID, UUID, UUID, UUID, TEXT, TEXT), \
                          public.nazo_append_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
                          public.nazo_stage_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
                          public.nazo_security_audit_batch_members(), \
@@ -323,7 +322,6 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
                          public.nazo_commit_authorization_decision(UUID, UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, UUID, TIMESTAMPTZ, JSONB, JSONB, JSONB, JSONB), \
                          public.nazo_cleanup_authorization_decisions(), \
-                         public.nazo_access_request_required_approval_matches(UUID, UUID, UUID, UUID, TEXT, TEXT), \
                          public.nazo_lock_token_principals(UUID, UUID, BIGINT, UUID, BIGINT), \
                          public.nazo_create_refresh_family(UUID, UUID, UUID, UUID, BYTEA, JSONB, UUID, BYTEA, JSONB, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, BIGINT, BIGINT, UUID, UUID, TEXT), \
                          public.nazo_oauth_refresh_contract_ensure(UUID, BYTEA, JSONB), \

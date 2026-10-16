@@ -10,7 +10,7 @@ use nazo_identity::{
 use nazo_postgres::{AccessRequestRepository, OAuthClientRepository, create_pool, get_conn};
 use uuid::Uuid;
 
-async fn fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
+fn database_url() -> Option<String> {
     let database_url =
         match std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
             Ok(database_url) => database_url,
@@ -19,6 +19,14 @@ async fn fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
             }
             Err(_) => return None,
         };
+    Some(database_url)
+}
+
+async fn fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
+    Some(fixture_at(&database_url()?).await)
+}
+
+async fn fixture_at(database_url: &str) -> (nazo_postgres::DbPool, TenantContext, UserId) {
     let pool = create_pool(database_url, 8).expect("test pool can be built");
     let tenant = TenantContext::default_system();
     let user_id = UserId::new(Uuid::now_v7()).unwrap();
@@ -34,7 +42,7 @@ async fn fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
         .execute(&mut connection)
         .await
         .unwrap();
-    Some((pool, tenant, user_id))
+    (pool, tenant, user_id)
 }
 
 async fn cleanup(pool: &nazo_postgres::DbPool, user_id: UserId) {
@@ -1015,7 +1023,7 @@ async fn required_access_outcomes(
 }
 
 #[tokio::test]
-async fn required_approval_rolls_back_client_and_decision_and_recovers_only_exact_audit_binding() {
+async fn required_approval_rolls_back_and_recovers_only_the_committed_approval() {
     use diesel_async::SimpleAsyncConnection;
     use futures_util::FutureExt as _;
     let Some((pool, tenant, actor)) = fixture().await else {
@@ -1230,12 +1238,10 @@ async fn required_approval_rolls_back_client_and_decision_and_recovers_only_exac
         events
     );
 
-    // Confirm the narrow capability works with the actual configured runtime
-    // privileges while canonical audit-table SELECT stays forbidden.
+    // Business-row matching works with the configured runtime privileges;
+    // canonical audit-table SELECT remains forbidden.
     #[derive(diesel::QueryableByName)]
     struct RuntimeEvidence {
-        #[diesel(sql_type = diesel::sql_types::Bool)]
-        matched: bool,
         #[diesel(sql_type = diesel::sql_types::Bool)]
         may_read_audit: bool,
     }
@@ -1250,15 +1256,18 @@ async fn required_approval_rolls_back_client_and_decision_and_recovers_only_exac
         .unwrap();
     let runtime_body = std::panic::AssertUnwindSafe(async {
         nazo_postgres::configure_runtime_role(&database_url, &role).await.unwrap();
-        connection.batch_execute(&format!("SET ROLE {role}")).await.unwrap();
-        let result = sql_query("SELECT public.nazo_access_request_required_approval_matches($1,$2,$3,$4,$5,NULL) AS matched, has_table_privilege(current_user,'public.security_audit_events','SELECT') AS may_read_audit")
-            .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid()).bind::<SqlUuid, _>(actor.as_uuid())
-            .bind::<SqlUuid, _>(request.id).bind::<SqlUuid, _>(approved.client.id)
-            .bind::<Text, _>(&approved.client.client_id).get_result::<RuntimeEvidence>(&mut connection).await.unwrap();
-        assert!(result.matched);
-        assert!(!result.may_read_audit, "purpose capability must not grant audit-table reads");
+        let mut role_url = url::Url::parse(&database_url).unwrap();
+        role_url.query_pairs_mut().append_pair("options", &format!("-c role={role}"));
+        let runtime_pool = create_pool(role_url.as_str(), 1).unwrap();
+        let runtime_repository = AccessRequestRepository::new(runtime_pool.clone());
+        assert!(runtime_repository.approved_delivery_with_required_audit_matches(
+            tenant.tenant_id, actor, request.id, approved.client.id, &approved.client.client_id, None
+        ).await.unwrap());
+        let mut runtime_connection = get_conn(&runtime_pool).await.unwrap();
+        let result = sql_query("SELECT has_table_privilege(current_user,'public.security_audit_events','SELECT') AS may_read_audit")
+            .get_result::<RuntimeEvidence>(&mut runtime_connection).await.unwrap();
+        assert!(!result.may_read_audit, "delivery matching must not grant audit-table reads");
     }).catch_unwind().await;
-    let reset_result = connection.batch_execute("RESET ROLE").await;
     let role_cleanup_result = connection
         .batch_execute(&format!("DROP OWNED BY {role}; DROP ROLE {role};"))
         .await;
@@ -1279,7 +1288,6 @@ async fn required_approval_rolls_back_client_and_decision_and_recovers_only_exac
         cleanup(&pool, actor).await;
         std::panic::resume_unwind(error);
     }
-    reset_result.unwrap();
     role_cleanup_result.unwrap();
     sql_query("UPDATE client_access_requests SET required_approval_event_id=NULL WHERE tenant_id=$1 AND id=$2")
         .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid()).bind::<SqlUuid, _>(request.id).execute(&mut connection).await.unwrap();
@@ -1296,7 +1304,7 @@ async fn required_approval_rolls_back_client_and_decision_and_recovers_only_exac
             )
             .await
             .unwrap(),
-        "an Approved row alone cannot recover a secret without its exact canonical outcome reference"
+        "an Approved row alone cannot recover a secret without the Required commit marker"
     );
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("DELETE FROM client_access_requests WHERE tenant_id=$1 AND id=$2")
@@ -1721,4 +1729,116 @@ async fn client_cas_commit_error_after_returning_never_returns_a_success_view() 
         .unwrap();
     drop(control);
     cleanup(&pool, actor).await;
+}
+
+#[tokio::test]
+async fn delivery_receipt_survives_real_audit_batch_acknowledgement() {
+    use diesel_async::{AsyncConnection, AsyncPgConnection, SimpleAsyncConnection};
+    use futures_util::FutureExt as _;
+    use nazo_persistence::{SecurityAuditBatchAck, SecurityAuditBatchClaim};
+    let Some(base) = database_url() else { return };
+    let name = format!("access_retention_{}", Uuid::now_v7().simple());
+    let mut admin = AsyncPgConnection::establish(&base).await.unwrap();
+    admin
+        .batch_execute(&format!("CREATE DATABASE {name}"))
+        .await
+        .unwrap();
+    let mut url = url::Url::parse(&base).unwrap();
+    url.set_path(&name);
+    let body = std::panic::AssertUnwindSafe(async {
+        nazo_postgres::run_pending_migrations(url.as_str())
+            .await
+            .unwrap();
+        let (pool, tenant, actor) = fixture_at(url.as_str()).await;
+        let repository = AccessRequestRepository::new(pool.clone());
+        let suffix = Uuid::now_v7().simple().to_string();
+        let request = repository
+            .create(new_request(tenant, actor, &suffix))
+            .await
+            .unwrap();
+        let prepared = prepared_client(tenant, client(&suffix), false);
+        let approved = repository
+            .approve_with_required_audit(
+                tenant,
+                request.id,
+                actor,
+                &prepared,
+                "retention-test".to_owned(),
+            )
+            .await
+            .unwrap();
+        let ledger = nazo_postgres::AuditLedgerRepository::new(pool.clone());
+        let SecurityAuditBatchClaim::Claimed(batch) = ledger
+            .claim_batch("approval-retention", 256, 1024 * 1024, 60)
+            .await
+            .unwrap()
+        else {
+            panic!("the committed approval must have a real audit batch")
+        };
+        assert!(
+            batch
+                .deliveries
+                .iter()
+                .any(|event| event.event_type == "client_created")
+        );
+        ledger
+            .ack_batch(SecurityAuditBatchAck {
+                generation: batch.generation,
+                deployment_id: "approval-retention".to_owned(),
+                first_sequence: batch.first_sequence,
+                last_sequence: batch.last_sequence,
+                event_count: batch.event_count(),
+                last_hash: batch.last_hash,
+                batch_digest: batch.digest,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            required_access_outcomes(&pool, tenant, request.id).await,
+            serde_json::json!([])
+        );
+        assert!(
+            repository
+                .approved_delivery_with_required_audit_matches(
+                    tenant.tenant_id,
+                    actor,
+                    request.id,
+                    approved.client.id,
+                    &approved.client.client_id,
+                    None
+                )
+                .await
+                .unwrap(),
+            "delivered audit reclamation must not erase the committed approval"
+        );
+        let mut connection = get_conn(&pool).await.unwrap();
+        sql_query("UPDATE oauth_clients SET is_active=FALSE WHERE id=$1")
+            .bind::<SqlUuid, _>(approved.client.id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        assert!(
+            !repository
+                .approved_delivery_with_required_audit_matches(
+                    tenant.tenant_id,
+                    actor,
+                    request.id,
+                    approved.client.id,
+                    &approved.client.client_id,
+                    None
+                )
+                .await
+                .unwrap(),
+            "the durable approval does not bypass current client state"
+        );
+    })
+    .catch_unwind()
+    .await;
+    let dropped = admin
+        .batch_execute(&format!("DROP DATABASE {name} WITH (FORCE)"))
+        .await;
+    if let Err(error) = body {
+        std::panic::resume_unwind(error);
+    }
+    dropped.unwrap();
 }
