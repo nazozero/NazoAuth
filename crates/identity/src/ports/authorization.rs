@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{AccessRequest, NewAccessRequest, TenantId, UserId};
 
-use super::common::{RepositoryError, RepositoryFuture};
+use super::common::RepositoryFuture;
 
 pub trait GrantSummaryRepositoryPort: Send + Sync {
     fn authorized_client_count(
@@ -45,18 +45,6 @@ pub trait AccessRequestRepositoryPort: Send + Sync {
     /// canonical Required outcome, in addition to current client linkage.
     /// Unavailable preserves the delivery for a later verified retry.
     fn approved_delivery_with_required_audit_matches<'a>(
-        &'a self,
-        _tenant_id: TenantId,
-        _user_id: UserId,
-        _request_id: Uuid,
-        _approved_client_id: Uuid,
-        _client_id: &'a str,
-        _secret_binding: Option<&'a str>,
-    ) -> RepositoryFuture<'a, bool> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
-
-    fn approved_delivery_matches<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,

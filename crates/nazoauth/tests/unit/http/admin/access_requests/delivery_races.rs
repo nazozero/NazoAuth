@@ -131,18 +131,6 @@ impl AdminAccessRequestStore for UnknownApproval {
             .reject_with_required_audit(tenant, id, actor, note)
     }
 
-    fn approved_delivery_matches<'a>(
-        &'a self,
-        tenant: nazo_identity::TenantId,
-        user: nazo_identity::UserId,
-        request: Uuid,
-        client: Uuid,
-        public_id: &'a str,
-        binding: Option<&'a str>,
-    ) -> RepositoryFuture<'a, bool> {
-        self.inner
-            .approved_delivery_matches(tenant, user, request, client, public_id, binding)
-    }
     fn page<'a>(
         &'a self,
         tenant: nazo_identity::TenantId,
@@ -159,28 +147,6 @@ impl AdminAccessRequestStore for UnknownApproval {
         id: Uuid,
     ) -> RepositoryFuture<'_, Option<nazo_identity::AccessRequest>> {
         self.inner.by_id(tenant, id)
-    }
-    fn approve<'a>(
-        &'a self,
-        tenant: nazo_identity::TenantContext,
-        id: Uuid,
-        actor: nazo_identity::UserId,
-        prepared: &'a nazo_auth::PreparedClientRegistration,
-    ) -> RepositoryFuture<'a, nazo_persistence::AdminAccessRequestApproval> {
-        Box::pin(async move {
-            let _committed = self.inner.approve(tenant, id, actor, prepared).await?;
-            self.commits.fetch_add(1, Ordering::AcqRel);
-            Err(RepositoryError::Unavailable)
-        })
-    }
-    fn reject(
-        &self,
-        tenant: nazo_identity::TenantId,
-        id: Uuid,
-        actor: nazo_identity::UserId,
-        note: String,
-    ) -> RepositoryFuture<'_, nazo_identity::AccessRequest> {
-        self.inner.reject(tenant, id, actor, note)
     }
 }
 

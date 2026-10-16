@@ -1608,7 +1608,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
 // ---------------------------------------------------------------------------
 
 /// EXS-04: `family_active`, `access_token_revoked`, and
-/// `approved_delivery_matches` are each exactly one read-only SELECT — no
+/// `approved_delivery_with_required_audit_matches` are each exactly one read-only SELECT — no
 /// transaction, one pooled checkout.
 #[tokio::test]
 async fn exs04_existence_checks_are_single_statements() {
@@ -1666,10 +1666,11 @@ async fn exs04_existence_checks_are_single_statements() {
     assert_no_transaction(delta);
     assert_clean(delta);
 
-    // approved_delivery_matches — request joined to the approved client.
+    // The seeded historical approval has no Required outcome. One predicate
+    // checks linkage and evidence together and rejects it.
     let (result, delta) = measure(
         &counter,
-        requests.approved_delivery_matches(
+        requests.approved_delivery_with_required_audit_matches(
             TenantId::new(tenant_id).expect("tenant id"),
             UserId::new(seed.user_id).expect("user id"),
             request_id,
@@ -1682,9 +1683,8 @@ async fn exs04_existence_checks_are_single_statements() {
         ),
     )
     .await;
-    assert!(result.expect("approved_delivery_matches succeeds"));
-    // 1 data statement: SELECT EXISTS over client_access_requests joined to
-    // oauth_clients with the approved-client predicates.
+    assert!(!result.expect("an unaudited fixture must not authorize delivery"));
+    // 1 data statement: the narrow Required approval evidence predicate.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_clean(delta);

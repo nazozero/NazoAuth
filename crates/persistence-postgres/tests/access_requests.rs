@@ -24,7 +24,7 @@ async fn fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
     let user_id = UserId::new(Uuid::now_v7()).unwrap();
     let token = Uuid::now_v7().simple().to_string();
     let mut connection = get_conn(&pool).await.unwrap();
-    sql_query("INSERT INTO users (id, tenant_id, realm_id, organization_id, username, email, password_hash) VALUES ($1,$2,$3,$4,$5,$6,'test')")
+    sql_query("INSERT INTO users (id, tenant_id, realm_id, organization_id, username, email, password_hash, role, admin_level) VALUES ($1,$2,$3,$4,$5,$6,'test','admin',10)")
         .bind::<SqlUuid, _>(user_id.as_uuid())
         .bind::<SqlUuid, _>(tenant.tenant_id.as_uuid())
         .bind::<SqlUuid, _>(tenant.realm_id.as_uuid())
@@ -246,8 +246,20 @@ async fn concurrent_approval_has_one_cas_winner_and_rolls_back_losing_client() {
         right_client.registration.client_id.clone(),
     ];
     let (left, right) = tokio::join!(
-        repository.approve(tenant, request.id, user_id, &left_client),
-        repository.approve(tenant, request.id, user_id, &right_client)
+        repository.approve_with_required_audit(
+            tenant,
+            request.id,
+            user_id,
+            &left_client,
+            "fixture-source-hash".to_owned()
+        ),
+        repository.approve_with_required_audit(
+            tenant,
+            request.id,
+            user_id,
+            &right_client,
+            "fixture-source-hash".to_owned()
+        )
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
     assert!(
@@ -291,11 +303,12 @@ async fn approval_rejects_mismatched_actor_context() {
         .await
         .unwrap();
     let actor_error = repository
-        .approve(
+        .approve_with_required_audit(
             tenant,
             request.id,
             UserId::new(Uuid::now_v7()).unwrap(),
             &prepared_client(tenant, client(&Uuid::now_v7().simple().to_string()), false),
+            "fixture-source-hash".to_owned(),
         )
         .await
         .unwrap_err();
@@ -314,11 +327,12 @@ async fn approval_rejects_mismatched_actor_context() {
     assert_eq!(actor_tenant, tenant);
     assert_ne!(actor_id, user_id);
     repository
-        .approve(
+        .approve_with_required_audit(
             tenant,
             request.id,
             actor_id,
             &prepared_client(tenant, client(&Uuid::now_v7().simple().to_string()), false),
+            "fixture-source-hash".to_owned(),
         )
         .await
         .expect("two distinct users in the same context must satisfy the batched lookup");
@@ -347,8 +361,8 @@ async fn concurrent_rejection_has_one_cas_winner() {
         .await
         .unwrap();
     let (left, right) = tokio::join!(
-        repository.reject(tenant.tenant_id, request.id, user_id, "left".to_owned()),
-        repository.reject(tenant.tenant_id, request.id, user_id, "right".to_owned())
+        repository.reject_with_required_audit(tenant, request.id, user_id, "left".to_owned()),
+        repository.reject_with_required_audit(tenant, request.id, user_id, "right".to_owned())
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
     assert!(
@@ -386,9 +400,16 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
     let expected_registration = registration.clone();
     let prepared = prepared_client(tenant, registration, true);
     let approved = repository
-        .approve(tenant, first.id, user_id, &prepared)
+        .approve_with_required_audit(
+            tenant,
+            first.id,
+            user_id,
+            &prepared,
+            "fixture-source-hash".to_owned(),
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .client;
     let client_repository = OAuthClientRepository::new(pool.clone());
     let persisted = client_repository
         .by_id(tenant.tenant_id.as_uuid(), approved.id)
@@ -433,7 +454,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
     );
     assert!(
         repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 tenant.tenant_id,
                 user_id,
                 first.id,
@@ -446,7 +467,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
     );
     assert!(
         !repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 tenant.tenant_id,
                 user_id,
                 first.id,
@@ -463,7 +484,13 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .unwrap();
 
     let error = repository
-        .approve(tenant, second.id, user_id, &prepared)
+        .approve_with_required_audit(
+            tenant,
+            second.id,
+            user_id,
+            &prepared,
+            "fixture-source-hash".to_owned(),
+        )
         .await
         .unwrap_err();
 
@@ -485,7 +512,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn approved_delivery_matches_requires_every_predicate_to_hold() {
+async fn approved_delivery_with_required_audit_matches_requires_every_predicate_to_hold() {
     let Some((pool, tenant, user_id)) = fixture().await else {
         return;
     };
@@ -496,19 +523,21 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
         .await
         .unwrap();
     let approved = repository
-        .approve(
+        .approve_with_required_audit(
             tenant,
             request.id,
             user_id,
             &prepared_client(tenant, client(&suffix), false),
+            "fixture-source-hash".to_owned(),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .client;
 
     // Every predicate holds.
     assert!(
         repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 tenant.tenant_id,
                 user_id,
                 request.id,
@@ -528,7 +557,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
         .unwrap();
     assert!(
         !repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 tenant.tenant_id,
                 user_id,
                 pending.id,
@@ -584,7 +613,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
     ] {
         assert!(
             !repository
-                .approved_delivery_matches(
+                .approved_delivery_with_required_audit_matches(
                     flipped_tenant,
                     flipped_user,
                     flipped_request,
@@ -607,7 +636,7 @@ async fn approved_delivery_matches_requires_every_predicate_to_hold() {
         .unwrap();
     assert!(
         !repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 tenant.tenant_id,
                 user_id,
                 request.id,
@@ -635,18 +664,20 @@ async fn existence_predicates_return_booleans_while_page_keeps_count_semantics()
         .await
         .unwrap();
     let approved = repository
-        .approve(
+        .approve_with_required_audit(
             tenant,
             request.id,
             user_id,
             &prepared_client(tenant, client(&suffix), false),
+            "fixture-source-hash".to_owned(),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .client;
 
     // The existence predicate returns a plain boolean, not a count.
     let exists: bool = repository
-        .approved_delivery_matches(
+        .approved_delivery_with_required_audit_matches(
             tenant.tenant_id,
             user_id,
             request.id,
@@ -667,7 +698,7 @@ async fn existence_predicates_return_booleans_while_page_keeps_count_semantics()
         .await
         .unwrap();
     repository
-        .reject(tenant.tenant_id, first_extra.id, user_id, "done".to_owned())
+        .reject_with_required_audit(tenant, first_extra.id, user_id, "done".to_owned())
         .await
         .unwrap();
     let second_extra = repository
@@ -675,12 +706,7 @@ async fn existence_predicates_return_booleans_while_page_keeps_count_semantics()
         .await
         .unwrap();
     repository
-        .reject(
-            tenant.tenant_id,
-            second_extra.id,
-            user_id,
-            "done".to_owned(),
-        )
+        .reject_with_required_audit(tenant, second_extra.id, user_id, "done".to_owned())
         .await
         .unwrap();
     repository
@@ -726,13 +752,20 @@ async fn delivery_binding_requires_the_exact_approved_secret_generation() {
     prepared.registration.token_endpoint_auth_method = "client_secret_post".to_owned();
     prepared.client_secret_hash = Some("client-secret-v1:attempt-salt:attempt-digest".to_owned());
     let approved = repository
-        .approve(tenant, request.id, user, &prepared)
+        .approve_with_required_audit(
+            tenant,
+            request.id,
+            user,
+            &prepared,
+            "fixture-source-hash".to_owned(),
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .client;
     for binding in [None, Some("client-secret-v1:other-salt:other-digest")] {
         assert!(
             !repository
-                .approved_delivery_matches(
+                .approved_delivery_with_required_audit_matches(
                     tenant.tenant_id,
                     user,
                     request.id,
@@ -745,7 +778,7 @@ async fn delivery_binding_requires_the_exact_approved_secret_generation() {
         );
     }
     assert!(
-        nazo_persistence::AdminAccessRequestStore::approved_delivery_matches(
+        nazo_persistence::AdminAccessRequestStore::approved_delivery_with_required_audit_matches(
             &repository,
             tenant.tenant_id,
             user,
@@ -766,7 +799,7 @@ async fn delivery_binding_requires_the_exact_approved_secret_generation() {
         .unwrap();
     assert!(
         !repository
-            .approved_delivery_matches(
+            .approved_delivery_with_required_audit_matches(
                 tenant.tenant_id,
                 user,
                 request.id,
@@ -792,12 +825,13 @@ async fn decision_write_ports_return_acknowledged_views_without_a_display_reread
         .await
         .unwrap();
     let prepared = prepared_client(tenant, client(&suffix), false);
-    let approved = nazo_persistence::AdminAccessRequestStore::approve(
+    let approved = nazo_persistence::AdminAccessRequestStore::approve_with_required_audit(
         &repository,
         tenant,
         pending.id,
         user,
         &prepared,
+        "fixture-source-hash".to_owned(),
     )
     .await
     .unwrap();
@@ -823,9 +857,9 @@ async fn decision_write_ports_return_acknowledged_views_without_a_display_reread
         .create(new_request(tenant, user, &format!("rejected-{suffix}")))
         .await
         .unwrap();
-    let rejected = nazo_persistence::AdminAccessRequestStore::reject(
+    let rejected = nazo_persistence::AdminAccessRequestStore::reject_with_required_audit(
         &repository,
-        tenant.tenant_id,
+        tenant,
         to_reject.id,
         user,
         "reviewed rejection".to_owned(),
@@ -845,9 +879,9 @@ async fn decision_write_ports_return_acknowledged_views_without_a_display_reread
             .unwrap()
     );
     assert_eq!(
-        nazo_persistence::AdminAccessRequestStore::reject(
+        nazo_persistence::AdminAccessRequestStore::reject_with_required_audit(
             &repository,
-            tenant.tenant_id,
+            tenant,
             to_reject.id,
             user,
             "another attempt".to_owned(),
@@ -1402,9 +1436,16 @@ async fn cancellation_discards_client_cas_and_access_rejection_connections_befor
         .unwrap();
     let prepared = prepared_client(tenant, client(&suffix), false);
     let client = requests
-        .approve(tenant, seed.id, actor, &prepared)
+        .approve_with_required_audit(
+            tenant,
+            seed.id,
+            actor,
+            &prepared,
+            "fixture-source-hash".to_owned(),
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .client;
     let pending = requests
         .create(new_request(tenant, actor, &format!("{suffix}-pending")))
         .await
@@ -1605,9 +1646,16 @@ async fn client_cas_commit_error_after_returning_never_returns_a_success_view() 
         .unwrap();
     let prepared = prepared_client(tenant, client(&suffix), false);
     let client = requests
-        .approve(tenant, request.id, actor, &prepared)
+        .approve_with_required_audit(
+            tenant,
+            request.id,
+            actor,
+            &prepared,
+            "fixture-source-hash".to_owned(),
+        )
         .await
-        .unwrap();
+        .unwrap()
+        .client;
     let clients = OAuthClientRepository::new(pool.clone());
     let before = clients
         .by_id(tenant.tenant_id.as_uuid(), client.id)
