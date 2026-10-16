@@ -90,6 +90,19 @@ fn verify_compact<T: DeserializeOwned>(
     if header.kid != expected_key_id || header.typ != expected_type {
         return Err(ProtocolError::Header);
     }
+    verify_signature(
+        &compact.as_bytes()[..protected.len() + 1 + payload.len()],
+        signature,
+        key,
+    )?;
+    decode_json(payload)
+}
+
+pub(crate) fn verify_signature(
+    signing_input: &[u8],
+    signature: &str,
+    key: &VerifyingKey,
+) -> Result<(), ProtocolError> {
     let mut signature_bytes = [0_u8; 64];
     match URL_SAFE_NO_PAD.decode_slice(signature, &mut signature_bytes) {
         Ok(64) => {}
@@ -98,12 +111,8 @@ fn verify_compact<T: DeserializeOwned>(
         }
         Err(_) => return Err(ProtocolError::Base64),
     }
-    key.verify(
-        &compact.as_bytes()[..protected.len() + 1 + payload.len()],
-        &signature_bytes,
-    )
-    .map_err(|_| ProtocolError::Signature)?;
-    decode_json(payload)
+    key.verify(signing_input, &signature_bytes)
+        .map_err(|_| ProtocolError::Signature)
 }
 
 pub(crate) fn validate_discovery_statement(

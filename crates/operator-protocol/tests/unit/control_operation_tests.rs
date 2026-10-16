@@ -530,10 +530,7 @@ fn tenant_resource_payloads_are_bounded_typed_and_unique() {
     let error = serde_json::from_value::<ControlOperationPayload>(raw)
         .unwrap_err()
         .to_string();
-    assert!(
-        error.contains("unknown resource field 'endpoint'"),
-        "{error}"
-    );
+    assert!(error.contains("unknown field `endpoint`"), "{error}");
 
     let raw = serde_json::json!({
         "name": "tenant-resource-enumerate",
@@ -543,7 +540,10 @@ fn tenant_resource_payloads_are_bounded_typed_and_unique() {
     let error = serde_json::from_value::<ControlOperationPayload>(raw)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("unknown selector kind"), "{error}");
+    assert!(
+        error.contains("unknown variant `wallet-provider`"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -754,22 +754,18 @@ fn typed_result_data_is_closed_and_outcome_coupled() {
         serde_json::from_value::<ControlResultData>(value).map_err(|error| error.to_string())
     };
     let raw = serde_json::json!({"kind": "tenant-resource-old", "revision": 1, "resources": []});
-    assert!(parse_data(raw).unwrap_err().contains("unknown result kind"));
+    assert!(parse_data(raw).unwrap_err().contains("unknown variant"));
     let raw = serde_json::json!({
         "kind": "tenant-resource-enumerate", "revision": 1, "resources": [],
         "resource_manifest_sha256": "f".repeat(64),
         "selectors": [],
     });
-    assert!(
-        parse_data(raw)
-            .unwrap_err()
-            .contains("unknown result field")
-    );
+    assert!(parse_data(raw).unwrap_err().contains("unknown field"));
     let raw = serde_json::json!({"kind": "tenant-resource-enumerate", "resources": []});
     assert!(
         parse_data(raw)
             .unwrap_err()
-            .contains("requires unsigned field 'revision'")
+            .contains("missing field `revision`")
     );
     let raw = serde_json::json!({
         "kind": "tenant-resource-enumerate",

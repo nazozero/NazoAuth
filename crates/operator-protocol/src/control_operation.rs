@@ -220,25 +220,23 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
             serde_json::Value::Object(members) => members,
             _ => return Err(serde::de::Error::custom("operation must be a JSON object")),
         };
-        let name = take_string_member(&mut members, "name").map_err(serde::de::Error::custom)?;
+        let name: String = take_member(&mut members, "name").map_err(serde::de::Error::custom)?;
         let payload = match name.as_str() {
             "migrate-apply" => ControlOperationPayload::MigrateApply,
             "keys-list" => ControlOperationPayload::KeysList,
             "keys-validate" => ControlOperationPayload::KeysValidate,
             "keys-generate-local" => {
-                let alg =
-                    take_string_member(&mut members, "alg").map_err(serde::de::Error::custom)?;
-                let purposes = take_string_vec_member(&mut members, "purposes")
-                    .map_err(serde::de::Error::custom)?;
+                let alg = take_member(&mut members, "alg").map_err(serde::de::Error::custom)?;
+                let purposes =
+                    take_member(&mut members, "purposes").map_err(serde::de::Error::custom)?;
                 ControlOperationPayload::KeysGenerateLocal { alg, purposes }
             }
             "tenant-keys-generate-local" => {
-                let tenant_id = take_string_member(&mut members, "tenant_id")
-                    .map_err(serde::de::Error::custom)?;
-                let alg =
-                    take_string_member(&mut members, "alg").map_err(serde::de::Error::custom)?;
-                let purposes = take_string_vec_member(&mut members, "purposes")
-                    .map_err(serde::de::Error::custom)?;
+                let tenant_id =
+                    take_member(&mut members, "tenant_id").map_err(serde::de::Error::custom)?;
+                let alg = take_member(&mut members, "alg").map_err(serde::de::Error::custom)?;
+                let purposes =
+                    take_member(&mut members, "purposes").map_err(serde::de::Error::custom)?;
                 ControlOperationPayload::TenantKeysGenerateLocal {
                     tenant_id,
                     alg,
@@ -246,13 +244,11 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
                 }
             }
             "keys-register-external" => {
-                let kid =
-                    take_string_member(&mut members, "kid").map_err(serde::de::Error::custom)?;
-                let alg =
-                    take_string_member(&mut members, "alg").map_err(serde::de::Error::custom)?;
-                let key_ref = take_string_member(&mut members, "key_ref")
-                    .map_err(serde::de::Error::custom)?;
-                let public_jwk_sha256 = take_string_member(&mut members, "public_jwk_sha256")
+                let kid = take_member(&mut members, "kid").map_err(serde::de::Error::custom)?;
+                let alg = take_member(&mut members, "alg").map_err(serde::de::Error::custom)?;
+                let key_ref =
+                    take_member(&mut members, "key_ref").map_err(serde::de::Error::custom)?;
+                let public_jwk_sha256 = take_member(&mut members, "public_jwk_sha256")
                     .map_err(serde::de::Error::custom)?;
                 ControlOperationPayload::KeysRegisterExternal {
                     kid,
@@ -262,10 +258,10 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
                 }
             }
             "tenant-resource-apply" | "tenant-resource-revoke" => {
-                let tenant_id = take_string_member(&mut members, "tenant_id")
-                    .map_err(serde::de::Error::custom)?;
-                let resources = take_resource_vec_member(&mut members, "resources")
-                    .map_err(serde::de::Error::custom)?;
+                let tenant_id =
+                    take_member(&mut members, "tenant_id").map_err(serde::de::Error::custom)?;
+                let resources =
+                    take_member(&mut members, "resources").map_err(serde::de::Error::custom)?;
                 if name == "tenant-resource-apply" {
                     ControlOperationPayload::TenantResourceApply {
                         tenant_id,
@@ -279,32 +275,31 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
                 }
             }
             "tenant-resource-enumerate" => {
-                let tenant_id = take_string_member(&mut members, "tenant_id")
-                    .map_err(serde::de::Error::custom)?;
-                let selectors = take_selector_vec_member(&mut members, "selectors")
-                    .map_err(serde::de::Error::custom)?;
+                let tenant_id =
+                    take_member(&mut members, "tenant_id").map_err(serde::de::Error::custom)?;
+                let selectors =
+                    take_member(&mut members, "selectors").map_err(serde::de::Error::custom)?;
                 ControlOperationPayload::TenantResourceEnumerate {
                     tenant_id,
                     selectors,
                 }
             }
             "recovery-invalidate" => ControlOperationPayload::RecoveryInvalidate {
-                state_epoch: take_string_member(&mut members, "state_epoch")
+                state_epoch: take_member(&mut members, "state_epoch")
                     .map_err(serde::de::Error::custom)?,
             },
             "tenant-directory-create" => {
-                let expected_revision = take_u64_member(&mut members, "expected_revision")
+                let expected_revision = take_member(&mut members, "expected_revision")
                     .map_err(serde::de::Error::custom)?;
-                let tenant = take_boundary_member(&mut members, "tenant")
-                    .map_err(serde::de::Error::custom)?;
-                let realm = take_boundary_member(&mut members, "realm")
-                    .map_err(serde::de::Error::custom)?;
-                let organization = take_boundary_member(&mut members, "organization")
-                    .map_err(serde::de::Error::custom)?;
+                let tenant =
+                    take_member(&mut members, "tenant").map_err(serde::de::Error::custom)?;
+                let realm = take_member(&mut members, "realm").map_err(serde::de::Error::custom)?;
+                let organization =
+                    take_member(&mut members, "organization").map_err(serde::de::Error::custom)?;
                 let issuer =
-                    take_string_member(&mut members, "issuer").map_err(serde::de::Error::custom)?;
-                let external_host = take_string_member(&mut members, "external_host")
-                    .map_err(serde::de::Error::custom)?;
+                    take_member(&mut members, "issuer").map_err(serde::de::Error::custom)?;
+                let external_host =
+                    take_member(&mut members, "external_host").map_err(serde::de::Error::custom)?;
                 ControlOperationPayload::TenantDirectoryCreate {
                     expected_revision,
                     tenant,
@@ -315,14 +310,14 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
                 }
             }
             "tenant-directory-update" => {
-                let expected_revision = take_u64_member(&mut members, "expected_revision")
+                let expected_revision = take_member(&mut members, "expected_revision")
                     .map_err(serde::de::Error::custom)?;
-                let tenant_id = take_string_member(&mut members, "tenant_id")
-                    .map_err(serde::de::Error::custom)?;
+                let tenant_id =
+                    take_member(&mut members, "tenant_id").map_err(serde::de::Error::custom)?;
                 let issuer =
-                    take_string_member(&mut members, "issuer").map_err(serde::de::Error::custom)?;
-                let external_host = take_string_member(&mut members, "external_host")
-                    .map_err(serde::de::Error::custom)?;
+                    take_member(&mut members, "issuer").map_err(serde::de::Error::custom)?;
+                let external_host =
+                    take_member(&mut members, "external_host").map_err(serde::de::Error::custom)?;
                 ControlOperationPayload::TenantDirectoryUpdate {
                     expected_revision,
                     tenant_id,
@@ -331,21 +326,21 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
                 }
             }
             "tenant-directory-disable" => ControlOperationPayload::TenantDirectoryDisable {
-                expected_revision: take_u64_member(&mut members, "expected_revision")
+                expected_revision: take_member(&mut members, "expected_revision")
                     .map_err(serde::de::Error::custom)?,
-                tenant_id: take_string_member(&mut members, "tenant_id")
+                tenant_id: take_member(&mut members, "tenant_id")
                     .map_err(serde::de::Error::custom)?,
             },
             "tenant-directory-reload" => ControlOperationPayload::TenantDirectoryReload {
-                expected_revision: take_u64_member(&mut members, "expected_revision")
+                expected_revision: take_member(&mut members, "expected_revision")
                     .map_err(serde::de::Error::custom)?,
-                tenant_id: take_string_member(&mut members, "tenant_id")
+                tenant_id: take_member(&mut members, "tenant_id")
                     .map_err(serde::de::Error::custom)?,
             },
             "tenant-directory-finalize" => ControlOperationPayload::TenantDirectoryFinalize {
-                expected_revision: take_u64_member(&mut members, "expected_revision")
+                expected_revision: take_member(&mut members, "expected_revision")
                     .map_err(serde::de::Error::custom)?,
-                tenant_id: take_string_member(&mut members, "tenant_id")
+                tenant_id: take_member(&mut members, "tenant_id")
                     .map_err(serde::de::Error::custom)?,
             },
             "tenant-directory-describe" => ControlOperationPayload::TenantDirectoryDescribe,
@@ -364,151 +359,15 @@ impl<'de> Deserialize<'de> for ControlOperationPayload {
     }
 }
 
-fn take_string_member(
+fn take_member<T: serde::de::DeserializeOwned>(
     members: &mut serde_json::Map<String, serde_json::Value>,
     key: &'static str,
-) -> Result<String, String> {
-    match members.remove(key) {
-        Some(serde_json::Value::String(text)) => Ok(text),
-        Some(_) => Err(format!("operation field '{key}' must be a string")),
-        None => Err(format!("operation requires field '{key}'")),
-    }
-}
-
-fn take_u64_member(
-    members: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Result<u64, String> {
-    match members.remove(key) {
-        Some(serde_json::Value::Number(number)) => number.as_u64().ok_or(format!(
-            "operation field '{key}' must be an unsigned integer"
-        )),
-        Some(_) => Err(format!(
-            "operation field '{key}' must be an unsigned integer"
-        )),
-        None => Err(format!("operation requires field '{key}'")),
-    }
-}
-
-fn take_boundary_member(
-    members: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Result<ControlTenantBoundary, String> {
-    match members.remove(key) {
-        Some(value @ serde_json::Value::Object(_)) => {
-            serde_json::from_value::<ControlTenantBoundary>(value)
-                .map_err(|_| format!("operation field '{key}' is not a valid boundary"))
-        }
-        Some(_) => Err(format!("operation field '{key}' must be an object")),
-        None => Err(format!("operation requires field '{key}'")),
-    }
-}
-
-fn take_string_vec_member(
-    members: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Result<Vec<String>, String> {
-    match members.remove(key) {
-        Some(serde_json::Value::Array(values)) => {
-            let mut parsed = Vec::with_capacity(values.len());
-            for value in values {
-                match value {
-                    serde_json::Value::String(text) => parsed.push(text),
-                    _ => return Err(format!("operation field '{key}' must contain strings")),
-                }
-            }
-            Ok(parsed)
-        }
-        _ => Err(format!(
-            "operation field '{key}' must be an array of strings"
-        )),
-    }
-}
-
-/// Parse a closed [`crate::wire::TenantResourceKind`] spelling.
-fn parse_tenant_resource_kind(text: &str) -> Option<crate::wire::TenantResourceKind> {
-    use crate::wire::TenantResourceKind as Kind;
-    match text {
-        "oauth-client" => Some(Kind::OauthClient),
-        "mtls-trust-anchor" => Some(Kind::MtlsTrustAnchor),
-        "openid4vc-dataset" => Some(Kind::Openid4vcDataset),
-        "openid4vc-trust-policy" => Some(Kind::Openid4vcTrustPolicy),
-        "user" => Some(Kind::User),
-        _ => None,
-    }
-}
-
-/// Strictly parse one member as an array of [`TenantResourceIdentity`]
-/// objects.  Every object must carry exactly `kind`, `resource_id`, and
-/// `digest`; unknown members are rejected instead of dropped.
-fn take_resource_vec_member(
-    members: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Result<Vec<TenantResourceIdentity>, String> {
-    let values = take_object_vec_member(members, key)?;
-    let mut parsed = Vec::with_capacity(values.len());
-    for mut fields in values {
-        let kind_text = take_string_member(&mut fields, "kind")?;
-        let kind = parse_tenant_resource_kind(&kind_text)
-            .ok_or_else(|| format!("operation field '{key}' carries unknown resource kind"))?;
-        let resource_id = take_string_member(&mut fields, "resource_id")?;
-        let digest = take_string_member(&mut fields, "digest")?;
-        if let Some(member) = fields.keys().next() {
-            return Err(format!(
-                "operation field '{key}' carries unknown resource field '{member}'"
-            ));
-        }
-        parsed.push(TenantResourceIdentity {
-            kind,
-            resource_id,
-            digest,
-        });
-    }
-    Ok(parsed)
-}
-
-/// Strictly parse one member as an array of [`TenantResourceSelector`]
-/// objects carrying exactly `kind` and `resource_id`.
-fn take_selector_vec_member(
-    members: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Result<Vec<TenantResourceSelector>, String> {
-    let values = take_object_vec_member(members, key)?;
-    let mut parsed = Vec::with_capacity(values.len());
-    for mut fields in values {
-        let kind_text = take_string_member(&mut fields, "kind")?;
-        let kind = parse_tenant_resource_kind(&kind_text)
-            .ok_or_else(|| format!("operation field '{key}' carries unknown selector kind"))?;
-        let resource_id = take_string_member(&mut fields, "resource_id")?;
-        if let Some(member) = fields.keys().next() {
-            return Err(format!(
-                "operation field '{key}' carries unknown selector field '{member}'"
-            ));
-        }
-        parsed.push(TenantResourceSelector { kind, resource_id });
-    }
-    Ok(parsed)
-}
-
-fn take_object_vec_member(
-    members: &mut serde_json::Map<String, serde_json::Value>,
-    key: &'static str,
-) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
-    match members.remove(key) {
-        Some(serde_json::Value::Array(values)) => {
-            let mut parsed = Vec::with_capacity(values.len());
-            for value in values {
-                match value {
-                    serde_json::Value::Object(fields) => parsed.push(fields),
-                    _ => return Err(format!("operation field '{key}' must contain objects")),
-                }
-            }
-            Ok(parsed)
-        }
-        _ => Err(format!(
-            "operation field '{key}' must be an array of objects"
-        )),
-    }
+) -> Result<T, String> {
+    let value = members
+        .remove(key)
+        .ok_or_else(|| format!("operation requires field '{key}'"))?;
+    serde_json::from_value(value)
+        .map_err(|error| format!("invalid operation field '{key}': {error}"))
 }
 
 /// Plain durable journal entry for one operation outcome (E01 §2 / 05 §8).
@@ -546,11 +405,10 @@ pub struct ControlResult {
 
 /// Closed typed result-data variants (H07).  Only operations whose contract
 /// defines returned data may populate the channel; adding a variant is a
-/// protocol change.  Deserialization is hand-written for the same reason as
-/// [`ControlOperationPayload`]: serde silently ignores `deny_unknown_fields`
-/// on internally tagged enums.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+/// protocol change. Every variant has named fields, so serde enforces the
+/// closed field set directly.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ControlResultData {
     /// Public receipt for a freshly generated tenant-local signing key. The
     /// certificate bundle contains public material only; private key bytes
@@ -611,166 +469,6 @@ pub enum ControlResultData {
         revision: u64,
         tenants: Vec<ControlTenantDirectoryBinding>,
     },
-}
-
-impl<'de> Deserialize<'de> for ControlResultData {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let mut members = match serde_json::Value::deserialize(deserializer)? {
-            serde_json::Value::Object(members) => members,
-            _ => return Err(serde::de::Error::custom("result must be a JSON object")),
-        };
-        let kind = take_string_member(&mut members, "kind").map_err(serde::de::Error::custom)?;
-        let data = match kind.as_str() {
-            "tenant-key-generated" => ControlResultData::TenantKeyGenerated {
-                tenant_id: take_string_member(&mut members, "tenant_id")
-                    .map_err(serde::de::Error::custom)?,
-                kid: take_string_member(&mut members, "kid").map_err(serde::de::Error::custom)?,
-                keyset_revision: take_string_member(&mut members, "keyset_revision")
-                    .map_err(serde::de::Error::custom)?,
-                certificate_chain_pem: take_string_member(&mut members, "certificate_chain_pem")
-                    .map_err(serde::de::Error::custom)?,
-            },
-            "tenant-resource-apply" | "tenant-resource-revoke" | "tenant-resource-enumerate" => {
-                let revision = match members.remove("revision") {
-                    Some(serde_json::Value::Number(number)) => {
-                        number.as_u64().ok_or_else(|| {
-                            serde::de::Error::custom(
-                                "result field 'revision' must be an unsigned integer",
-                            )
-                        })?
-                    }
-                    _ => {
-                        return Err(serde::de::Error::custom(
-                            "result requires unsigned field 'revision'",
-                        ));
-                    }
-                };
-                let resources = take_resource_vec_member(&mut members, "resources")
-                    .map_err(serde::de::Error::custom)?;
-                let resource_manifest_sha256 =
-                    take_string_member(&mut members, "resource_manifest_sha256")
-                        .map_err(serde::de::Error::custom)?;
-                match kind.as_str() {
-                    "tenant-resource-apply" => {
-                        let resource_mappings = members
-                            .remove("resource_mappings")
-                            .ok_or_else(|| {
-                                serde::de::Error::custom(
-                                    "result requires field 'resource_mappings'",
-                                )
-                            })
-                            .and_then(|value| {
-                                serde_json::from_value(value).map_err(serde::de::Error::custom)
-                            })?;
-                        ControlResultData::TenantResourceApply {
-                            revision,
-                            resources,
-                            resource_mappings,
-                            resource_manifest_sha256,
-                        }
-                    }
-                    "tenant-resource-revoke" => ControlResultData::TenantResourceRevoke {
-                        revision,
-                        resources,
-                        resource_manifest_sha256,
-                    },
-                    _ => ControlResultData::TenantResourceEnumerate {
-                        revision,
-                        resources,
-                        resource_manifest_sha256,
-                    },
-                }
-            }
-            "recovery-invalidation" => {
-                let state_epoch = take_string_member(&mut members, "state_epoch")
-                    .map_err(serde::de::Error::custom)?;
-                let not_before = match members.remove("not_before") {
-                    Some(serde_json::Value::Number(number)) => {
-                        number.as_i64().ok_or_else(|| {
-                            serde::de::Error::custom("result field 'not_before' must be an integer")
-                        })?
-                    }
-                    _ => {
-                        return Err(serde::de::Error::custom(
-                            "result requires integer field 'not_before'",
-                        ));
-                    }
-                };
-                let revoked_refresh_tokens = match members.remove("revoked_refresh_tokens") {
-                    Some(serde_json::Value::Number(number)) => {
-                        number.as_u64().ok_or_else(|| {
-                            serde::de::Error::custom(
-                                "result field 'revoked_refresh_tokens' must be an unsigned integer",
-                            )
-                        })?
-                    }
-                    _ => {
-                        return Err(serde::de::Error::custom(
-                            "result requires unsigned field 'revoked_refresh_tokens'",
-                        ));
-                    }
-                };
-                ControlResultData::RecoveryInvalidation {
-                    state_epoch,
-                    not_before,
-                    revoked_refresh_tokens,
-                }
-            }
-            "tenant-directory-mutation" => {
-                let action =
-                    take_string_member(&mut members, "action").map_err(serde::de::Error::custom)?;
-                let tenant_id = take_string_member(&mut members, "tenant_id")
-                    .map_err(serde::de::Error::custom)?;
-                let previous_revision = take_u64_member(&mut members, "previous_revision")
-                    .map_err(serde::de::Error::custom)?;
-                let revision =
-                    take_u64_member(&mut members, "revision").map_err(serde::de::Error::custom)?;
-                ControlResultData::TenantDirectoryMutation {
-                    action,
-                    tenant_id,
-                    previous_revision,
-                    revision,
-                }
-            }
-            "tenant-directory-describe" => {
-                let revision =
-                    take_u64_member(&mut members, "revision").map_err(serde::de::Error::custom)?;
-                let tenants = members.remove("tenants");
-                let tenants = match tenants {
-                    Some(serde_json::Value::Array(values)) => values
-                        .into_iter()
-                        .map(|value| {
-                            serde_json::from_value::<ControlTenantDirectoryBinding>(value).map_err(
-                                |_| {
-                                    serde::de::Error::custom(
-                                        "result field 'tenants' must contain bindings",
-                                    )
-                                },
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                    _ => {
-                        return Err(serde::de::Error::custom("result requires field 'tenants'"));
-                    }
-                };
-                ControlResultData::TenantDirectoryDescribe { revision, tenants }
-            }
-            other => {
-                return Err(serde::de::Error::custom(format!(
-                    "unknown result kind '{other}'"
-                )));
-            }
-        };
-        if let Some(member) = members.keys().next() {
-            return Err(serde::de::Error::custom(format!(
-                "unknown result field '{member}'"
-            )));
-        }
-        Ok(data)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -842,7 +540,7 @@ fn validate_control_payload(payload: &ControlOperationPayload) -> Result<(), Pro
         } => {
             validate_file_identifier(kid)?;
             validate_identifier(alg)?;
-            validate_lower_hex_digest(public_jwk_sha256)?;
+            validate_lower_hex(public_jwk_sha256, 64)?;
             if key_ref.is_empty()
                 || key_ref.len() > 512
                 || ["//", "@", "?", "#", "="]
@@ -964,7 +662,7 @@ fn validate_tenant_issuer(issuer: &str) -> Result<(), ProtocolError> {
 fn validate_tenant_host(external_host: &str) -> Result<(), ProtocolError> {
     if external_host.is_empty()
         || external_host.len() > 255
-        || external_host != external_host.to_ascii_lowercase()
+        || external_host.bytes().any(|byte| byte.is_ascii_uppercase())
         || external_host != external_host.trim()
     {
         return Err(ProtocolError::Policy(
@@ -1014,21 +712,8 @@ fn validate_tenant_resource_set(resources: &[TenantResourceIdentity]) -> Result<
 /// Canonical lowercase UUIDv7 enforcement (RFC 9562 version and variant
 /// nibbles included).  No UUID dependency is pulled into this crate.
 fn validate_uuidv7(value: &str) -> Result<(), ProtocolError> {
+    validate_uuid(value)?;
     let bytes = value.as_bytes();
-    let hex = |byte: &u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte);
-    if bytes.len() != 36
-        || !bytes.iter().enumerate().all(|(index, byte)| {
-            if matches!(index, 8 | 13 | 18 | 23) {
-                *byte == b'-'
-            } else {
-                hex(byte)
-            }
-        })
-    {
-        return Err(ProtocolError::Policy(
-            "operation_id is not a canonical UUID",
-        ));
-    }
     if bytes[14] != b'7' {
         return Err(ProtocolError::Policy("operation_id must be a UUIDv7"));
     }
@@ -1059,22 +744,14 @@ fn validate_controller_kid(kid: &str) -> Result<(), ProtocolError> {
     Ok(())
 }
 
-fn validate_lower_hex_digest(value: &str) -> Result<(), ProtocolError> {
-    if value.len() != 64
-        || !value
-            .chars()
-            .all(|character| character.is_ascii_digit() || ('a'..='f').contains(&character))
-    {
-        return Err(ProtocolError::Policy("invalid digest"));
-    }
-    Ok(())
-}
-
 fn validate_keyset_revision(value: &str) -> Result<(), ProtocolError> {
     let revision = value
         .parse::<i64>()
         .map_err(|_| ProtocolError::Policy("invalid keyset revision"))?;
-    if revision < 1 || revision.to_string() != value {
+    if revision < 1
+        || !value.starts_with(|c: char| matches!(c, '1'..='9'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
         return Err(ProtocolError::Policy("invalid keyset revision"));
     }
     Ok(())
@@ -1153,11 +830,9 @@ pub fn verify_control_operation_signature(
     ensure_control_operation_kid(&operation, expected_kid)?;
     let canonical = canonical_control_operation_bytes(&operation)?;
     verify_control_operation_payload(
-        protected,
-        payload,
+        &compact.as_bytes()[..protected.len() + 1 + payload.len()],
         signature,
-        &payload_bytes,
-        &canonical,
+        payload_bytes == canonical,
         key,
     )?;
     Ok(operation)
@@ -1167,10 +842,10 @@ pub fn verify_control_operation_signature(
 /// and canonical bytes cannot be mutated between parsing, hashing and verification.
 /// A presentation carries no signature authority; only `verify` promotes it.
 pub struct PresentedControlOperation<'a> {
+    signing_input: &'a [u8],
     protected: &'a str,
-    payload: &'a str,
     signature: &'a str,
-    payload_bytes: Vec<u8>,
+    canonical_payload: bool,
     operation: ControlOperation,
     canonical: Vec<u8>,
 }
@@ -1184,17 +859,14 @@ impl<'a> PresentedControlOperation<'a> {
         let payload_bytes = URL_SAFE_NO_PAD
             .decode(payload)
             .map_err(|_| ProtocolError::Base64)?;
-        if payload_bytes.len() > MAX_CONTROL_OPERATION_BYTES {
-            return Err(ProtocolError::TooLarge);
-        }
         let operation: ControlOperation =
             serde_json::from_slice(&payload_bytes).map_err(|_| ProtocolError::Json)?;
         let canonical = canonical_control_operation_bytes(&operation)?;
         Ok(Self {
+            signing_input: &compact.as_bytes()[..protected.len() + 1 + payload.len()],
             protected,
-            payload,
             signature,
-            payload_bytes,
+            canonical_payload: payload_bytes == canonical,
             operation,
             canonical,
         })
@@ -1218,11 +890,9 @@ impl<'a> PresentedControlOperation<'a> {
         verify_control_operation_header(self.protected, expected_kid)?;
         ensure_control_operation_kid(&self.operation, expected_kid)?;
         verify_control_operation_payload(
-            self.protected,
-            self.payload,
+            self.signing_input,
             self.signature,
-            &self.payload_bytes,
-            &self.canonical,
+            self.canonical_payload,
             key,
         )?;
         Ok(self.operation)
@@ -1256,10 +926,7 @@ fn verify_control_operation_header(
         .map_err(|_| ProtocolError::Base64)?;
     let header: ProtectedHeader =
         serde_json::from_slice(&header_bytes).map_err(|_| ProtocolError::Header)?;
-    if header.alg != FixedAlgorithm::EdDSA
-        || header.typ != CONTROL_OPERATION_JWS_TYPE
-        || header.kid != expected_kid
-    {
+    if header.typ != CONTROL_OPERATION_JWS_TYPE || header.kid != expected_kid {
         return Err(ProtocolError::Header);
     }
     Ok(())
@@ -1278,27 +945,17 @@ fn ensure_control_operation_kid(
 }
 
 fn verify_control_operation_payload(
-    protected: &str,
-    payload: &str,
+    signing_input: &[u8],
     signature: &str,
-    payload_bytes: &[u8],
-    canonical: &[u8],
+    canonical_payload: bool,
     key: &VerifyingKey,
 ) -> Result<(), ProtocolError> {
-    if payload_bytes != canonical {
+    if !canonical_payload {
         return Err(ProtocolError::Policy(
             "control operation payload is not canonically encoded",
         ));
     }
-    let signature_bytes = URL_SAFE_NO_PAD
-        .decode(signature)
-        .map_err(|_| ProtocolError::Base64)?;
-    // Verify the original compact segments, never a reconstructed payload.
-    key.verify(
-        format!("{protected}.{payload}").as_bytes(),
-        &signature_bytes,
-    )
-    .map_err(|_| ProtocolError::Signature)
+    crate::verification::verify_signature(signing_input, signature, key)
 }
 
 /// Validate and serialize a [`ControlResult`] for the journal or the
@@ -1355,7 +1012,7 @@ pub fn validate_control_result(result: &ControlResult) -> Result<(), ProtocolErr
         return Err(ProtocolError::Policy("unsupported control result schema"));
     }
     validate_uuidv7(&result.operation_id)?;
-    validate_lower_hex_digest(&result.request_hash)?;
+    validate_lower_hex(&result.request_hash, 64)?;
     match result.outcome {
         ControlOutcome::InProgress => {
             if result.error.is_some() {
@@ -1413,20 +1070,6 @@ pub fn validate_control_result(result: &ControlResult) -> Result<(), ProtocolErr
 /// Structural invariants of the typed result channel: bounded, unique,
 /// digest-bound identity sets only.
 fn validate_control_result_data(data: &ControlResultData) -> Result<(), ProtocolError> {
-    if let ControlResultData::RecoveryInvalidation {
-        state_epoch,
-        not_before,
-        ..
-    } = data
-    {
-        validate_recovery_state_epoch(state_epoch)?;
-        if *not_before <= 0 {
-            return Err(ProtocolError::Policy(
-                "invalid recovery invalidation result",
-            ));
-        }
-        return Ok(());
-    }
     let (resources, resource_mappings, resource_manifest_sha256, is_apply) = match data {
         ControlResultData::TenantKeyGenerated {
             tenant_id,
@@ -1513,7 +1156,19 @@ fn validate_control_result_data(data: &ControlResultData) -> Result<(), Protocol
             resource_manifest_sha256,
             ..
         } => (resources, &[][..], resource_manifest_sha256, false),
-        ControlResultData::RecoveryInvalidation { .. } => unreachable!("validated above"),
+        ControlResultData::RecoveryInvalidation {
+            state_epoch,
+            not_before,
+            ..
+        } => {
+            validate_recovery_state_epoch(state_epoch)?;
+            if *not_before <= 0 {
+                return Err(ProtocolError::Policy(
+                    "invalid recovery invalidation result",
+                ));
+            }
+            return Ok(());
+        }
     };
     validate_lower_hex(resource_manifest_sha256, 64)?;
     if resources.len() > MAX_TENANT_RESOURCE_IDENTITIES {
@@ -1536,11 +1191,7 @@ fn validate_control_result_data(data: &ControlResultData) -> Result<(), Protocol
             "tenant resource result mappings are out of bounds",
         ));
     }
-    let resource_set = resources
-        .iter()
-        .map(|resource| (resource.kind, resource.resource_id.as_str()))
-        .collect::<std::collections::BTreeSet<_>>();
-    let expected_mappings = resources
+    let expected_mapping_count = resources
         .iter()
         .filter(|resource| {
             matches!(
@@ -1549,8 +1200,7 @@ fn validate_control_result_data(data: &ControlResultData) -> Result<(), Protocol
                     | crate::wire::TenantResourceKind::OauthClient
             )
         })
-        .map(|resource| (resource.kind, resource.resource_id.as_str()))
-        .collect::<std::collections::BTreeSet<_>>();
+        .count();
     let mut mapped = std::collections::BTreeSet::new();
     for mapping in resource_mappings {
         validate_file_identifier(&mapping.resource_id)?;
@@ -1565,10 +1215,7 @@ fn validate_control_result_data(data: &ControlResultData) -> Result<(), Protocol
                 ));
             }
         }
-        if !matches!(
-            mapping.kind,
-            crate::wire::TenantResourceKind::User | crate::wire::TenantResourceKind::OauthClient
-        ) || !resource_set.contains(&(mapping.kind, mapping.resource_id.as_str()))
+        if !seen.contains(&(mapping.kind, mapping.resource_id.as_str()))
             || !mapped.insert((mapping.kind, mapping.resource_id.as_str()))
         {
             return Err(ProtocolError::Policy(
@@ -1576,7 +1223,7 @@ fn validate_control_result_data(data: &ControlResultData) -> Result<(), Protocol
             ));
         }
     }
-    if is_apply && mapped != expected_mappings {
+    if is_apply && mapped.len() != expected_mapping_count {
         return Err(ProtocolError::Policy(
             "tenant resource apply mappings must cover public resources exactly",
         ));
