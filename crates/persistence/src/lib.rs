@@ -344,7 +344,6 @@ pub trait RuntimeModuleStore: Send + Sync {
 
     fn compare_and_set_instance(
         &self,
-        required_desired_revision: nazo_runtime_modules::ModuleRevision,
         mutation: nazo_runtime_modules::InstanceStateMutation,
     ) -> BoxFuture<
         '_,

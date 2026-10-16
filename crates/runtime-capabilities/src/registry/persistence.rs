@@ -51,17 +51,13 @@ where
         };
         let event = self.event(&next, event_type, before, outcome_code);
         self.repository
-            .compare_and_set_instance(
-                revision,
-                InstanceStateMutation {
-                    change: InstanceStateChange {
-                        expected_revision,
-                        next,
-                    },
-                    applied_event: event.clone(),
-                    stale_event: self.event_from(event, ModuleEventType::StaleTransitionDiscarded),
+            .compare_and_set_instance(InstanceStateMutation {
+                change: InstanceStateChange {
+                    expected_revision,
+                    next,
                 },
-            )
+                event,
+            })
             .await
             .map_err(RegistryError::Repository)
     }
@@ -134,15 +130,5 @@ where
             outcome_code: outcome_code.map(str::to_owned),
             occurred_at: state.updated_at,
         }
-    }
-
-    fn event_from(
-        &self,
-        mut event: ModuleEventRecord,
-        event_type: ModuleEventType,
-    ) -> ModuleEventRecord {
-        event.event_id = Uuid::now_v7().to_string();
-        event.event_type = event_type;
-        event
     }
 }

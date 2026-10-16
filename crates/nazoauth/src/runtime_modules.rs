@@ -91,12 +91,9 @@ impl ModuleStateRepository for PersistenceRuntimeModuleRepository {
 
     async fn compare_and_set_instance(
         &self,
-        required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
-        self.store
-            .compare_and_set_instance(required_desired_revision, mutation)
-            .await
+        self.store.compare_and_set_instance(mutation).await
     }
 
     async fn record_instance_observation(

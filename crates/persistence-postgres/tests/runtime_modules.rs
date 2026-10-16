@@ -77,17 +77,11 @@ fn instance_event(
 fn instance_mutation(
     change: InstanceStateChange,
     event_type: ModuleEventType,
-    stale_event_id: Uuid,
+    event_id: Uuid,
 ) -> InstanceStateMutation {
     let before = change.expected_revision.map(|_| ModuleState::Starting);
     InstanceStateMutation {
-        applied_event: instance_event(Uuid::now_v7(), &change.next, event_type, before),
-        stale_event: instance_event(
-            stale_event_id,
-            &change.next,
-            ModuleEventType::StaleTransitionDiscarded,
-            before,
-        ),
+        event: instance_event(event_id, &change.next, event_type, before),
         change,
     }
 }
@@ -548,17 +542,14 @@ async fn instance_completion_cannot_overwrite_a_newer_transition_revision() {
         .unwrap();
 
     repository
-        .compare_and_set_instance(
-            ModuleRevision::new(7),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: None,
-                    next: instance(&instance_id, module_id, ModuleState::Starting, 7),
-                },
-                ModuleEventType::TransitionStarted,
-                Uuid::now_v7(),
-            ),
-        )
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: instance(&instance_id, module_id, ModuleState::Starting, 7),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("initial instance state should persist");
     repository
@@ -569,32 +560,26 @@ async fn instance_completion_cannot_overwrite_a_newer_transition_revision() {
         .await
         .unwrap();
     repository
-        .compare_and_set_instance(
-            ModuleRevision::new(8),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: Some(ModuleRevision::new(7)),
-                    next: instance(&instance_id, module_id, ModuleState::Starting, 8),
-                },
-                ModuleEventType::TransitionStarted,
-                Uuid::now_v7(),
-            ),
-        )
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(7)),
+                next: instance(&instance_id, module_id, ModuleState::Starting, 8),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("newer transition should persist");
 
     let stale = repository
-        .compare_and_set_instance(
-            ModuleRevision::new(7),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: Some(ModuleRevision::new(7)),
-                    next: instance(&instance_id, module_id, ModuleState::Enabled, 7),
-                },
-                ModuleEventType::TransitionCompleted,
-                Uuid::now_v7(),
-            ),
-        )
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(7)),
+                next: instance(&instance_id, module_id, ModuleState::Enabled, 7),
+            },
+            ModuleEventType::TransitionCompleted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("stale completion should be a typed outcome");
     assert!(
@@ -656,17 +641,14 @@ async fn desired_revision_change_commits_before_old_completion_and_forces_stale_
         desired_revision = next_revision;
     }
     base_repository
-        .compare_and_set_instance(
-            ModuleRevision::new(7),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: None,
-                    next: instance(&instance_id, module_id, ModuleState::Starting, 7),
-                },
-                ModuleEventType::TransitionStarted,
-                Uuid::now_v7(),
-            ),
-        )
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: instance(&instance_id, module_id, ModuleState::Starting, 7),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        ))
         .await
         .unwrap();
 
@@ -708,11 +690,8 @@ async fn desired_revision_change_commits_before_old_completion_and_forces_stale_
         ModuleEventType::TransitionCompleted,
         Uuid::now_v7(),
     );
-    let old = tokio::spawn(async move {
-        old_repository
-            .compare_and_set_instance(ModuleRevision::new(7), completion)
-            .await
-    });
+    let old =
+        tokio::spawn(async move { old_repository.compare_and_set_instance(completion).await });
     if !wait_for_lock_wait(&mut observer).await {
         commit_tx.send(()).unwrap();
         coordinator.await.unwrap().unwrap();
@@ -772,9 +751,9 @@ async fn instance_event_insert_failure_rolls_back_state_mutation() {
         ModuleEventType::TransitionStarted,
         Uuid::now_v7(),
     );
-    initial_mutation.applied_event.event_id = duplicate_event_id.to_string();
+    initial_mutation.event.event_id = duplicate_event_id.to_string();
     repository
-        .compare_and_set_instance(ModuleRevision::new(1), initial_mutation)
+        .compare_and_set_instance(initial_mutation)
         .await
         .expect("initial transition should commit");
 
@@ -787,10 +766,10 @@ async fn instance_event_insert_failure_rolls_back_state_mutation() {
         ModuleEventType::TransitionCompleted,
         Uuid::now_v7(),
     );
-    completion.applied_event.event_id = duplicate_event_id.to_string();
+    completion.event.event_id = duplicate_event_id.to_string();
     assert!(
         repository
-            .compare_and_set_instance(ModuleRevision::new(1), completion)
+            .compare_and_set_instance(completion)
             .await
             .is_err(),
         "duplicate audit event must fail the atomic mutation"
@@ -879,32 +858,26 @@ async fn audit_persistence_accepts_every_closed_event_kind() {
             desired_revision = revision;
         }
         repository
-            .compare_and_set_instance(
-                ModuleRevision::new(revision),
-                instance_mutation(
-                    InstanceStateChange {
-                        expected_revision,
-                        next: instance(&instance_id, module_id, state, revision),
-                    },
-                    event_type,
-                    Uuid::now_v7(),
-                ),
-            )
+            .compare_and_set_instance(instance_mutation(
+                InstanceStateChange {
+                    expected_revision,
+                    next: instance(&instance_id, module_id, state, revision),
+                },
+                event_type,
+                Uuid::now_v7(),
+            ))
             .await
             .expect("transition event should persist atomically");
     }
     repository
-        .compare_and_set_instance(
-            ModuleRevision::new(2),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: Some(ModuleRevision::new(2)),
-                    next: instance(&instance_id, module_id, ModuleState::Enabled, 2),
-                },
-                ModuleEventType::TransitionCompleted,
-                Uuid::now_v7(),
-            ),
-        )
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: Some(ModuleRevision::new(2)),
+                next: instance(&instance_id, module_id, ModuleState::Enabled, 2),
+            },
+            ModuleEventType::TransitionCompleted,
+            Uuid::now_v7(),
+        ))
         .await
         .expect("stale transition event should persist atomically");
 
@@ -927,17 +900,14 @@ async fn stale_observation_is_state_preserving_with_current_or_superseded_revisi
     let instance_id = format!("observation-{}", Uuid::now_v7());
     let module = ModuleId::TokenExchange;
     repository
-        .compare_and_set_instance(
-            ModuleRevision::new(1),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: None,
-                    next: instance(&instance_id, module, ModuleState::Starting, 1),
-                },
-                ModuleEventType::TransitionStarted,
-                Uuid::now_v7(),
-            ),
-        )
+        .compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: instance(&instance_id, module, ModuleState::Starting, 1),
+            },
+            ModuleEventType::TransitionStarted,
+            Uuid::now_v7(),
+        ))
         .await
         .unwrap();
     let before = repository

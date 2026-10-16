@@ -231,27 +231,28 @@ impl ModuleStateRepository for Repository {
 
     async fn compare_and_set_instance(
         &self,
-        required_desired_revision: ModuleRevision,
-        mutation: InstanceStateMutation,
+        mut mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let mut state = self.state.lock().unwrap();
         let current = state.instance.clone();
         if state
             .desired
             .as_ref()
-            .is_none_or(|desired| desired.revision != required_desired_revision)
+            .is_none_or(|desired| desired.revision != mutation.change.next.transition_revision)
         {
-            state.events.push(mutation.stale_event);
+            mutation.event.event_type = ModuleEventType::StaleTransitionDiscarded;
+            state.events.push(mutation.event);
             return Ok(CasOutcome::Stale { current });
         }
         if current.as_ref().map(|value| value.transition_revision)
             != mutation.change.expected_revision
         {
-            state.events.push(mutation.stale_event);
+            mutation.event.event_type = ModuleEventType::StaleTransitionDiscarded;
+            state.events.push(mutation.event);
             return Ok(CasOutcome::Stale { current });
         }
         state.instance = Some(mutation.change.next.clone());
-        state.events.push(mutation.applied_event);
+        state.events.push(mutation.event);
         drop(state);
         if self.unknown_completed_state == Some(mutation.change.next.state) {
             if let Some(pause) = self.completion_pause.as_ref() {

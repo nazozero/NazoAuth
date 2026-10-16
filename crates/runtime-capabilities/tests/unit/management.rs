@@ -340,7 +340,6 @@ impl ModuleStateRepository for TestRepository {
 
     async fn compare_and_set_instance(
         &self,
-        _required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let InstanceStateChange { next, .. } = mutation.change;
