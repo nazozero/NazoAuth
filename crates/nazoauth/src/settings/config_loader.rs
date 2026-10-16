@@ -142,8 +142,7 @@ impl Settings {
             .map(|tenant| tenant.issuer.clone())
             .unwrap_or_else(|| config.string("ISSUER", &public_base_url));
         validate_issuer_url(&issuer)?;
-        let transport_mode =
-            TransportMode::from_config(config.get("TRANSPORT_MODE").as_deref(), &issuer);
+        let transport_mode = TransportMode::from_config(config.get("TRANSPORT_MODE"), &issuer);
         let tenant = match tenant_override {
             Some(tenant) => TenantSettings {
                 context: tenant.context,
@@ -552,7 +551,7 @@ impl Settings {
                 let transport_mode = transport_mode?;
                 let configured_mtls_source = config
                     .get("MTLS_CERTIFICATE_SOURCE")
-                    .map(|value| value.trim().to_owned())
+                    .map(str::trim)
                     .filter(|value| !value.is_empty());
                 let mtls_certificate_source = match transport_mode {
                     TransportMode::LoopbackHttp => {
@@ -576,10 +575,7 @@ impl Settings {
                         if !trusted_proxy_cidrs.is_empty() {
                             bail!("direct-tls transport must not configure TRUSTED_PROXY_CIDRS");
                         }
-                        if configured_mtls_source
-                            .as_deref()
-                            .is_some_and(|value| value != "direct-tls")
-                        {
+                        if configured_mtls_source.is_some_and(|value| value != "direct-tls") {
                             bail!("direct-tls transport cannot use a proxy certificate source");
                         }
                         MtlsCertificateSourceMode::DirectTls
@@ -590,7 +586,7 @@ impl Settings {
                                 "trusted-proxy transport requires at least one TRUSTED_PROXY_CIDRS entry"
                             );
                         }
-                        let Some(value) = configured_mtls_source.as_deref() else {
+                        let Some(value) = configured_mtls_source else {
                             bail!(
                                 "trusted-proxy transport requires an explicit MTLS_CERTIFICATE_SOURCE"
                             );

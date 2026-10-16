@@ -100,7 +100,7 @@ impl IpCidr {
     }
 }
 
-pub fn parse_trusted_proxy_cidrs(raw: Option<String>) -> Result<Vec<IpCidr>, ClientIpParseError> {
+pub fn parse_trusted_proxy_cidrs(raw: Option<&str>) -> Result<Vec<IpCidr>, ClientIpParseError> {
     raw.unwrap_or_default()
         .split(',')
         .map(str::trim)

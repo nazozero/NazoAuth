@@ -5,8 +5,7 @@ use nazo_http_actix::{
 };
 
 fn config(mode: ClientIpHeaderMode, trusted: &str) -> ClientIpConfig {
-    let cidrs = parse_trusted_proxy_cidrs(Some(trusted.to_owned()))
-        .expect("trusted proxy CIDRs should parse");
+    let cidrs = parse_trusted_proxy_cidrs(Some(trusted)).expect("trusted proxy CIDRs should parse");
     ClientIpConfig::new(&cidrs, mode)
 }
 
