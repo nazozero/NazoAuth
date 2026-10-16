@@ -14,6 +14,7 @@ use nazo_http_actix::mtls::MtlsThumbprintExtractor;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
+use nazo_oauth_server::contracts::token_client_auth::ClientCertificateFacts;
 use nazo_oauth_server::token::client_auth::{
     ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
     authenticate_client_with_dependencies,
@@ -77,6 +78,7 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
             PrivateKeyDer::from_pem_slice(server_key.serialize_pem().as_bytes()).unwrap(),
         )
         .unwrap();
+    let expected_chain = vec![material.leaf.der().to_vec(), material.ca.der().to_vec()];
     let server = HttpServer::new(|| {
         App::new()
             .app_data(Data::new(mtls::MtlsCertificateSource::new(
@@ -96,7 +98,10 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
     })
     .workers(1)
     .on_connect(move |io, extensions| {
-        mtls::capture_direct_tls_client_certificate(io, extensions, Some(verifier.as_ref()))
+        mtls::capture_direct_tls_client_certificate(io, extensions, Some(verifier.as_ref()));
+        if let Some(certificate) = extensions.get::<ClientCertificateFacts>() {
+            assert_eq!(certificate.certificate_chain_der.as_ref(), &expected_chain);
+        }
     })
     .bind_rustls_0_23(("127.0.0.1", 0), tls)
     .unwrap();

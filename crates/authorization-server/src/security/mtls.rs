@@ -20,34 +20,39 @@ use x509_parser::{
     parse_x509_certificate,
     x509::X509Name,
 };
-pub fn certificate_der_identity(der: &[u8]) -> Option<ClientCertificateFacts> {
-    let x509 = parse_current_x509(der)?;
-    let mut certificate = ClientCertificateFacts {
-        thumbprint: Some(URL_SAFE_NO_PAD.encode(Sha256::digest(der))),
-        subject_dn: Some(subject_name_to_dn(x509.subject())?),
-        certificate_chain_der: vec![der.to_vec()].into(),
-        ..ClientCertificateFacts::default()
-    };
+pub fn certificate_der_identity(der: Vec<u8>) -> Option<ClientCertificateFacts> {
+    let x509 = parse_current_x509(&der)?;
+    let thumbprint = URL_SAFE_NO_PAD.encode(Sha256::digest(&der));
+    let subject_dn = subject_name_to_dn(x509.subject())?;
+    let mut san_dns = Vec::new();
+    let mut san_uri = Vec::new();
+    let mut san_email = Vec::new();
+    let mut san_ip = Vec::new();
     if let Some(names) = x509.subject_alternative_name().ok().flatten() {
         for name in &names.value.general_names {
             match name {
-                GeneralName::DNSName(value) => certificate.san_dns.push((*value).to_owned()),
-                GeneralName::URI(value) => certificate.san_uri.push((*value).to_owned()),
-                GeneralName::RFC822Name(value) => certificate.san_email.push((*value).to_owned()),
+                GeneralName::DNSName(value) => san_dns.push((*value).to_owned()),
+                GeneralName::URI(value) => san_uri.push((*value).to_owned()),
+                GeneralName::RFC822Name(value) => san_email.push((*value).to_owned()),
                 GeneralName::IPAddress(value) => {
                     if let Some(value) = ipaddress_to_string(value) {
-                        certificate.san_ip.push(value);
+                        san_ip.push(value);
                     }
                 }
                 _ => {}
             }
         }
     }
-    certificate.san_dns = sorted_unique(certificate.san_dns);
-    certificate.san_uri = sorted_unique(certificate.san_uri);
-    certificate.san_ip = sorted_unique(certificate.san_ip);
-    certificate.san_email = sorted_unique(certificate.san_email);
-    Some(certificate)
+    Some(ClientCertificateFacts {
+        thumbprint: Some(thumbprint),
+        subject_dn: Some(subject_dn),
+        san_dns: sorted_unique(san_dns),
+        san_uri: sorted_unique(san_uri),
+        san_ip: sorted_unique(san_ip),
+        san_email: sorted_unique(san_email),
+        certificate_chain_der: vec![der].into(),
+        deployment_trusted_chain: false,
+    })
 }
 
 /// PKI authentication consumes the tenant's currently approved trust anchors.

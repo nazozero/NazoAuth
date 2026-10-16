@@ -44,12 +44,9 @@ pub(crate) fn capture_direct_tls_client_certificate(
     let Some((certificate, intermediates)) = chain.split_first() else {
         return;
     };
-    if let Some(mut identity) = certificate_der_identity(certificate.as_ref()) {
-        identity.certificate_chain_der = chain
-            .iter()
-            .map(|der| der.as_ref().to_vec())
-            .collect::<Vec<_>>()
-            .into();
+    if let Some(mut identity) = certificate_der_identity(certificate.to_vec()) {
+        Arc::make_mut(&mut identity.certificate_chain_der)
+            .extend(intermediates.iter().map(|der| der.to_vec()));
         identity.deployment_trusted_chain = deployment_verifier.is_some_and(|verifier| {
             verifier
                 .verify_client_cert(
@@ -108,13 +105,6 @@ pub(crate) fn request_mtls_thumbprint(
 }
 
 pub(crate) fn request_mtls_client_certificate(
-    req: &HttpRequest,
-    trusted_proxy_cidrs: &[IpCidr],
-) -> Option<ClientCertificateFacts> {
-    request_mtls_client_certificate_from_configured_source(req, trusted_proxy_cidrs)
-}
-
-fn request_mtls_client_certificate_from_configured_source(
     req: &HttpRequest,
     trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<ClientCertificateFacts> {
@@ -178,7 +168,7 @@ pub(crate) fn request_mtls_client_certificate_from_rfc9440(
         return None;
     }
     let der = decode_forwarded_certificate(value)?;
-    let mut certificate = certificate_der_identity(&der)?;
+    let mut certificate = certificate_der_identity(der)?;
     let mut chains = headers.get_all("client-cert-chain");
     if let Some(chain) = chains.next() {
         if chains.next().is_some() {

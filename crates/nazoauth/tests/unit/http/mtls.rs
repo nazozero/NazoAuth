@@ -77,7 +77,7 @@ fn disabled_certificate_source_cannot_fall_back_to_forwarded_headers() {
         )))
         .insert_header(("x-ssl-client-verify", "SUCCESS"))
         .to_http_request();
-    assert!(request_mtls_client_certificate_from_configured_source(&disabled, &[]).is_none());
+    assert!(request_mtls_client_certificate(&disabled, &[]).is_none());
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn rfc9440_source_accepts_only_a_trusted_peer() {
         .insert_header(("client-cert", header_value.as_str()))
         .to_http_request();
     assert_eq!(
-        request_mtls_client_certificate_from_configured_source(&trusted, &trusted_proxy)
+        request_mtls_client_certificate(&trusted, &trusted_proxy)
             .and_then(|certificate| certificate.thumbprint)
             .as_deref(),
         Some(certificate.thumbprint.as_str())
@@ -120,10 +120,7 @@ fn rfc9440_source_accepts_only_a_trusted_peer() {
         .peer_addr("198.51.100.10:443".parse().expect("untrusted peer address"))
         .insert_header(("client-cert", header_value.as_str()))
         .to_http_request();
-    assert!(
-        request_mtls_client_certificate_from_configured_source(&untrusted, &trusted_proxy)
-            .is_none()
-    );
+    assert!(request_mtls_client_certificate(&untrusted, &trusted_proxy).is_none());
 }
 
 #[test]
@@ -141,9 +138,7 @@ fn rfc9440_source_ignores_removed_nonstandard_headers() {
         .to_http_request();
     let trusted_proxy = [IpCidr::parse("192.0.2.0/24").expect("trusted proxy CIDR")];
 
-    assert!(
-        request_mtls_client_certificate_from_configured_source(&request, &trusted_proxy).is_none()
-    );
+    assert!(request_mtls_client_certificate(&request, &trusted_proxy).is_none());
 }
 
 fn test_certificate(
