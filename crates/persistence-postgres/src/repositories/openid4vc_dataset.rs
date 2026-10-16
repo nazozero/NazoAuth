@@ -519,6 +519,43 @@ async fn append_managed_dataset_outcome(
 }
 
 impl nazo_persistence::Openid4vciDatasetStore for Openid4vciDatasetRepository {
+    fn datasets_available<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        subject_id: Uuid,
+        credential_configuration_ids: &'a [String],
+    ) -> futures_util::future::BoxFuture<'a, Result<bool, CredentialStoreError>> {
+        Box::pin(async move {
+            #[derive(QueryableByName)]
+            struct Availability {
+                #[diesel(sql_type = sql_types::Bool)]
+                available: bool,
+            }
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| CredentialStoreError::Unavailable)?;
+            sql_query(
+                "SELECT NOT EXISTS (
+                    SELECT 1 FROM unnest($3::text[]) AS requested(configuration_id)
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM openid4vci_credential_datasets AS dataset
+                        WHERE dataset.tenant_id = $1 AND dataset.subject_id = $2
+                          AND dataset.credential_configuration_id = requested.configuration_id
+                          AND (dataset.valid_from IS NULL OR dataset.valid_from <= CURRENT_TIMESTAMP)
+                          AND (dataset.valid_until IS NULL OR dataset.valid_until > CURRENT_TIMESTAMP)
+                    )
+                 ) AS available",
+            )
+            .bind::<sql_types::Uuid, _>(tenant_id)
+            .bind::<sql_types::Uuid, _>(subject_id)
+            .bind::<sql_types::Array<sql_types::Text>, _>(credential_configuration_ids)
+            .get_result::<Availability>(&mut connection)
+            .await
+            .map(|row| row.available)
+            .map_err(|_| CredentialStoreError::Unavailable)
+        })
+    }
+
     fn dataset<'a>(
         &'a self,
         tenant_id: Uuid,

@@ -259,39 +259,6 @@ impl ServerCredentialIssuerOperations {
                     "Credential offer grant types are invalid.",
                 ));
             }
-            let tenant = TenantId::new(self.tenant_id)
-                .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
-            let subject = UserId::new(request.subject_id)
-                .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
-            if !self
-                .users
-                .is_active(tenant, subject)
-                .await
-                .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
-            {
-                return Err(vci_error(
-                    400,
-                    "invalid_request",
-                    "Credential subject is not active.",
-                ));
-            }
-            for configuration_id in &request.credential_configuration_ids {
-                let available = self
-                    .datasets
-                    .dataset(self.tenant_id, request.subject_id, configuration_id)
-                    .await
-                    .map_err(|_| {
-                        vci_error(503, "server_error", "Credential dataset lookup failed.")
-                    })?
-                    .is_some();
-                if !available {
-                    return Err(vci_error(
-                        400,
-                        "invalid_request",
-                        "Requested credential data is unavailable for the subject.",
-                    ));
-                }
-            }
             if !(30..=600).contains(&request.expires_in) {
                 return Err(vci_error(
                     400,
@@ -309,6 +276,38 @@ impl ServerCredentialIssuerOperations {
                 ));
             }
 
+            let tenant = TenantId::new(self.tenant_id)
+                .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
+            let subject = UserId::new(request.subject_id)
+                .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
+            if !self
+                .users
+                .is_active(tenant, subject)
+                .await
+                .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
+            {
+                return Err(vci_error(
+                    400,
+                    "invalid_request",
+                    "Credential subject is not active.",
+                ));
+            }
+            if !self
+                .datasets
+                .datasets_available(
+                    self.tenant_id,
+                    request.subject_id,
+                    &request.credential_configuration_ids,
+                )
+                .await
+                .map_err(|_| vci_error(503, "server_error", "Credential dataset lookup failed."))?
+            {
+                return Err(vci_error(
+                    400,
+                    "invalid_request",
+                    "Requested credential data is unavailable for the subject.",
+                ));
+            }
             let issuer_state = grant_types
                 .contains("authorization_code")
                 .then(random_urlsafe_token);

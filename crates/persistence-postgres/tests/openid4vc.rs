@@ -22,6 +22,7 @@ use nazo_openid4vp::{
     AuthorizationRequest, ClientIdPrefix, PresentationResult, PresentationStorePort,
     PresentationTransaction, RequestMethod,
 };
+use nazo_persistence::Openid4vciDatasetStore as _;
 use nazo_postgres::{
     ManagedCredentialDatasetWrite, Openid4vciDatasetRepository, Openid4vciRepository,
     Openid4vpRepository, create_pool, get_conn,
@@ -223,6 +224,30 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
             .is_none(),
         "dataset reads must remain tenant scoped"
     );
+    assert!(
+        repository
+            .datasets_available(tenant_id, subject_id, &["pid".into(), "pid".into()])
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .datasets_available(tenant_id, subject_id, &["pid".into(), "missing".into()])
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .datasets_available(Uuid::now_v7(), subject_id, &["pid".into()])
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
+            .datasets_available(tenant_id, Uuid::now_v7(), &["pid".into()])
+            .await
+            .unwrap()
+    );
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query(
         "UPDATE openid4vci_credential_datasets
@@ -242,6 +267,12 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
             .unwrap()
             .is_none(),
         "future-valid datasets must not be available to issuance"
+    );
+    assert!(
+        !repository
+            .datasets_available(tenant_id, subject_id, &["pid".into()])
+            .await
+            .unwrap()
     );
     assert_eq!(
         committed_view.valid_from, None,
@@ -275,6 +306,12 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
             .unwrap()
             .is_none(),
         "expired datasets must not be available to issuance"
+    );
+    assert!(
+        !repository
+            .datasets_available(tenant_id, subject_id, &["pid".into()])
+            .await
+            .unwrap()
     );
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query(
@@ -396,6 +433,14 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
             .await,
         Err(CredentialStoreError::InvalidTransition),
         "ciphertext copied to another dataset identity must fail AAD authentication"
+    );
+    // Offer preflight never loads/decrypts claims. The actual issuer read above
+    // still rejects a broken envelope at the point where the data is consumed.
+    assert!(
+        repository
+            .datasets_available(tenant_id, subject_id, &["pid".into(), "pid-copy".into()])
+            .await
+            .unwrap()
     );
     assert!(
         !repository
