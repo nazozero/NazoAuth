@@ -258,26 +258,6 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
-    pub async fn inspect_lost_response_successor(
-        &self,
-        token: &RefreshToken,
-        client_id: Uuid,
-        now: DateTime<Utc>,
-    ) -> Result<Option<RefreshToken>, RepositoryError> {
-        if token.dpop_jkt.is_none() && token.mtls_x5t_s256.is_none() {
-            return Ok(None);
-        }
-        let mut connection = self.connection().await?;
-        let row = load_lost_response_successor(&mut connection, token, client_id, now)
-            .await
-            .map_err(map_error)?;
-        drop(connection);
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        token_from_lost_response_successor(row, token, now).map_err(map_error)
-    }
-
     pub async fn family_active(
         &self,
         tenant_id: Uuid,
@@ -316,27 +296,7 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
-    /// One indexed state read for both individual and principal-wide revocation.
-    /// Epoch-less tokens retain the previous JTI contract during migration.
-    pub async fn access_token_state_revoked(
-        &self,
-        key: RevocationLookupKey<'_>,
-    ) -> Result<bool, RepositoryError> {
-        let tenant_id = Uuid::parse_str(key.tenant_id)
-            .map_err(|_| RepositoryError::Consistency("invalid token tenant".to_owned()))?;
-        self.access_token_state_revoked_typed(TypedRevocationLookupKey {
-            tenant_id,
-            jti: key.jti,
-            client_id: key.client_id,
-            subject: key.subject,
-            user_id: key.user_id,
-            subject_type: key.subject_type,
-            client_epoch: key.client_epoch,
-            user_epoch: key.user_epoch,
-        })
-        .await
-    }
-
+    /// One indexed read for individual and principal-wide revocation.
     pub(super) async fn access_token_state_revoked_typed(
         &self,
         key: TypedRevocationLookupKey<'_>,
@@ -528,11 +488,20 @@ impl AccessTokenRevocationLookup for TokenRepository {
         key: RevocationLookupKey<'a>,
     ) -> ResourceServerPortFuture<'a, Result<bool, ProtectedResourceDependencyError>> {
         Box::pin(async move {
-            Uuid::parse_str(key.tenant_id)
+            let tenant_id = Uuid::parse_str(key.tenant_id)
                 .map_err(|_| ProtectedResourceDependencyError::InvalidTenantBoundary)?;
-            self.access_token_state_revoked(key)
-                .await
-                .map_err(|_| ProtectedResourceDependencyError::RevocationLookupUnavailable)
+            self.access_token_state_revoked_typed(TypedRevocationLookupKey {
+                tenant_id,
+                jti: key.jti,
+                client_id: key.client_id,
+                subject: key.subject,
+                user_id: key.user_id,
+                subject_type: key.subject_type,
+                client_epoch: key.client_epoch,
+                user_epoch: key.user_epoch,
+            })
+            .await
+            .map_err(|_| ProtectedResourceDependencyError::RevocationLookupUnavailable)
         })
     }
 }
@@ -1393,132 +1362,6 @@ async fn compromise_family(
     .execute(connection)
     .await?;
     Ok(())
-}
-
-/// Lost-response recovery for a spent presentation: the presented token must
-/// be a known spent proof, still inside the 60s window, and the family must
-/// still carry the named direct successor as its live current member. Sender
-/// constraints are family-level facts, so the successor cannot carry a weaker
-/// binding than the token it replaced.
-/// One statement: the presented digest's spent edge joined to the family row
-/// that still names it as the direct predecessor (`current_member_id =
-/// successor_member_id`), then to its contract. A revoked, compromised,
-/// re-rotated, or expired family simply yields no row.
-async fn load_lost_response_successor(
-    connection: &mut AsyncPgConnection,
-    token: &RefreshToken,
-    client_id: Uuid,
-    now: DateTime<Utc>,
-) -> diesel::QueryResult<Option<LostResponseJoinRow>> {
-    sql_query(
-        "SELECT \
-             f.tenant_id, f.token_family_id, f.client_id, f.user_id, \
-             f.contract_blake3, f.current_member_id, f.current_token_blake3, \
-             f.current_audience, f.current_issued_at, f.current_expires_at, \
-             f.current_id_token_sid, f.dpop_jkt, f.mtls_x5t_s256, \
-             f.client_attestation_jkt, f.revoked_at, \
-             f.reuse_detected_at, c.contract, s.spent_at \
-         FROM oauth_refresh_spent_tokens AS s \
-         JOIN oauth_refresh_families AS f \
-           ON f.tenant_id = s.tenant_id AND f.token_family_id = s.token_family_id \
-         LEFT JOIN oauth_refresh_contracts AS c \
-           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 \
-         WHERE s.tenant_id = $1 AND s.refresh_token_blake3 = $2 \
-           AND f.client_id = $3 \
-           AND f.current_member_id = s.successor_member_id \
-           AND f.revoked_at IS NULL AND f.reuse_detected_at IS NULL \
-           AND f.current_expires_at > $4",
-    )
-    .bind::<sql_types::Uuid, _>(token.tenant_id)
-    .bind::<sql_types::Binary, _>(token.token_blake3.as_slice())
-    .bind::<sql_types::Uuid, _>(client_id)
-    .bind::<sql_types::Timestamptz, _>(now)
-    .get_result::<LostResponseJoinRow>(connection)
-    .await
-    .optional()
-}
-
-fn token_from_lost_response_successor(
-    row: LostResponseJoinRow,
-    token: &RefreshToken,
-    now: DateTime<Utc>,
-) -> diesel::QueryResult<Option<RefreshToken>> {
-    if row.token_family_id != token.token_family_id {
-        return Ok(None);
-    }
-    let elapsed = now.signed_duration_since(row.spent_at);
-    if elapsed < Duration::zero() || elapsed > Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS) {
-        return Ok(None);
-    }
-    let Some(contract_json) = row.contract else {
-        return Err(diesel::result::Error::DeserializationError(
-            "refresh family references a missing contract".into(),
-        ));
-    };
-    let contract = parse_contract(contract_json).map_err(deserialization_error)?;
-    token_from_current(
-        RefreshFamilyRow {
-            tenant_id: row.tenant_id,
-            token_family_id: row.token_family_id,
-            client_id: row.client_id,
-            user_id: row.user_id,
-            contract_blake3: row.contract_blake3,
-            current_member_id: row.current_member_id,
-            current_token_blake3: row.current_token_blake3,
-            current_audience: row.current_audience,
-            current_issued_at: row.current_issued_at,
-            current_expires_at: row.current_expires_at,
-            current_id_token_sid: row.current_id_token_sid,
-            dpop_jkt: row.dpop_jkt,
-            mtls_x5t_s256: row.mtls_x5t_s256,
-            client_attestation_jkt: row.client_attestation_jkt,
-            revoked_at: row.revoked_at,
-            reuse_detected_at: row.reuse_detected_at,
-        },
-        contract,
-    )
-    .map(Some)
-    .map_err(deserialization_error)
-}
-
-#[derive(diesel::QueryableByName)]
-struct LostResponseJoinRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    tenant_id: Uuid,
-    #[diesel(sql_type = sql_types::Uuid)]
-    token_family_id: Uuid,
-    #[diesel(sql_type = sql_types::Uuid)]
-    client_id: Uuid,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    user_id: Option<Uuid>,
-    #[diesel(sql_type = sql_types::Binary)]
-    contract_blake3: Vec<u8>,
-    #[diesel(sql_type = sql_types::Uuid)]
-    current_member_id: Uuid,
-    #[diesel(sql_type = sql_types::Binary)]
-    current_token_blake3: Vec<u8>,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    current_audience: Value,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    current_issued_at: DateTime<Utc>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    current_expires_at: DateTime<Utc>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    current_id_token_sid: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    dpop_jkt: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    mtls_x5t_s256: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    client_attestation_jkt: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    revoked_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    reuse_detected_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
-    contract: Option<Value>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    spent_at: DateTime<Utc>,
 }
 
 fn blake3_hex(value: &str) -> String {

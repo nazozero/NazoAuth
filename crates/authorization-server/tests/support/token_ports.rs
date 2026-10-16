@@ -52,13 +52,15 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         panic!("unexpected TokenRepositoryPort::refresh_token call")
     }
-    fn inspect_lost_response_successor<'a>(
+    fn refresh_token_snapshot<'a>(
         &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>> {
-        panic!("unexpected TokenRepositoryPort::inspect_lost_response_successor call")
+        _tenant_id: Uuid,
+        _raw_token: &'a str,
+        _client_id: Uuid,
+        _retry_started_at: chrono::DateTime<chrono::Utc>,
+        _prepare_oidc_subject: bool,
+    ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        panic!("unexpected refresh snapshot lookup")
     }
     fn active_subject_claims<'a>(
         &'a self,

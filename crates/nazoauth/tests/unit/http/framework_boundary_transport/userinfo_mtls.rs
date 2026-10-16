@@ -279,13 +279,15 @@ mod real_userinfo_contract {
         ) -> TokenFuture<'a, Option<RefreshToken>> {
             panic!("unexpected refresh lookup")
         }
-        fn inspect_lost_response_successor<'a>(
+        fn refresh_token_snapshot<'a>(
             &'a self,
-            _: &'a RefreshToken,
-            _: Uuid,
-            _: DateTime<Utc>,
-        ) -> TokenFuture<'a, Option<RefreshToken>> {
-            panic!("unexpected successor lookup")
+            _tenant_id: Uuid,
+            _raw_token: &'a str,
+            _client_id: Uuid,
+            _retry_started_at: chrono::DateTime<chrono::Utc>,
+            _prepare_oidc_subject: bool,
+        ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+            panic!("unexpected refresh snapshot lookup")
         }
         fn revoke_issued_tokens<'a>(
             &'a self,

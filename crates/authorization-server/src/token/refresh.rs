@@ -127,7 +127,7 @@ pub async fn token_refresh_with_service(
     };
     let requested_scopes = form.scope.as_deref().map(parse_scope).unwrap_or_default();
     let token = match token_service
-        .refresh_token_snapshot_with_subject(
+        .refresh_token_snapshot(
             client.tenant_id,
             refresh_token,
             client.id,
@@ -379,7 +379,7 @@ pub async fn token_refresh_with_service(
             id_token_claim_requests: authentication_context.id_token_claim_requests,
             include_refresh: true,
             refresh_token_policy,
-            dpop_jkt: dpop_jkt.clone(),
+            dpop_jkt,
             refresh_token_dpop_jkt: token.dpop_jkt,
             mtls_x5t_s256,
             // Client policy can newly bind this access token; the source RT

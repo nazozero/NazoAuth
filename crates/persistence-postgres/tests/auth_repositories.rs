@@ -13,6 +13,7 @@ use nazo_postgres::{
     AuditRepository, AuthorizationRepository, GrantRepository, TokenIssuanceRepository,
     TokenRepository, create_pool,
 };
+use nazo_resource_server::AccessTokenRevocationLookup;
 use serde_json::json;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -582,7 +583,7 @@ async fn assert_deactivation_batches_and_repeated_owners() {
         eprintln!("deactivation fixture: checking principal epoch");
         assert!(
             tokens
-                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                .is_revoked(nazo_resource_server::RevocationLookupKey {
                     tenant_id: &tenant.to_string(),
                     jti: &fresh.access_token_jti,
                     client_id: &owner.client_public_id,
@@ -1505,7 +1506,7 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert!(
         tokens
-            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+            .is_revoked(nazo_resource_server::RevocationLookupKey {
                 tenant_id: &tenant_id.to_string(),
                 jti: &access_token_jti,
                 client_id: &fixture.client_public_id,
@@ -3510,7 +3511,7 @@ async fn bound_rotation_fixture(
     tenant_id: Uuid,
     family_id: Uuid,
     dpop_jkt: &str,
-) -> (nazo_auth::RefreshToken, nazo_auth::RefreshToken) {
+) -> (String, nazo_auth::RefreshToken, nazo_auth::RefreshToken) {
     let tokens = TokenRepository::new(create_pool(database_url, 2).unwrap());
     let root_raw = format!("bound-root-{}", Uuid::now_v7());
     let mut root = refresh_token_fixture(fixture, tenant_id, family_id, root_raw.clone(), None);
@@ -3544,7 +3545,7 @@ async fn bound_rotation_fixture(
         .await
         .unwrap()
         .unwrap();
-    (original, successor)
+    (root_raw, original, successor)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3557,16 +3558,25 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let family_id = Uuid::now_v7();
     let dpop_jkt = format!("lost-response-jkt-{}", Uuid::now_v7().simple());
-    let (original, successor) =
+    let (original_raw, original, successor) =
         bound_rotation_fixture(&database_url, &fixture, tenant_id, family_id, &dpop_jkt).await;
-    let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+    let tokens = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
 
     // Outer snapshot: the unconsumed successor of the revoked original.
     let retry_started_at = chrono::Utc::now();
     let inspected = tokens
-        .inspect_lost_response_successor(&original, fixture.client_id, retry_started_at)
+        .refresh_token_snapshot(
+            tenant_id,
+            &original_raw,
+            fixture.client_id,
+            retry_started_at,
+            false,
+        )
         .await
-        .expect("outer successor snapshot should load");
+        .expect("outer snapshot should load")
+        .expect("original presentation exists")
+        .successor
+        .expect("successor projection should load");
     assert_eq!(
         inspected.as_ref().map(|token| token.id),
         Some(successor.id),
@@ -3646,9 +3656,7 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     );
 }
 
-/// Stages a revoked original refresh row plus `successor_count` successor rows
-/// in a fresh family and returns the original's domain token together with the
-/// inserted successor ids.
+/// Stages a family and spent edge, returning the raw presentation and successor IDs.
 #[allow(clippy::too_many_arguments)]
 async fn stage_lost_response(
     database_url: &str,
@@ -3661,7 +3669,7 @@ async fn stage_lost_response(
     successor_expires_offset_seconds: i32,
     successor_reuse_detected: bool,
     successor_count: usize,
-) -> (nazo_auth::RefreshToken, Vec<Uuid>) {
+) -> (String, Vec<Uuid>) {
     let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
     let family_id = Uuid::now_v7();
     let original_raw = format!("{label}-original-{}", Uuid::now_v7());
@@ -3683,12 +3691,7 @@ async fn stage_lost_response(
         successor_row.reuse_detected = successor_reuse_detected;
         successor_ids.push(insert_refresh_row(&mut connection, &successor_row).await);
     }
-    let original = TokenRepository::new(create_pool(database_url, 1).unwrap())
-        .by_raw_refresh_token(tenant_id, &original_raw)
-        .await
-        .expect("staged original should load")
-        .expect("staged original should exist");
-    (original, successor_ids)
+    (original_raw, successor_ids)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3699,14 +3702,14 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
-    let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
+    let tokens = TokenIssuanceRepository::new(create_pool(&database_url, 4).unwrap());
     let jkt = "lost-successor-jkt";
     // The retry timestamp must follow the staged `revoked_at` for the
     // sixty-second recovery window to be entered at all.
     let now = || chrono::Utc::now();
 
     // Zero successors → nothing to recover.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3721,15 +3724,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "no successor may be reported when none exists"
     );
 
     // Exactly one bound, unexpired, unrevoked successor → recovered.
-    let (original, successor_ids) = stage_lost_response(
+    let (original_raw, successor_ids) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3743,14 +3749,17 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     )
     .await;
     let recovered = tokens
-        .inspect_lost_response_successor(&original, fixture.client_id, now())
+        .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
         .await
-        .expect("successor lookup should load")
+        .expect("snapshot lookup should load")
+        .expect("original presentation exists")
+        .successor
+        .expect("successor projection should load")
         .expect("exactly one bound successor must be recoverable");
     assert_eq!(recovered.id, successor_ids[0]);
 
-    // Two competing successors trip the LIMIT 2 + exactly-one constraint.
-    let (original, _) = stage_lost_response(
+    // Competing successor fixtures compromise the family, so neither is recoverable.
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3765,15 +3774,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
-        "two candidate successors must fail the exactly-one constraint"
+        "a compromised family must not expose a successor"
     );
 
     // An expired successor does not count.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3788,15 +3800,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "an expired successor must not be recovered"
     );
 
     // Without any holder binding on the original there is no successor proof.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3811,9 +3826,12 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "an unbound original has no recoverable successor"
     );
@@ -3865,7 +3883,7 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
 
     // A client different from the original's owner sees nothing.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3880,15 +3898,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, Uuid::now_v7(), now())
+            .refresh_token_snapshot(tenant_id, &original_raw, Uuid::now_v7(), now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "a different client id must not recover the successor"
     );
 
     // A retry started outside the sixty-second window recovers nothing.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3903,15 +3924,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "a successor outside the retry window must not be recovered"
     );
 
     // A family already flagged for reuse hides the successor entirely.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3926,9 +3950,12 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "a compromised family must hide every successor"
     );

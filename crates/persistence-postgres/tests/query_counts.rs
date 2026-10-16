@@ -27,9 +27,8 @@ use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
-    OAuthClient, RefreshToken, RefreshTokenAuthenticationContext, TokenIssuanceMode,
-    TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef,
-    ValidatedClientRegistration,
+    OAuthClient, RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
+    TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef, ValidatedClientRegistration,
 };
 use nazo_digital_credentials::CredentialFormat;
 use nazo_identity::{AccessRequestStatus, TenantContext, TenantId, UserId};
@@ -960,7 +959,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
 // ---------------------------------------------------------------------------
 
 /// RF-06: the spent edge, active direct-successor family and contract are read
-/// in one joined statement. Without sender binding recovery needs no checkout.
+/// in one statement, including unbound presentations that cannot recover a successor.
 #[tokio::test]
 async fn rf06_lost_response_successor_is_single_read() {
     let _serial = SERIAL.lock().await;
@@ -1010,8 +1009,6 @@ async fn rf06_lost_response_successor_is_single_read() {
     }
 
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = TokenRepository::new(pool.clone());
-    // R05: the production port reads presentation and candidate together.
     let snapshots = TokenIssuanceRepository::new(pool.clone());
     let retry_started_at = Utc::now();
     for (raw, expected_member, expected_successor) in [
@@ -1020,7 +1017,13 @@ async fn rf06_lost_response_successor_is_single_read() {
     ] {
         let (result, delta) = measure(
             &counter,
-            snapshots.refresh_token_snapshot(tenant_id, raw, seed.client.id, retry_started_at),
+            snapshots.refresh_token_snapshot(
+                tenant_id,
+                raw,
+                seed.client.id,
+                retry_started_at,
+                false,
+            ),
         )
         .await;
         let snapshot = result.unwrap().expect("presentation exists");
@@ -1044,7 +1047,7 @@ async fn rf06_lost_response_successor_is_single_read() {
     ] {
         let (result, delta) = measure(
             &counter,
-            snapshots.refresh_token_snapshot(tenant_id, &parent_raw, client_id, at),
+            snapshots.refresh_token_snapshot(tenant_id, &parent_raw, client_id, at, false),
         )
         .await;
         let snapshot = result.unwrap().expect("original presentation still exists");
@@ -1095,6 +1098,7 @@ async fn rf06_lost_response_successor_is_single_read() {
                 &parent_raw,
                 seed.client.id,
                 persisted_spent_at + elapsed,
+                false,
             ),
         )
         .await;
@@ -1136,7 +1140,13 @@ async fn rf06_lost_response_successor_is_single_read() {
     ] {
         let (result, delta) = measure(
             &counter,
-            snapshots.refresh_token_snapshot(lookup_tenant, raw, seed.client.id, retry_started_at),
+            snapshots.refresh_token_snapshot(
+                lookup_tenant,
+                raw,
+                seed.client.id,
+                retry_started_at,
+                false,
+            ),
         )
         .await;
         assert!(result.unwrap().is_none());
@@ -1144,65 +1154,6 @@ async fn rf06_lost_response_successor_is_single_read() {
         assert_no_transaction(delta);
         assert_clean(delta);
     }
-
-    let parent = RefreshToken {
-        id_token_sid: None,
-        id: parent_id,
-        token_blake3: *blake3::hash(parent_raw.as_bytes()).as_bytes(),
-        tenant_id,
-        token_family_id: family_id,
-        client_id: seed.client.id,
-        user_id: Some(seed.user_id),
-        contract_key: [0; 32],
-        audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
-        issued_at: revoked_at - Duration::minutes(5),
-        expires_at: revoked_at + Duration::hours(1),
-        revoked_at: Some(revoked_at),
-        dpop_jkt: Some(dpop_jkt),
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-
-        contract: nazo_auth::RefreshContract {
-            audiences: vec!["resource://default".to_owned()],
-            scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
-            authorization_details: json!([]),
-            subject: seed.user_id.to_string(),
-            authentication_context: refresh_context(&seed.client.client_id),
-        },
-    };
-
-    let (result, delta) = measure(
-        &counter,
-        repository.inspect_lost_response_successor(&parent, seed.client.id, Utc::now()),
-    )
-    .await;
-
-    let successor = result.expect("successor lookup succeeds");
-    assert_eq!(
-        successor.map(|token| token.id),
-        Some(child_id),
-        "the seeded non-compromised child must be found"
-    );
-    // One joined statement keeps the spent edge, current family and immutable
-    // contract in one snapshot, including the compromise and expiry predicates.
-    assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-    let mut unbound_parent = parent;
-    unbound_parent.dpop_jkt = None;
-    let (result, delta) = measure(
-        &counter,
-        repository.inspect_lost_response_successor(&unbound_parent, seed.client.id, Utc::now()),
-    )
-    .await;
-    assert!(
-        result
-            .expect("unbound presentations cannot recover successors")
-            .is_none()
-    );
-    assert_eq!(delta.data_queries, 0);
-    assert_no_transaction(delta);
-    assert_clean(delta);
 
     // Current digest identity wins even if another presentation also has a
     // spent proof with those bytes. Restore the actual digest before cleanup.
@@ -1213,7 +1164,13 @@ async fn rf06_lost_response_successor_is_single_read() {
         .execute(&mut connection).await.unwrap();
     let (result, delta) = measure(
         &counter,
-        snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
+        snapshots.refresh_token_snapshot(
+            tenant_id,
+            &parent_raw,
+            seed.client.id,
+            retry_started_at,
+            false,
+        ),
     )
     .await;
     let snapshot = result.unwrap().expect("current presentation has priority");
@@ -1228,7 +1185,13 @@ async fn rf06_lost_response_successor_is_single_read() {
         .execute(&mut connection).await.unwrap();
     let (result, delta) = measure(
         &counter,
-        snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
+        snapshots.refresh_token_snapshot(
+            tenant_id,
+            &parent_raw,
+            seed.client.id,
+            retry_started_at,
+            false,
+        ),
     )
     .await;
     let snapshot = result
@@ -2158,13 +2121,7 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
         }
         let (result, delta) = measure(
             &counter,
-            repository.refresh_token_snapshot_with_subject(
-                tenant_id,
-                &raw,
-                seed.client.id,
-                Utc::now(),
-                true,
-            ),
+            repository.refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now(), true),
         )
         .await;
         let snapshot = result.unwrap().unwrap();
@@ -2179,7 +2136,7 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
         assert_clean(delta);
         let (_, baseline) = measure(&counter, async {
             let original = repository
-                .refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now())
+                .refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now(), false)
                 .await
                 .unwrap()
                 .unwrap();
@@ -2242,13 +2199,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     ] {
         let (r, q) = measure(
             &counter,
-            repo.refresh_token_snapshot_with_subject(
-                lookup_tenant,
-                &raw,
-                lookup_client,
-                Utc::now(),
-                hint,
-            ),
+            repo.refresh_token_snapshot(lookup_tenant, &raw, lookup_client, Utc::now(), hint),
         )
         .await;
         assert!(r.unwrap().is_none_or(|s| s.prepared_subject.is_none()));
@@ -2262,7 +2213,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         .unwrap();
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2287,7 +2238,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     }
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2304,7 +2255,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     .await;
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2344,7 +2295,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         .unwrap();
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2399,7 +2350,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
         .unwrap();
     let repo = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
     let early = repo
-        .refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true)
+        .refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true)
         .await
         .unwrap()
         .unwrap();
@@ -2426,7 +2377,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
             .unwrap()
             .2;
         let source = repo
-            .refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true)
+            .refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true)
             .await
             .unwrap()
             .unwrap();
@@ -2575,13 +2526,7 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
         for (member, raw) in &fixtures {
             for prepared in [false, true] {
                 let result = repository
-                    .refresh_token_snapshot_with_subject(
-                        tenant_id,
-                        raw,
-                        seed.client.id,
-                        Utc::now(),
-                        prepared,
-                    )
+                    .refresh_token_snapshot(tenant_id, raw, seed.client.id, Utc::now(), prepared)
                     .await;
                 let snapshot = result.unwrap().unwrap();
                 assert_eq!(snapshot.presented.id, *member);
@@ -2597,25 +2542,13 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
             (tenant_id, unknown.as_str()),
         ] {
             let result = repository
-                .refresh_token_snapshot_with_subject(
-                    lookup_tenant,
-                    raw,
-                    seed.client.id,
-                    Utc::now(),
-                    prepared,
-                )
+                .refresh_token_snapshot(lookup_tenant, raw, seed.client.id, Utc::now(), prepared)
                 .await;
             assert!(result.unwrap().is_none());
         }
     }
     let result = repository
-        .refresh_token_snapshot_with_subject(
-            tenant_id,
-            &fixtures[0].1,
-            Uuid::now_v7(),
-            Utc::now(),
-            true,
-        )
+        .refresh_token_snapshot(tenant_id, &fixtures[0].1, Uuid::now_v7(), Utc::now(), true)
         .await;
     let foreign_client = result.unwrap().unwrap();
     assert_eq!(foreign_client.presented.id, fixtures[0].0);

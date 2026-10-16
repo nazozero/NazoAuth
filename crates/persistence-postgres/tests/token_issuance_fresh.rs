@@ -11,6 +11,7 @@ use nazo_auth::{
     TokenPortError, TokenRepositoryPort,
 };
 use nazo_postgres::{TokenIssuanceRepository, TokenRepository, create_pool};
+use nazo_resource_server::AccessTokenRevocationLookup;
 use uuid::Uuid;
 
 fn database_url() -> Option<String> {
@@ -169,7 +170,7 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
         );
         assert_eq!(
             tokens
-                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                .is_revoked(nazo_resource_server::RevocationLookupKey {
                     tenant_id: &tenant.to_string(),
                     jti: &issuance.access_token_jti,
                     client_id: &fixture.client_public_id,
@@ -200,7 +201,7 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
         .unwrap();
     assert!(
         tokens
-            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+            .is_revoked(nazo_resource_server::RevocationLookupKey {
                 tenant_id: &tenant.to_string(),
                 jti: &current.access_token_jti,
                 client_id: &fixture.client_public_id,
@@ -297,7 +298,7 @@ async fn repeated_pairwise_issuance_reuses_one_binding_and_honors_user_epoch() {
         );
         assert_eq!(
             tokens
-                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                .is_revoked(nazo_resource_server::RevocationLookupKey {
                     tenant_id: &tenant.to_string(),
                     jti: &last_jti,
                     client_id: &fixture.client_public_id,
@@ -697,7 +698,7 @@ async fn client_deactivation_waits_for_fresh_issuance_commit() {
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert!(
         tokens
-            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+            .is_revoked(nazo_resource_server::RevocationLookupKey {
                 tenant_id: &tenant_id.to_string(),
                 jti: &access_token_jti,
                 client_id: &fixture.client_public_id,

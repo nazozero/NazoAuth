@@ -506,38 +506,16 @@ pub trait TokenRepositoryPort: Send + Sync {
         raw_token: &'a str,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
 
-    /// Read current-or-spent presentation and its direct successor candidate
-    /// from one storage snapshot. Unsupported adapters fail before issuance.
+    /// Read the presentation and direct successor from one storage snapshot.
+    /// The subject hint lets the adapter prepare OIDC claims in that read.
     fn refresh_token_snapshot<'a>(
-        &'a self,
-        _tenant_id: Uuid,
-        _raw_token: &'a str,
-        _client_id: Uuid,
-        _retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>> {
-        Box::pin(async { Err(TokenPortError::Unavailable) })
-    }
-
-    /// Optionally prepare OIDC claims during an ordinary refresh presentation
-    /// read. The hint carries no storage detail; adapters without this
-    /// optimization retain the original snapshot and later claims path.
-    fn refresh_token_snapshot_with_subject<'a>(
         &'a self,
         tenant_id: Uuid,
         raw_token: &'a str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
-        _prepare_oidc_subject: bool,
-    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
-    }
-
-    fn inspect_lost_response_successor<'a>(
-        &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>>;
+        prepare_oidc_subject: bool,
+    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>>;
 
     fn active_subject_claims<'a>(
         &'a self,
@@ -771,22 +749,10 @@ where
         raw_token: &str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
-    ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
-        self.repository
-            .refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
-            .await
-    }
-
-    pub async fn refresh_token_snapshot_with_subject(
-        &self,
-        tenant_id: Uuid,
-        raw_token: &str,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
         prepare_oidc_subject: bool,
     ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
         self.repository
-            .refresh_token_snapshot_with_subject(
+            .refresh_token_snapshot(
                 tenant_id,
                 raw_token,
                 client_id,
@@ -820,17 +786,6 @@ where
 
     pub async fn load_native_sso(&self, secret: &str) -> Result<Option<Value>, TokenPortError> {
         self.state.load_native_sso(secret).await
-    }
-
-    pub async fn inspect_lost_refresh_successor(
-        &self,
-        token: &RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> Result<Option<RefreshToken>, TokenPortError> {
-        self.repository
-            .inspect_lost_response_successor(token, client_id, retry_started_at)
-            .await
     }
 
     pub async fn active_subject_claims(

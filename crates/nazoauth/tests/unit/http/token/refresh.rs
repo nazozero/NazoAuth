@@ -1339,10 +1339,19 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     )
     .await;
     assert!(
-        nazo_postgres::TokenRepository::new(state.diesel_db.clone())
-            .inspect_lost_response_successor(&revoked, client.id, Utc::now())
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone())
+            .refresh_token_snapshot(
+                revoked.tenant_id,
+                &revoked_raw,
+                client.id,
+                Utc::now(),
+                false
+            )
             .await
-            .expect("lost-response successor inspection should succeed")
+            .expect("snapshot lookup should succeed")
+            .expect("presentation exists")
+            .successor
+            .expect("successor projection should succeed")
             .is_none(),
         "an unbound bearer refresh token must never be eligible for lost-response recovery"
     );
@@ -1704,45 +1713,28 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
 
     // The window is measured from the persisted spent_at (`now`), so the
     // boundary moves with the `now` argument, not with the stored row.
-    let repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
-    let at_zero = repository
-        .inspect_lost_response_successor(&revoked, client_id, now)
-        .await;
-    let at_sixty_seconds = repository
-        .inspect_lost_response_successor(&revoked, client_id, now + Duration::seconds(60))
-        .await;
-    let after_sixty_seconds = repository
-        .inspect_lost_response_successor(
-            &revoked,
-            client_id,
+    let repository = nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone());
+    for (at, expected) in [
+        (now, Some(successor.id)),
+        (now + Duration::seconds(60), Some(successor.id)),
+        (
             now + Duration::seconds(60) + Duration::milliseconds(1),
-        )
-        .await;
-    let before_spent = repository
-        .inspect_lost_response_successor(&revoked, client_id, now - Duration::milliseconds(1))
-        .await;
+            None,
+        ),
+        (now - Duration::milliseconds(1), None),
+    ] {
+        let snapshot = repository
+            .refresh_token_snapshot(revoked.tenant_id, &revoked_raw, client_id, at, false)
+            .await
+            .expect("boundary snapshot should load")
+            .expect("original presentation exists");
+        assert_eq!(
+            snapshot.successor.unwrap().map(|row| row.id),
+            expected,
+            "retry at {at}"
+        );
+    }
     drop_schema(&state, &schema).await;
-
-    let (at_zero, at_sixty_seconds, after_sixty_seconds, before_spent) = (
-        at_zero.expect("zero boundary should load"),
-        at_sixty_seconds.expect("sixty-second boundary should load"),
-        after_sixty_seconds.expect("after-window lookup should load"),
-        before_spent.expect("pre-spent lookup should load"),
-    );
-    assert_eq!(at_zero.map(|row| row.id), Some(successor.id));
-    assert_eq!(
-        at_sixty_seconds.map(|row| row.id),
-        Some(successor.id),
-        "the exact 60-second boundary must remain inclusive"
-    );
-    assert!(
-        after_sixty_seconds.is_none(),
-        "60 seconds plus 1 millisecond must be outside the retry window"
-    );
-    assert!(
-        before_spent.is_none(),
-        "a retry before the recorded spent instant must not be eligible"
-    );
 }
 
 #[actix_web::test]
@@ -2002,12 +1994,10 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
 
     // Tenant isolation: replaying the same digest under a foreign tenant must
     // not resolve the spent proof or the family's current member.
-    let mut foreign = revoked.clone();
-    foreign.tenant_id = Uuid::now_v7();
-    let repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
+    let repository = nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone());
     assert!(
         repository
-            .inspect_lost_response_successor(&foreign, client_id, Utc::now())
+            .refresh_token_snapshot(Uuid::now_v7(), revoked_raw, client_id, Utc::now(), false)
             .await
             .expect("successor lookup should succeed")
             .is_none(),
@@ -2015,9 +2005,12 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     );
     assert_eq!(
         repository
-            .inspect_lost_response_successor(&revoked, client_id, Utc::now())
+            .refresh_token_snapshot(revoked.tenant_id, revoked_raw, client_id, Utc::now(), false)
             .await
             .expect("same-tenant lookup should succeed")
+            .expect("presentation exists")
+            .successor
+            .expect("valid successor projection")
             .map(|row| row.id),
         Some(successor.id),
         "the same-tenant direct successor still resolves"
@@ -3102,13 +3095,7 @@ async fn oidc_refresh_domain_fallback_preserves_http_errors_and_validation_prior
         }
         let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
         let source = inner
-            .refresh_token_snapshot_with_subject(
-                client.tenant_id,
-                &raw,
-                client.id,
-                Utc::now(),
-                true,
-            )
+            .refresh_token_snapshot(client.tenant_id, &raw, client.id, Utc::now(), true)
             .await
             .unwrap()
             .unwrap();
@@ -3249,7 +3236,7 @@ async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
     .await;
     let inner = crate::test_support::token_issuance_repository(state.diesel_db.clone());
     let source = inner
-        .refresh_token_snapshot_with_subject(
+        .refresh_token_snapshot(
             client.tenant_id,
             &predecessor_raw,
             client.id,

@@ -370,7 +370,7 @@ async fn fence_native_sso_source(
     }
 }
 
-fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryError> {
+fn validate_commit_input(input: &CommitTokenIssuance) -> Result<DateTime<Utc>, RepositoryError> {
     if input.issuance_id.is_nil()
         || input.tenant_id.is_nil()
         || input.client_id.is_nil()
@@ -467,8 +467,7 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
     }
     DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
         RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
-    })?;
-    Ok(())
+    })
 }
 
 /// One durable audit event per committed issuance. A rotation is the same
@@ -550,10 +549,8 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
         Box::pin(async move {
-            validate_commit_input(&input).map_err(map_repository_error)?;
             let access_token_expires_at =
-                DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0)
-                    .ok_or(TokenPortError::CorruptData)?;
+                validate_commit_input(&input).map_err(map_repository_error)?;
             let ownership_horizon = access_token_expires_at
                 .checked_add_signed(chrono::Duration::seconds(
                     MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
@@ -852,22 +849,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         raw_token: &'a str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot_with_subject(
-            tenant_id,
-            raw_token,
-            client_id,
-            retry_started_at,
-            false,
-        )
-    }
-
-    fn refresh_token_snapshot_with_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        raw_token: &'a str,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
         prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         Box::pin(async move {
@@ -891,19 +872,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         })
     }
 
-    fn inspect_lost_response_successor<'a>(
-        &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>> {
-        Box::pin(async move {
-            self.tokens
-                .inspect_lost_response_successor(token, client_id, retry_started_at)
-                .await
-                .map_err(map_repository_error)
-        })
-    }
     fn active_subject_claims<'a>(
         &'a self,
         tenant_id: Uuid,

@@ -270,26 +270,12 @@ pub async fn issue_token_response(
         }
     };
     let issuance_id = Uuid::now_v7();
-    // Commit-owned issuance: when the final commit transaction carries both
-    // the principal-version check and required `token_issued` append, the
-    // commit itself is the fail-closed writer check, so the per-request
-    // static capability probe is redundant. Normal refresh rotation and
-    // preserving an existing refresh token join the no-refresh shape: any
-    // family lock and spent-proof bookkeeping are owned by
-    // that same commit transaction. Any path
-    // with a preceding durable side effect (authorization-code consumption,
-    // Native SSO device-secret persistence) keeps the full storage
-    // preflight, and `RotateLostResponse` stays on it as well — the retry
-    // proves its direct-predecessor edge inside the commit but the
-    // lost-response recovery path is deliberately kept conservative.
+    // These paths write their refresh state and required audit in the same
+    // commit. Earlier authorization-code consumption or Native SSO persistence
+    // still requires the full preflight before those independent effects.
     let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
         && issue.authorization_code_hash.is_none()
-        && issue.native_sso.is_none()
-        && (!will_issue_refresh
-            || matches!(
-                issue.refresh_token_policy,
-                RefreshTokenPolicy::PreserveExisting | RefreshTokenPolicy::Rotate { .. }
-            ));
+        && issue.native_sso.is_none();
     let audit_ready = if commit_owned {
         context.security_audit.ensure_transactional_ready().await
     } else {
@@ -457,9 +443,8 @@ pub async fn issue_token_response(
         }
         let frontchannel_logout_enabled =
             context.permits(nazo_runtime_modules::ModuleId::FrontchannelLogout);
-        let id_token_sid = id_token_session_sid(client, &issue, frontchannel_logout_enabled)
-            .map(ToOwned::to_owned);
-        issued_id_token_sid = id_token_sid.clone();
+        let id_token_sid = id_token_session_sid(client, &issue, frontchannel_logout_enabled);
+        issued_id_token_sid = id_token_sid;
         if issue.refresh_authority.is_some()
             && !refreshed_id_token_essential_claims_satisfied(
                 &issue,
@@ -487,10 +472,8 @@ pub async fn issue_token_response(
                 issuer: &context.config.issuer,
                 subject: &issue.subject,
                 client_id: &client.client_id,
-                // OIDC Core 12.2 says a refreshed ID Token SHOULD omit
-                // nonce.  The original value remains in `issue.nonce` so
-                // the successor refresh contract can retain it, but it is
-                // never emitted for a refresh issuance.
+                // OIDC Core 12.2 omits the first-response nonce on refresh;
+                // the immutable refresh contract never stores it.
                 nonce: if issue.refresh_authority.is_some() {
                     None
                 } else {
@@ -498,7 +481,7 @@ pub async fn issue_token_response(
                 },
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
-                sid: id_token_sid.as_deref(),
+                sid: id_token_sid,
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
                 ttl_seconds: context.config.id_token_ttl_seconds,
@@ -569,7 +552,7 @@ pub async fn issue_token_response(
             expires_at: now + Duration::seconds(context.config.refresh_token_ttl_seconds),
         };
         let id_token_sid_for_refresh_persistence =
-            persisted_id_token_sid(&issue, issued_id_token_sid.as_deref());
+            persisted_id_token_sid(&issue, issued_id_token_sid);
         let refresh_token = prepare_refresh_token(
             client,
             &issue,

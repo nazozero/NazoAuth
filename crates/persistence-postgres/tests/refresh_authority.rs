@@ -1126,9 +1126,18 @@ async fn public_unbound_replay_after_65_rotations_revokes_only_its_family() {
     assert!(original.expires_at > Utc::now());
     assert!(original.revoked_at.is_some());
     assert!(
-        tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, Utc::now())
+        repository
+            .refresh_token_snapshot(
+                tenant(),
+                &original_raw,
+                fixture.client_id,
+                Utc::now(),
+                false
+            )
             .await
+            .unwrap()
+            .expect("original presentation exists")
+            .successor
             .unwrap()
             .is_none(),
         "unbound replay must not receive the bound lost-response exception"
@@ -1173,15 +1182,17 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
         }
         let (first_raw, mut current) = issue_with_binding(&url, &fixture, binding).await;
         let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
-        let mut predecessor = current.clone();
+        let mut current_raw = first_raw.clone();
+        let mut predecessor_raw = String::new();
         for _ in 0..66 {
-            predecessor = current.clone();
+            predecessor_raw = current_raw;
             let (input, raw) = rotation(&fixture, &current, &[A]);
             assert_eq!(
                 repository.commit_token_issuance(input).await.unwrap(),
                 CommitTokenIssuanceResult::Committed
             );
             current = lookup(&url, &raw).await;
+            current_raw = raw;
         }
         let family = state(&mut connection, current.token_family_id).await;
         assert_eq!(family.spent, nazo_auth::MAX_SPENT_PROOFS_PER_REFRESH_FAMILY);
@@ -1194,9 +1205,18 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
                 .unwrap()
                 .is_none()
         );
-        let recovered = tokens
-            .inspect_lost_response_successor(&predecessor, fixture.client_id, Utc::now())
+        let recovered = repository
+            .refresh_token_snapshot(
+                tenant(),
+                &predecessor_raw,
+                fixture.client_id,
+                Utc::now(),
+                false,
+            )
             .await
+            .unwrap()
+            .expect("predecessor presentation exists")
+            .successor
             .unwrap();
         assert_eq!(
             recovered.map(|token| token.id),
@@ -1596,7 +1616,13 @@ async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
             CommitTokenIssuanceResult::Committed
         );
         let snapshot = repository
-            .refresh_token_snapshot(tenant(), &original_raw, fixture.client_id, Utc::now())
+            .refresh_token_snapshot(
+                tenant(),
+                &original_raw,
+                fixture.client_id,
+                Utc::now(),
+                false,
+            )
             .await
             .unwrap()
             .expect("spent presentation exists");
@@ -1733,6 +1759,7 @@ async fn bound_delayed_rotation_uses_transition_clock_without_false_reuse() {
                     &original_raw,
                     fixture.client_id,
                     retry_started_at,
+                    false,
                 )
                 .await
                 .unwrap()
@@ -1843,6 +1870,7 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
                     &original_raw,
                     fixture.client_id,
                     retry_started_at,
+                    false,
                 )
                 .await
                 .unwrap()

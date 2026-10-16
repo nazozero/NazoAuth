@@ -112,8 +112,7 @@ async fn issue_counted_fresh(
     .await
 }
 
-/// The conservative eligibility predicate: commit-owned Fresh issuance
-/// with no refresh bookkeeping, no authorization-code consumption and no
+/// Commit-owned Fresh issuance with no authorization-code consumption and no
 /// Native SSO device-secret write relies on the commit transaction for the
 /// writer check, so the static per-request probe is elided.
 #[actix_web::test]
@@ -147,31 +146,48 @@ async fn commit_owned_fresh_issuance_uses_transactional_readiness() {
     );
 }
 
-/// Refresh issuance carries family/spent bookkeeping alongside the commit,
-/// so it keeps the full storage preflight.
+/// New-family state and its required audit commit atomically.
 #[actix_web::test]
-async fn refresh_issuance_keeps_the_full_storage_preflight() {
+async fn new_refresh_family_uses_transactional_readiness() {
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
     let mut client = client_with_grants(&["client_credentials", "refresh_token"]);
     client.client_id = format!("audit-ready-refresh-{}", Uuid::now_v7());
     insert_issue_client(&state, &client).await;
-    let mut issue = token_issue_without_openid();
-    issue.user_id = None;
-    issue.subject = client.client_id.clone();
-    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
-    issue.include_refresh = true;
-    let audit = CountingSecurityAudit::default();
-
-    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        audit.counts(),
-        (1, 0),
-        "refresh issuance must keep ensure_storage"
-    );
+    for reject in [false, true] {
+        let baseline_families = refresh_token_row_count(&state, &client).await;
+        let mut issue = token_issue_without_openid();
+        issue.user_id = None;
+        issue.subject = client.client_id.clone();
+        issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+        issue.include_refresh = true;
+        let audit = CountingSecurityAudit {
+            reject_transactional: reject,
+            ..Default::default()
+        };
+        let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+        let expected = if reject {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            StatusCode::OK
+        };
+        assert_eq!(response.status(), expected);
+        let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+        assert_eq!(
+            body.get("access_token").is_some(),
+            expected == StatusCode::OK
+        );
+        assert_eq!(
+            body.get("refresh_token").is_some(),
+            expected == StatusCode::OK
+        );
+        assert_eq!(audit.counts(), (0, 1));
+        assert_eq!(
+            refresh_token_row_count(&state, &client).await,
+            baseline_families + i64::from(expected == StatusCode::OK)
+        );
+    }
 }
 
 /// Preserving a refresh token does not persist any state before the final
@@ -267,40 +283,56 @@ async fn refresh_rotation_uses_transactional_readiness() {
     );
 }
 
-/// Lost-response rotation recovery is deliberately kept conservative: the
-/// commit still proves its direct-predecessor edge transactionally, but the
-/// path keeps the full storage preflight.
+/// The lost-response edge, rotation and required audit share the final commit.
 #[actix_web::test]
-async fn lost_response_rotation_keeps_the_full_storage_preflight() {
+async fn lost_response_rotation_uses_transactional_readiness() {
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
     let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
     client.client_id = format!("audit-ready-lost-{}", Uuid::now_v7());
     insert_issue_client(&state, &client).await;
-    let mut issue = token_issue_without_openid();
-    issue.user_id = None;
-    issue.subject = client.client_id.clone();
-    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
-    issue.include_refresh = true;
-    issue.refresh_token_policy = RefreshTokenPolicy::RotateLostResponse {
-        family_id: Uuid::now_v7(),
-        original_id: Uuid::now_v7(),
-        original_blake3: [0xAB; 32],
-        successor_id: Uuid::now_v7(),
-        retry_started_at: Utc::now(),
-    };
-    set_refresh_authority_for_issue(&state, &client, &mut issue);
-    let audit = CountingSecurityAudit::default();
-
-    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(
-        audit.counts(),
-        (1, 0),
-        "lost-response rotation must keep ensure_storage"
-    );
+    for reject in [false, true] {
+        let baseline_families = refresh_token_row_count(&state, &client).await;
+        let mut issue = token_issue_without_openid();
+        issue.user_id = None;
+        issue.subject = client.client_id.clone();
+        issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+        issue.include_refresh = true;
+        issue.refresh_token_policy = RefreshTokenPolicy::RotateLostResponse {
+            family_id: Uuid::now_v7(),
+            original_id: Uuid::now_v7(),
+            original_blake3: [0xAB; 32],
+            successor_id: Uuid::now_v7(),
+            retry_started_at: Utc::now(),
+        };
+        set_refresh_authority_for_issue(&state, &client, &mut issue);
+        let audit = CountingSecurityAudit {
+            reject_transactional: reject,
+            ..Default::default()
+        };
+        let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+        let expected = if reject {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        assert_eq!(response.status(), expected);
+        let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+        assert_eq!(
+            body.get("access_token").is_some(),
+            expected == StatusCode::OK
+        );
+        assert_eq!(
+            body.get("refresh_token").is_some(),
+            expected == StatusCode::OK
+        );
+        assert_eq!(audit.counts(), (0, 1));
+        assert_eq!(
+            refresh_token_row_count(&state, &client).await,
+            baseline_families + i64::from(expected == StatusCode::OK)
+        );
+    }
 }
 
 /// Authorization-code (single-use) redemption consumes grant state and is

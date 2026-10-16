@@ -24,8 +24,9 @@ required-intent append failure prevents the business mutation. Silent
 `prompt=none` authorization applies the same dynamic readiness gate before its
 atomic decision commit. Fresh token
 issuance without earlier authorization-code consumption or Native SSO persistence
-also uses it for no-refresh, normal rotation, and `PreserveExisting` policies.
-Other issuance shapes retain the full storage preflight.
+also uses it for every refresh policy, including new families and lost-response
+rotation: their required audit and state changes share the commit. Issuance with
+earlier grant consumption or Native SSO persistence retains the full storage preflight.
 
 Where the mutation and ledger do not share a transaction, the caller records a
 required `*_intent` before changing state and emits an outcome afterward. An
