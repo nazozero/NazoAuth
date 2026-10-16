@@ -288,10 +288,11 @@ def cleanup_load_fixture() -> None:
 
 
 def percentile(values: list[float], pct: float) -> float:
+    """Select a percentile from the phase's sorted duration samples."""
     if not values:
         return 0.0
-    index = min(len(values) - 1, max(0, round((len(values) - 1) * pct)))
-    return sorted(values)[index]
+    index = round((len(values) - 1) * pct)
+    return values[index]
 
 
 def run_phase(name: str, requests_count: int, concurrency: int, call: Callable[[], None]) -> dict[str, Any]:
@@ -313,6 +314,7 @@ def run_phase(name: str, requests_count: int, concurrency: int, call: Callable[[
                 errors.append(str(exc))
 
     elapsed = time.perf_counter() - started
+    durations.sort()
     return {
         "name": name,
         "requests": requests_count,

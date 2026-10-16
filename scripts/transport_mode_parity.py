@@ -190,20 +190,21 @@ def capture(args):
     items = []
     for target, base, client_opener in (("public", public, public_opener), ("public_forged_client_cert", public, public_opener), ("mtls", mtls, mtls_opener)):
         for case in matrix:
-            items.append(request(client_opener, target, case, f"{base}/{case[2].lstrip('/')}", args.timeout))
+            item = request(client_opener, target, case, f"{base}/{case[2].lstrip('/')}", args.timeout)
+            items.append(report_observation(item, replace))
     differences = []
     for item in items:
         differences.extend({"kind": "protocol", "target": item["target"], "case": item["case"], **issue} for issue in expected(item))
     by = {(item["target"], item["case"]): item for item in items}
     for case in matrix:
         for left, right, kind in (("public", "mtls", "public_vs_mtls"), ("public", "public_forged_client_cert", "forged_client_cert")):
-            a, b = semantic(by[(left, case[0])], replace), semantic(by[(right, case[0])], replace)
+            a, b = by[(left, case[0])]["semantic"], by[(right, case[0])]["semantic"]
             if a != b:
                 differences.append({"kind": kind, "case": case[0], "left": left, "right": right, "left_semantic": a, "right_semantic": b})
     return {
         "schema": SCHEMA, "kind": "transport-mode-parity-capture", "success": not differences,
         "mode": args.mode, "matrix": [{"name": c[0], "method": c[1], "path": c[2]} for c in matrix],
-        "observations": [report_observation(item, replace) for item in items], "differences": differences,
+        "observations": items, "differences": differences,
     }
 
 

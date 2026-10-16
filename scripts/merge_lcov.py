@@ -71,7 +71,11 @@ def parse_lcov(text: str) -> dict[str, SourceRecord]:
         if line == "end_of_record":
             if source is None or current is None:
                 raise LcovError(f"line {line_number}: end without SF record")
-            records.setdefault(source, SourceRecord()).merge(current)
+            previous = records.get(source)
+            if previous is None:
+                records[source] = current
+            else:
+                previous.merge(current)
             source = None
             current = None
             continue
@@ -171,7 +175,11 @@ def merge_reports(paths: list[Path], source_root: Path) -> dict[str, SourceRecor
     for path in paths:
         for source, record in parse_lcov(path.read_text(encoding="utf-8")).items():
             normalized = normalize_source(source, source_root)
-            merged.setdefault(normalized, SourceRecord()).merge(record)
+            previous = merged.get(normalized)
+            if previous is None:
+                merged[normalized] = record
+            else:
+                previous.merge(record)
     return merged
 
 

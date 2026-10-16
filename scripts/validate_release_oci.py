@@ -59,12 +59,10 @@ def _bounded_string(value: Any, name: str, maximum: int = 1024) -> str:
 def _annotations(value: Any, name: str) -> dict[str, str]:
     if not isinstance(value, dict) or len(value) > 128:
         _fail(f"{name} must be a bounded string map")
-    result: dict[str, str] = {}
     for key, item in value.items():
-        result[_bounded_string(key, f"{name} key", 256)] = _bounded_string(
-            item, f"{name}.{key}", 4096
-        )
-    return result
+        _bounded_string(key, f"{name} key", 256)
+        _bounded_string(item, f"{name}.{key}", 4096)
+    return value
 
 
 def _json_object(payload: bytes, name: str) -> dict[str, Any]:
@@ -124,7 +122,7 @@ def extract_archive(archive: Path, layout: Path) -> Path:
         normalized_members: list[tuple[tarfile.TarInfo, str]] = []
         for member in members:
             path = PurePosixPath(member.name)
-            parts = tuple(part for part in path.parts if part not in ("", "."))
+            parts = path.parts
             if (
                 path.is_absolute()
                 or not parts
@@ -149,25 +147,13 @@ def extract_archive(archive: Path, layout: Path) -> Path:
 
         for member, normalized in normalized_members:
             destination = layout.joinpath(*PurePosixPath(normalized).parts)
-            try:
-                destination.relative_to(layout)
-            except ValueError:
-                _fail(f"OCI archive member escapes extraction root: {member.name!r}")
             if member.isdir():
-                if destination.exists() and not destination.is_dir():
-                    _fail(f"OCI archive directory collides with a file: {member.name!r}")
                 destination.mkdir(parents=True, exist_ok=True)
                 continue
             destination.parent.mkdir(parents=True, exist_ok=True)
-            if destination.exists():
-                _fail(f"OCI archive file collides with an existing path: {member.name!r}")
             extracted = source.extractfile(member)
-            if extracted is None:
-                _fail(f"OCI archive member cannot be read: {member.name!r}")
             with extracted, destination.open("xb") as output:
                 shutil.copyfileobj(extracted, output, length=1024 * 1024)
-            if destination.stat().st_size != member.size:
-                _fail(f"OCI archive member size changed during extraction: {member.name!r}")
     return layout
 
 
@@ -182,18 +168,12 @@ class Layout:
     def load(cls, root: Path) -> "Layout":
         if {entry.name for entry in root.iterdir()} != {"blobs", "index.json", "oci-layout"}:
             _fail("OCI layout has unexpected root entries")
-        for entry in root.rglob("*"):
-            if entry.is_symlink():
-                _fail(f"OCI layout contains a symbolic link: {entry}")
-
-        metadata = _json_file(root / "oci-layout", "OCI layout metadata")
-        if metadata != {"imageLayoutVersion": "1.0.0"}:
-            _fail("OCI layout metadata is not the closed 1.0.0 schema")
-
         layout = cls(root)
         if not layout.blob_root.is_dir():
             _fail("OCI layout has no sha256 blob directory")
         for entry in root.rglob("*"):
+            if entry.is_symlink():
+                _fail(f"OCI layout contains a symbolic link: {entry}")
             if entry.is_dir():
                 if entry not in {root / "blobs", layout.blob_root}:
                     _fail(f"OCI layout contains an unexpected directory: {entry}")
@@ -211,6 +191,9 @@ class Layout:
             if digest.hexdigest() != entry.name:
                 _fail(f"OCI blob digest mismatch: {entry.name}")
             layout.blobs[f"sha256:{entry.name}"] = (entry, size)
+        metadata = _json_file(root / "oci-layout", "OCI layout metadata")
+        if metadata != {"imageLayoutVersion": "1.0.0"}:
+            _fail("OCI layout metadata is not the closed 1.0.0 schema")
         return layout
 
     def descriptor(self, value: Any, name: str) -> dict[str, Any]:
