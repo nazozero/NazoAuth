@@ -408,3 +408,24 @@ fn prepared_snapshot_rejects_invalid_public_input() {
         Err(CredentialTrustError::RevocationSnapshotUnavailable)
     );
 }
+
+#[test]
+fn certificate_identity_requires_a_canonical_unpadded_sha256_digest() {
+    let mut value = snapshot(&certificate_der(), CertificateRevocationStatus::Good);
+    value.entries[0].certificate = format!("sha256:{}", "A".repeat(43));
+    assert!(value.validate_structure().is_ok());
+    for encoded in [
+        format!("{}B", "A".repeat(42)),
+        format!("{}=", "A".repeat(43)),
+        format!("{} ", "A".repeat(43)),
+        "A".repeat(42),
+        "A".repeat(44),
+        "+".repeat(43),
+    ] {
+        value.entries[0].certificate = format!("sha256:{encoded}");
+        assert_eq!(
+            value.validate_structure(),
+            Err(CertificateRevocationSnapshotError::InvalidEntry)
+        );
+    }
+}

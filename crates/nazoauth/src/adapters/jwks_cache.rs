@@ -156,10 +156,12 @@ pub(super) struct FetchGuard<'a> {
 impl FetchGuard<'_> {
     pub(super) fn finish(mut self, result: Result<Value, String>, now: Duration) -> FetchResult {
         let result = result.map(Arc::new);
-        let mut state = self.cache.lock(&self.key);
+        let key = std::mem::take(&mut self.key);
+        let mut state = self.cache.lock(&key);
+        state.pending.remove(&key);
         let evicted = match &result {
             Ok(document) => state.entries.push(
-                self.key.clone(),
+                key,
                 Entry {
                     document: Arc::clone(document),
                     expires_at: now.saturating_add(self.cache.ttl),
@@ -168,7 +170,6 @@ impl FetchGuard<'_> {
             ),
             Err(_) => None,
         };
-        state.pending.remove(&self.key);
         drop(state);
         drop(evicted);
         if let Some(sender) = self.sender.take() {

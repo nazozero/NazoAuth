@@ -48,10 +48,10 @@ pub struct PresentedCredential<'a> {
 /// certificate issued by the same authority.
 #[must_use]
 pub fn certificate_identity(certificate_der: &[u8]) -> String {
-    format!(
-        "sha256:{}",
-        URL_SAFE_NO_PAD.encode(Sha256::digest(certificate_der))
-    )
+    let mut identity = String::with_capacity(50);
+    identity.push_str("sha256:");
+    URL_SAFE_NO_PAD.encode_string(Sha256::digest(certificate_der), &mut identity);
+    identity
 }
 
 /// A status entry from an operator-provisioned certificate revocation
@@ -135,18 +135,11 @@ impl CertificateRevocationSnapshot {
             if entry.issuer.is_empty()
                 || entry.issuer.len() > 2048
                 || !valid_certificate_identity(&entry.certificate)
-                || !identities.insert((entry.issuer.as_str(), entry.certificate.as_str()))
             {
-                return Err(
-                    if entry.issuer.is_empty()
-                        || entry.issuer.len() > 2048
-                        || !valid_certificate_identity(&entry.certificate)
-                    {
-                        CertificateRevocationSnapshotError::InvalidEntry
-                    } else {
-                        CertificateRevocationSnapshotError::DuplicateEntry
-                    },
-                );
+                return Err(CertificateRevocationSnapshotError::InvalidEntry);
+            }
+            if !identities.insert((entry.issuer.as_str(), entry.certificate.as_str())) {
+                return Err(CertificateRevocationSnapshotError::DuplicateEntry);
             }
         }
         Ok(())
@@ -355,8 +348,9 @@ impl CertificateRevocationPolicy {
         bytes: &[u8],
         now: DateTime<Utc>,
     ) -> Result<(), CertificateRevocationSnapshotError> {
-        let snapshot = Arc::new(CertificateRevocationSnapshot::from_json(bytes)?);
-        self.replace_snapshot(snapshot, now)
+        let snapshot = serde_json::from_slice(bytes)
+            .map_err(|_| CertificateRevocationSnapshotError::InvalidEntry)?;
+        self.replace_snapshot(Arc::new(snapshot), now)
     }
 
     #[must_use]
@@ -493,7 +487,6 @@ impl VcIssuerTrustPolicy {
     pub fn validate(&self, issuer: &str, leaf_der: &[u8]) -> Result<(), CredentialTrustError> {
         let issuer_url = Url::parse(issuer).map_err(|_| CredentialTrustError::UntrustedIssuer)?;
         if issuer_url.scheme() != "https"
-            || issuer_url.host_str().is_none()
             || !issuer_url.username().is_empty()
             || issuer_url.password().is_some()
             || issuer_url.query().is_some()
@@ -600,7 +593,5 @@ fn valid_certificate_identity(value: &str) -> bool {
     let Some(encoded) = value.strip_prefix("sha256:") else {
         return false;
     };
-    URL_SAFE_NO_PAD
-        .decode(encoded)
-        .is_ok_and(|decoded| decoded.len() == 32 && URL_SAFE_NO_PAD.encode(decoded) == encoded)
+    URL_SAFE_NO_PAD.decode_slice(encoded, &mut [0_u8; 32]) == Ok(32)
 }
