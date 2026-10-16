@@ -79,7 +79,10 @@ impl PasskeyProfileOperations for ProfileOperations {
         Box::pin(async { Err(PasskeyEndpointError::SessionMissing) })
     }
 
-    fn list(&self, context: PasskeyProfileContext) -> PasskeyFuture<'_, Vec<PasskeyCredential>> {
+    fn list_summaries(
+        &self,
+        context: PasskeyProfileContext,
+    ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>> {
         self.contexts.lock().unwrap().push(context);
         Box::pin(async { Err(PasskeyEndpointError::SessionMissing) })
     }

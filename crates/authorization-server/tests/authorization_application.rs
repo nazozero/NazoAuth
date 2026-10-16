@@ -125,7 +125,7 @@ fn client_presentation_distinguishes_absence_and_repository_failure() {
         ] {
             let (app, ports) = application(client, Ok(None));
             assert_eq!(app.client_presentation("client-1").await, Err(expected));
-            assert_eq!(ports.calls(), ["client"]);
+            assert_eq!(ports.calls(), ["client_presentation"]);
         }
     });
 }

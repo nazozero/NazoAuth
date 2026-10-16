@@ -513,16 +513,6 @@ where
         Ok(row)
     }
 
-    pub async fn list(
-        &self,
-        account: &PublicAccount,
-    ) -> Result<Vec<PasskeyCredential>, PasskeyError> {
-        self.credentials
-            .list(account.tenant().tenant_id, account.user_id())
-            .await
-            .map_err(PasskeyError::State)
-    }
-
     pub async fn list_summaries(
         &self,
         account: &PublicAccount,
