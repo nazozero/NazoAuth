@@ -32,7 +32,10 @@ pub(super) fn social_authorization_url(
 ) -> String {
     // QQ 与微信使用不同的 client 参数名；adapter 在这里收敛差异，
     // 上层 handler 不需要知道 provider-specific URL 细节。
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    let mut url = provider.authorization_endpoint.clone();
+    url.push('?');
+    let query_start = url.len();
+    let mut serializer = url::form_urlencoded::Serializer::for_suffix(url, query_start);
     serializer
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", &provider.redirect_uri)
@@ -48,11 +51,7 @@ pub(super) fn social_authorization_url(
             serializer.append_pair("client_id", &provider.client_id);
         }
     }
-    format!(
-        "{}?{}",
-        provider.authorization_endpoint,
-        serializer.finish()
-    )
+    serializer.finish()
 }
 
 pub(super) async fn resolve_social_identity(
@@ -196,27 +195,28 @@ fn normalize_social_identity(
         .as_deref()
         .and_then(|claim| claim_string(Some(&userinfo), claim))
         .map(str::to_owned);
-    let union_id = provider
-        .union_id_claim
-        .as_deref()
-        .and_then(|claim| {
-            claim_string(Some(&userinfo), claim)
-                .or_else(|| token_claim_string(token, claim))
-                .or_else(|| claim_string(openid_claims.as_ref(), claim))
-        })
-        .map(str::to_owned);
-    let claims = json!({
-        "adapter": "oauth2_social",
-        "kind": format!("{:?}", provider.kind).to_ascii_lowercase(),
-        "subject": subject,
-        "email": email,
-        "email_verified": email_verified,
-        "display_name": display_name,
-        "union_id": union_id,
-        "userinfo": userinfo,
-        "openid": openid_claims,
-        "expires_in": token.expires_in,
+    let union_id = provider.union_id_claim.as_deref().and_then(|claim| {
+        claim_string(Some(&userinfo), claim)
+            .or_else(|| token_claim_string(token, claim))
+            .or_else(|| claim_string(openid_claims.as_ref(), claim))
     });
+    let kind = match provider.kind {
+        SocialProviderKind::Qq => "qq",
+        SocialProviderKind::Wechat => "wechat",
+        SocialProviderKind::Custom => "custom",
+    };
+    let claims = Value::Object(serde_json::Map::from_iter([
+        ("adapter".into(), "oauth2_social".into()),
+        ("kind".into(), kind.into()),
+        ("subject".into(), subject.clone().into()),
+        ("email".into(), json!(email)),
+        ("email_verified".into(), email_verified.into()),
+        ("display_name".into(), json!(display_name)),
+        ("union_id".into(), json!(union_id)),
+        ("userinfo".into(), userinfo),
+        ("openid".into(), openid_claims.unwrap_or(Value::Null)),
+        ("expires_in".into(), json!(token.expires_in)),
+    ]));
     Ok(SocialIdentity {
         subject,
         email: email.filter(|_| email_verified),
@@ -230,22 +230,26 @@ fn parse_social_token_response(body: String) -> anyhow::Result<SocialTokenRespon
     if let Ok(value) = serde_json::from_str::<SocialTokenResponse>(&body) {
         return Ok(value);
     }
-    let values = url::form_urlencoded::parse(body.as_bytes())
-        .into_owned()
-        .collect::<std::collections::HashMap<_, _>>();
-    let access_token = values
-        .get("access_token")
-        .filter(|value| !value.is_empty())
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("social token response missing access_token"))?;
-    Ok(SocialTokenResponse {
-        access_token,
-        openid: values.get("openid").cloned(),
-        unionid: values.get("unionid").cloned(),
-        expires_in: values
-            .get("expires_in")
-            .and_then(|value| value.parse::<i64>().ok()),
-    })
+    let mut token = SocialTokenResponse {
+        access_token: String::new(),
+        openid: None,
+        unionid: None,
+        expires_in: None,
+    };
+    for (key, value) in url::form_urlencoded::parse(body.as_bytes()) {
+        match key.as_ref() {
+            "access_token" => token.access_token = value.into_owned(),
+            "openid" => token.openid = Some(value.into_owned()),
+            "unionid" => token.unionid = Some(value.into_owned()),
+            "expires_in" => token.expires_in = value.parse().ok(),
+            _ => {}
+        }
+    }
+    anyhow::ensure!(
+        !token.access_token.is_empty(),
+        "social token response missing access_token"
+    );
+    Ok(token)
 }
 
 fn parse_json_or_jsonp(body: &str) -> anyhow::Result<Value> {
