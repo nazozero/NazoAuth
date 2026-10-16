@@ -11,6 +11,7 @@ pub trait RegistrationAccountRepositoryPort: Send + Sync {
         email: &'a str,
     ) -> RepositoryFuture<'a, bool>;
 
+    /// Persists and returns the account in the supplied tenant context.
     fn create_user(&self, user: NewUser) -> RepositoryFuture<'_, PublicAccount>;
 
     /// Administrative creation rechecks the current active actor in the new
@@ -81,7 +82,7 @@ pub trait EmailVerificationStorePort: Send + Sync {
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
-        expected: &'a EmailVerificationRecord,
+        expected_version: &'a str,
     ) -> RepositoryFuture<'a, EmailVerificationConsume>;
 
     fn delete_code<'a>(
@@ -154,9 +155,10 @@ where
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
-        expected: &'a EmailVerificationRecord,
+        expected_version: &'a str,
     ) -> RepositoryFuture<'a, EmailVerificationConsume> {
-        self.as_ref().consume_code(tenant_id, email, expected)
+        self.as_ref()
+            .consume_code(tenant_id, email, expected_version)
     }
 
     fn delete_code<'a>(

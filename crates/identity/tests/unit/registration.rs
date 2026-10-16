@@ -128,8 +128,9 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         &'a self,
         tenant_id: crate::TenantId,
         _email: &'a str,
-        _expected: &'a EmailVerificationRecord,
+        expected_version: &'a str,
     ) -> RepositoryFuture<'a, EmailVerificationConsume> {
+        assert_eq!(expected_version, "stored-code-hash");
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {
             calls.code_consumes.fetch_add(1, Ordering::Relaxed);

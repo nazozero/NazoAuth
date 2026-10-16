@@ -217,7 +217,7 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         .unwrap();
 
     assert_eq!(
-        EmailVerificationStorePort::consume_code(&store, tenant_id, &email, &stale)
+        EmailVerificationStorePort::consume_code(&store, tenant_id, &email, &stale.opaque_version)
             .await
             .unwrap(),
         EmailVerificationConsume::MissingOrChanged
@@ -237,9 +237,14 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        EmailVerificationStorePort::consume_code(&store, tenant_id, &email, &current)
-            .await
-            .unwrap(),
+        EmailVerificationStorePort::consume_code(
+            &store,
+            tenant_id,
+            &email,
+            &current.opaque_version
+        )
+        .await
+        .unwrap(),
         EmailVerificationConsume::Consumed
     );
     assert!(
@@ -353,9 +358,14 @@ async fn email_verification_state_isolated_by_tenant() {
         .unwrap();
     assert_ne!(first, second);
     assert_eq!(
-        EmailVerificationStorePort::consume_code(&store, first_tenant, &email, &first)
-            .await
-            .unwrap(),
+        EmailVerificationStorePort::consume_code(
+            &store,
+            first_tenant,
+            &email,
+            &first.opaque_version
+        )
+        .await
+        .unwrap(),
         EmailVerificationConsume::Consumed
     );
     assert!(

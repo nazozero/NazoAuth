@@ -346,14 +346,14 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
         &'a self,
         tenant_id: TenantId,
         email: &'a str,
-        expected: &'a nazo_identity::ports::EmailVerificationRecord,
+        expected_version: &'a str,
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::EmailVerificationConsume>
     {
         Box::pin(async move {
             command::compare_delete(
                 &self.connection,
                 keys::email_code(tenant_id, email),
-                &expected.opaque_version,
+                expected_version,
             )
             .await
             .map(|outcome| match outcome {
