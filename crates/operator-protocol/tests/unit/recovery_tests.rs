@@ -17,20 +17,30 @@ fn hex(bytes: &[u8]) -> String {
 #[test]
 fn hkdf_matches_the_rfc_5869_sha256_vectors() {
     // RFC 5869 appendix A, test case 1.
-    let okm = hkdf_sha256_v1(
+    let okm = hkdf_sha256_v1::<42>(
         &[0x0bu8; 22],
         &[
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c,
         ],
         &[0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9],
-        42,
     );
     assert_eq!(
         hex(&okm),
         "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
     );
+    // RFC 5869 permits all 255 blocks; the former counter loop panicked on block 255.
+    let maximum = hkdf_sha256_v1::<8160>(
+        &[0x0b; 22],
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        &[0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9],
+    );
+    assert_eq!(&maximum[..42], okm);
+    assert_eq!(
+        hex(&maximum[8128..]),
+        "76a3f78bcffe95fecf91923c22ad6ee64d48a6d1b981d7e523d5c0f22154ee88"
+    );
     // RFC 5869 appendix A, test case 3: zero-length salt and info.
-    let okm = hkdf_sha256_v1(&[0x0b; 22], &[], &[], 42);
+    let okm = hkdf_sha256_v1::<42>(&[0x0b; 22], &[], &[]);
     assert_eq!(
         hex(&okm),
         "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
@@ -73,6 +83,7 @@ fn parsing_accepts_optional_prefix_grouping_whitespace_and_case() {
     for variant in [
         format!("{canonical} "),
         canonical.replace(RECOVERY_SECRET_PREFIX, "nazo-recovery-"),
+        canonical.replace(RECOVERY_SECRET_PREFIX, "NaZo-ReCoVeRy-"),
         grouped,
         canonical.to_ascii_uppercase(),
     ] {
@@ -127,8 +138,8 @@ fn derivation_is_deterministic_and_discriminates_secret_and_deployment() {
     assert_ne!(first, derive_recovery_seed(&secret, "deployment-b"));
     // And so does the info string inside the raw KDF.
     assert_ne!(
-        hkdf_sha256_v1(&secret, b"deployment-a", b"nazoauthctl/recovery", 32),
-        hkdf_sha256_v1(&secret, b"deployment-a", b"nazoauthctl/recovery2", 32)
+        hkdf_sha256_v1::<32>(&secret, b"deployment-a", b"nazoauthctl/recovery"),
+        hkdf_sha256_v1::<32>(&secret, b"deployment-a", b"nazoauthctl/recovery2")
     );
 }
 

@@ -84,9 +84,7 @@ fn derive_tenant_secret(
     tenant_id: nazo_identity::TenantId,
     purpose: &'static [u8],
 ) -> [u8; 32] {
-    nazo_operator_protocol::hkdf_sha256_v1(root, tenant_id.as_uuid().as_bytes(), purpose, 32)
-        .try_into()
-        .expect("HKDF output length is fixed to 32 bytes")
+    nazo_operator_protocol::hkdf_sha256_v1(root, tenant_id.as_uuid().as_bytes(), purpose)
 }
 
 fn derive_tenant_management_token(
