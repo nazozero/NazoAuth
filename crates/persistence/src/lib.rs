@@ -33,6 +33,33 @@ use nazo_operator_protocol::Openid4vcTrustPolicy;
 
 pub const MAX_SECURITY_AUDIT_PAYLOAD_BYTES: usize = 64 * 1024;
 
+/// Check compact JSON size without allocating the encoded payload. Stop at the
+/// queue/storage boundary instead of serializing the rest of an oversized value.
+pub fn security_audit_payload_within_limit(payload: &serde_json::Value) -> bool {
+    struct RemainingBytes(usize);
+    impl std::io::Write for RemainingBytes {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > self.0 {
+                return Err(std::io::Error::other(
+                    "audit payload exceeds its byte limit",
+                ));
+            }
+            self.0 -= bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    // Value has no fallible custom serializers; only this writer can fail.
+    serde_json::to_writer(
+        &mut RemainingBytes(MAX_SECURITY_AUDIT_PAYLOAD_BYTES),
+        payload,
+    )
+    .is_ok()
+}
+
 #[derive(Clone, Debug)]
 pub struct SecurityAuditEvent {
     pub event_id: uuid::Uuid,

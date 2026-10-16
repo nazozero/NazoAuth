@@ -10,11 +10,9 @@ use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use nazo_oauth_server::ports::audit::{AuditFuture, SecurityAudit};
-use nazo_persistence::{SecurityAuditEvent, SecurityAuditLedger};
+use nazo_persistence::{SECURITY_AUDIT_SCHEMA_VERSION, SecurityAuditEvent, SecurityAuditLedger};
 
 use super::audit_anchor::AuditAnchorPreflight;
-
-pub(crate) const AUDIT_SCHEMA_VERSION: &str = "nazo.audit.v1";
 
 tokio::task_local! {
     /// Set by the HTTP tenant resolver for the lifetime of the selected
@@ -410,15 +408,6 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         "token_lifecycle",
         AuditEventClass::Required,
     ),
-    // Retired intent marker: issuance commits the token row and `token_issued`
-    // in one transaction, so no producer emits this.  It stays defined as
-    // Required so any future accidental emission fails closed instead of
-    // reaching the best-effort queue as an unknown event.
-    (
-        "token_issuance_intent",
-        "token_lifecycle",
-        AuditEventClass::Required,
-    ),
     (
         "token_revoked",
         "token_lifecycle",
@@ -441,12 +430,12 @@ struct PersistentAuditSink {
 
 #[derive(Debug)]
 struct AuditPersistRequest {
-    event: QueuedAuditEvent,
+    event: SecurityAuditEvent,
     completion: Option<oneshot::Sender<anyhow::Result<SecurityAuditEvent>>>,
 }
 
-impl From<QueuedAuditEvent> for AuditPersistRequest {
-    fn from(event: QueuedAuditEvent) -> Self {
+impl From<SecurityAuditEvent> for AuditPersistRequest {
+    fn from(event: SecurityAuditEvent) -> Self {
         Self {
             event,
             completion: None,
@@ -458,15 +447,6 @@ struct RequiredAuditRepository {
     repository: Arc<dyn SecurityAuditLedger>,
     require_least_privilege: bool,
     preflight: AuditAnchorPreflight,
-}
-
-#[derive(Clone, Debug)]
-struct QueuedAuditEvent {
-    event_id: Uuid,
-    event_type: String,
-    event_category: String,
-    payload: serde_json::Value,
-    occurred_at: chrono::DateTime<Utc>,
 }
 
 /// Install the durable audit sink once during application bootstrap.
@@ -582,19 +562,7 @@ async fn run_audit_persist_worker(
         );
         let (mut events, mut completions): (Vec<SecurityAuditEvent>, Vec<_>) = batch
             .into_iter()
-            .map(|request| {
-                let event = request.event;
-                (
-                    SecurityAuditEvent {
-                        event_id: event.event_id,
-                        event_type: event.event_type,
-                        event_category: event.event_category,
-                        payload: event.payload,
-                        occurred_at: event.occurred_at,
-                    },
-                    request.completion,
-                )
-            })
+            .map(|request| (request.event, request.completion))
             .unzip();
         let mut append_attempted = false;
         let mut retry_delay = Duration::from_millis(100);
@@ -730,7 +698,7 @@ async fn ensure_audit_storage_via(required: &RequiredAuditRepository) -> anyhow:
         .map_err(|error| {
             anyhow::anyhow!("durable security audit repository unavailable: {error}")
         })?;
-    ensure_anchor_fresh_if_required(required).await
+    ensure_transactional_audit_ready_via(required).await
 }
 
 /// Readiness for a mutation whose required audit record commits inside the
@@ -756,13 +724,6 @@ async fn ensure_transactional_audit_ready_via(
     }
 }
 
-async fn ensure_anchor_fresh_if_required(required: &RequiredAuditRepository) -> anyhow::Result<()> {
-    if required.preflight.is_required() {
-        ensure_anchor_fresh(required).await?;
-    }
-    Ok(())
-}
-
 async fn ensure_anchor_fresh(required: &RequiredAuditRepository) -> anyhow::Result<()> {
     let health =
         required.repository.anchor_health().await.map_err(|error| {
@@ -785,7 +746,7 @@ pub(crate) async fn audit_event_required(
 
 async fn append_required_event(
     event: &str,
-    queued: Result<QueuedAuditEvent, &'static str>,
+    queued: Result<SecurityAuditEvent, &'static str>,
 ) -> anyhow::Result<()> {
     let queued =
         queued.map_err(|reason| anyhow::anyhow!("security audit event rejected: {reason}"))?;
@@ -800,7 +761,7 @@ async fn append_required_event(
 async fn append_required_via(
     sink: &mpsc::Sender<AuditPersistRequest>,
     event: &str,
-    queued: QueuedAuditEvent,
+    queued: SecurityAuditEvent,
 ) -> anyhow::Result<()> {
     let (completion, persisted) = oneshot::channel();
     sink.try_send(AuditPersistRequest {
@@ -828,9 +789,7 @@ async fn append_required_via(
     Ok(())
 }
 
-fn enqueue_event(event: &str, queued: Result<QueuedAuditEvent, &'static str>) {
-    debug_assert!(audit_event_name_valid(event));
-    debug_assert!(audit_event_category(event).is_some());
+fn enqueue_event(event: &str, queued: Result<SecurityAuditEvent, &'static str>) {
     let queued = match queued {
         Ok(queued) => queued,
         Err(reason) => {
@@ -865,7 +824,7 @@ fn enqueue_event(event: &str, queued: Result<QueuedAuditEvent, &'static str>) {
 fn enqueue_into_sink(
     sink: &mpsc::Sender<AuditPersistRequest>,
     event: &str,
-    queued: QueuedAuditEvent,
+    queued: SecurityAuditEvent,
 ) {
     let required_class = audit_event_is_required(event);
     if required_class {
@@ -909,7 +868,7 @@ fn enqueue_into_sink(
 fn prepare_event(
     event: &str,
     fields: serde_json::Map<String, serde_json::Value>,
-) -> Result<QueuedAuditEvent, &'static str> {
+) -> Result<SecurityAuditEvent, &'static str> {
     prepare_event_for_tenant(
         event,
         fields,
@@ -921,7 +880,7 @@ fn prepare_event_for_tenant(
     event: &str,
     mut fields: serde_json::Map<String, serde_json::Value>,
     tenant_id: Option<nazo_identity::TenantId>,
-) -> Result<QueuedAuditEvent, &'static str> {
+) -> Result<SecurityAuditEvent, &'static str> {
     if let Some(tenant_id) = tenant_id {
         let tenant = serde_json::json!(tenant_id);
         if fields
@@ -940,20 +899,17 @@ fn prepare_event_for_tenant(
     };
     fields.insert(
         "schema_version".to_owned(),
-        serde_json::Value::String(AUDIT_SCHEMA_VERSION.to_owned()),
+        serde_json::Value::String(SECURITY_AUDIT_SCHEMA_VERSION.to_owned()),
     );
     fields.insert(
         "event_category".to_owned(),
         serde_json::Value::String(category.to_owned()),
     );
     let payload = serde_json::Value::Object(fields);
-    let payload_size = serde_json::to_vec(&payload)
-        .map_err(|_| "payload_serialization_failed")?
-        .len();
-    if payload_size > nazo_persistence::MAX_SECURITY_AUDIT_PAYLOAD_BYTES {
+    if !nazo_persistence::security_audit_payload_within_limit(&payload) {
         return Err("payload_too_large");
     }
-    Ok(QueuedAuditEvent {
+    Ok(SecurityAuditEvent {
         event_id: Uuid::now_v7(),
         event_type: event.to_owned(),
         event_category: category.to_owned(),
@@ -975,15 +931,6 @@ fn audit_event_is_required(event: &str) -> bool {
             (*name == event).then_some(matches!(class, AuditEventClass::Required))
         })
         .unwrap_or(true)
-}
-
-fn audit_event_name_valid(event: &str) -> bool {
-    let mut chars = event.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    first.is_ascii_lowercase()
-        && chars.all(|value| value.is_ascii_lowercase() || value.is_ascii_digit() || value == '_')
 }
 
 #[cfg(test)]

@@ -391,12 +391,16 @@ async fn source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirem
         } else {
             assert_eq!(
                 repository
-                    .revoke_token(TokenRevocation {
-                        tenant_id: tenant(),
-                        client_id: fixture.client_id,
-                        raw_token: &raw,
-                        access_token: None,
-                    })
+                    .revoke_token_with_audit(
+                        TokenRevocation {
+                            tenant_id: tenant(),
+                            client_id: fixture.client_id,
+                            raw_token: &raw,
+                            access_token: None,
+                        },
+                        "revocation-test-client",
+                        "test-source-hash"
+                    )
                     .await
                     .unwrap(),
                 1
@@ -559,12 +563,16 @@ async fn two_legal_preserves_overlap_while_revocation_waits_for_both() {
     let client_id = fixture.client_id;
     let mut revoking = tokio::spawn(async move {
         repository
-            .revoke_token(TokenRevocation {
-                tenant_id: tenant(),
-                client_id,
-                raw_token: &raw,
-                access_token: None,
-            })
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id: tenant(),
+                    client_id,
+                    raw_token: &raw,
+                    access_token: None,
+                },
+                "revocation-test-client",
+                "test-source-hash",
+            )
             .await
     });
     wait_for_lock(&mut coordinator, &revoke_app, &mut revoking).await;
@@ -726,12 +734,16 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
             } else {
                 assert_eq!(
                     repository
-                        .revoke_token(TokenRevocation {
-                            tenant_id: tenant(),
-                            client_id,
-                            raw_token: &raw,
-                            access_token: None,
-                        })
+                        .revoke_token_with_audit(
+                            TokenRevocation {
+                                tenant_id: tenant(),
+                                client_id,
+                                raw_token: &raw,
+                                access_token: None,
+                            },
+                            "revocation-test-client",
+                            "test-source-hash"
+                        )
                         .await
                         .unwrap(),
                     1
@@ -1651,12 +1663,16 @@ async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
         match change {
             "revoke" => {
                 repository
-                    .revoke_token(nazo_auth::TokenRevocation {
-                        tenant_id: tenant(),
-                        client_id: fixture.client_id,
-                        raw_token: &child_raw,
-                        access_token: None,
-                    })
+                    .revoke_token_with_audit(
+                        nazo_auth::TokenRevocation {
+                            tenant_id: tenant(),
+                            client_id: fixture.client_id,
+                            raw_token: &child_raw,
+                            access_token: None,
+                        },
+                        "revocation-test-client",
+                        "test-source-hash",
+                    )
                     .await
                     .unwrap();
             }

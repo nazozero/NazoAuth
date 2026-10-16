@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
     CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, SingleUseRedemption,
-    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort, TokenRevocation,
+    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
 };
 use uuid::Uuid;
 
@@ -321,10 +321,6 @@ impl TokenRepositoryPort for CountingTokenRepository {
     ) -> TokenFuture<'a, bool> {
         self.inner
             .refresh_family_active(tenant_id, family_id, user_id)
-    }
-
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-        self.inner.revoke_token(input)
     }
 
     fn revoke_token_with_audit<'a>(

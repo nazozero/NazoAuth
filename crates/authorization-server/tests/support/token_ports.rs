@@ -106,8 +106,13 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'_, bool> {
         panic!("unexpected TokenRepositoryPort::refresh_family_active call")
     }
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-        panic!("unexpected TokenRepositoryPort::revoke_token call")
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: TokenRevocation<'a>,
+        _client_public_id: &'a str,
+        _source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
+        panic!("unexpected TokenRepositoryPort::revoke_token_with_audit call")
     }
 }
 

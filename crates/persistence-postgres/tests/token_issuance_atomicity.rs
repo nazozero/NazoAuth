@@ -726,12 +726,16 @@ async fn native_source_revoked_after_preparation_rolls_back_destination() {
             .unwrap()
     );
     assert_eq!(
-        repo.revoke_token(nazo_auth::TokenRevocation {
-            tenant_id: token.tenant_id,
-            client_id: source.client_id,
-            raw_token: &token.raw_token,
-            access_token: None
-        })
+        repo.revoke_token_with_audit(
+            nazo_auth::TokenRevocation {
+                tenant_id: token.tenant_id,
+                client_id: source.client_id,
+                raw_token: &token.raw_token,
+                access_token: None
+            },
+            "revocation-test-client",
+            "test-source-hash"
+        )
         .await
         .unwrap(),
         1
@@ -855,12 +859,16 @@ async fn native_source_same_client_capacity_transfer_requires_own_live_retiremen
             );
         }
         if pre_revoked {
-            repo.revoke_token(nazo_auth::TokenRevocation {
-                tenant_id: token.tenant_id,
-                client_id: source.client_id,
-                raw_token: &token.raw_token,
-                access_token: None,
-            })
+            repo.revoke_token_with_audit(
+                nazo_auth::TokenRevocation {
+                    tenant_id: token.tenant_id,
+                    client_id: source.client_id,
+                    raw_token: &token.raw_token,
+                    access_token: None,
+                },
+                "revocation-test-client",
+                "test-source-hash",
+            )
             .await
             .unwrap();
         }
@@ -991,12 +999,16 @@ async fn native_source_share_lock_holds_through_required_audit_and_commit() {
     let client = source.client_id;
     let revocation = tokio::spawn(async move {
         issuer
-            .revoke_token(nazo_auth::TokenRevocation {
-                tenant_id: tenant,
-                client_id: client,
-                raw_token: &raw,
-                access_token: None,
-            })
+            .revoke_token_with_audit(
+                nazo_auth::TokenRevocation {
+                    tenant_id: tenant,
+                    client_id: client,
+                    raw_token: &raw,
+                    access_token: None,
+                },
+                "revocation-test-client",
+                "test-source-hash",
+            )
             .await
     });
     // The audit gate has one waiter; source UPDATE must add a second blocked

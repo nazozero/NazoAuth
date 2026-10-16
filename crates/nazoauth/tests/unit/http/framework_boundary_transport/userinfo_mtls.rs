@@ -302,8 +302,13 @@ mod real_userinfo_contract {
         fn refresh_family_active(&self, _: Uuid, _: Uuid, _: Uuid) -> TokenFuture<'_, bool> {
             panic!("unexpected refresh family lookup")
         }
-        fn revoke_token<'a>(&'a self, _: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-            panic!("unexpected revoke_token")
+        fn revoke_token_with_audit<'a>(
+            &'a self,
+            _: TokenRevocation<'a>,
+            _: &'a str,
+            _: &'a str,
+        ) -> TokenFuture<'a, usize> {
+            panic!("unexpected revoke_token_with_audit")
         }
     }
 

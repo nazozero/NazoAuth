@@ -531,9 +531,9 @@ async fn cleanup_seed(database_url: &str, tenant: TenantContext, seed: &Seed) {
 // ---------------------------------------------------------------------------
 
 /// A verified access token is access-only authority: its bytes are never
-/// reinterpreted as a refresh token. The JTI retention upsert is one statement.
+/// reinterpreted as a refresh token. The JTI retention upsert and audit append are two statements.
 #[tokio::test]
-async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
+async fn rv09_access_revocation_skips_refresh_probes_and_appends_audit() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -556,11 +556,15 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
             expires_at: Utc::now() + Duration::minutes(5),
         }),
     };
-    let (result, delta) = measure(&counter, repository.revoke_token(input)).await;
+    let (result, delta) = measure(
+        &counter,
+        repository.revoke_token_with_audit(input, "revocation-test-client", "test-source-hash"),
+    )
+    .await;
 
     assert_eq!(result.expect("revocation succeeds"), 0);
     assert_eq!(
-        delta.data_queries, 1,
+        delta.data_queries, 2,
         "verified access authority never probes refresh families"
     );
     assert_eq!(delta.begins, 1);
@@ -570,11 +574,11 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
 }
 
 /// RV-09 (refresh-family path): revoking a presented refresh token is family
-/// lookup + `pg_advisory_xact_lock` + one UPDATE — 3 data statements in one
+/// lookup + `pg_advisory_xact_lock` + one UPDATE + audit — 4 data statements in one
 /// transaction on one pooled connection. A verified access-token input cannot
 /// borrow refresh-family authority even when its bytes collide with that family.
 #[tokio::test]
-async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
+async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update_with_audit() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -584,68 +588,134 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
         .expect("migrations should apply");
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
-    let family_id = Uuid::now_v7();
-    let raw_token = format!("qc-refresh-{}", Uuid::now_v7());
-    {
-        let mut connection = connect(&database_url).await;
-        seed_refresh_token_row(
-            &mut connection,
-            tenant,
-            &seed,
-            Uuid::now_v7(),
-            family_id,
-            &raw_token,
-            None,
-            None,
-            None,
+    for spent in [false, true] {
+        let family_id = Uuid::now_v7();
+        let member_id = Uuid::now_v7();
+        let raw_token = format!("qc-refresh-{}", Uuid::now_v7());
+        {
+            let mut connection = connect(&database_url).await;
+            seed_refresh_token_row(
+                &mut connection,
+                tenant,
+                &seed,
+                member_id,
+                family_id,
+                &raw_token,
+                None,
+                None,
+                None,
+            )
+            .await;
+            if spent {
+                seed_refresh_token_row(
+                    &mut connection,
+                    tenant,
+                    &seed,
+                    Uuid::now_v7(),
+                    family_id,
+                    &format!("qc-successor-{}", Uuid::now_v7()),
+                    Some(member_id),
+                    None,
+                    None,
+                )
+                .await;
+            }
+        }
+        let (pool, counter) = instrumented_pool(&database_url).await;
+        let repository = TokenIssuanceRepository::new(pool);
+
+        for (tenant_id, client_id, token) in [
+            (
+                tenant.tenant_id.as_uuid(),
+                Uuid::now_v7(),
+                raw_token.as_str(),
+            ),
+            (Uuid::now_v7(), seed.client.id, raw_token.as_str()),
+            (
+                tenant.tenant_id.as_uuid(),
+                seed.client.id,
+                "unknown-refresh",
+            ),
+        ] {
+            let (result, delta) = measure(
+                &counter,
+                repository.revoke_token_with_audit(
+                    TokenRevocation {
+                        tenant_id,
+                        client_id,
+                        raw_token: token,
+                        access_token: None,
+                    },
+                    &seed.client.client_id,
+                    "test-source-hash",
+                ),
+            )
+            .await;
+            assert_eq!(result.unwrap(), 0);
+            assert_eq!(
+                delta.data_queries, 2,
+                "one family lookup plus required audit on a miss"
+            );
+            assert_eq!(delta.begins, 1);
+            assert_eq!(delta.commits, 1);
+            assert_clean(delta);
+        }
+
+        let access_input = TokenRevocation {
+            tenant_id: tenant.tenant_id.as_uuid(),
+            client_id: seed.client.id,
+            raw_token: &raw_token,
+            access_token: Some(AccessTokenRevocation {
+                jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
+                expires_at: Utc::now() + Duration::minutes(5),
+            }),
+        };
+        let (result, access_delta) = measure(
+            &counter,
+            repository.revoke_token_with_audit(
+                access_input,
+                &seed.client.client_id,
+                "test-source-hash",
+            ),
         )
         .await;
+        assert_eq!(result.expect("verified access revocation succeeds"), 0);
+        assert_eq!(access_delta.data_queries, 2);
+        assert_eq!(access_delta.begins, 1);
+        assert_eq!(access_delta.commits, 1);
+        assert_clean(access_delta);
+        assert!(
+            repository
+                .refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
+                .await
+                .expect("refresh family state remains readable"),
+            "verified access authority must leave the colliding refresh family active"
+        );
+        let input = TokenRevocation {
+            tenant_id: tenant.tenant_id.as_uuid(),
+            client_id: seed.client.id,
+            raw_token: &raw_token,
+            access_token: None,
+        };
+        let (result, delta) = measure(
+            &counter,
+            repository.revoke_token_with_audit(input, &seed.client.client_id, "test-source-hash"),
+        )
+        .await;
+
+        assert_eq!(
+            result.expect("family revocation succeeds"),
+            1,
+            "one family member was marked revoked"
+        );
+        // 4 data statements: SELECT token_family_id, SELECT pg_advisory_xact_lock,
+        // UPDATE oauth_refresh_families SET revoked_at + audit append. The access-token upsert never runs
+        // because the raw token resolved to a refresh family first.
+        assert_eq!(delta.data_queries, 4);
+        assert_eq!(delta.begins, 1);
+        assert_eq!(delta.commits, 1);
+        assert_clean(delta);
     }
-    let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = TokenIssuanceRepository::new(pool);
-
-    let access_input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(),
-        client_id: seed.client.id,
-        raw_token: &raw_token,
-        access_token: Some(AccessTokenRevocation {
-            jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
-            expires_at: Utc::now() + Duration::minutes(5),
-        }),
-    };
-    let (result, access_delta) = measure(&counter, repository.revoke_token(access_input)).await;
-    assert_eq!(result.expect("verified access revocation succeeds"), 0);
-    assert_eq!(access_delta.data_queries, 1);
-    assert_eq!(access_delta.begins, 1);
-    assert_eq!(access_delta.commits, 1);
-    assert_clean(access_delta);
-    assert!(
-        repository
-            .refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
-            .await
-            .expect("refresh family state remains readable"),
-        "verified access authority must leave the colliding refresh family active"
-    );
-    let input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(),
-        client_id: seed.client.id,
-        raw_token: &raw_token,
-        access_token: None,
-    };
-    let (result, delta) = measure(&counter, repository.revoke_token(input)).await;
-
-    assert_eq!(
-        result.expect("family revocation succeeds"),
-        1,
-        "one family member was marked revoked"
-    );
-    // 3 data statements: SELECT token_family_id, SELECT pg_advisory_xact_lock,
-    // UPDATE oauth_refresh_families SET revoked_at. The access-token upsert never runs
-    // because the raw token resolved to a refresh family first.
-    assert_eq!(delta.data_queries, 3);
-    assert_eq!(delta.begins, 1);
-    assert_eq!(delta.commits, 1);
-    assert_clean(delta);
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 

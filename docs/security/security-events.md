@@ -147,7 +147,7 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | `identity_lifecycle` | `external_identity_linked`, `external_identity_relink_denied`, `external_identity_unlinked` |
 | `provisioning` | `scim_token_denied`, `scim_token_used` |
 | `session_lifecycle` | `oidc_logout` |
-| `token_lifecycle` | `token_issued`, `token_issuance_intent`, `token_revoked`, `refresh_family_security_revoked` |
+| `token_lifecycle` | `token_issued`, `token_revoked`, `refresh_family_security_revoked` |
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 

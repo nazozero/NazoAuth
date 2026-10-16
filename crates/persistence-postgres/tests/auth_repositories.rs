@@ -1939,12 +1939,16 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
 
     let foreign_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let foreign_result = foreign_repository
-        .revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: foreign.client_id,
-            raw_token: &first,
-            access_token: None,
-        })
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: foreign.client_id,
+                raw_token: &first,
+                access_token: None,
+            },
+            "revocation-test-client",
+            "test-source-hash",
+        )
         .await
         .expect("foreign revocation must remain non-disclosing");
     assert_eq!(foreign_result, 0);
@@ -1952,18 +1956,26 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let first_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let second_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let (first_result, second_result) = tokio::join!(
-        first_repository.revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: owner.client_id,
-            raw_token: &first,
-            access_token: None,
-        }),
-        second_repository.revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: owner.client_id,
-            raw_token: &second,
-            access_token: None,
-        }),
+        first_repository.revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &first,
+                access_token: None,
+            },
+            "revocation-test-client",
+            "test-source-hash"
+        ),
+        second_repository.revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &second,
+                access_token: None,
+            },
+            "revocation-test-client",
+            "test-source-hash"
+        ),
     );
     assert_eq!(
         first_result.unwrap() + second_result.unwrap(),
@@ -1974,12 +1986,16 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     assert_eq!(
         repository
-            .revoke_token(TokenRevocation {
-                tenant_id,
-                client_id: owner.client_id,
-                raw_token: &first,
-                access_token: None,
-            })
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id,
+                    client_id: owner.client_id,
+                    raw_token: &first,
+                    access_token: None,
+                },
+                "revocation-test-client",
+                "test-source-hash"
+            )
             .await
             .expect("repeat family revocation should be idempotent"),
         0
@@ -1988,15 +2004,19 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let access_jti = format!("revocation-access-{}", Uuid::now_v7());
     for _ in 0..2 {
         repository
-            .revoke_token(TokenRevocation {
-                tenant_id,
-                client_id: owner.client_id,
-                raw_token: "opaque-access-token",
-                access_token: Some(AccessTokenRevocation {
-                    jti: access_jti.clone(),
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-                }),
-            })
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id,
+                    client_id: owner.client_id,
+                    raw_token: "opaque-access-token",
+                    access_token: Some(AccessTokenRevocation {
+                        jti: access_jti.clone(),
+                        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                    }),
+                },
+                "revocation-test-client",
+                "test-source-hash",
+            )
             .await
             .expect("access-token revocation should be idempotent");
     }
@@ -4177,16 +4197,20 @@ async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
         "an unknown jti is not revoked"
     );
     retry_token_infra(|| {
-        issuance.revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: fixture.client_id,
-            raw_token: "revoked-jti-unused-refresh",
-            access_token: Some(AccessTokenRevocation {
-                jti: jti.clone(),
-                // Already past even after the verifier clock-skew deadline.
-                expires_at: chrono::Utc::now() - chrono::Duration::hours(2),
-            }),
-        })
+        issuance.revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: fixture.client_id,
+                raw_token: "revoked-jti-unused-refresh",
+                access_token: Some(AccessTokenRevocation {
+                    jti: jti.clone(),
+                    // Already past even after the verifier clock-skew deadline.
+                    expires_at: chrono::Utc::now() - chrono::Duration::hours(2),
+                }),
+            },
+            "revocation-test-client",
+            "test-source-hash",
+        )
     })
     .await
     .expect("revocation should commit");

@@ -151,12 +151,12 @@ fn audit_event_definitions_include_authorization_decision_intent() {
 }
 
 #[test]
-fn audit_event_definitions_include_token_issuance_intent() {
+fn retired_token_issuance_intent_is_not_an_active_producer() {
+    assert_eq!(audit_event_category("token_issuance_intent"), None);
     assert_eq!(
-        audit_event_category("token_issuance_intent"),
-        Some("token_lifecycle")
+        prepare_event("token_issuance_intent", serde_json::Map::new()).unwrap_err(),
+        "unknown_event_type"
     );
-    assert!(prepare_event("token_issuance_intent", serde_json::Map::new()).is_ok());
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn audit_event_definitions_include_trust_and_credential_control_planes() {
 
 #[test]
 fn audit_schema_version_is_stable_for_collectors() {
-    assert_eq!(AUDIT_SCHEMA_VERSION, "nazo.audit.v1");
+    assert_eq!(SECURITY_AUDIT_SCHEMA_VERSION, "nazo.audit.v1");
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn prepare_event_normalizes_security_payload_and_rejects_unknown_or_oversized_ev
     assert_eq!(queued.event_category, "authentication");
     assert_eq!(
         queued.payload["schema_version"],
-        json!(AUDIT_SCHEMA_VERSION)
+        json!(SECURITY_AUDIT_SCHEMA_VERSION)
     );
     assert_eq!(queued.payload["event_category"], json!("authentication"));
     assert!(queued.payload.get("access_token").is_none());
@@ -235,7 +235,6 @@ fn prepare_event_redacts_every_known_credential_from_intent_and_outcome_payloads
         "authorization_decision_intent",
         "ciba_decision_intent",
         "device_decision_intent",
-        "token_issuance_intent",
         "token_issued",
     ] {
         let queued = prepare_event(event, fields.clone())
@@ -510,7 +509,7 @@ mod queue_persistence {
         }
     }
 
-    fn telemetry_event() -> QueuedAuditEvent {
+    fn telemetry_event() -> SecurityAuditEvent {
         prepare_event("login_success", serde_json::Map::new()).unwrap()
     }
     #[tokio::test]
@@ -1340,4 +1339,13 @@ fn administrative_mutation_events_are_registered_required_evidence() {
             .expect("real administrative handlers must have a registered event");
         assert_eq!(prepared.event_type, name);
     }
+}
+
+fn audit_event_name_valid(event: &str) -> bool {
+    let mut chars = event.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && chars.all(|value| value.is_ascii_lowercase() || value.is_ascii_digit() || value == '_')
 }

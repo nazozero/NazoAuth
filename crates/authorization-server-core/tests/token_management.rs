@@ -98,21 +98,9 @@ impl TokenRepositoryPort for Ports {
         access_token_expires_at: Option<DateTime<Utc>>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()> {
-        Box::pin(async move {
-            self.calls.lock().unwrap().access.push((
-                tenant_id,
-                client_id,
-                access_token_jti.to_owned(),
-                access_token_expires_at,
-                refresh_token_family_id,
-            ));
-            if self.unavailable {
-                Err(TokenPortError::Unavailable)
-            } else {
-                Ok(())
-            }
-        })
+        panic!("management revocation must use the atomic audited port")
     }
+
     fn access_token_revoked<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -135,11 +123,32 @@ impl TokenRepositoryPort for Ports {
     ) -> TokenFuture<'_, bool> {
         panic!("unexpected refresh_family_active call")
     }
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
         Box::pin(async move {
-            assert!(input.access_token.is_none());
-            self.calls.lock().unwrap().mixed += 1;
-            Ok(3)
+            assert_eq!(client_public_id, "client-1");
+            assert_eq!(source_ip_hash, "test-source-hash");
+            if let Some(access) = input.access_token {
+                self.calls.lock().unwrap().access.push((
+                    input.tenant_id,
+                    input.client_id,
+                    access.jti,
+                    Some(access.expires_at),
+                    None,
+                ));
+                if self.unavailable {
+                    Err(TokenPortError::Unavailable)
+                } else {
+                    Ok(0)
+                }
+            } else {
+                self.calls.lock().unwrap().mixed += 1;
+                Ok(3)
+            }
         })
     }
 }
@@ -321,7 +330,12 @@ fn verified_owned_access_revokes_directly_and_retains_audit_count_and_expiry() {
     let expiry = 1_800_000_000;
     let (service, calls) = fixture(Some(claims(&client, expiry)), false);
     assert_eq!(
-        futures_executor::block_on(service.revoke_token("https://issuer.example", "jwt", &client)),
+        futures_executor::block_on(service.revoke_token_with_audit(
+            "https://issuer.example",
+            "jwt",
+            &client,
+            "test-source-hash"
+        )),
         Ok(0)
     );
     let calls = calls.lock().unwrap();
@@ -348,10 +362,11 @@ fn unknown_or_foreign_access_uses_raw_refresh_lookup_without_a_jti() {
     for candidate in [None, Some(foreign_tenant), Some(foreign_client)] {
         let (service, calls) = fixture(candidate, false);
         assert_eq!(
-            futures_executor::block_on(service.revoke_token(
+            futures_executor::block_on(service.revoke_token_with_audit(
                 "https://issuer.example",
                 "raw",
-                &client
+                &client,
+                "test-source-hash"
             )),
             Ok(3)
         );
@@ -365,7 +380,12 @@ fn access_revocation_storage_failure_is_propagated() {
     let client = client(Uuid::now_v7());
     let (service, calls) = fixture(Some(claims(&client, 1_800_000_000)), true);
     assert_eq!(
-        futures_executor::block_on(service.revoke_token("https://issuer.example", "jwt", &client)),
+        futures_executor::block_on(service.revoke_token_with_audit(
+            "https://issuer.example",
+            "jwt",
+            &client,
+            "test-source-hash"
+        )),
         Err(TokenPortError::Unavailable)
     );
     assert_eq!(calls.lock().unwrap().mixed, 0);

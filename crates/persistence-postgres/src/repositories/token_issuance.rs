@@ -977,19 +977,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-        Box::pin(async move {
-            self.tokens
-                .revoke_for_client(
-                    input.tenant_id,
-                    input.client_id,
-                    input.raw_token,
-                    input.access_token.as_ref(),
-                )
-                .await
-                .map_err(map_repository_error)
-        })
-    }
     fn revoke_token_with_audit<'a>(
         &'a self,
         input: TokenRevocation<'a>,
@@ -1003,7 +990,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     input.client_id,
                     input.raw_token,
                     input.access_token.as_ref(),
-                    Some((client_public_id, source_ip_hash)),
+                    (client_public_id, source_ip_hash),
                 )
                 .await
                 .map_err(map_repository_error)

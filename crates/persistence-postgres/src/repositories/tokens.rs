@@ -348,24 +348,13 @@ impl TokenRepository {
 
     /// Revokes a refresh-token family or records an access-token JTI in one transaction.
     /// The family lock is shared with rotation so a successor cannot escape revocation.
-    pub(crate) async fn revoke_for_client(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        raw_token: &str,
-        access_token: Option<&nazo_auth::AccessTokenRevocation>,
-    ) -> Result<usize, RepositoryError> {
-        self.revoke_for_client_with_audit(tenant_id, client_id, raw_token, access_token, None)
-            .await
-    }
-
     pub(crate) async fn revoke_for_client_with_audit(
         &self,
         tenant_id: Uuid,
         client_id: Uuid,
         raw_token: &str,
         access_token: Option<&nazo_auth::AccessTokenRevocation>,
-        audit_context: Option<(&str, &str)>,
+        audit_context: (&str, &str),
     ) -> Result<usize, RepositoryError> {
         // The revocation fact covers the token's full verifier acceptance
         // window; plain input conversion happens before a connection or
@@ -419,22 +408,21 @@ impl TokenRepository {
                     }
                     0
                 };
-                if let Some((client_public_id, source_ip_hash)) = audit_context {
-                    let event = SecurityAuditEvent {
-                        event_id: Uuid::now_v7(),
-                        event_type: "token_revoked".to_owned(),
-                        event_category: "token_lifecycle".to_owned(),
-                        payload: serde_json::json!({
-                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
-                            "event_category": "token_lifecycle", "tenant_id": tenant_id,
-                            "client_id": client_public_id,
-                            "token_hash": raw_token_blake3.to_hex().to_string(),
-                            "updated": updated, "source_ip_hash": source_ip_hash,
-                        }),
-                        occurred_at: Utc::now(),
-                    };
-                    append_fresh_security_audit_on_connection(connection, &event).await?;
-                }
+                let (client_public_id, source_ip_hash) = audit_context;
+                let event = SecurityAuditEvent {
+                    event_id: Uuid::now_v7(),
+                    event_type: "token_revoked".to_owned(),
+                    event_category: "token_lifecycle".to_owned(),
+                    payload: serde_json::json!({
+                        "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                        "event_category": "token_lifecycle", "tenant_id": tenant_id,
+                        "client_id": client_public_id,
+                        "token_hash": raw_token_blake3.to_hex().to_string(),
+                        "updated": updated, "source_ip_hash": source_ip_hash,
+                    }),
+                    occurred_at: Utc::now(),
+                };
+                append_fresh_security_audit_on_connection(connection, &event).await?;
                 Ok(updated)
             })
             .await
@@ -1241,22 +1229,16 @@ async fn refresh_family_id_for_digest(
     client_id: Uuid,
     digest: &[u8],
 ) -> diesel::QueryResult<Option<Uuid>> {
-    if let Some(family_id) = oauth_refresh_families::table
-        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-        .filter(oauth_refresh_families::client_id.eq(client_id))
-        .filter(oauth_refresh_families::current_token_blake3.eq(digest))
-        .select(oauth_refresh_families::token_family_id)
-        .first::<Uuid>(connection)
-        .await
-        .optional()?
-    {
-        return Ok(Some(family_id));
-    }
     sql_query(
-        "SELECT s.token_family_id FROM oauth_refresh_spent_tokens AS s \
-         JOIN oauth_refresh_families AS f \
-           ON f.tenant_id = s.tenant_id AND f.token_family_id = s.token_family_id \
-         WHERE s.tenant_id = $1 AND s.refresh_token_blake3 = $2 AND f.client_id = $3",
+        "SELECT token_family_id FROM ( \
+             SELECT token_family_id, 0 AS priority FROM oauth_refresh_families \
+             WHERE tenant_id = $1 AND current_token_blake3 = $2 AND client_id = $3 \
+             UNION ALL \
+             SELECT s.token_family_id, 1 FROM oauth_refresh_spent_tokens AS s \
+             JOIN oauth_refresh_families AS f \
+               ON f.tenant_id = s.tenant_id AND f.token_family_id = s.token_family_id \
+             WHERE s.tenant_id = $1 AND s.refresh_token_blake3 = $2 AND f.client_id = $3 \
+         ) AS presentation ORDER BY priority LIMIT 1",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Binary, _>(digest)

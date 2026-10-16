@@ -555,19 +555,14 @@ pub trait TokenRepositoryPort: Send + Sync {
         user_id: Uuid,
     ) -> TokenFuture<'_, bool>;
 
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize>;
-
-    /// Own the required revocation event in the same atomic commit as access
-    /// denial or refresh-family invalidation. Unsupported adapters fail before
-    /// effects; never emulate this by calling the ordinary mutation then audit.
+    /// Own required revocation evidence and access denial or family invalidation
+    /// in one atomic commit.
     fn revoke_token_with_audit<'a>(
         &'a self,
-        _input: TokenRevocation<'a>,
-        _client_public_id: &'a str,
-        _source_ip_hash: &'a str,
-    ) -> TokenFuture<'a, usize> {
-        Box::pin(async { Err(TokenPortError::Unavailable) })
-    }
+        input: TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize>;
 }
 
 pub trait TokenStateStorePort: Send + Sync {
@@ -1031,39 +1026,6 @@ where
             issued_at: token.issued_at.timestamp(),
             subject: token.contract.subject,
         })
-    }
-
-    pub async fn revoke_token(
-        &self,
-        issuer: &str,
-        raw_token: &str,
-        client: &OAuthClient,
-    ) -> Result<usize, TokenPortError> {
-        let access_token = self
-            .verified_revocation_target(issuer, raw_token, client)
-            .await?;
-        if let Some(access_token) = access_token {
-            self.repository
-                .revoke_issued_tokens(
-                    client.tenant_id,
-                    client.id,
-                    &access_token.jti,
-                    Some(access_token.expires_at),
-                    None,
-                )
-                .await?;
-            // The audit count records revoked refresh-family members. An
-            // access-only revocation has always reported zero updated members.
-            return Ok(0);
-        }
-        self.repository
-            .revoke_token(TokenRevocation {
-                tenant_id: client.tenant_id,
-                client_id: client.id,
-                raw_token,
-                access_token: None,
-            })
-            .await
     }
 
     /// The authenticated endpoint uses this command so Required evidence cannot
