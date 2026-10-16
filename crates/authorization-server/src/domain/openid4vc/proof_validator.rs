@@ -5,14 +5,13 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use chrono::{Duration, Utc};
 use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
-use nazo_digital_credentials::decode_compact_jwt;
 use nazo_openid4vci::{
     CredentialProofOrigin, ProofError, ProofValidatorPort, Proofs, ValidatedProof,
 };
 use nazo_operator_protocol::Openid4vcTrustPolicy;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 #[derive(Clone)]
 pub struct Openid4vcProofValidator {
@@ -101,7 +100,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     return Err(ProofError::InvalidKeyAttestation);
                 };
                 let encoded = encoded.as_str().ok_or(ProofError::InvalidKeyAttestation)?;
-                let claims = self.validate_key_attestation_with(
+                let keys = self.validate_key_attestation_with(
                     &trust_jwks,
                     encoded,
                     expected_nonce,
@@ -109,14 +108,11 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     now,
                     KeyAttestationContext::AttestationProof,
                 )?;
-                let keys = claims
-                    .get("attested_keys")
-                    .and_then(Value::as_array)
-                    .ok_or(ProofError::InvalidKeyAttestation)?;
                 return Ok(keys
-                    .iter()
+                    .into_iter()
                     .map(|key| ValidatedProof {
-                        holder_binding: json!({"jwk": key}),
+                        holder_binding: serde_json::Map::from_iter([("jwk".to_owned(), key)])
+                            .into(),
                     })
                     .collect());
             }
@@ -143,7 +139,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 let mut validation = Validation::new(header.alg);
                 validation.validate_exp = false;
                 validation.required_spec_claims.clear();
-                validation.set_audience(&[expected_audience]);
+                validation.validate_aud = false;
                 let decoded = decode::<ProofClaims>(encoded, &key, &validation)
                     .map_err(|_| ProofError::InvalidSignature)?;
                 if decoded.claims.aud != expected_audience {
@@ -155,17 +151,15 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 {
                     return Err(ProofError::InvalidNonce);
                 }
-                let compact =
-                    decode_compact_jwt(encoded).map_err(|_| ProofError::InvalidSignature)?;
-                if compact.claims.get("iss").is_some_and(|issuer| {
-                    origin != CredentialProofOrigin::RegisteredClient
-                        || issuer.as_str() != Some(client_id)
+                if decoded.claims.iss.as_deref().is_some_and(|issuer| {
+                    origin != CredentialProofOrigin::RegisteredClient || issuer != client_id
                 }) {
                     return Err(ProofError::InvalidSignature);
                 }
-                let key_attestation = compact
+                let key_attestation = decoded
                     .header
-                    .extensions
+                    .extras
+                    .inner()
                     .get("key_attestation")
                     .map(|value| {
                         let encoded = value.as_str().ok_or(ProofError::InvalidKeyAttestation)?;
@@ -182,17 +176,13 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 if metadata.key_attestations_required.is_some() && key_attestation.is_none() {
                     return Err(ProofError::InvalidKeyAttestation);
                 }
-                if let Some(claims) = key_attestation.as_ref() {
-                    let matches = claims
-                        .get("attested_keys")
-                        .and_then(Value::as_array)
-                        .is_some_and(|keys| keys.iter().any(|key| jwk_public_eq(key, &jwk)));
-                    if !matches {
-                        return Err(ProofError::InvalidKeyAttestation);
-                    }
+                if let Some(keys) = key_attestation.as_ref()
+                    && !keys.iter().any(|key| jwk_public_eq(key, &jwk))
+                {
+                    return Err(ProofError::InvalidKeyAttestation);
                 }
                 validated.push(ValidatedProof {
-                    holder_binding: json!({"jwk": jwk}),
+                    holder_binding: serde_json::Map::from_iter([("jwk".to_owned(), jwk)]).into(),
                 });
             }
             Ok(validated)
@@ -209,18 +199,21 @@ impl Openid4vcProofValidator {
         metadata: &nazo_openid4vci::ProofTypeMetadata,
         now: chrono::DateTime<Utc>,
         context: KeyAttestationContext,
-    ) -> Result<Value, ProofError> {
-        let compact = decode_compact_jwt(encoded).map_err(|_| ProofError::InvalidKeyAttestation)?;
-        if compact.header.typ.as_deref() != Some("key-attestation+jwt")
+    ) -> Result<Vec<Value>, ProofError> {
+        let header = decode_header(encoded).map_err(|_| ProofError::InvalidKeyAttestation)?;
+        let algorithm = match header.alg {
+            Algorithm::ES256 | Algorithm::EdDSA => header.alg,
+            _ => return Err(ProofError::InvalidKeyAttestation),
+        };
+        if header.typ.as_deref() != Some("key-attestation+jwt")
             || !metadata
                 .proof_signing_alg_values_supported
                 .iter()
-                .any(|algorithm| algorithm == &compact.header.alg)
+                .any(|candidate| Some(candidate.as_str()) == algorithm_name(algorithm))
         {
             return Err(ProofError::InvalidKeyAttestation);
         }
-        let kid = compact
-            .header
+        let kid = header
             .kid
             .as_deref()
             .ok_or(ProofError::InvalidKeyAttestation)?;
@@ -232,16 +225,11 @@ impl Openid4vcProofValidator {
                     .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))
             })
             .ok_or(ProofError::InvalidKeyAttestation)?;
-        let algorithm = match compact.header.alg.as_str() {
-            "ES256" => Algorithm::ES256,
-            "EdDSA" => Algorithm::EdDSA,
-            _ => return Err(ProofError::InvalidKeyAttestation),
-        };
         let mut validation = Validation::new(algorithm);
         validation.validate_aud = false;
         validation.required_spec_claims.clear();
         validation.validate_exp = false;
-        let claims = decode::<Value>(encoded, &decoding_key(key, algorithm)?, &validation)
+        let mut claims = decode::<Value>(encoded, &decoding_key(key, algorithm)?, &validation)
             .map_err(|_| ProofError::InvalidKeyAttestation)?
             .claims;
         let issued_at = claims
@@ -271,13 +259,6 @@ impl Openid4vcProofValidator {
         {
             return Err(ProofError::InvalidKeyAttestation);
         }
-        if claims
-            .get("attested_keys")
-            .and_then(Value::as_array)
-            .is_none_or(Vec::is_empty)
-        {
-            return Err(ProofError::InvalidKeyAttestation);
-        }
         if let Some(required) = &metadata.key_attestations_required {
             for (component, allowed) in required {
                 let asserted = claims
@@ -293,7 +274,13 @@ impl Openid4vcProofValidator {
                 }
             }
         }
-        Ok(claims)
+        match claims
+            .as_object_mut()
+            .and_then(|claims| claims.remove("attested_keys"))
+        {
+            Some(Value::Array(keys)) if !keys.is_empty() => Ok(keys),
+            _ => Err(ProofError::InvalidKeyAttestation),
+        }
     }
 }
 
@@ -306,7 +293,16 @@ fn jwk_public_eq(left: &Value, right: &Value) -> bool {
 
 #[derive(Deserialize)]
 struct ProofClaims {
+    #[serde(default, deserialize_with = "deserialize_present_issuer")]
+    iss: Option<String>,
     aud: String,
     nonce: String,
     iat: i64,
+}
+
+fn deserialize_present_issuer<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(Some)
 }

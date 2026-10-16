@@ -84,7 +84,7 @@ fn validate_key_attestation(
     metadata: &nazo_openid4vci::ProofTypeMetadata,
     now: chrono::DateTime<Utc>,
     context: KeyAttestationContext,
-) -> Result<Value, ProofError> {
+) -> Result<Vec<Value>, ProofError> {
     validator.validate_key_attestation_with(
         &validator.key_attestation_jwks,
         encoded,
