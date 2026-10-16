@@ -27,6 +27,9 @@ fn private_origin_allowlist_is_exact_and_https_only() {
 #[test]
 fn content_types_are_narrowly_accepted() {
     assert!(RemoteDocumentKind::Jwks.accepts_content_type("application/jwk-set+json"));
+    assert!(RemoteDocumentKind::Jwks.accepts_content_type("Application/Jwk-Set+Json"));
+    assert!(!RemoteDocumentKind::SectorIdentifier.accepts_content_type("text/plain"));
+    assert!(!RemoteDocumentKind::SectorIdentifier.accepts_content_type("application/jsonp"));
     assert!(RemoteDocumentKind::Jwks.accepts_content_type("application/json; charset=utf-8"));
     assert!(!RemoteDocumentKind::Jwks.accepts_content_type("application/jsonp"));
     assert!(!RemoteDocumentKind::Jwks.accepts_content_type("text/plain"));
@@ -398,8 +401,12 @@ async fn jwks_cold_refresh_after_expiry_restores_the_forced_refresh_budget() {
 
 #[tokio::test]
 async fn request_objects_validate_utf8_size_and_content_type() {
-    let (address, server, certificate_der) =
-        tls_server(200, "application/jwt", b"  signed.jwt \n".to_vec(), true);
+    let (address, server, certificate_der) = tls_server(
+        200,
+        "application/jwt",
+        "\u{2003} signed.jwt \n\u{2003}".as_bytes().to_vec(),
+        true,
+    );
     let resolver = resolver_for(address, &certificate_der);
     let uri = format!("https://localhost:{}/request", address.port());
     assert_eq!(
@@ -468,7 +475,7 @@ async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots()
     let resolver = RemoteClientDocumentResolver::new(&[]).expect("resolver should build");
     let Err(blocked_error) = resolver
         .fetch(
-            "https://localhost:1/jwks",
+            validate_https_url("https://localhost:1/jwks", false).unwrap(),
             RemoteDocumentKind::Jwks,
             tokio::time::Instant::now() + Duration::from_secs(2),
         )
@@ -480,7 +487,7 @@ async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots()
 
     let Err(dns_error) = resolver
         .fetch(
-            "https://does-not-exist.invalid/jwks",
+            validate_https_url("https://does-not-exist.invalid/jwks", false).unwrap(),
             RemoteDocumentKind::Jwks,
             tokio::time::Instant::now() + Duration::from_secs(2),
         )
@@ -508,8 +515,8 @@ async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots()
 
 #[test]
 fn remote_uri_validation_and_kid_selection_are_fail_closed() {
-    assert!(canonical_cache_key("http://client.example/jwks").is_err());
-    assert!(canonical_cache_key("https://client.example/jwks").is_ok());
+    assert!(validate_https_url("http://client.example/jwks", false).is_err());
+    assert!(validate_https_url("https://client.example/jwks", false).is_ok());
     assert!(validate_https_url("https://user:pass@client.example/jwks", true).is_err());
     assert!(validate_https_url("https://client.example/jwks#fragment", false).is_err());
     assert!(validate_https_url("https://client.example/jwks#fragment", true).is_ok());

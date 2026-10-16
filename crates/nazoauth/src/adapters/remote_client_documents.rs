@@ -39,7 +39,7 @@ impl RemoteClientDocumentResolver {
         let mut origins = HashSet::new();
         for value in private_network_origins {
             let parsed = validate_https_url(value, false)?;
-            if parsed.path() != "/" || parsed.query().is_some() || parsed.fragment().is_some() {
+            if parsed.path() != "/" || parsed.query().is_some() {
                 return Err(format!(
                     "REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS entry must be an HTTPS origin: {value}"
                 ));
@@ -68,7 +68,8 @@ impl RemoteClientDocumentResolver {
         expected_kid: Option<&str>,
     ) -> Result<Arc<Value>, String> {
         let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
-        let cache_key = canonical_cache_key(uri)?;
+        let parsed = validate_https_url(uri, false)?;
+        let cache_key = parsed.as_str().to_owned();
         let cached = self.jwks_cache.get(&cache_key, self.cache_epoch.elapsed());
         if let Some(document) = &cached
             && jwks_contains_kid(document, expected_kid)
@@ -85,7 +86,7 @@ impl RemoteClientDocumentResolver {
                     .await
                     .map_err(|_| "remote document request timed out".to_owned())??,
                 Lookup::Fetch(guard) => {
-                    let result = timeout_at(deadline, self.fetch_jwks(uri, deadline))
+                    let result = timeout_at(deadline, self.fetch_jwks(parsed, deadline))
                         .await
                         .map_err(|_| "remote document request timed out".to_owned())
                         .and_then(|result| result);
@@ -95,11 +96,13 @@ impl RemoteClientDocumentResolver {
         Ok(document)
     }
 
-    async fn fetch_jwks(&self, uri: &str, deadline: Instant) -> Result<Value, String> {
-        let fetched = self.fetch(uri, RemoteDocumentKind::Jwks, deadline).await?;
-        let document: Value = serde_json::from_slice(&fetched.body)
+    async fn fetch_jwks(&self, parsed: Url, deadline: Instant) -> Result<Value, String> {
+        let fetched = self
+            .fetch(parsed, RemoteDocumentKind::Jwks, deadline)
+            .await?;
+        let document: Value = serde_json::from_slice(&fetched)
             .map_err(|_| "remote JWKS is not valid JSON".to_owned())?;
-        if !document.is_object() || !document.get("keys").is_some_and(Value::is_array) {
+        if !document.get("keys").is_some_and(Value::is_array) {
             return Err("remote JWKS must be an object containing a keys array".to_owned());
         }
         Ok(document)
@@ -108,33 +111,41 @@ impl RemoteClientDocumentResolver {
     pub(crate) async fn sector_identifier_uris(&self, uri: &str) -> Result<Vec<String>, String> {
         let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
         let fetched = self
-            .fetch(uri, RemoteDocumentKind::SectorIdentifier, deadline)
+            .fetch(
+                validate_https_url(uri, false)?,
+                RemoteDocumentKind::SectorIdentifier,
+                deadline,
+            )
             .await?;
-        parse_sector_identifier_document(&fetched.content_type, &fetched.body)
-            .map_err(|error| format!("{error:?}"))
+        parse_sector_identifier_document(&fetched).map_err(|error| format!("{error:?}"))
     }
 
     pub(crate) async fn request_object(&self, uri: &str) -> Result<String, String> {
         let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
         let fetched = self
-            .fetch(uri, RemoteDocumentKind::RequestObject, deadline)
+            .fetch(
+                validate_https_url(uri, true)?,
+                RemoteDocumentKind::RequestObject,
+                deadline,
+            )
             .await?;
-        let jwt = String::from_utf8(fetched.body)
+        let mut jwt = String::from_utf8(fetched)
             .map_err(|_| "remote request object must be UTF-8".to_owned())?;
-        let jwt = jwt.trim();
-        if jwt.is_empty() || jwt.len() as u64 > MAX_RESPONSE_BYTES {
-            return Err("remote request object is empty or oversized".to_owned());
+        jwt.truncate(jwt.trim_end().len());
+        let leading_whitespace = jwt.len() - jwt.trim_start().len();
+        jwt.drain(..leading_whitespace);
+        if jwt.is_empty() {
+            return Err("remote request object is empty".to_owned());
         }
-        Ok(jwt.to_owned())
+        Ok(jwt)
     }
 
     async fn fetch(
         &self,
-        uri: &str,
+        parsed: Url,
         kind: RemoteDocumentKind,
         deadline: Instant,
-    ) -> Result<RemoteDocument, String> {
-        let parsed = validate_https_url(uri, kind == RemoteDocumentKind::RequestObject)?;
+    ) -> Result<Vec<u8>, String> {
         let host = parsed
             .host_str()
             .ok_or_else(|| "remote document URI has no host".to_owned())?;
@@ -148,8 +159,7 @@ impl RemoteClientDocumentResolver {
         }
         let _permit = self
             .fetch_slots
-            .clone()
-            .try_acquire_owned()
+            .try_acquire()
             .map_err(|_| "remote document concurrency limit reached".to_owned())?;
         let addresses = timeout_at(deadline, tokio::net::lookup_host((host, port)))
             .await
@@ -197,9 +207,8 @@ impl RemoteClientDocumentResolver {
             .headers()
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if !kind.accepts_content_type(&content_type) {
+            .unwrap_or("");
+        if !kind.accepts_content_type(content_type) {
             return Err("remote document has an unsupported content type".to_owned());
         }
         let body = timeout_at(deadline, async move {
@@ -217,18 +226,8 @@ impl RemoteClientDocumentResolver {
         })
         .await
         .map_err(|_| "remote document body timed out".to_owned())??;
-        Ok(RemoteDocument { content_type, body })
+        Ok(body)
     }
-}
-
-struct RemoteDocument {
-    content_type: String,
-    body: Vec<u8>,
-}
-
-fn canonical_cache_key(uri: &str) -> Result<String, String> {
-    let parsed = validate_https_url(uri, true)?;
-    Ok(parsed.to_string())
 }
 
 fn jwks_contains_kid(document: &Value, expected_kid: Option<&str>) -> bool {
@@ -256,13 +255,14 @@ impl RemoteDocumentKind {
         let media_type = content_type.split(';').next().unwrap_or_default().trim();
         match self {
             Self::Jwks => {
-                matches!(media_type, "application/json" | "application/jwk-set+json")
+                media_type.eq_ignore_ascii_case("application/json")
+                    || media_type.eq_ignore_ascii_case("application/jwk-set+json")
             }
-            Self::RequestObject => matches!(
-                media_type,
-                "application/jwt" | "application/oauth-authz-req+jwt"
-            ),
-            Self::SectorIdentifier => media_type == "application/json",
+            Self::RequestObject => {
+                media_type.eq_ignore_ascii_case("application/jwt")
+                    || media_type.eq_ignore_ascii_case("application/oauth-authz-req+jwt")
+            }
+            Self::SectorIdentifier => media_type.eq_ignore_ascii_case("application/json"),
         }
     }
 }
