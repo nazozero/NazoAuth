@@ -28,16 +28,12 @@ impl MfaVerificationMethod {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MfaPolicyError {
     NegativeTotpStep,
-    InvalidHmacKey,
-    ShortDigest,
 }
 
 impl fmt::Display for MfaPolicyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::NegativeTotpStep => "TOTP step must be non-negative",
-            Self::InvalidHmacKey => "TOTP HMAC key is invalid",
-            Self::ShortDigest => "TOTP HMAC digest is too short",
         })
     }
 }
@@ -75,14 +71,18 @@ pub fn verified_totp_step(
         return None;
     }
     let secret = base32_decode(secret_base32)?;
+    let mac = Hmac::<Sha1>::new_from_slice(&secret).expect("HMAC accepts keys of any length");
+    let candidate = candidate
+        .bytes()
+        .fold(0u32, |value, digit| value * 10 + u32::from(digit - b'0'));
     let step = now.div_euclid(MFA_TOTP_PERIOD_SECONDS);
     (-MFA_TOTP_SKEW_STEPS..=MFA_TOTP_SKEW_STEPS).find_map(|offset| {
-        let candidate_step = step.checked_add(offset)?;
+        let candidate_step = step + offset;
+        let counter = u64::try_from(candidate_step).ok()?;
         if last_used_step.is_some_and(|last| candidate_step <= last) {
             return None;
         }
-        let expected = totp_for_step(&secret, candidate_step).ok()?;
-        constant_time_eq(expected.as_bytes(), candidate.as_bytes()).then_some(candidate_step)
+        (totp_value(mac.clone(), counter) == candidate).then_some(candidate_step)
     })
 }
 
@@ -124,24 +124,23 @@ pub fn totp_for_step(secret: &[u8], step: i64) -> Result<String, MfaPolicyError>
     if step < 0 {
         return Err(MfaPolicyError::NegativeTotpStep);
     }
-    let mut mac =
-        Hmac::<Sha1>::new_from_slice(secret).map_err(|_| MfaPolicyError::InvalidHmacKey)?;
-    mac.update(&(step as u64).to_be_bytes());
+    let mac = Hmac::<Sha1>::new_from_slice(secret).expect("HMAC accepts keys of any length");
+    Ok(format!(
+        "{:0width$}",
+        totp_value(mac, step as u64),
+        width = MFA_TOTP_DIGITS
+    ))
+}
+
+fn totp_value(mut mac: Hmac<Sha1>, step: u64) -> u32 {
+    mac.update(&step.to_be_bytes());
     let digest = mac.finalize().into_bytes();
-    let offset = digest
-        .last()
-        .map(|value| (value & 0x0f) as usize)
-        .filter(|offset| offset + 4 <= digest.len())
-        .ok_or(MfaPolicyError::ShortDigest)?;
+    let offset = (digest[19] & 0x0f) as usize;
     let binary = (((digest[offset] & 0x7f) as u32) << 24)
         | ((digest[offset + 1] as u32) << 16)
         | ((digest[offset + 2] as u32) << 8)
         | (digest[offset + 3] as u32);
-    Ok(format!(
-        "{:0width$}",
-        binary % 10u32.pow(MFA_TOTP_DIGITS as u32),
-        width = MFA_TOTP_DIGITS
-    ))
+    binary % 10u32.pow(MFA_TOTP_DIGITS as u32)
 }
 
 #[must_use]
@@ -189,14 +188,4 @@ pub fn base32_decode(value: &str) -> Option<Vec<u8>> {
         }
     }
     (!output.is_empty()).then_some(output)
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.iter()
-        .zip(right)
-        .fold(0u8, |difference, (left, right)| difference | (left ^ right))
-        == 0
 }

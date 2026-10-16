@@ -32,6 +32,10 @@ fn mfa_policy_preserves_totp_and_backup_code_contracts() {
             totp_for_step(secret, timestamp / MFA_TOTP_PERIOD_SECONDS).unwrap(),
             expected
         );
+        assert_eq!(
+            verified_totp_step(&base32_encode(secret), expected, timestamp, None),
+            Some(timestamp / MFA_TOTP_PERIOD_SECONDS)
+        );
     }
     assert_eq!(MfaVerificationMethod::Totp.amr(), "otp");
     assert_eq!(MfaVerificationMethod::BackupCode.amr(), "recovery_code");
@@ -140,11 +144,18 @@ fn totp_verifier_rejects_malformed_code_or_secret_without_fallback() {
     let step = now / MFA_TOTP_PERIOD_SECONDS;
     let code = totp_for_step(b"12345678901234567890", step).unwrap();
 
-    for malformed in ["", "00592", "0059247", "00592a", "005 24"] {
+    for malformed in ["", "00592", "0059247", "00592a", "005 24", "+05924"] {
         assert_eq!(verified_totp_step(&secret, malformed, now, None), None);
     }
     assert_eq!(verified_totp_step("!!!!", &code, now, None), None);
     assert_eq!(verified_totp_step("", &code, now, None), None);
+    assert_eq!(verified_totp_step(&secret, &code, i64::MIN, None), None);
+    let last_step = i64::MAX / MFA_TOTP_PERIOD_SECONDS;
+    let last_code = totp_for_step(b"12345678901234567890", last_step).unwrap();
+    assert_eq!(
+        verified_totp_step(&secret, &last_code, i64::MAX, None),
+        Some(last_step)
+    );
 }
 
 #[test]
