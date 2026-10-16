@@ -162,7 +162,7 @@ where
                 if let Some(current) = current.as_ref()
                     && current.transition_revision == desired.revision
                 {
-                    return self.fail_dependency_loss(current, true).await;
+                    return self.fail_dependency_loss(current).await;
                 }
                 return Err(RegistryError::DependencyUnavailable {
                     module_id,

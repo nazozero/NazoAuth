@@ -53,57 +53,12 @@ struct ReadPause {
     release: mpsc::Receiver<()>,
 }
 
-struct InitializePause {
-    entered: mpsc::SyncSender<()>,
-    release: Mutex<mpsc::Receiver<()>>,
-    stopped: AtomicBool,
-}
-
-impl ModuleLifecycle for InitializePause {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async move {
-            self.entered.send(()).unwrap();
-            self.release.lock().unwrap().recv().unwrap();
-            Ok(())
-        })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        self.stopped.store(true, Ordering::Release);
-        Box::pin(async { Ok(()) })
-    }
-
-    fn drain_stored_transactions(
-        &self,
-        _module_id: ModuleId,
-        _revision: ModuleRevision,
-        _remaining_duration: Duration,
-    ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
-        Box::pin(async { Ok(true) })
-    }
-}
-
 #[derive(Default)]
 struct ScriptedLifecycle {
-    initializes: Mutex<VecDeque<Result<(), LifecycleFailure>>>,
-    stops: Mutex<VecDeque<Result<(), LifecycleFailure>>>,
     drains: Mutex<VecDeque<Result<bool, LifecycleFailure>>>,
 }
 
 impl ScriptedLifecycle {
-    fn with_initialize(self, result: Result<(), LifecycleFailure>) -> Self {
-        self.initializes.lock().unwrap().push_back(result);
-        self
-    }
-
-    fn with_stop(self, result: Result<(), LifecycleFailure>) -> Self {
-        self.stops.lock().unwrap().push_back(result);
-        self
-    }
-
     fn with_drain(self, result: Result<bool, LifecycleFailure>) -> Self {
         self.drains.lock().unwrap().push_back(result);
         self
@@ -111,24 +66,6 @@ impl ScriptedLifecycle {
 }
 
 impl ModuleLifecycle for ScriptedLifecycle {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        let result = self
-            .initializes
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or(Ok(()));
-        Box::pin(async move { result })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        let result = self.stops.lock().unwrap().pop_front().unwrap_or(Ok(()));
-        Box::pin(async move { result })
-    }
-
     fn drain_stored_transactions(
         &self,
         _module_id: ModuleId,
@@ -155,6 +92,7 @@ struct TestRepository {
     desired_after_reconcile_read: Mutex<Option<DesiredStateRecord>>,
     cas_pause: Mutex<Option<CasPause>>,
     read_pause: Mutex<Option<ReadPause>>,
+    instance_pause: Mutex<Option<ReadPause>>,
     desired_transaction: Mutex<()>,
     instance_outcomes: Mutex<VecDeque<CasOutcome<InstanceStateRecord>>>,
 }
@@ -360,6 +298,11 @@ impl ModuleStateRepository for TestRepository {
             } else {
                 state.instances.push(next.clone());
             }
+        }
+        let pause = self.instance_pause.lock().unwrap().take();
+        if let Some(pause) = pause {
+            pause.entered.send(()).unwrap();
+            pause.release.recv().unwrap();
         }
         Ok(CasOutcome::Applied(next))
     }
@@ -1164,7 +1107,7 @@ fn snapshot_revision_exhaustion_returns_instead_of_spinning() {
 }
 
 #[test]
-fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
+fn dependency_loss_during_starting_commit_is_rechecked_and_fails_closed() {
     let repository = Arc::new(TestRepository::default());
     {
         let mut state = repository.state.lock().unwrap();
@@ -1200,14 +1143,13 @@ fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
     .unwrap();
     let (entered_tx, entered_rx) = mpsc::sync_channel(1);
     let (release_tx, release_rx) = mpsc::sync_channel(1);
-    let lifecycle = Arc::new(InitializePause {
+    *repository.instance_pause.lock().unwrap() = Some(ReadPause {
         entered: entered_tx,
-        release: Mutex::new(release_rx),
-        stopped: AtomicBool::new(false),
+        release: release_rx,
     });
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
-        lifecycle.clone(),
+        Arc::new(NoopModuleLifecycle),
         catalog,
         "instance-a".to_owned(),
         ActiveModuleSnapshot {
@@ -1237,7 +1179,6 @@ fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
         Ok(ReconcileOutcome::Failed)
     ));
     assert!(!registry.snapshot().admits(ModuleId::Jarm));
-    assert!(lifecycle.stopped.load(Ordering::Acquire));
 }
 
 #[test]
@@ -1336,28 +1277,6 @@ fn reconcile_propagates_desired_state_repository_failures() {
 }
 
 #[test]
-fn enable_lifecycle_failure_is_persisted_as_failed() {
-    let repository = Arc::new(TestRepository::default());
-    repository
-        .state
-        .lock()
-        .unwrap()
-        .desired
-        .push(desired(1, DesiredMode::Enabled));
-    let lifecycle = Arc::new(
-        ScriptedLifecycle::default().with_initialize(Err(LifecycleFailure {
-            code: "initialize_failed",
-        })),
-    );
-    let registry = registry_with_lifecycle(repository, lifecycle, fixed_catalog(), BTreeSet::new());
-
-    assert_eq!(
-        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
-        ReconcileOutcome::Failed
-    );
-}
-
-#[test]
 fn enable_stale_final_cas_withdraws_admission() {
     let repository = Arc::new(TestRepository::default());
     repository
@@ -1410,7 +1329,7 @@ fn active_enabled_instance() -> InstanceStateRecord {
 }
 
 #[test]
-fn disable_drains_stored_transactions_before_stopping() {
+fn disable_drains_stored_transactions_before_disabled_commit() {
     let repository = Arc::new(TestRepository::default());
     repository
         .state
@@ -1488,40 +1407,6 @@ fn disable_drain_lifecycle_error_is_persisted() {
             ScriptedLifecycle::default().with_drain(Err(LifecycleFailure {
                 code: "drain_failed",
             })),
-        ),
-        fixed_catalog(),
-        BTreeSet::from([ModuleId::Ciba]),
-    );
-
-    assert_eq!(
-        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
-        ReconcileOutcome::Failed
-    );
-}
-
-#[test]
-fn disable_stop_failure_is_persisted_after_drain() {
-    let repository = Arc::new(TestRepository::default());
-    repository
-        .state
-        .lock()
-        .unwrap()
-        .desired
-        .push(desired(1, DesiredMode::Disabled));
-    repository
-        .state
-        .lock()
-        .unwrap()
-        .instances
-        .push(active_enabled_instance());
-    let registry = registry_with_lifecycle(
-        repository,
-        Arc::new(
-            ScriptedLifecycle::default()
-                .with_drain(Ok(true))
-                .with_stop(Err(LifecycleFailure {
-                    code: "stop_failed",
-                })),
         ),
         fixed_catalog(),
         BTreeSet::from([ModuleId::Ciba]),

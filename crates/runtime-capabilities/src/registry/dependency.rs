@@ -80,23 +80,16 @@ where
     pub(super) async fn fail_dependency_loss(
         &self,
         current: &InstanceStateRecord,
-        initialized: bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         self.publish(current.module_id, false, false)?;
-        let failure = if initialized {
-            self.lifecycle
-                .stop(current.module_id)
-                .await
-                .err()
-                .unwrap_or(LifecycleFailure {
+        let failed = self
+            .persist_failure(
+                current,
+                LifecycleFailure {
                     code: "dependency_unavailable",
-                })
-        } else {
-            LifecycleFailure {
-                code: "dependency_unavailable",
-            }
-        };
-        let failed = self.persist_failure(current, failure).await?;
+                },
+            )
+            .await?;
         Ok(if failed {
             ReconcileOutcome::Failed
         } else {

@@ -118,22 +118,6 @@ pub(crate) struct ServerModuleLifecycle {
 }
 
 impl ModuleLifecycle for ServerModuleLifecycle {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> nazo_runtime_modules::LifecycleFuture<'_, Result<(), nazo_runtime_modules::LifecycleFailure>>
-    {
-        Box::pin(async { Ok(()) })
-    }
-
-    fn stop(
-        &self,
-        _module_id: ModuleId,
-    ) -> nazo_runtime_modules::LifecycleFuture<'_, Result<(), nazo_runtime_modules::LifecycleFailure>>
-    {
-        Box::pin(async { Ok(()) })
-    }
-
     fn drain_stored_transactions(
         &self,
         module_id: ModuleId,

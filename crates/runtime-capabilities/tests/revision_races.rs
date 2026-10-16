@@ -43,6 +43,7 @@ struct State {
 struct Repository {
     state: Mutex<State>,
     pause: Pause,
+    starting_pause: Option<Pause>,
     compensation_pause: Option<Pause>,
     completion_pause: Option<Pause>,
     unknown_completed_state: Option<ModuleState>,
@@ -53,6 +54,7 @@ impl Repository {
     fn new(pause_at_validation: usize) -> Self {
         Self {
             state: Mutex::new(State::default()),
+            starting_pause: None,
             compensation_pause: None,
             completion_pause: None,
             unknown_completed_state: None,
@@ -254,6 +256,12 @@ impl ModuleStateRepository for Repository {
         state.instance = Some(mutation.change.next.clone());
         state.events.push(mutation.event);
         drop(state);
+        if mutation.change.next.state == ModuleState::Starting
+            && let Some(pause) = self.starting_pause.as_ref()
+        {
+            pause.entered.wait();
+            pause.release.wait();
+        }
         if self.unknown_completed_state == Some(mutation.change.next.state) {
             if let Some(pause) = self.completion_pause.as_ref() {
                 pause.entered.wait();
@@ -351,58 +359,12 @@ fn registry(
     )
 }
 
-struct PausingLifecycle {
-    calls: AtomicUsize,
-    entered: mpsc::Sender<usize>,
-    release_first: Barrier,
-}
-
-impl ModuleLifecycle for PausingLifecycle {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async move {
-            let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
-            self.entered.send(call).unwrap();
-            if call == 1 {
-                self.release_first.wait();
-            }
-            Ok(())
-        })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async { Ok(()) })
-    }
-
-    fn drain_stored_transactions(
-        &self,
-        _module_id: ModuleId,
-        _revision: ModuleRevision,
-        _max_duration: Duration,
-    ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
-        Box::pin(async { Ok(true) })
-    }
-}
-
 #[derive(Default)]
 struct RecordingDrainLifecycle {
     remaining: Mutex<Option<Duration>>,
 }
 
 impl ModuleLifecycle for RecordingDrainLifecycle {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async { Ok(()) })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async { Ok(()) })
-    }
-
     fn drain_stored_transactions(
         &self,
         _module_id: ModuleId,
@@ -450,48 +412,50 @@ fn resumed_drain_uses_the_persisted_deadline_instead_of_extending_the_ttl() {
 }
 
 #[test]
-fn concurrent_reconciles_for_one_module_execute_one_lifecycle_transition() {
-    let repository = Arc::new(Repository::new(usize::MAX));
-    repository.force_desired(7, DesiredMode::Enabled);
-    let (entered_tx, entered_rx) = mpsc::channel();
-    let lifecycle = Arc::new(PausingLifecycle {
-        calls: AtomicUsize::new(0),
-        entered: entered_tx,
-        release_first: Barrier::new(2),
+fn concurrent_reconciles_for_one_module_execute_one_state_transition() {
+    let mut repository = Repository::new(usize::MAX);
+    repository.starting_pause = Some(Pause {
+        call: 0,
+        entered: Barrier::new(2),
+        release: Barrier::new(2),
     });
-    let registry = Arc::new(RuntimeModuleRegistry::new(
-        Arc::clone(&repository),
-        Arc::clone(&lifecycle),
-        catalog(),
-        "instance-a".to_owned(),
-        ActiveModuleSnapshot {
-            revision: ModuleRevision::new(6),
-            accepting: BTreeSet::new(),
-            draining: BTreeSet::new(),
-        },
-    ));
-
+    let repository = Arc::new(repository);
+    repository.force_desired(7, DesiredMode::Enabled);
+    let registry = Arc::new(registry(Arc::clone(&repository), false));
     let first = {
         let registry = Arc::clone(&registry);
         std::thread::spawn(move || block_on(registry.reconcile_once(ModuleId::Ciba)))
     };
-    assert_eq!(entered_rx.recv().unwrap(), 1);
+    let pause = repository.starting_pause.as_ref().unwrap();
+    pause.entered.wait();
     let second_started = Arc::new(Barrier::new(2));
+    let (completed_tx, completed_rx) = mpsc::channel();
     let second = {
         let registry = Arc::clone(&registry);
         let second_started = Arc::clone(&second_started);
         std::thread::spawn(move || {
             second_started.wait();
-            block_on(registry.reconcile_once(ModuleId::Ciba))
+            let result = block_on(registry.reconcile_once(ModuleId::Ciba));
+            completed_tx.send(()).unwrap();
+            result
         })
     };
     second_started.wait();
-    assert!(entered_rx.recv_timeout(Duration::from_millis(25)).is_err());
-    lifecycle.release_first.wait();
-
+    assert!(
+        completed_rx
+            .recv_timeout(Duration::from_millis(25))
+            .is_err()
+    );
+    pause.release.wait();
     assert_eq!(first.join().unwrap().unwrap(), ReconcileOutcome::Enabled);
     assert_eq!(second.join().unwrap().unwrap(), ReconcileOutcome::NoChange);
-    assert_eq!(lifecycle.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        repository.event_types(),
+        vec![
+            ModuleEventType::TransitionStarted,
+            ModuleEventType::TransitionCompleted,
+        ]
+    );
 }
 
 #[test]
@@ -844,7 +808,7 @@ fn compensation_revalidates_a_second_durable_intent_change_after_publication() {
 }
 
 #[test]
-fn stale_disable_after_stop_cannot_reopen_until_the_new_revision_initializes() {
+fn intent_changed_after_disable_commit_waits_for_the_new_revision() {
     let repository = Arc::new(Repository::new(5));
     repository.force_desired(7, DesiredMode::Disabled);
     repository.force_instance(6, ModuleState::Enabled);
