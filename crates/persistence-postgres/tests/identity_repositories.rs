@@ -355,11 +355,7 @@ async fn fixture_mfa_generation(
         return row.id;
     }
     mfa_repository(pool.clone())
-        .begin_totp_enrollment(
-            tenant_id,
-            user_id,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-        )
+        .begin_totp_enrollment(tenant_id, user_id, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         .await
         .unwrap();
     let mut connection = get_conn(pool).await.unwrap();
@@ -707,7 +703,7 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            nazo_identity::mfa::base32_encode(&secret),
+            &nazo_identity::mfa::base32_encode(&secret),
         )
         .await
         .unwrap();
@@ -774,7 +770,7 @@ async fn totp_verification_classification_and_audit_are_atomic_and_replay_safe()
     let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", STEP).unwrap();
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET.to_owned())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET)
         .await
         .unwrap();
     let mut connection = get_conn(&pool).await.unwrap();
@@ -842,7 +838,7 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
         )
         .await
         .unwrap();
@@ -885,7 +881,7 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
     const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET.to_owned())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET)
         .await
         .unwrap();
     let step = chrono::Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
@@ -1109,11 +1105,11 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     );
 
     trait_repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, secret_base32.clone())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, &secret_base32)
         .await
         .unwrap();
     trait_repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, secret_base32.clone())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, &secret_base32)
         .await
         .unwrap();
     let enrollment = trait_repository
@@ -1158,6 +1154,13 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         nazo_identity::ports::TotpVerificationOutcome::Accepted(
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await
         )
+    );
+    assert!(
+        !trait_repository
+            .begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP")
+            .await
+            .unwrap(),
+        "starting enrollment must preserve the confirmed credential"
     );
     let credential = trait_repository
         .totp_enrollment(tenant.tenant_id, user_id)
@@ -1854,15 +1857,11 @@ async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
         .unwrap();
     drop(connection);
     let (left, right) = tokio::join!(
-        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP".into(),),
-        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "GEZDGNBVGY3TQOJQ".into(),)
+        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP",),
+        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "GEZDGNBVGY3TQOJQ",)
     );
-    assert!(
-        left.is_ok() || right.is_ok(),
-        "left={left:?}, right={right:?}"
-    );
-    assert!(matches!(left, Ok(()) | Err(RepositoryError::Conflict)));
-    assert!(matches!(right, Ok(()) | Err(RepositoryError::Conflict)));
+    assert_eq!(left, Ok(true));
+    assert_eq!(right, Ok(true));
     cleanup(&pool, user_id).await;
 }
 

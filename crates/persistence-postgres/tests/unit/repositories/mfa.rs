@@ -234,7 +234,7 @@ async fn mfa_repository_key_requirement_precedes_database_access() {
             .begin_totp_enrollment(
                 tenant_id,
                 user_id,
-                "JBSWY3DPEHPK3PXP".to_owned(),)
+                "JBSWY3DPEHPK3PXP",)
             .await,
         Err(RepositoryError::Consistency(message)) if message.contains("not configured")
     ));

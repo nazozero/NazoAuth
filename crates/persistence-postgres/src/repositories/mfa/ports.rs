@@ -16,12 +16,12 @@ impl MfaRepositoryPort for MfaRepository {
         Box::pin(async move { self.totp_enrollment(tenant_id, user_id).await })
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()> {
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
         Box::pin(async move { self.begin_totp_enrollment(tenant_id, user_id, secret).await })
     }
 

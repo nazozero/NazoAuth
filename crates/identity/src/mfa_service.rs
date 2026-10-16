@@ -130,24 +130,15 @@ impl MfaService {
         account: &PublicAccount,
         issuer: &str,
     ) -> Result<TotpEnrollmentStart, MfaServiceError> {
-        let existing = self
+        let secret = generate_totp_secret_base32();
+        let started = self
             .repository
-            .totp_enrollment(account.tenant().tenant_id, account.user_id())
+            .begin_totp_enrollment(account.tenant().tenant_id, account.user_id(), &secret)
             .await
             .map_err(MfaServiceError::repository)?;
-        if existing.as_ref().is_some_and(|value| value.confirmed) {
+        if !started {
             return Err(MfaServiceError::policy(MfaServiceErrorKind::AlreadyEnabled));
         }
-
-        let secret = generate_totp_secret_base32();
-        self.repository
-            .begin_totp_enrollment(
-                account.tenant().tenant_id,
-                account.user_id(),
-                secret.clone(),
-            )
-            .await
-            .map_err(MfaServiceError::repository)?;
         Ok(TotpEnrollmentStart {
             otpauth_uri: otpauth_uri(issuer, &account.account.email, &secret),
             secret_base32: secret,

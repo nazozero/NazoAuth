@@ -20,13 +20,18 @@ impl MfaRepositoryPort for ConfirmRepository {
         unreachable!()
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-        _secret: String,
-    ) -> RepositoryFuture<'_, ()> {
-        unreachable!()
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
+        assert_eq!(secret.len(), 32);
+        let started = matches!(
+            *self.0.lock().unwrap(),
+            TotpVerificationOutcome::Accepted(_)
+        );
+        Box::pin(async move { Ok(started) })
     }
 
     fn verify_and_confirm_totp<'a>(
@@ -150,6 +155,29 @@ impl MfaRepositoryPort for ConfirmRepository {
 }
 
 struct UnusedHasher;
+
+#[tokio::test]
+async fn begin_enrollment_uses_the_atomic_write_without_reading_the_old_secret() {
+    for (outcome, started) in [
+        (TotpVerificationOutcome::Accepted(Uuid::now_v7()), true),
+        (TotpVerificationOutcome::Replay, false),
+    ] {
+        let service = MfaService::new(
+            Arc::new(ConfirmRepository(Mutex::new(outcome))),
+            Arc::new(UnusedHasher),
+        );
+        let result = service.begin_totp(&account(), "Issuer").await;
+        if started {
+            let enrollment = result.unwrap();
+            assert!(enrollment.otpauth_uri.contains(&enrollment.secret_base32));
+        } else {
+            assert_eq!(
+                result.unwrap_err().kind(),
+                MfaServiceErrorKind::AlreadyEnabled
+            );
+        }
+    }
+}
 
 impl MfaSecretHashPort for UnusedHasher {
     fn hash_secrets(&self, _secrets: Vec<String>) -> MfaHashFuture<'_, Vec<EncodedSecretHash>> {

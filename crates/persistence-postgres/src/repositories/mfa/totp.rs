@@ -82,54 +82,38 @@ impl MfaRepository {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> Result<(), RepositoryError> {
+        secret: &str,
+    ) -> Result<bool, RepositoryError> {
+        use diesel::{query_dsl::methods::FilterDsl, upsert::excluded};
+
         let (secret_ciphertext, secret_key_id) =
-            self.protect_totp_secret(tenant_id, user_id, &secret)?;
+            self.protect_totp_secret(tenant_id, user_id, secret)?;
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<_, diesel::result::Error, _>(async move |connection| {
-                let existing = user_totp_credentials::table
-                    .filter(user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()))
-                    .filter(user_totp_credentials::user_id.eq(user_id.as_uuid()))
-                    .for_update()
-                    .select((
-                        user_totp_credentials::id,
-                        user_totp_credentials::confirmed_at,
-                    ))
-                    .first::<(uuid::Uuid, Option<chrono::DateTime<chrono::Utc>>)>(connection)
-                    .await
-                    .optional()?;
-                match existing {
-                    Some((_, Some(_))) => Err(diesel::result::Error::RollbackTransaction),
-                    Some((id, None)) => {
-                        diesel::update(user_totp_credentials::table.find(id))
-                            .set((
-                                user_totp_credentials::secret_ciphertext.eq(secret_ciphertext),
-                                user_totp_credentials::secret_key_id.eq(secret_key_id),
-                                user_totp_credentials::last_used_step.eq::<Option<i64>>(None),
-                            ))
-                            .execute(connection)
-                            .await?;
-                        Ok(())
-                    }
-                    None => {
-                        diesel::insert_into(user_totp_credentials::table)
-                            .values((
-                                user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()),
-                                user_totp_credentials::user_id.eq(user_id.as_uuid()),
-                                user_totp_credentials::secret_ciphertext.eq(secret_ciphertext),
-                                user_totp_credentials::secret_key_id.eq(secret_key_id),
-                            ))
-                            .execute(connection)
-                            .await?;
-                        Ok(())
-                    }
-                }
-            })
+        diesel::insert_into(user_totp_credentials::table)
+            .values((
+                user_totp_credentials::tenant_id.eq(tenant_id.as_uuid()),
+                user_totp_credentials::user_id.eq(user_id.as_uuid()),
+                user_totp_credentials::secret_ciphertext.eq(secret_ciphertext),
+                user_totp_credentials::secret_key_id.eq(secret_key_id),
+            ))
+            .on_conflict((
+                user_totp_credentials::tenant_id,
+                user_totp_credentials::user_id,
+            ))
+            .do_update()
+            .set((
+                user_totp_credentials::secret_ciphertext
+                    .eq(excluded(user_totp_credentials::secret_ciphertext)),
+                user_totp_credentials::secret_key_id
+                    .eq(excluded(user_totp_credentials::secret_key_id)),
+                user_totp_credentials::last_used_step.eq::<Option<i64>>(None),
+            ))
+            .filter(user_totp_credentials::confirmed_at.is_null())
+            .execute(&mut connection)
             .await
+            .map(|affected| affected == 1)
             .map_err(map_mfa_error)
     }
     pub async fn verify_and_confirm_totp(

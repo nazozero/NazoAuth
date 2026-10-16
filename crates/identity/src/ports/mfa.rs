@@ -57,12 +57,14 @@ pub trait MfaRepositoryPort: Send + Sync {
         user_id: UserId,
     ) -> RepositoryFuture<'a, Option<TotpEnrollment>>;
 
-    fn begin_totp_enrollment(
-        &self,
+    /// Create or replace a pending enrollment atomically. A confirmed credential
+    /// is preserved and returns false.
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()>;
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool>;
 
     fn verify_and_confirm_totp<'a>(
         &'a self,

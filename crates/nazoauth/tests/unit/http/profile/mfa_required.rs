@@ -86,12 +86,12 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         MfaRepositoryPort::totp_enrollment(&self.inner, tenant_id, user_id)
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()> {
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
         MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret)
     }
 
@@ -480,11 +480,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
     let now = Utc::now().timestamp();
     let step = now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         .await
         .unwrap();
     if regenerate {
