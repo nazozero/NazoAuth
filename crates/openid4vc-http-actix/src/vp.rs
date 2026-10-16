@@ -7,7 +7,6 @@ use nazo_openid4vp::application::{
     PresentationResponseBody, PresentationResponseInput,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -165,9 +164,13 @@ fn parse_presentation_response(
             response.into_owned(),
         ));
     }
-    let vp_token = values.remove("vp_token").map(|value| {
-        serde_json::from_str(value.as_ref()).unwrap_or_else(|_| Value::String(value.into_owned()))
-    });
+    let vp_token = values
+        .remove("vp_token")
+        .map(|value| {
+            serde_json::from_str(value.as_ref())
+                .map_err(|_| invalid_response("vp_token must contain valid JSON."))
+        })
+        .transpose()?;
     let response = AuthorizationResponse {
         vp_token,
         state: values.remove("state").map(Cow::into_owned),

@@ -1213,6 +1213,27 @@ async fn direct_post_preserves_json_vp_token_and_jwt_response_shapes() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
 
+    for payload in [
+        "vp_token=not-json&state=state",
+        "vp_token=%7Bbroken&state=state",
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/response/{id}"))
+                .insert_header(("content-type", "application/x-www-form-urlencoded"))
+                .set_payload(payload)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            verifier.responses.lock().unwrap().len(),
+            1,
+            "malformed JSON must not reach transaction or trust-policy lookup"
+        );
+    }
+
     let response = test::call_service(
         &app,
         test::TestRequest::post()
