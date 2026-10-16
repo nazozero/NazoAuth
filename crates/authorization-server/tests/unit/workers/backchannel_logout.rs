@@ -21,7 +21,7 @@ fn retries_are_bounded_and_never_scheduled_after_expiry() {
 #[test]
 fn persisted_delivery_errors_are_unicode_safe_and_bounded() {
     let error = "失".repeat(ERROR_MAX_CHARS + 10);
-    let truncated = truncate_error(&error);
+    let truncated = truncate_error(error);
     assert_eq!(truncated.chars().count(), ERROR_MAX_CHARS);
     assert!(truncated.is_char_boundary(truncated.len()));
 }

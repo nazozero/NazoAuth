@@ -93,7 +93,7 @@ async fn post_logout_token(
         .append_pair("logout_token", logout_token)
         .finish();
     let response = http
-        .post(logout_uri)
+        .post(endpoint)
         .header(
             reqwest::header::CONTENT_TYPE,
             "application/x-www-form-urlencoded",
