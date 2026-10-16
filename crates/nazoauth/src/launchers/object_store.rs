@@ -1,7 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use nazo_identity::{TenantId, ports::AvatarStorageError};
-use nazo_oauth_server_object_store::{S3AvatarObjectStore, S3AvatarObjectStoreConfig};
+use nazo_oauth_server_object_store::{
+    S3AvatarObjectStore, S3AvatarObjectStoreClient, S3AvatarObjectStoreConfig,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -27,20 +29,20 @@ impl ServerAvatarObjectStoreProvider for LocalAvatarObjectStoreProvider {
 /// Binds one S3 bucket configuration to disjoint tenant object namespaces.
 #[derive(Clone)]
 pub struct S3AvatarObjectStoreProvider {
-    config: S3AvatarObjectStoreConfig,
+    client: Arc<S3AvatarObjectStoreClient>,
 }
 
 impl S3AvatarObjectStoreProvider {
     pub fn new(config: S3AvatarObjectStoreConfig) -> Result<Self, AvatarStorageError> {
-        config.validate()?;
-        Ok(Self { config })
+        Ok(Self {
+            client: Arc::new(S3AvatarObjectStoreClient::new(config)?),
+        })
     }
 }
 
 impl ServerAvatarObjectStoreProvider for S3AvatarObjectStoreProvider {
     fn for_tenant(&self, tenant_id: TenantId) -> ServerAvatarStorageCapability {
-        let store = S3AvatarObjectStore::new(self.config.clone(), tenant_id)
-            .expect("provider configuration was validated before tenant binding");
+        let store = self.client.for_tenant(tenant_id);
         ServerAvatarStorageCapability::Direct(Arc::new(store))
     }
 }

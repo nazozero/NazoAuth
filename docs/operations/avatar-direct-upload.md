@@ -28,6 +28,8 @@ The target accepts only its fixed staging object and its signed exact byte count
 
 Final S3 reads obtain Content-Type and bytes from the same signed GET response. Staged reads obtain ETag, declared length and bytes from one signed GET response, enforce the streaming size bound and exact returned length, and retain that ETag for source-if-match copy; candidate publication retains its existing HEAD checks. Failed or ambiguous database CAS outcomes retain a direct-upload candidate because another lease may share it.
 
+Each configured S3 bucket owns one parsed endpoint, credential set and HTTP client. Tenant bindings share that connection and carry only their object namespace. Bucket URL construction and client initialization happen during configuration, so invalid endpoints fail startup before tenant binding. CopyObject response bodies are drained without retaining their XML.
+
 S3 HTTPS connections use Reqwest 0.13's platform certificate verifier and
 operating-system trust store. This replaces the Reqwest 0.12 bundled WebPKI
 roots used by the earlier S3 adapter. Ensure the runtime CA package is present;

@@ -48,25 +48,40 @@ fn default_path_style() -> bool {
     true
 }
 
-#[derive(Clone)]
-pub struct S3AvatarObjectStore {
+/// One configured bucket connection shared by tenant-bound stores.
+pub struct S3AvatarObjectStoreClient {
     endpoint: Url,
-    bucket: Arc<str>,
-    path_style: bool,
-    client: reqwest::Client,
+    bucket: String,
+    http: reqwest::Client,
     credentials: AwsCredentials,
-    region: Arc<str>,
-    prefix: Arc<str>,
+    region: String,
 }
 
-impl S3AvatarObjectStore {
-    pub fn new(
-        config: S3AvatarObjectStoreConfig,
-        tenant_id: TenantId,
-    ) -> Result<Self, AvatarStorageError> {
-        config.validate()?;
-        let endpoint = Url::parse(&config.endpoint).map_err(unavailable)?;
-        let client = reqwest::Client::builder()
+impl S3AvatarObjectStoreClient {
+    pub fn new(config: S3AvatarObjectStoreConfig) -> Result<Self, AvatarStorageError> {
+        if !matches!(config.endpoint.strip_prefix("http://").or_else(|| config.endpoint.strip_prefix("https://")), Some(value) if !value.is_empty())
+            || config.region.trim().is_empty()
+            || config.bucket.trim().is_empty()
+            || config.access_key.trim().is_empty()
+            || config.secret_key.trim().is_empty()
+        {
+            return Err(AvatarStorageError::InvalidState);
+        }
+        let mut endpoint = Url::parse(&config.endpoint).map_err(unavailable)?;
+        if config.path_style {
+            endpoint
+                .path_segments_mut()
+                .expect("HTTP endpoint has path segments")
+                .pop_if_empty()
+                .push(&config.bucket);
+        } else {
+            let host = endpoint.host_str().expect("HTTP endpoint has a host");
+            let virtual_host = format!("{}.{}", config.bucket, host);
+            endpoint
+                .set_host(Some(&virtual_host))
+                .map_err(unavailable)?;
+        }
+        let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(unavailable)?;
@@ -79,13 +94,33 @@ impl S3AvatarObjectStore {
         );
         Ok(Self {
             endpoint,
-            bucket: Arc::from(config.bucket),
-            path_style: config.path_style,
-            client,
+            bucket: config.bucket,
+            http,
             credentials,
-            region: Arc::from(config.region),
-            prefix: Arc::from(tenant_namespace(tenant_id)),
+            region: config.region,
         })
+    }
+
+    pub fn for_tenant(self: &Arc<Self>, tenant_id: TenantId) -> S3AvatarObjectStore {
+        S3AvatarObjectStore {
+            client: self.clone(),
+            prefix: Arc::from(tenant_namespace(tenant_id)),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct S3AvatarObjectStore {
+    client: Arc<S3AvatarObjectStoreClient>,
+    prefix: Arc<str>,
+}
+
+impl S3AvatarObjectStore {
+    pub fn new(
+        config: S3AvatarObjectStoreConfig,
+        tenant_id: TenantId,
+    ) -> Result<Self, AvatarStorageError> {
+        Ok(Arc::new(S3AvatarObjectStoreClient::new(config)?).for_tenant(tenant_id))
     }
 
     fn staging_key(&self, object_id: &str) -> Result<String, AvatarStorageError> {
@@ -104,26 +139,18 @@ impl S3AvatarObjectStore {
         ))
     }
 
-    fn object_url(&self, object_key: &str) -> Result<Url, AvatarStorageError> {
-        let mut url = self.endpoint.clone();
-        if !self.path_style {
-            let host = url.host_str().ok_or(AvatarStorageError::InvalidState)?;
-            let virtual_host = format!("{}.{}", self.bucket, host);
-            url.set_host(Some(&virtual_host)).map_err(unavailable)?;
-        }
+    fn object_url(&self, object_key: &str) -> Url {
+        let mut url = self.client.endpoint.clone();
         {
             let mut segments = url
                 .path_segments_mut()
-                .map_err(|_| AvatarStorageError::InvalidState)?;
+                .expect("HTTP endpoint has path segments");
             segments.pop_if_empty();
-            if self.path_style {
-                segments.push(self.bucket.as_ref());
-            }
             for segment in object_key.split('/') {
                 segments.push(segment);
             }
         }
-        Ok(url)
+        url
     }
 
     async fn copy_staged_object(
@@ -136,7 +163,7 @@ impl S3AvatarObjectStore {
         let mut headers = http::HeaderMap::new();
         headers.insert(
             "x-amz-copy-source",
-            format!("/{}/{}", self.bucket, source)
+            format!("/{}/{}", self.client.bucket, source)
                 .parse()
                 .map_err(unavailable)?,
         );
@@ -156,12 +183,15 @@ impl S3AvatarObjectStore {
                 .expect("static content type is valid"),
         );
         let response = self
-            .signed_request(http::Method::PUT, destination, headers, Vec::new())
+            .signed_request(http::Method::PUT, destination, headers)
             .await?;
         let status = response.status().as_u16();
         // S3 can finish a CopyObject response after sending the status line.
         // Drain it before verifying the destination and publishing its reference.
-        response.bytes().await.map_err(unavailable)?;
+        let mut body = response.bytes_stream();
+        while let Some(chunk) = body.next().await {
+            chunk.map_err(unavailable)?;
+        }
         Ok(status)
     }
 
@@ -170,10 +200,9 @@ impl S3AvatarObjectStore {
         method: http::Method,
         object_key: &str,
         mut headers: http::HeaderMap,
-        body: Vec<u8>,
     ) -> Result<reqwest::Response, AvatarStorageError> {
         let uri: http::Uri = self
-            .object_url(object_key)?
+            .object_url(object_key)
             .as_str()
             .parse()
             .map_err(unavailable)?;
@@ -187,7 +216,7 @@ impl S3AvatarObjectStore {
         let mut request = http::Request::builder()
             .method(method)
             .uri(uri)
-            .body(body)
+            .body(Vec::<u8>::new())
             .map_err(unavailable)?;
         *request.headers_mut() = headers;
         let header_values = request
@@ -207,14 +236,14 @@ impl S3AvatarObjectStore {
             SignableBody::Bytes(request.body()),
         )
         .map_err(unavailable)?;
-        let identity = self.credentials.clone().into();
+        let identity = self.client.credentials.clone().into();
         let mut signing_settings = SigningSettings::default();
         signing_settings.payload_checksum_kind = PayloadChecksumKind::XAmzSha256;
         signing_settings.percent_encoding_mode = PercentEncodingMode::Single;
         signing_settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
         let signing_params = v4::SigningParams::builder()
             .identity(&identity)
-            .region(self.region.as_ref())
+            .region(self.client.region.as_ref())
             .name("s3")
             .time(SystemTime::now())
             .settings(signing_settings)
@@ -226,19 +255,20 @@ impl S3AvatarObjectStore {
             .into_parts();
         instructions.apply_to_request_http1x(&mut request);
         self.client
+            .http
             .execute(reqwest::Request::try_from(request).map_err(unavailable)?)
             .await
             .map_err(unavailable)
     }
 
-    async fn presigned_put(
+    fn presigned_put(
         &self,
         object_key: &str,
         content_length: u64,
         expires: u32,
     ) -> Result<String, AvatarStorageError> {
         let uri: http::Uri = self
-            .object_url(object_key)?
+            .object_url(object_key)
             .as_str()
             .parse()
             .map_err(unavailable)?;
@@ -270,7 +300,7 @@ impl S3AvatarObjectStore {
             SignableBody::UnsignedPayload,
         )
         .map_err(unavailable)?;
-        let identity = self.credentials.clone().into();
+        let identity = self.client.credentials.clone().into();
         let mut settings = SigningSettings::default();
         settings.signature_location = SignatureLocation::QueryParams;
         settings.expires_in = Some(std::time::Duration::from_secs(expires.into()));
@@ -279,7 +309,7 @@ impl S3AvatarObjectStore {
         settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
         let params = v4::SigningParams::builder()
             .identity(&identity)
-            .region(self.region.as_ref())
+            .region(self.client.region.as_ref())
             .name("s3")
             .time(SystemTime::now())
             .settings(settings)
@@ -302,12 +332,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
         Box::pin(async move {
             let object_key = self.staging_key(staging_object_id)?;
             let expiry_seconds = expiry_seconds(expires_at)?;
-            let content_length: u64 = content_length
-                .try_into()
-                .map_err(|_| AvatarStorageError::InvalidState)?;
-            let url = self
-                .presigned_put(&object_key, content_length, expiry_seconds)
-                .await?;
+            let url = self.presigned_put(&object_key, content_length as u64, expiry_seconds)?;
             Ok(AvatarUploadTarget {
                 url,
                 method: "PUT".to_owned(),
@@ -324,12 +349,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
         Box::pin(async move {
             let object_key = self.staging_key(staging_object_id)?;
             let response = self
-                .signed_request(
-                    http::Method::GET,
-                    &object_key,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
+                .signed_request(http::Method::GET, &object_key, http::HeaderMap::new())
                 .await?;
             ensure_status(response.status().as_u16())?;
             let content_length = response
@@ -376,12 +396,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
             let source = self.staging_key(staging_object_id)?;
             let destination = self.final_key(final_object_id)?;
             let response = self
-                .signed_request(
-                    http::Method::HEAD,
-                    &destination,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
+                .signed_request(http::Method::HEAD, &destination, http::HeaderMap::new())
                 .await?;
             let status = response.status().as_u16();
             if (200..300).contains(&status) {
@@ -400,12 +415,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
                 .await?;
             if (200..300).contains(&status) {
                 let response = self
-                    .signed_request(
-                        http::Method::HEAD,
-                        &destination,
-                        http::HeaderMap::new(),
-                        Vec::new(),
-                    )
+                    .signed_request(http::Method::HEAD, &destination, http::HeaderMap::new())
                     .await?;
                 ensure_status(response.status().as_u16())?;
                 return existing_candidate_matches(
@@ -425,12 +435,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
         Box::pin(async move {
             let object_key = self.final_key(final_object_id)?;
             let response = self
-                .signed_request(
-                    http::Method::GET,
-                    &object_key,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
+                .signed_request(http::Method::GET, &object_key, http::HeaderMap::new())
                 .await?;
             ensure_status(response.status().as_u16())?;
             let content_type = response
@@ -451,15 +456,10 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
         Box::pin(async move {
             let object_key = self.staging_key(staging_object_id)?;
             ensure_status(
-                self.signed_request(
-                    http::Method::DELETE,
-                    &object_key,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
-                .await?
-                .status()
-                .as_u16(),
+                self.signed_request(http::Method::DELETE, &object_key, http::HeaderMap::new())
+                    .await?
+                    .status()
+                    .as_u16(),
             )
         })
     }
@@ -468,31 +468,12 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
         Box::pin(async move {
             let object_key = self.final_key(final_object_id)?;
             ensure_status(
-                self.signed_request(
-                    http::Method::DELETE,
-                    &object_key,
-                    http::HeaderMap::new(),
-                    Vec::new(),
-                )
-                .await?
-                .status()
-                .as_u16(),
+                self.signed_request(http::Method::DELETE, &object_key, http::HeaderMap::new())
+                    .await?
+                    .status()
+                    .as_u16(),
             )
         })
-    }
-}
-
-impl S3AvatarObjectStoreConfig {
-    pub fn validate(&self) -> Result<(), AvatarStorageError> {
-        if !matches!(self.endpoint.strip_prefix("http://").or_else(|| self.endpoint.strip_prefix("https://")), Some(value) if !value.is_empty())
-            || self.region.trim().is_empty()
-            || self.bucket.trim().is_empty()
-            || self.access_key.trim().is_empty()
-            || self.secret_key.trim().is_empty()
-        {
-            return Err(AvatarStorageError::InvalidState);
-        }
-        Ok(())
     }
 }
 
@@ -519,9 +500,7 @@ fn expiry_seconds(expires_at: DateTime<Utc>) -> Result<u32, AvatarStorageError> 
     if seconds <= 0 || seconds > 604_800 {
         return Err(AvatarStorageError::InvalidState);
     }
-    seconds
-        .try_into()
-        .map_err(|_| AvatarStorageError::InvalidState)
+    Ok(seconds as u32)
 }
 
 fn existing_candidate_matches(
