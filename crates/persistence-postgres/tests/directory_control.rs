@@ -42,8 +42,9 @@ async fn isolated_executor() -> Option<(
         .await
         .expect("isolated database should create");
     drop(coordinator);
-    let separator = database_url.rfind('/').expect("database URL has a path");
-    let isolated_url = format!("{}/{}", &database_url[..separator], database_name);
+    let mut isolated_url = url::Url::parse(&database_url).expect("database URL should parse");
+    isolated_url.set_path(&database_name);
+    let isolated_url = isolated_url.to_string();
     run_pending_migrations(&isolated_url)
         .await
         .expect("isolated database migrations should apply");
@@ -455,4 +456,49 @@ async fn audit_before_revision_is_the_locked_mutation_fact_after_a_concurrent_co
     );
     assert_eq!(audit_rows_for(&probe, &update.jti).await, 1);
     assert_eq!(ledger_rows(&probe).await, 2);
+}
+
+#[tokio::test]
+async fn outcome_insert_failure_rolls_back_boundary_audit_and_revision() {
+    let Some((executor, probe)) = isolated_executor().await else {
+        return;
+    };
+    let mut connection = probe.pool.get().await.unwrap();
+    connection.batch_execute(
+        "ALTER TABLE tenant_directory_control_operations ADD CONSTRAINT reject_test_outcome CHECK (false)",
+    ).await.unwrap();
+    let request = provisioning_request("rollback", "rollback.example");
+    let tenant_id = request.tenant.id.as_uuid();
+    let realm_id = request.realm.id.as_uuid();
+    let organization_id = request.organization.id.as_uuid();
+    let identity = operation_identity();
+    let error = executor
+        .execute_control_operation(frame(
+            DirectoryControlAction::Create {
+                expected_revision: 0,
+                provisioning: Box::new(request),
+            },
+            &identity,
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        nazo_persistence::directory_control::TenantDirectoryControlError::Unavailable
+    ));
+    assert_eq!(probe_revision(&probe).await, 0);
+    assert_eq!(audit_rows_for(&probe, &identity.jti).await, 0);
+    assert_eq!(ledger_rows(&probe).await, 0);
+    let boundaries = sql_query(
+        "SELECT (SELECT count(*) FROM tenants WHERE id = $1) +
+                (SELECT count(*) FROM realms WHERE id = $2) +
+                (SELECT count(*) FROM organizations WHERE id = $3) AS value",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Uuid, _>(realm_id)
+    .bind::<sql_types::Uuid, _>(organization_id)
+    .get_result::<ScalarRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(boundaries.value, 0);
 }
