@@ -25,6 +25,8 @@ BACKEND_PACKAGES = {
     "web-sys", "wolfssl", "wolfssl-sys",
 }
 
+_BACKEND_ROOTS = frozenset(name.replace("-", "_") for name in BACKEND_PACKAGES)
+
 TLS_EXCEPTIONS = {
     "crates/nazoauth/src/bootstrap/transport.rs": {
         "rustls::crypto::CryptoProvider",
@@ -225,14 +227,10 @@ def _rust_aliases(masked: str, dependency_aliases: dict) -> dict:
     return aliases
 
 
-def _backend_roots() -> set:
-    return {name.replace("-", "_") for name in BACKEND_PACKAGES}
-
-
 def _is_backend_path(path: str) -> bool:
     """A path rooted at a concrete backend, or a TLS provider type."""
     return (
-        path.partition("::")[0] in _backend_roots()
+        path.partition("::")[0] in _BACKEND_ROOTS
         or path.startswith(_PROVIDER_PREFIX)
     )
 
@@ -364,7 +362,6 @@ def source_violations(root: Path) -> list:
     violations = []
     workspace = _load_manifest(root / "Cargo.toml").get("workspace", {})
     crypto_dir = (root / "crates" / "crypto").resolve()
-    backend_rust = _backend_roots()
     for manifest_path in sorted((root / "crates").glob("*/Cargo.toml")):
         crate_dir = manifest_path.parent
         manifest = _load_manifest(manifest_path)
@@ -409,7 +406,7 @@ def source_violations(root: Path) -> list:
                         f"native verify_signature call: {resolved} outside nazo-crypto"
                     )
                 detail = None
-                if root_name in backend_rust:
+                if root_name in _BACKEND_ROOTS:
                     detail = f"backend path {resolved}"
                 elif resolved.startswith(_PROVIDER_PREFIX):
                     allowed = TLS_EXCEPTIONS.get(relative, set())
