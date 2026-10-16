@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SenderConstraintPolicy {
     BearerAllowed,
@@ -17,28 +19,26 @@ impl SenderConstraintPolicy {
 pub fn is_valid_dpop_jkt(value: &str) -> bool {
     value.len() == 43
         && URL_SAFE_NO_PAD
-            .decode(value)
-            .is_ok_and(|bytes| bytes.len() == 32)
+            .decode_slice(value, &mut [0; 32])
+            .is_ok_and(|len| len == 32)
 }
 
 #[must_use]
-pub fn normalize_sha256_thumbprint(value: &str) -> Option<String> {
+pub fn normalize_sha256_thumbprint(value: &str) -> Option<Cow<'_, str>> {
     let trimmed = value.trim();
     if is_valid_dpop_jkt(trimmed) {
-        return Some(trimmed.to_owned());
+        return Some(Cow::Borrowed(trimmed));
     }
 
-    let hex = trimmed
+    let mut hex = trimmed
         .chars()
-        .filter(|ch| !matches!(ch, ':' | ' ' | '\t' | '\r' | '\n'))
-        .collect::<String>();
-    if hex.len() != 64 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        return None;
+        .filter(|ch| !matches!(ch, ':' | ' ' | '\t' | '\r' | '\n'));
+    let mut bytes = [0; 32];
+    for byte in &mut bytes {
+        *byte = (hex.next()?.to_digit(16)? * 16 + hex.next()?.to_digit(16)?) as u8;
     }
-    let mut bytes = Vec::with_capacity(32);
-    for index in (0..hex.len()).step_by(2) {
-        bytes.push(u8::from_str_radix(&hex[index..index + 2], 16).ok()?);
-    }
-    Some(URL_SAFE_NO_PAD.encode(bytes))
+    hex.next()
+        .is_none()
+        .then(|| Cow::Owned(URL_SAFE_NO_PAD.encode(bytes)))
 }
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};

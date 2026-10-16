@@ -52,14 +52,53 @@ fn sender_thumbprints_accept_only_canonical_sha256_evidence() {
     assert_eq!(
         nazo_auth::normalize_sha256_thumbprint(
             "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
-        ),
-        Some(url_safe.to_owned())
+        ).as_deref(),
+        Some(url_safe)
     );
     assert!(!nazo_auth::is_valid_dpop_jkt("not-a-thumbprint"));
     assert_eq!(
         nazo_auth::normalize_sha256_thumbprint("not-a-thumbprint"),
         None
     );
+}
+
+#[test]
+fn sender_thumbprint_normalization_preserves_canonical_encoding_and_length() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use std::borrow::Cow;
+
+    let digest = std::array::from_fn::<_, 32, _>(|index| index as u8);
+    let canonical = URL_SAFE_NO_PAD.encode(digest);
+    assert!(nazo_auth::is_valid_dpop_jkt(&canonical));
+    assert!(matches!(
+        nazo_auth::normalize_sha256_thumbprint(&canonical),
+        Some(Cow::Borrowed(value)) if value == canonical
+    ));
+    let hex = digest
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(": \t\r\n");
+    assert_eq!(
+        nazo_auth::normalize_sha256_thumbprint(&hex).as_deref(),
+        Some(canonical.as_str())
+    );
+    for invalid in [
+        URL_SAFE_NO_PAD.encode([0; 31]),
+        URL_SAFE_NO_PAD.encode([0; 33]),
+        format!("{canonical}="),
+        format!("{}B", "A".repeat(42)),
+        "0".repeat(63),
+        "0".repeat(65),
+        format!("{}g", "0".repeat(63)),
+        format!("{}é", "0".repeat(63)),
+    ] {
+        assert!(!nazo_auth::is_valid_dpop_jkt(&invalid), "{invalid}");
+        assert!(
+            nazo_auth::normalize_sha256_thumbprint(&invalid).is_none(),
+            "{invalid}"
+        );
+    }
 }
 
 #[test]
