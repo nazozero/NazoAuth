@@ -43,31 +43,9 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         })?;
     // Prompt-none shares the same durable decision fence as interactive
     // approval. Preparation/cache disposal cannot grant authorization.
-    let mut intent_fields = audit_fields([
-        ("request_id_hash", json!(blake3_hex(&payload.request_id))),
-        ("user_id", json!(payload.user_id)),
-        ("client_id", json!(payload.client_id)),
-        ("decision", json!("approve")),
-        ("decision_source", json!("prompt_none")),
-        ("scope", json!(payload.scopes.join(" "))),
-        ("source_ip_hash", json!(blake3_hex(facts.source_ip))),
-    ]);
-    if !payload.resource_indicators.is_empty() {
-        intent_fields.insert(
-            "resource_digest".to_owned(),
-            json!(blake3_hex(&payload.resource_indicators.join("\u{1f}"))),
-        );
-    }
-    if payload
-        .authorization_details
-        .as_array()
-        .is_some_and(|details| !details.is_empty())
-    {
-        intent_fields.insert(
-            "authorization_details_digest".to_owned(),
-            json!(blake3_hex(&payload.authorization_details.to_string())),
-        );
-    }
+    // Only request context is supplied here; the commit binds its own digests
+    // and derives actor, client, decision and scope from durable inputs.
+    let mut intent_fields = audit_fields([("source_ip_hash", json!(blake3_hex(facts.source_ip)))]);
     if let Some(digest) = payload.pushed_request_digest.as_deref() {
         intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
     }
