@@ -836,7 +836,7 @@ impl KeyManager {
         loaded.openid4vc_material = Some(material.into());
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded).expect(
+            .store(Arc::new(KeyGeneration::from_loaded(loaded).expect(
                 "test fixture generation must contain valid key material",
             )));
     }
@@ -1283,7 +1283,24 @@ impl KeyGeneration {
     /// Prepares all per-generation material before publication. A failure
     /// rejects the whole generation; a partially initialized object is never
     /// handed to `ArcSwap`.
-    fn database(loaded: LoadedKeyset) -> anyhow::Result<Self> {
+    fn database(mut loaded: LoadedKeyset) -> anyhow::Result<Self> {
+        if let Some(snapshot) = loaded
+            .openid4vc_material
+            .as_mut()
+            .and_then(|material| material.public.revocation_snapshot.as_mut())
+        {
+            // Only the observation window is local. Revocation facts remain unchanged.
+            let now = Utc::now();
+            snapshot.this_update = now;
+            snapshot.next_update = now
+                + chrono::Duration::seconds(
+                    crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS,
+                );
+        }
+        Self::from_loaded(loaded)
+    }
+
+    fn from_loaded(loaded: LoadedKeyset) -> anyhow::Result<Self> {
         let snapshot = Arc::new(snapshot_from_loaded(&loaded)?);
         let openid4vc_public = loaded
             .openid4vc_material

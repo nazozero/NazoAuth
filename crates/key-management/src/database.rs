@@ -192,13 +192,10 @@ pub(crate) async fn openid4vc_state(
 ) -> anyhow::Result<Openid4vcState> {
     let record = require_record(binding).await?;
     let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
-    load_payload(binding.external_signer.as_ref(), &payload)?;
+    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     Ok(Openid4vcState {
         revision: record.revision,
-        material: payload
-            .get("openid4vc")
-            .map(Openid4vcMaterial::deserialize)
-            .transpose()?,
+        material: loaded.openid4vc_material,
     })
 }
 
@@ -300,9 +297,9 @@ pub(crate) async fn commit_openid4vc(
             "purposes":["credential", "presentation_request"],
         }));
     }
-    payload["openid4vc"] = serde_json::to_value(material)?;
+    payload["openid4vc"] = serde_json::to_value(&material)?;
     // Validate the entire candidate before the sole externally visible write.
-    load_payload(binding.external_signer.as_ref(), &payload)?;
+    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     let revision = record
         .revision
         .checked_add(1)
@@ -313,20 +310,13 @@ pub(crate) async fn commit_openid4vc(
         .compare_and_swap(expected_revision, candidate)
         .await?
     {
-        SigningKeysetCompareAndSwapResult::Applied(record) => {
-            // The applied receipt owns this exact generation even if another
-            // writer has already committed a newer one before acknowledgement.
-            let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
-            let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
-            let state = Openid4vcState {
-                revision: record.revision,
-                material: payload
-                    .get("openid4vc")
-                    .map(Openid4vcMaterial::deserialize)
-                    .transpose()?,
-            };
-            Ok((loaded, state))
-        }
+        SigningKeysetCompareAndSwapResult::Applied(_) => Ok((
+            loaded,
+            Openid4vcState {
+                revision,
+                material: Some(material),
+            },
+        )),
         SigningKeysetCompareAndSwapResult::Conflict(_) => {
             anyhow::bail!("OpenID4VC keyset revision conflict")
         }
@@ -421,6 +411,7 @@ where
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("signing keyset revision overflow"))?;
+        let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
         let candidate =
             persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys)?;
         match binding
@@ -428,15 +419,7 @@ where
             .compare_and_swap(record.revision, candidate)
             .await?
         {
-            SigningKeysetCompareAndSwapResult::Applied(record) => {
-                return load_record(
-                    binding.external_signer.as_ref(),
-                    binding.tenant_id,
-                    &binding.wrapping_keys,
-                    &record,
-                )
-                .map(|loaded| (loaded, record.revision));
-            }
+            SigningKeysetCompareAndSwapResult::Applied(_) => return Ok((loaded, revision)),
             SigningKeysetCompareAndSwapResult::Conflict(winner) => record = winner,
         }
     }
@@ -781,9 +764,8 @@ fn load_payload(
             .get("kid")
             .and_then(Value::as_str)
             .filter(|kid| !kid.trim().is_empty())
-            .ok_or_else(|| anyhow!("keyset key missing kid"))?
-            .to_owned();
-        if !kids.insert(kid.clone()) {
+            .ok_or_else(|| anyhow!("keyset key missing kid"))?;
+        if !kids.insert(kid) {
             anyhow::bail!("keyset contains duplicate kid {kid}");
         }
         // Diagnostics validate lifecycle metadata without advancing maintenance.
@@ -807,7 +789,7 @@ fn load_payload(
                     URL_SAFE_NO_PAD.decode(entry["private_pkcs8_der"].as_str().ok_or_else(
                         || anyhow!("local database key {kid} missing private material"),
                     )?)?;
-                let public = public_jwk_from_private_der(&kid, algorithm, &private)?;
+                let public = public_jwk_from_private_der(kid, algorithm, &private)?;
                 if entry.get("public_jwk") != Some(&public) {
                     anyhow::bail!(
                         "local database key {kid} public metadata does not match private material"
@@ -829,7 +811,7 @@ fn load_payload(
                     .get("public_jwk")
                     .ok_or_else(|| anyhow!("public_jwk must be an object"))?;
                 validate_external_public_jwk(
-                    &kid,
+                    kid,
                     signing_algorithm_name(algorithm).unwrap(),
                     public,
                 )?;
@@ -866,12 +848,10 @@ fn load_payload(
             public_jwk,
             retire_at: retired_at,
             managed: ManagedKey {
-                kid,
+                kid: kid.to_owned(),
                 algorithm: signing_algorithm_name(algorithm).unwrap().to_owned(),
                 purposes,
-                state: if entry.get("purposes").is_some()
-                    || entry.get("kid").and_then(Value::as_str) == Some(active_kid.as_str())
-                {
+                state: if entry.get("purposes").is_some() || kid == active_kid {
                     KeyState::Active
                 } else if retired_at.is_some_and(|time| time <= Utc::now()) {
                     KeyState::Retired
@@ -884,7 +864,7 @@ fn load_payload(
             },
         });
     }
-    let mut loaded = LoadedKeyset {
+    let loaded = LoadedKeyset {
         active_kid,
         active_alg: active_alg.ok_or_else(|| anyhow!("active key is unavailable"))?,
         active_signing_key: active.ok_or_else(|| anyhow!("active signer unavailable"))?,
@@ -897,17 +877,6 @@ fn load_payload(
             .transpose()?,
     };
     validate_openid4vc_material(&loaded)?;
-    if let Some(snapshot) = loaded
-        .openid4vc_material
-        .as_mut()
-        .and_then(|material| material.public.revocation_snapshot.as_mut())
-    {
-        // Only the observation window is local. Revocation facts remain unchanged.
-        let now = Utc::now();
-        snapshot.this_update = now;
-        snapshot.next_update = now
-            + chrono::Duration::seconds(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS);
-    }
     Ok(loaded)
 }
 

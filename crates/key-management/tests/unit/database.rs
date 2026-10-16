@@ -843,7 +843,7 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         .next()
         .unwrap()
         .clone();
-    manager
+    let committed = manager
         .database_commit_openid4vc(
             expected.revision,
             fixture.material.clone(),
@@ -851,6 +851,16 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         )
         .await
         .unwrap();
+
+    assert_eq!(
+        committed
+            .material
+            .as_ref()
+            .unwrap()
+            .public
+            .revocation_snapshot,
+        fixture.material.public.revocation_snapshot,
+    );
 
     let record = repository.load().await.unwrap().unwrap();
     assert_eq!(record.wrapping_key_id, wrapping_keys.current_id());
