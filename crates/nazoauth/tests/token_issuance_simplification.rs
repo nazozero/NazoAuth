@@ -708,7 +708,7 @@ async fn device_code_consumes_exactly_once_under_concurrent_polling() {
             .create(&device_code, "T01USRCD", &approved, 600)
             .await
             .expect("approved device state should store"),
-        nazo_valkey::DeviceCreateResult::Applied
+        nazo_auth::DeviceCreateResult::Applied
     );
 
     // TOK-06/SEC-03: two concurrent polls against the same approved grant —
@@ -823,7 +823,7 @@ async fn expired_device_grant_fails_closed_without_an_issuance_row() {
             .create(&device_code, "T01XPRD", &stale_approved, 600)
             .await
             .expect("stale approved device state should store"),
-        nazo_valkey::DeviceCreateResult::Applied
+        nazo_auth::DeviceCreateResult::Applied
     );
 
     // TOK-09/TOK-10: the stale grant deadline fails closed at the endpoint,

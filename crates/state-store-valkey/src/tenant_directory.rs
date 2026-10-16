@@ -112,29 +112,29 @@ fn decode_cached_snapshot(
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct CachedDirectorySnapshot {
+struct CachedDirectorySnapshot<S> {
     schema_version: u8,
-    integrity: String,
+    integrity: S,
     revision: String,
-    tenants: Vec<CachedDirectoryBinding>,
+    tenants: Vec<CachedDirectoryBinding<S>>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct CachedDirectoryBinding {
+struct CachedDirectoryBinding<S> {
     tenant_id: Uuid,
     realm_id: Uuid,
     organization_id: Uuid,
     runtime_revision: String,
-    issuer: String,
-    external_host: String,
+    issuer: S,
+    external_host: S,
 }
 
 fn encode_snapshot(snapshot: &TenantDirectorySnapshot) -> Result<String, Error> {
     validate_bindings(&snapshot.tenants, Error::unexpected)?;
     let wire = CachedDirectorySnapshot {
         schema_version: CACHE_SCHEMA_VERSION,
-        integrity: CACHE_INTEGRITY_MARKER.to_owned(),
+        integrity: CACHE_INTEGRITY_MARKER,
         revision: snapshot.revision.to_string(),
         tenants: snapshot
             .tenants
@@ -144,8 +144,8 @@ fn encode_snapshot(snapshot: &TenantDirectorySnapshot) -> Result<String, Error> 
                 realm_id: binding.tenant.realm_id.as_uuid(),
                 organization_id: binding.tenant.organization_id.as_uuid(),
                 runtime_revision: binding.runtime_revision.to_string(),
-                issuer: binding.issuer.clone(),
-                external_host: binding.external_host.clone(),
+                issuer: binding.issuer.as_str(),
+                external_host: binding.external_host.as_str(),
             })
             .collect(),
     };
@@ -154,7 +154,7 @@ fn encode_snapshot(snapshot: &TenantDirectorySnapshot) -> Result<String, Error> 
 }
 
 fn decode_snapshot(encoded: &str) -> Result<TenantDirectorySnapshot, Error> {
-    let wire: CachedDirectorySnapshot = serde_json::from_str(encoded).map_err(|error| {
+    let wire: CachedDirectorySnapshot<String> = serde_json::from_str(encoded).map_err(|error| {
         Error::corrupt_data(format!("cached tenant directory JSON is invalid: {error}"))
     })?;
     if wire.schema_version != CACHE_SCHEMA_VERSION {

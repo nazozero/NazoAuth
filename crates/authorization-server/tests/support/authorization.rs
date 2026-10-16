@@ -258,12 +258,6 @@ impl AuthorizationStateStorePort for Ports {
             Ok(())
         })
     }
-    fn take_consent<'a>(
-        &'a self,
-        _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        panic!("unexpected AuthorizationStateStorePort::take_consent call")
-    }
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,

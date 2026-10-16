@@ -84,18 +84,6 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        Box::pin(async move {
-            self.authorization
-                .take_consent(request_id)
-                .await
-                .map_err(map_error)
-        })
-    }
-
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,

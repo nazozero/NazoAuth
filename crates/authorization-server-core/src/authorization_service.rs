@@ -358,10 +358,6 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         &'a self,
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>>;
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>>;
     /// Consume only the exact storage version returned by `load_consent`.
     fn compare_and_delete_consent<'a>(
         &'a self,
@@ -508,13 +504,6 @@ where
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.as_ref().load_consent(request_id)
-    }
-
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        self.as_ref().take_consent(request_id)
     }
 
     fn compare_and_delete_consent<'a>(
@@ -963,12 +952,6 @@ where
             .load_consent(id)
             .await?
             .map(|snapshot| snapshot.payload))
-    }
-    pub async fn take_consent(
-        &self,
-        id: &str,
-    ) -> Result<Option<ConsentPayload>, AuthorizationPortError> {
-        self.state.take_consent(id).await
     }
     pub async fn store_consent(
         &self,

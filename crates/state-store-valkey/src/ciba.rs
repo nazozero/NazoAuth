@@ -157,13 +157,6 @@ redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
 return 'applied'
 "#;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AtomicResult {
-    Applied,
-    Conflict,
-    DeadlineElapsed,
-}
-
 #[derive(Clone, Debug)]
 pub struct CibaStore {
     connection: ValkeyConnection,
@@ -208,7 +201,7 @@ impl CibaStore {
         &self,
         auth_req_id: &str,
         state: &CibaRequestState,
-    ) -> Result<AtomicResult, Error> {
+    ) -> Result<CibaAtomicResult, Error> {
         self.create_with_authorization_deadline(auth_req_id, state, None)
             .await
     }
@@ -218,7 +211,7 @@ impl CibaStore {
         auth_req_id: &str,
         state: &CibaRequestState,
         authorization_deadline: Option<i64>,
-    ) -> Result<AtomicResult, Error> {
+    ) -> Result<CibaAtomicResult, Error> {
         let mut state = state.clone();
         if let Some(notification) = state.ping_notification.as_mut() {
             notification.auth_req_id = Some(auth_req_id.to_owned());
@@ -272,7 +265,7 @@ impl CibaStore {
         auth_req_id: &str,
         expected: &CibaStateVersion,
         replacement: &CibaRequestState,
-    ) -> Result<AtomicResult, Error> {
+    ) -> Result<CibaAtomicResult, Error> {
         self.replace_with_authorization_deadline(auth_req_id, expected, replacement, None)
             .await
     }
@@ -283,7 +276,7 @@ impl CibaStore {
         expected: &CibaStateVersion,
         replacement: &CibaRequestState,
         authorization_deadline: Option<i64>,
-    ) -> Result<AtomicResult, Error> {
+    ) -> Result<CibaAtomicResult, Error> {
         if replacement.retention_expires_at != expected.retention_expires_at() {
             return Err(Error::protocol(
                 "CIBA replacement changed retention deadline",
@@ -300,7 +293,10 @@ impl CibaStore {
         let reply = command::eval_string(
             &self.connection,
             COMPARE_SET_DEADLINE_SCRIPT,
-            vec![keys::ciba(auth_req_id), keys::ciba_ping_queue()],
+            vec![
+                keys::ciba_from_hash(&auth_req_id_hash),
+                keys::ciba_ping_queue(),
+            ],
             vec![
                 expected.comparison_token().to_owned(),
                 raw,
@@ -318,7 +314,7 @@ impl CibaStore {
         &self,
         auth_req_id: &str,
         expected: &CibaStateVersion,
-    ) -> Result<AtomicResult, Error> {
+    ) -> Result<CibaAtomicResult, Error> {
         self.delete_with_authorization_deadline(auth_req_id, expected, None)
             .await
     }
@@ -328,15 +324,19 @@ impl CibaStore {
         auth_req_id: &str,
         expected: &CibaStateVersion,
         authorization_deadline: Option<i64>,
-    ) -> Result<AtomicResult, Error> {
+    ) -> Result<CibaAtomicResult, Error> {
+        let auth_req_id_hash = keys::ciba_hash(auth_req_id);
         let reply = command::eval_string(
             &self.connection,
             COMPARE_DELETE_DEADLINE_SCRIPT,
-            vec![keys::ciba(auth_req_id), keys::ciba_ping_queue()],
+            vec![
+                keys::ciba_from_hash(&auth_req_id_hash),
+                keys::ciba_ping_queue(),
+            ],
             vec![
                 expected.comparison_token().to_owned(),
                 expected.retention_expires_at().to_string(),
-                keys::ciba_hash(auth_req_id),
+                auth_req_id_hash,
                 authorization_deadline.map_or_else(String::new, |value| value.to_string()),
             ],
         )
@@ -435,7 +435,6 @@ impl CibaStateStorePort for CibaStore {
         Box::pin(async move {
             CibaStore::create(self, auth_req_id, state)
                 .await
-                .map(Into::into)
                 .map_err(port_error)
         })
     }
@@ -454,7 +453,6 @@ impl CibaStateStorePort for CibaStore {
                 authorization_deadline,
             )
             .await
-            .map(Into::into)
             .map_err(port_error)
         })
     }
@@ -468,7 +466,6 @@ impl CibaStateStorePort for CibaStore {
         Box::pin(async move {
             CibaStore::replace(self, auth_req_id, version, state)
                 .await
-                .map(Into::into)
                 .map_err(port_error)
         })
     }
@@ -489,7 +486,6 @@ impl CibaStateStorePort for CibaStore {
                 authorization_deadline,
             )
             .await
-            .map(Into::into)
             .map_err(port_error)
         })
     }
@@ -502,7 +498,6 @@ impl CibaStateStorePort for CibaStore {
         Box::pin(async move {
             CibaStore::delete(self, auth_req_id, version)
                 .await
-                .map(Into::into)
                 .map_err(port_error)
         })
     }
@@ -521,19 +516,8 @@ impl CibaStateStorePort for CibaStore {
                 authorization_deadline,
             )
             .await
-            .map(Into::into)
             .map_err(port_error)
         })
-    }
-}
-
-impl From<AtomicResult> for CibaAtomicResult {
-    fn from(result: AtomicResult) -> Self {
-        match result {
-            AtomicResult::Applied => Self::Applied,
-            AtomicResult::Conflict => Self::Conflict,
-            AtomicResult::DeadlineElapsed => Self::DeadlineElapsed,
-        }
     }
 }
 
@@ -552,11 +536,11 @@ fn port_error(error: Error) -> CibaStatePortError {
         crate::ErrorKind::UnexpectedResult => CibaStatePortError::Unexpected,
     }
 }
-fn parse_atomic(reply: &str) -> Result<AtomicResult, Error> {
+fn parse_atomic(reply: &str) -> Result<CibaAtomicResult, Error> {
     match reply {
-        "applied" => Ok(AtomicResult::Applied),
-        "conflict" => Ok(AtomicResult::Conflict),
-        "deadline_elapsed" => Ok(AtomicResult::DeadlineElapsed),
+        "applied" => Ok(CibaAtomicResult::Applied),
+        "conflict" => Ok(CibaAtomicResult::Conflict),
+        "deadline_elapsed" => Ok(CibaAtomicResult::DeadlineElapsed),
         other => Err(Error::unexpected(format!(
             "unexpected atomic result {other:?}"
         ))),

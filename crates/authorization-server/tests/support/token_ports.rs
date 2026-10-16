@@ -241,12 +241,6 @@ impl AuthorizationStateStorePort for HolderFixture {
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         panic!("unexpected AuthorizationStateStorePort::load_consent call")
     }
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        panic!("unexpected AuthorizationStateStorePort::take_consent call")
-    }
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,

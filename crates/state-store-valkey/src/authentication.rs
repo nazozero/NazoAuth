@@ -4,9 +4,9 @@ use serde_json::Value;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredEmailVerificationCode {
-    owner: String,
-    password_hash: String,
+struct StoredEmailVerificationCode<S> {
+    owner: S,
+    password_hash: S,
 }
 
 const STORE_OWNED_EMAIL_CODE: &str = r#"
@@ -88,8 +88,8 @@ impl AuthenticationStore {
         ttl: u64,
     ) -> Result<bool, Error> {
         let raw = serde_json::to_string(&StoredEmailVerificationCode {
-            owner: owner.to_owned(),
-            password_hash: code.to_owned(),
+            owner,
+            password_hash: code,
         })
         .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
         match command::eval_string(
@@ -117,7 +117,7 @@ impl AuthenticationStore {
         command::get(&self.connection, keys::email_code(tenant_id, email))
             .await?
             .map(|raw| {
-                serde_json::from_str::<StoredEmailVerificationCode>(&raw)
+                serde_json::from_str::<StoredEmailVerificationCode<String>>(&raw)
                     .map(|stored| stored.password_hash)
                     .map_err(|_| Error::corrupt_data("malformed owned email verification code"))
             })
@@ -192,43 +192,6 @@ impl AuthenticationStore {
     pub async fn take_passkey_authentication(&self, id: &str) -> Result<Option<Value>, Error> {
         self.take_value(keys::passkey_authentication(id)).await
     }
-    pub async fn store_oidc_federation(
-        &self,
-        state: &str,
-        value: &Value,
-        ttl: u64,
-    ) -> Result<(), Error> {
-        self.store_value(keys::oidc_federation(state), value, ttl)
-            .await
-    }
-    pub async fn take_oidc_federation(
-        &self,
-        state: &str,
-        expected_browser_binding_hash: &str,
-    ) -> Result<Option<Value>, Error> {
-        self.take_federation_value(keys::oidc_federation(state), expected_browser_binding_hash)
-            .await
-    }
-    pub async fn store_social_federation(
-        &self,
-        state: &str,
-        value: &Value,
-        ttl: u64,
-    ) -> Result<(), Error> {
-        self.store_value(keys::social_federation(state), value, ttl)
-            .await
-    }
-    pub async fn take_social_federation(
-        &self,
-        state: &str,
-        expected_browser_binding_hash: &str,
-    ) -> Result<Option<Value>, Error> {
-        self.take_federation_value(
-            keys::social_federation(state),
-            expected_browser_binding_hash,
-        )
-        .await
-    }
     pub async fn reserve_saml_federation_replay(
         &self,
         signature: &str,
@@ -253,11 +216,11 @@ impl AuthenticationStore {
         })?;
         command::set_ex(&self.connection, key, raw, ttl).await
     }
-    async fn take_federation_value(
+    async fn take_federation_value<T: serde::de::DeserializeOwned>(
         &self,
         key: String,
         expected_browser_binding_hash: &str,
-    ) -> Result<Option<Value>, Error> {
+    ) -> Result<Option<T>, Error> {
         // One namespaced EVAL owns comparison and consumption. Nonowners never
         // refresh or delete the initiating browser's state.
         let raw = command::eval_string(
@@ -360,8 +323,8 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
                 .await
                 .map_err(crate::identity_repository_error)?;
             raw.map(|raw| {
-                let stored: StoredEmailVerificationCode =
-                    serde_json::from_str(&raw).map_err(|_| {
+                let stored: StoredEmailVerificationCode<String> = serde_json::from_str(&raw)
+                    .map_err(|_| {
                         nazo_identity::ports::RepositoryError::Consistency(
                             "malformed owned email verification code".to_owned(),
                         )
@@ -414,7 +377,6 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
         Box::pin(async move {
             self.delete_email_code(tenant_id, email, owner)
                 .await
-                .map(|_| ())
                 .map_err(crate::identity_repository_error)
         })
     }
@@ -428,7 +390,6 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
         Box::pin(async move {
             self.delete_email_send(tenant_id, email, owner)
                 .await
-                .map(|_| ())
                 .map_err(crate::identity_repository_error)
         })
     }
@@ -442,7 +403,6 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
         Box::pin(async move {
             self.delete_email_peer_send(tenant_id, subject, owner)
                 .await
-                .map(|_| ())
                 .map_err(crate::identity_repository_error)
         })
     }
@@ -518,10 +478,7 @@ impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
         ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let value = serde_json::to_value(value).map_err(|error| {
-                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
-            })?;
-            self.store_oidc_federation(state, &value, ttl_seconds)
+            self.store_value(keys::oidc_federation(state), value, ttl_seconds)
                 .await
                 .map_err(crate::identity_repository_error)
         })
@@ -534,14 +491,9 @@ impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::OidcFederationState>>
     {
         Box::pin(async move {
-            self.take_oidc_federation(state, expected_browser_binding_hash)
+            self.take_federation_value(keys::oidc_federation(state), expected_browser_binding_hash)
                 .await
-                .map_err(crate::identity_repository_error)?
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
-                })
+                .map_err(crate::identity_repository_error)
         })
     }
 
@@ -552,10 +504,7 @@ impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
         ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let value = serde_json::to_value(value).map_err(|error| {
-                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
-            })?;
-            self.store_social_federation(state, &value, ttl_seconds)
+            self.store_value(keys::social_federation(state), value, ttl_seconds)
                 .await
                 .map_err(crate::identity_repository_error)
         })
@@ -568,14 +517,12 @@ impl nazo_identity::ports::FederationStatePort for AuthenticationStore {
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::SocialFederationState>>
     {
         Box::pin(async move {
-            self.take_social_federation(state, expected_browser_binding_hash)
-                .await
-                .map_err(crate::identity_repository_error)?
-                .map(serde_json::from_value)
-                .transpose()
-                .map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
-                })
+            self.take_federation_value(
+                keys::social_federation(state),
+                expected_browser_binding_hash,
+            )
+            .await
+            .map_err(crate::identity_repository_error)
         })
     }
 

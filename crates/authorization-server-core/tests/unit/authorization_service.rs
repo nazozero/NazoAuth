@@ -209,15 +209,6 @@ impl AuthorizationStateStorePort for FakeStore {
         })
     }
 
-    fn take_consent<'a>(
-        &'a self,
-        _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        self.0.consent_takes.fetch_add(1, Ordering::Relaxed);
-        let consent = self.0.consent.lock().unwrap().take();
-        Box::pin(async move { Ok(consent) })
-    }
-
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,

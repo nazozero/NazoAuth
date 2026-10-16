@@ -131,12 +131,6 @@ impl AuthorizationStore {
         self.load_snapshot(keys::consent(request_id)).await
     }
 
-    /// Removes transient material only. Deletion is not an authorization
-    /// decision, consumption fence, or cancellation of an observed preparation.
-    pub async fn take_consent(&self, request_id: &str) -> Result<Option<ConsentPayload>, Error> {
-        self.take_json(keys::consent(request_id)).await
-    }
-
     /// Best-effort cleanup after a durable decision; this does not authorize
     /// or cancel a decision, including one already holding a snapshot.
     pub async fn compare_and_delete_consent(
@@ -370,20 +364,6 @@ impl AuthorizationStore {
                 Ok(AuthorizationStateSnapshot {
                     payload,
                     version: raw,
-                })
-            })
-            .transpose()
-    }
-
-    async fn take_json<T: serde::de::DeserializeOwned>(
-        &self,
-        key: String,
-    ) -> Result<Option<T>, Error> {
-        command::take(&self.connection, key)
-            .await?
-            .map(|raw| {
-                serde_json::from_str(&raw).map_err(|error| {
-                    Error::corrupt_data(format!("malformed consumed authorization state: {error}"))
                 })
             })
             .transpose()

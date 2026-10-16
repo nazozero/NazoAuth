@@ -140,27 +140,27 @@ use crate::{Error, ValkeyConnection, command, keys};
 
 /// Initial authorization only. Later-stage fields are installed by their
 /// owning atomic transition, never serialized as unused placeholders.
-#[derive(Clone, Debug, Serialize)]
-struct AvatarUploadWireState {
+#[derive(Serialize)]
+struct AvatarUploadWireState<'a> {
     status: &'static str,
-    upload_id: String,
+    upload_id: &'a str,
     tenant_id: Uuid,
     user_id: Uuid,
-    expected_avatar_url: Option<String>,
-    staging_object_id: String,
+    expected_avatar_url: Option<&'a str>,
+    staging_object_id: &'a str,
     expires_at: i64,
     claim_generation: u64,
 }
 
-impl From<&AvatarUploadAuthorization> for AvatarUploadWireState {
-    fn from(value: &AvatarUploadAuthorization) -> Self {
+impl<'a> From<&'a AvatarUploadAuthorization> for AvatarUploadWireState<'a> {
+    fn from(value: &'a AvatarUploadAuthorization) -> Self {
         Self {
             status: "pending",
-            upload_id: value.upload_id.clone(),
+            upload_id: &value.upload_id,
             tenant_id: value.tenant_id.as_uuid(),
             user_id: value.user_id.as_uuid(),
-            expected_avatar_url: value.expected_avatar_url.clone(),
-            staging_object_id: value.staging_object_id.clone(),
+            expected_avatar_url: value.expected_avatar_url.as_deref(),
+            staging_object_id: &value.staging_object_id,
             expires_at: value.expires_at.timestamp(),
             claim_generation: 0,
         }

@@ -59,13 +59,6 @@ impl AuthorizationStateStorePort for UnknownAttestationAck {
         self.inner.as_ref().load_consent(request_id)
     }
 
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        self.inner.as_ref().take_consent(request_id)
-    }
-
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,

@@ -13,7 +13,6 @@ use nazo_auth::{
     evaluate_ciba_decision, evaluate_ciba_poll,
 };
 use nazo_auth::{CibaRequestState, CibaStatePortError, CibaStatus};
-use nazo_valkey::AtomicResult as ValkeyAtomicResult;
 use nazo_valkey::CibaStore;
 use nazo_valkey::test_support::ciba_request_storage_key;
 use std::collections::{HashMap, VecDeque};
@@ -756,7 +755,7 @@ async fn ciba_compare_set_preserves_current_retention_deadline() {
             .create(&auth_req_id, &state)
             .await
             .unwrap(),
-        ValkeyAtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let stored = CibaStore::new(&connection)
         .load(&auth_req_id)
@@ -774,7 +773,7 @@ async fn ciba_compare_set_preserves_current_retention_deadline() {
             .replace(&auth_req_id, stored.version(), &next)
             .await
             .unwrap(),
-        ValkeyAtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let snapshot = valkey_atomic_snapshot(&valkey, &key)
         .await
@@ -803,7 +802,7 @@ async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
             .create(&occupied_id, &occupied)
             .await
             .unwrap(),
-        ValkeyAtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let occupied_raw = valkey_atomic_snapshot(&valkey, &ciba_request_storage_key(&occupied_id))
         .await
@@ -856,7 +855,7 @@ async fn ciba_creation_stops_after_four_collisions() {
                 .create(auth_req_id, &state)
                 .await
                 .unwrap(),
-            ValkeyAtomicResult::Applied
+            CibaAtomicResult::Applied
         );
     }
     let mut candidates = VecDeque::from(ids);
@@ -1060,7 +1059,7 @@ async fn ciba_poll_conflict_retry_consumes_assertion_once() {
             .replace(&auth_req_id, winner_version.version(), &winner)
             .await
             .unwrap(),
-        ValkeyAtomicResult::Applied
+        CibaAtomicResult::Applied
     );
 
     let result = service

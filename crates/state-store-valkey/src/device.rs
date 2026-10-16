@@ -1,8 +1,8 @@
 use fred::prelude::LuaInterface;
 use nazo_auth::DeviceAuthorizationState;
 use nazo_auth::{
-    DeviceAtomicResult, DeviceCreateResult as AuthDeviceCreateResult, DeviceStatePortError,
-    DeviceStateReplacement, DeviceStateStorePort, DeviceStateVersion, StoredDeviceAuthorization,
+    DeviceAtomicResult, DeviceCreateResult, DeviceStatePortError, DeviceStateReplacement,
+    DeviceStateStorePort, DeviceStateVersion, StoredDeviceAuthorization,
 };
 
 use crate::{Error, ValkeyConnection, command, keys};
@@ -57,13 +57,6 @@ if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 'conflict' end
 redis.call('DEL', KEYS[1])
 return 'applied'
 "#;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DeviceCreateResult {
-    Applied,
-    DeviceCodeCollision,
-    UserCodeCollision,
-}
 
 #[derive(Clone, Debug)]
 pub struct DeviceStore {
@@ -215,19 +208,10 @@ impl DeviceStateStorePort for DeviceStore {
         user_code: &'a str,
         state: &'a DeviceAuthorizationState,
         ttl_seconds: u64,
-    ) -> nazo_auth::DeviceStateFuture<'a, AuthDeviceCreateResult> {
+    ) -> nazo_auth::DeviceStateFuture<'a, DeviceCreateResult> {
         Box::pin(async move {
             DeviceStore::create(self, device_code, user_code, state, ttl_seconds)
                 .await
-                .map(|result| match result {
-                    DeviceCreateResult::Applied => AuthDeviceCreateResult::Applied,
-                    DeviceCreateResult::DeviceCodeCollision => {
-                        AuthDeviceCreateResult::DeviceCodeCollision
-                    }
-                    DeviceCreateResult::UserCodeCollision => {
-                        AuthDeviceCreateResult::UserCodeCollision
-                    }
-                })
                 .map_err(port_error)
         })
     }

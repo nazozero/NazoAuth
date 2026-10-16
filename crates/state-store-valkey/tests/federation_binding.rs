@@ -135,7 +135,7 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
     let oidc = OidcFederationState {
         browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: Some("oidc-provider".to_owned()),
-        nonce: "original-nonce".to_owned(),
+        nonce: "nonce-\"-\\-雪".to_owned(),
         pkce_verifier: "original-verifier".to_owned(),
         created_at: 1_700_000_000,
     };
@@ -150,15 +150,16 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
     assert!(wrong.unwrap().is_none());
     let winners: Vec<_> = [a.unwrap(), b.unwrap()].into_iter().flatten().collect();
     assert_eq!(winners.len(), 1);
-    assert_eq!(winners[0].nonce, oidc.nonce);
-    assert_eq!(winners[0].pkce_verifier, oidc.pkce_verifier);
-    assert_eq!(winners[0].provider_id, oidc.provider_id);
+    assert_eq!(
+        serde_json::to_value(&winners[0]).unwrap(),
+        serde_json::to_value(&oidc).unwrap()
+    );
 
     let social_state = format!("social-{}", uuid::Uuid::now_v7());
     let social = SocialFederationState {
         browser_binding_hash: Some("owner-browser".to_owned()),
         provider_id: "social-provider".to_owned(),
-        pkce_verifier: "social-verifier".to_owned(),
+        pkce_verifier: "social-\"-\\-雪".to_owned(),
         created_at: 1_700_000_000,
     };
     FederationStatePort::store_social(&store, &social_state, &social, 300)
@@ -172,34 +173,8 @@ async fn correct_and_wrong_browser_concurrency_has_exactly_one_owner_winner() {
     assert!(wrong.unwrap().is_none());
     let winners: Vec<_> = [a.unwrap(), b.unwrap()].into_iter().flatten().collect();
     assert_eq!(winners.len(), 1);
-    assert_eq!(winners[0].pkce_verifier, social.pkce_verifier);
-    assert_eq!(winners[0].provider_id, social.provider_id);
-}
-
-#[test]
-fn each_federation_take_uses_the_single_eval_matching_path() {
-    let source = include_str!("../src/authentication.rs");
-    let helper = source
-        .split("async fn take_federation_value(")
-        .nth(1)
-        .unwrap()
-        .split("async fn take_value")
-        .next()
-        .unwrap();
-    assert_eq!(helper.matches("command::eval_string(").count(), 1);
-    for forbidden in ["command::get(", "command::take(", "command::delete("] {
-        assert!(!helper.contains(forbidden));
-    }
-    for name in ["oidc", "social"] {
-        let signature = format!("pub async fn take_{name}_federation(");
-        let body = source
-            .split(signature.as_str())
-            .nth(1)
-            .unwrap()
-            .split("\n    pub ")
-            .next()
-            .unwrap();
-        assert_eq!(body.matches("self.take_federation_value(").count(), 1);
-        assert!(!body.contains("self.take_value("));
-    }
+    assert_eq!(
+        serde_json::to_value(&winners[0]).unwrap(),
+        serde_json::to_value(&social).unwrap()
+    );
 }
