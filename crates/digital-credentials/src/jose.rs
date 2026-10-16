@@ -71,16 +71,11 @@ pub struct CompactJwe {
 }
 
 pub fn parse_compact_jwe(input: &str) -> Result<CompactJwe, JoseError> {
-    let parts = input.split('.').collect::<Vec<_>>();
+    let parts = compact_jwe_parts(input).ok_or(JoseError::MalformedJwe)?;
     // RFC 7516 compact serialization always has five parts, but direct key
     // agreement algorithms such as ECDH-ES carry no encrypted CEK.  In that
     // case the second part is intentionally empty (`protected..iv.ct.tag`).
-    if parts.len() != 5
-        || parts[0].is_empty()
-        || parts[2].is_empty()
-        || parts[3].is_empty()
-        || parts[4].is_empty()
-    {
+    if parts[0].is_empty() || parts[2].is_empty() || parts[3].is_empty() || parts[4].is_empty() {
         return Err(JoseError::MalformedJwe);
     }
     Ok(CompactJwe {
@@ -90,6 +85,18 @@ pub fn parse_compact_jwe(input: &str) -> Result<CompactJwe, JoseError> {
         ciphertext: parts[3].to_owned(),
         authentication_tag: parts[4].to_owned(),
     })
+}
+
+pub(crate) fn compact_jwe_parts(input: &str) -> Option<[&str; 5]> {
+    let mut segments = input.split('.');
+    let parts = [
+        segments.next()?,
+        segments.next()?,
+        segments.next()?,
+        segments.next()?,
+        segments.next()?,
+    ];
+    segments.next().is_none().then_some(parts)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

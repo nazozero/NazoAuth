@@ -260,25 +260,23 @@ fn mdoc_session_transcript(
         } else {
             None
         };
-    let handover_info = ciborium::Value::Array(vec![
-        ciborium::Value::Text(transaction.request.client_id.clone()),
-        ciborium::Value::Text(transaction.request.nonce.clone()),
-        verifier_key_thumbprint
-            .map(ciborium::Value::Bytes)
-            .unwrap_or(ciborium::Value::Null),
-        ciborium::Value::Text(transaction.request.response_uri.clone()),
-    ]);
+    let handover_info = (
+        &transaction.request.client_id,
+        &transaction.request.nonce,
+        verifier_key_thumbprint.map(ciborium::Value::Bytes),
+        &transaction.request.response_uri,
+    );
     let mut encoded_handover_info = Vec::new();
     ciborium::into_writer(&handover_info, &mut encoded_handover_info)
         .map_err(|_| PresentationError::InvalidRequest)?;
-    let transcript = ciborium::Value::Array(vec![
-        ciborium::Value::Null,
-        ciborium::Value::Null,
-        ciborium::Value::Array(vec![
-            ciborium::Value::Text("OpenID4VPHandover".to_owned()),
+    let transcript = (
+        (),
+        (),
+        (
+            "OpenID4VPHandover",
             ciborium::Value::Bytes(Sha256::digest(encoded_handover_info).to_vec()),
-        ]),
-    ]);
+        ),
+    );
     let mut encoded = Vec::new();
     ciborium::into_writer(&transcript, &mut encoded)
         .map_err(|_| PresentationError::InvalidRequest)?;

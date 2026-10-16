@@ -34,7 +34,6 @@ use uuid::Uuid;
 
 use super::{OperatorPersistence, control_journal::SideEffectError};
 use nazo_identity::{TenantBoundaryDefinition, TenantProvisioningRequest};
-use nazo_oauth_server::crypto::constant_time_eq;
 use nazo_operator_protocol::{
     ControlOperationPayload, ControlResultData, ControlTenantDirectoryBinding,
     TenantResourceIdentity, TenantResourceSelector,
@@ -838,7 +837,7 @@ pub(super) fn verify_public_jwk_at(
         read_regular_file_bounded(&path, MAX_EXTERNAL_PUBLIC_JWK_BYTES, "external public JWK")
             .context("external public JWK was not mounted")?;
     let actual = hex::encode(Sha256::digest(&bytes));
-    if !constant_time_eq(actual.as_bytes(), expected_sha256.as_bytes()) {
+    if actual != expected_sha256 {
         bail!("external public JWK digest mismatch");
     }
     Ok(bytes)

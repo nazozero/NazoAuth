@@ -79,6 +79,7 @@ fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
             parse_compact_jwe(malformed).is_err(),
             "malformed compact JWE should be rejected: {malformed}"
         );
+        assert_eq!(recipient.decrypt(malformed), Err(JweError::Malformed));
     }
 }
 

@@ -12,7 +12,7 @@ use nazo_key_management::{KeyManager, signing_algorithm_from_name};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::crypto::{access_token_tenant_id, blake3_hex, constant_time_eq};
+use crate::crypto::{access_token_tenant_id, blake3_hex};
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
 use crate::domain::client_policy::{parse_scope, refresh_client_jwks_for_encryption};
 use crate::domain::oidc_claims::oidc_user_claims;
@@ -243,7 +243,7 @@ impl ServerUserinfoOperations {
                 let actual = facts
                     .mtls_thumbprint
                     .ok_or(UserinfoError::MissingMtlsCertificate)?;
-                if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+                if expected != actual {
                     return Err(UserinfoError::MtlsCertificateMismatch);
                 }
                 Ok(None)

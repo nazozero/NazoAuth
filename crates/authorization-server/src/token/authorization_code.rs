@@ -6,7 +6,6 @@ use crate::contracts::{
     token_endpoint::TokenRequestFacts,
 };
 use crate::crypto::blake3_hex;
-use crate::crypto::constant_time_eq;
 use crate::crypto::pkce_s256;
 use crate::domain::client_policy::audiences_allowed;
 use nazo_auth::ValidatedClientAssertion;
@@ -209,11 +208,7 @@ pub(super) fn holder_matches_original(
     client_attestation_jkt: Option<&str>,
 ) -> bool {
     fn matches(expected: Option<&str>, candidate: Option<&str>) -> bool {
-        expected.is_none_or(|expected| {
-            candidate.is_some_and(|candidate| {
-                constant_time_eq(expected.as_bytes(), candidate.as_bytes())
-            })
-        })
+        expected.is_none_or(|expected| candidate == Some(expected))
     }
     (!expected.authenticated_client() || authenticated_client)
         && matches(expected.pkce_s256(), pkce_s256)

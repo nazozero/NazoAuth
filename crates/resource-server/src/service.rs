@@ -305,7 +305,7 @@ where
                     .dpop_jkt
                     .as_deref()
                     .ok_or(ProtectedResourceAuthorizationError::MissingSenderConstraint)?;
-                if !constant_time_eq(expected_jkt.as_bytes(), actual_jkt.as_bytes()) {
+                if expected_jkt != actual_jkt {
                     return Err(ProtectedResourceAuthorizationError::DpopBindingMismatch);
                 }
                 self.validate_dpop_nonce(verification.nonce.as_deref(), now)
@@ -419,7 +419,7 @@ fn verify_bearer_constraint(
         let actual = context
             .mtls_x5t_s256
             .ok_or(ProtectedResourceAuthorizationError::MissingSenderConstraint)?;
-        if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+        if expected != actual {
             return Err(ProtectedResourceAuthorizationError::MtlsBindingMismatch);
         }
         return Ok(VerifiedSenderConstraintProof {
@@ -428,18 +428,6 @@ fn verify_bearer_constraint(
         });
     }
     Err(ProtectedResourceAuthorizationError::MissingSenderConstraint)
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    left.iter()
-        .zip(right)
-        .fold(0_u8, |difference, (left, right)| {
-            difference | (left ^ right)
-        })
-        == 0
 }
 
 #[cfg(test)]

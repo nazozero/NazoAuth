@@ -181,8 +181,8 @@ fn decrypt_ecdh_es(
     recipient: &P256SecretKey,
     expected_kid: Option<&str>,
 ) -> Result<Vec<u8>, JweError> {
-    let parts = compact.split('.').collect::<Vec<_>>();
-    if parts.len() != 5 || !parts[1].is_empty() {
+    let parts = crate::jose::compact_jwe_parts(compact).ok_or(JweError::Malformed)?;
+    if !parts[1].is_empty() {
         return Err(JweError::Malformed);
     }
     let header: Value = serde_json::from_slice(

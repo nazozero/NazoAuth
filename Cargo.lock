@@ -2977,7 +2977,6 @@ dependencies = [
  "serde_json",
  "sfv 0.16.0",
  "sha2 0.11.0",
- "subtle",
  "thiserror",
  "url",
 ]

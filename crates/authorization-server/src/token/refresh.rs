@@ -3,7 +3,6 @@ use crate::contracts::{
     oauth_error::OAuthEndpointError, token_endpoint::TokenEndpointSuccess,
     token_endpoint::TokenRequestFacts,
 };
-use crate::crypto::constant_time_eq;
 use nazo_auth::ValidatedClientAssertion;
 
 use crate::domain::client_policy::audiences_allowed;
@@ -53,11 +52,8 @@ fn refresh_token_has_stable_sender_constraint(token: &TokenRow) -> bool {
 
 fn refresh_token_scopes(
     original_scopes: Vec<String>,
-    requested_scope: Option<&str>,
+    requested: Vec<String>,
 ) -> Result<Vec<String>, ()> {
-    let Some(requested) = requested_scope.map(parse_scope) else {
-        return Ok(original_scopes);
-    };
     if requested.is_empty() {
         return Ok(original_scopes);
     }
@@ -68,8 +64,7 @@ fn refresh_token_scopes(
     }
 }
 
-fn refresh_requests_oidc_subject(requested_scope: Option<&str>) -> bool {
-    let requested = requested_scope.map(parse_scope).unwrap_or_default();
+fn refresh_requests_oidc_subject(requested: &[String]) -> bool {
     requested.is_empty() || requested.iter().any(|scope| scope == "openid")
 }
 
@@ -86,7 +81,7 @@ fn client_attestation_refresh_binding_matches(
     matches!(
         (expected, presented),
         (Some(expected), Some(presented))
-            if constant_time_eq(expected.as_bytes(), presented.as_bytes())
+            if expected == presented
     )
 }
 
@@ -130,13 +125,14 @@ pub async fn token_refresh_with_service(
             false,
         ));
     };
+    let requested_scopes = form.scope.as_deref().map(parse_scope).unwrap_or_default();
     let token = match token_service
         .refresh_token_snapshot_with_subject(
             client.tenant_id,
             refresh_token,
             client.id,
             request_started_at,
-            refresh_requests_oidc_subject(form.scope.as_deref()),
+            refresh_requests_oidc_subject(&requested_scopes),
         )
         .await
     {
@@ -300,7 +296,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let scopes = match refresh_token_scopes(original_scopes, form.scope.as_deref()) {
+    let scopes = match refresh_token_scopes(original_scopes, requested_scopes) {
         Ok(scopes) => scopes,
         Err(()) => {
             return Err(OAuthEndpointError::token(

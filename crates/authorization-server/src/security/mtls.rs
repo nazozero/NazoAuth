@@ -1,8 +1,5 @@
 //! Certificate identity, PKI trust, and registered client matching policy.
-use crate::{
-    contracts::token_client_auth::ClientCertificateFacts, crypto::constant_time_eq,
-    domain::rows::ClientRow,
-};
+use crate::{contracts::token_client_auth::ClientCertificateFacts, domain::rows::ClientRow};
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -85,7 +82,7 @@ pub fn client_mtls_thumbprint_matches(client: &ClientRow, thumbprint: &str) -> b
         .tls_client_auth_cert_sha256
         .as_deref()
         .and_then(normalize_sha256_thumbprint)
-        .is_some_and(|registered| constant_time_eq(registered.as_bytes(), thumbprint.as_bytes()))
+        .is_some_and(|registered| registered == thumbprint)
 }
 
 pub fn client_mtls_certificate_matches(
@@ -162,7 +159,7 @@ pub fn jwks_contains_current_x5c_thumbprint(jwks: &Value, thumbprint: &str) -> b
                 .filter_map(|key| key.get("x5c").and_then(Value::as_array))
                 .filter_map(|x5c| x5c.as_slice().first().and_then(Value::as_str))
                 .filter_map(certificate_x5c_thumbprint)
-                .any(|registered| constant_time_eq(registered.as_bytes(), thumbprint.as_bytes()))
+                .any(|registered| registered == thumbprint)
         })
 }
 
@@ -213,13 +210,14 @@ fn subject_name_to_dn(name: &X509Name<'_>) -> Option<String> {
 }
 
 fn escape_dn_value(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(|ch| match ch {
-            ',' | '+' | '"' | '\\' | '<' | '>' | ';' => vec!['\\', ch],
-            _ => vec![ch],
-        })
-        .collect()
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, ',' | '+' | '"' | '\\' | '<' | '>' | ';') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
 }
 
 fn ipaddress_to_string(bytes: &[u8]) -> Option<String> {
@@ -238,11 +236,9 @@ fn ipaddress_to_string(bytes: &[u8]) -> Option<String> {
 }
 
 fn registered_values_match(registered: &[String], actual: &[String]) -> bool {
-    registered.iter().any(|registered| {
-        actual
-            .iter()
-            .any(|actual| constant_time_eq(registered.as_bytes(), actual.as_bytes()))
-    })
+    registered
+        .iter()
+        .any(|registered| actual.iter().any(|actual| registered == actual))
 }
 
 fn registered_dns_values_match(registered: &[String], actual: &[String]) -> bool {
@@ -274,7 +270,7 @@ fn registered_email_values_match(registered: &[String], actual: &[String]) -> bo
             let Some((actual_local, actual_domain)) = actual.rsplit_once('@') else {
                 return false;
             };
-            constant_time_eq(registered_local.as_bytes(), actual_local.as_bytes())
+            registered_local == actual_local
                 && registered_domain.eq_ignore_ascii_case(actual_domain)
         })
     })

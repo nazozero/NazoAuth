@@ -177,14 +177,16 @@ where
             .authentication_by_email(self.config.tenant_id, &input.email)
             .await
             .map_err(AuthenticatePasswordError::AccountLookup)?;
-        let authenticatable = authentication
-            .as_ref()
-            .is_some_and(|identity| identity.principal.active);
-        let password_hash = authentication
-            .as_ref()
-            .filter(|_| authenticatable)
-            .map(|identity| identity.login.password_hash.clone())
-            .unwrap_or_else(|| self.config.dummy_password_hash.clone());
+        let (principal, password_hash) = match authentication {
+            Some(identity) if identity.principal.active => {
+                (Some(identity.principal), identity.login.password_hash)
+            }
+            identity => (
+                identity.map(|identity| identity.principal),
+                self.config.dummy_password_hash.clone(),
+            ),
+        };
+        let authenticatable = principal.as_ref().is_some_and(|principal| principal.active);
         let password_valid = self
             .verifier
             .verify_secret(input.password, password_hash)
@@ -205,17 +207,14 @@ where
             self.audit.record(AuthenticationAuditEvent::Failure {
                 email: input.email,
                 source_ip: input.source_ip,
-                user_id: authentication.as_ref().map(|value| value.principal.user_id),
+                user_id: principal.as_ref().map(|principal| principal.user_id),
             });
             return Err(AuthenticatePasswordError::InvalidCredentials);
         }
-        let authenticated = authentication.expect("active authenticated identity must exist");
+        let authenticated = principal.expect("active authenticated identity must exist");
         let account = self
             .accounts
-            .public_account_by_id(
-                authenticated.principal.tenant.tenant_id,
-                authenticated.principal.user_id,
-            )
+            .public_account_by_id(authenticated.tenant.tenant_id, authenticated.user_id)
             .await
             .map_err(AuthenticatePasswordError::AccountLookup)?
             .ok_or(AuthenticatePasswordError::InvalidCredentials)?;

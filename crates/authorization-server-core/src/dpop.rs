@@ -6,7 +6,6 @@ use rand::random;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 
 use crate::{AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort};
 
@@ -341,10 +340,7 @@ fn verify_dpop_proof_at(
     )?;
 
     let jkt = jwk_thumbprint(&header.jwk)?;
-    if request
-        .expected_jkt
-        .is_some_and(|expected| !constant_time_eq(expected.as_bytes(), jkt.as_bytes()))
-    {
+    if request.expected_jkt.is_some_and(|expected| expected != jkt) {
         return Err(DpopError::BindingMismatch);
     }
     validate_claims(request, &claims, now)?;
@@ -605,13 +601,6 @@ fn normalize_htu(value: &str) -> Result<String, DpopError> {
     url.set_query(None);
     url.set_fragment(None);
     Ok(url.to_string())
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    bool::from(left.ct_eq(right))
 }
 
 #[cfg(test)]

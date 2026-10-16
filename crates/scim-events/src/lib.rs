@@ -448,8 +448,8 @@ where
         let mut sets = BTreeMap::new();
         for event in page.events {
             let claims = SecurityEventClaims::from_stored(event, &self.issuer, &receiver.audience);
-            let jti = claims.jti.clone();
-            sets.insert(jti, self.signer.sign(&claims).await?);
+            let signed = self.signer.sign(&claims).await?;
+            sets.insert(claims.jti, signed);
         }
         Ok(PollResponse {
             sets,

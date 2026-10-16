@@ -35,7 +35,7 @@ use nazo_runtime_modules::ModuleId;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::crypto::{blake3_hex, constant_time_eq, random_urlsafe_token};
+use crate::crypto::{blake3_hex, random_urlsafe_token};
 use crate::domain::openid4vc::{Openid4vcCredentialCrypto, Openid4vcProofValidator};
 use crate::services::{ServerAuthorizationService, ServerTokenService};
 use nazo_identity::ports::SecretHashPort;
@@ -389,7 +389,7 @@ impl ServerCredentialIssuerOperations {
                         "A mTLS-bound access token requires the matching client certificate.",
                     ));
                 };
-                if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+                if expected != actual {
                     return Err(vci_error(
                         401,
                         "invalid_token",

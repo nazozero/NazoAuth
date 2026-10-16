@@ -257,23 +257,21 @@ fn binding_and_missing_proof_are_enforced() {
     );
 
     let proof = proof(public_jwk(), json!({}));
-    assert_eq!(
-        verify_dpop_proof_at(request(Some(&proof), Some("wrong-jkt")), NOW),
-        Err(DpopError::BindingMismatch)
-    );
+    let jkt = jwk_thumbprint(&public_jwk()).expect("public key thumbprint");
+    assert!(verify_dpop_proof_at(request(Some(&proof), Some(&jkt)), NOW).is_ok());
+    let same_length_mismatch = format!("{}!", &jkt[..jkt.len() - 1]);
+    for mismatch in ["wrong-jkt", same_length_mismatch.as_str()] {
+        assert_eq!(
+            verify_dpop_proof_at(request(Some(&proof), Some(mismatch)), NOW),
+            Err(DpopError::BindingMismatch)
+        );
+    }
 }
 
 #[test]
 fn nonce_has_256_bits_of_urlsafe_entropy() {
     let nonce = new_dpop_nonce();
     assert_eq!(URL_SAFE_NO_PAD.decode(nonce).expect("base64url").len(), 32);
-}
-
-#[test]
-fn constant_time_comparison_preserves_equality_semantics() {
-    assert!(constant_time_eq(b"same", b"same"));
-    assert!(!constant_time_eq(b"same", b"diff"));
-    assert!(!constant_time_eq(b"short", b"longer"));
 }
 
 #[test]

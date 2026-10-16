@@ -1,6 +1,5 @@
 use sfv::{BareItem, Dictionary, ItemSerializer, ListEntry, Parser, Version};
 use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 
 /// Computes an RFC 9530 SHA-256 `Content-Digest` field value.
 pub fn content_digest(body: &[u8]) -> String {
@@ -44,7 +43,7 @@ pub fn content_digest_field_matches(field_value: &str, body: &[u8]) -> bool {
         _ => return false,
     };
     let computed: [u8; 32] = Sha256::digest(body).into();
-    bool::from(digest.ct_eq(&computed))
+    digest == computed
 }
 
 fn raw_dictionary_key_count(field: &str, wanted: &str) -> usize {
