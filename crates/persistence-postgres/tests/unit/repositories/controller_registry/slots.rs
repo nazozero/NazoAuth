@@ -3,8 +3,8 @@
 
 use super::{
     ControllerRegistryError, ControllerSlotStatus, NewControllerSlot, RotateControllerKey,
-    lowest_free_slot_index, validate_controller_id, validate_kid, validate_kid_binding,
-    validate_label,
+    lowest_free_slot_index, parse_slot_status, validate_controller_id, validate_kid,
+    validate_kid_binding, validate_label,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest as _, Sha256};
@@ -105,15 +105,15 @@ fn slot_index_selection_fills_lowest_free_and_stops_at_three() {
 #[test]
 fn status_catalog_is_closed() {
     assert_eq!(
-        ControllerSlotStatus::from_str("active"),
+        parse_slot_status("active"),
         Some(ControllerSlotStatus::Active)
     );
     assert_eq!(
-        ControllerSlotStatus::from_str("revoked"),
+        parse_slot_status("revoked"),
         Some(ControllerSlotStatus::Revoked)
     );
-    assert_eq!(ControllerSlotStatus::from_str("expired"), None);
-    assert_eq!(ControllerSlotStatus::from_str(""), None);
+    assert_eq!(parse_slot_status("expired"), None);
+    assert_eq!(parse_slot_status(""), None);
 }
 
 #[test]

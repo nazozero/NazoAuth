@@ -1466,7 +1466,7 @@ impl contract::RecoveryRootPort for RecoveryRootRepository {
             )
             .await
             .map(|commit| contract::RecoveredSlotCommit {
-                slot: super::controller_registry::contract_slot(commit.slot),
+                slot: commit.slot,
                 recovery_generation: commit.recovery_generation,
             })
             .map_err(contract_recovery_error)

@@ -50,12 +50,12 @@ pub use slots::{
     NewControllerSlot, RotateControllerKey, StoredControllerSlot,
 };
 use slots::{
-    contract_admitted, contract_registry_error, lock_deployment_slots, revoke_slot_on_connection,
+    contract_registry_error, lock_deployment_slots, revoke_slot_on_connection,
     rotate_slot_on_connection, validate_controller_id, validate_slot_input,
 };
 pub(crate) use slots::{
-    contract_slot, insert_slot_on_connection, validate_deployment_id, validate_kid,
-    validate_kid_binding, validate_label,
+    insert_slot_on_connection, validate_deployment_id, validate_kid, validate_kid_binding,
+    validate_label,
 };
 
 use chrono::{DateTime, Utc};
@@ -183,12 +183,7 @@ impl ControllerRegistryRepository {
                 approval_token: approval_token.to_owned(),
                 action: expected_action,
                 action_sha256: expected_action_sha256.to_owned(),
-                slot: contract::NewControllerSlot {
-                    deployment_id: slot.deployment_id,
-                    label: slot.label,
-                    kid: slot.kid,
-                    public_key: slot.public_key,
-                },
+                slot,
                 initial_root: initial_root.map(|root| contract::NewRecoveryRoot {
                     deployment_id: root.deployment_id,
                     kid: root.kid,
@@ -215,14 +210,8 @@ impl ControllerRegistryRepository {
             now,
         } = command;
         let expected_action = action;
-        let expected_action_sha256 = action_sha256.as_str();
+        let expected_action_sha256 = action_sha256;
         let approval_token = approval_token.as_str();
-        let slot = NewControllerSlot {
-            deployment_id: slot.deployment_id,
-            label: slot.label,
-            kid: slot.kid,
-            public_key: slot.public_key,
-        };
         let initial_root = initial_root.map(|root| NewRecoveryRoot {
             deployment_id: root.deployment_id,
             kid: root.kid,
@@ -236,7 +225,6 @@ impl ControllerRegistryRepository {
             &slot.public_key,
         )?;
         let token_hash = approval_token_digest(approval_token);
-        let expected_action_sha256 = expected_action_sha256.to_owned();
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
                 .await
@@ -245,8 +233,8 @@ impl ControllerRegistryRepository {
         let result = guard
             .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
+                lock_deployment_slots(connection, &slot.deployment_id).await?;
                 if let Some(audit) = &audit {
-                    lock_deployment_slots(connection, &slot.deployment_id).await?;
                     required::authorize_actor(connection, audit)
                         .await
                         .map_err(CommitWithApprovalError::transport)?;
@@ -260,10 +248,6 @@ impl ControllerRegistryRepository {
                     now,
                 )
                 .await?;
-                // P0-3: the shared identity lock is held from BEFORE the root
-                // existence check through the commit, so a concurrent
-                // bind/rotate/revoke can never interleave here.
-                lock_deployment_slots(connection, &slot.deployment_id).await?;
                 if initial_root.is_some() {
                     let existing =
                         read_root_on_connection_for_registry(connection, &slot.deployment_id)
@@ -315,13 +299,7 @@ impl ControllerRegistryRepository {
                 approval_token: approval_token.to_owned(),
                 deployment_id: expected_deployment_id.to_owned(),
                 action_sha256: expected_action_sha256.to_owned(),
-                rotation: contract::RotateControllerKey {
-                    deployment_id: rotation.deployment_id,
-                    controller_id: rotation.controller_id,
-                    label: rotation.label,
-                    kid: rotation.kid,
-                    public_key: rotation.public_key,
-                },
+                rotation,
                 now,
             },
             None,
@@ -342,15 +320,8 @@ impl ControllerRegistryRepository {
             now,
         } = command;
         let approval_token = approval_token.as_str();
-        let expected_deployment_id = deployment_id.as_str();
-        let expected_action_sha256 = action_sha256.as_str();
-        let rotation = RotateControllerKey {
-            deployment_id: rotation.deployment_id,
-            controller_id: rotation.controller_id,
-            label: rotation.label,
-            kid: rotation.kid,
-            public_key: rotation.public_key,
-        };
+        let expected_deployment_id = deployment_id;
+        let expected_action_sha256 = action_sha256;
 
         validate_controller_id(&rotation.controller_id)?;
         validate_slot_input(
@@ -365,7 +336,6 @@ impl ControllerRegistryRepository {
             ));
         }
         let token_hash = approval_token_digest(approval_token);
-        let expected_action_sha256 = expected_action_sha256.to_owned();
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
                 .await
@@ -374,8 +344,8 @@ impl ControllerRegistryRepository {
         let result = guard
             .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
+                lock_deployment_slots(connection, &rotation.deployment_id).await?;
                 if let Some(audit) = &audit {
-                    lock_deployment_slots(connection, &rotation.deployment_id).await?;
                     required::authorize_actor(connection, audit)
                         .await
                         .map_err(CommitWithApprovalError::transport)?;
@@ -442,16 +412,12 @@ impl ControllerRegistryRepository {
             now,
         } = command;
         let approval_token = approval_token.as_str();
-        let expected_deployment_id = deployment_id.as_str();
-        let expected_action_sha256 = action_sha256.as_str();
-        let controller_id = controller_id.as_str();
+        let expected_deployment_id = deployment_id;
+        let expected_action_sha256 = action_sha256;
 
-        validate_deployment_id(expected_deployment_id)?;
-        validate_controller_id(controller_id)?;
+        validate_deployment_id(&expected_deployment_id)?;
+        validate_controller_id(&controller_id)?;
         let token_hash = approval_token_digest(approval_token);
-        let expected_deployment_id = expected_deployment_id.to_owned();
-        let controller_id = controller_id.to_owned();
-        let expected_action_sha256 = expected_action_sha256.to_owned();
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool)
                 .await
@@ -460,8 +426,8 @@ impl ControllerRegistryRepository {
         let result = guard
             .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
+                lock_deployment_slots(connection, &expected_deployment_id).await?;
                 if let Some(audit) = &audit {
-                    lock_deployment_slots(connection, &expected_deployment_id).await?;
                     required::authorize_actor(connection, audit)
                         .await
                         .map_err(CommitWithApprovalError::transport)?;
@@ -545,7 +511,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             self.commit_slot_creation_owned(command, Some(audit))
                 .await
-                .map(contract_slot)
                 .map_err(contract_commit_error)
         })
     }
@@ -560,7 +525,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             self.commit_slot_rotation_owned(command, Some(audit))
                 .await
-                .map(contract_slot)
                 .map_err(contract_commit_error)
         })
     }
@@ -575,7 +539,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             self.commit_slot_revocation_owned(command, Some(audit))
                 .await
-                .map(contract_slot)
                 .map_err(contract_commit_error)
         })
     }
@@ -623,12 +586,7 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
                 approval_token,
                 expected_action,
                 expected_action_sha256,
-                NewControllerSlot {
-                    deployment_id: slot.deployment_id,
-                    label: slot.label,
-                    kid: slot.kid,
-                    public_key: slot.public_key,
-                },
+                slot,
                 initial_root.map(|root| NewRecoveryRoot {
                     deployment_id: root.deployment_id,
                     kid: root.kid,
@@ -637,7 +595,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
                 now,
             )
             .await
-            .map(contract_slot)
             .map_err(contract_commit_error)
         })
     }
@@ -659,17 +616,10 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
                 approval_token,
                 expected_deployment_id,
                 expected_action_sha256,
-                RotateControllerKey {
-                    deployment_id: rotation.deployment_id,
-                    controller_id: rotation.controller_id,
-                    label: rotation.label,
-                    kid: rotation.kid,
-                    public_key: rotation.public_key,
-                },
+                rotation,
                 now,
             )
             .await
-            .map(contract_slot)
             .map_err(contract_commit_error)
         })
     }
@@ -695,7 +645,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
                 now,
             )
             .await
-            .map(contract_slot)
             .map_err(contract_commit_error)
         })
     }
@@ -710,7 +659,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             ControllerRegistryRepository::list_slots(self, deployment_id)
                 .await
-                .map(|slots| slots.into_iter().map(contract_slot).collect())
                 .map_err(contract_registry_error)
         })
     }
@@ -726,7 +674,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             ControllerRegistryRepository::admitted_controllers(self, deployment_id, now)
                 .await
-                .map(|items| items.into_iter().map(contract_admitted).collect())
                 .map_err(contract_registry_error)
         })
     }
@@ -743,7 +690,6 @@ impl contract::ControllerRegistryPort for ControllerRegistryRepository {
         Box::pin(async move {
             ControllerRegistryRepository::admitted_controller_by_kid(self, deployment_id, kid, now)
                 .await
-                .map(|item| item.map(contract_admitted))
                 .map_err(contract_registry_error)
         })
     }

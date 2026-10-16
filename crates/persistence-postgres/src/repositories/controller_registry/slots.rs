@@ -18,13 +18,10 @@ use crate::get_conn;
 
 use super::ControllerRegistryRepository;
 
-/// Fixed controller key lifetime in seconds: exactly 30 days (04 §2).  Not a
-/// configuration item, never derived from a natural month, never renewed in
-/// place.
-pub const CONTROLLER_KEY_TTL_SECONDS: i64 = contract::CONTROLLER_KEY_TTL_SECONDS;
-
-/// Maximum number of concurrently non-revoked controller slots per deployment.
-pub const MAX_ACTIVE_CONTROLLER_SLOTS: usize = contract::MAX_ACTIVE_CONTROLLER_SLOTS;
+pub use contract::{
+    AdmittedController, CONTROLLER_KEY_TTL_SECONDS, ControllerSlotStatus, ControllerSlotSummary,
+    MAX_ACTIVE_CONTROLLER_SLOTS, NewControllerSlot, RotateControllerKey, StoredControllerSlot,
+};
 
 /// Advisory-lock seed namespace for the per-deployment identity lock. Slot
 /// mutations AND Recovery Root/challenge mutations share this single lock so
@@ -36,109 +33,12 @@ pub const DEPLOYMENT_IDENTITY_LOCK_SEED: i64 = 0x4E5A_4354_5200_0001;
 /// Legal slot indices; the migration pins this range with a CHECK constraint.
 const SLOT_INDEX_RANGE: [i16; 3] = [0, 1, 2];
 
-/// Status catalog of a stored controller slot.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ControllerSlotStatus {
-    /// Enrolled and eligible for admission until `expires_at`.
-    Active,
-    /// Terminal state; can never admit operations again.
-    Revoked,
-}
-
-impl ControllerSlotStatus {
-    const ACTIVE: &'static str = "active";
-    const REVOKED: &'static str = "revoked";
-
-    fn from_str(value: &str) -> Option<Self> {
-        match value {
-            Self::ACTIVE => Some(Self::Active),
-            Self::REVOKED => Some(Self::Revoked),
-            _ => None,
-        }
+fn parse_slot_status(value: &str) -> Option<ControllerSlotStatus> {
+    match value {
+        "active" => Some(ControllerSlotStatus::Active),
+        "revoked" => Some(ControllerSlotStatus::Revoked),
+        _ => None,
     }
-}
-
-/// One authoritative controller slot (public material only).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StoredControllerSlot {
-    pub deployment_id: String,
-    /// Server-assigned canonical UUIDv7; stable across rotations.
-    pub controller_id: String,
-    pub label: String,
-    pub kid: String,
-    /// Raw Ed25519 public key bytes (32).
-    pub public_key: Vec<u8>,
-    pub slot_index: i16,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub status: ControllerSlotStatus,
-    pub revoked_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-impl StoredControllerSlot {
-    /// Non-secret summary for human-facing surfaces.  Never carries public key
-    /// bytes.
-    #[must_use]
-    pub fn summary(&self) -> ControllerSlotSummary {
-        ControllerSlotSummary {
-            controller_id: self.controller_id.clone(),
-            label: self.label.clone(),
-            kid: self.kid.clone(),
-            slot_index: self.slot_index,
-            issued_at: self.issued_at,
-            expires_at: self.expires_at,
-            status: self.status,
-        }
-    }
-}
-
-/// Non-secret slot summary used in limit errors and approval screens.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ControllerSlotSummary {
-    pub controller_id: String,
-    pub label: String,
-    pub kid: String,
-    pub slot_index: i16,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub status: ControllerSlotStatus,
-}
-
-/// A controller slot that would admit a new application-level operation at the
-/// instant of the lookup: exists, non-revoked, and unexpired.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdmittedController {
-    pub controller_id: String,
-    pub kid: String,
-    /// Raw Ed25519 public key bytes used to verify operation signatures.
-    pub public_key: Vec<u8>,
-    pub expires_at: DateTime<Utc>,
-}
-
-/// Server-side input for enrolling one new controller slot.  Bind and add
-/// share this shape; the distinction lives in the approval action only.  The
-/// `controller_id` is assigned by the server, never by callers.
-#[derive(Clone, Debug)]
-pub struct NewControllerSlot {
-    pub deployment_id: String,
-    pub label: String,
-    /// Unpadded base64url SHA-256 of `public_key`.
-    pub kid: String,
-    /// Raw Ed25519 public key bytes (32); private halves are not representable here.
-    pub public_key: [u8; 32],
-}
-
-/// Atomic same-`controller_id` key replacement (rotate).  The active-slot
-/// count is unchanged by construction.
-#[derive(Clone, Debug)]
-pub struct RotateControllerKey {
-    pub deployment_id: String,
-    pub controller_id: String,
-    pub label: String,
-    pub kid: String,
-    pub public_key: [u8; 32],
 }
 
 /// Typed registry failures.  Transport failures are infrastructure faults;
@@ -230,7 +130,7 @@ impl TryFrom<SlotRow> for StoredControllerSlot {
             slot_index: row.slot_index,
             issued_at: row.issued_at,
             expires_at: row.expires_at,
-            status: ControllerSlotStatus::from_str(&row.status)
+            status: parse_slot_status(&row.status)
                 .ok_or_else(|| anyhow::anyhow!("stored controller slot has unknown status"))?,
             revoked_at: row.revoked_at,
             created_at: row.created_at,
@@ -251,16 +151,14 @@ struct AdmittedRow {
     expires_at: DateTime<Utc>,
 }
 
-impl TryFrom<AdmittedRow> for AdmittedController {
-    type Error = anyhow::Error;
-
-    fn try_from(row: AdmittedRow) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<AdmittedRow> for AdmittedController {
+    fn from(row: AdmittedRow) -> Self {
+        Self {
             controller_id: row.controller_id,
             kid: row.kid,
             public_key: row.public_key,
             expires_at: row.expires_at,
-        })
+        }
     }
 }
 
@@ -412,7 +310,6 @@ pub(crate) async fn insert_slot_on_connection(
     slot: &NewControllerSlot,
     now: DateTime<Utc>,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    lock_deployment_slots(connection, &slot.deployment_id).await?;
     let active = active_slots_on_connection(connection, &slot.deployment_id).await?;
     let Some(slot_index) = lowest_free_slot_index(&active) else {
         return Err(ControllerRegistryError::SlotLimit(
@@ -472,7 +369,6 @@ pub(super) async fn rotate_slot_on_connection(
     rotation: &RotateControllerKey,
     now: DateTime<Utc>,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    lock_deployment_slots(connection, &rotation.deployment_id).await?;
     let current =
         load_slot_for_update(connection, &rotation.deployment_id, &rotation.controller_id).await?;
     if current.status == ControllerSlotStatus::Revoked {
@@ -506,7 +402,6 @@ pub(super) async fn revoke_slot_on_connection(
     controller_id: &str,
     now: DateTime<Utc>,
 ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-    lock_deployment_slots(connection, deployment_id).await?;
     let current = load_slot_for_update(connection, deployment_id, controller_id).await?;
     if current.status == ControllerSlotStatus::Revoked {
         return Err(ControllerRegistryError::AlreadyRevoked);
@@ -546,6 +441,7 @@ impl ControllerRegistryRepository {
         let mut connection = get_conn(&self.pool).await.map_err(transport)?;
         connection
             .transaction::<_, ControllerRegistryError, _>(async move |connection| {
+                lock_deployment_slots(connection, &slot.deployment_id).await?;
                 insert_slot_on_connection(connection, &slot, now).await
             })
             .await
@@ -570,6 +466,7 @@ impl ControllerRegistryRepository {
         let mut connection = get_conn(&self.pool).await.map_err(transport)?;
         connection
             .transaction::<_, ControllerRegistryError, _>(async move |connection| {
+                lock_deployment_slots(connection, &rotation.deployment_id).await?;
                 rotate_slot_on_connection(connection, &rotation, now).await
             })
             .await
@@ -591,6 +488,7 @@ impl ControllerRegistryRepository {
         let mut connection = get_conn(&self.pool).await.map_err(transport)?;
         connection
             .transaction::<_, ControllerRegistryError, _>(async move |connection| {
+                lock_deployment_slots(connection, &deployment_id).await?;
                 revoke_slot_on_connection(connection, &deployment_id, &controller_id, now).await
             })
             .await
@@ -642,10 +540,7 @@ impl ControllerRegistryRepository {
         .load::<AdmittedRow>(&mut connection)
         .await
         .map_err(transport)?;
-        rows.into_iter()
-            .map(AdmittedController::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(transport)
+        Ok(rows.into_iter().map(AdmittedController::from).collect())
     }
 
     /// Single-kid admission lookup used to verify one presented envelope key.
@@ -672,56 +567,8 @@ impl ControllerRegistryRepository {
         .get_result::<AdmittedRow>(&mut connection)
         .await
         .optional()
-        .map_err(transport)?
-        .map(AdmittedController::try_from)
-        .transpose()
         .map_err(transport)?;
-        Ok(row)
-    }
-}
-
-fn contract_status(status: ControllerSlotStatus) -> contract::ControllerSlotStatus {
-    match status {
-        ControllerSlotStatus::Active => contract::ControllerSlotStatus::Active,
-        ControllerSlotStatus::Revoked => contract::ControllerSlotStatus::Revoked,
-    }
-}
-
-pub(crate) fn contract_slot(slot: StoredControllerSlot) -> contract::StoredControllerSlot {
-    contract::StoredControllerSlot {
-        deployment_id: slot.deployment_id,
-        controller_id: slot.controller_id,
-        label: slot.label,
-        kid: slot.kid,
-        public_key: slot.public_key,
-        slot_index: slot.slot_index,
-        issued_at: slot.issued_at,
-        expires_at: slot.expires_at,
-        status: contract_status(slot.status),
-        revoked_at: slot.revoked_at,
-        created_at: slot.created_at,
-        updated_at: slot.updated_at,
-    }
-}
-
-fn contract_summary(summary: ControllerSlotSummary) -> contract::ControllerSlotSummary {
-    contract::ControllerSlotSummary {
-        controller_id: summary.controller_id,
-        label: summary.label,
-        kid: summary.kid,
-        slot_index: summary.slot_index,
-        issued_at: summary.issued_at,
-        expires_at: summary.expires_at,
-        status: contract_status(summary.status),
-    }
-}
-
-pub(super) fn contract_admitted(controller: AdmittedController) -> contract::AdmittedController {
-    contract::AdmittedController {
-        controller_id: controller.controller_id,
-        kid: controller.kid,
-        public_key: controller.public_key,
-        expires_at: controller.expires_at,
+        Ok(row.map(AdmittedController::from))
     }
 }
 
@@ -730,9 +577,7 @@ pub(super) fn contract_registry_error(
 ) -> contract::ControllerRegistryError {
     match error {
         ControllerRegistryError::SlotLimit(summaries) => {
-            contract::ControllerRegistryError::SlotLimit(
-                summaries.into_iter().map(contract_summary).collect(),
-            )
+            contract::ControllerRegistryError::SlotLimit(summaries)
         }
         ControllerRegistryError::UnknownController => {
             contract::ControllerRegistryError::UnknownController

@@ -832,7 +832,7 @@ async fn unrelated_unique_constraints_are_transport_errors_and_roll_back() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
+async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
     let Some((url, _fixture)) = isolated_repository("slot_rows").await else {
         return;
     };
@@ -842,9 +842,9 @@ async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
     connection.set_instrumentation(counter.clone());
     drop(connection);
     let repository = ControllerRegistryRepository::new(pool);
-    let assert_mutation = |before| {
+    let assert_mutation = |before, queries| {
         let evidence = counter.since(before);
-        assert_eq!(evidence.data_queries, 3);
+        assert_eq!(evidence.data_queries, queries);
         assert_eq!(evidence.begins, 1);
         assert_eq!(evidence.commits, 1);
         assert_eq!(evidence.rollbacks, 0);
@@ -856,7 +856,7 @@ async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
         .create_slot(slot_input(deployment, "first", 100), at(0))
         .await
         .unwrap();
-    assert_mutation(before);
+    assert_mutation(before, 3);
     assert_eq!(
         repository.list_slots(deployment).await.unwrap(),
         vec![created.clone()]
@@ -869,7 +869,7 @@ async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
         )
         .await
         .unwrap();
-    assert_mutation(before);
+    assert_mutation(before, 3);
     assert_eq!(
         repository.list_slots(deployment).await.unwrap(),
         vec![rotated.clone()]
@@ -879,11 +879,69 @@ async fn slot_mutations_return_the_stored_rows_in_three_data_queries() {
         .revoke_slot(deployment, &rotated.controller_id, at(2))
         .await
         .unwrap();
-    assert_mutation(before);
+    assert_mutation(before, 3);
     assert_eq!(
         repository.list_slots(deployment).await.unwrap(),
         vec![revoked]
     );
+    let digest = "a".repeat(64);
+    let admin = Uuid::now_v7();
+    let mut current = None;
+    for action in [
+        ControllerIdentityAction::Add,
+        ControllerIdentityAction::Rotate,
+        ControllerIdentityAction::Revoke,
+    ] {
+        let approval = repository
+            .issue_identity_approval(deployment, action, &digest, admin, at(3))
+            .await
+            .unwrap();
+        let before = counter.snapshot();
+        let stored = match action {
+            ControllerIdentityAction::Add => repository
+                .commit_slot_creation(
+                    &approval.token,
+                    action,
+                    &digest,
+                    slot_input(deployment, "approved", 102),
+                    None,
+                    at(4),
+                )
+                .await
+                .unwrap(),
+            ControllerIdentityAction::Rotate => repository
+                .commit_slot_rotation(
+                    &approval.token,
+                    deployment,
+                    &digest,
+                    rotation_input(deployment, current.as_deref().unwrap(), 103),
+                    at(5),
+                )
+                .await
+                .unwrap(),
+            ControllerIdentityAction::Revoke => repository
+                .commit_slot_revocation(
+                    &approval.token,
+                    deployment,
+                    &digest,
+                    current.as_deref().unwrap(),
+                    at(6),
+                )
+                .await
+                .unwrap(),
+            _ => unreachable!(),
+        };
+        // One deployment lock, approval read/consume, slot read/write.
+        assert_mutation(before, 5);
+        current = Some(stored.controller_id.clone());
+        assert!(
+            repository
+                .list_slots(deployment)
+                .await
+                .unwrap()
+                .contains(&stored)
+        );
+    }
 }
 
 #[tokio::test]
