@@ -1654,6 +1654,32 @@ fn oidc_federation_rejects_insecure_runtime_urls() {
 }
 
 #[test]
+fn federation_provider_strings_preserve_unicode_trimming_and_empty_options() {
+    let config = oidc_provider_registry_config_with("display_name", "\u{3000} 登录 \u{2003}");
+    let settings = Settings::from_config(&config).unwrap();
+    let provider = settings
+        .identity
+        .federation
+        .providers
+        .enabled_provider("oidc-upstream")
+        .unwrap();
+    assert_eq!(provider.display_name, "登录");
+
+    let config = oidc_provider_registry_config_with("icon", "\u{3000}\u{2003}");
+    let settings = Settings::from_config(&config).unwrap();
+    assert!(
+        settings
+            .identity
+            .federation
+            .providers
+            .enabled_provider("oidc-upstream")
+            .unwrap()
+            .icon
+            .is_none()
+    );
+}
+
+#[test]
 fn oidc_federation_requires_openid_scope() {
     let config = oidc_provider_registry_config_with("scopes", "email profile");
 

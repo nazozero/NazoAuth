@@ -99,8 +99,12 @@ impl FederationProviderRegistry {
     // 从 JSON 配置构建 provider registry；登录运行时只读取这一处事实源。
     pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         let mut providers = Vec::new();
-        if let Some(raw) = config.optional_string("FEDERATION_PROVIDER_CONFIGS") {
-            let parsed = serde_json::from_str::<Vec<ProviderConfig>>(&raw)
+        if let Some(raw) = config
+            .get("FEDERATION_PROVIDER_CONFIGS")
+            .map(str::trim)
+            .filter(|raw| !raw.is_empty())
+        {
+            let parsed = serde_json::from_str::<Vec<ProviderConfig>>(raw)
                 .context("FEDERATION_PROVIDER_CONFIGS must be a JSON array")?;
             for config in parsed {
                 providers.push(config.into_provider()?);
@@ -147,18 +151,17 @@ impl ExternalLoginProvider {
 impl ProviderConfig {
     // 将松散配置转换成强类型 provider。配置不完整时直接启动失败，
     // 而不是在用户点击登录时再进入半配置状态。
-    fn into_provider(self) -> anyhow::Result<ExternalLoginProvider> {
+    fn into_provider(mut self) -> anyhow::Result<ExternalLoginProvider> {
         validate_provider_id(&self.provider_id)?;
-        let display_name = required_text(Some(self.display_name.clone()), "display_name")?;
         let adapter = match self.adapter_type.as_str() {
-            "oidc" => ExternalLoginProviderAdapter::Oidc(self.clone_oidc()?),
-            "oauth2_social" => ExternalLoginProviderAdapter::Social(self.clone_social()?),
+            "oidc" => ExternalLoginProviderAdapter::Oidc(self.take_oidc()?),
+            "oauth2_social" => ExternalLoginProviderAdapter::Social(self.take_social()?),
             other => bail!("unsupported federation provider adapter_type {other}"),
         };
         Ok(ExternalLoginProvider {
             provider_id: self.provider_id,
             enabled: self.enabled,
-            display_name,
+            display_name: required_text(Some(self.display_name), "display_name")?,
             icon: self.icon.and_then(trimmed_optional),
             display_order: self.display_order,
             adapter,
@@ -167,22 +170,22 @@ impl ProviderConfig {
 
     // OIDC provider 必须提供 issuer、端点、JWKS、client 凭据和 openid scope。
     // 这些字段共同决定 ID Token 校验边界，不能在运行时补默认值。
-    fn clone_oidc(&self) -> anyhow::Result<OidcFederationSettings> {
+    fn take_oidc(&mut self) -> anyhow::Result<OidcFederationSettings> {
         let settings = OidcFederationSettings {
             provider_id: self.provider_id.clone(),
-            issuer: required_text(self.issuer.clone(), "issuer")?,
+            issuer: required_text(self.issuer.take(), "issuer")?,
             authorization_endpoint: required_text(
-                self.authorization_endpoint.clone(),
+                self.authorization_endpoint.take(),
                 "authorization_endpoint",
             )?,
-            token_endpoint: required_text(self.token_endpoint.clone(), "token_endpoint")?,
-            jwks_url: required_text(self.jwks_url.clone(), "jwks_url")?,
-            client_id: required_text(self.client_id.clone(), "client_id")?,
-            client_secret: required_text(self.client_secret.clone(), "client_secret")?,
-            redirect_uri: required_text(self.redirect_uri.clone(), "redirect_uri")?,
+            token_endpoint: required_text(self.token_endpoint.take(), "token_endpoint")?,
+            jwks_url: required_text(self.jwks_url.take(), "jwks_url")?,
+            client_id: required_text(self.client_id.take(), "client_id")?,
+            client_secret: required_text(self.client_secret.take(), "client_secret")?,
+            redirect_uri: required_text(self.redirect_uri.take(), "redirect_uri")?,
             scopes: self
                 .scopes
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| "openid email profile".to_owned()),
         };
@@ -192,7 +195,7 @@ impl ProviderConfig {
 
     // OAuth2 social provider 支持 provider preset，但仍要求 client 凭据和 redirect URI
     // 显式配置。preset 只提供公开端点和 claim 名称，不提供任何信任决策。
-    fn clone_social(&self) -> anyhow::Result<SocialProviderSettings> {
+    fn take_social(&mut self) -> anyhow::Result<SocialProviderSettings> {
         let kind = match self
             .provider_kind
             .as_deref()
@@ -211,55 +214,55 @@ impl ProviderConfig {
             kind,
             authorization_endpoint: self
                 .authorization_endpoint
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| defaults.authorization_endpoint.to_owned()),
             token_endpoint: self
                 .token_endpoint
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| defaults.token_endpoint.to_owned()),
             openid_endpoint: self
                 .openid_endpoint
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .or_else(|| defaults.openid_endpoint.map(str::to_owned)),
             userinfo_endpoint: self
                 .userinfo_endpoint
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| defaults.userinfo_endpoint.to_owned()),
-            client_id: required_text(self.client_id.clone(), "client_id")?,
-            client_secret: required_text(self.client_secret.clone(), "client_secret")?,
-            redirect_uri: required_text(self.redirect_uri.clone(), "redirect_uri")?,
+            client_id: required_text(self.client_id.take(), "client_id")?,
+            client_secret: required_text(self.client_secret.take(), "client_secret")?,
+            redirect_uri: required_text(self.redirect_uri.take(), "redirect_uri")?,
             scopes: self
                 .scopes
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| defaults.scopes.to_owned()),
             subject_claim: self
                 .subject_claim
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| defaults.subject_claim.to_owned()),
             email_claim: self
                 .email_claim
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .or_else(|| defaults.email_claim.map(str::to_owned)),
             email_verified_claim: self
                 .email_verified_claim
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .or_else(|| defaults.email_verified_claim.map(str::to_owned)),
             name_claim: self
                 .name_claim
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .or_else(|| defaults.name_claim.map(str::to_owned)),
             union_id_claim: self
                 .union_id_claim
-                .clone()
+                .take()
                 .and_then(trimmed_optional)
                 .or_else(|| defaults.union_id_claim.map(str::to_owned)),
         };
@@ -328,8 +331,10 @@ fn required_text(value: Option<String>, field: &str) -> anyhow::Result<String> {
 }
 
 // 可选字符串统一 trim，空字符串等价于未配置。
-fn trimmed_optional(value: String) -> Option<String> {
-    let value = value.trim().to_owned();
+fn trimmed_optional(mut value: String) -> Option<String> {
+    value.truncate(value.trim_end().len());
+    let leading = value.len() - value.trim_start().len();
+    value.drain(..leading);
     (!value.is_empty()).then_some(value)
 }
 

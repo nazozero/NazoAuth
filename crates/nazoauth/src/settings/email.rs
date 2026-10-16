@@ -41,7 +41,8 @@ impl EmailSettings {
         issuer_is_loopback_http: bool,
     ) -> anyhow::Result<Self> {
         let delivery = match config
-            .string("EMAIL_DELIVERY", "disabled")
+            .get("EMAIL_DELIVERY")
+            .unwrap_or("disabled")
             .trim()
             .to_ascii_lowercase()
             .as_str()
@@ -111,7 +112,8 @@ impl SmtpEmailSettings {
 impl SmtpTlsMode {
     fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         match config
-            .string("EMAIL_SMTP_TLS", "starttls")
+            .get("EMAIL_SMTP_TLS")
+            .unwrap_or("starttls")
             .trim()
             .to_ascii_lowercase()
             .as_str()

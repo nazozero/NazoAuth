@@ -10,7 +10,8 @@ pub(super) fn authorization_server_profile_from_config(
     config: &ConfigSource,
 ) -> anyhow::Result<AuthorizationServerProfile> {
     match config
-        .string("AUTHORIZATION_SERVER_PROFILE", "oauth2-baseline")
+        .get("AUTHORIZATION_SERVER_PROFILE")
+        .unwrap_or("oauth2-baseline")
         .trim()
         .to_ascii_lowercase()
         .as_str()
@@ -32,7 +33,8 @@ pub(super) fn ciba_security_profile_from_config(
     config: &ConfigSource,
 ) -> anyhow::Result<CibaSecurityProfile> {
     match config
-        .string("CIBA_SECURITY_PROFILE", "fapi-ciba-id1")
+        .get("CIBA_SECURITY_PROFILE")
+        .unwrap_or("fapi-ciba-id1")
         .trim()
         .to_ascii_lowercase()
         .as_str()
@@ -47,7 +49,8 @@ pub(super) fn request_object_jti_policy_from_config(
     config: &ConfigSource,
 ) -> anyhow::Result<RequestObjectJtiPolicy> {
     match config
-        .string("REQUEST_OBJECT_JTI_POLICY", "optional")
+        .get("REQUEST_OBJECT_JTI_POLICY")
+        .unwrap_or("optional")
         .trim()
         .to_ascii_lowercase()
         .as_str()
@@ -64,7 +67,8 @@ pub(super) fn request_object_jti_policy_from_config(
 
 pub(super) fn subject_type_from_config(config: &ConfigSource) -> anyhow::Result<SubjectType> {
     match config
-        .string("SUBJECT_TYPE", "public")
+        .get("SUBJECT_TYPE")
+        .unwrap_or("public")
         .trim()
         .to_ascii_lowercase()
         .as_str()
@@ -79,8 +83,8 @@ pub(super) fn openid4vc_revocation_policy_from_config(
     config: &ConfigSource,
 ) -> anyhow::Result<Openid4vcRevocationPolicy> {
     match config
-        .string("OPENID4VC_REVOCATION_POLICY", "disabled")
-        .as_str()
+        .get("OPENID4VC_REVOCATION_POLICY")
+        .unwrap_or("disabled")
     {
         "disabled" => Ok(Openid4vcRevocationPolicy::Disabled),
         "optional" => Ok(Openid4vcRevocationPolicy::Optional),
@@ -113,7 +117,8 @@ fn dpop_nonce_policy_from_config_key(
     default: &str,
 ) -> anyhow::Result<DpopNoncePolicy> {
     match config
-        .string(key, default)
+        .get(key)
+        .unwrap_or(default)
         .trim()
         .to_ascii_lowercase()
         .as_str()

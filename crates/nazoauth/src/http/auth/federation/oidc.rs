@@ -23,7 +23,6 @@ pub(super) struct OidcIdTokenClaims {
     pub(super) sub: String,
     pub(super) aud: Value,
     pub(super) azp: Option<String>,
-    pub(super) exp: i64,
     pub(super) iat: Option<i64>,
     pub(super) nonce: Option<String>,
     pub(super) email: Option<String>,
@@ -126,28 +125,22 @@ pub(super) fn verify_oidc_id_token(
     let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
     validation.set_issuer(&[provider.issuer.as_str()]);
     validation.set_audience(&[provider.client_id.as_str()]);
+    validation.set_required_spec_claims(&["exp", "aud"]);
+    validation.leeway = 0;
+    // Keep the existing strict expiry policy: exp must be later than now.
+    validation.reject_tokens_expiring_in_less_than = 1;
     let token = nazo_crypto::jwt::decode::<OidcIdTokenClaims>(token, &decoding_key, &validation)?;
     let claims = token.claims;
     let audience_count = claims.aud.as_array().map_or(1, Vec::len);
     if claims.nonce.as_deref() != Some(expected_nonce)
-        || !audience_contains(&claims.aud, &provider.client_id)
         || (audience_count > 1 && claims.azp.as_deref() != Some(&provider.client_id))
-        || claims.exp <= Utc::now().timestamp()
         || claims
             .iat
-            .is_some_and(|iat| iat > Utc::now().timestamp().saturating_add(60))
+            .is_some_and(|iat| iat > Utc::now().timestamp() + 60)
     {
         anyhow::bail!("OIDC ID Token claims failed policy");
     }
     Ok(claims)
-}
-
-fn audience_contains(aud: &Value, client_id: &str) -> bool {
-    match aud {
-        Value::String(value) => value == client_id,
-        Value::Array(values) => values.iter().any(|value| value.as_str() == Some(client_id)),
-        _ => false,
-    }
 }
 
 #[cfg(test)]
