@@ -14,6 +14,12 @@ use nazo_postgres::{
 use serde_json::json;
 use uuid::Uuid;
 
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = sql_types::BigInt)]
+    count: i64,
+}
+
 #[derive(Debug)]
 enum TestTransactionError {
     Diesel(diesel::result::Error),
@@ -808,12 +814,15 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 ));
             };
             assert_ne!(reapplied.id, revoked.id, "revoked binding IDs stay frozen");
-            assert!(
-                TenantResourceRepository::active_openid4vc_trust_policy_binding_on_connection(
-                    connection, tenant_id, revoked.id,
-                )
-                .await?
-                .is_none(),
+            let old_active = sql_query(
+                "SELECT COUNT(*)::BIGINT AS count FROM openid4vc_trust_policies
+                 WHERE id = $1 AND active",
+            )
+            .bind::<sql_types::Uuid, _>(revoked.id)
+            .get_result::<CountRow>(connection)
+            .await?;
+            assert_eq!(
+                old_active.count, 0,
                 "reapply must not reactivate an old frozen binding ID"
             );
             Ok(())

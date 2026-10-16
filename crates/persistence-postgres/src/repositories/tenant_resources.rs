@@ -169,8 +169,6 @@ struct Openid4vcTrustPolicyRow {
     public_material: Value,
     #[diesel(sql_type = sql_types::Jsonb)]
     wallet_origins: Value,
-    #[diesel(sql_type = sql_types::Varchar)]
-    source: String,
     #[diesel(sql_type = sql_types::Bool)]
     active: bool,
     #[diesel(sql_type = sql_types::Timestamptz)]
@@ -236,22 +234,10 @@ impl TryFrom<Openid4vcTrustPolicyRow> for StoredOpenid4vcTrustPolicy {
     type Error = RepositoryError;
 
     fn try_from(row: Openid4vcTrustPolicyRow) -> Result<Self, Self::Error> {
-        if row.source != "operator-managed" {
-            return Err(RepositoryError::Consistency(
-                "OpenID4VC trust policy has an invalid source".to_owned(),
-            ));
-        }
-        validate_stored_openid4vc_trust_policy_identity(
-            &row.resource_id,
-            Some(&row.resource_digest),
-        )?;
-        validate_bounded_public_material(&row.public_material)?;
-        let wallet_origins = validate_stored_wallet_origins(row.wallet_origins)?;
-        if row.active == row.revoked_at.is_some() {
-            return Err(RepositoryError::Consistency(
-                "OpenID4VC trust policy active state is inconsistent".to_owned(),
-            ));
-        }
+        // The table owns source, identity, size and active-state constraints.
+        let wallet_origins = serde_json::from_value(row.wallet_origins).map_err(|_| {
+            RepositoryError::Consistency("stored wallet origins are not a string array".to_owned())
+        })?;
         Ok(Self {
             id: row.id,
             tenant_id: row.tenant_id,
@@ -550,7 +536,7 @@ impl TenantResourceRepository {
         sql_query(
             "SELECT id, tenant_id, resource_id, resource_digest, public_material,
                     wallet_origins,
-                    source, active, created_at, updated_at, revoked_at
+                    active, created_at, updated_at, revoked_at
              FROM openid4vc_trust_policies
              WHERE tenant_id = $1 AND resource_id = $2 AND active",
         )
@@ -618,27 +604,6 @@ impl TenantResourceRepository {
         .await
     }
 
-    pub async fn active_openid4vc_trust_policy_binding_on_connection(
-        connection: &mut AsyncPgConnection,
-        tenant_id: Uuid,
-        binding_id: Uuid,
-    ) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
-        sql_query(
-            "SELECT id, tenant_id, resource_id, resource_digest, public_material,
-                    wallet_origins, source, active, created_at, updated_at, revoked_at
-             FROM openid4vc_trust_policies
-             WHERE tenant_id = $1 AND id = $2 AND active",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Uuid, _>(binding_id)
-        .get_result::<Openid4vcTrustPolicyRow>(connection)
-        .await
-        .optional()
-        .map_err(map_error)?
-        .map(StoredOpenid4vcTrustPolicy::try_from)
-        .transpose()
-    }
-
     pub async fn openid4vc_trust_policy_for_client_on_connection(
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,
@@ -695,7 +660,7 @@ impl TenantResourceRepository {
         // Request-time trust resolution is a single committed snapshot. Row
         // locks belong to the management transaction's on_connection variant;
         // a read lock here would end before proof verification even begins.
-        let rows = sql_query(
+        let row = sql_query(
             "SELECT client.is_active AS client_active, \
                     EXISTS (SELECT 1 FROM openid4vc_trust_policy_clients AS any_binding \
                             WHERE any_binding.tenant_id = client.tenant_id \
@@ -704,28 +669,23 @@ impl TenantResourceRepository {
              FROM oauth_clients AS client \
              LEFT JOIN LATERAL ( \
                  SELECT policy.id, policy.tenant_id, policy.resource_id, policy.resource_digest, \
-                        policy.public_material, policy.wallet_origins, policy.source, \
+                        policy.public_material, policy.wallet_origins, \
                         policy.active, policy.created_at, policy.updated_at, policy.revoked_at \
                  FROM openid4vc_trust_policy_clients AS binding \
                  JOIN openid4vc_trust_policies AS policy \
                    ON policy.tenant_id = binding.tenant_id AND policy.id = binding.policy_id \
                  WHERE binding.tenant_id = client.tenant_id AND binding.oauth_client_id = client.id \
                    AND binding.active AND policy.active \
-                 ORDER BY policy.id LIMIT 2 \
              ) AS policy ON client.is_active \
              WHERE client.tenant_id = $1 AND client.client_id = $2",
         )
         .bind::<sql_types::Uuid, _>(tenant_id)
         .bind::<sql_types::Varchar, _>(public_client_id)
-        .load::<Openid4vcTrustPolicyReadRow>(&mut connection)
+        .get_result::<Openid4vcTrustPolicyReadRow>(&mut connection)
         .await
+        .optional()
         .map_err(map_error)?;
-        if rows.len() > 1 {
-            return Err(RepositoryError::Consistency(
-                "OAuth client has multiple active OpenID4VC trust policies".to_owned(),
-            ));
-        }
-        let Some(row) = rows.into_iter().next() else {
+        let Some(row) = row else {
             return Ok(Openid4vcTrustPolicyForClient::Unbound);
         };
         if !row.has_binding {
@@ -770,7 +730,6 @@ impl TenantResourceRepository {
             connection,
             policy.tenant_id,
             policy.resource_id,
-            true,
         )
         .await?
         {
@@ -791,7 +750,7 @@ impl TenantResourceRepository {
              VALUES ($1, $2, $3, $4, $5, $6, 'operator-managed', TRUE)
              RETURNING id, tenant_id, resource_id, resource_digest, public_material,
                        wallet_origins,
-                       source, active, created_at, updated_at, revoked_at",
+                       active, created_at, updated_at, revoked_at",
         )
         .bind::<sql_types::Uuid, _>(Uuid::now_v7())
         .bind::<sql_types::Uuid, _>(policy.tenant_id)
@@ -831,7 +790,7 @@ impl TenantResourceRepository {
             &oauth_client_id.to_string(),
         )
         .await?;
-        let client = sql_query(
+        sql_query(
             "SELECT id, is_active
              FROM oauth_clients
              WHERE tenant_id = $1 AND id = $2
@@ -845,7 +804,6 @@ impl TenantResourceRepository {
         .map_err(map_error)?
         .filter(|client| client.is_active)
         .ok_or(RepositoryError::NotFound)?;
-        debug_assert_eq!(client.id, oauth_client_id);
         let policy = Self::active_openid4vc_trust_policy_by_resource_digest_on_connection(
             connection,
             tenant_id,
@@ -859,8 +817,6 @@ impl TenantResourceRepository {
             connection,
             tenant_id,
             oauth_client_id,
-            true,
-            None,
         )
         .await?;
         if let Some(active_binding) = active_binding {
@@ -906,8 +862,7 @@ impl TenantResourceRepository {
         )
         .await?;
         let Some(current) =
-            select_openid4vc_trust_policy_on_connection(connection, tenant_id, resource_id, true)
-                .await?
+            select_openid4vc_trust_policy_on_connection(connection, tenant_id, resource_id).await?
         else {
             return Ok(Openid4vcTrustPolicyRevoke::AlreadyAbsent);
         };
@@ -931,7 +886,7 @@ impl TenantResourceRepository {
              WHERE id = $1 AND active AND resource_digest = $2
              RETURNING id, tenant_id, resource_id, resource_digest, public_material,
                        wallet_origins,
-                       source, active, created_at, updated_at, revoked_at",
+                       active, created_at, updated_at, revoked_at",
         )
         .bind::<sql_types::Uuid, _>(current.id)
         .bind::<sql_types::Varchar, _>(expected_digest)
@@ -947,21 +902,17 @@ async fn select_openid4vc_trust_policy_on_connection(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     resource_id: &str,
-    active: bool,
 ) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
     sql_query(
         "SELECT id, tenant_id, resource_id, resource_digest, public_material,
                 wallet_origins,
-                source, active, created_at, updated_at, revoked_at
+                active, created_at, updated_at, revoked_at
          FROM openid4vc_trust_policies
-         WHERE tenant_id = $1 AND resource_id = $2 AND active = $3
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 1
+         WHERE tenant_id = $1 AND resource_id = $2 AND active
          FOR UPDATE",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Varchar, _>(resource_id)
-    .bind::<sql_types::Bool, _>(active)
     .get_result::<Openid4vcTrustPolicyRow>(connection)
     .await
     .optional()
@@ -974,22 +925,15 @@ async fn select_openid4vc_trust_policy_client_binding_on_connection(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     oauth_client_id: Uuid,
-    active: bool,
-    policy_id: Option<Uuid>,
 ) -> Result<Option<Openid4vcTrustPolicyClientBindingRow>, RepositoryError> {
     sql_query(
         "SELECT id, policy_id
          FROM openid4vc_trust_policy_clients
-         WHERE tenant_id = $1 AND oauth_client_id = $2 AND active = $3
-           AND ($4::UUID IS NULL OR policy_id = $4)
-         ORDER BY updated_at DESC, id DESC
-         LIMIT 1
+         WHERE tenant_id = $1 AND oauth_client_id = $2 AND active
          FOR UPDATE",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Uuid, _>(oauth_client_id)
-    .bind::<sql_types::Bool, _>(active)
-    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(policy_id)
     .get_result::<Openid4vcTrustPolicyClientBindingRow>(connection)
     .await
     .optional()
@@ -1001,10 +945,9 @@ async fn active_openid4vc_trust_policy_for_internal_client_on_connection(
     tenant_id: Uuid,
     oauth_client_id: Uuid,
 ) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
-    let rows = sql_query(
+    sql_query(
         "SELECT policy.id, policy.tenant_id, policy.resource_id,
                 policy.resource_digest, policy.public_material, policy.wallet_origins,
-                policy.source,
                 policy.active, policy.created_at, policy.updated_at, policy.revoked_at
          FROM openid4vc_trust_policy_clients binding
          JOIN openid4vc_trust_policies policy
@@ -1013,24 +956,16 @@ async fn active_openid4vc_trust_policy_for_internal_client_on_connection(
           AND policy.active
          WHERE binding.tenant_id = $1 AND binding.oauth_client_id = $2
            AND binding.active
-         ORDER BY policy.id
-         LIMIT 2
          FOR UPDATE OF binding, policy",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Uuid, _>(oauth_client_id)
-    .load::<Openid4vcTrustPolicyRow>(connection)
+    .get_result::<Openid4vcTrustPolicyRow>(connection)
     .await
-    .map_err(map_error)?;
-    if rows.len() > 1 {
-        return Err(RepositoryError::Consistency(
-            "OAuth client has multiple active OpenID4VC trust policies".to_owned(),
-        ));
-    }
-    rows.into_iter()
-        .next()
-        .map(StoredOpenid4vcTrustPolicy::try_from)
-        .transpose()
+    .optional()
+    .map_err(map_error)?
+    .map(StoredOpenid4vcTrustPolicy::try_from)
+    .transpose()
 }
 
 impl Openid4vcTrustPolicyStore for TenantResourceRepository {
@@ -1257,9 +1192,9 @@ fn validate_wallet_origins(wallet_origins: &[String]) -> Result<(), RepositoryEr
     Ok(())
 }
 
-fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<String>, RepositoryError> {
+fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<&str>, RepositoryError> {
     validate_wallet_origins(wallet_origins)?;
-    let mut normalized = wallet_origins.to_vec();
+    let mut normalized: Vec<_> = wallet_origins.iter().map(String::as_str).collect();
     normalized.sort();
     let original_len = normalized.len();
     normalized.dedup();
@@ -1269,21 +1204,6 @@ fn validate_new_wallet_origins(wallet_origins: &[String]) -> Result<Vec<String>,
         ));
     }
     Ok(normalized)
-}
-
-fn validate_stored_wallet_origins(value: Value) -> Result<Vec<String>, RepositoryError> {
-    let origins = serde_json::from_value::<Vec<String>>(value).map_err(|_| {
-        RepositoryError::Consistency(
-            "stored OpenID4VC trust policy wallet origins are invalid".to_owned(),
-        )
-    })?;
-    validate_wallet_origins(&origins)?;
-    if !origins.windows(2).all(|pair| pair[0] < pair[1]) {
-        return Err(RepositoryError::Consistency(
-            "stored OpenID4VC trust policy wallet origins are not canonical".to_owned(),
-        ));
-    }
-    Ok(origins)
 }
 
 fn validate_wallet_origin(origin: &str) -> Result<(), RepositoryError> {
