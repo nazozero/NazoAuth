@@ -186,18 +186,13 @@ async fn download(
         descriptor.version, ARTIFACT_NAME
     );
     let response = client.get(url).send().await?.error_for_status()?;
-    if !allowed_download_url(response.url()) {
-        bail!("frontend download left the approved HTTPS origin set");
-    }
     let mut stream = response.bytes_stream();
     let mut file = tokio::fs::File::create(target).await?;
     let mut digest = Sha256::new();
     let mut size = 0_u64;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
-        size = size
-            .checked_add(chunk.len() as u64)
-            .context("frontend archive size overflow")?;
+        size += chunk.len() as u64;
         if size > descriptor.size {
             bail!("frontend archive exceeds its release size");
         }
@@ -303,8 +298,7 @@ fn extract(archive: &Path, target: &Path) -> anyhow::Result<()> {
         if entries > MAX_ENTRIES {
             bail!("frontend archive contains too many entries");
         }
-        let path = entry.path()?.into_owned();
-        if !safe_relative(&path) {
+        if !safe_relative(entry.path()?.as_ref()) {
             bail!("frontend archive contains an unsafe path");
         }
         let kind = entry.header().entry_type();
