@@ -79,37 +79,6 @@ struct WrappingKey {
     key: [u8; 32],
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SealedKeyMaterial {
-    pub wrapping_key_id: String,
-    pub nonce: [u8; 12],
-    pub ciphertext: Vec<u8>,
-}
-
-impl SealedKeyMaterial {
-    #[must_use]
-    pub fn into_persisted_bytes(self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(self.nonce.len() + self.ciphertext.len());
-        bytes.extend_from_slice(&self.nonce);
-        bytes.extend_from_slice(&self.ciphertext);
-        bytes
-    }
-
-    pub fn from_persisted_bytes(wrapping_key_id: String, bytes: &[u8]) -> anyhow::Result<Self> {
-        let nonce = bytes
-            .get(..12)
-            .ok_or_else(|| anyhow::anyhow!("signing-key encrypted material is malformed"))?
-            .try_into()
-            .expect("twelve-byte slice converts to nonce");
-        let ciphertext = bytes[12..].to_vec();
-        Ok(Self {
-            wrapping_key_id,
-            nonce,
-            ciphertext,
-        })
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SigningKeyWrappingKeyError {
     EmptyId,
@@ -150,92 +119,43 @@ impl SigningKeyWrappingKeyRing {
         &self.current.id
     }
 
-    pub fn seal(
-        &self,
-        tenant_id: Uuid,
-        purpose: &str,
-        plaintext: &[u8],
-    ) -> anyhow::Result<SealedKeyMaterial> {
-        let nonce: [u8; 12] = rand::random();
-        Ok(SealedKeyMaterial {
-            wrapping_key_id: self.current.id.clone(),
-            nonce,
-            ciphertext: nazo_crypto::aead::encrypt(
-                &self.current.key,
-                &nonce,
-                &associated_data(tenant_id, purpose),
-                plaintext,
-            )?,
-        })
-    }
-
-    pub fn open(
-        &self,
-        tenant_id: Uuid,
-        purpose: &str,
-        material: &SealedKeyMaterial,
-    ) -> anyhow::Result<Vec<u8>> {
-        let key = self
-            .key_for(&material.wrapping_key_id)
-            .ok_or_else(|| anyhow::anyhow!("signing-key wrapping key is unavailable"))?;
-        if material.ciphertext.len() < 16 {
-            anyhow::bail!("signing-key encrypted material is malformed");
-        }
-        Ok(nazo_crypto::aead::decrypt(
-            key,
-            &material.nonce,
-            &associated_data(tenant_id, purpose),
-            &material.ciphertext,
-        )?)
-    }
-
     pub fn seal_generation(
         &self,
         tenant_id: Uuid,
         revision: i64,
         public_metadata: &serde_json::Value,
         plaintext: &[u8],
-    ) -> anyhow::Result<SealedKeyMaterial> {
-        self.seal_with_aad(
+    ) -> anyhow::Result<Vec<u8>> {
+        let nonce: [u8; 12] = rand::random();
+        let ciphertext = nazo_crypto::aead::encrypt(
+            &self.current.key,
+            &nonce,
+            &generation_associated_data(tenant_id, revision, public_metadata)?,
             plaintext,
-            generation_associated_data(tenant_id, revision, public_metadata)?,
-        )
+        )?;
+        let mut bytes = Vec::with_capacity(nonce.len() + ciphertext.len());
+        bytes.extend_from_slice(&nonce);
+        bytes.extend_from_slice(&ciphertext);
+        Ok(bytes)
     }
 
     pub fn open_generation(
         &self,
         tenant_id: Uuid,
-        revision: i64,
-        public_metadata: &serde_json::Value,
-        material: &SealedKeyMaterial,
+        record: &PersistedSigningKeyset,
     ) -> anyhow::Result<Vec<u8>> {
-        self.open_with_aad(
-            material,
-            generation_associated_data(tenant_id, revision, public_metadata)?,
-        )
-    }
-
-    fn seal_with_aad(&self, plaintext: &[u8], aad: Vec<u8>) -> anyhow::Result<SealedKeyMaterial> {
-        let nonce: [u8; 12] = rand::random();
-        Ok(SealedKeyMaterial {
-            wrapping_key_id: self.current.id.clone(),
-            nonce,
-            ciphertext: nazo_crypto::aead::encrypt(&self.current.key, &nonce, &aad, plaintext)?,
-        })
-    }
-
-    fn open_with_aad(&self, material: &SealedKeyMaterial, aad: Vec<u8>) -> anyhow::Result<Vec<u8>> {
         let key = self
-            .key_for(&material.wrapping_key_id)
+            .key_for(&record.wrapping_key_id)
             .ok_or_else(|| anyhow::anyhow!("signing-key wrapping key is unavailable"))?;
-        if material.ciphertext.len() < 16 {
-            anyhow::bail!("signing-key encrypted material is malformed");
-        }
+        let (nonce, ciphertext) = record
+            .encrypted_private_material
+            .split_at_checked(12)
+            .ok_or_else(|| anyhow::anyhow!("signing-key encrypted material is malformed"))?;
         Ok(nazo_crypto::aead::decrypt(
             key,
-            &material.nonce,
-            &aad,
-            &material.ciphertext,
+            nonce,
+            &generation_associated_data(tenant_id, record.revision, &record.public_metadata)?,
+            ciphertext,
         )?)
     }
 
@@ -261,14 +181,6 @@ impl WrappingKey {
         }
         Ok(Self { id, key })
     }
-}
-
-fn associated_data(tenant_id: Uuid, purpose: &str) -> Vec<u8> {
-    let mut aad = b"nazoauth/signing-key-material/v1\0".to_vec();
-    aad.extend_from_slice(tenant_id.as_bytes());
-    aad.push(0);
-    aad.extend_from_slice(purpose.as_bytes());
-    aad
 }
 
 fn generation_associated_data(

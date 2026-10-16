@@ -1089,17 +1089,9 @@ async fn replace_only_sealed_private_payload(
     let mut record = repository.load().await.unwrap().unwrap();
     let expected = record.revision;
     let ring = SigningKeyWrappingKeyRing::new("keyctl-test-root", [0x42; 32], None).unwrap();
-    let sealed = nazo_key_management::SealedKeyMaterial::from_persisted_bytes(
-        record.wrapping_key_id.clone(),
-        &record.encrypted_private_material,
-    )
-    .unwrap();
-    let mut payload: serde_json::Value = serde_json::from_slice(
-        &ring
-            .open_generation(tenant_id, record.revision, &record.public_metadata, &sealed)
-            .unwrap(),
-    )
-    .unwrap();
+
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(&ring.open_generation(tenant_id, &record).unwrap()).unwrap();
     mutate(&mut payload);
     record.revision += 1;
     record.encrypted_private_material = ring
@@ -1109,8 +1101,7 @@ async fn replace_only_sealed_private_payload(
             &record.public_metadata,
             &serde_json::to_vec(&payload).unwrap(),
         )
-        .unwrap()
-        .into_persisted_bytes();
+        .unwrap();
     assert!(matches!(
         repository.compare_and_swap(expected, record).await.unwrap(),
         nazo_key_management::SigningKeysetCompareAndSwapResult::Applied(_)

@@ -789,7 +789,7 @@ async fn external_signer_malformed_response_terminates_owned_descendant() {
 async fn external_signer_invalid_signature_terminates_owned_descendant() {
     use nazo_auth::{SignError, SignRequest, Signer, SigningPurpose};
     use nazo_key_management::{
-        KeyManager, KeySettings, SealedKeyMaterial, SigningKeyWrappingKeyRing,
+        KeyManager, KeySettings, SigningKeyWrappingKeyRing,
         test_support::MemorySigningKeyRepository,
     };
     use std::sync::Mutex;
@@ -857,14 +857,10 @@ async fn external_signer_invalid_signature_terminates_owned_descendant() {
         .public_jwk
         .clone();
     let mut record = repository.snapshot().expect("initial keyset is persisted");
-    let sealed = SealedKeyMaterial::from_persisted_bytes(
-        record.wrapping_key_id.clone(),
-        &record.encrypted_private_material,
-    )
-    .expect("initial material has a valid envelope");
+
     let mut payload: Value = serde_json::from_slice(
         &wrapping_keys
-            .open_generation(tenant_id, record.revision, &record.public_metadata, &sealed)
+            .open_generation(tenant_id, &record)
             .expect("initial generation authenticates"),
     )
     .expect("initial payload is JSON");
@@ -897,8 +893,7 @@ async fn external_signer_invalid_signature_terminates_owned_descendant() {
             &record.public_metadata,
             &serde_json::to_vec(&payload).expect("external key payload serializes"),
         )
-        .expect("external generation seals")
-        .into_persisted_bytes();
+        .expect("external generation seals");
     repository.replace(Some(record));
     manager
         .refresh()

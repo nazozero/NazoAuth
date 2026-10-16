@@ -10,9 +10,8 @@ use uuid::Uuid;
 
 use crate::{
     ExternalKeyRegistration, ExternalKeySigner, KeyRecord, KeyRecordStatus, LocalKeyRegistration,
-    Openid4vcMaterial, Openid4vcState, PersistedSigningKeyset, SealedKeyMaterial,
-    SigningKeyRepository, SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult,
-    SigningKeysetCreateResult,
+    Openid4vcMaterial, Openid4vcState, PersistedSigningKeyset, SigningKeyRepository,
+    SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
     model::{
         ActiveSigningKey, ExternalSigningKey, KeyHandle, KeySettings, KeyState, LoadedKeyset,
         LocalSigningMaterial, ManagedKey, StoredVerificationKey,
@@ -671,7 +670,7 @@ pub(crate) fn persist_payload(
     Ok(PersistedSigningKeyset {
         revision,
         public_metadata,
-        encrypted_private_material: sealed.into_persisted_bytes(),
+        encrypted_private_material: sealed,
         wrapping_key_id: keys.current_id().to_owned(),
     })
 }
@@ -728,16 +727,9 @@ fn decrypt_payload(
     if record.revision < 1 {
         anyhow::bail!("database signing keyset revision must be positive");
     }
-    let sealed = SealedKeyMaterial::from_persisted_bytes(
-        record.wrapping_key_id.clone(),
-        &record.encrypted_private_material,
-    )?;
-    let payload: Value = serde_json::from_slice(&wrapping_keys.open_generation(
-        tenant_id,
-        record.revision,
-        &record.public_metadata,
-        &sealed,
-    )?)?;
+
+    let payload: Value =
+        serde_json::from_slice(&wrapping_keys.open_generation(tenant_id, record)?)?;
     if public_projection(&payload)? != record.public_metadata {
         anyhow::bail!("signing keyset public metadata does not match encrypted generation");
     }
