@@ -342,16 +342,6 @@ pub(super) struct LockedContinuationGrant {
 }
 
 #[derive(QueryableByName)]
-pub(super) struct DeferredLeaseReceipt {
-    #[diesel(sql_type = sql_types::Uuid)]
-    pub(super) id: Uuid,
-    #[diesel(sql_type = sql_types::Text)]
-    pub(super) claim_id: String,
-    #[diesel(sql_type = sql_types::Uuid)]
-    pub(super) claim_token_id: Uuid,
-}
-
-#[derive(QueryableByName)]
 pub(super) struct IssuanceResponseRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
     pub(super) credential_selection: Option<serde_json::Value>,
@@ -441,13 +431,11 @@ impl DeferredRow {
     pub(super) fn into_domain(
         self,
         access: CredentialAccess,
+        selection: Option<nazo_openid4vci::CredentialSelection>,
         data_key: &[u8; 32],
     ) -> Result<DeferredCredential, diesel::result::Error> {
-        if self.token_id != access.token_id || self.authorization_id != access.authorization_id {
-            return Err(diesel::result::Error::NotFound);
-        }
         Ok(DeferredCredential {
-            selection: decode_selection(self.credential_selection)?,
+            selection,
             id: self.id,
             transaction_hash: self.transaction_hash,
             access,
