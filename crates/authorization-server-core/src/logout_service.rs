@@ -57,11 +57,11 @@ pub struct RegisteredLogoutClient {
 }
 
 impl RegisteredLogoutClient {
-    fn policy(&self) -> LogoutClient {
+    fn policy(&self) -> LogoutClient<'_> {
         LogoutClient {
-            redirect_uris: self.redirect_uris.clone(),
-            subject_type: self.subject_type.clone(),
-            sector_identifier_host: self.sector_identifier_host.clone(),
+            redirect_uris: &self.redirect_uris,
+            subject_type: &self.subject_type,
+            sector_identifier_host: self.sector_identifier_host.as_deref(),
         }
     }
 }
@@ -183,7 +183,7 @@ impl LogoutService {
             input.id_token_hint.as_ref(),
         )
         .map_err(LogoutServiceError::Policy)?;
-        let hinted_client = match client_id.as_deref() {
+        let hinted_client = match client_id {
             Some(client_id) => Some(self.lookup_client(input.tenant_id, client_id).await?),
             None => None,
         };
@@ -247,16 +247,10 @@ impl LogoutService {
         let operation_key = input.session.as_ref().map(logout_operation_key);
         if let (Some(session), Some(operation_key)) =
             (input.session.as_ref(), operation_key.as_deref())
+            && (input.id_token_hint.is_none() || hint_matches_current_session)
         {
-            self.enqueue_backchannel(
-                session,
-                input.id_token_hint.as_ref(),
-                hinted_client.as_ref(),
-                &active_clients,
-                operation_key,
-                input.now,
-            )
-            .await?;
+            self.enqueue_backchannel(session, &active_clients, operation_key, input.now)
+                .await?;
         }
         Ok(LogoutExecution {
             redirect_uri,
@@ -376,15 +370,10 @@ impl LogoutService {
     async fn enqueue_backchannel(
         &self,
         session: &LogoutSession,
-        hint: Option<&IdTokenHintClaims>,
-        hinted_client: Option<&RegisteredLogoutClient>,
         active_clients: &[RegisteredLogoutClient],
         operation_key: &str,
         now: DateTime<Utc>,
     ) -> Result<(), LogoutServiceError> {
-        if hint.is_some_and(|hint| !self.hint_matches_session(hinted_client, session, hint)) {
-            return Ok(());
-        }
         let mut deliveries = Vec::new();
         for client in active_clients {
             let Some(logout_uri) = client.backchannel_logout_uri.clone() else {
