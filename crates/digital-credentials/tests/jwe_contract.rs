@@ -27,6 +27,18 @@ fn ecdh_es_a256gcm_round_trip_is_authenticated() {
 }
 
 #[test]
+fn empty_plaintext_keeps_the_authentication_tag_for_both_key_lengths() {
+    let recipient = EphemeralEncryptionKey::generate();
+    for encrypt in [encrypt_ecdh_es, encrypt_ecdh_es_a128] {
+        let compact = encrypt(b"", &recipient.public_jwk(), None).unwrap();
+        assert!(recipient.decrypt(&compact).unwrap().is_empty());
+        let parts: Vec<_> = compact.split('.').collect();
+        assert!(parts[3].is_empty());
+        assert_eq!(URL_SAFE_NO_PAD.decode(parts[4]).unwrap().len(), 16);
+    }
+}
+
+#[test]
 fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
     let recipient = EphemeralEncryptionKey::generate();
     let compact = encrypt_ecdh_es(

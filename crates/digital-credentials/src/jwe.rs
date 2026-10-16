@@ -126,6 +126,7 @@ fn encrypt_ecdh_es_with_zip(
         .agree(&recipient)
         .map_err(|_| JweError::InvalidKey)?;
     let key = concat_kdf(shared.as_slice(), enc, &[], &[], key_bits);
+    let key = &key[..(key_bits / 8) as usize];
     let mut header = json!({
         "alg": "ECDH-ES", "enc": enc, "epk": ephemeral_public_jwk(ephemeral.public_key()),
     });
@@ -154,12 +155,9 @@ fn encrypt_ecdh_es_with_zip(
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
     let ciphertext_and_tag =
-        nazo_crypto::aead::encrypt(&key, &nonce, protected.as_bytes(), plaintext)
+        nazo_crypto::aead::encrypt(key, &nonce, protected.as_bytes(), plaintext)
             .map_err(jwe_aead_error)?;
-    let tag_at = ciphertext_and_tag
-        .len()
-        .checked_sub(16)
-        .ok_or(JweError::Malformed)?;
+    let tag_at = ciphertext_and_tag.len() - 16;
     let (ciphertext, tag) = ciphertext_and_tag.split_at(tag_at);
     Ok(format!(
         "{protected}..{}.{}.{}",
@@ -215,22 +213,14 @@ fn decrypt_ecdh_es(
     let apu = decode_party_info(&header, "apu")?;
     let apv = decode_party_info(&header, "apv")?;
     let key = concat_kdf(shared.as_slice(), enc, &apu, &apv, key_bits);
-    let nonce: [u8; 12] = URL_SAFE_NO_PAD
-        .decode(parts[2])
-        .map_err(|_| JweError::Malformed)?
-        .try_into()
-        .map_err(|_| JweError::Malformed)?;
+    let key = &key[..(key_bits / 8) as usize];
+    let nonce: [u8; 12] = decode_array(parts[2]).ok_or(JweError::Malformed)?;
     let mut ciphertext = URL_SAFE_NO_PAD
         .decode(parts[3])
         .map_err(|_| JweError::Malformed)?;
-    let tag = URL_SAFE_NO_PAD
-        .decode(parts[4])
-        .map_err(|_| JweError::Malformed)?;
-    if tag.len() != 16 {
-        return Err(JweError::Malformed);
-    }
+    let tag: [u8; 16] = decode_array(parts[4]).ok_or(JweError::Malformed)?;
     ciphertext.extend_from_slice(&tag);
-    let plaintext = nazo_crypto::aead::decrypt(&key, &nonce, parts[0].as_bytes(), &ciphertext)
+    let plaintext = nazo_crypto::aead::decrypt(key, &nonce, parts[0].as_bytes(), &ciphertext)
         .map_err(jwe_aead_error)?;
     match header.get("zip").and_then(Value::as_str) {
         None => Ok(plaintext),
@@ -305,15 +295,17 @@ fn parse_ec_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
 }
 
 fn decode_coordinate(jwk: &Value, name: &str) -> Result<[u8; 32], JweError> {
-    URL_SAFE_NO_PAD
-        .decode(
-            jwk.get(name)
-                .and_then(Value::as_str)
-                .ok_or(JweError::InvalidKey)?,
-        )
-        .map_err(|_| JweError::InvalidKey)?
-        .try_into()
-        .map_err(|_| JweError::InvalidKey)
+    decode_array(
+        jwk.get(name)
+            .and_then(Value::as_str)
+            .ok_or(JweError::InvalidKey)?,
+    )
+    .ok_or(JweError::InvalidKey)
+}
+
+fn decode_array<const N: usize>(input: &str) -> Option<[u8; N]> {
+    let mut bytes = [0; N];
+    (URL_SAFE_NO_PAD.decode_slice(input, &mut bytes).ok()? == N).then_some(bytes)
 }
 
 fn decode_party_info(header: &Value, name: &str) -> Result<Vec<u8>, JweError> {
@@ -334,7 +326,7 @@ fn concat_kdf(
     apu: &[u8],
     apv: &[u8],
     key_bits: u32,
-) -> Vec<u8> {
+) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(1_u32.to_be_bytes());
     digest.update(shared_secret);
@@ -345,7 +337,7 @@ fn concat_kdf(
     digest.update((apv.len() as u32).to_be_bytes());
     digest.update(apv);
     digest.update(key_bits.to_be_bytes());
-    digest.finalize()[..(key_bits / 8) as usize].to_vec()
+    digest.finalize().into()
 }
 
 fn compact_jwe_parts(input: &str) -> Option<[&str; 5]> {
