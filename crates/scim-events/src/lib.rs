@@ -154,11 +154,8 @@ impl StoredEvent {
         attributes: &[impl AsRef<str>],
         active_transition: Option<bool>,
     ) -> Self {
-        let mut attributes = attributes
-            .iter()
-            .map(|value| value.as_ref().to_owned())
-            .collect::<Vec<_>>();
-        attributes.sort();
+        let mut attributes = attributes.iter().map(AsRef::as_ref).collect::<Vec<_>>();
+        attributes.sort_unstable();
         attributes.dedup();
         let mut events = BTreeMap::new();
         events.insert(event_uri.to_owned(), json!({"attributes": attributes}));
@@ -243,7 +240,7 @@ pub struct PollRequest {
 }
 
 impl PollRequest {
-    pub fn validate(&self) -> Result<ValidatedPollRequest, PollRequestError> {
+    pub fn validate(self) -> Result<ValidatedPollRequest, PollRequestError> {
         let max_events = self.max_events.unwrap_or(DEFAULT_POLL_EVENTS);
         if max_events > MAX_POLL_EVENTS {
             return Err(PollRequestError::TooManyEvents);
@@ -255,13 +252,15 @@ impl PollRequest {
         }
         let ack = parse_event_ids(&self.ack)?;
         let mut set_errors = BTreeMap::new();
-        for (event_id, error) in &self.set_errors {
-            let event_id = parse_event_id(event_id)?;
+        for (event_id, error) in self.set_errors {
+            let event_id = parse_event_id(&event_id)?;
             if ack.contains(&event_id) {
                 return Err(PollRequestError::ConflictingDisposition);
             }
             error.validate()?;
-            set_errors.insert(event_id, error.clone());
+            if set_errors.insert(event_id, error).is_some() {
+                return Err(PollRequestError::DuplicateDisposition);
+            }
         }
         Ok(ValidatedPollRequest {
             max_events,
@@ -455,20 +454,6 @@ where
             sets,
             more_available: page.more_available,
         })
-    }
-}
-
-impl<K> EventPublisher<std::sync::Arc<dyn EventStorePort>, K>
-where
-    K: EventSignerPort,
-{
-    #[must_use]
-    pub fn from_port(store: std::sync::Arc<dyn EventStorePort>, signer: K, issuer: String) -> Self {
-        Self {
-            store,
-            signer,
-            issuer,
-        }
     }
 }
 

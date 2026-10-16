@@ -103,6 +103,34 @@ fn poll_request_rejects_ambiguous_or_unbounded_dispositions() {
 }
 
 #[test]
+fn poll_request_rejects_two_error_dispositions_for_the_same_uuid() {
+    let event_id = Uuid::now_v7();
+    let request = PollRequest {
+        set_errors: BTreeMap::from([
+            (
+                event_id.hyphenated().to_string(),
+                SetError {
+                    err: "invalid_key".to_owned(),
+                    description: "key rejected".to_owned(),
+                },
+            ),
+            (
+                event_id.simple().to_string(),
+                SetError {
+                    err: "invalid_issuer".to_owned(),
+                    description: "issuer rejected".to_owned(),
+                },
+            ),
+        ]),
+        ..PollRequest::default()
+    };
+    assert_eq!(
+        request.validate(),
+        Err(PollRequestError::DuplicateDisposition)
+    );
+}
+
+#[test]
 fn mutation_context_is_default_closed_and_uses_uuidv7() {
     assert_eq!(MutationContext::default().transaction_id(), None);
     assert_eq!(

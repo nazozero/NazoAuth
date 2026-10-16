@@ -157,7 +157,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
             Arc::new(ServerScimBootstrapPasswordProvider),
             scim_client_ip,
         )
-        .with_security_events(Arc::new(nazo_scim_events::EventPublisher::from_port(
+        .with_security_events(Arc::new(nazo_scim_events::EventPublisher::new(
             persistence.scim_event_store(),
             ServerScimEventSigner::new(keyset.clone()),
             startup.settings.endpoint.issuer.clone(),
