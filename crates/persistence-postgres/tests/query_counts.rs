@@ -2846,3 +2846,94 @@ async fn session_principal_projection_is_tenant_scoped_and_single_read() {
     }
     cleanup_seed(&url, tenant, &seed).await;
 }
+
+#[tokio::test]
+async fn registration_authentication_reads_client_and_secret_metadata_once() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&database_url, tenant).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = OAuthClientRepository::new(pool.clone());
+    let salt = format!("qc-salt-{}", seed.client.id);
+    for (secret, expected_present, expected_salt) in [
+        (
+            Some(format!("client-secret-v1:{salt}:digest")),
+            true,
+            Some(salt.as_str()),
+        ),
+        (Some("legacy-verifier".to_owned()), true, None),
+        (None, false, None),
+    ] {
+        let mut connection = get_conn(&pool).await.unwrap();
+        sql_query("UPDATE oauth_clients SET client_secret_hash = $2 WHERE id = $1")
+            .bind::<sql_types::Uuid, _>(seed.client.id)
+            .bind::<sql_types::Nullable<sql_types::Text>, _>(secret)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        drop(connection);
+        for attempt in 0..2 {
+            let (result, delta) = measure(
+                &counter,
+                repository.by_registration_access_token(
+                    seed.client.tenant_id,
+                    &seed.client.client_id,
+                    &seed.registration_access_token_blake3,
+                ),
+            )
+            .await;
+            let snapshot = result.unwrap().unwrap();
+            assert_eq!(snapshot.client.id, seed.client.id);
+            assert_eq!(snapshot.has_client_secret, expected_present);
+            assert_eq!(snapshot.secret_salt.as_deref(), expected_salt);
+            assert_eq!(delta.data_queries, 1);
+            if attempt == 1 {
+                assert_eq!(
+                    delta.cache_queries, 0,
+                    "the fixed projection reuses its statement"
+                );
+            }
+            assert_no_transaction(delta);
+            assert_clean(delta);
+        }
+    }
+    for (tenant_id, token) in [
+        (
+            Uuid::now_v7(),
+            seed.registration_access_token_blake3.as_str(),
+        ),
+        (seed.client.tenant_id, "wrong-token"),
+    ] {
+        let (result, delta) = measure(
+            &counter,
+            repository.by_registration_access_token(tenant_id, &seed.client.client_id, token),
+        )
+        .await;
+        assert!(result.unwrap().is_none());
+        assert_eq!(delta.data_queries, 1);
+        assert_clean(delta);
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(seed.client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    assert!(
+        repository
+            .by_registration_access_token(
+                seed.client.tenant_id,
+                &seed.client.client_id,
+                &seed.registration_access_token_blake3
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    cleanup_seed(&database_url, tenant, &seed).await;
+}

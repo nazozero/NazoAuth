@@ -550,9 +550,10 @@ async fn client_secret_comparison_returns_only_salt_and_database_equality() {
 
     assert_eq!(
         repository
-            .client_secret_salt(client.tenant_id, client.id)
+            .authentication_snapshot(client.tenant_id, &client.client_id)
             .await
             .unwrap()
+            .and_then(|(_, salt, _)| salt)
             .as_deref(),
         Some("c2FsdA")
     );
@@ -3077,7 +3078,7 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
 /// return, stays tenant-scoped, suppresses the salt for inactive clients, and
 /// `client_secret_salt` keeps serving the DCR path directly.
 #[tokio::test]
-async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
+async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
     let Some((pool, tenant, user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
@@ -3123,10 +3124,6 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
         .await
         .unwrap()
         .unwrap();
-    let split_salt = repository
-        .client_secret_salt(client.tenant_id, client.id)
-        .await
-        .unwrap();
     assert_eq!(
         serde_json::to_value(&snapshot_client.registration).unwrap(),
         serde_json::to_value(&split_client.registration).unwrap(),
@@ -3140,9 +3137,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
         split_client.organization_id
     );
     assert_eq!(snapshot_client.is_active, split_client.is_active);
-    // CA-02/CA-07: the snapshot salt is exactly what client_secret_salt reads.
-    assert_eq!(snapshot_salt, split_salt);
-    assert_eq!(split_salt.as_deref(), Some("ca-salt"));
+    assert_eq!(snapshot_salt.as_deref(), Some("ca-salt"));
 
     // The authorization-flow port adapter forwards the same snapshot.
     let flow = nazo_postgres::AuthorizationFlowRepository::new(pool.clone(), client.tenant_id);
@@ -3156,7 +3151,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     assert_eq!(ported.client.id, client.id);
     assert_eq!(ported.secret_salt.as_deref(), Some("ca-salt"));
 
-    // CA-02: a wrong-tenant lookup resolves nothing on either read.
+    // A wrong-tenant lookup resolves no authentication snapshot.
     let foreign_tenant = Uuid::now_v7();
     assert!(
         repository
@@ -3164,13 +3159,6 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
             .await
             .unwrap()
             .is_none()
-    );
-    assert_eq!(
-        repository
-            .client_secret_salt(foreign_tenant, client.id)
-            .await
-            .unwrap(),
-        None
     );
     // An unknown client id resolves nothing.
     assert!(
@@ -3190,8 +3178,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     assert_eq!(public_salt, None);
 
     // An inactive client still returns its row (callers reject it via
-    // `is_active`) but the snapshot suppresses the salt, matching the split
-    // reads: client_secret_salt filters on is_active.
+    // `is_active`) but the snapshot suppresses the salt.
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
         .bind::<SqlUuid, _>(client.id)
@@ -3209,13 +3196,6 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     assert_eq!(
         inactive_salt, None,
         "an inactive client must not leak a usable secret salt"
-    );
-    assert_eq!(
-        repository
-            .client_secret_salt(client.tenant_id, client.id)
-            .await
-            .unwrap(),
-        None
     );
 
     let mut connection = get_conn(&pool).await.unwrap();

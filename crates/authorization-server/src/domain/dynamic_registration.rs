@@ -154,9 +154,10 @@ impl DynamicRegistrationApplication {
         source_ip: &str,
     ) -> Result<DynamicRegistrationResult, OAuthEndpointError> {
         self.enforce_rate_limit(source_ip).await?;
-        let (current, _authenticated_token_hash, registration_access_token) = self
+        let (snapshot, _authenticated_token_hash, registration_access_token) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
+        let current = snapshot.client;
         let response_types = response_types_from_client(&current);
         self.request_guard
             .audit("dynamic_client_configuration_read", &current, source_ip);
@@ -166,7 +167,7 @@ impl DynamicRegistrationApplication {
                 response_types,
                 issued_secret: None,
                 issuer: self.config.issuer.clone(),
-                registration_access_token,
+                registration_access_token: registration_access_token.to_owned(),
             },
         ))
     }
@@ -179,16 +180,13 @@ impl DynamicRegistrationApplication {
         source_ip: &str,
     ) -> Result<DynamicRegistrationResult, OAuthEndpointError> {
         self.enforce_rate_limit(source_ip).await?;
-        let (current, authenticated_token_hash, _) = self
+        let (snapshot, authenticated_token_hash, _) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
-        let has_secret = self
-            .clients
-            .has_client_secret(current.tenant_id, current.id)
-            .await
-            .map_err(|_| lookup_failed())?;
+        let current = snapshot.client;
+        let has_secret = snapshot.has_client_secret;
         let secret_matches = self
-            .submitted_secret_matches(&current, &payload)
+            .submitted_secret_matches(&current, snapshot.secret_salt.as_deref(), &payload)
             .await
             .map_err(|_| lookup_failed())?;
         let payload =
@@ -265,9 +263,10 @@ impl DynamicRegistrationApplication {
         source_ip: &str,
     ) -> Result<DynamicRegistrationResult, OAuthEndpointError> {
         self.enforce_rate_limit(source_ip).await?;
-        let (current, authenticated_token_hash, _) = self
+        let (snapshot, authenticated_token_hash, _) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
+        let current = snapshot.client;
         self.request_guard
             .ensure_mutation_ready()
             .await
@@ -336,11 +335,11 @@ impl DynamicRegistrationApplication {
         ))
     }
 
-    async fn authenticate_registration_client(
+    async fn authenticate_registration_client<'a>(
         &self,
-        token: Option<&str>,
+        token: Option<&'a str>,
         client_id: &str,
-    ) -> Result<(OAuthClient, String, String), OAuthEndpointError> {
+    ) -> Result<(nazo_auth::RegistrationClientSnapshot, String, &'a str), OAuthEndpointError> {
         let token = token.ok_or_else(registration_access_denied)?;
         let token_hash = self.security.registration_tokens.token_hash(token);
         match self
@@ -352,7 +351,7 @@ impl DynamicRegistrationApplication {
             )
             .await
         {
-            Ok(Some(client)) => Ok((client, token_hash, token.to_owned())),
+            Ok(Some(client)) => Ok((client, token_hash, token)),
             Ok(None) => Err(registration_access_denied()),
             Err(_) => Err(lookup_failed()),
         }
@@ -361,22 +360,19 @@ impl DynamicRegistrationApplication {
     async fn submitted_secret_matches(
         &self,
         current: &OAuthClient,
+        salt: Option<&str>,
         payload: &Value,
     ) -> Result<bool, DynamicRegistrationDependencyError> {
         let Some(secret) = payload.get("client_secret").and_then(Value::as_str) else {
             return Ok(false);
         };
-        let Some(salt) = self
-            .clients
-            .client_secret_salt(current.tenant_id, current.id)
-            .await?
-        else {
+        let Some(salt) = salt else {
             return Ok(false);
         };
         let candidate = self.security.secret_digester.client_secret_digest(
             secret,
             &self.config.client_secret_pepper,
-            &salt,
+            salt,
         );
         self.clients
             .client_secret_digest_matches(current.tenant_id, current.id, &candidate)

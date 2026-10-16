@@ -28,37 +28,14 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
         tenant_id: Uuid,
         client_id: &'a str,
         token_hash: &'a str,
-    ) -> nazo_auth::DynamicRegistrationFuture<'a, Option<OAuthClient>> {
+    ) -> nazo_auth::DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>>
+    {
         Box::pin(async move {
             OAuthClientRepository::by_registration_access_token(
                 self, tenant_id, client_id, token_hash,
             )
             .await
             .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
-        })
-    }
-
-    fn has_client_secret(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> nazo_auth::DynamicRegistrationFuture<'_, bool> {
-        Box::pin(async move {
-            OAuthClientRepository::has_client_secret(self, tenant_id, client_id)
-                .await
-                .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
-        })
-    }
-
-    fn client_secret_salt(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> nazo_auth::DynamicRegistrationFuture<'_, Option<String>> {
-        Box::pin(async move {
-            OAuthClientRepository::client_secret_salt(self, tenant_id, client_id)
-                .await
-                .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
         })
     }
 

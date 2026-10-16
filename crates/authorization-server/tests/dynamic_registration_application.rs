@@ -152,35 +152,24 @@ impl DynamicRegistrationClientStore for Store {
         tenant: Uuid,
         client_id: &'a str,
         token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, Option<OAuthClient>> {
+    ) -> DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>> {
         Box::pin(async move {
             let state = self.0.lock().unwrap();
-            Ok(state.client.clone().filter(|client| {
-                client.is_active
-                    && client.tenant_id == tenant
-                    && client.client_id == client_id
-                    && state.token_hash == token_hash
-            }))
+            Ok(state
+                .client
+                .clone()
+                .filter(|client| {
+                    client.is_active
+                        && client.tenant_id == tenant
+                        && client.client_id == client_id
+                        && state.token_hash == token_hash
+                })
+                .map(|client| nazo_auth::RegistrationClientSnapshot {
+                    client,
+                    has_client_secret: state.secret_hash.is_some(),
+                    secret_salt: state.secret_hash.as_ref().map(|_| "salt".to_owned()),
+                }))
         })
-    }
-    fn has_client_secret(&self, tenant: Uuid, id: Uuid) -> DynamicRegistrationFuture<'_, bool> {
-        Box::pin(async move {
-            let state = self.0.lock().unwrap();
-            assert!(
-                state
-                    .client
-                    .as_ref()
-                    .is_some_and(|client| client.tenant_id == tenant && client.id == id)
-            );
-            Ok(state.secret_hash.is_some())
-        })
-    }
-    fn client_secret_salt(
-        &self,
-        _tenant: Uuid,
-        _id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, Option<String>> {
-        Box::pin(async { Ok(Some("salt".to_owned())) })
     }
     fn client_secret_digest_matches<'a>(
         &'a self,

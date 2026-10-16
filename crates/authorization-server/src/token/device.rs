@@ -92,7 +92,7 @@ impl DeviceDecisionHandles {
         &self,
         prepared: PreparedDeviceAuthorization,
         credentials: ClientCredentials,
-        auth_request: ClientAuthRequestFacts,
+        auth_request: ClientAuthRequestFacts<'_>,
         source_ip: &str,
     ) -> Result<DeviceAuthorizationResponse, OAuthEndpointError> {
         let (form, has_basic) = prepared.into_parts();
@@ -437,7 +437,7 @@ pub fn device_authorization_request_payload(
 async fn authenticate_device_authorization_client(
     authorization_service: &ServerAuthorizationService,
     config: &DeviceConfig,
-    auth_request: &ClientAuthRequestFacts,
+    auth_request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: &ClientCredentials,
     remote_client_documents: &dyn RemoteJwksResolverPort,

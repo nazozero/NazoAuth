@@ -441,6 +441,7 @@ diesel::table! {
         sector_identifier_uri -> Nullable<Text>,
         sector_identifier_host -> Nullable<Text>,
         security_policy -> Jsonb,
+        access_token_epoch -> BigInt,
     }
 }
 

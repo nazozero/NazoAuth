@@ -88,43 +88,20 @@ impl DynamicRegistrationClientStore for FakeStore {
         tenant_id: Uuid,
         client_id: &'a str,
         _token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, Option<OAuthClient>> {
+    ) -> DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>> {
         let found = self
             .client
             .lock()
             .expect("client lock")
             .clone()
             .filter(|client| client.tenant_id == tenant_id && client.client_id == client_id);
-        Box::pin(async move { Ok(found) })
-    }
-
-    fn has_client_secret(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, bool> {
-        let matches = self
-            .client
-            .lock()
-            .expect("client lock")
-            .as_ref()
-            .is_some_and(|client| client.tenant_id == tenant_id && client.id == client_id);
-        Box::pin(async move { Ok(matches) })
-    }
-
-    fn client_secret_salt(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, Option<String>> {
-        let salt = self
-            .client
-            .lock()
-            .expect("client lock")
-            .as_ref()
-            .filter(|client| client.tenant_id == tenant_id && client.id == client_id)
-            .map(|_| "salt".to_owned());
-        Box::pin(async move { Ok(salt) })
+        Box::pin(async move {
+            Ok(found.map(|client| nazo_auth::RegistrationClientSnapshot {
+                client,
+                has_client_secret: true,
+                secret_salt: Some("salt".to_owned()),
+            }))
+        })
     }
 
     fn client_secret_digest_matches<'a>(

@@ -49,11 +49,11 @@ impl TokenManagementRequestGuard for ServerTokenManagementRequestGuard {
         &'a self,
         request: &'a TokenManagementRequestFacts,
     ) -> Pin<Box<dyn Future<Output = Result<(), TokenManagementRateLimitError>> + Send + 'a>> {
-        let subject = request.source_ip.clone();
+        let subject = request.source_ip.as_str();
         Box::pin(async move {
             let count = self
                 .token_service
-                .increment_token_management_rate(&subject, self.config.rate_limit_window_seconds)
+                .increment_token_management_rate(subject, self.config.rate_limit_window_seconds)
                 .await
                 .map_err(|error| {
                     tracing::warn!(%error, "token management rate limit increment failed");
@@ -155,8 +155,10 @@ impl ServerTokenManagementOperations {
             self.audit.as_ref(),
         )
         .with_fapi2_requirement(self.config.profile.requires_fapi2_security());
-        let auth_request =
-            ClientAuthRequestFacts::new(&request.endpoint_path, request.client_certificate.clone());
+        let auth_request = ClientAuthRequestFacts::borrowed(
+            &request.endpoint_path,
+            request.client_certificate.as_ref(),
+        );
         let result = match context {
             ClientAuthenticationContext::ConfidentialOnly => {
                 authenticate_introspection_client_with_dependencies(

@@ -109,7 +109,7 @@ impl CibaApplication {
     pub async fn create(
         &self,
         prepared: PreparedCibaClient,
-        auth_request: ClientAuthRequestFacts,
+        auth_request: ClientAuthRequestFacts<'_>,
         source_ip: &str,
     ) -> Result<CibaCreationResponse, OAuthEndpointError> {
         let PreparedCibaClient {

@@ -1,4 +1,6 @@
 //! token 管理端点复用的客户端认证。
+use std::borrow::Cow;
+
 use crate::crypto::{blake3_hex, client_secret_digest};
 use crate::domain::client_policy::refresh_client_jwks;
 use crate::domain::rows::ClientRow;
@@ -25,19 +27,29 @@ pub enum TokenManagementClientAuthError {
 }
 
 #[derive(Clone, Debug)]
-pub struct ClientAuthRequestFacts {
-    endpoint_path: String,
-    client_certificate: Option<ClientCertificateFacts>,
+pub struct ClientAuthRequestFacts<'a> {
+    endpoint_path: Cow<'a, str>,
+    client_certificate: Option<Cow<'a, ClientCertificateFacts>>,
 }
 
-impl ClientAuthRequestFacts {
+impl<'a> ClientAuthRequestFacts<'a> {
     pub fn new(
-        endpoint_path: impl Into<String>,
+        endpoint_path: impl Into<Cow<'a, str>>,
         client_certificate: Option<ClientCertificateFacts>,
     ) -> Self {
         Self {
             endpoint_path: endpoint_path.into(),
-            client_certificate,
+            client_certificate: client_certificate.map(Cow::Owned),
+        }
+    }
+
+    pub fn borrowed(
+        endpoint_path: &'a str,
+        client_certificate: Option<&'a ClientCertificateFacts>,
+    ) -> Self {
+        Self {
+            endpoint_path: Cow::Borrowed(endpoint_path),
+            client_certificate: client_certificate.map(Cow::Borrowed),
         }
     }
 
@@ -84,11 +96,10 @@ impl<'a> ClientAuthConfig<'a> {
     }
 }
 
-#[allow(dead_code)]
 pub async fn authenticate_introspection_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     secret_salt: Option<&str>,
@@ -118,11 +129,10 @@ pub async fn authenticate_introspection_client_with_dependencies<'credential>(
     })
 }
 
-#[allow(dead_code)]
 pub async fn authenticate_revocation_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     secret_salt: Option<&str>,
@@ -149,7 +159,7 @@ pub async fn authenticate_revocation_client_with_dependencies<'credential>(
 pub async fn authenticate_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     context: ClientAuthenticationContext,
@@ -283,7 +293,7 @@ fn client_assertion_error_reason(error: &ClientAssertionError) -> &'static str {
 }
 
 fn log_client_auth_rejection(
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &ClientRow,
     credentials: &PresentedClientCredentialsView<'_>,
     reason: &'static str,

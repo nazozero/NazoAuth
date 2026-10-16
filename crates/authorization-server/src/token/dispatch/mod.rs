@@ -265,7 +265,8 @@ impl TokenEndpointHandles {
         } else {
             validate_token_client_enabled(&client, &form.grant_type)?;
         }
-        let auth_request = ClientAuthRequestFacts::new(facts.dpop.path, facts.certificate.clone());
+        let auth_request =
+            ClientAuthRequestFacts::borrowed(facts.dpop.path, facts.certificate.as_ref());
         let mut client_attestation_jkt = None;
         let client_assertion = if let Some((attestation, proof)) = attestation_headers {
             if client.token_endpoint_auth_method != "attest_jwt_client_auth" {

@@ -51,7 +51,7 @@ pub struct PreparedParClient<'a> {
     credentials: PresentedClientCredentials,
 }
 pub struct ParRequestFacts<'a> {
-    pub client_auth: ClientAuthRequestFacts,
+    pub client_auth: ClientAuthRequestFacts<'a>,
     pub dpop: DpopRequestFacts<'a>,
     pub mtls_thumbprint: Option<String>,
     pub attestation: Option<(&'a str, &'a str)>,

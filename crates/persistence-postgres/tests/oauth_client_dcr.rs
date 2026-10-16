@@ -185,19 +185,6 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
     );
     assert!(
         !repository
-            .has_client_secret(other_client.tenant_id, default_client.id)
-            .await
-            .unwrap()
-    );
-    assert_eq!(
-        repository
-            .client_secret_salt(other_client.tenant_id, default_client.id)
-            .await
-            .unwrap(),
-        None
-    );
-    assert!(
-        !repository
             .client_secret_digest_matches(other_client.tenant_id, default_client.id, secret_hash,)
             .await
             .unwrap()
@@ -514,13 +501,7 @@ async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
         .await
         .unwrap()
         .expect("active registration access token should resolve its client");
-    assert_eq!(registered.id, client.id);
-    assert!(
-        !repository
-            .has_client_secret(client.tenant_id, client.id)
-            .await
-            .unwrap()
-    );
+    assert_eq!(registered.client.id, client.id);
     assert!(
         repository
             .active_for_tenant_user(client.tenant_id, Uuid::now_v7())
@@ -629,36 +610,17 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
     .unwrap();
     assert_eq!(inserted.client_id, template.client_id);
     assert_eq!(inserted.tenant_id, tenant.tenant_id.as_uuid());
-    assert!(
-        DynamicRegistrationClientStore::by_registration_access_token(
-            &repository,
-            tenant.tenant_id.as_uuid(),
-            &inserted.client_id,
-            &initial_token,
-        )
-        .await
-        .unwrap()
-        .is_some()
-    );
-    assert!(
-        DynamicRegistrationClientStore::has_client_secret(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        Some("initial-salt".to_owned())
-    );
+    let snapshot = DynamicRegistrationClientStore::by_registration_access_token(
+        &repository,
+        tenant.tenant_id.as_uuid(),
+        &inserted.client_id,
+        &initial_token,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(snapshot.has_client_secret);
+    assert_eq!(snapshot.secret_salt.as_deref(), Some("initial-salt"));
     assert!(
         DynamicRegistrationClientStore::client_secret_digest_matches(
             &repository,
@@ -703,27 +665,17 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         .unwrap()
         .is_none()
     );
-    assert!(
-        DynamicRegistrationClientStore::by_registration_access_token(
-            &repository,
-            inserted.tenant_id,
-            &inserted.client_id,
-            &rotated_token,
-        )
-        .await
-        .unwrap()
-        .is_some()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        Some("rotated-salt".to_owned())
-    );
+    let snapshot = DynamicRegistrationClientStore::by_registration_access_token(
+        &repository,
+        inserted.tenant_id,
+        &inserted.client_id,
+        &rotated_token,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(snapshot.has_client_secret);
+    assert_eq!(snapshot.secret_salt.as_deref(), Some("rotated-salt"));
     assert!(
         DynamicRegistrationClientStore::client_secret_digest_matches(
             &repository,
@@ -761,27 +713,17 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         .unwrap()
         .is_none()
     );
-    assert!(
-        DynamicRegistrationClientStore::by_registration_access_token(
-            &repository,
-            inserted.tenant_id,
-            &inserted.client_id,
-            &replacement_token,
-        )
-        .await
-        .unwrap()
-        .is_some()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        Some("replacement-salt".to_owned())
-    );
+    let snapshot = DynamicRegistrationClientStore::by_registration_access_token(
+        &repository,
+        inserted.tenant_id,
+        &inserted.client_id,
+        &replacement_token,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(snapshot.has_client_secret);
+    assert_eq!(snapshot.secret_salt.as_deref(), Some("replacement-salt"));
     assert!(
         DynamicRegistrationClientStore::client_secret_digest_matches(
             &repository,
@@ -814,25 +756,6 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         .await
         .unwrap()
         .is_none()
-    );
-    assert!(
-        !DynamicRegistrationClientStore::has_client_secret(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        None
     );
     assert!(
         !DynamicRegistrationClientStore::client_secret_digest_matches(
@@ -895,26 +818,6 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
             tenant.tenant_id.as_uuid(),
             &template.client_id,
             &initial_token,
-        )
-        .await
-        .unwrap_err(),
-        DynamicRegistrationDependencyError::Unavailable
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::has_client_secret(
-            &repository,
-            template.tenant_id,
-            template.id,
-        )
-        .await
-        .unwrap_err(),
-        DynamicRegistrationDependencyError::Unavailable
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            template.tenant_id,
-            template.id,
         )
         .await
         .unwrap_err(),
@@ -1062,9 +965,10 @@ async fn replace_registration_returns_the_committed_row() {
     // The credential bindings changed through the same single statement.
     assert_eq!(
         repository
-            .client_secret_salt(client.tenant_id, client.id)
+            .authentication_snapshot(client.tenant_id, &client.client_id)
             .await
-            .unwrap(),
+            .unwrap()
+            .and_then(|(_, salt, _)| salt),
         Some("dc01-salt".to_owned())
     );
     let state = client_credential_state(&pool, client.id).await;
