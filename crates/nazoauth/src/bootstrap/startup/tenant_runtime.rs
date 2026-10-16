@@ -4,7 +4,7 @@
 //! request only resolves its host in the immutable index owned here.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -45,7 +45,7 @@ pub(in crate::bootstrap) struct TenantRuntime {
     // `None` is solely a control-plane test runtime. Production construction
     // is private and always supplies an assembled HTTP graph.
     assembly: Option<Arc<ServiceAssembly>>,
-    lifecycle: Arc<Mutex<TenantRuntimeLifecycle>>,
+    lifecycle: Mutex<TenantRuntimeLifecycle>,
 }
 
 #[derive(Default)]
@@ -69,15 +69,11 @@ impl Drop for TenantRuntimeLifecycle {
 }
 
 impl TenantRuntime {
-    fn new(
-        binding: TenantDirectoryBinding,
-        assembly: Arc<ServiceAssembly>,
-        lifecycle: Arc<Mutex<TenantRuntimeLifecycle>>,
-    ) -> Self {
+    fn new(binding: TenantDirectoryBinding, assembly: Arc<ServiceAssembly>) -> Self {
         Self {
             binding,
             assembly: Some(assembly),
-            lifecycle,
+            lifecycle: Mutex::new(TenantRuntimeLifecycle::default()),
         }
     }
 
@@ -203,7 +199,7 @@ impl TenantRuntimeRegistry {
     }
 
     pub(in crate::bootstrap) fn revision(&self) -> u64 {
-        self.load().revision
+        self.current.load().revision
     }
 
     pub(crate) fn contains_tenant(&self, tenant_id: nazo_identity::TenantId) -> bool {
@@ -213,12 +209,8 @@ impl TenantRuntimeRegistry {
             .any(|runtime| runtime.binding.tenant.tenant_id == tenant_id)
     }
 
-    fn replace(&self, next: TenantHostIndex) -> Arc<TenantHostIndex> {
-        // Refreshes are serialized by TenantRuntimeRefresher. Loading before
-        // the store lets retirement act only on old, displaced graphs.
-        let previous = self.load();
-        self.current.store(Arc::new(next));
-        previous
+    fn replace(&self, next: Arc<TenantHostIndex>) -> Arc<TenantHostIndex> {
+        self.current.swap(next)
     }
 }
 
@@ -230,44 +222,21 @@ pub(super) type TenantRuntimeBuildFuture<'a> =
 /// makes the all-or-nothing swap independently testable without weakening the
 /// production construction path.
 pub(super) trait TenantRuntimeBuildPort: Send + Sync {
-    fn build(
-        &self,
-        binding: &TenantDirectoryBinding,
-        previous_same_tenant: Option<Arc<TenantRuntime>>,
-    ) -> TenantRuntimeBuildFuture<'_>;
+    fn build(&self, binding: &TenantDirectoryBinding) -> TenantRuntimeBuildFuture<'_>;
 }
 
-#[derive(Clone)]
 pub(super) struct TenantRuntimeBuilder {
-    port: Arc<dyn TenantRuntimeBuildPort>,
-}
-
-impl TenantRuntimeBuilder {
-    pub(super) fn production(process: Arc<ProcessRuntime>) -> Self {
-        Self {
-            port: Arc::new(ServiceAssemblyTenantRuntimeBuilder { process }),
-        }
-    }
-
-    async fn build(
-        &self,
-        binding: &TenantDirectoryBinding,
-        previous_same_tenant: Option<Arc<TenantRuntime>>,
-    ) -> anyhow::Result<Arc<TenantRuntime>> {
-        self.port.build(binding, previous_same_tenant).await
-    }
-}
-
-struct ServiceAssemblyTenantRuntimeBuilder {
     process: Arc<ProcessRuntime>,
 }
 
-impl TenantRuntimeBuildPort for ServiceAssemblyTenantRuntimeBuilder {
-    fn build(
-        &self,
-        binding: &TenantDirectoryBinding,
-        _previous_same_tenant: Option<Arc<TenantRuntime>>,
-    ) -> TenantRuntimeBuildFuture<'_> {
+impl TenantRuntimeBuilder {
+    pub(super) fn production(process: Arc<ProcessRuntime>) -> Arc<dyn TenantRuntimeBuildPort> {
+        Arc::new(Self { process })
+    }
+}
+
+impl TenantRuntimeBuildPort for TenantRuntimeBuilder {
+    fn build(&self, binding: &TenantDirectoryBinding) -> TenantRuntimeBuildFuture<'_> {
         let process = self.process.clone();
         let binding = binding.clone();
         Box::pin(async move {
@@ -310,7 +279,6 @@ async fn build_service_runtime(
         wrapping_keys,
     )
     .await?;
-    let lifecycle = Arc::new(Mutex::new(TenantRuntimeLifecycle::default()));
     let avatar_storage = process
         .avatar_object_store
         .provider()
@@ -362,7 +330,7 @@ async fn build_service_runtime(
         keyset,
     };
     let assembly = Arc::new(services::build(startup).await?);
-    Ok(Arc::new(TenantRuntime::new(binding, assembly, lifecycle)))
+    Ok(Arc::new(TenantRuntime::new(binding, assembly)))
 }
 
 /// Observable result for one refresh attempt.
@@ -374,8 +342,8 @@ pub(super) enum TenantDirectoryRefreshOutcome {
 
 #[derive(Default)]
 struct TenantDirectoryRefreshState {
-    // Cache-applied revisions deliberately do not advance this fence. The DB
-    // reconciler must eventually read the authoritative payload for them.
+    // The last authoritative payload is reused to repair a missing cache
+    // when the database revision has not changed.
     last_database_snapshot: Option<Arc<TenantDirectorySnapshot>>,
     // A cache revision proven ahead of PostgreSQL is ignored until the DB
     // catches up, rather than being re-applied every one-second cache tick.
@@ -388,7 +356,7 @@ pub(super) struct TenantRuntimeRefresher {
     registry: TenantRuntimeRegistry,
     directory: Arc<dyn nazo_persistence::TenantDirectoryStore>,
     cache: Arc<dyn nazo_oauth_server::ports::transient_state::TenantDirectoryCachePort>,
-    builder: TenantRuntimeBuilder,
+    builder: Arc<dyn TenantRuntimeBuildPort>,
     gate: tokio::sync::Mutex<()>,
     state: Mutex<TenantDirectoryRefreshState>,
 }
@@ -398,7 +366,7 @@ impl TenantRuntimeRefresher {
         registry: TenantRuntimeRegistry,
         directory: Arc<dyn nazo_persistence::TenantDirectoryStore>,
         cache: Arc<dyn nazo_oauth_server::ports::transient_state::TenantDirectoryCachePort>,
-        builder: TenantRuntimeBuilder,
+        builder: Arc<dyn TenantRuntimeBuildPort>,
     ) -> Self {
         Self {
             registry,
@@ -471,7 +439,7 @@ impl TenantRuntimeRefresher {
     /// only remaining registry mutation during shutdown.
     pub(super) async fn shutdown(&self) {
         let _guard = self.gate.lock().await;
-        let previous = self.registry.replace(TenantHostIndex::empty());
+        let previous = self.registry.replace(Arc::new(TenantHostIndex::empty()));
         for runtime in previous.by_host.values() {
             runtime.stop_lifecycle().await;
         }
@@ -496,8 +464,7 @@ impl TenantRuntimeRefresher {
             && revision == snapshot.revision
             && revision == local_revision
         {
-            // Only a database-confirmed payload may repair the cache. A
-            // cache-applied generation still takes the full authoritative read.
+            // Only a database-confirmed payload may repair the cache.
             if repair_cache && let Err(error) = self.cache.publish_authoritative(&snapshot).await {
                 tracing::warn!(%error, "tenant directory cache repair failed; retaining authoritative local snapshot");
             }
@@ -561,10 +528,7 @@ impl TenantRuntimeRefresher {
             let runtime = match existing.get(&binding.tenant.tenant_id) {
                 Some(runtime) if runtime.binding == *binding => runtime.clone(),
                 _ => {
-                    let runtime = self
-                        .builder
-                        .build(binding, existing.get(&binding.tenant.tenant_id).cloned())
-                        .await?;
+                    let runtime = self.builder.build(binding).await?;
                     newly_built.push(runtime.clone());
                     runtime
                 }
@@ -584,36 +548,25 @@ impl TenantRuntimeRefresher {
     ) -> anyhow::Result<TenantDirectoryRefreshOutcome> {
         // Candidate lifecycles have no request visibility yet. If any start
         // fails, retire the already-started candidates and retain last-good.
-        let mut started: Vec<Arc<TenantRuntime>> = Vec::with_capacity(newly_built.len());
-        for runtime in &newly_built {
+        for (started, runtime) in newly_built.iter().enumerate() {
             if let Err(error) = runtime.start_lifecycle().await {
-                for started_runtime in started {
+                for started_runtime in &newly_built[..started] {
                     started_runtime.stop_lifecycle().await;
                 }
                 return Err(error);
             }
-            started.push(runtime.clone());
         }
 
-        let previous = self.registry.replace(TenantHostIndex { revision, by_host });
-        let retired = {
-            let next = self.registry.load();
-            // A retained runtime also retains its lifecycle. One pointer set
-            // covers both retained graphs and replacements sharing a lifecycle.
-            let retained_lifecycles = next
+        let next = Arc::new(TenantHostIndex { revision, by_host });
+        let previous = self.registry.replace(next.clone());
+        for runtime in previous.by_host.values() {
+            let retained = next
                 .by_host
-                .values()
-                .map(|runtime| Arc::as_ptr(&runtime.lifecycle))
-                .collect::<HashSet<_>>();
-            previous
-                .by_host
-                .values()
-                .filter(|runtime| !retained_lifecycles.contains(&Arc::as_ptr(&runtime.lifecycle)))
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-        for runtime in retired {
-            runtime.stop_lifecycle().await;
+                .get(&runtime.binding.external_host)
+                .is_some_and(|next_runtime| Arc::ptr_eq(runtime, next_runtime));
+            if !retained {
+                runtime.stop_lifecycle().await;
+            }
         }
         Ok(TenantDirectoryRefreshOutcome::Applied { revision })
     }

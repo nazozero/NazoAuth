@@ -20,20 +20,8 @@ impl TenantRuntime {
         Arc::new(Self {
             binding,
             assembly: None,
-            lifecycle: Arc::new(Mutex::new(TenantRuntimeLifecycle::default())),
+            lifecycle: Mutex::new(TenantRuntimeLifecycle::default()),
         })
-    }
-
-    fn for_test_reusing(binding: TenantDirectoryBinding, previous: &Arc<Self>) -> Arc<Self> {
-        Arc::new(Self {
-            binding,
-            assembly: None,
-            lifecycle: previous.lifecycle.clone(),
-        })
-    }
-
-    fn shares_lifecycle_with(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.lifecycle, &other.lifecycle)
     }
 }
 
@@ -200,7 +188,6 @@ impl TenantDirectoryStore for RecordingDirectory {
 
 struct RecordingBuilder {
     builds: AtomicUsize,
-    builds_with_previous: AtomicUsize,
     failing_host: Mutex<Option<String>>,
 }
 
@@ -208,7 +195,6 @@ impl RecordingBuilder {
     fn new() -> Self {
         Self {
             builds: AtomicUsize::new(0),
-            builds_with_previous: AtomicUsize::new(0),
             failing_host: Mutex::new(None),
         }
     }
@@ -217,25 +203,14 @@ impl RecordingBuilder {
         self.builds.load(Ordering::SeqCst)
     }
 
-    fn build_with_previous_count(&self) -> usize {
-        self.builds_with_previous.load(Ordering::SeqCst)
-    }
-
     fn fail_for(&self, host: &str) {
         *self.failing_host.lock().expect("builder failure lock") = Some(host.to_owned());
     }
 }
 
 impl TenantRuntimeBuildPort for RecordingBuilder {
-    fn build(
-        &self,
-        binding: &TenantDirectoryBinding,
-        previous_same_tenant: Option<Arc<TenantRuntime>>,
-    ) -> TenantRuntimeBuildFuture<'_> {
+    fn build(&self, binding: &TenantDirectoryBinding) -> TenantRuntimeBuildFuture<'_> {
         self.builds.fetch_add(1, Ordering::SeqCst);
-        if previous_same_tenant.is_some() {
-            self.builds_with_previous.fetch_add(1, Ordering::SeqCst);
-        }
         let binding = binding.clone();
         let should_fail = self
             .failing_host
@@ -247,10 +222,7 @@ impl TenantRuntimeBuildPort for RecordingBuilder {
             if should_fail {
                 anyhow::bail!("scripted build failure for {}", binding.external_host);
             }
-            Ok(match previous_same_tenant {
-                Some(previous) => TenantRuntime::for_test_reusing(binding, &previous),
-                None => TenantRuntime::for_test(binding),
-            })
+            Ok(TenantRuntime::for_test(binding))
         })
     }
 }
@@ -281,9 +253,7 @@ impl Fixture {
             registry.clone(),
             directory.clone(),
             cache.clone(),
-            TenantRuntimeBuilder {
-                port: builder.clone(),
-            },
+            builder.clone(),
         );
         let expected_revision = initial.revision;
         assert_eq!(
@@ -522,7 +492,6 @@ async fn tenant_runtime_revision_rebuilds_only_the_changed_tenant() {
     assert!(Arc::ptr_eq(&previous_b, &current_b));
     assert_eq!(current_a.binding, reloaded_a);
     assert_eq!(fixture.builder.build_count(), 3);
-    assert_eq!(fixture.builder.build_with_previous_count(), 1);
 }
 
 #[tokio::test]
@@ -573,8 +542,6 @@ async fn database_payload_is_used_instead_of_same_revision_cache_payload() {
         .expect("authoritative tenant A is routable");
     assert_eq!(authoritative_runtime.binding, authoritative_a);
     assert!(Arc::ptr_eq(&cache_runtime, &authoritative_runtime));
-    assert!(authoritative_runtime.shares_lifecycle_with(&cache_runtime));
-    assert_eq!(fixture.builder.build_with_previous_count(), 1);
     assert_eq!(fixture.directory.revision_read_count(), 2);
     assert_eq!(fixture.directory.snapshot_read_count(), 1);
     assert_eq!(fixture.cache.stored().last(), Some(&authoritative));
@@ -904,8 +871,6 @@ async fn in_flight_request_arc_keeps_old_runtime_after_atomic_update() {
         .expect("updated tenant A is routable");
 
     assert!(!Arc::ptr_eq(&in_flight, &next_request));
-    assert_eq!(fixture.builder.build_with_previous_count(), 1);
-    assert!(next_request.shares_lifecycle_with(&in_flight));
     assert_eq!(in_flight.binding, tenant_a);
     assert_eq!(next_request.binding, changed_a);
 }
@@ -989,7 +954,7 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
         registry_one.clone(),
         shared_directory.clone(),
         shared_cache.clone(),
-        TenantRuntimeBuilder { port: builder_one },
+        builder_one,
     );
     refresher_one
         .install_initial(snapshot(1, vec![tenant_a.clone()]))
@@ -1002,7 +967,7 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
         registry_two.clone(),
         shared_directory.clone(),
         shared_cache.clone(),
-        TenantRuntimeBuilder { port: builder_two },
+        builder_two,
     );
     refresher_two
         .install_initial(snapshot(1, vec![tenant_a]))
@@ -1238,7 +1203,7 @@ async fn publication_stops_only_displaced_lifecycles() {
             .lock()
             .unwrap()
             .runtime_module_reconciler
-            .is_some()
+            .is_none()
     );
     assert!(
         removed
