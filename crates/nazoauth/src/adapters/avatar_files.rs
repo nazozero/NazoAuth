@@ -30,16 +30,15 @@ pub(crate) struct LocalAvatarStorage {
 }
 
 pub(crate) struct LocalAvatarMutation {
-    root: Arc<PathBuf>,
     user_id: UserId,
     candidate_version: Option<String>,
     previous_version: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
-struct AvatarMetadata {
-    content_type: String,
-    version: String,
+struct AvatarMetadata<S = String> {
+    content_type: S,
+    version: S,
 }
 
 impl LocalAvatarStorage {
@@ -67,28 +66,18 @@ impl LocalAvatarStorage {
     }
 
     fn mutation(
-        &self,
         user_id: UserId,
         candidate_version: Option<String>,
         previous_version: Option<&str>,
     ) -> LocalAvatarMutation {
         LocalAvatarMutation {
-            root: Arc::clone(&self.root),
             user_id,
             candidate_version,
             previous_version: previous_version.map(str::to_owned),
         }
     }
 
-    fn check_mutation(&self, mutation: &LocalAvatarMutation) -> Result<(), AvatarStorageError> {
-        if self.root != mutation.root {
-            return Err(AvatarStorageError::InvalidState);
-        }
-        Ok(())
-    }
-
     async fn check_user_dir(&self, user_id: UserId) -> Result<PathBuf, AvatarStorageError> {
-        check_directory_path(&self.root).await?;
         let user_dir = self.user_dir(user_id);
         check_directory_path(&user_dir).await?;
         Ok(user_dir)
@@ -159,9 +148,6 @@ impl LocalAvatarStorage {
         user_id: UserId,
         version: &str,
     ) -> Result<(), AvatarStorageError> {
-        if !canonical_version(version) {
-            return Err(AvatarStorageError::InvalidState);
-        }
         let user_dir = self.check_user_dir(user_id).await?;
         let versions = user_dir.join(VERSIONS_DIRECTORY);
         check_directory_path(&versions).await?;
@@ -272,8 +258,8 @@ impl AvatarStoragePort for LocalAvatarStorage {
                 restrict_directory(&candidate).await?;
                 write_new_file(&candidate.join(AVATAR_FILE_NAME), &avatar.bytes).await?;
                 let metadata = serde_json::to_vec(&AvatarMetadata {
-                    content_type: avatar.content_type.as_str().to_owned(),
-                    version: avatar.version.clone(),
+                    content_type: avatar.content_type.as_str(),
+                    version: avatar.version.as_str(),
                 })
                 .map_err(|_| AvatarStorageError::InvalidState)?;
                 write_new_file(&candidate.join(METADATA_FILE_NAME), &metadata).await?;
@@ -299,7 +285,11 @@ impl AvatarStoragePort for LocalAvatarStorage {
                 let _ = self.remove_candidate(user_id, &avatar.version).await;
                 return Err(as_preparation_failure(error));
             }
-            Ok(self.mutation(user_id, Some(avatar.version), expected_version))
+            Ok(Self::mutation(
+                user_id,
+                Some(avatar.version),
+                expected_version,
+            ))
         })
     }
 
@@ -307,16 +297,14 @@ impl AvatarStoragePort for LocalAvatarStorage {
         &'a self,
         user_id: UserId,
         expected_version: Option<&'a str>,
-        _revision: &'a str,
     ) -> AvatarStorageFuture<'a, Self::Mutation> {
         // The database reference is the sole authority. Deletion preparation
         // performs no filesystem mutation or active-version consistency CAS.
-        Box::pin(async move { Ok(self.mutation(user_id, None, expected_version)) })
+        Box::pin(async move { Ok(Self::mutation(user_id, None, expected_version)) })
     }
 
     fn commit<'a>(&'a self, mutation: &'a Self::Mutation) -> AvatarStorageFuture<'a, ()> {
         Box::pin(async move {
-            self.check_mutation(mutation)?;
             if let Some(previous) = mutation.previous_version.as_deref() {
                 self.retire_version(mutation.user_id, previous).await;
             }
@@ -328,7 +316,6 @@ impl AvatarStoragePort for LocalAvatarStorage {
 
     fn rollback<'a>(&'a self, mutation: &'a Self::Mutation) -> AvatarStorageFuture<'a, ()> {
         Box::pin(async move {
-            self.check_mutation(mutation)?;
             if let Some(candidate) = mutation.candidate_version.as_deref() {
                 self.remove_candidate(mutation.user_id, candidate).await?;
             }
@@ -373,7 +360,8 @@ impl AvatarStoragePort for LocalAvatarStorage {
 }
 
 fn canonical_version(version: &str) -> bool {
-    Uuid::parse_str(version).is_ok_and(|uuid| uuid.to_string() == version)
+    Uuid::parse_str(version)
+        .is_ok_and(|uuid| uuid.hyphenated().encode_lower(&mut Uuid::encode_buffer()) == version)
 }
 
 async fn legacy_backups(user_dir: &Path) -> Result<Vec<(PathBuf, PathBuf)>, AvatarStorageError> {
@@ -406,7 +394,7 @@ async fn check_directory_path(path: &Path) -> Result<(), AvatarStorageError> {
     if !path.is_absolute() {
         return Err(AvatarStorageError::InvalidState);
     }
-    for component in path.ancestors() {
+    for component in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
         let metadata = fs::symlink_metadata(component)
             .await
             .map_err(missing_or_unavailable)?;

@@ -613,10 +613,9 @@ where
             .map(avatar_url_version)
             .transpose()
             .map_err(|()| DeleteAvatarError::InvalidCurrentReference)?;
-        let revision = Uuid::now_v7().to_string();
         let mutation = self
             .storage
-            .begin_delete(account.user_id(), expected_version, &revision)
+            .begin_delete(account.user_id(), expected_version)
             .await
             .map_err(map_delete_storage_error)?;
         let updated = self
