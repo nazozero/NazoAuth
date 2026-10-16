@@ -147,7 +147,7 @@ async fn unavailable_client_lookup_has_only_error_json() {
 fn presentation_lookup_accepts_exactly_one_visible_ascii_client_id() {
     assert_eq!(
         presentation_client_id("client_id=client-1"),
-        Some("client-1".to_owned())
+        Some("client-1".into())
     );
     for query in [
         "",

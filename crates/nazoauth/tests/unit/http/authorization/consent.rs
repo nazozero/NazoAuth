@@ -12,7 +12,7 @@ use crate::test_support::valkey::valkey_set_ex;
 
 use chrono::{Duration, Utc};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
     raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())

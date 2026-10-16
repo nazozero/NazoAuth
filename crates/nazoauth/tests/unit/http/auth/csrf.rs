@@ -1,6 +1,6 @@
 use super::*;
 use actix_web::http::StatusCode;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn config() -> CsrfHttpConfig {
     CsrfHttpConfig::new("nazo_csrf", 900, true)

@@ -6,24 +6,36 @@ use nazo_auth::ConsentPayload;
 use nazo_http_actix::{cookie_value, json_response, oauth_endpoint_error_response};
 use nazo_identity::SessionId;
 use nazo_oauth_server::authorization::AuthorizationApplication;
-use serde_json::json;
+use serde::Serialize;
 use std::collections::HashMap;
 
 use crate::http::authorization::AuthorizationEndpoint;
 use crate::http::sessions::SessionHttpConfig;
 
 fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) -> HttpResponse {
-    json_response(json!({
-        "request_id": payload.request_id,
-        "client_id": payload.client_id,
-        "client_name": payload.client_name,
-        "redirect_uri": payload.redirect_uri,
-        "scopes": payload.scopes,
-        "userinfo_claims": payload.userinfo_claim_requests.names(),
-        "id_token_claims": payload.id_token_claim_requests.names(),
-        "authorization_details": payload.authorization_details,
-        "csrf_token": csrf_token
-    }))
+    #[derive(Serialize)]
+    struct ConsentPage<'a> {
+        request_id: String,
+        client_id: String,
+        client_name: String,
+        redirect_uri: String,
+        scopes: Vec<String>,
+        userinfo_claims: Vec<&'a str>,
+        id_token_claims: Vec<&'a str>,
+        authorization_details: serde_json::Value,
+        csrf_token: Option<String>,
+    }
+    json_response(ConsentPage {
+        request_id: payload.request_id,
+        client_id: payload.client_id,
+        client_name: payload.client_name,
+        redirect_uri: payload.redirect_uri,
+        scopes: payload.scopes,
+        userinfo_claims: payload.userinfo_claim_requests.names(),
+        id_token_claims: payload.id_token_claim_requests.names(),
+        authorization_details: payload.authorization_details,
+        csrf_token,
+    })
 }
 
 pub(crate) async fn authorize_consent(

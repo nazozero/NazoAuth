@@ -6,6 +6,7 @@ use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use nazo_http_actix::{json_response_no_store, json_response_status_no_store};
 use nazo_oauth_server::authorization::presentation::{ClientPresentation, ClientPresentationError};
+use std::borrow::Cow;
 
 use crate::http::authorization::AuthorizationEndpoint;
 
@@ -22,7 +23,7 @@ pub(crate) async fn authorize_client_presentation(
     client_presentation_response(result)
 }
 
-fn presentation_client_id(query: &str) -> Option<String> {
+fn presentation_client_id(query: &str) -> Option<Cow<'_, str>> {
     let mut pairs = url::form_urlencoded::parse(query.as_bytes());
     let (name, client_id) = pairs.next()?;
     if name != "client_id" || pairs.next().is_some() {
@@ -31,7 +32,7 @@ fn presentation_client_id(query: &str) -> Option<String> {
     (!client_id.is_empty()
         && client_id.len() <= MAX_CLIENT_ID_BYTES
         && client_id.bytes().all(|byte| (0x21..=0x7e).contains(&byte)))
-    .then(|| client_id.into_owned())
+    .then_some(client_id)
 }
 
 fn client_presentation_response(
