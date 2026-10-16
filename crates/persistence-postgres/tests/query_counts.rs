@@ -2940,3 +2940,48 @@ async fn registration_authentication_reads_client_and_secret_metadata_once() {
     );
     cleanup_seed(&database_url, tenant, &seed).await;
 }
+
+#[tokio::test]
+async fn access_request_creation_uses_the_foreign_key_without_a_preflight_read() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let user_id = UserId::new(Uuid::now_v7()).unwrap();
+    let mut connection = connect(&database_url).await;
+    seed_user(&mut connection, tenant, user_id.as_uuid()).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = AccessRequestRepository::new(pool);
+    let new_request = |user_id| nazo_identity::NewAccessRequest {
+        tenant_id: tenant.tenant_id,
+        user_id,
+        site_name: "Single insert".to_owned(),
+        site_url: "https://single.example.test".to_owned(),
+        request_description: "Query count".to_owned(),
+    };
+    let (result, delta) = measure(&counter, repository.create(new_request(user_id))).await;
+    let created = result.unwrap();
+    assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+    repository
+        .cancel_pending(tenant.tenant_id, user_id, created.id)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<sql_types::Uuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let (result, delta) = measure(&counter, repository.create(new_request(user_id))).await;
+    assert_eq!(
+        result.unwrap_err(),
+        nazo_identity::ports::RepositoryError::NotFound
+    );
+    // RETURNING reports FinishQuery when the stream opens; an FK error can
+    // arrive while consuming it. Count the statement, not its event category.
+    assert_eq!(delta.data_queries + delta.failed_queries, 1);
+    assert_no_transaction(delta);
+}

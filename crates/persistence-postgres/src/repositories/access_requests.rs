@@ -152,18 +152,6 @@ impl AccessRequestRepository {
         request: NewAccessRequest,
     ) -> Result<AccessRequest, RepositoryError> {
         let mut connection = self.connection().await?;
-        let user_belongs_to_tenant = users::table
-            .find(request.user_id.as_uuid())
-            .filter(users::tenant_id.eq(request.tenant_id.as_uuid()))
-            .select(users::id)
-            .first::<Uuid>(&mut connection)
-            .await
-            .optional()
-            .map_err(map_error)?
-            .is_some();
-        if !user_belongs_to_tenant {
-            return Err(RepositoryError::NotFound);
-        }
         diesel::insert_into(client_access_requests::table)
             .values((
                 client_access_requests::tenant_id.eq(request.tenant_id.as_uuid()),
@@ -176,7 +164,15 @@ impl AccessRequestRepository {
             .returning(user_record_selection!())
             .get_result::<AccessRequestRecord>(&mut connection)
             .await
-            .map_err(map_error)?
+            .map_err(|error| match error {
+                // The existing user/tenant foreign keys enforce membership at
+                // insertion, including a concurrent account deletion.
+                diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::ForeignKeyViolation,
+                    _,
+                ) => RepositoryError::NotFound,
+                other => map_error(other),
+            })?
             .try_into()
     }
 
@@ -204,9 +200,9 @@ impl AccessRequestRepository {
         if let Some(pattern) = &pattern {
             count_query = count_query.filter(
                 users::email
-                    .ilike(pattern.clone())
-                    .or(client_access_requests::site_name.ilike(pattern.clone()))
-                    .or(client_access_requests::site_url.ilike(pattern.clone())),
+                    .ilike(pattern)
+                    .or(client_access_requests::site_name.ilike(pattern))
+                    .or(client_access_requests::site_url.ilike(pattern)),
             );
         }
         let total = count_query
@@ -226,11 +222,11 @@ impl AccessRequestRepository {
         if let Some(status) = status {
             items_query = items_query.filter(client_access_requests::status.eq(status.code()));
         }
-        if let Some(pattern) = pattern {
+        if let Some(pattern) = &pattern {
             items_query = items_query.filter(
                 users::email
-                    .ilike(pattern.clone())
-                    .or(client_access_requests::site_name.ilike(pattern.clone()))
+                    .ilike(pattern)
+                    .or(client_access_requests::site_name.ilike(pattern))
                     .or(client_access_requests::site_url.ilike(pattern)),
             );
         }
