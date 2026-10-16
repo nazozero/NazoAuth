@@ -809,8 +809,16 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
         RepositoryError::Unavailable
     );
     assert_eq!(
-        repository.update_metadata(&template).await.unwrap_err(),
-        RepositoryError::Unavailable
+        nazo_auth::AdminClientRepositoryPort::update_with_required_audit(
+            &repository,
+            &template,
+            &template,
+            Uuid::now_v7(),
+            "fixture-source-ip-hash",
+        )
+        .await
+        .unwrap_err(),
+        nazo_auth::AdminClientPortError::Unavailable
     );
     assert_eq!(
         DynamicRegistrationClientStore::by_registration_access_token(
