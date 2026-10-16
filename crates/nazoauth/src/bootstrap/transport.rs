@@ -206,8 +206,8 @@ impl DirectTlsSnapshotStore {
         // tenant hosts through SANs or a wildcard. Rustls and the client still
         // validate that coverage. Requiring the process-start issuer list here
         // would turn a dynamic directory back into a restart-bound allowlist.
-        let server_name = server_name?;
-        nazo_identity::canonical_tenant_host(server_name).ok()?;
+        // Rustls supplies an already parsed DnsName from ClientHello.
+        server_name?;
         Some(Arc::clone(&self.current.load().server_key))
     }
 }
@@ -467,27 +467,25 @@ pub(super) fn load_client_verifier(
 ) -> anyhow::Result<Arc<dyn rustls::server::danger::ClientCertVerifier>> {
     let client_ca_bytes = read_bounded(client_ca, "TLS client CA bundle", false)?;
     let mut client_roots = RootCertStore::empty();
-    let client_ca_certificates = CertificateDer::pem_slice_iter(&client_ca_bytes)
-        .collect::<Result<Vec<_>, _>>()
-        .with_context(|| {
+    for certificate in CertificateDer::pem_slice_iter(&client_ca_bytes) {
+        let certificate = certificate.with_context(|| {
             format!(
                 "failed to parse TLS client CA bundle {}",
                 client_ca.display()
             )
         })?;
-    if client_ca_certificates.is_empty() {
-        anyhow::bail!(
-            "TLS client CA bundle {} contains no certificates",
-            client_ca.display()
-        );
-    }
-    for certificate in client_ca_certificates {
         client_roots.add(certificate).with_context(|| {
             format!(
                 "TLS client CA bundle {} contains an invalid certificate",
                 client_ca.display()
             )
         })?;
+    }
+    if client_roots.is_empty() {
+        anyhow::bail!(
+            "TLS client CA bundle {} contains no certificates",
+            client_ca.display()
+        );
     }
     WebPkiClientVerifier::builder_with_provider(Arc::new(client_roots), provider)
         .build()
@@ -524,7 +522,7 @@ fn validate_tls_server_names<'a>(
         )
     })?;
     for host in names {
-        let server_name = rustls::pki_types::ServerName::try_from(host.to_owned())
+        let server_name = rustls::pki_types::ServerName::try_from(host)
             .map_err(|error| anyhow::anyhow!("invalid TLS endpoint host {host}: {error}"))?;
         certificate
             .verify_is_valid_for_subject_name(&server_name)
