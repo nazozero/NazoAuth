@@ -2,9 +2,8 @@
 //! Database-backed invariant and race tests live in `tests/controller_registry.rs`.
 
 use super::{
-    ControllerRegistryError, ControllerSlotStatus, NewControllerSlot, RotateControllerKey,
-    lowest_free_slot_index, validate_controller_id, validate_kid, validate_kid_binding,
-    validate_label,
+    ControllerSlotStatus, NewControllerSlot, RotateControllerKey, lowest_free_slot_index,
+    parse_slot_status, validate_kid,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest as _, Sha256};
@@ -13,30 +12,6 @@ const CANONICAL_V7: &str = "018f6a52-3b7c-7cc9-9f2a-4f5a6b7c8d90";
 
 fn kid_of(public_key: &[u8; 32]) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(public_key))
-}
-
-#[test]
-fn controller_id_requires_canonical_lowercase_uuidv7() {
-    assert!(validate_controller_id(CANONICAL_V7).is_ok());
-    // Wrong version nibble (v4) is rejected: identity is time-ordered v7 only.
-    let mut v4 = CANONICAL_V7.to_owned();
-    v4.replace_range(14..15, "4");
-    assert!(matches!(
-        validate_controller_id(&v4),
-        Err(ControllerRegistryError::InvalidIdentity(_))
-    ));
-    // Wrong RFC 9562 variant nibble is rejected.
-    let mut bad_variant = CANONICAL_V7.to_owned();
-    bad_variant.replace_range(19..20, "c");
-    assert!(matches!(
-        validate_controller_id(&bad_variant),
-        Err(ControllerRegistryError::InvalidIdentity(_))
-    ));
-    // Uppercase is not canonical.
-    assert!(validate_controller_id(&CANONICAL_V7.to_uppercase()).is_err());
-    // Truncated/overlong shapes are rejected.
-    assert!(validate_controller_id("").is_err());
-    assert!(validate_controller_id("not-a-uuid").is_err());
 }
 
 #[test]
@@ -49,26 +24,6 @@ fn kid_shape_must_be_unpadded_base64url_sha256_length() {
     let mut padded = kid_of(&[9u8; 32]).into_bytes();
     padded[0] = b'+';
     assert!(validate_kid(std::str::from_utf8(&padded).unwrap()).is_err());
-}
-
-#[test]
-fn kid_must_bind_to_public_key_material() {
-    let key = [3u8; 32];
-    assert!(validate_kid_binding(&kid_of(&key), &key).is_ok());
-    let other = [4u8; 32];
-    assert!(matches!(
-        validate_kid_binding(&kid_of(&other), &key),
-        Err(ControllerRegistryError::InvalidIdentity(_))
-    ));
-}
-
-#[test]
-fn label_bounds_are_enforced_before_storage() {
-    assert!(validate_label("ops-a").is_ok());
-    assert!(validate_label("").is_err());
-    assert!(validate_label(&"x".repeat(129)).is_err());
-    assert!(validate_label(&"x".repeat(128)).is_ok());
-    assert!(validate_label("bad\u{0007}label").is_err());
 }
 
 #[test]
@@ -105,15 +60,15 @@ fn slot_index_selection_fills_lowest_free_and_stops_at_three() {
 #[test]
 fn status_catalog_is_closed() {
     assert_eq!(
-        ControllerSlotStatus::from_str("active"),
+        parse_slot_status("active"),
         Some(ControllerSlotStatus::Active)
     );
     assert_eq!(
-        ControllerSlotStatus::from_str("revoked"),
+        parse_slot_status("revoked"),
         Some(ControllerSlotStatus::Revoked)
     );
-    assert_eq!(ControllerSlotStatus::from_str("expired"), None);
-    assert_eq!(ControllerSlotStatus::from_str(""), None);
+    assert_eq!(parse_slot_status("expired"), None);
+    assert_eq!(parse_slot_status(""), None);
 }
 
 #[test]

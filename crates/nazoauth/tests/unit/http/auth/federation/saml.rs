@@ -1,3 +1,4 @@
+use super::super::tests::saml_gateway_signature;
 use super::*;
 use crate::settings::SamlGatewaySettings;
 
@@ -236,6 +237,38 @@ fn gateway_name_is_unsigned_and_must_remain_untrusted_metadata() {
     assert!(!valid_saml_gateway_assertion(
         &settings,
         &value,
+        "user@example.com"
+    ));
+}
+
+#[test]
+fn gateway_mac_preserves_wire_bytes_and_rejects_noncanonical_signatures() {
+    let settings = settings();
+    let now = Utc::now().timestamp();
+    let mut assertion = assertion(&settings, "subject", "user@example.com", now, now + 60);
+    let mut reference = HmacSha256::new_from_slice(settings.secret.as_bytes()).unwrap();
+    reference.update(
+        format!(
+            "gateway\nnazo\nsubject\nuser@example.com\n{}\n{}",
+            now,
+            now + 60
+        )
+        .as_bytes(),
+    );
+    assert_eq!(
+        assertion.signature,
+        URL_SAFE_NO_PAD.encode(reference.finalize().into_bytes())
+    );
+    assertion.signature.push('=');
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &assertion,
+        "user@example.com"
+    ));
+    assertion.signature = URL_SAFE_NO_PAD.encode([0; 31]);
+    assert!(!valid_saml_gateway_assertion(
+        &settings,
+        &assertion,
         "user@example.com"
     ));
 }

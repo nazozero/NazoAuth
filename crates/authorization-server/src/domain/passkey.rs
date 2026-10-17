@@ -122,16 +122,6 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
         })
     }
 
-    fn list(&self, context: PasskeyProfileContext) -> PasskeyFuture<'_, Vec<PasskeyCredential>> {
-        Box::pin(async move {
-            let account = self.current_account(&context).await?;
-            self.passkeys
-                .list(&account)
-                .await
-                .map_err(Self::profile_error)
-        })
-    }
-
     fn list_summaries(
         &self,
         context: PasskeyProfileContext,

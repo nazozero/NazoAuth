@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{AccessRequest, NewAccessRequest, TenantId, UserId};
 
-use super::common::{RepositoryError, RepositoryFuture};
+use super::common::RepositoryFuture;
 
 pub trait GrantSummaryRepositoryPort: Send + Sync {
     fn authorized_client_count(
@@ -46,18 +46,6 @@ pub trait AccessRequestRepositoryPort: Send + Sync {
     /// Unavailable preserves the delivery for a later verified retry.
     fn approved_delivery_with_required_audit_matches<'a>(
         &'a self,
-        _tenant_id: TenantId,
-        _user_id: UserId,
-        _request_id: Uuid,
-        _approved_client_id: Uuid,
-        _client_id: &'a str,
-        _secret_binding: Option<&'a str>,
-    ) -> RepositoryFuture<'a, bool> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
-
-    fn approved_delivery_matches<'a>(
-        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
         request_id: Uuid,
@@ -76,7 +64,8 @@ pub struct DeliveryStage {
     pub value: Value,
 }
 
-/// A snapshot whose opaque version must be compared by every mutation.
+/// An unchanged snapshot returned by stage/load. Mutations compare its opaque
+/// version; after successful consumption the caller owns its disclosed value.
 #[derive(Clone, PartialEq)]
 pub struct DeliveryRecord {
     pub value: Value,
@@ -99,9 +88,9 @@ pub enum DeliveryPublish {
     MissingOrChanged,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeliveryConsume {
-    Consumed(Value),
+    Consumed,
     MissingOrChanged,
 }
 
@@ -144,6 +133,8 @@ pub trait DeliveryStorePort: Send + Sync {
         expected: &'a DeliveryRecord,
     ) -> RepositoryFuture<'a, bool>;
 
+    /// Consume this exact committed snapshot once. Success authorizes disclosure
+    /// of `expected.value`; changed, expired and missing records are not consumed.
     fn consume<'a>(
         &'a self,
         user_id: UserId,

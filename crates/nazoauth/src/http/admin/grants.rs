@@ -11,8 +11,8 @@ use actix_web::{HttpRequest, HttpResponse};
 use nazo_auth::{AdminGrantRepositoryPort, AdminGrantRevokeError, AdminGrantView};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 // 授权列表与撤销逻辑只依赖授权表和 refresh token 撤销。
@@ -30,9 +30,9 @@ pub(crate) async fn admin_grants(
     let (page, page_size, offset) = pagination(&q);
     let page_result = match grants
         .page(
-            admin.tenant().tenant_id.as_uuid(),
+            admin.tenant.tenant_id.as_uuid(),
             i64::from(page_size),
-            i64::from(offset),
+            offset,
         )
         .await
     {
@@ -55,20 +55,18 @@ fn grants_list_response(
     total: i64,
     rows: Vec<AdminGrantView>,
 ) -> HttpResponse {
-    let items: Vec<Value> = rows.into_iter().map(grant_json).collect();
-    json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
-}
-
-fn grant_json(row: AdminGrantView) -> Value {
-    json!({
-        "user_id": row.user_id,
-        "email": row.email,
-        "client_id": row.client_id,
-        "client_name": row.client_name,
-        "last_authorized_at": row.last_authorized_at,
-        "authorization_count": row.authorization_count,
-        "last_scopes": row.last_scopes,
-        "last_authorization_details": row.last_authorization_details
+    #[derive(Serialize)]
+    struct GrantList {
+        total: i64,
+        page: i32,
+        page_size: i32,
+        items: Vec<AdminGrantView>,
+    }
+    json_response(GrantList {
+        total,
+        page,
+        page_size,
+        items: rows,
     })
 }
 
@@ -111,7 +109,7 @@ pub(crate) async fn admin_revoke_grant(
     }
     let revoked = match grants
         .revoke_by_client_id(
-            admin.tenant().tenant_id.as_uuid(),
+            admin.tenant.tenant_id.as_uuid(),
             user_id,
             &payload.client_id,
             admin.id(),

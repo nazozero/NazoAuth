@@ -6,7 +6,7 @@ use actix_web::{
     http::{Method, StatusCode},
     test, web,
 };
-use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile};
 use nazo_oauth_server::contracts::metadata::{
     MetadataEndpointConfig, MetadataSnapshot, MetadataSnapshotSource,
 };
@@ -17,18 +17,24 @@ use super::*;
 
 struct TestSnapshots {
     calls: AtomicUsize,
+    module_calls: AtomicUsize,
     jwks_calls: AtomicUsize,
 }
 
 impl MetadataSnapshotSource for TestSnapshots {
+    fn active_modules(&self) -> Arc<ActiveModuleSnapshot> {
+        self.module_calls.fetch_add(1, Ordering::Relaxed);
+        Arc::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(7),
+            accepting: [ModuleId::Ciba].into_iter().collect(),
+            draining: BTreeSet::new(),
+        })
+    }
+
     fn snapshot(&self) -> MetadataSnapshot {
         self.calls.fetch_add(1, Ordering::Relaxed);
         MetadataSnapshot {
-            active_modules: Arc::new(ActiveModuleSnapshot {
-                revision: ModuleRevision::new(7),
-                accepting: [ModuleId::Ciba].into_iter().collect(),
-                draining: BTreeSet::new(),
-            }),
+            active_modules: self.active_modules(),
             active_signing_algorithms: vec!["RS256"],
             id_token_signing_algorithms: vec!["RS256", "PS256"],
             response_signing_algorithms: vec!["PS256"],
@@ -49,7 +55,6 @@ fn handles(source: Arc<TestSnapshots>) -> MetadataHandles {
             mtls_enabled: false,
             authorization_server_profile: MetadataAuthorizationServerProfile::Oauth2Baseline,
             ciba_profile: CibaMetadataProfile::FapiCiba,
-            subject_type: MetadataSubjectType::Public,
             pairwise_subject_enabled: false,
             protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
             additional_scopes_supported: vec!["orders:read".to_owned()],
@@ -64,6 +69,7 @@ fn handles(source: Arc<TestSnapshots>) -> MetadataHandles {
 async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
     let source = Arc::new(TestSnapshots {
         calls: AtomicUsize::new(0),
+        module_calls: AtomicUsize::new(0),
         jwks_calls: AtomicUsize::new(0),
     });
     let app = test::init_service(
@@ -146,7 +152,8 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
         );
     }
 
-    assert_eq!(source.calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+    assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
     assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 0);
     let response = test::call_service(
         &app,
@@ -163,7 +170,8 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
     );
     let body: Value = test::read_body_json(response).await;
     assert_eq!(body["keys"][0]["kid"], "current");
-    assert_eq!(source.calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+    assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
     assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
 
     for (path, expected_status) in [
@@ -194,6 +202,7 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
             assert_eq!(response.status(), expected_status, "{method} {path}");
         }
     }
-    assert_eq!(source.calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+    assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
     assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
 }

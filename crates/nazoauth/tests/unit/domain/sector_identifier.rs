@@ -153,9 +153,8 @@ fn block_literal_private_hosts() {
 }
 
 #[test]
-fn parse_sector_identifier_document_accepts_json_content_type_with_parameters() {
+fn parse_sector_identifier_document_accepts_uri_array() {
     let uris = parse_sector_identifier_document(
-        "application/json; charset=utf-8",
         br#"["https://client.example/callback","https://client.example/alt"]"#,
     )
     .expect("valid sector identifier document should parse");
@@ -170,33 +169,8 @@ fn parse_sector_identifier_document_accepts_json_content_type_with_parameters() 
 }
 
 #[test]
-fn parse_sector_identifier_document_rejects_non_json_content_type() {
-    let err = parse_sector_identifier_document("text/plain", br#"[]"#)
-        .expect_err("sector identifier document must be JSON");
-
-    assert!(matches!(err, SectorIdentifierError::InvalidContentType));
-}
-
-#[test]
-fn parse_sector_identifier_document_rejects_jsonp_content_type() {
-    let err = parse_sector_identifier_document("application/jsonp", br#"[]"#)
-        .expect_err("sector identifier documents must use application/json");
-
-    assert!(matches!(err, SectorIdentifierError::InvalidContentType));
-}
-
-#[test]
-fn parse_sector_identifier_document_rejects_oversized_body_before_json_parse() {
-    let body = vec![b' '; 128 * 1024 + 1];
-    let err = parse_sector_identifier_document("application/json", &body)
-        .expect_err("oversized sector identifier document must be rejected");
-
-    assert!(matches!(err, SectorIdentifierError::ResponseTooLarge));
-}
-
-#[test]
 fn parse_sector_identifier_document_rejects_invalid_json() {
-    let err = parse_sector_identifier_document("application/json", br#"{"redirect_uris":[]}"#)
+    let err = parse_sector_identifier_document(br#"{"redirect_uris":[]}"#)
         .expect_err("sector identifier document must be a JSON array");
 
     assert!(matches!(err, SectorIdentifierError::InvalidJson));
@@ -204,7 +178,7 @@ fn parse_sector_identifier_document_rejects_invalid_json() {
 
 #[test]
 fn parse_sector_identifier_document_rejects_invalid_uri_entry() {
-    let err = parse_sector_identifier_document("application/json", br#"["not a uri"]"#)
+    let err = parse_sector_identifier_document(br#"["not a uri"]"#)
         .expect_err("sector identifier entries must be absolute URIs");
 
     assert!(matches!(err, SectorIdentifierError::InvalidEntry(entry) if entry == "not a uri"));

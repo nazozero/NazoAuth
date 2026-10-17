@@ -175,18 +175,20 @@ fn certificate_der_identity_rejects_trailing_data() {
     let mut der = STANDARD.decode(certificate.x5c).unwrap();
     der.extend_from_slice(b"trailing-data");
 
-    assert!(certificate_der_identity(&der).is_none());
+    assert!(certificate_der_identity(der).is_none());
 }
 
 #[test]
 fn certificate_der_identity_extracts_san_values_and_escapes_subject_dn() {
     let certificate = test_certificate_with_sans();
-    let parsed = certificate_der_identity(&certificate.der).expect("certificate should parse");
+    let der_storage = certificate.der.as_ptr();
+    let parsed = certificate_der_identity(certificate.der).expect("certificate should parse");
 
     assert_eq!(
         parsed.subject_dn.as_deref(),
         Some(r"CN=client\, one,O=Example \+ Org")
     );
+    assert_eq!(parsed.certificate_chain_der[0].as_ptr(), der_storage);
     assert_eq!(
         parsed.san_dns,
         vec!["api.client.example".to_owned(), "client.example".to_owned()]
@@ -202,7 +204,7 @@ fn certificate_der_identity_extracts_san_values_and_escapes_subject_dn() {
 #[test]
 fn certificate_der_identity_extracts_full_subject_dn_names() {
     let certificate = test_certificate_with_full_subject();
-    let parsed = certificate_der_identity(&certificate.der).expect("certificate should parse");
+    let parsed = certificate_der_identity(certificate.der).expect("certificate should parse");
 
     assert_eq!(
         parsed.subject_dn.as_deref(),
@@ -213,10 +215,10 @@ fn certificate_der_identity_extracts_full_subject_dn_names() {
 #[test]
 fn certificate_der_identity_rejects_future_and_expired_certificates() {
     let future = test_certificate("client-future", 3600, 7200);
-    assert!(certificate_der_identity(&future.der).is_none());
+    assert!(certificate_der_identity(future.der).is_none());
 
     let expired = test_certificate("client-expired", -7200, -3600);
-    assert!(certificate_der_identity(&expired.der).is_none());
+    assert!(certificate_der_identity(expired.der).is_none());
 }
 
 #[test]
@@ -454,9 +456,9 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
     let leaf = leaf_params
         .signed_by(&KeyPair::generate().unwrap(), &intermediate)
         .unwrap();
-    let mut certificate = certificate_der_identity(leaf.der()).unwrap();
+    let mut certificate = certificate_der_identity(leaf.der().to_vec()).unwrap();
     std::sync::Arc::make_mut(&mut certificate.certificate_chain_der)
-        .push(intermediate.der().to_vec());
+        .push(intermediate.der().clone());
     assert!(certificate_chain_trusted(&certificate, &root.pem()));
     assert!(!certificate_chain_trusted(&certificate, &other_root.pem()));
     assert!(
@@ -474,4 +476,8 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
 #[test]
 fn mtls_ipaddress_parser_rejects_invalid_san_lengths() {
     assert!(ipaddress_to_string(&[192, 0, 2]).is_none());
+}
+
+fn certificate_der_identity(der: Vec<u8>) -> Option<ClientCertificateFacts> {
+    certificate_chain_identity(vec![der.into()].into())
 }

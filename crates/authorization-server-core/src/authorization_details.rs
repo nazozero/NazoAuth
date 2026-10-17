@@ -108,10 +108,7 @@ fn validate_authorization_details(value: &Value) -> Result<(), AuthorizationDeta
         let Some(type_) = object.get("type").and_then(Value::as_str) else {
             return Err(AuthorizationDetailsError);
         };
-        if type_.trim().is_empty()
-            || type_.len() > 256
-            || !SUPPORTED_AUTHORIZATION_DETAILS_TYPES.contains(&type_)
-        {
+        if !SUPPORTED_AUTHORIZATION_DETAILS_TYPES.contains(&type_) {
             return Err(AuthorizationDetailsError);
         }
         if type_ == "openid_credential" {

@@ -112,10 +112,10 @@ impl DynamicRegistrationApplication {
         self.authorize_initial_access(initial_access_token)?;
         let prepared = prepare_dynamic_client_registration(payload, self.registration_policy())
             .map_err(registration_error)?;
-        let response_types = prepared.response_types.clone();
+        let response_types = prepared.response_types;
         let registration_access_token = self.security.registration_tokens.random_token();
         let mut prepared_insert = match self
-            .prepare_insert(prepared, &registration_access_token, None)
+            .prepare_insert(prepared.request, &registration_access_token, None)
             .await
         {
             Ok(prepared) => prepared,
@@ -154,9 +154,10 @@ impl DynamicRegistrationApplication {
         source_ip: &str,
     ) -> Result<DynamicRegistrationResult, OAuthEndpointError> {
         self.enforce_rate_limit(source_ip).await?;
-        let (current, _authenticated_token_hash, registration_access_token) = self
+        let (snapshot, _authenticated_token_hash, registration_access_token) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
+        let current = snapshot.client;
         let response_types = response_types_from_client(&current);
         self.request_guard
             .audit("dynamic_client_configuration_read", &current, source_ip);
@@ -166,7 +167,7 @@ impl DynamicRegistrationApplication {
                 response_types,
                 issued_secret: None,
                 issuer: self.config.issuer.clone(),
-                registration_access_token,
+                registration_access_token: registration_access_token.to_owned(),
             },
         ))
     }
@@ -179,16 +180,13 @@ impl DynamicRegistrationApplication {
         source_ip: &str,
     ) -> Result<DynamicRegistrationResult, OAuthEndpointError> {
         self.enforce_rate_limit(source_ip).await?;
-        let (current, authenticated_token_hash, _) = self
+        let (snapshot, authenticated_token_hash, _) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
-        let has_secret = self
-            .clients
-            .has_client_secret(current.tenant_id, current.id)
-            .await
-            .map_err(|_| lookup_failed())?;
+        let current = snapshot.client;
+        let has_secret = snapshot.has_client_secret;
         let secret_matches = self
-            .submitted_secret_matches(&current, &payload)
+            .submitted_secret_matches(&current, snapshot.secret_salt.as_deref(), &payload)
             .await
             .map_err(|_| lookup_failed())?;
         let payload =
@@ -196,13 +194,13 @@ impl DynamicRegistrationApplication {
                 .map_err(registration_error)?;
         let registration = prepare_dynamic_client_registration(payload, self.registration_policy())
             .map_err(registration_error)?;
-        let response_types = registration.response_types.clone();
+        let response_types = registration.response_types;
         let registration_access_token = self.security.registration_tokens.random_token();
         let mut prepared = match self
             .prepare_insert(
-                registration,
+                registration.request,
                 &registration_access_token,
-                Some(&current.security_policy),
+                Some(current.registration.security_policy),
             )
             .await
         {
@@ -212,8 +210,7 @@ impl DynamicRegistrationApplication {
             }
             Err(_) => return Err(server_error("Client configuration update failed.")),
         };
-        let mut registration = prepared.registration;
-        registration.security_policy = current.security_policy.clone();
+        let registration = prepared.registration;
         let updated = OAuthClient {
             id: current.id,
             tenant_id: current.tenant_id,
@@ -265,9 +262,10 @@ impl DynamicRegistrationApplication {
         source_ip: &str,
     ) -> Result<DynamicRegistrationResult, OAuthEndpointError> {
         self.enforce_rate_limit(source_ip).await?;
-        let (current, authenticated_token_hash, _) = self
+        let (snapshot, authenticated_token_hash, _) = self
             .authenticate_registration_client(registration_token, client_id)
             .await?;
+        let current = snapshot.client;
         self.request_guard
             .ensure_mutation_ready()
             .await
@@ -336,11 +334,11 @@ impl DynamicRegistrationApplication {
         ))
     }
 
-    async fn authenticate_registration_client(
+    async fn authenticate_registration_client<'a>(
         &self,
-        token: Option<&str>,
+        token: Option<&'a str>,
         client_id: &str,
-    ) -> Result<(OAuthClient, String, String), OAuthEndpointError> {
+    ) -> Result<(nazo_auth::RegistrationClientSnapshot, String, &'a str), OAuthEndpointError> {
         let token = token.ok_or_else(registration_access_denied)?;
         let token_hash = self.security.registration_tokens.token_hash(token);
         match self
@@ -352,7 +350,7 @@ impl DynamicRegistrationApplication {
             )
             .await
         {
-            Ok(Some(client)) => Ok((client, token_hash, token.to_owned())),
+            Ok(Some(client)) => Ok((client, token_hash, token)),
             Ok(None) => Err(registration_access_denied()),
             Err(_) => Err(lookup_failed()),
         }
@@ -361,22 +359,19 @@ impl DynamicRegistrationApplication {
     async fn submitted_secret_matches(
         &self,
         current: &OAuthClient,
+        salt: Option<&str>,
         payload: &Value,
     ) -> Result<bool, DynamicRegistrationDependencyError> {
         let Some(secret) = payload.get("client_secret").and_then(Value::as_str) else {
             return Ok(false);
         };
-        let Some(salt) = self
-            .clients
-            .client_secret_salt(current.tenant_id, current.id)
-            .await?
-        else {
+        let Some(salt) = salt else {
             return Ok(false);
         };
         let candidate = self.security.secret_digester.client_secret_digest(
             secret,
             &self.config.client_secret_pepper,
-            &salt,
+            salt,
         );
         self.clients
             .client_secret_digest_matches(current.tenant_id, current.id, &candidate)
@@ -384,12 +379,12 @@ impl DynamicRegistrationApplication {
     }
     async fn prepare_insert(
         &self,
-        mut registration: nazo_auth::PreparedDynamicClientRegistration,
+        mut request: nazo_auth::CreateClientRequest,
         registration_access_token: &str,
-        security_policy_override: Option<&nazo_auth::ClientSecurityPolicy>,
+        security_policy_override: Option<nazo_auth::ClientSecurityPolicy>,
     ) -> Result<PreparedClientRegistration, AdminClientError> {
-        if let Some(uri) = registration.request.jwks_uri.as_deref() {
-            registration.request.jwks = Some(Arc::unwrap_or_clone(
+        if let Some(uri) = request.jwks_uri.as_deref() {
+            request.jwks = Some(Arc::unwrap_or_clone(
                 self.security
                     .remote_jwks
                     .resolve(uri, None)
@@ -401,16 +396,15 @@ impl DynamicRegistrationApplication {
                     })?,
             ));
         }
-        let mut request = registration.request;
-        if let Some(security_policy) = security_policy_override {
-            request.security_policy = security_policy.clone();
-        }
         // A confidential OIDC authorization-code client can authenticate the
         // code exchange and the baseline OIDC profile permits it to operate
         // without PKCE.  Apply that ordinary protocol policy independently of
         // how the RFC 7591 initial-access token was provisioned; public clients
-        // and OAuth-only registrations retain the stricter default.
-        if request.client_type == "confidential"
+        // and OAuth-only registrations retain the stricter default. Updates
+        // retain the existing administrator-owned policy before validation.
+        if let Some(security_policy) = security_policy_override {
+            request.security_policy = security_policy;
+        } else if request.client_type == "confidential"
             && request.scopes.iter().any(|scope| scope == "openid")
             && request
                 .grant_types
@@ -551,7 +545,7 @@ impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
     fn audit(&self, event: &'static str, client: &nazo_auth::OAuthClient, source_ip: &str) {
         self.audit.record(
             event,
-            audit_fields(&[
+            audit_fields([
                 ("client_id", json!(client.client_id)),
                 ("client_type", json!(client.client_type)),
                 ("grant_types", json!(client.grant_types)),

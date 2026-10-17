@@ -93,15 +93,6 @@ impl CredentialStorePort for Openid4vciRepository {
         self.nonce_claim(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.nonce_finalize(nonce_hash, claim_id, now)
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -109,16 +100,6 @@ impl CredentialStorePort for Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.nonce_release(nonce_hash, claim_id, now)
-    }
-
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.notification_finalize_nonce(nonce_hash, claim_id, handle, now)
     }
 
     fn finalize_nonce_with_notification_and_response<'a>(
@@ -149,13 +130,6 @@ impl CredentialStorePort for Openid4vciRepository {
         self.access_resolve(token_hash, now)
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.deferred_store(credential)
-    }
-
     fn store_deferred_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -163,16 +137,6 @@ impl CredentialStorePort for Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.deferred_store_with_response(credential, response, now)
-    }
-
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.deferred_store_and_finalize_nonce(credential, nonce_hash, claim_id, now)
     }
 
     fn store_deferred_and_finalize_nonce_with_response<'a>(
@@ -201,16 +165,6 @@ impl CredentialStorePort for Openid4vciRepository {
         self.deferred_claim_ready(transaction_hash, token_id, claim_id, now)
     }
 
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.deferred_finalize(transaction_hash, token_id, claim_id, now)
-    }
-
     fn release_deferred<'a>(
         &'a self,
         transaction_hash: &'a str,
@@ -219,17 +173,6 @@ impl CredentialStorePort for Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.deferred_release(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.notification_finalize_deferred(transaction_hash, token_id, claim_id, handle, now)
     }
 
     fn finalize_deferred_with_notification_and_response<'a>(
@@ -256,13 +199,6 @@ impl CredentialStorePort for Openid4vciRepository {
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.notification_record(notification)
-    }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.notification_issue_handle(handle)
     }
 }
 
@@ -339,16 +275,6 @@ pub(super) struct LockedContinuationGrant {
     #[serde(flatten)]
     pub(super) access: AccessRow,
     pub(super) revoked_at: Option<DateTime<Utc>>,
-}
-
-#[derive(QueryableByName)]
-pub(super) struct DeferredLeaseReceipt {
-    #[diesel(sql_type = sql_types::Uuid)]
-    pub(super) id: Uuid,
-    #[diesel(sql_type = sql_types::Text)]
-    pub(super) claim_id: String,
-    #[diesel(sql_type = sql_types::Uuid)]
-    pub(super) claim_token_id: Uuid,
 }
 
 #[derive(QueryableByName)]
@@ -439,15 +365,13 @@ impl TryFrom<AccessRow> for CredentialAccess {
 
 impl DeferredRow {
     pub(super) fn into_domain(
-        self,
+        mut self,
         access: CredentialAccess,
+        selection: Option<nazo_openid4vci::CredentialSelection>,
         data_key: &[u8; 32],
     ) -> Result<DeferredCredential, diesel::result::Error> {
-        if self.token_id != access.token_id || self.authorization_id != access.authorization_id {
-            return Err(diesel::result::Error::NotFound);
-        }
         Ok(DeferredCredential {
-            selection: decode_selection(self.credential_selection)?,
+            selection,
             id: self.id,
             transaction_hash: self.transaction_hash,
             access,
@@ -456,10 +380,10 @@ impl DeferredRow {
                 decode_error(serde_json::Error::io(std::io::Error::other(error)))
             })?,
             holder_bindings: serde_json::from_value(self.holder_bindings).map_err(decode_error)?,
-            payload: serde_json::from_slice(&unprotect_payload(
+            payload: serde_json::from_slice(unprotect_payload(
                 data_key,
                 self.id,
-                &self.payload_ciphertext,
+                &mut self.payload_ciphertext,
             )?)
             .map_err(decode_error)?,
             ready_at: self.ready_at,

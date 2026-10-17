@@ -9,6 +9,7 @@ use nazo_identity::{
     },
 };
 use std::sync::Mutex;
+use uuid::Uuid;
 
 struct FakeSessionStore {
     loaded: Result<Option<SessionSnapshot>, RepositoryError>,
@@ -40,7 +41,7 @@ impl SessionStorePort for FakeSessionStore {
     fn rotate<'a>(
         &'a self,
         _old_session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _new_session_id: &'a SessionId,
         _replacement: &'a SessionRecord,
         _ttl_seconds: u64,
@@ -51,7 +52,7 @@ impl SessionStorePort for FakeSessionStore {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         _replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
         panic!("session lookup must not update sessions")
@@ -73,6 +74,18 @@ impl FakeAccounts {
 }
 
 impl SessionAccountPort for FakeAccounts {
+    fn principal_by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         tenant_id: TenantId,
@@ -247,12 +260,34 @@ fn resolved_session_preserves_account_authentication_and_logged_in_clients() {
     let current = block_on(resolver(store.clone(), accounts).current_session_by_id("session-1"))
         .unwrap()
         .unwrap();
-    assert_eq!(current.user, user);
+    assert_eq!(current.user, user.principal);
     assert_eq!(current.auth_time, 1_000);
     assert_eq!(current.amr, ["password", "otp", "mfa"]);
     assert_eq!(current.oidc_sid, "sid-1");
     assert_eq!(current.logged_in_client_ids, ["client-b", "client-a"]);
     assert!(store.deleted.lock().unwrap().is_empty());
+}
+
+#[test]
+fn resolved_session_moves_authentication_buffers() {
+    let session = CurrentSession {
+        user: account(true).principal,
+        pending_mfa: false,
+        auth_time: 1_000,
+        auth_time_micros: None,
+        amr: vec!["password".to_owned()],
+        oidc_sid: "sid-1".to_owned(),
+        logged_in_client_ids: vec!["client-1".to_owned()],
+    };
+    let amr = session.amr.as_ptr();
+    let sid = session.oidc_sid.as_ptr();
+    let clients = session.logged_in_client_ids.as_ptr();
+
+    let current =
+        resolved_session(nazo_identity::SessionResolution::Present(Box::new(session))).unwrap();
+    assert_eq!(current.amr.as_ptr(), amr);
+    assert_eq!(current.oidc_sid.as_ptr(), sid);
+    assert_eq!(current.logged_in_client_ids.as_ptr(), clients);
 }
 
 #[test]
@@ -269,7 +304,8 @@ fn administrator_policy_requires_a_positive_admin_level() {
         let mut user = account(true);
         user.principal.role = role;
         let session = CurrentSession {
-            user,
+            pending_mfa: false,
+            user: user.principal,
             auth_time: 1_000,
             auth_time_micros: None,
             amr: vec!["password".to_owned()],
@@ -277,99 +313,6 @@ fn administrator_policy_requires_a_positive_admin_level() {
             logged_in_client_ids: Vec::new(),
         };
         assert_eq!(require_admin_session(Some(session)).is_ok(), allowed);
-    }
-}
-
-fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
-    nazo_identity::session::valid_authentication_metadata(
-        payload.auth_time,
-        &payload.amr,
-        payload.oidc_sid.as_deref(),
-        now,
-    )
-}
-
-fn valid_payload() -> SessionPayload {
-    SessionPayload {
-        user_id: Uuid::now_v7(),
-        auth_time: 1_000,
-        amr: vec!["password".to_owned()],
-        pending_mfa: false,
-        oidc_sid: Some("sid-1".to_owned()),
-    }
-}
-
-#[test]
-fn session_payload_requires_authentication_metadata_and_oidc_sid() {
-    let valid = valid_payload();
-
-    assert!(valid_session_payload(&valid, 1_001));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            oidc_sid: None,
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            oidc_sid: Some(" ".to_owned()),
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            auth_time: 0,
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            auth_time: 2_000,
-            ..valid.clone()
-        },
-        1_001
-    ));
-    assert!(!valid_session_payload(
-        &SessionPayload {
-            amr: Vec::new(),
-            ..valid
-        },
-        1_001
-    ));
-}
-
-#[test]
-fn session_payload_allows_only_small_clock_skew_for_auth_time() {
-    let mut payload = valid_payload();
-
-    payload.auth_time = 1_030;
-    assert!(valid_session_payload(&payload, 1_000));
-
-    payload.auth_time = 1_031;
-    assert!(!valid_session_payload(&payload, 1_000));
-}
-
-#[test]
-fn session_payload_preserves_pending_mfa_as_metadata_not_validity() {
-    let mut payload = valid_payload();
-    payload.pending_mfa = true;
-
-    assert!(valid_session_payload(&payload, 1_001));
-}
-
-#[test]
-fn session_payload_requires_non_blank_oidc_sid_after_trimming() {
-    for sid in ["", " ", "\t\n"] {
-        let mut payload = valid_payload();
-        payload.oidc_sid = Some(sid.to_owned());
-
-        assert!(
-            !valid_session_payload(&payload, 1_001),
-            "blank sid {sid:?} must not produce an OIDC session"
-        );
     }
 }
 

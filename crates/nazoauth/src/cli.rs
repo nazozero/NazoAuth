@@ -149,21 +149,16 @@ pub async fn run(
             let migration_config = ConfigSource::load_for_migrations()?;
             let operator_persistence = persistence.operator_persistence(&migration_config).await?;
             let config = ConfigSource::load()?;
-            let directory = operator_persistence
+            let binding = operator_persistence
                 .tenant_directory()
-                .load_active()
-                .await?;
-            let binding = directory
-                .tenants
-                .iter()
-                .find(|binding| binding.tenant.tenant_id.as_uuid() == tenant_id)
+                .find_active_binding(nazo_identity::TenantId::new(tenant_id)?)
+                .await?
                 .ok_or_else(|| {
                     anyhow::anyhow!("mdoc management requires an active tenant binding")
                 })?;
-            #[allow(unused_variables)]
-            let revision = crate::keyctl::operator_manage_mdoc(
+            crate::keyctl::operator_manage_mdoc(
                 &config,
-                binding,
+                &binding,
                 operator_persistence.as_ref(),
                 action,
             )
@@ -179,17 +174,16 @@ async fn ensure_system_tenant_material(
     persistence: &dyn crate::operator_task::OperatorPersistence,
 ) -> anyhow::Result<()> {
     let system_tenant = nazo_identity::TenantContext::default_system().tenant_id;
-    let directory = persistence.tenant_directory().load_active().await?;
-    let binding = directory
-        .tenants
-        .iter()
-        .find(|binding| binding.tenant.tenant_id == system_tenant)
+    let binding = persistence
+        .tenant_directory()
+        .find_active_binding(system_tenant)
+        .await?
         .ok_or_else(|| anyhow::anyhow!("tenant directory has no active system tenant"))?;
-    let settings = Settings::from_directory_binding(config, binding)?;
+    let settings = Settings::from_directory_binding(config, &binding)?;
     if settings.modules.enable_openid4vci_issuer || settings.modules.enable_openid4vp_verifier {
         crate::keyctl::operator_generate_local_database_for_tenant(
             config,
-            binding,
+            &binding,
             persistence,
             "ES256",
             &["credential".to_owned(), "presentation_request".to_owned()],
@@ -310,21 +304,12 @@ fn read_admin_provision_credentials() -> anyhow::Result<AdminProvisionCredential
 
 fn read_admin_provision_credentials_at(path: &Path) -> anyhow::Result<AdminProvisionCredentials> {
     let metadata = fs::symlink_metadata(path).map_err(|_| admin_provision_input_error())?;
-    if metadata.file_type().is_symlink()
-        || !metadata.file_type().is_file()
-        || metadata.len() > MAX_ADMIN_PROVISION_CREDENTIAL_FILE_BYTES
+    if !metadata.file_type().is_file() || metadata.len() > MAX_ADMIN_PROVISION_CREDENTIAL_FILE_BYTES
     {
         return Err(admin_provision_input_error());
     }
     let mut file = File::open(path).map_err(|_| admin_provision_input_error())?;
-    let mut bytes = Zeroizing::new(Vec::with_capacity(
-        usize::try_from(
-            metadata
-                .len()
-                .min(MAX_ADMIN_PROVISION_CREDENTIAL_FILE_BYTES),
-        )
-        .map_err(|_| admin_provision_error())?,
-    ));
+    let mut bytes = Zeroizing::new(Vec::with_capacity(metadata.len() as usize));
     file.by_ref()
         .take(MAX_ADMIN_PROVISION_CREDENTIAL_FILE_BYTES + 1)
         .read_to_end(&mut bytes)

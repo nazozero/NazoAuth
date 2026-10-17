@@ -6,7 +6,6 @@
 
 mod dcql;
 mod format;
-mod jose;
 mod jwe;
 mod trust;
 
@@ -15,9 +14,6 @@ pub use dcql::{
     CredentialSetQuery, DcqlError, DcqlQuery, TrustedAuthority,
 };
 pub use format::{CredentialFormat, CredentialFormatError, CredentialPayload, HolderBinding};
-pub use jose::{
-    CompactJwe, CompactJwt, JoseError, JwtHeader, decode_compact_jwt, parse_compact_jwe,
-};
 pub use jwe::{
     EphemeralEncryptionKey, JweError, encrypt_ecdh_es, encrypt_ecdh_es_a128,
     encrypt_ecdh_es_deflate,

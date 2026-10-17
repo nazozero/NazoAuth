@@ -742,7 +742,7 @@ async fn protocol_native_sso_dispatch_preserves_verified_instance_binding() {
         state.keyset.clone(),
     );
     let persisted = service
-        .refresh_token_snapshot_with_subject(
+        .refresh_token_snapshot(
             target.tenant_id,
             refresh_token,
             target.id,

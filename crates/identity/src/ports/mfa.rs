@@ -8,17 +8,12 @@ use super::common::{EncodedSecretHash, RepositoryError, RepositoryFuture};
 pub type MfaHashFuture<'a, T> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, MfaHashError>> + Send + 'a>>;
 
-#[derive(Clone, Eq, PartialEq)]
-pub struct TotpEnrollment {
-    pub secret_base32: String,
-    pub confirmed: bool,
-    pub last_used_step: Option<i64>,
-}
-
-impl std::fmt::Debug for TotpEnrollment {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("TotpEnrollment([REDACTED])")
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TotpEnrollmentCheck {
+    Missing,
+    AlreadyConfirmed,
+    InvalidCode,
+    ValidCode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,18 +46,24 @@ pub trait MfaSecretHashPort: Send + Sync {
 }
 
 pub trait MfaRepositoryPort: Send + Sync {
-    fn totp_enrollment<'a>(
+    /// Preflight before backup-code hashing. Confirmation rechecks the current
+    /// credential under lock after hashing; no secret crosses this boundary.
+    fn check_totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>>;
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck>;
 
-    fn begin_totp_enrollment(
-        &self,
+    /// Create or replace a pending enrollment atomically. A confirmed credential
+    /// is preserved and returns false.
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()>;
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool>;
 
     fn verify_and_confirm_totp<'a>(
         &'a self,

@@ -7,10 +7,12 @@ use std::sync::{
 
 use futures_util::future::BoxFuture;
 use nazo_identity::{TenantContext, TenantDirectoryBinding, TenantDirectorySnapshot, TenantId};
-use nazo_operator_protocol::{ControlOperationPayload, TenantResourceIdentity, TenantResourceKind};
+use nazo_operator_protocol::{
+    ControlOperationPayload, ControlResultData, TenantResourceIdentity, TenantResourceKind,
+};
 use nazo_persistence::tenant_resources::{
-    ControlTenantResourceFrame, ControlTenantResourceOutcome, TenantResourceAction,
-    TenantResourceExecutorError, TenantResourceExecutorPort, TenantResourcePreparation,
+    ControlTenantResourceFrame, TenantResourceAction, TenantResourceExecutorError,
+    TenantResourceExecutorPort, TenantResourcePreparation,
 };
 use tokio::sync::Notify;
 use uuid::Uuid;
@@ -23,7 +25,7 @@ const OPERATION_ID: &str = "019c8ca2-30a6-7000-8000-00000000a061";
 
 #[derive(Clone)]
 enum Receipt {
-    Hit(ControlTenantResourceOutcome),
+    Hit(ControlResultData),
     Miss,
     Conflict,
     Unavailable,
@@ -73,7 +75,7 @@ impl nazo_persistence::TenantDirectoryStore for Directory {
 }
 
 struct Executor {
-    outcome: ControlTenantResourceOutcome,
+    revision: u64,
     calls: AtomicUsize,
 }
 
@@ -81,7 +83,7 @@ impl TenantResourceExecutorPort for Executor {
     fn execute_control_operation<'a>(
         &'a self,
         frame: ControlTenantResourceFrame<'a>,
-    ) -> BoxFuture<'a, Result<ControlTenantResourceOutcome, TenantResourceExecutorError>> {
+    ) -> BoxFuture<'a, Result<ControlResultData, TenantResourceExecutorError>> {
         Box::pin(async move {
             assert!(matches!(
                 frame.operation,
@@ -95,7 +97,7 @@ impl TenantResourceExecutorPort for Executor {
             );
             assert_eq!(frame.jti, OPERATION_ID);
             self.calls.fetch_add(1, Ordering::Relaxed);
-            Ok(self.outcome.clone())
+            Ok(outcome(self.revision, frame.operation))
         })
     }
 }
@@ -136,7 +138,7 @@ impl Persistence {
                 reads: AtomicUsize::new(0),
             }),
             executor: Arc::new(Executor {
-                outcome: outcome(7),
+                revision: 7,
                 calls: AtomicUsize::new(0),
             }),
             compositions: AtomicUsize::new(0),
@@ -167,8 +169,7 @@ impl OperatorPersistence for Persistence {
         operation_id: Uuid,
         request_hash: &'a str,
         _: TenantResourceAction,
-    ) -> BoxFuture<'a, Result<Option<ControlTenantResourceOutcome>, TenantResourceExecutorError>>
-    {
+    ) -> BoxFuture<'a, Result<Option<ControlResultData>, TenantResourceExecutorError>> {
         Box::pin(async move {
             assert_eq!(tenant_id, self.tenant.tenant_id);
             assert_eq!(deployment_id, "deployment-o03");
@@ -224,12 +225,26 @@ impl OperatorPersistence for Persistence {
     }
 }
 
-fn outcome(revision: u64) -> ControlTenantResourceOutcome {
-    ControlTenantResourceOutcome {
-        revision,
-        resources: vec![],
-        resource_mappings: vec![],
-        resource_manifest_sha256: nazo_persistence::tenant_resources::empty_manifest_sha256(),
+fn outcome(revision: u64, action: TenantResourceAction) -> ControlResultData {
+    let resources = vec![];
+    let resource_manifest_sha256 = nazo_persistence::tenant_resources::empty_manifest_sha256();
+    match action {
+        TenantResourceAction::Apply => ControlResultData::TenantResourceApply {
+            revision,
+            resources,
+            resource_mappings: vec![],
+            resource_manifest_sha256,
+        },
+        TenantResourceAction::Enumerate => ControlResultData::TenantResourceEnumerate {
+            revision,
+            resources,
+            resource_manifest_sha256,
+        },
+        TenantResourceAction::Revoke => ControlResultData::TenantResourceRevoke {
+            revision,
+            resources,
+            resource_manifest_sha256,
+        },
     }
 }
 
@@ -274,7 +289,7 @@ async fn exact_tenant_resource_receipts_skip_current_tenant_and_apply_dependenci
         TenantResourceAction::Enumerate,
         TenantResourceAction::Revoke,
     ] {
-        let expected = outcome(5);
+        let expected = outcome(5, action);
         let persistence = Persistence::new(Receipt::Hit(expected.clone()), false);
         let result = execution::execute_with_persistence(
             &operation(action, persistence.tenant.tenant_id),
@@ -283,7 +298,7 @@ async fn exact_tenant_resource_receipts_skip_current_tenant_and_apply_dependenci
         )
         .await
         .unwrap();
-        assert_eq!(result, Some(expected.control_result_data(action)));
+        assert_eq!(result, Some(expected));
         assert_eq!(persistence.receipt_reads.load(Ordering::Relaxed), 1);
         assert_eq!(persistence.directory.reads.load(Ordering::Relaxed), 0);
         assert_eq!(persistence.compositions.load(Ordering::Relaxed), 0);
@@ -306,10 +321,7 @@ async fn fresh_enumerate_and_revoke_require_active_tenant_without_apply_capabili
         )
         .await
         .unwrap();
-        assert_eq!(
-            result,
-            Some(persistence.executor.outcome.control_result_data(action))
-        );
+        assert_eq!(result, Some(outcome(persistence.executor.revision, action)));
         assert_eq!(persistence.directory.reads.load(Ordering::Relaxed), 1);
         assert_eq!(persistence.compositions.load(Ordering::Relaxed), 1);
         assert_eq!(persistence.executor.calls.load(Ordering::Relaxed), 1);
@@ -361,7 +373,7 @@ async fn receipt_conflict_and_unavailability_keep_owned_error_classification() {
 
 #[tokio::test]
 async fn captured_receipt_survives_concurrent_tenant_disable_and_newer_outcome() {
-    let expected = outcome(5);
+    let expected = outcome(5, TenantResourceAction::Apply);
     let barrier = Arc::new(ReceiptReadBarrier::default());
     let mut persistence = Persistence::new(Receipt::Hit(expected.clone()), true);
     persistence.barrier = Some(barrier.clone());
@@ -384,14 +396,12 @@ async fn captured_receipt_survives_concurrent_tenant_disable_and_newer_outcome()
                 .unwrap()
                 .tenants
                 .clear();
-            *persistence.receipt.lock().unwrap() = Receipt::Hit(outcome(9));
+            *persistence.receipt.lock().unwrap() =
+                Receipt::Hit(outcome(9, TenantResourceAction::Apply));
             barrier.release.notify_one();
         }
     );
-    assert_eq!(
-        result.unwrap(),
-        Some(expected.control_result_data(TenantResourceAction::Apply))
-    );
+    assert_eq!(result.unwrap(), Some(expected));
     assert_eq!(persistence.receipt_reads.load(Ordering::Relaxed), 1);
     assert_eq!(persistence.directory.reads.load(Ordering::Relaxed), 0);
     assert_eq!(persistence.compositions.load(Ordering::Relaxed), 0);

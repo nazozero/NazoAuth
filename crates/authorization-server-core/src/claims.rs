@@ -51,6 +51,16 @@ pub struct OidcClaimRequest {
 }
 
 impl OidcClaimRequest {
+    /// Match a supplied value against the explicit claim constraint.
+    #[must_use]
+    pub fn matches_value(&self, actual: &Value) -> bool {
+        match (&self.value, self.values.as_slice()) {
+            (Some(expected), _) => expected == actual,
+            (None, []) => true,
+            (None, values) => values.contains(actual),
+        }
+    }
+
     /// An explicit request with no additional value constraint.
     #[must_use]
     pub fn named(name: impl Into<String>) -> Self {
@@ -157,8 +167,8 @@ pub fn access_token_claims(
 }
 
 fn access_token_public_user_id(user_id: Option<Uuid>, subject: &str) -> Option<String> {
-    let user_id = user_id?;
-    (subject == user_id.to_string()).then_some(user_id.to_string())
+    let user_id = user_id?.to_string();
+    (subject == user_id).then_some(user_id)
 }
 
 fn token_audience_claim(audiences: &[String]) -> Value {
@@ -169,8 +179,8 @@ fn token_audience_claim(audiences: &[String]) -> Value {
 }
 
 fn sorted_scope_string(scopes: &[String]) -> String {
-    let mut values = scopes.to_vec();
-    values.sort();
+    let mut values = scopes.iter().map(String::as_str).collect::<Vec<_>>();
+    values.sort_unstable();
     values.dedup();
     values.join(" ")
 }
@@ -193,7 +203,8 @@ pub fn id_token_claims(
     input: &IdTokenClaimsInput<'_>,
     now: i64,
 ) -> serde_json::Map<String, Value> {
-    let mut claims = registered_claims(issuer, input.subject, input.client_id, now, input.ttl);
+    let mut claims =
+        registered_claims(issuer, Some(input.subject), input.client_id, now, input.ttl);
     if let Some(nonce) = input.nonce {
         claims.insert("nonce".to_owned(), json!(nonce));
     }
@@ -247,8 +258,7 @@ pub fn backchannel_logout_token_claims(
     input: &BackchannelLogoutClaimsInput<'_>,
     now: i64,
 ) -> serde_json::Map<String, Value> {
-    let mut claims = registered_claims(issuer, "", input.client_id, now, input.ttl.max(1));
-    claims.remove("sub");
+    let mut claims = registered_claims(issuer, None, input.client_id, now, input.ttl.max(1));
     claims.insert(
         "events".to_owned(),
         json!({"http://schemas.openid.net/event/backchannel-logout": {}}),
@@ -276,8 +286,7 @@ pub fn authorization_response_jwt_claims(
     input: &AuthorizationResponseClaimsInput<'_>,
     now: i64,
 ) -> serde_json::Map<String, Value> {
-    let mut claims = registered_claims(issuer, "", input.client_id, now, input.ttl.max(1));
-    claims.remove("sub");
+    let mut claims = registered_claims(issuer, None, input.client_id, now, input.ttl.max(1));
     if let Some(code) = input.code {
         claims.insert("code".to_owned(), json!(code));
     }
@@ -292,14 +301,16 @@ pub fn authorization_response_jwt_claims(
 
 fn registered_claims(
     issuer: &str,
-    subject: &str,
+    subject: Option<&str>,
     audience: &str,
     now: i64,
     ttl: i64,
 ) -> serde_json::Map<String, Value> {
     let mut claims = serde_json::Map::new();
     claims.insert("iss".to_owned(), json!(issuer));
-    claims.insert("sub".to_owned(), json!(subject));
+    if let Some(subject) = subject {
+        claims.insert("sub".to_owned(), json!(subject));
+    }
     claims.insert("aud".to_owned(), json!(audience));
     claims.insert("iat".to_owned(), json!(now));
     claims.insert("nbf".to_owned(), json!(now));

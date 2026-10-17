@@ -2741,7 +2741,7 @@ dependencies = [
 [[package]]
 name = "mdoc-rs"
 version = "0.2.0"
-source = "git+https://github.com/nazozero/mdoc-rs?rev=40e5ac7e1739150870c41544219345c2b6de4c9b#40e5ac7e1739150870c41544219345c2b6de4c9b"
+source = "git+https://github.com/nazozero/mdoc-rs?rev=c5d460cfd667324e51e590e8ecbbdb21f63bbdbe#c5d460cfd667324e51e590e8ecbbdb21f63bbdbe"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2929,7 +2929,6 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror",
  "url",
- "uuid",
  "x509-parser",
 ]
 
@@ -2938,7 +2937,6 @@ name = "nazo-http-actix"
 version = "0.3.1"
 dependencies = [
  "actix-cors",
- "actix-rt",
  "actix-web",
  "base64 0.23.1",
  "blake3",
@@ -2977,7 +2975,6 @@ dependencies = [
  "serde_json",
  "sfv 0.16.0",
  "sha2 0.11.0",
- "subtle",
  "thiserror",
  "url",
 ]
@@ -2990,6 +2987,7 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "chrono",
+ "hex",
  "hmac 0.13.0",
  "image",
  "lettre",
@@ -3019,6 +3017,7 @@ dependencies = [
  "chrono",
  "der 0.8.2",
  "futures-executor",
+ "hex",
  "hmac 0.13.0",
  "jsonwebtoken",
  "nazo-auth",
@@ -3095,13 +3094,13 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "futures-util",
+ "hex",
  "http 1.5.0",
  "nazo-identity",
  "rcgen",
  "reqwest",
  "rustls",
  "serde",
- "serde_json",
  "sha2 0.11.0",
  "tokio",
  "uuid",
@@ -3139,7 +3138,6 @@ dependencies = [
 name = "nazo-openid4vc-http-actix"
 version = "0.3.1"
 dependencies = [
- "actix-rt",
  "actix-web",
  "chrono",
  "nazo-openid4vci",
@@ -3147,7 +3145,6 @@ dependencies = [
  "nazo-operator-protocol",
  "serde",
  "serde_json",
- "tokio",
  "url",
  "uuid",
 ]
@@ -3157,6 +3154,7 @@ name = "nazo-openid4vci"
 version = "0.3.1"
 dependencies = [
  "blake3",
+ "bytes",
  "chrono",
  "nazo-digital-credentials",
  "serde",
@@ -3181,7 +3179,6 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror",
  "tokio",
- "url",
  "uuid",
 ]
 
@@ -3190,11 +3187,10 @@ name = "nazo-operator-protocol"
 version = "0.3.1"
 dependencies = [
  "base64 0.23.1",
- "chrono",
- "hmac 0.13.0",
+ "hex",
+ "hkdf 0.13.0",
  "nazo-crypto",
  "proptest",
- "rand 0.10.3",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -3210,6 +3206,7 @@ dependencies = [
  "blake3",
  "chrono",
  "futures-util",
+ "hex",
  "nazo-auth",
  "nazo-identity",
  "nazo-openid4vci",
@@ -3231,6 +3228,7 @@ dependencies = [
  "argon2",
  "base64 0.23.1",
  "blake3",
+ "bytes",
  "chrono",
  "diesel",
  "diesel-async",
@@ -3334,7 +3332,6 @@ dependencies = [
  "actix-cors",
  "actix-files",
  "actix-multipart",
- "actix-rt",
  "actix-tls",
  "actix-web",
  "anyhow",
@@ -3349,13 +3346,13 @@ dependencies = [
  "coset",
  "diesel",
  "diesel-async",
- "diesel_migrations",
  "ed25519-dalek 3.0.0",
  "flate2",
  "fred",
  "fs2",
  "futures-channel",
  "futures-util",
+ "hex",
  "hmac 0.13.0",
  "http 1.5.0",
  "jsonwebtoken",
@@ -4462,9 +4459,8 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+version = "0.23.46"
+source = "git+https://github.com/bymoye/rustls?rev=f282759e6b6811537566a71b29f25b528735d966#f282759e6b6811537566a71b29f25b528735d966"
 dependencies = [
  "aws-lc-rs",
  "log",

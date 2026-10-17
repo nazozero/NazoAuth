@@ -7,7 +7,7 @@ use nazo_oauth_server::sessions::{
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
 use nazo_http_actix::oauth_error;
-use nazo_identity::PublicAccount;
+use nazo_identity::{Principal, PublicAccount};
 use std::sync::Arc;
 
 // 只处理从请求 Cookie 到当前用户/管理员身份的解析。
@@ -155,7 +155,10 @@ impl SessionProfileHandles {
         &self,
         req: &HttpRequest,
     ) -> Result<CurrentSession, HttpResponse> {
-        match self.current_session(req).await {
+        let Some(session_id) = cookie_value(req, self.http.session_cookie_name()) else {
+            return Err(self.login_required_response());
+        };
+        match self.resolver.current_session_by_id(&session_id).await {
             Ok(Some(session)) => Ok(session),
             Ok(None) => Err(self.login_required_response()),
             Err(error) => Err(session_lookup_error_response(error)),
@@ -165,11 +168,13 @@ impl SessionProfileHandles {
     pub(crate) async fn current_session(
         &self,
         req: &HttpRequest,
-    ) -> anyhow::Result<Option<CurrentSession>> {
+    ) -> anyhow::Result<Option<CurrentSession<PublicAccount>>> {
         let Some(session_id) = cookie_value(req, self.http.session_cookie_name()) else {
             return Ok(None);
         };
-        self.resolver.current_session_by_id(&session_id).await
+        self.resolver
+            .current_profile_session_by_id(&session_id)
+            .await
     }
 }
 
@@ -194,7 +199,7 @@ fn login_required_response_for_cookies(
 pub(crate) async fn require_admin_or_forbidden_with_handles(
     handles: &AdminSessionHandles,
     req: &HttpRequest,
-) -> Result<PublicAccount, HttpResponse> {
+) -> Result<Principal, HttpResponse> {
     current_admin_session_or_forbidden(handles, req)
         .await
         .map(|session| session.user)
@@ -213,7 +218,7 @@ pub(crate) async fn require_admin_or_forbidden_with_handles(
 pub(crate) async fn require_admin_with_recent_mfa_or_forbidden_with_handles(
     handles: &AdminSessionHandles,
     req: &HttpRequest,
-) -> Result<PublicAccount, HttpResponse> {
+) -> Result<Principal, HttpResponse> {
     let session = current_admin_session_or_forbidden(handles, req).await?;
     require_recent_mfa(&session, Utc::now().timestamp()).map_err(admin_session_error_response)?;
     Ok(session.user)

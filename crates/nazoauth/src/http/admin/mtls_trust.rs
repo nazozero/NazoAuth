@@ -11,7 +11,6 @@ use nazo_http_actix::{
 use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
-use std::fmt::Write as _;
 use uuid::Uuid;
 
 use crate::adapters::audit::audit_event_required;
@@ -65,12 +64,7 @@ pub(crate) async fn admin_mtls_trust_requests(
         },
     };
     match service
-        .page(
-            admin.principal.tenant.tenant_id,
-            status,
-            i64::from(page_size),
-            i64::from(offset),
-        )
+        .page(admin.tenant.tenant_id, status, i64::from(page_size), offset)
         .await
     {
         Ok(result) => json_response_no_store(serde_json::json!({
@@ -147,21 +141,11 @@ async fn resolve(
     }
     let result = if approve {
         service
-            .approve(
-                admin.principal.tenant.tenant_id,
-                request_id,
-                admin.user_id(),
-                note,
-            )
+            .approve(admin.tenant.tenant_id, request_id, admin.user_id, note)
             .await
     } else {
         service
-            .reject(
-                admin.principal.tenant.tenant_id,
-                request_id,
-                admin.user_id(),
-                note,
-            )
+            .reject(admin.tenant.tenant_id, request_id, admin.user_id, note)
             .await
     };
     match result {
@@ -235,9 +219,9 @@ pub(crate) async fn admin_revoke_mtls_trust_anchor(
     }
     match service
         .revoke(
-            admin.principal.tenant.tenant_id,
+            admin.tenant.tenant_id,
             request_id,
-            admin.user_id(),
+            admin.user_id,
             reason.to_owned(),
         )
         .await
@@ -272,10 +256,7 @@ pub(crate) async fn admin_mtls_trust_bundle(
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
-    match service
-        .active_bundle(admin.principal.tenant.tenant_id, None)
-        .await
-    {
+    match service.active_bundle(admin.tenant.tenant_id, None).await {
         Ok(bundle) => {
             let bundle_sha256 = sha256_hex(bundle.as_bytes());
             let certificate_count = bundle.matches("-----BEGIN CERTIFICATE-----").count();
@@ -283,7 +264,7 @@ pub(crate) async fn admin_mtls_trust_bundle(
             // the bundle leaves; an audit outage fails closed with 503.
             if let Err(error) = audit_event_required(
                 "mtls_trust_bundle_exported",
-                audit_fields(&[
+                audit_fields([
                     ("admin_user_id", serde_json::json!(admin.id())),
                     ("bundle_sha256", serde_json::json!(bundle_sha256)),
                     ("certificate_count", serde_json::json!(certificate_count)),
@@ -329,12 +310,7 @@ fn valid_csrf(sessions: &AdminSessionHandles, req: &HttpRequest) -> bool {
 }
 
 fn sha256_hex(value: &[u8]) -> String {
-    Sha256::digest(value)
-        .iter()
-        .fold(String::with_capacity(64), |mut output, byte| {
-            write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
-            output
-        })
+    hex::encode(Sha256::digest(value))
 }
 
 #[cfg(test)]

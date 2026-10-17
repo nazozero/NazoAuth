@@ -278,9 +278,7 @@ def main():
         parser.error(str(error))
     if args.stream_workers > 1 and args.stream_workers + 1 > len(cpus["generator"]):
         parser.error("stream workers plus dispatcher exceed the allocated generator CPU set")
-    points.KEYSET_VOLUME = f"{sis.PROJECT}-keys"
-    sis.dc("volume", "create", points.KEYSET_VOLUME)
-    for service in ("keyset", "audit-receiver", "perf"):
+    for service in ("audit-receiver", "perf"):
         sis.dc("tag", f"nazoauth-perf-{service}", f"{sis.PROJECT}-{service}")
     binary = points.image_binary_sha("nazoauth-perf-nazoauth")
     if not binary:

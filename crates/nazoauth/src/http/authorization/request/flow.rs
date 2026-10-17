@@ -21,7 +21,7 @@ pub(crate) async fn authorize_get(
 ) -> HttpResponse {
     let mut parameters = match parse_authorization_query(
         req.query_string(),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     ) {
         Ok(parameters) => parameters,
         Err(response) => return response,
@@ -37,7 +37,7 @@ pub(crate) async fn authorize_post(
     let mut parameters = match parse_authorization_post_form(
         &req,
         &body,
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     ) {
         Ok(parameters) => parameters,
         Err(response) => return response,

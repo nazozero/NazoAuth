@@ -249,8 +249,8 @@ async fn recovery_consume_before_original_publisher_resumes_cannot_disclose_twic
     gate.wait().await;
     let mut disclosures = 0;
     for consumer in consumers {
-        if let DeliveryConsume::Consumed(value) = consumer.await.unwrap() {
-            assert_eq!(value["client_secret"], "original-secret");
+        if let DeliveryConsume::Consumed = consumer.await.unwrap() {
+            assert_eq!(snapshot.value["client_secret"], "original-secret");
             disclosures += 1;
         }
     }
@@ -320,7 +320,7 @@ async fn committed_snapshot_rejects_republication_and_has_one_exact_consumer() {
     assert_eq!(
         [a.unwrap(), b.unwrap()]
             .into_iter()
-            .filter(|r| matches!(r, DeliveryConsume::Consumed(_)))
+            .filter(|r| matches!(r, DeliveryConsume::Consumed))
             .count(),
         1
     );

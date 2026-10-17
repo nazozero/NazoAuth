@@ -63,20 +63,10 @@ pub trait PasskeyProfileOperations: Send + Sync {
         command: PasskeyRegistrationFinishCommand,
     ) -> PasskeyFuture<'_, PasskeyCredential>;
 
-    fn list(&self, context: PasskeyProfileContext) -> PasskeyFuture<'_, Vec<PasskeyCredential>>;
-
     fn list_summaries(
         &self,
         context: PasskeyProfileContext,
-    ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>> {
-        Box::pin(async move {
-            self.list(context).await.map(|rows| {
-                rows.into_iter()
-                    .map(PasskeyCredentialSummary::from)
-                    .collect()
-            })
-        })
-    }
+    ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>>;
 
     fn delete(&self, context: PasskeyProfileContext, passkey_id: Uuid) -> PasskeyFuture<'_, ()>;
 }

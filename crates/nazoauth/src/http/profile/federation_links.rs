@@ -12,7 +12,8 @@ use actix_web::web::Path;
 use actix_web::{HttpRequest, HttpResponse};
 
 use nazo_identity::ports::FederationLinkSummary;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 use uuid::Uuid;
 
 pub(crate) async fn my_federation_links(
@@ -20,8 +21,8 @@ pub(crate) async fn my_federation_links(
     federation: Data<nazo_oauth_server::services::FederationProfileService>,
     req: HttpRequest,
 ) -> HttpResponse {
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     let rows = match federation.list_summaries(&user).await {
@@ -35,11 +36,15 @@ pub(crate) async fn my_federation_links(
             );
         }
     };
-    let items = rows
-        .into_iter()
-        .map(federation_link_json)
-        .collect::<Vec<_>>();
-    json_response_no_store(json!({ "total": items.len(), "items": items }))
+    #[derive(Serialize)]
+    struct Links {
+        total: usize,
+        items: Vec<PublicFederationLink>,
+    }
+    json_response_no_store(Links {
+        total: rows.len(),
+        items: rows.into_iter().map(PublicFederationLink::from).collect(),
+    })
 }
 
 pub(crate) async fn unlink_my_federation_link(
@@ -53,8 +58,8 @@ pub(crate) async fn unlink_my_federation_link(
     }
     // link_id 来自路径参数，但后续删除仍必须叠加当前 user_id 约束。
     let link_id = path.into_inner();
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     let link = match federation.unlink(&user, link_id).await {
@@ -77,10 +82,10 @@ pub(crate) async fn unlink_my_federation_link(
     };
     if audit_event_required(
         "external_identity_unlinked",
-        audit_fields(&[
+        audit_fields([
             ("user_id", json!(user.id())),
-            ("provider_type", json!(link.provider_type)),
-            ("provider_id", json!(link.provider_id)),
+            ("provider_type", link.provider_type.into()),
+            ("provider_id", link.provider_id.into()),
             ("link_id", json!(link.id)),
         ]),
     )
@@ -96,19 +101,32 @@ pub(crate) async fn unlink_my_federation_link(
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
 
-fn federation_link_json(link: FederationLinkSummary) -> Value {
-    // subject 可能是 provider 内稳定标识，但不是本地 secret；claims 可能含上游
-    // 扩展字段，列表接口不返回 claims，避免把 provider 原始响应扩散给前端。
-    json!({
-        "id": link.id,
-        "provider_type": link.provider_type,
-        "provider_id": link.provider_id,
-        "subject": link.subject,
-        "email": link.email,
-        "created_at": link.created_at,
-        "updated_at": link.updated_at,
-        "last_login_at": link.last_login_at,
-    })
+// Provider claims and internal tenant/user identifiers stay outside the HTTP document.
+#[derive(Serialize)]
+struct PublicFederationLink {
+    id: Uuid,
+    provider_type: String,
+    provider_id: String,
+    subject: String,
+    email: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    last_login_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl From<FederationLinkSummary> for PublicFederationLink {
+    fn from(link: FederationLinkSummary) -> Self {
+        Self {
+            id: link.id,
+            provider_type: link.provider_type,
+            provider_id: link.provider_id,
+            subject: link.subject,
+            email: link.email,
+            created_at: link.created_at,
+            updated_at: link.updated_at,
+            last_login_at: link.last_login_at,
+        }
+    }
 }
 
 #[cfg(test)]

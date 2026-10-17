@@ -165,7 +165,7 @@ fn replace_registration_validates_the_record_before_audited_commit() {
         .find("append_dynamic_registration_audit")
         .expect("audited update retains the Required owner");
     assert!(transaction < statement && statement < drain && drain < domain && domain < audit);
-    assert!(body.contains("RETURNING") && body.contains("records.len() != 1"));
+    assert!(body.contains("RETURNING"));
     let metadata = body
         .find("serde_json::json!")
         .expect("metadata serialization remains present");

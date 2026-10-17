@@ -1,18 +1,6 @@
 use super::*;
 
 #[test]
-fn dummy_client_secret_salt_is_deterministic_but_not_global() {
-    assert_eq!(
-        dummy_client_secret_salt(Some("unknown-client")),
-        dummy_client_secret_salt(Some("unknown-client"))
-    );
-    assert_ne!(
-        dummy_client_secret_salt(Some("unknown-client-a")),
-        dummy_client_secret_salt(Some("unknown-client-b"))
-    );
-}
-
-#[test]
 fn client_assertion_failures_keep_typed_security_classification() {
     assert!(matches!(
         token_management_client_assertion_error(ClientAssertionError::ReplayDetected),

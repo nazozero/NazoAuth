@@ -42,6 +42,13 @@ struct PromptNoneStore {
     reached: Arc<AtomicUsize>,
 }
 impl AuthorizationRepositoryPort for GrantFailureRepository {
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        self.live.active_client_presentation(client_id)
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,
@@ -150,12 +157,6 @@ impl AuthorizationStateStorePort for PromptNoneStore {
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.live.load_consent(request_id)
-    }
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        self.live.take_consent(request_id)
     }
     fn compare_and_delete_consent<'a>(
         &'a self,
@@ -382,7 +383,7 @@ impl PromptNoneFixture {
             .expect("client read")
             .expect("client exists");
         GrantRepository::new(live.state.diesel_db.clone())
-            .upsert(
+            .ensure(
                 DEFAULT_TENANT_ID,
                 user.id,
                 client.id,

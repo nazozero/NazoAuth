@@ -98,6 +98,19 @@ async fn signed_policy_access_token(
         })
         .collect::<Vec<_>>();
     if retain_provenance && !configuration_ids.is_empty() {
+        let credential_identifiers = authorization_details
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|detail| {
+                detail
+                    .get("credential_identifiers")
+                    .and_then(Value::as_array)
+            })
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|identifier| nazo_openid4vci::CredentialIdentifier(identifier.to_owned()))
+            .collect();
         retain_policy_credential_access(
             fixture,
             &issued.token,
@@ -108,7 +121,7 @@ async fn signed_policy_access_token(
                 subject_id,
                 client_id: fixture.wallet_client_id.clone(),
                 configuration_ids,
-                credential_identifiers: Vec::new(),
+                credential_identifiers,
                 dpop_jkt: dpop_jkt.map(str::to_owned),
                 mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned),
                 expires_at: chrono::DateTime::from_timestamp(issued.expires_at, 0).unwrap(),
@@ -138,6 +151,113 @@ async fn retain_policy_credential_access(
         )
         .await
         .expect("the real registered owner retains the exact signed credential provenance");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_access_reuses_matching_projection_and_still_backfills_legacy_binding() {
+    use diesel::connection::InstrumentationEvent;
+    use diesel_async::AsyncConnection;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let Some(database_url) = std::env::var("NAZO_TEST_DATABASE_URL")
+        .ok()
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+    else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires a test database"
+        );
+        return;
+    };
+    // Instrument only the issuance store; other endpoint owners use the fixture pool.
+    let store_pool = nazo_postgres::create_pool(database_url, 1).unwrap();
+    let store = Arc::new(nazo_postgres::Openid4vciRepository::new(
+        store_pool.clone(),
+        [0x51; 32],
+        Arc::new(crate::bootstrap::LoginPasswordVerifier),
+    ));
+    let Some(fixture) = LiveEndpointFixture::new_with_overrides(
+        "unit-live-projection-reuse",
+        false,
+        Some(store),
+        None,
+    )
+    .await
+    else {
+        return;
+    };
+    let token = signed_mtls_access_token(
+        &fixture,
+        fixture.subject_id,
+        "unit-live-projection-reuse",
+        "unit-mtls",
+    )
+    .await;
+    let context = CredentialRequestContext {
+        bearer_token: token,
+        mtls_x5t_s256: Some("unit-mtls".to_owned()),
+        ..request_context()
+    };
+    let queries = Arc::new(AtomicUsize::new(0));
+    let upserts = Arc::new(AtomicUsize::new(0));
+    let observed = queries.clone();
+    let observed_upserts = upserts.clone();
+    let mut connection = nazo_postgres::get_conn(&store_pool).await.unwrap();
+    connection.set_instrumentation(move |event: InstrumentationEvent<'_>| {
+        if let InstrumentationEvent::FinishQuery { query, .. } = event {
+            observed.fetch_add(1, Ordering::Relaxed);
+            if query
+                .to_string()
+                .contains("INSERT INTO openid4vci_access_grants")
+            {
+                observed_upserts.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    });
+    drop(connection);
+
+    fixture.issuer.access(&context).await.unwrap();
+    assert_eq!(
+        queries.swap(0, Ordering::Relaxed),
+        1,
+        "the matching projection requires only one read"
+    );
+    assert_eq!(upserts.swap(0, Ordering::Relaxed), 0);
+
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    sql_query("UPDATE openid4vci_access_grants SET mtls_x5t_s256 = NULL WHERE subject_id = $1")
+        .bind::<SqlUuid, _>(fixture.subject_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    fixture.issuer.access(&context).await.unwrap();
+    assert_eq!(
+        queries.swap(0, Ordering::Relaxed),
+        2,
+        "a legacy missing mTLS projection also requires the guarded write"
+    );
+    assert_eq!(upserts.swap(0, Ordering::Relaxed), 1);
+    fixture.issuer.access(&context).await.unwrap();
+    assert_eq!(
+        queries.swap(0, Ordering::Relaxed),
+        1,
+        "the repaired projection requires only one read"
+    );
+    assert_eq!(upserts.swap(0, Ordering::Relaxed), 0);
+
+    let mut connection = nazo_postgres::get_conn(&fixture.pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_access_grants SET revoked_at = CURRENT_TIMESTAMP WHERE subject_id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.subject_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    let error = fixture.issuer.access(&context).await.unwrap_err();
+    assert_eq!(error.status, 401, "a revoked grant is never reused");
+    fixture.cleanup().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

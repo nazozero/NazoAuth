@@ -52,13 +52,15 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         panic!("unexpected TokenRepositoryPort::refresh_token call")
     }
-    fn inspect_lost_response_successor<'a>(
+    fn refresh_token_snapshot<'a>(
         &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>> {
-        panic!("unexpected TokenRepositoryPort::inspect_lost_response_successor call")
+        _tenant_id: Uuid,
+        _raw_token: &'a str,
+        _client_id: Uuid,
+        _retry_started_at: chrono::DateTime<chrono::Utc>,
+        _prepare_oidc_subject: bool,
+    ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        panic!("unexpected refresh snapshot lookup")
     }
     fn active_subject_claims<'a>(
         &'a self,
@@ -104,8 +106,13 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'_, bool> {
         panic!("unexpected TokenRepositoryPort::refresh_family_active call")
     }
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-        panic!("unexpected TokenRepositoryPort::revoke_token call")
+    fn revoke_token_with_audit<'a>(
+        &'a self,
+        input: TokenRevocation<'a>,
+        _client_public_id: &'a str,
+        _source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize> {
+        panic!("unexpected TokenRepositoryPort::revoke_token_with_audit call")
     }
 }
 
@@ -157,6 +164,13 @@ impl TokenStateStorePort for HolderFixture {
 
 #[allow(unused_variables)]
 impl AuthorizationRepositoryPort for HolderFixture {
+    fn active_client_presentation<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        panic!("unexpected AuthorizationRepositoryPort::active_client_presentation call")
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,
@@ -233,12 +247,6 @@ impl AuthorizationStateStorePort for HolderFixture {
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         panic!("unexpected AuthorizationStateStorePort::load_consent call")
-    }
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        panic!("unexpected AuthorizationStateStorePort::take_consent call")
     }
     fn compare_and_delete_consent<'a>(
         &'a self,

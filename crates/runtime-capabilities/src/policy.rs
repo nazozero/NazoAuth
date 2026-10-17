@@ -23,61 +23,33 @@ pub struct ModuleSpec {
 /// Structural defects in a caller-supplied module catalog.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ModuleCatalogError {
-    #[error("module catalog has no specification for {0:?}")]
-    MissingSpec(ModuleId),
-    #[error("module catalog has more than one specification for {0:?}")]
-    DuplicateSpec(ModuleId),
     #[error("module {0:?} depends on itself")]
     SelfDependency(ModuleId),
-    #[error("module {module:?} depends on missing module {dependency:?}")]
-    MissingDependency {
-        module: ModuleId,
-        dependency: ModuleId,
-    },
     #[error("module dependency graph contains a cycle through {0:?}")]
     DependencyCycle(ModuleId),
 }
 
-/// Validates completeness and acyclicity without assigning domain policy.
-pub fn validate_module_specs(specs: &[ModuleSpec]) -> Result<(), ModuleCatalogError> {
-    let mut by_id = BTreeMap::new();
-    for spec in specs {
-        if by_id.insert(spec.id, spec).is_some() {
-            return Err(ModuleCatalogError::DuplicateSpec(spec.id));
-        }
-    }
-
-    for id in ModuleId::ALL {
-        if !by_id.contains_key(&id) {
-            return Err(ModuleCatalogError::MissingSpec(id));
-        }
-    }
-
-    for spec in specs {
+/// Checks caller-supplied dependencies within the complete, fixed catalog.
+pub(crate) fn validate_dependencies(
+    specs: &BTreeMap<ModuleId, ModuleSpec>,
+) -> Result<(), ModuleCatalogError> {
+    for spec in specs.values() {
         if spec.dependencies.contains(&spec.id) {
             return Err(ModuleCatalogError::SelfDependency(spec.id));
-        }
-        for dependency in &spec.dependencies {
-            if !by_id.contains_key(dependency) {
-                return Err(ModuleCatalogError::MissingDependency {
-                    module: spec.id,
-                    dependency: *dependency,
-                });
-            }
         }
     }
 
     let mut visiting = BTreeSet::new();
     let mut visited = BTreeSet::new();
     for id in ModuleId::ALL {
-        visit(id, &by_id, &mut visiting, &mut visited)?;
+        visit(id, specs, &mut visiting, &mut visited)?;
     }
     Ok(())
 }
 
 fn visit(
     id: ModuleId,
-    specs: &BTreeMap<ModuleId, &ModuleSpec>,
+    specs: &BTreeMap<ModuleId, ModuleSpec>,
     visiting: &mut BTreeSet<ModuleId>,
     visited: &mut BTreeSet<ModuleId>,
 ) -> Result<(), ModuleCatalogError> {
@@ -88,7 +60,7 @@ fn visit(
         return Err(ModuleCatalogError::DependencyCycle(id));
     }
 
-    let spec = specs.get(&id).ok_or(ModuleCatalogError::MissingSpec(id))?;
+    let spec = &specs[&id];
     for dependency in &spec.dependencies {
         visit(*dependency, specs, visiting, visited)?;
     }

@@ -124,15 +124,24 @@ mod jose {
         }
     }
 
-    /// The public-side VerificationKey matching a generated private key.
+    /// Raw component constructors must interoperate with the independent
+    /// jsonwebtoken oracle above, including both RSA signature paddings.
     fn verification_key(algorithm: Algorithm, private_der: &[u8]) -> VerificationKey {
-        let parts = public_components(algorithm, private_der);
+        let parts: Vec<Vec<u8>> = public_components(algorithm, private_der)
+            .iter()
+            .map(|part| URL_SAFE_NO_PAD.decode(part).unwrap())
+            .collect();
         match algorithm {
-            Algorithm::EdDSA => VerificationKey::from_ed_components(&parts[0]).unwrap(),
-            Algorithm::RS256 | Algorithm::PS256 => {
-                VerificationKey::from_rsa_components(&parts[0], &parts[1]).unwrap()
+            Algorithm::EdDSA => {
+                VerificationKey::from_ed25519_bytes(parts[0].as_slice().try_into().unwrap())
             }
-            Algorithm::ES256 => VerificationKey::from_ec_components(&parts[0], &parts[1]).unwrap(),
+            Algorithm::RS256 | Algorithm::PS256 => {
+                VerificationKey::from_rsa_raw_components(&parts[0], &parts[1])
+            }
+            Algorithm::ES256 => VerificationKey::from_p256_coordinates(
+                parts[0].as_slice().try_into().unwrap(),
+                parts[1].as_slice().try_into().unwrap(),
+            ),
             _ => unreachable!(),
         }
     }
@@ -346,6 +355,16 @@ mod jose {
 
         let rs_raw = rs_key.sign(message).unwrap();
         let ps_raw = ps_key.sign(message).unwrap();
+        let key = verification_key(Algorithm::RS256, &private_der);
+        assert!(matches!(
+            signature::verify(Algorithm::PS256, &key, message, &rs_raw),
+            Err(CryptoError::InvalidSignature)
+        ));
+        assert!(matches!(
+            signature::verify(Algorithm::RS256, &key, message, &ps_raw),
+            Err(CryptoError::InvalidSignature)
+        ));
+
         assert!(!matches!(
             jsonwebtoken::crypto::verify(
                 &URL_SAFE_NO_PAD.encode(&rs_raw),
@@ -714,7 +733,7 @@ mod jose {
         // RFC 3394 wrap output unwraps under the old AWS-LC oracle.
         for kek_len in [16_usize, 32] {
             let kek = vec![0x42_u8; kek_len];
-            let cek = vec![0x07_u8; 32];
+            let cek = [0x07_u8; 32];
             let wrapped = key_wrap::aes_wrap(&kek, &cek).unwrap();
             assert_eq!(wrapped.len(), cek.len() + 8);
             let cipher = if kek_len == 16 { &AES_128 } else { &AES_256 };
@@ -726,14 +745,6 @@ mod jose {
         assert!(matches!(
             key_wrap::aes_wrap(&[0_u8; 24], &[0_u8; 32]),
             Err(CryptoError::InvalidKey)
-        ));
-        assert!(matches!(
-            key_wrap::aes_wrap(&[0_u8; 16], &[0_u8; 8]),
-            Err(CryptoError::InvalidInput)
-        ));
-        assert!(matches!(
-            key_wrap::aes_wrap(&[0_u8; 16], &[0_u8; 20]),
-            Err(CryptoError::InvalidInput)
         ));
     }
 }
@@ -792,8 +803,44 @@ mod aead {
                 }
                 .unwrap();
                 assert_eq!(out, expected, "ct||tag layout must match aes-gcm");
+                if key_len == 32 {
+                    let mut versioned_prefix = [1_u8; 13];
+                    versioned_prefix[1..].copy_from_slice(&nonce);
+                    for prefix in [nonce.as_slice(), versioned_prefix.as_slice()] {
+                        let mut prefixed = crypto_aead::encrypt_prefixed(
+                            key.as_slice().try_into().unwrap(),
+                            &nonce,
+                            aad,
+                            plaintext,
+                            prefix,
+                        )
+                        .unwrap();
+                        assert_eq!(&prefixed[..prefix.len()], prefix);
+                        assert_eq!(&prefixed[prefix.len()..], &expected);
+                        let plaintext_address = prefixed[prefix.len()..].as_ptr();
+                        let decrypted = crypto_aead::decrypt_nonce_prefixed(
+                            key.as_slice().try_into().unwrap(),
+                            aad,
+                            &mut prefixed[prefix.len() - 12..],
+                        )
+                        .unwrap();
+                        assert_eq!(decrypted, plaintext);
+                        assert_eq!(decrypted.as_ptr(), plaintext_address);
+                    }
+                }
                 let back = crypto_aead::decrypt(&key, &nonce, aad, &out).unwrap();
                 assert_eq!(back, plaintext);
+                let (ciphertext, tag) = expected.split_last_chunk::<16>().unwrap();
+                let mut owned_plaintext = plaintext.to_vec();
+                let buffer = owned_plaintext.as_ptr();
+                let detached_tag =
+                    crypto_aead::encrypt_in_place(&key, &nonce, aad, &mut owned_plaintext).unwrap();
+                assert_eq!(owned_plaintext.as_ptr(), buffer);
+                assert_eq!(owned_plaintext, ciphertext);
+                assert_eq!(&detached_tag, tag);
+                let mut in_place = ciphertext.to_vec();
+                crypto_aead::decrypt_in_place(&key, &nonce, aad, &mut in_place, tag).unwrap();
+                assert_eq!(in_place, plaintext);
             }
         }
 
@@ -832,6 +879,21 @@ mod aead {
             Err(CryptoError::AuthenticationFailed)
         ));
 
+        for index in [0, 12, 12 + out.len() - 1] {
+            let mut protected =
+                crypto_aead::encrypt_prefixed(&key, &nonce, aad, b"secret", &nonce).unwrap();
+            protected[index] ^= 1;
+            assert!(matches!(
+                crypto_aead::decrypt_nonce_prefixed(&key, aad, &mut protected),
+                Err(CryptoError::AuthenticationFailed)
+            ));
+        }
+        for length in [0, 11, 12, 27] {
+            assert!(matches!(
+                crypto_aead::decrypt_nonce_prefixed(&key, aad, &mut vec![0; length]),
+                Err(CryptoError::InvalidInput)
+            ));
+        }
         // Input length categories.
         assert!(matches!(
             crypto_aead::encrypt(&key, &[0_u8; 11], aad, b"x"),
@@ -843,6 +905,10 @@ mod aead {
         ));
         assert!(matches!(
             crypto_aead::encrypt(&[0_u8; 24], &nonce, aad, b"x"),
+            Err(CryptoError::InvalidKey)
+        ));
+        assert!(matches!(
+            crypto_aead::encrypt_in_place(&[0_u8; 24], &nonce, aad, &mut [0_u8]),
             Err(CryptoError::InvalidKey)
         ));
         let empty = crypto_aead::encrypt(&key, &nonce, aad, b"").unwrap();
@@ -1253,7 +1319,7 @@ mod certificate {
         // Standard client-chain verification against the anchor at a fixed time.
         let anchors = to_pem(&ca_der);
         assert!(
-            certs::verify_client_chain_at(std::slice::from_ref(&leaf_der), &anchors, NOW as u64)
+            certs::verify_client_chain_at(&[leaf_der.as_slice().into()], &anchors, NOW as u64)
                 .is_ok()
         );
 
@@ -1262,7 +1328,7 @@ mod certificate {
         let other_der = certs::self_signed(ca_params(), &other_key_pem).unwrap();
         assert!(
             certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
+                &[leaf_der.as_slice().into()],
                 &to_pem(&other_der),
                 NOW as u64
             )
@@ -1271,7 +1337,7 @@ mod certificate {
         // Actual expiry: one second past the leaf's not_after.
         assert!(matches!(
             certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
+                &[leaf_der.as_slice().into()],
                 &anchors,
                 (NOW + LEAF_SECONDS + 1) as u64
             ),
@@ -1280,7 +1346,7 @@ mod certificate {
         // Not yet valid: one second before the leaf's not_before.
         assert!(matches!(
             certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
+                &[leaf_der.as_slice().into()],
                 &anchors,
                 (NOW - 1) as u64
             ),
@@ -1288,13 +1354,13 @@ mod certificate {
         ));
         let mut tampered = leaf_der.clone();
         *tampered.last_mut().unwrap() ^= 0x01;
-        assert!(certs::verify_client_chain_at(&[tampered], &anchors, NOW as u64).is_err());
+        assert!(certs::verify_client_chain_at(&[tampered.into()], &anchors, NOW as u64).is_err());
         assert!(matches!(
             certs::verify_client_chain_at(&[], &anchors, NOW as u64),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(
-            certs::verify_client_chain_at(&[leaf_der], "not pem", NOW as u64),
+            certs::verify_client_chain_at(&[leaf_der.into()], "not pem", NOW as u64),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(

@@ -180,3 +180,47 @@ async fn concurrent_provisioning_returns_one_receipt_and_one_admin_effect() {
         assert_eq!(count.count, 1, "{table} must contain one committed effect");
     }
 }
+
+#[tokio::test]
+async fn provisioning_uses_unique_email_constraint_without_a_preflight_read() {
+    let Some((_, isolated_url)) = isolated_repository().await else {
+        return;
+    };
+    let pool = create_pool(isolated_url, 1).unwrap();
+    let counter = support::query_counter::QueryCounter::new();
+    {
+        let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();
+        connection.set_instrumentation(counter.clone());
+    }
+    let repository = AdminProvisionRepository::new(pool);
+    let before = counter.snapshot();
+    let first = repository
+        .provision(request("counted", "counted@example.test"))
+        .await
+        .unwrap();
+    let delta = counter.since(before);
+    // Operation lock, receipt lookup, user insert, receipt insert, event insert.
+    assert_eq!(delta.data_queries, 5);
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
+    assert_eq!(delta.failed_queries, 0);
+    let before = counter.snapshot();
+    let retry = repository
+        .provision(request("counted", "COUNTED@example.test"))
+        .await
+        .unwrap();
+    assert_eq!(retry, first);
+    assert_eq!(counter.since(before).data_queries, 3);
+    let before = counter.snapshot();
+    assert_eq!(
+        repository
+            .provision(request("other-operation", "counted@example.test"))
+            .await
+            .unwrap_err(),
+        AdminProvisionError::EmailConflict
+    );
+    let delta = counter.since(before);
+    assert_eq!(delta.data_queries + delta.failed_queries, 3);
+    assert_eq!(delta.rollbacks, 1);
+    assert_eq!(delta.failed_queries, 1);
+}

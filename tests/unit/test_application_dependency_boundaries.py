@@ -23,9 +23,9 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
             with patch.object(GUARDS, "ROOT", root):
                 if rejected:
                     with self.assertRaises(SystemExit):
-                        GUARDS.check_package_roles()
+                        GUARDS.check_package_roles(GUARDS.manifest_reader())
                 else:
-                    GUARDS.check_package_roles()
+                    GUARDS.check_package_roles(GUARDS.manifest_reader())
 
     def test_application_rejects_host_and_http_adapter(self) -> None:
         for dependency in ("nazoauth", "nazo-http-actix"):
@@ -83,7 +83,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
                 edge = 'hidden.workspace = true' if workspace_edge else 'hidden = { path = "../../private-host" }'
                 (consumer / "Cargo.toml").write_text('[package]\nname = "nazo-oauth-server"\n[dependencies]\n' + edge)
                 with patch.object(GUARDS, "ROOT", root), self.assertRaises(SystemExit):
-                    GUARDS.check_package_roles()
+                    GUARDS.check_package_roles(GUARDS.manifest_reader())
 
     def test_resolved_edges_keep_metadata_for_graph_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -94,7 +94,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
             path.write_text('[package]\nname="nazoauth"\n[target.\'cfg(unix)\'.build-dependencies]\nhidden={workspace=true,optional=true,features=["rt"]}\n')
             workspace = {"dependencies": {"hidden": {"package": "tokio", "version": "1", "features": ["sync"]}}}
             with patch.object(GUARDS, "ROOT", root):
-                edges = list(GUARDS.resolved_production_dependencies(path, workspace))
+                edges = list(GUARDS.resolved_production_dependencies(path, workspace, GUARDS.manifest_reader()))
             self.assertEqual(len(edges), 1)
             name, spec = edges[0]
             self.assertEqual(name, "tokio")
@@ -117,9 +117,9 @@ class InnerSourceBoundaries(unittest.TestCase):
             with patch.object(GUARDS, "ROOT", root):
                 if rejected:
                     with self.assertRaises(SystemExit):
-                        GUARDS.check_inner_source_boundaries()
+                        GUARDS.check_inner_source_boundaries(GUARDS.manifest_reader())
                 else:
-                    GUARDS.check_inner_source_boundaries()
+                    GUARDS.check_inner_source_boundaries(GUARDS.manifest_reader())
 
     def test_concrete_request_response_extractor_and_public_wrappers_are_rejected(self) -> None:
         for source in (

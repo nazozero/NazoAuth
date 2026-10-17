@@ -3,10 +3,7 @@
 //! An adapter must commit idempotency, resource mutations, revision fencing,
 //! security audit append, and the replayable typed outcome as one atomic unit.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
-};
+use std::{collections::BTreeMap, fmt};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
@@ -14,26 +11,22 @@ use futures_util::future::BoxFuture;
 use nazo_auth::{CreateClientRequest, OAuthClient};
 use nazo_identity::TenantContext;
 use nazo_operator_protocol::{
-    ControlResultData, Openid4vcTrustPolicy, ProtocolError, TenantResourceIdentity,
-    TenantResourceKind, TenantResourceMapping, TenantResourceSelector,
-    canonical_tenant_resource_manifest_sha256, validate_control_result_data_for_wire,
+    ControlResultData, Openid4vcTrustPolicy, TenantResourceIdentity, TenantResourceKind,
+    TenantResourceSelector, canonical_tenant_resource_manifest_sha256,
     validate_openid4vc_trust_policy,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 const APPLY_MANIFEST_SCHEMA: u32 = 1;
 const MAX_MANIFEST_BYTES: usize = 4 * 1024 * 1024;
 const MAX_RESOURCE_PAYLOAD_BYTES: usize = 512 * 1024;
-const MAX_RESOURCE_PAYLOAD_TOTAL_BYTES: usize = 4 * 1024 * 1024;
 const MAX_USERNAME_BYTES: usize = 150;
 const MAX_EMAIL_BYTES: usize = 254;
 const MAX_PASSWORD_BYTES: usize = 512;
 const MAX_CLIENT_SECRET_BYTES: usize = 512;
 const MAX_CONFIGURATION_ID_BYTES: usize = 255;
-const MAX_PROFILE_BYTES: usize = 128 * 1024;
-const MAX_CERTIFICATE_BYTES: usize = 256 * 1024;
 const MAX_DATASET_CLAIMS_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,7 +54,8 @@ pub struct UserResourcePayload {
     pub profile: UserProfileFields,
 }
 
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(Clone, Default, Deserialize, Eq, PartialEq)]
+#[serde(default, deny_unknown_fields)]
 pub struct UserProfileFields {
     pub display_name: Option<String>,
     pub given_name: Option<String>,
@@ -163,7 +157,7 @@ struct UserManifestPayload {
     password: String,
     email_verified: bool,
     #[serde(default)]
-    profile: Option<Value>,
+    profile: Option<serde_json::Map<String, Value>>,
 }
 
 #[derive(Deserialize)]
@@ -195,13 +189,8 @@ struct Openid4vcDatasetManifestPayload {
 /// identity set. This validation is backend independent.
 pub fn decode_change_set_payloads(
     raw_manifest: &[u8],
-    authorized: &BTreeMap<(TenantResourceKind, String), TenantResourceIdentity>,
+    identities: &[TenantResourceIdentity],
 ) -> Result<Vec<PreparedTenantResource>, TenantResourceExecutorError> {
-    if raw_manifest.is_empty() {
-        return Err(TenantResourceExecutorError::InvalidPayload(
-            "manifest is empty",
-        ));
-    }
     if raw_manifest.len() > MAX_MANIFEST_BYTES {
         return Err(TenantResourceExecutorError::TooLarge);
     }
@@ -215,16 +204,17 @@ pub fn decode_change_set_payloads(
             "unsupported resource manifest",
         ));
     }
-    let mut seen_identities = BTreeSet::new();
-    let mut payload_total = 0usize;
+    let mut authorized = identities
+        .iter()
+        .map(|identity| ((identity.kind, identity.resource_id.as_str()), identity))
+        .collect::<BTreeMap<_, _>>();
     let mut prepared = Vec::with_capacity(manifest.resources.len());
-    for resource in manifest.resources {
-        validate_resource_id(&resource.resource_id)?;
-        if !seen_identities.insert((resource.kind, resource.resource_id.clone())) {
-            return Err(TenantResourceExecutorError::InvalidPayload(
-                "resource identities must be unique",
-            ));
-        }
+    for resource in &manifest.resources {
+        let identity = authorized
+            .remove(&(resource.kind, resource.resource_id.as_str()))
+            .ok_or(TenantResourceExecutorError::InvalidPayload(
+                "manifest resource is not authorized by task or is duplicated",
+            ))?;
         let payload = URL_SAFE_NO_PAD
             .decode(&resource.payload_base64url)
             .map_err(|_| {
@@ -232,24 +222,9 @@ pub fn decode_change_set_payloads(
                     "resource payload is not valid base64url",
                 )
             })?;
-        if payload.is_empty() || payload.len() > MAX_RESOURCE_PAYLOAD_BYTES {
-            return Err(if payload.len() > MAX_RESOURCE_PAYLOAD_BYTES {
-                TenantResourceExecutorError::TooLarge
-            } else {
-                TenantResourceExecutorError::InvalidPayload("resource payload is empty")
-            });
-        }
-        payload_total = payload_total
-            .checked_add(payload.len())
-            .ok_or(TenantResourceExecutorError::TooLarge)?;
-        if payload_total > MAX_RESOURCE_PAYLOAD_TOTAL_BYTES {
+        if payload.len() > MAX_RESOURCE_PAYLOAD_BYTES {
             return Err(TenantResourceExecutorError::TooLarge);
         }
-        let identity = authorized
-            .get(&(resource.kind, resource.resource_id.clone()))
-            .ok_or(TenantResourceExecutorError::InvalidPayload(
-                "manifest resource is not authorized by task",
-            ))?;
         if sha256_hex(&payload) != identity.digest {
             return Err(TenantResourceExecutorError::InvalidPayload(
                 "resource payload digest does not match task",
@@ -261,7 +236,7 @@ pub fn decode_change_set_payloads(
             payload: Some(typed),
         });
     }
-    if prepared.len() != authorized.len() {
+    if prepared.len() != identities.len() {
         return Err(TenantResourceExecutorError::InvalidPayload(
             "manifest resources do not match task",
         ));
@@ -280,17 +255,7 @@ fn decode_payload(
             validate_text(&value.username, MAX_USERNAME_BYTES)?;
             validate_text(&value.email, MAX_EMAIL_BYTES)?;
             validate_text(&value.password, MAX_PASSWORD_BYTES)?;
-            if let Some(profile) = &value.profile {
-                let size = serde_json::to_vec(profile)
-                    .map_err(|_| {
-                        TenantResourceExecutorError::InvalidPayload("invalid user profile")
-                    })?
-                    .len();
-                if size > MAX_PROFILE_BYTES {
-                    return Err(TenantResourceExecutorError::TooLarge);
-                }
-            }
-            let profile = normalize_user_profile(value.profile.as_ref())?;
+            let profile = normalize_user_profile(value.profile)?;
             Ok(TenantResourcePayload::User(Box::new(UserResourcePayload {
                 username: value.username,
                 email: value.email,
@@ -324,16 +289,6 @@ fn decode_payload(
                     TenantResourceExecutorError::InvalidPayload("invalid mTLS trust anchor payload")
                 })?;
             validate_resource_id(&value.client_resource_id)?;
-            if value.certificate_pem.len() > MAX_CERTIFICATE_BYTES
-                || !value
-                    .certificate_pem
-                    .contains("-----BEGIN CERTIFICATE-----")
-                || !value.certificate_pem.contains("-----END CERTIFICATE-----")
-            {
-                return Err(TenantResourceExecutorError::InvalidPayload(
-                    "invalid mTLS trust anchor certificate",
-                ));
-            }
             Ok(TenantResourcePayload::MtlsTrustAnchor(
                 MtlsTrustAnchorResourcePayload {
                     client_resource_id: value.client_resource_id,
@@ -353,9 +308,10 @@ fn decode_payload(
                     "OpenID4VC dataset claims must be an object",
                 ));
             }
-            let size = serde_json::to_vec(&value.claims)
-                .map_err(|_| TenantResourceExecutorError::InvalidPayload("invalid dataset claims"))?
-                .len();
+            let size =
+                nazo_operator_protocol::serialized_json_size(&value.claims).map_err(|_| {
+                    TenantResourceExecutorError::InvalidPayload("invalid dataset claims")
+                })?;
             if size > MAX_DATASET_CLAIMS_BYTES {
                 return Err(TenantResourceExecutorError::TooLarge);
             }
@@ -399,49 +355,18 @@ fn validate_text(value: &str, max_bytes: usize) -> Result<(), TenantResourceExec
 }
 
 fn normalize_user_profile(
-    value: Option<&Value>,
+    value: Option<serde_json::Map<String, Value>>,
 ) -> Result<UserProfileFields, TenantResourceExecutorError> {
-    let Some(value) = value else {
-        return Ok(UserProfileFields::default());
-    };
-    let Some(object) = value.as_object() else {
-        return Err(TenantResourceExecutorError::InvalidPayload(
-            "invalid user profile",
-        ));
-    };
-    if object.keys().any(|key| {
-        !matches!(
-            key.as_str(),
-            "display_name"
-                | "given_name"
-                | "family_name"
-                | "middle_name"
-                | "nickname"
-                | "profile_url"
-                | "avatar_url"
-                | "website_url"
-                | "gender"
-                | "birthdate"
-                | "zoneinfo"
-                | "locale"
-                | "address_formatted"
-                | "address_street_address"
-                | "address_locality"
-                | "address_region"
-                | "address_postal_code"
-                | "address_country"
-                | "phone_number"
-                | "phone_number_verified"
-        )
-    }) {
-        return Err(TenantResourceExecutorError::InvalidPayload(
-            "invalid user profile",
-        ));
-    }
-    let mut fields = UserProfileFields::default();
+    let fields: UserProfileFields = value
+        .map(|object| serde_json::from_value(Value::Object(object)))
+        .transpose()
+        .map_err(|_| TenantResourceExecutorError::InvalidPayload("invalid user profile"))?
+        .unwrap_or_default();
     macro_rules! text {
         ($name:ident, $max:expr) => {
-            fields.$name = profile_text(object.get(stringify!($name)), $max)?;
+            if let Some(text) = &fields.$name {
+                validate_profile_text(text, $max)?;
+            }
         };
     }
     text!(display_name, 80);
@@ -463,45 +388,20 @@ fn normalize_user_profile(
     text!(address_postal_code, 64);
     text!(address_country, 64);
     text!(phone_number, 32);
-    if let Some(value) = object.get("phone_number_verified") {
-        fields.phone_number_verified =
-            value
-                .as_bool()
-                .ok_or(TenantResourceExecutorError::InvalidPayload(
-                    "invalid user profile",
-                ))?;
-    }
     Ok(fields)
 }
 
-fn profile_text(
-    value: Option<&Value>,
-    max_bytes: usize,
-) -> Result<Option<String>, TenantResourceExecutorError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    let text = value
-        .as_str()
-        .ok_or(TenantResourceExecutorError::InvalidPayload(
-            "invalid user profile",
-        ))?;
+fn validate_profile_text(text: &str, max_bytes: usize) -> Result<(), TenantResourceExecutorError> {
     if text.is_empty() || text.len() > max_bytes || text.chars().any(char::is_control) {
         return Err(TenantResourceExecutorError::InvalidPayload(
             "invalid user profile",
         ));
     }
-    Ok(Some(text.to_owned()))
+    Ok(())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// Result of application policy preparation consumed by a persistence adapter.
@@ -556,39 +456,6 @@ pub trait TenantResourcePreparation: Send + Sync {
     ) -> BoxFuture<'a, Result<PreparedMtlsTrustAnchor, TenantResourcePreparationError>>;
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ControlTenantResourceOutcome {
-    pub revision: u64,
-    pub resources: Vec<TenantResourceIdentity>,
-    pub resource_mappings: Vec<TenantResourceMapping>,
-    pub resource_manifest_sha256: String,
-}
-
-impl ControlTenantResourceOutcome {
-    #[must_use]
-    pub fn control_result_data(&self, operation: TenantResourceAction) -> ControlResultData {
-        match operation {
-            TenantResourceAction::Apply => ControlResultData::TenantResourceApply {
-                revision: self.revision,
-                resources: self.resources.clone(),
-                resource_mappings: self.resource_mappings.clone(),
-                resource_manifest_sha256: self.resource_manifest_sha256.clone(),
-            },
-            TenantResourceAction::Enumerate => ControlResultData::TenantResourceEnumerate {
-                revision: self.revision,
-                resources: self.resources.clone(),
-                resource_manifest_sha256: self.resource_manifest_sha256.clone(),
-            },
-            TenantResourceAction::Revoke => ControlResultData::TenantResourceRevoke {
-                revision: self.revision,
-                resources: self.resources.clone(),
-                resource_manifest_sha256: self.resource_manifest_sha256.clone(),
-            },
-        }
-    }
-}
-
 pub struct ControlTenantResourceFrame<'a> {
     pub deployment_id: &'a str,
     pub jti: &'a str,
@@ -605,25 +472,13 @@ pub trait TenantResourceExecutorPort: Send + Sync {
     fn execute_control_operation<'a>(
         &'a self,
         frame: ControlTenantResourceFrame<'a>,
-    ) -> BoxFuture<'a, Result<ControlTenantResourceOutcome, TenantResourceExecutorError>>;
+    ) -> BoxFuture<'a, Result<ControlResultData, TenantResourceExecutorError>>;
 }
 
 #[must_use]
 pub fn empty_manifest_sha256() -> String {
     canonical_tenant_resource_manifest_sha256(&[])
         .expect("the empty tenant-resource identity set is valid")
-}
-
-pub fn validate_control_outcome(
-    operation: TenantResourceAction,
-    outcome: &ControlTenantResourceOutcome,
-) -> Result<(), TenantResourceExecutorError> {
-    validate_control_result_data_for_wire(&outcome.control_result_data(operation)).map_err(
-        |error| match error {
-            ProtocolError::TooLarge => TenantResourceExecutorError::TooLarge,
-            _ => TenantResourceExecutorError::Rejected,
-        },
-    )
 }
 
 #[must_use]

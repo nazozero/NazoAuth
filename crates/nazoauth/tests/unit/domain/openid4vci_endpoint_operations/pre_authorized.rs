@@ -95,15 +95,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         self.inner.claim_nonce(nonce_hash, claim_id, now)
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner.finalize_nonce(nonce_hash, claim_id, now)
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -111,17 +102,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         now: chrono::DateTime<chrono::Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.release_nonce(nonce_hash, claim_id, now)
-    }
-
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner
-            .finalize_nonce_with_notification(nonce_hash, claim_id, handle, now)
     }
 
     fn find_response<'a>(
@@ -167,24 +147,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         self.inner.resolve_access(token_hash, now)
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.inner.store_deferred(credential)
-    }
-
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.inner
-            .store_deferred_and_finalize_nonce(credential, nonce_hash, claim_id, now)
-    }
-
     fn store_deferred_and_finalize_nonce_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -222,17 +184,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
             .claim_ready_deferred(transaction_hash, token_id, claim_id, now)
     }
 
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner
-            .finalize_deferred(transaction_hash, token_id, claim_id, now)
-    }
-
     fn release_deferred<'a>(
         &'a self,
         transaction_hash: &'a str,
@@ -242,23 +193,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner
             .release_deferred(transaction_hash, token_id, claim_id, now)
-    }
-
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        self.inner.finalize_deferred_with_notification(
-            transaction_hash,
-            token_id,
-            claim_id,
-            handle,
-            now,
-        )
     }
 
     fn finalize_deferred_with_notification_and_response<'a>(
@@ -285,13 +219,6 @@ impl CredentialStorePort for ClientDeactivatingStore {
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.record_notification(notification)
-    }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.inner.issue_notification_handle(handle)
     }
 }
 
@@ -398,19 +325,18 @@ async fn live_immediate_offer_pre_authorized_credential_replay_and_notification(
         .await
         .expect("live immediate credential should be issued");
     let notification_id = match &response.body {
-        CredentialResponseBody::Json(body) => body
+        CredentialResponseBody::Json(body) => serde_json::from_slice::<CredentialResponse>(body)
+            .unwrap()
             .notification_id
-            .clone()
             .expect("immediate response notification id"),
         CredentialResponseBody::Jwt(_) => panic!("live fixture requests JSON response"),
     };
     assert!(matches!(
         &response.body,
-        CredentialResponseBody::Json(CredentialResponse {
-            credentials: Some(_),
-            transaction_id: None,
-            ..
-        })
+        CredentialResponseBody::Json(body) if {
+            let value: CredentialResponse = serde_json::from_slice(body).unwrap();
+            value.credentials.is_some() && value.transaction_id.is_none()
+        }
     ));
 
     let replay = fixture
@@ -811,10 +737,7 @@ async fn live_pre_authorized_mtls_access_preserves_the_signed_sender_and_denies_
         .unwrap();
     assert!(matches!(
         response.body,
-        CredentialResponseBody::Json(CredentialResponse {
-            credentials: Some(_),
-            ..
-        })
+        CredentialResponseBody::Json(body) if serde_json::from_slice::<CredentialResponse>(&body).unwrap().credentials.is_some()
     ));
     fixture.cleanup().await;
 }

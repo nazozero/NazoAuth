@@ -45,10 +45,10 @@ impl nazo_http_actix::TokenManagementRequestFactsExtractor
     }
 }
 
-pub(crate) fn client_auth_request_facts(
-    request: &HttpRequest,
+pub(crate) fn client_auth_request_facts<'a>(
+    request: &'a HttpRequest,
     trusted_proxy_cidrs: &[nazo_http_actix::IpCidr],
-) -> ClientAuthRequestFacts {
+) -> ClientAuthRequestFacts<'a> {
     ClientAuthRequestFacts::new(
         request.path(),
         crate::http::mtls::request_mtls_client_certificate(request, trusted_proxy_cidrs),

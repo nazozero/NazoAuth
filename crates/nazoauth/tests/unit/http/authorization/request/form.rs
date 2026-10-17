@@ -18,7 +18,7 @@ async fn authorization_post_form_requires_form_urlencoded_content_type() {
     let response = parse_authorization_post_form(
         &req,
         &Bytes::from_static(br#"{"response_type":"code"}"#),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap_err();
 
@@ -36,7 +36,7 @@ async fn authorization_post_form_rejects_non_utf8_body() {
     let response = parse_authorization_post_form(
         &req,
         &Bytes::from_static(&[0xff, 0xfe]),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap_err();
 
@@ -57,7 +57,7 @@ async fn authorization_post_form_rejects_duplicate_oauth_parameter_in_query() {
     let response = parse_authorization_post_form(
         &req,
         &Bytes::from_static(b"client_id=client"),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap_err();
 
@@ -75,7 +75,7 @@ async fn authorization_post_form_rejects_duplicate_oauth_parameter_in_body() {
     let response = parse_authorization_post_form(
         &req,
         &Bytes::from_static(b"response_type=code&response_type=token"),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap_err();
 
@@ -93,7 +93,7 @@ fn authorization_post_form_preserves_unknown_parameters_without_duplicate_reject
     let parsed = parse_authorization_post_form(
         &req,
         &Bytes::from_static(b"response_type=code&custom=a&custom=b"),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap();
 
@@ -108,7 +108,7 @@ fn authorization_post_form_preserves_unknown_parameters_without_duplicate_reject
 fn authorization_query_preserves_multiple_resource_indicators() {
     let parsed = parse_authorization_query(
         "response_type=code&resource=https%3A%2F%2Fapi.example%2Fone&resource=https%3A%2F%2Fapi.example%2Ftwo",
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap();
 
@@ -130,7 +130,7 @@ fn authorization_post_form_preserves_multiple_resource_indicators() {
         &Bytes::from_static(
             b"response_type=code&resource=https%3A%2F%2Fapi.example%2Fone&resource=https%3A%2F%2Fapi.example%2Ftwo",
         ),
-        &AuthorizationApplication::duplicate_parameters(),
+        AuthorizationApplication::duplicate_parameters(),
     )
     .unwrap();
 

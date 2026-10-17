@@ -70,15 +70,12 @@ fn generic_audit_append_rejects_reserved_authorization_authority() {
 }
 
 #[test]
-fn payload_byte_count_matches_compact_json_and_exact_limit() {
+fn payload_limit_matches_compact_json_and_exact_limit() {
     for payload in [
         serde_json::json!({}),
         serde_json::json!({"escaped": "\\\"\n\t", "unicode": "签名😀"}),
         serde_json::json!({"nested": [{"b": null, "a": [true, -17, 2.5]}, []]}),
     ] {
-        let mut count = PayloadByteCount::default();
-        serde_json::to_writer(&mut count, &payload).unwrap();
-        assert_eq!(count.0, serde_json::to_vec(&payload).unwrap().len());
         assert!(validate_payload_size(&event(payload)).is_ok());
     }
     let empty_size = serde_json::to_vec(&serde_json::json!({"body": ""}))
@@ -88,10 +85,28 @@ fn payload_byte_count_matches_compact_json_and_exact_limit() {
         let payload = serde_json::json!({
             "body": "x".repeat(MAX_SECURITY_AUDIT_PAYLOAD_BYTES - empty_size + extra),
         });
-        let mut count = PayloadByteCount::default();
-        serde_json::to_writer(&mut count, &payload).unwrap();
-        assert_eq!(count.0, MAX_SECURITY_AUDIT_PAYLOAD_BYTES + extra);
+        assert_eq!(
+            serde_json::to_vec(&payload).unwrap().len(),
+            MAX_SECURITY_AUDIT_PAYLOAD_BYTES + extra
+        );
         assert_eq!(validate_payload_size(&event(payload)).is_ok(), extra == 0);
+    }
+}
+
+#[test]
+fn payload_limit_counts_escaped_and_multibyte_json_bytes() {
+    for text in ["签名😀", "\n\t\\\""] {
+        let mut payload = serde_json::json!({"body": text.repeat(512), "padding": ""});
+        let encoded_len = serde_json::to_vec(&payload).unwrap().len();
+        let padding = "x".repeat(MAX_SECURITY_AUDIT_PAYLOAD_BYTES - encoded_len);
+        payload["padding"] = Value::String(padding.clone());
+        assert_eq!(
+            serde_json::to_vec(&payload).unwrap().len(),
+            MAX_SECURITY_AUDIT_PAYLOAD_BYTES
+        );
+        assert!(validate_payload_size(&event(payload.clone())).is_ok());
+        payload["padding"] = Value::String(padding + "x");
+        assert!(validate_payload_size(&event(payload)).is_err());
     }
 }
 

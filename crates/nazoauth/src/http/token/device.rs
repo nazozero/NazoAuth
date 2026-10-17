@@ -76,36 +76,34 @@ pub(crate) fn parse_device_authorization_form(
     };
 
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
-        let key = key.into_owned();
-        let value = value.into_owned();
-        match key.as_str() {
+        match key.as_ref() {
             "resource" => {
-                resources.push(value);
+                resources.push(value.into_owned());
             }
             "client_id" => {
-                accept_device_authorization_parameter_once(&mut seen, key)?;
-                form.client_id = non_empty(value);
+                accept_device_authorization_parameter_once(&mut seen, "client_id")?;
+                form.client_id = non_empty(value.into_owned());
             }
             "scope" => {
-                accept_device_authorization_parameter_once(&mut seen, key)?;
-                form.scope = non_empty(value);
+                accept_device_authorization_parameter_once(&mut seen, "scope")?;
+                form.scope = non_empty(value.into_owned());
             }
             "client_secret" => {
-                accept_device_authorization_parameter_once(&mut seen, key)?;
-                form.client_secret = non_empty(value);
+                accept_device_authorization_parameter_once(&mut seen, "client_secret")?;
+                form.client_secret = non_empty(value.into_owned());
             }
             "client_assertion_type" => {
-                accept_device_authorization_parameter_once(&mut seen, key)?;
-                form.client_assertion_type = non_empty(value);
+                accept_device_authorization_parameter_once(&mut seen, "client_assertion_type")?;
+                form.client_assertion_type = non_empty(value.into_owned());
             }
             "client_assertion" => {
-                accept_device_authorization_parameter_once(&mut seen, key)?;
-                form.client_assertion = non_empty(value);
+                accept_device_authorization_parameter_once(&mut seen, "client_assertion")?;
+                form.client_assertion = non_empty(value.into_owned());
             }
             _ => {}
         }
     }
-    form.resources = parse_resource_indicators(&resources)
+    form.resources = parse_resource_indicators(resources)
         .map_err(|_| DeviceAuthorizationFormError::InvalidResourceParameter)?;
     Ok(form)
 }
@@ -266,8 +264,8 @@ fn device_authorization_form_error(error: DeviceAuthorizationFormError) -> HttpR
 }
 
 fn accept_device_authorization_parameter_once(
-    seen: &mut std::collections::HashSet<String>,
-    key: String,
+    seen: &mut std::collections::HashSet<&'static str>,
+    key: &'static str,
 ) -> Result<(), DeviceAuthorizationFormError> {
     if seen.insert(key) {
         Ok(())

@@ -1,9 +1,7 @@
 use crate::{Error, ValkeyConnection, command, keys};
 const INCREMENT_SCRIPT: &str = r#"
-local current = redis.call('GET', KEYS[1])
-if not current then redis.call('SET', KEYS[1], '1', 'EX', ARGV[1]); return '1' end
 local count = redis.call('INCR', KEYS[1])
-if redis.call('TTL', KEYS[1]) == -1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
 return tostring(count)
 "#;
 #[derive(Clone, Copy, Debug)]

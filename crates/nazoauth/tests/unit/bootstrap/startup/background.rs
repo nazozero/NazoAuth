@@ -4,7 +4,6 @@ use nazo_oauth_server::ports::transient_state::{
     CibaPingClaimBatch, CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome,
     CibaPingFinishResult, TransientStateFuture,
 };
-use std::collections::BTreeSet;
 
 struct EmptyDeliveries;
 
@@ -33,26 +32,10 @@ impl CibaPingDeliveryPort for EmptyDeliveries {
 }
 
 #[tokio::test]
-async fn worker_starts_when_ciba_is_disabled_in_startup_snapshot() {
+async fn worker_starts_and_stops_without_a_module_snapshot() {
     let settings = Settings::from_config(&ConfigSource::default()).expect("default settings load");
-    let pool =
-        nazo_postgres::create_pool("not a postgres url", 1).expect("a lazy test pool should build");
-    let runtime_modules =
-        crate::runtime_modules::test_support::runtime_modules_with_modules_for_test(
-            pool,
-            &settings,
-            BTreeSet::new(),
-        )
-        .expect("disabled runtime-module snapshot should build");
-    assert!(!nazo_auth::module_admissible(
-        runtime_modules.registry.snapshot().as_ref(),
-        nazo_runtime_modules::ModuleId::Ciba,
-        nazo_auth::CapabilityAdmission::NewRequest,
-    ));
-
-    let worker = spawn_ciba_ping_worker(Arc::new(EmptyDeliveries), &settings, &runtime_modules)
-        .expect("worker construction should succeed")
-        .expect("CIBA delivery worker must not follow the startup module snapshot");
+    let worker = spawn_ciba_ping_worker(Arc::new(EmptyDeliveries), &settings)
+        .expect("worker construction should succeed");
     worker.abort();
     assert!(
         worker

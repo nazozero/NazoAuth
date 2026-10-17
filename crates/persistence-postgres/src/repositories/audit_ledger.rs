@@ -241,7 +241,6 @@ impl AuditLedgerRepository {
                 "audit batch claim arguments are outside their safe bounds".to_owned(),
             ));
         }
-        let deployment_id = deployment_id.to_owned();
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
         let result = guard
             .connection()
@@ -256,13 +255,13 @@ impl AuditLedgerRepository {
                 .get_result::<AuditChainHeadRow>(connection)
                 .await?;
                 if head.batch_last_sequence.is_some() {
-                    return claim_inflight(connection, &head, &deployment_id, lock_timeout_seconds)
+                    return claim_inflight(connection, &head, deployment_id, lock_timeout_seconds)
                         .await;
                 }
                 claim_fresh(
                     connection,
                     &head,
-                    &deployment_id,
+                    deployment_id,
                     limit,
                     max_envelope_bytes,
                     lock_timeout_seconds,
@@ -812,28 +811,8 @@ fn validate_event(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
     Ok(())
 }
 
-#[derive(Default)]
-struct PayloadByteCount(usize);
-
-impl std::io::Write for PayloadByteCount {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(bytes.len())
-            .ok_or_else(|| std::io::Error::other("audit payload byte count overflow"))?;
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 fn validate_payload_size(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
-    let mut payload_bytes = PayloadByteCount::default();
-    serde_json::to_writer(&mut payload_bytes, &event.payload)
-        .map_err(|error| RepositoryError::Unexpected(format!("invalid audit payload: {error}")))?;
-    if payload_bytes.0 > MAX_SECURITY_AUDIT_PAYLOAD_BYTES {
+    if !nazo_persistence::security_audit_payload_within_limit(&event.payload) {
         return Err(RepositoryError::Unexpected(format!(
             "audit payload exceeds {MAX_SECURITY_AUDIT_PAYLOAD_BYTES} bytes"
         )));

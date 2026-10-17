@@ -22,24 +22,26 @@ impl AdminClientCryptoPort for TestCrypto {
         ("issued-secret".to_owned(), "hashed-secret".to_owned())
     }
 
-    fn validate_jwks(&self, _jwks: &serde_json::Value) -> Result<(), String> {
-        Ok(())
+    fn inspect_jwks(
+        &self,
+        _jwks: &serde_json::Value,
+        _certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        Ok(nazo_auth::ClientJwksCapabilities {
+            signing_algorithms: nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+                .iter()
+                .copied()
+                .collect(),
+            encryption_key_counts: nazo_auth::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+                .iter()
+                .map(|alg| (*alg, 1))
+                .collect(),
+            has_current_mtls_certificate: true,
+        })
     }
 
     fn validate_rfc4514_dn(&self, _value: &str) -> Result<(), String> {
         Ok(())
-    }
-
-    fn matching_encryption_key_count(&self, _jwks: &serde_json::Value, _algorithm: &str) -> usize {
-        1
-    }
-
-    fn contains_signing_key(&self, _jwks: &serde_json::Value) -> bool {
-        true
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &serde_json::Value) -> bool {
-        true
     }
 }
 
@@ -336,10 +338,6 @@ fn admin_client_ports_and_errors_have_stable_operator_messages() {
     }
     for (error, expected) in [
         (AdminClientError::NotFound, "admin client not found"),
-        (
-            AdminClientError::Consistency("invariant".to_owned()),
-            "invariant",
-        ),
         (
             AdminClientError::Repository(AdminClientPortError::Unavailable),
             "admin client repository unavailable",

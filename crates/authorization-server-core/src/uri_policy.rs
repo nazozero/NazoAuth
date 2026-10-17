@@ -9,7 +9,7 @@ pub enum RedirectUriError {
     Invalid,
 }
 
-pub fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
+pub fn validate_issuer_url(value: &str) -> anyhow::Result<Url> {
     let url = parse_url("issuer", value)?;
     if !url.has_host() {
         bail!("issuer 必须包含 host");
@@ -21,7 +21,8 @@ pub fn validate_issuer_url(value: &str) -> anyhow::Result<()> {
     if url.query().is_some() || url.fragment().is_some() {
         bail!("issuer 不能包含 query 或 fragment");
     }
-    validate_https_or_loopback_http("issuer", &url)
+    validate_https_or_loopback_http("issuer", &url)?;
+    Ok(url)
 }
 
 pub fn validate_frontend_base_url(value: &str) -> anyhow::Result<()> {
@@ -78,7 +79,7 @@ pub fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Re
             }
             Ok(())
         }
-        scheme if client_type == "public" && is_private_use_scheme(scheme) => Ok(()),
+        scheme if client_type == "public" && scheme.contains('.') => Ok(()),
         _ => bail!("redirect_uri 必须使用 https、loopback http 或 public native 私有 scheme"),
     }
 }
@@ -181,11 +182,4 @@ fn is_loopback_host(url: &Url) -> bool {
         Some(url::Host::Ipv6(addr)) => addr.is_loopback(),
         None => false,
     }
-}
-
-fn is_private_use_scheme(scheme: &str) -> bool {
-    scheme.contains('.')
-        && scheme
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
 }

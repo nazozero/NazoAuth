@@ -7,10 +7,9 @@ use std::path::PathBuf;
 use anyhow::bail;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::{
-    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+    validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
     validate_protected_resource_identifier,
 };
-use url::Url;
 
 use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use crate::config::{ConfigSource, DEFAULT_DATA_DIR};
@@ -66,8 +65,6 @@ pub(crate) struct Settings {
 /// The immutable tenant identity selected for this runtime snapshot.
 ///
 /// A directory binding creates one complete `Settings` value per tenant.
-/// Keeping the host beside the identity prevents request routing from consulting
-/// a second tenant registry after the snapshot has been selected.
 #[derive(Clone)]
 pub(crate) struct TenantSettings {
     pub(crate) context: nazo_identity::TenantContext,
@@ -97,21 +94,23 @@ pub(crate) enum TransportMode {
 }
 
 impl TransportMode {
-    fn from_config(value: Option<&str>, issuer: &str) -> anyhow::Result<Self> {
+    fn from_config(
+        value: Option<&str>,
+        issuer: &str,
+        issuer_is_loopback_http: bool,
+    ) -> anyhow::Result<Self> {
         match value.map(str::trim).filter(|value| !value.is_empty()) {
-            None if is_loopback_http_url(issuer) => Ok(Self::LoopbackHttp),
+            None if issuer_is_loopback_http => Ok(Self::LoopbackHttp),
             None => bail!(
                 "TRANSPORT_MODE is required for non-loopback issuers and must be direct-tls or trusted-proxy"
             ),
-            Some("loopback-http") if is_loopback_http_url(issuer) => Ok(Self::LoopbackHttp),
+            Some("loopback-http") if issuer_is_loopback_http => Ok(Self::LoopbackHttp),
             Some("loopback-http") => {
                 bail!("TRANSPORT_MODE=loopback-http requires a loopback HTTP issuer")
             }
             Some("direct-tls") if issuer.starts_with("https://") => Ok(Self::DirectTls),
             Some("direct-tls") => bail!("direct-tls transport requires an HTTPS issuer"),
-            Some("trusted-proxy")
-                if issuer.starts_with("https://") || is_loopback_http_url(issuer) =>
-            {
+            Some("trusted-proxy") if issuer.starts_with("https://") || issuer_is_loopback_http => {
                 Ok(Self::TrustedProxy)
             }
             Some("trusted-proxy") => {
@@ -139,7 +138,6 @@ pub(crate) struct ProtocolSettings {
     pub(crate) id_token_ttl_seconds: i64,
     pub(crate) refresh_token_ttl_seconds: i64,
     pub(crate) client_secret_pepper: String,
-    pub(crate) subject_type: SubjectType,
     pub(crate) pairwise_subject_secret: Option<String>,
     pub(crate) par_ttl_seconds: u64,
     pub(crate) require_pushed_authorization_requests: bool,
@@ -264,13 +262,13 @@ pub(crate) fn mfa_totp_key_ring(
     let previous_key_id = config.optional_string("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID");
     validate_mfa_totp_key_pair(
         "MFA_TOTP_ENCRYPTION_KEY",
-        current_key,
+        current_key.is_some(),
         "MFA_TOTP_ENCRYPTION_KEY_ID",
         current_key_id.as_deref(),
     )?;
     validate_mfa_totp_key_pair(
         "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",
-        previous_key,
+        previous_key.is_some(),
         "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID",
         previous_key_id.as_deref(),
     )?;
@@ -278,11 +276,6 @@ pub(crate) fn mfa_totp_key_ring(
         bail!(
             "MFA_TOTP_ENCRYPTION_KEY is required when a previous TOTP encryption key is configured"
         );
-    }
-    if let (Some(current), Some(previous)) = (current_key_id.as_deref(), previous_key_id.as_deref())
-        && current == previous
-    {
-        bail!("MFA_TOTP_ENCRYPTION_KEY_ID and MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID must differ");
     }
     let Some(current_key) = current_key else {
         return Ok(None);
@@ -345,15 +338,12 @@ fn parse_optional_32_byte_key(
 
 fn validate_mfa_totp_key_pair(
     key_name: &'static str,
-    key: Option<[u8; 32]>,
+    key_present: bool,
     id_name: &'static str,
     id: Option<&str>,
 ) -> anyhow::Result<()> {
-    if key.is_some() != id.is_some() {
+    if key_present != id.is_some() {
         bail!("{key_name} and {id_name} must be configured together");
-    }
-    if id.is_some_and(|value| value.len() > 128) {
-        bail!("{id_name} must be at most 128 bytes");
     }
     Ok(())
 }
@@ -475,19 +465,6 @@ pub(crate) fn bounded_id_token_ttl_seconds(config: &ConfigSource) -> anyhow::Res
         );
     }
     Ok(ttl)
-}
-
-fn url_origin(value: &str) -> anyhow::Result<String> {
-    let url = Url::parse(value).map_err(|_| anyhow::anyhow!("PUBLIC_BASE_URL must be absolute"))?;
-    let Some(host) = url.host_str() else {
-        bail!("PUBLIC_BASE_URL must include host");
-    };
-    let mut origin = format!("{}://{}", url.scheme(), host);
-    if let Some(port) = url.port() {
-        origin.push(':');
-        origin.push_str(&port.to_string());
-    }
-    Ok(origin)
 }
 
 fn parse_signing_external_command(value: Option<String>) -> Vec<String> {

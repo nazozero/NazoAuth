@@ -80,6 +80,13 @@ fn social_token_parser_accepts_json_and_form_urlencoded_provider_responses() {
     assert_eq!(form.access_token, "qq-token");
     assert_eq!(form.openid.as_deref(), Some("qq-openid"));
     assert_eq!(form.expires_in, Some(7_776_000));
+    let repeated = parse_social_token_response(
+        "access_token=old&access%5Ftoken=new%2Btoken&expires_in=invalid&openid=first&openid=last&unused=ignored".to_owned(),
+    ).unwrap();
+    assert_eq!(repeated.access_token, "new+token");
+    assert_eq!(repeated.openid.as_deref(), Some("last"));
+    assert_eq!(repeated.expires_in, None);
+    assert!(parse_social_token_response("access_token=old&access_token=".to_owned()).is_err());
 
     let json = parse_social_token_response(
         r#"{"access_token":"wechat-token","openid":"wechat-openid","unionid":"wechat-union"}"#
@@ -124,6 +131,10 @@ fn social_identity_normalization_uses_subject_claim_and_verified_email_only() {
     )
     .unwrap();
 
+    assert_eq!(identity.claims["kind"], "qq");
+    assert_eq!(identity.claims["union_id"], "qq-union");
+    assert_eq!(identity.claims["openid"], json!({"openid": "qq-openid"}));
+    assert_eq!(identity.claims["userinfo"]["nickname"], "QQ User");
     assert_eq!(identity.subject, "qq-openid");
     assert_eq!(identity.email.as_deref(), Some("user@example.com"));
     assert_eq!(identity.display_name.as_deref(), Some("QQ User"));

@@ -205,7 +205,7 @@ impl ScimCursorProtector for UnusedCursor {
         Err(ScimDependencyError::Unavailable)
     }
 
-    fn unprotect(&self, _protected: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {
+    fn unprotect<'a>(&self, _protected: &'a mut [u8]) -> Result<&'a [u8], ScimDependencyError> {
         Err(ScimDependencyError::Unavailable)
     }
 }

@@ -148,6 +148,13 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         .await
         .unwrap();
 
+    // Reconstruct the historical append/open schema before testing its upgrade.
+    owner
+        .batch_execute(include_str!(
+            "../../../migrations/20261017000300_retire_split_audit_claim/down.sql"
+        ))
+        .await
+        .unwrap();
     // Only holders of both legacy capabilities gain the fused API on upgrade.
     owner
         .batch_execute(include_str!(
@@ -744,6 +751,46 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         before,
         "role changes never alter function identity"
     );
+
+    // Finish the upgrade: the current exporter no longer needs either split API.
+    owner
+        .batch_execute(include_str!(
+            "../../../migrations/20261017000300_retire_split_audit_claim/up.sql"
+        ))
+        .await
+        .unwrap();
+    let split_apis_absent = sql_query(
+        "SELECT to_regprocedure('public.nazo_append_security_audit_chain(bigint,bytea,uuid[],bytea[])') IS NULL \
+         AND to_regprocedure('public.nazo_open_security_audit_batch(bigint,bigint,integer,bytea,integer)') IS NULL AS value",
+    )
+    .get_result::<Allowed>(&mut owner)
+    .await
+    .unwrap();
+    assert!(split_apis_absent.value);
+    let current_exports = EXPORT_FUNCTIONS
+        .iter()
+        .filter(|function| {
+            !function.contains("nazo_append_security_audit_chain")
+                && !function.contains("nazo_open_security_audit_batch")
+        })
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    owner
+        .batch_execute(&format!(
+            "GRANT EXECUTE ON FUNCTION {current_exports} TO {login}"
+        ))
+        .await
+        .unwrap();
+    policy(
+        &mut runtime,
+        false,
+        false,
+        true,
+        true,
+        "current exporter without split APIs",
+    )
+    .await;
 
     // Deliberately leave accidental new grants behind, then exercise the
     // actual writer reconfiguration rather than merely inspecting its SQL.

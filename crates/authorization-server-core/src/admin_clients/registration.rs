@@ -24,46 +24,32 @@ where
     S: SectorIdentifierResolverPort + ?Sized,
     C: AdminClientCryptoPort + ?Sized,
 {
-    let (issued_secret, client_secret_hash) = if request.client_type == "confidential"
-        && matches!(
-            request.token_endpoint_auth_method.as_str(),
-            "client_secret_basic" | "client_secret_post"
-        ) {
+    let requires_secret = request.requires_client_secret();
+    let mut prepared =
+        prepare_client_registration_metadata(request, policy, sector_identifiers, crypto).await?;
+    if requires_secret {
         let (secret, digest) = crypto.issue_client_secret(&policy.client_secret_pepper);
-        (Some(secret), Some(digest))
-    } else {
-        (None, None)
-    };
-    prepare_client_registration_with_material(
-        request,
-        policy,
-        sector_identifiers,
-        crypto,
-        issued_secret,
-        client_secret_hash,
-    )
-    .await
+        prepared.issued_secret = Some(secret).into();
+        prepared.client_secret_hash = Some(digest);
+    }
+    Ok(prepared)
 }
 
-pub(crate) async fn prepare_client_registration_with_material<S, C>(
+pub(crate) async fn prepare_client_registration_metadata<S, C>(
     request: CreateClientRequest,
     policy: &AdminClientPolicy,
     sector_identifiers: &S,
     crypto: &C,
-    issued_secret: Option<String>,
-    client_secret_hash: Option<String>,
 ) -> Result<PreparedClientRegistration, AdminClientError>
 where
     S: SectorIdentifierResolverPort + ?Sized,
     C: AdminClientCryptoPort + ?Sized,
 {
-    // Guard before any validation or await, including rejected preparation.
-    let issued_secret = super::PendingClientSecret::from(issued_secret);
     request
         .security_policy
         .validate()
         .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?;
-    validate_client_metadata(
+    let keys = validate_client_metadata(
         ClientMetadata::from_create(&request),
         &crypto.id_token_signing_algorithms(),
         &crypto.response_signing_algorithms(),
@@ -77,9 +63,8 @@ where
             require_dpop_bound_tokens: request.require_dpop_bound_tokens,
             require_mtls_bound_tokens: request.require_mtls_bound_tokens,
             jwks_uri: request.jwks_uri.as_deref(),
-            jwks: request.jwks.as_ref(),
+            has_signing_key: !keys.signing_algorithms.is_empty(),
         },
-        crypto,
     )?;
     let subject_type = request.subject_type.unwrap_or_else(|| "public".to_owned());
     validate_subject_type(&subject_type)?;
@@ -183,8 +168,8 @@ where
             security_policy: request.security_policy,
         },
         require_mtls_bound_tokens: request.require_mtls_bound_tokens,
-        issued_secret,
-        client_secret_hash,
+        issued_secret: super::PendingClientSecret::default(),
+        client_secret_hash: None,
         registration_access_token_blake3: None,
     })
 }

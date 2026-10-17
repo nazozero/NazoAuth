@@ -80,14 +80,16 @@ where
             return false;
         }
         if enabled {
-            self.catalog.spec(module_id).is_some_and(|spec| {
-                spec.dependencies.iter().all(|dependency| {
+            self.catalog
+                .spec(module_id)
+                .dependencies
+                .iter()
+                .all(|dependency| {
                     states.get(dependency).is_some_and(|state| {
                         self.catalog
                             .effective_enabled(*dependency, state.desired.mode.is_enabled())
                     }) && snapshot.admits(*dependency)
                 })
-            })
         } else {
             self.catalog
                 .specs()
@@ -160,7 +162,7 @@ where
                 if let Some(current) = current.as_ref()
                     && current.transition_revision == desired.revision
                 {
-                    return self.fail_dependency_loss(current, true).await;
+                    return self.fail_dependency_loss(current).await;
                 }
                 return Err(RegistryError::DependencyUnavailable {
                     module_id,

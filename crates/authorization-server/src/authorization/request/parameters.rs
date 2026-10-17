@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
-pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
+pub(crate) const AUTHORIZATION_DUPLICATE_PARAMETERS: &[&str] = &[
     "response_type",
     "client_id",
     "redirect_uri",
     "scope",
-    "resource",
     "authorization_details",
     "issuer_state",
     "state",
@@ -20,23 +19,10 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "response_mode",
     "request_uri",
     "request",
+    REAUTH_NONCE_PARAMETER,
 ];
 
-const REAUTH_NONCE_PARAMETER: &str = "_nazo_reauth_nonce";
-
-pub(crate) fn authorization_duplicate_parameters() -> Vec<&'static str> {
-    let mut parameters = AUTHORIZED_REQUEST_PARAMETERS
-        .iter()
-        .copied()
-        .filter(|parameter| *parameter != "resource")
-        .collect::<Vec<_>>();
-    parameters.push(REAUTH_NONCE_PARAMETER);
-    parameters
-}
-
-pub(super) fn reauth_nonce_parameter() -> &'static str {
-    REAUTH_NONCE_PARAMETER
-}
+pub(super) const REAUTH_NONCE_PARAMETER: &str = "_nazo_reauth_nonce";
 
 pub(super) fn preserve_verified_dpop_binding(
     q: &mut HashMap<String, String>,
@@ -59,20 +45,6 @@ pub(super) fn outer_request_uri_parameters_match_pushed(
         }
         pushed.get(key) == Some(outer_value)
     })
-}
-
-pub(super) fn authorization_login_query(
-    expanded: &HashMap<String, String>,
-    original: Option<&HashMap<String, String>>,
-    request_uri: Option<&String>,
-) -> HashMap<String, String> {
-    if request_uri.is_some()
-        || original.is_some_and(|q| q.contains_key("request") || q.contains_key("request_uri"))
-    {
-        original.cloned().unwrap_or_else(|| expanded.clone())
-    } else {
-        expanded.clone()
-    }
 }
 
 pub(super) fn authorization_login_url_for_frontend(

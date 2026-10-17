@@ -132,7 +132,6 @@ pub(crate) fn valid_client_notification_token(token: &str) -> bool {
         && unpadded.bytes().all(|byte| {
             byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'+' | b'/')
         })
-        && token[unpadded.len()..].bytes().all(|byte| byte == b'=')
 }
 
 pub(crate) fn validate_ciba_token_request_profile(

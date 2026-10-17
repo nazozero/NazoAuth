@@ -5,13 +5,13 @@ use std::sync::{
 
 use chrono::Utc;
 use nazo_identity::{
-    AccountIdentity, AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationIdentity,
-    AuthenticationService, AuthenticationServiceConfig, LoginIdentity, PasswordHash, Principal,
-    PublicAccount, TenantContext, TenantId, UserId, UserRole,
+    AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationIdentity,
+    AuthenticationService, AuthenticationServiceConfig, PasswordHash, TenantContext, TenantId,
+    UserId,
     ports::{
         AuthenticationAuditEvent, AuthenticationAuditPort, LoginAccountRepositoryPort,
-        LoginSessionCreate, LoginSessionPort, LoginThrottlePort, RememberedMfaDevicePort,
-        RepositoryFuture, SecretVerifyFuture, SecretVerifyPort,
+        LoginAccountState, LoginSessionCreate, LoginSessionPort, LoginThrottlePort,
+        RememberedMfaDevicePort, RepositoryFuture, SecretVerifyFuture, SecretVerifyPort,
     },
     session::SessionRecord,
 };
@@ -30,12 +30,12 @@ impl LoginAccountRepositoryPort for Accounts {
         Box::pin(async move { Ok(identity) })
     }
 
-    fn public_account_by_id(
+    fn login_state_by_id(
         &self,
         _tenant_id: TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'_, Option<PublicAccount>> {
-        Box::pin(async { panic!("non-authenticatable accounts must not load a public account") })
+    ) -> RepositoryFuture<'_, Option<LoginAccountState>> {
+        Box::pin(async { panic!("non-authenticatable accounts must not load login state") })
     }
 }
 
@@ -90,7 +90,8 @@ struct RememberedMfa;
 impl RememberedMfaDevicePort for RememberedMfa {
     fn is_valid<'a>(
         &'a self,
-        _account: &'a PublicAccount,
+        _tenant_id: TenantId,
+        _user_id: UserId,
         _token_hash: &'a str,
         _user_agent_hash: Option<&'a str>,
         _now: chrono::DateTime<Utc>,
@@ -165,7 +166,7 @@ impl SecretVerifyPort for AlwaysValidVerifier {
 #[derive(Clone)]
 struct ActiveAccounts {
     authentication: AuthenticationIdentity,
-    public: PublicAccount,
+    state: LoginAccountState,
 }
 
 impl LoginAccountRepositoryPort for ActiveAccounts {
@@ -178,13 +179,13 @@ impl LoginAccountRepositoryPort for ActiveAccounts {
         Box::pin(async move { Ok(Some(authentication)) })
     }
 
-    fn public_account_by_id(
+    fn login_state_by_id(
         &self,
         _tenant_id: TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'_, Option<PublicAccount>> {
-        let public = self.public.clone();
-        Box::pin(async move { Ok(Some(public)) })
+    ) -> RepositoryFuture<'_, Option<LoginAccountState>> {
+        let state = self.state;
+        Box::pin(async move { Ok(Some(state)) })
     }
 }
 
@@ -199,41 +200,16 @@ impl AuthenticationAuditPort for Audit {
 
 fn inactive_identity() -> AuthenticationIdentity {
     AuthenticationIdentity {
-        principal: Principal {
-            user_id: UserId::new(Uuid::now_v7()).unwrap(),
-            tenant: TenantContext::default_system(),
-            role: UserRole::User,
-            active: false,
-        },
-        login: LoginIdentity {
-            account: AccountIdentity {
-                username: "inactive".to_owned(),
-                email: "inactive@example.com".to_owned(),
-                email_verified: true,
-                mfa_enabled: false,
-            },
-            password_hash: PasswordHash::new("persisted-password-hash").unwrap(),
-        },
+        user_id: UserId::new(Uuid::now_v7()).unwrap(),
+        active: false,
+        password_hash: PasswordHash::new("persisted-password-hash").unwrap(),
     }
 }
 
-fn active_mfa_identity() -> AuthenticationIdentity {
+fn active_identity() -> AuthenticationIdentity {
     AuthenticationIdentity {
-        principal: Principal {
-            user_id: UserId::new(Uuid::now_v7()).unwrap(),
-            tenant: TenantContext::default_system(),
-            role: UserRole::User,
-            active: true,
-        },
-        login: LoginIdentity {
-            account: AccountIdentity {
-                username: "active".to_owned(),
-                email: "active@example.com".to_owned(),
-                email_verified: true,
-                mfa_enabled: true,
-            },
-            password_hash: PasswordHash::new("persisted-password-hash").unwrap(),
-        },
+        active: true,
+        ..inactive_identity()
     }
 }
 
@@ -280,54 +256,60 @@ async fn missing_and_inactive_accounts_share_dummy_verification_and_failure_beha
         assert!(matches!(
             &events[0],
             AuthenticationAuditEvent::Failure { user_id, .. }
-                if *user_id == authentication.as_ref().map(|identity| identity.principal.user_id)
+                if *user_id == authentication.as_ref().map(|identity| identity.user_id)
         ));
     }
 }
 
 #[tokio::test]
-async fn pending_mfa_login_uses_a_short_session_ttl() {
-    let authentication = active_mfa_identity();
-    let public = PublicAccount {
-        principal: authentication.principal.clone(),
-        account: authentication.login.account.clone(),
-        profile: Default::default(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-    let sessions = RecordingSessions::default();
-    let service = AuthenticationService::new(
-        ActiveAccounts {
-            authentication,
-            public,
-        },
-        Throttles::default(),
-        AlwaysValidVerifier,
-        RememberedMfa,
-        sessions.clone(),
-        Audit::default(),
-        AuthenticationServiceConfig {
-            tenant_id: TenantContext::default_system().tenant_id,
-            dummy_password_hash: PasswordHash::new("dummy-password-hash").unwrap(),
-            failure_window_seconds: 60,
-            failure_ip_email_max_attempts: 5,
-            session_ttl_seconds: 300,
-            pending_mfa_session_ttl_seconds: 120,
-        },
-    );
+async fn login_uses_current_account_state_after_password_verification() {
+    for (active, mfa_enabled) in [(true, true), (true, false), (false, true)] {
+        let authentication = active_identity();
+        let state = LoginAccountState {
+            active,
+            mfa_enabled,
+        };
+        let sessions = RecordingSessions::default();
+        let service = AuthenticationService::new(
+            ActiveAccounts {
+                authentication,
+                state,
+            },
+            Throttles::default(),
+            AlwaysValidVerifier,
+            RememberedMfa,
+            sessions.clone(),
+            Audit::default(),
+            AuthenticationServiceConfig {
+                tenant_id: TenantContext::default_system().tenant_id,
+                dummy_password_hash: PasswordHash::new("dummy-password-hash").unwrap(),
+                failure_window_seconds: 60,
+                failure_ip_email_max_attempts: 5,
+                session_ttl_seconds: 300,
+                pending_mfa_session_ttl_seconds: 120,
+            },
+        );
 
-    let result = service
-        .authenticate_password(AuthenticatePasswordInput {
-            email: "active@example.com".to_owned(),
-            password: "candidate".to_owned(),
-            source_ip: "192.0.2.1".to_owned(),
-            remembered_mfa: None,
-            previous_session_id: None,
-            now: Utc::now(),
-        })
-        .await
-        .unwrap();
+        let result = service
+            .authenticate_password(AuthenticatePasswordInput {
+                email: "active@example.com".to_owned(),
+                password: "candidate".to_owned(),
+                source_ip: "192.0.2.1".to_owned(),
+                remembered_mfa: None,
+                previous_session_id: None,
+                now: Utc::now(),
+            })
+            .await;
 
-    assert!(result.session.pending_mfa());
-    assert_eq!(*sessions.0.lock().unwrap(), vec![120]);
+        if active {
+            assert_eq!(result.unwrap().session.pending_mfa(), mfa_enabled);
+            assert_eq!(
+                *sessions.0.lock().unwrap(),
+                vec![if mfa_enabled { 120 } else { 300 }]
+            );
+        } else {
+            assert_eq!(result, Err(AuthenticatePasswordError::InactiveAccount));
+            assert!(sessions.0.lock().unwrap().is_empty());
+        }
+    }
 }

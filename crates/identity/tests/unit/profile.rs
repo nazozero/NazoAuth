@@ -11,7 +11,7 @@ use crate::{
     UserRole,
     ports::{
         AuthorizedApplication, AuthorizedApplicationRepositoryPort, GrantSummaryRepositoryPort,
-        ProfileRepositoryPort, ProfileUpdate, RepositoryError, RepositoryFuture,
+        ProfileRepositoryPort, RepositoryError, RepositoryFuture,
     },
 };
 
@@ -31,10 +31,35 @@ impl ProfileRepositoryPort for StoredProfileRepository {
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-        update: ProfileUpdate,
+        update: ProfilePatch,
     ) -> RepositoryFuture<'a, PublicAccount> {
         let mut account = self.account.lock().unwrap();
-        account.profile = update.profile;
+        let phone_number_verified = account.profile.phone_number_verified
+            && account.profile.phone_number == update.phone_number;
+        account.profile = UserProfile {
+            display_name: update.display_name,
+            given_name: update.given_name,
+            family_name: update.family_name,
+            middle_name: update.middle_name,
+            nickname: update.nickname,
+            profile_url: update.profile_url,
+            website_url: update.website_url,
+            gender: update.gender,
+            birthdate: update.birthdate,
+            zoneinfo: update.zoneinfo,
+            locale: update.locale,
+            phone_number: update.phone_number,
+            avatar_url: account.profile.avatar_url.take(),
+            phone_number_verified,
+            address: crate::PostalAddress {
+                formatted: update.address_formatted,
+                street_address: update.address_street_address,
+                locality: update.address_locality,
+                region: update.address_region,
+                postal_code: update.address_postal_code,
+                country: update.address_country,
+            },
+        };
         self.writes.fetch_add(1, Ordering::Relaxed);
         let account = account.clone();
         Box::pin(async move { Ok(account) })
@@ -126,7 +151,13 @@ async fn applications_are_loaded_from_the_accounts_tenant() {
         RecordingApplications(observed.clone()),
     );
 
-    assert!(service.applications(&account).await.unwrap().is_empty());
+    assert!(
+        service
+            .applications(&account.principal)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(*observed.lock().unwrap(), vec![account.tenant().tenant_id]);
 }
 
@@ -142,6 +173,29 @@ fn profile_text_trims_blanks_and_enforces_byte_limit() {
         profile_text(Some("abcdefghi".into()), 8, "name"),
         Err(ProfileValidationError::FieldTooLong("name"))
     );
+}
+
+#[test]
+fn profile_normalization_reuses_owned_text_and_scope_strings() {
+    let text = String::from("  阿丽丝\u{3000}");
+    let allocation = text.as_ptr();
+    let result = profile_text(Some(text), 32, "name").unwrap().unwrap();
+    assert_eq!(result, "阿丽丝");
+    assert_eq!(result.as_ptr(), allocation);
+    let scope = String::from("openid");
+    let allocation = scope.as_ptr();
+    let view = super::AuthorizedApplicationView::from(AuthorizedApplication {
+        client_id: "client".into(),
+        client_name: "Client".into(),
+        last_scopes: serde_json::Value::Array(vec![
+            serde_json::Value::String(scope),
+            serde_json::Value::Null,
+        ]),
+        last_authorized_at: Utc::now(),
+        authorization_count: 1,
+    });
+    assert_eq!(view.last_scopes, ["openid"]);
+    assert_eq!(view.last_scopes[0].as_ptr(), allocation);
 }
 
 #[test]
@@ -182,7 +236,7 @@ async fn retry_is_idempotent_when_profile_write_succeeds_before_overview_failure
         ..ProfilePatch::default()
     };
 
-    let first = service.update(&original, patch.clone()).await;
+    let first = service.update(&original.principal, patch.clone()).await;
     assert_eq!(
         first,
         Err(UpdateProfileError::OverviewRepository(
@@ -195,7 +249,7 @@ async fn retry_is_idempotent_when_profile_write_succeeds_before_overview_failure
         "the profile write is committed before the independent overview read"
     );
 
-    let retry = service.update(&original, patch).await.unwrap();
+    let retry = service.update(&original.principal, patch).await.unwrap();
     assert_eq!(retry.account.profile.display_name.as_deref(), Some("Alice"));
     assert_eq!(retry.authorized_application_count, 2);
     assert_eq!(writes.load(Ordering::Relaxed), 2);
@@ -207,7 +261,7 @@ async fn retry_is_idempotent_when_profile_write_succeeds_before_overview_failure
 }
 
 #[tokio::test]
-async fn profile_update_normalizes_only_profile_fields_and_resets_changed_phone_verification() {
+async fn profile_update_normalizes_only_writable_profile_fields() {
     let mut original = account();
     original.profile.phone_number = Some("+15550000001".to_owned());
     original.profile.phone_number_verified = true;
@@ -225,7 +279,7 @@ async fn profile_update_normalizes_only_profile_fields_and_resets_changed_phone_
 
     let updated = service
         .update(
-            &original,
+            &original.principal,
             ProfilePatch {
                 display_name: Some("  Alice Example  ".to_owned()),
                 given_name: Some(" Alice ".to_owned()),

@@ -28,7 +28,6 @@ impl TokenSignerPort for KeyManager {
         let generation = self.inner.generation.load_full();
         let mut header = nazo_crypto::jwt::Header::new(generation.snapshot.active_alg);
         header.typ = Some("at+jwt".to_owned());
-        header.kid = Some(generation.snapshot.active_kid.clone());
         Box::pin(async move {
             let now = Utc::now().timestamp();
             let jti = Uuid::now_v7().to_string();
@@ -61,7 +60,7 @@ impl TokenSignerPort for KeyManager {
                 &self.inner.health,
                 None,
                 SigningPurpose::AccessToken,
-                &header,
+                header,
                 &claims,
             )
             .await
@@ -105,7 +104,7 @@ impl TokenSignerPort for KeyManager {
                 &self.inner.health,
                 None,
                 SigningPurpose::IdToken,
-                &header,
+                header,
                 &Value::Object(claims),
             )
             .await
@@ -122,9 +121,7 @@ impl TokenSignerPort for KeyManager {
             let Some(header) = nazo_crypto::jwt::decode_header(token).ok() else {
                 return Ok(None);
             };
-            if header.typ.as_deref() != Some("at+jwt")
-                || crate::signing_algorithm_name(header.alg).is_none()
-            {
+            if header.typ.as_deref() != Some("at+jwt") {
                 return Ok(None);
             }
             let snapshot = self.snapshot();
@@ -207,7 +204,7 @@ impl TokenSignerPort for KeyManager {
                 &self.inner.health,
                 None,
                 SigningPurpose::Introspection,
-                &header,
+                header,
                 &claims,
             )
             .await
@@ -226,9 +223,7 @@ impl KeyManager {
         token: &str,
     ) -> Option<(nazo_auth::IdTokenHintClaims, i64)> {
         let header = nazo_crypto::jwt::decode_header(token).ok()?;
-        if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
-            || crate::signing_algorithm_name(header.alg).is_none()
-        {
+        if header.typ.as_deref().is_some_and(|typ| typ != "JWT") {
             return None;
         }
         let snapshot = self.snapshot();

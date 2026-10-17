@@ -11,7 +11,7 @@ async fn deferred_decrypts_a_valid_encrypted_request_before_access_validation() 
     jwk["alg"] = json!("ECDH-ES");
     jwk["kid"] = json!("openid4vci-request-encryption");
     let encrypted = encrypt_ecdh_es(
-        &serde_json::to_vec(&request).expect("deferred request should serialize"),
+        serde_json::to_vec(&request).expect("deferred request should serialize"),
         &jwk,
         Some("application/json"),
     )
@@ -91,7 +91,7 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         .as_ref()
         .unwrap()["keys"][0];
     let encrypted_request = nazo_digital_credentials::encrypt_ecdh_es(
-        &serde_json::to_vec(&request).unwrap(),
+        serde_json::to_vec(&request).unwrap(),
         issuer_request_jwk,
         Some("application/json"),
     )
@@ -120,8 +120,12 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
     let CredentialResponseBody::Jwt(encoded) = pending.body else {
         panic!("expected encrypted deferred response");
     };
-    let decoded: CredentialResponse =
-        serde_json::from_slice(&wallet.decrypt(&encoded).unwrap()).unwrap();
+    let decoded: CredentialResponse = serde_json::from_slice(
+        &wallet
+            .decrypt(std::str::from_utf8(&encoded).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
     assert!(decoded.credentials.is_none());
     let transaction_id = decoded
         .transaction_id
@@ -144,7 +148,7 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
     let mut waiting_request = deferred_request.clone();
     waiting_request.credential_response_encryption = request.credential_response_encryption.clone();
     let waiting_jwe = nazo_digital_credentials::encrypt_ecdh_es(
-        &serde_json::to_vec(&waiting_request).unwrap(),
+        serde_json::to_vec(&waiting_request).unwrap(),
         issuer_request_jwk,
         Some("application/json"),
     )
@@ -164,8 +168,12 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
     let CredentialResponseBody::Jwt(waiting_body) = waiting.body else {
         panic!("this poll selects encrypted response parameters");
     };
-    let waiting_body: CredentialResponse =
-        serde_json::from_slice(&wallet.decrypt(&waiting_body).unwrap()).unwrap();
+    let waiting_body: CredentialResponse = serde_json::from_slice(
+        &wallet
+            .decrypt(std::str::from_utf8(&waiting_body).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(
         waiting_body.transaction_id.as_deref(),
         Some(deferred_request.transaction_id.as_str())
@@ -197,6 +205,7 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
     let CredentialResponseBody::Json(busy_body) = busy.body else {
         panic!("this poll requests JSON");
     };
+    let busy_body: CredentialResponse = serde_json::from_slice(&busy_body).unwrap();
     assert_eq!(
         busy_body.transaction_id.as_deref(),
         Some(deferred_request.transaction_id.as_str())
@@ -224,19 +233,18 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         nazo_openid4vci::application::CredentialResponseStatus::Issued
     );
     let notification_id = match &response.body {
-        CredentialResponseBody::Json(body) => body
+        CredentialResponseBody::Json(body) => serde_json::from_slice::<CredentialResponse>(body)
+            .unwrap()
             .notification_id
-            .clone()
             .expect("deferred response notification id"),
         CredentialResponseBody::Jwt(_) => panic!("live fixture requests JSON response"),
     };
     assert!(matches!(
         &response.body,
-        CredentialResponseBody::Json(CredentialResponse {
-            credentials: Some(_),
-            transaction_id: None,
-            ..
-        })
+        CredentialResponseBody::Json(body) if {
+            let value: CredentialResponse = serde_json::from_slice(body).unwrap();
+            value.credentials.is_some() && value.transaction_id.is_none()
+        }
     ));
 
     let replay = fixture

@@ -94,7 +94,7 @@ pub fn ciba_start_audit_fields(
     auth_req_id: &str,
     source_ip_hash: Option<String>,
 ) -> serde_json::Map<String, Value> {
-    let mut fields = audit_fields(&[
+    let mut fields = audit_fields([
         ("client_id", json!(state.client_id)),
         ("user_id", json!(state.user_id)),
         ("auth_req_id_hash", json!(blake3_hex(auth_req_id))),

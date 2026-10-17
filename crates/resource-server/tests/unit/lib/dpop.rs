@@ -6,6 +6,45 @@ use jsonwebtoken::{Algorithm, Header};
 use serde_json::json;
 
 #[test]
+fn dpop_rejects_duplicate_header_fields_before_replay() {
+    let fixture = dpop_fixture();
+    let proof = dpop_proof(
+        &fixture,
+        "token",
+        "GET",
+        "https://api.example/orders",
+        "duplicate-header",
+        None,
+        None,
+    );
+    let mut parts = proof.split('.');
+    let header = String::from_utf8(URL_SAFE_NO_PAD.decode(parts.next().unwrap()).unwrap()).unwrap();
+    let payload = parts.next().unwrap();
+    let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
+    for member in [r#""alg":"RS256""#, r#""typ":"dpop+jwt""#] {
+        let duplicate = format!("{{{member},{}", &header[1..]);
+        let input = format!("{}.{payload}", URL_SAFE_NO_PAD.encode(duplicate));
+        let signature =
+            jsonwebtoken::crypto::sign(input.as_bytes(), &fixture.encoding_key, Algorithm::RS256)
+                .unwrap();
+        assert_eq!(
+            verifier.verify(
+                &format!("{input}.{signature}"),
+                "GET",
+                "https://api.example/orders",
+                "token"
+            ),
+            Err(DpopProofVerifierError::MalformedProof),
+        );
+    }
+    assert!(
+        verifier
+            .verify(&proof, "GET", "https://api.example/orders", "token")
+            .is_ok()
+    );
+}
+
+#[test]
 fn dpop_proof_verifier_produces_verified_sender_context() {
     let fixture = fixture();
     let dpop_fixture = dpop_fixture();

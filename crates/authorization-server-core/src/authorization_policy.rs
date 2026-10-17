@@ -195,7 +195,6 @@ fn requested_prompt(
             "consent" => directives.consent = true,
             "select_account" => directives.select_account = true,
             "none" => directives.none = true,
-            "" => {}
             _ => return Err(AuthorizationPolicyError::InvalidRequest),
         }
     }
@@ -244,7 +243,6 @@ fn requested_claim_requests(
         }
     }
     requests.sort_by(|left, right| left.name.cmp(&right.name));
-    requests.dedup_by(|left, right| left.name == right.name);
     Ok(requests)
 }
 
@@ -310,22 +308,22 @@ fn parse_optional_claim_request(
     if object.contains_key("value") && object.contains_key("values") {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }
-    let requested_value = object.get("value").cloned();
+    let requested_value = object.get("value");
     let requested_values = match object.get("values") {
         Some(values) => {
             let values = values
                 .as_array()
                 .filter(|values| !values.is_empty())
                 .ok_or(AuthorizationPolicyError::InvalidRequest)?;
-            values.clone()
+            values.as_slice()
         }
-        None => Vec::new(),
+        None => &[],
     };
     Ok(name.map(|name| OidcClaimRequest {
         name: name.to_owned(),
         essential,
-        value: requested_value,
-        values: requested_values,
+        value: requested_value.cloned(),
+        values: requested_values.to_vec(),
     }))
 }
 
@@ -341,13 +339,9 @@ fn requested_acr(
             .map(acr_value_is_baseline)
             .transpose()?
             .unwrap_or(false)
-            || claim
-                .values
-                .iter()
-                .map(acr_value_is_baseline)
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .any(|supported| supported);
+            || claim.values.iter().try_fold(false, |supported, value| {
+                Ok(supported | acr_value_is_baseline(value)?)
+            })?;
         if claim.essential && constrained && !supports_baseline {
             return Err(AuthorizationPolicyError::InvalidRequest);
         }

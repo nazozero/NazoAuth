@@ -58,7 +58,9 @@ impl TenantResourcePreparation for ServerTenantResourcePreparation {
         tenant: nazo_identity::TenantContext,
     ) -> BoxFuture<'a, Result<PreparedOAuthClient, TenantResourcePreparationError>> {
         Box::pin(async move {
-            let supplied_secret_expected = supplied_secret.is_some();
+            if supplied_secret.is_none() && request.requires_client_secret() {
+                return Err(TenantResourcePreparationError::Rejected);
+            }
             let prepared = match supplied_secret {
                 Some(secret) => {
                     let secret = SuppliedClientSecret::new(secret)
@@ -74,11 +76,7 @@ impl TenantResourcePreparation for ServerTenantResourcePreparation {
                 || prepared.tenant.realm_id != tenant.realm_id
                 || prepared.tenant.organization_id != tenant.organization_id
                 || prepared.registration_access_token_blake3.is_some()
-                // A newly generated secret cannot be returned after the
-                // transaction. A caller-supplied secret is deliberately
-                // echoed by the existing preparation service and is allowed;
-                // that temporary copy is wiped when `prepared` is dropped.
-                || (prepared.issued_secret.is_some() && !supplied_secret_expected)
+                || prepared.issued_secret.is_some()
             {
                 return Err(TenantResourcePreparationError::Rejected);
             }
@@ -122,8 +120,7 @@ pub(crate) fn map_admin_client_error(error: AdminClientError) -> TenantResourceP
         }
         AdminClientError::Repository(_)
         | AdminClientError::Lookup(_)
-        | AdminClientError::Write(_)
-        | AdminClientError::Consistency(_) => TenantResourcePreparationError::Unavailable,
+        | AdminClientError::Write(_) => TenantResourcePreparationError::Unavailable,
     }
 }
 

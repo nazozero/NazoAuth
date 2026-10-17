@@ -310,6 +310,20 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
     );
 
     let enabled = operations(invalid_pool(), true).await;
+    for create_request_jti in ["", "not-a-uuid", "A0000000-0000-0000-0000-000000000000"] {
+        let error = enabled
+            .create(CreatePresentationRequest {
+                create_request_jti: create_request_jti.to_owned(),
+                ..create_input(None, None, None, false)
+            })
+            .await
+            .expect_err("invalid create JTI must fail before storage");
+        assert_eq!(error.status, 400);
+        assert_eq!(
+            error.description,
+            "create_request_jti must be a canonical lowercase UUID."
+        );
+    }
     let wallet_error = enabled
         .create(CreatePresentationRequest {
             wallet_authorization_endpoint: "http://wallet.example/authorize".to_owned(),
@@ -817,9 +831,10 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     historical.expires_at = historical.created_at + chrono::Duration::seconds(300);
     let original_object = historical.request_object.as_ref().unwrap();
     let header = nazo_crypto::jwt::decode_header(original_object).unwrap();
-    let mut claims = nazo_digital_credentials::decode_compact_jwt(original_object)
-        .unwrap()
-        .claims;
+    let mut claims =
+        nazo_crypto::jwt::dangerous::insecure_decode::<serde_json::Value>(original_object)
+            .unwrap()
+            .claims;
     claims["dcql_query"] = serde_json::to_value(&historical.request.dcql_query).unwrap();
     claims["state"] = json!(historical.request.state);
     claims["jti"] = json!(Uuid::now_v7());

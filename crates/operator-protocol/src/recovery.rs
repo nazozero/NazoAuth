@@ -21,7 +21,7 @@
 //! functions are plain caller-owned buffers that never enter logs or errors.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, KeyInit, Mac};
+use hkdf::Hkdf;
 use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use sha2::{Digest as _, Sha256};
 
@@ -69,70 +69,45 @@ pub fn format_recovery_secret(secret: &[u8; 32]) -> String {
 /// truncated or padded.
 pub fn parse_recovery_secret(text: &str) -> Result<[u8; 32], ProtocolError> {
     let trimmed = text.trim();
-    let lowered_prefix = RECOVERY_SECRET_PREFIX.to_ascii_lowercase();
-    let without_prefix = trimmed
-        .strip_prefix(RECOVERY_SECRET_PREFIX)
-        .or_else(|| trimmed.strip_prefix(lowered_prefix.as_str()))
-        .unwrap_or(trimmed);
-    let mut hex = String::with_capacity(64);
-    for character in without_prefix.chars() {
-        if character.is_whitespace() {
-            continue;
-        }
-        hex.push(character.to_ascii_lowercase());
-    }
-    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(ProtocolError::Policy(
-            "recovery secret must decode to exactly 32 bytes",
-        ));
-    }
+    let without_prefix = if trimmed
+        .get(..RECOVERY_SECRET_PREFIX.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(RECOVERY_SECRET_PREFIX))
+    {
+        &trimmed[RECOVERY_SECRET_PREFIX.len()..]
+    } else {
+        trimmed
+    };
+    let invalid = || ProtocolError::Policy("recovery secret must decode to exactly 32 bytes");
+    let mut digits = without_prefix
+        .chars()
+        .filter(|character| !character.is_whitespace());
     let mut secret = [0u8; 32];
-    for (index, pair) in hex.as_bytes().chunks(2).enumerate() {
-        let high = (pair[0] as char)
-            .to_digit(16)
-            .expect("digits validated above") as u8;
-        let low = (pair[1] as char)
-            .to_digit(16)
-            .expect("digits validated above") as u8;
-        secret[index] = (high << 4) | low;
+    for byte in &mut secret {
+        let high = digits
+            .next()
+            .and_then(|character| character.to_digit(16))
+            .ok_or_else(invalid)?;
+        let low = digits
+            .next()
+            .and_then(|character| character.to_digit(16))
+            .ok_or_else(invalid)?;
+        *byte = ((high << 4) | low) as u8;
+    }
+    if digits.next().is_some() {
+        return Err(invalid());
     }
     Ok(secret)
 }
 
-/// HKDF-SHA-256 (RFC 5869) with the pinned parameters of this contract.
-///
-/// Implemented directly over the workspace `hmac` primitive so the parameter
-/// freeze lives beside the constants it interprets; pinned against the RFC
-/// 5869 test vectors in the unit suite.
+/// HKDF-SHA-256 (RFC 5869), pinned against the RFC test vectors.
+/// The output is written directly into the fixed-size key buffer.
 #[must_use]
-pub fn hkdf_sha256_v1(ikm: &[u8], salt: &[u8], info: &[u8], output_length: usize) -> Vec<u8> {
-    fn mac(key: &[u8]) -> Hmac<Sha256> {
-        Hmac::<Sha256>::new_from_slice(key).expect("HMAC-SHA-256 accepts any key length")
-    }
-    // Extract (RFC 5869 §2.2): PRK = HMAC-Hash(salt, IKM); an empty salt is
-    // replaced by zeroes of Hash size per the RFC.
-    let zero_salt = [0u8; 32];
-    let salt: &[u8] = if salt.is_empty() { &zero_salt } else { salt };
-    let mut extractor = mac(salt);
-    extractor.update(ikm);
-    let prk = extractor.finalize().into_bytes();
-    // Expand (RFC 5869 §2.3).
-    let mut okm = Vec::with_capacity(output_length);
-    let mut block: Vec<u8> = Vec::new();
-    let mut counter: u8 = 1;
-    while okm.len() < output_length {
-        let mut expander = mac(&prk);
-        expander.update(&block);
-        expander.update(info);
-        expander.update(&[counter]);
-        block = expander.finalize().into_bytes().to_vec();
-        let take = (output_length - okm.len()).min(block.len());
-        okm.extend_from_slice(&block[..take]);
-        counter = counter
-            .checked_add(1)
-            .expect("hkdf output length exceeded the counter space");
-    }
-    okm
+pub fn hkdf_sha256_v1<const LENGTH: usize>(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; LENGTH] {
+    let mut output = [0u8; LENGTH];
+    Hkdf::<Sha256>::new(Some(salt), ikm)
+        .expand(info, &mut output)
+        .expect("HKDF output must not exceed 255 SHA-256 blocks");
+    output
 }
 
 /// Deterministic derivation of the Ed25519 Recovery Key seed from one
@@ -140,10 +115,7 @@ pub fn hkdf_sha256_v1(ikm: &[u8], salt: &[u8], info: &[u8], output_length: usize
 /// secret or deployment yields an unrelated key.
 #[must_use]
 pub fn derive_recovery_seed(secret: &[u8; 32], deployment_id: &str) -> [u8; 32] {
-    let okm = hkdf_sha256_v1(secret, deployment_id.as_bytes(), RECOVERY_KDF_INFO, 32);
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(&okm);
-    seed
+    hkdf_sha256_v1(secret, deployment_id.as_bytes(), RECOVERY_KDF_INFO)
 }
 
 /// Ed25519 verifying key of a derived Recovery Key seed.
@@ -200,12 +172,9 @@ impl RecoveryRootRotation {
             "kid": self.kid,
             "public_key": URL_SAFE_NO_PAD.encode(self.public_key),
         });
-        let mut encoded = String::with_capacity(64);
-        for byte in Sha256::digest(serde_json::to_vec(&value).expect("json serialization")) {
-            use std::fmt::Write as _;
-            write!(&mut encoded, "{byte:02x}").expect("hex writing cannot fail");
-        }
-        encoded
+        hex::encode(Sha256::digest(
+            serde_json::to_vec(&value).expect("json serialization"),
+        ))
     }
 }
 

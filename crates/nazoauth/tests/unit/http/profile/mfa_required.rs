@@ -20,7 +20,7 @@ use nazo_identity::{
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaAttemptThrottleDecision, MfaAttemptThrottlePort,
         MfaHashError, MfaHashFuture, MfaRepositoryPort, MfaSecretHashPort, RepositoryError,
-        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpEnrollment,
+        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpEnrollmentCheck,
         TotpVerificationOutcome,
     },
     session::SessionRecord,
@@ -78,20 +78,22 @@ struct UnknownMfaCommitAck {
 }
 
 impl MfaRepositoryPort for UnknownMfaCommitAck {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
-        MfaRepositoryPort::totp_enrollment(&self.inner, tenant_id, user_id)
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
+        MfaRepositoryPort::check_totp_enrollment(&self.inner, tenant_id, user_id, code, timestamp)
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()> {
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
         MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret)
     }
 
@@ -333,14 +335,14 @@ impl SessionStorePort for MemorySessions {
     fn rotate<'a>(
         &'a self,
         old: &'a SessionId,
-        expected: &'a SessionSnapshot,
+        expected: &'a SessionVersion,
         new: &'a SessionId,
         replacement: &'a SessionRecord,
         _ttl: u64,
     ) -> RepositoryFuture<'a, SessionRotationOutcome> {
         Box::pin(async move {
             let mut records = self.records.lock().unwrap();
-            if records.get(old.as_str()) != Some(expected) {
+            if records.get(old.as_str()).map(SessionSnapshot::version) != Some(expected) {
                 return Ok(SessionRotationOutcome::Conflict);
             }
             records.remove(old.as_str());
@@ -358,12 +360,12 @@ impl SessionStorePort for MemorySessions {
     fn compare_and_set<'a>(
         &'a self,
         id: &'a SessionId,
-        expected: &'a SessionSnapshot,
+        expected: &'a SessionVersion,
         replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
         Box::pin(async move {
             let mut records = self.records.lock().unwrap();
-            if records.get(id.as_str()) != Some(expected) {
+            if records.get(id.as_str()).map(SessionSnapshot::version) != Some(expected) {
                 return Ok(SessionUpdateOutcome::Conflict);
             }
             records.insert(
@@ -379,6 +381,18 @@ impl SessionStorePort for MemorySessions {
 }
 struct Accounts(UserRepository);
 impl SessionAccountPort for Accounts {
+    fn principal_by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         tenant: TenantId,
@@ -468,11 +482,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
     let now = Utc::now().timestamp();
     let step = now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     repository
-        .begin_totp_enrollment(
-            tenant.tenant_id,
-            user,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-        )
+        .begin_totp_enrollment(tenant.tenant_id, user, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         .await
         .unwrap();
     if regenerate {
@@ -486,7 +496,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         let old_code =
             nazo_identity::mfa::totp_for_step(b"12345678901234567890", step - 2).unwrap();
         let prepared = initial
-            .prepare_totp_confirmation(&account, &old_code, old_now)
+            .prepare_totp_confirmation(&account, old_code, old_now)
             .await
             .unwrap();
         assert!(matches!(

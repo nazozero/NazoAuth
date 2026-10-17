@@ -51,20 +51,18 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?
             {
-                return response_from_record(response);
+                return response_from_record(response, self.dpop_nonce_policy);
             }
-            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
-            let configuration = self
-                .configurations
-                .get(&configuration_id)
-                .cloned()
-                .ok_or_else(|| {
-                    vci_error(
-                        400,
-                        "unknown_credential_configuration",
-                        "Credential configuration is unknown.",
-                    )
-                })?;
+            let dpop_nonce =
+                next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
+                    .await?;
+            let configuration = self.configurations.get(&configuration_id).ok_or_else(|| {
+                vci_error(
+                    400,
+                    "unknown_credential_configuration",
+                    "Credential configuration is unknown.",
+                )
+            })?;
             let nonce = if configuration.proof_types_supported.is_empty() {
                 None
             } else {
@@ -86,30 +84,29 @@ impl ServerCredentialIssuerOperations {
                 .issue_pending(
                     &access,
                     &request,
-                    &CredentialIssuance {
+                    CredentialIssuance {
                         configuration_id,
-                        configuration,
                         disposition,
                         status: None,
                         expires_at: intent_expires_at,
                     },
+                    configuration,
                     nonce.as_deref().unwrap_or(""),
-                    nazo_openid4vci::IssuanceIdentity {
-                        issuance_id,
-                        request_digest: request_digest.clone(),
-                    },
                     now,
                 )
                 .await
                 .map_err(map_issuance_error)?;
             let status = CredentialResponseStatus::for_response(&pending.response);
             let body = match finish_response(
-                pending.response.clone(),
+                pending.response,
                 request.credential_response_encryption.as_ref(),
             ) {
                 Ok(body) => body,
                 Err(error) => {
-                    let _ = self.service.rollback_pending(&pending, Utc::now()).await;
+                    let _ = self
+                        .service
+                        .rollback_pending(&pending.commit, Utc::now())
+                        .await;
                     return Err(error);
                 }
             };
@@ -121,14 +118,17 @@ impl ServerCredentialIssuerOperations {
                 status,
                 dpop_nonce.clone(),
                 access.continuation_expires_at(intent_expires_at),
-            )?;
+            );
             response_record.selection = selection;
             if let Err(error) = self
                 .service
-                .commit_pending_with_response(&pending, &response_record, Utc::now())
+                .commit_pending(&pending.commit, &response_record, Utc::now())
                 .await
             {
-                let _ = self.service.rollback_pending(&pending, Utc::now()).await;
+                let _ = self
+                    .service
+                    .rollback_pending(&pending.commit, Utc::now())
+                    .await;
                 return Err(map_issuance_error(error));
             }
             Ok(CredentialEndpointResponse {
@@ -184,9 +184,11 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?
             {
-                return response_from_record(response);
+                return response_from_record(response, self.dpop_nonce_policy);
             }
-            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
+            let dpop_nonce =
+                next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
+                    .await?;
             let transaction_hash = blake3_hex(&request.transaction_id);
             let claim_id = Uuid::now_v7().to_string();
             let outcome = self
@@ -201,7 +203,7 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?;
             let deferred = match outcome {
-                nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => claim.credential,
+                nazo_openid4vci::DeferredClaimOutcome::Claimed(credential) => *credential,
                 nazo_openid4vci::DeferredClaimOutcome::Pending { retry_at }
                 | nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at } => {
                     let interval = u64::try_from((retry_at - Utc::now()).num_seconds())
@@ -210,7 +212,7 @@ impl ServerCredentialIssuerOperations {
                     let body = finish_response(
                         CredentialResponse {
                             credentials: None,
-                            transaction_id: Some(request.transaction_id.clone()),
+                            transaction_id: Some(request.transaction_id),
                             notification_id: None,
                             interval: Some(interval),
                         },
@@ -244,37 +246,35 @@ impl ServerCredentialIssuerOperations {
                             "Deferred credential configuration is unavailable.",
                         )
                     })?;
-                let mut credentials = Vec::new();
+                let mut credentials = Vec::with_capacity(deferred.holder_bindings.len());
+                let mut input = nazo_digital_credentials::CredentialSignInput {
+                    payload: nazo_digital_credentials::CredentialPayload {
+                        issuer: self.issuer.clone(),
+                        format: deferred.format,
+                        configuration_id: deferred.configuration_id,
+                        credential_type: configuration
+                            .vct
+                            .clone()
+                            .or_else(|| configuration.doctype.clone())
+                            .ok_or_else(|| {
+                                vci_error(
+                                    503,
+                                    "server_error",
+                                    "Deferred credential type is unavailable.",
+                                )
+                            })?,
+                        subject_claims: payload.dataset,
+                        holder_binding: None,
+                    },
+                    issued_at: payload.issued_at,
+                    expires_at: payload.expires_at,
+                    status: payload.status,
+                };
                 for holder_binding in deferred.holder_bindings {
-                    let credential = self
-                        .crypto
-                        .sign(&nazo_digital_credentials::CredentialSignInput {
-                            payload: nazo_digital_credentials::CredentialPayload {
-                                issuer: self.issuer.clone(),
-                                format: deferred.format,
-                                configuration_id: deferred.configuration_id.clone(),
-                                credential_type: configuration
-                                    .vct
-                                    .clone()
-                                    .or_else(|| configuration.doctype.clone())
-                                    .ok_or_else(|| {
-                                        vci_error(
-                                            503,
-                                            "server_error",
-                                            "Deferred credential type is unavailable.",
-                                        )
-                                    })?,
-                                subject_claims: payload.dataset.clone(),
-                                holder_binding: serde_json::from_value(holder_binding).ok(),
-                            },
-                            issued_at: payload.issued_at,
-                            expires_at: payload.expires_at,
-                            status: payload.status.clone(),
-                        })
-                        .await
-                        .map_err(|_| {
-                            vci_error(503, "server_error", "Deferred credential signing failed.")
-                        })?;
+                    input.payload.holder_binding = serde_json::from_value(holder_binding).ok();
+                    let credential = self.crypto.sign(&input).await.map_err(|_| {
+                        vci_error(503, "server_error", "Deferred credential signing failed.")
+                    })?;
                     credentials.push(nazo_openid4vci::IssuedCredential {
                         credential: Value::String(credential),
                     });
@@ -300,13 +300,13 @@ impl ServerCredentialIssuerOperations {
                 let mut response_record = stored_response(
                     issuance_id,
                     access.token_id,
-                    request_digest.clone(),
+                    request_digest,
                     &body,
                     CredentialResponseStatus::Issued,
                     dpop_nonce.clone(),
                     access.continuation_expires_at(payload.expires_at),
-                )?;
-                response_record.selection = deferred.selection.clone();
+                );
+                response_record.selection = deferred.selection;
                 let committed = self
                     .store
                     .finalize_deferred_with_notification_and_response(
@@ -364,7 +364,9 @@ impl ServerCredentialIssuerOperations {
                 ));
             }
             let access = self.access(&context).await?;
-            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
+            let dpop_nonce =
+                next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)
+                    .await?;
             let recorded = self
                 .store
                 .record_notification(&IssuanceNotification {

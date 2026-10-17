@@ -1,9 +1,9 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
-use nazo_oauth_server::crypto::constant_time_eq;
 use serde::Deserialize;
 use sha2::Sha256;
+use std::io::Write;
 
 use crate::settings::SamlGatewaySettings;
 
@@ -38,7 +38,11 @@ pub(super) fn valid_saml_gateway_assertion(
     {
         return false;
     }
-    let expected = saml_gateway_signature(
+    let mut signature = [0; 32];
+    if URL_SAFE_NO_PAD.decode_slice(&assertion.signature, &mut signature) != Ok(signature.len()) {
+        return false;
+    }
+    saml_gateway_mac(
         &settings.secret,
         &assertion.issuer,
         &assertion.audience,
@@ -46,11 +50,12 @@ pub(super) fn valid_saml_gateway_assertion(
         normalized_email,
         assertion.iat,
         assertion.exp,
-    );
-    constant_time_eq(expected.as_bytes(), assertion.signature.as_bytes())
+    )
+    .verify_slice(&signature)
+    .is_ok()
 }
 
-pub(super) fn saml_gateway_signature(
+pub(super) fn saml_gateway_mac(
     secret: &str,
     issuer: &str,
     audience: &str,
@@ -58,10 +63,19 @@ pub(super) fn saml_gateway_signature(
     email: &str,
     iat: i64,
     exp: i64,
-) -> String {
+) -> HmacSha256 {
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
-    mac.update(format!("{issuer}\n{audience}\n{subject}\n{email}\n{iat}\n{exp}").as_bytes());
-    URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+    for field in [issuer, audience, subject, email] {
+        mac.update(field.as_bytes());
+        mac.update(b"\n");
+    }
+    // Two signed i64 decimal values (at most 20 bytes each) and one separator.
+    let mut timestamps = [0; 41];
+    let mut output = timestamps.as_mut_slice();
+    write!(output, "{iat}\n{exp}").expect("timestamp buffer holds both i64 values");
+    let written = 41 - output.len();
+    mac.update(&timestamps[..written]);
+    mac
 }
 
 #[cfg(test)]

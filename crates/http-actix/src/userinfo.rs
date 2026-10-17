@@ -51,7 +51,11 @@ pub async fn userinfo(
         }
     };
 
-    let prepared = match endpoint.operations.prepare(scheme, token).await {
+    let prepared = match endpoint
+        .operations
+        .prepare(scheme, token.into_owned())
+        .await
+    {
         Ok(prepared) => prepared,
         Err(error) => return userinfo_error_response(error),
     };
@@ -183,10 +187,10 @@ fn userinfo_dpop_error_response(error: UserinfoDpopError) -> HttpResponse {
         UserinfoDpopError::NonceStoreUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::BAD_REQUEST,
     };
-    let error_code = match &error {
-        UserinfoDpopError::UseNonce(_) => "use_dpop_nonce",
-        UserinfoDpopError::NonceStoreUnavailable => "server_error",
-        _ => "invalid_dpop_proof",
+    let (error_code, challenge) = match &error {
+        UserinfoDpopError::UseNonce(_) => ("use_dpop_nonce", "DPoP error=\"use_dpop_nonce\""),
+        UserinfoDpopError::NonceStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
+        _ => ("invalid_dpop_proof", "DPoP error=\"invalid_dpop_proof\""),
     };
     let mut response = oauth_error(status, error_code, description);
     if let UserinfoDpopError::UseNonce(nonce) = error
@@ -198,8 +202,7 @@ fn userinfo_dpop_error_response(error: UserinfoDpopError) -> HttpResponse {
     }
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        header::HeaderValue::from_str(&format!("DPoP error=\"{error_code}\""))
-            .unwrap_or_else(|_| header::HeaderValue::from_static("DPoP")),
+        header::HeaderValue::from_static(challenge),
     );
     response
 }

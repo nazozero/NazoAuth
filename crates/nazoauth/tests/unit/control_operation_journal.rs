@@ -13,13 +13,74 @@ use nazo_operator_protocol::{
 
 use super::*;
 
-/// Persist the terminal result. Its return is the permission to report success:
-/// the result is durable and response-loss recovery can serve it verbatim.
-pub(crate) fn complete(
-    state_directory: &Path,
-    result: ControlResult,
-) -> Result<JournaledOutcome, JournalFlowError> {
-    persist_completed_result(state_directory, PreparedJournalResult::new(result)?)
+// Test drivers follow the one-shot host's load/admit/run sequence. Production
+// carries the record through transitions without these assertion-time reads.
+#[derive(Debug, PartialEq, Eq)]
+enum AcceptOutcome {
+    Created,
+    Resumed(JournalCheckpoint),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum JournalCheckpoint {
+    Accepted,
+    Executing,
+    Completed(Box<ControlResult>),
+}
+
+fn checkpoint(record: OperationJournalRecord) -> JournalCheckpoint {
+    match record.phase.as_str() {
+        PHASE_EXECUTING => JournalCheckpoint::Executing,
+        PHASE_COMPLETED => JournalCheckpoint::Completed(Box::new(record.result.unwrap())),
+        _ => JournalCheckpoint::Accepted,
+    }
+}
+
+fn accept(
+    directory: &Path,
+    operation: &ControlOperation,
+    hash: &str,
+    snapshot: &AuthorizationSnapshot,
+) -> Result<AcceptOutcome, JournalFlowError> {
+    if let Some(record) = load_accepted(directory, &operation.operation_id, hash)? {
+        return Ok(AcceptOutcome::Resumed(checkpoint(record)));
+    }
+    super::accept(directory, operation, hash, snapshot.clone())?;
+    Ok(AcceptOutcome::Created)
+}
+
+fn begin_execution(directory: &Path, id: &str, hash: &str) -> Result<(), JournalFlowError> {
+    let mut record = load_accepted(directory, id, hash)?.unwrap();
+    if record.phase == PHASE_ACCEPTED {
+        mark_executing(directory, &mut record)?;
+    }
+    Ok(())
+}
+
+fn complete(directory: &Path, result: ControlResult) -> Result<JournaledOutcome, JournalFlowError> {
+    let record = load_accepted(directory, &result.operation_id, &result.request_hash)?.unwrap();
+    persist_completed_result(directory, record, PreparedJournalResult::new(result)?)
+}
+
+async fn run_journaled_operation<F, Fut>(
+    directory: &Path,
+    operation: &ControlOperation,
+    hash: &str,
+    snapshot: &AuthorizationSnapshot,
+    pause: &dyn Fn(&str),
+    side_effect: F,
+) -> Result<JournaledOutcome, JournalFlowError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = Result<Option<ControlResultData>, SideEffectError>>,
+{
+    let accepted = load_accepted(directory, &operation.operation_id, hash)?;
+    pause("control-journal-before-accept");
+    let record = match accepted {
+        Some(record) => record,
+        None => super::accept(directory, operation, hash, snapshot.clone())?,
+    };
+    super::run_journaled_operation(directory, record, pause, async |_| side_effect().await).await
 }
 
 fn temporary_directory() -> PathBuf {
@@ -44,19 +105,7 @@ fn status(
     operation_id: &str,
     request_hash: &str,
 ) -> Result<Option<JournalCheckpoint>, JournalFlowError> {
-    ensure_file_safe_identifier(operation_id)?;
-    ensure_request_hash_shape(request_hash)?;
-    let path = record_path(&control_journal_directory(directory), operation_id);
-    recover_temporary(&path)?;
-    if !state_path_present(&path).map_err(transport)? {
-        return Ok(None);
-    }
-    regular_state_file_present(&path, "control operation journal record").map_err(transport)?;
-    let record = read_record(&path).map_err(transport)?;
-    if record.request_hash != request_hash {
-        return Err(JournalFlowError::OperationIdConflict);
-    }
-    Ok(Some(checkpoint(record)))
+    Ok(load_accepted(directory, operation_id, request_hash)?.map(checkpoint))
 }
 
 fn operation(operation_id: &str) -> ControlOperation {
@@ -203,7 +252,7 @@ fn same_id_with_a_different_request_hash_conflicts_permanently() {
     ));
 
     // ...while executing...
-    begin_execution(&directory, OPERATION_ID, &hash('a'), false).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     assert!(matches!(
         accept(
             &directory,
@@ -214,7 +263,7 @@ fn same_id_with_a_different_request_hash_conflicts_permanently() {
         Err(JournalFlowError::OperationIdConflict)
     ));
     assert!(matches!(
-        begin_execution(&directory, OPERATION_ID, &hash('b'), true),
+        begin_execution(&directory, OPERATION_ID, &hash('b')),
         Err(JournalFlowError::OperationIdConflict)
     ));
 
@@ -262,7 +311,6 @@ async fn happy_path_pauses_at_every_boundary_in_order_and_binds_the_result() {
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        false,
         &move |name: &str| recorder.lock().unwrap().push(name.to_owned()),
         effect,
     )
@@ -318,7 +366,6 @@ async fn happy_path_pauses_at_every_boundary_in_order_and_binds_the_result() {
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &move |name: &str| recorder.lock().unwrap().push(name.to_owned()),
         effect,
     )
@@ -348,7 +395,6 @@ fn before_accept_crash_retries_cleanly_without_prior_mutation() {
             &operation(OPERATION_ID),
             &hash('a'),
             &snapshot(),
-            false,
             &|_| {},
             effect,
         ))
@@ -380,7 +426,6 @@ fn after_accept_crash_executes_the_side_effect_exactly_once() {
             &operation(OPERATION_ID),
             &hash('a'),
             &snapshot(),
-            false,
             &|_| {},
             effect,
         ))
@@ -398,7 +443,6 @@ fn after_accept_crash_executes_the_side_effect_exactly_once() {
             &operation(OPERATION_ID),
             &hash('a'),
             &snapshot(),
-            true,
             &|_| {},
             effect,
         ))
@@ -407,65 +451,6 @@ fn after_accept_crash_executes_the_side_effect_exactly_once() {
     assert_eq!(invocations.load(AtomicOrdering::SeqCst), 1);
     fs::remove_dir_all(directory).unwrap();
 }
-#[test]
-fn before_side_effect_crash_fails_closed_for_owners_without_idempotent_resume() {
-    let directory = temporary_directory();
-    accept(
-        &directory,
-        &operation(OPERATION_ID),
-        &hash('a'),
-        &snapshot(),
-    )
-    .unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), false).unwrap();
-
-    // Restart without a proven-idempotent owner: refuse, never execute.
-    let (invocations, _applications, effect) = ledger_side_effect(&directory);
-    let error = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(run_journaled_operation(
-            &directory,
-            &operation(OPERATION_ID),
-            &hash('a'),
-            &snapshot(),
-            false,
-            &|_| {},
-            effect,
-        ))
-        .unwrap_err();
-    assert!(matches!(error, JournalFlowError::UnknownOutcome));
-    assert_eq!(invocations.load(AtomicOrdering::SeqCst), 0);
-    assert_eq!(
-        status(&directory, OPERATION_ID, &hash('a'))
-            .unwrap()
-            .unwrap(),
-        JournalCheckpoint::Executing
-    );
-
-    // The refusal is stable, not transient.
-    let (_, _, effect) = ledger_side_effect(&directory);
-    let again = tokio::runtime::Runtime::new()
-        .unwrap()
-        .block_on(run_journaled_operation(
-            &directory,
-            &operation(OPERATION_ID),
-            &hash('a'),
-            &snapshot(),
-            false,
-            &|_| {},
-            effect,
-        ))
-        .unwrap_err();
-    assert!(matches!(again, JournalFlowError::UnknownOutcome));
-    assert_eq!(
-        status(&directory, OPERATION_ID, &hash('a'))
-            .unwrap()
-            .unwrap(),
-        JournalCheckpoint::Executing
-    );
-    fs::remove_dir_all(directory).unwrap();
-}
-
 #[tokio::test]
 async fn executing_records_reenter_only_for_proven_idempotent_owners() {
     let directory = temporary_directory();
@@ -476,7 +461,7 @@ async fn executing_records_reenter_only_for_proven_idempotent_owners() {
         &snapshot(),
     )
     .unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
 
     // The owner's own ledger makes re-entry apply the mutation once even
     // though the business action is invoked twice across two processes.
@@ -486,7 +471,6 @@ async fn executing_records_reenter_only_for_proven_idempotent_owners() {
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &|_| {},
         effect,
     )
@@ -496,12 +480,6 @@ async fn executing_records_reenter_only_for_proven_idempotent_owners() {
     assert_eq!(invocations.load(AtomicOrdering::SeqCst), 1);
     assert_eq!(applications.load(AtomicOrdering::SeqCst), 1);
 
-    // A second re-entry after completion is still refused for the raw
-    // checkpoint transition: terminal records never re-execute.
-    assert!(matches!(
-        begin_execution(&directory, OPERATION_ID, &hash('a'), true),
-        Err(JournalFlowError::UnknownOutcome)
-    ));
     assert_eq!(applications.load(AtomicOrdering::SeqCst), 1);
     fs::remove_dir_all(directory).unwrap();
 }
@@ -514,7 +492,6 @@ async fn retryable_execution_keeps_a_resumable_record_without_a_false_failure_re
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &|_| {},
         || async {
             Err(SideEffectError::Retryable(anyhow::anyhow!(
@@ -535,7 +512,6 @@ async fn retryable_execution_keeps_a_resumable_record_without_a_false_failure_re
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &|_| {},
         effect,
     )
@@ -558,7 +534,7 @@ async fn after_side_effect_crash_never_duplicates_the_mutation_and_recovers_the_
         &snapshot(),
     )
     .unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     {
         let (_invocations, applications, effect) = ledger_side_effect(&directory);
         let _ = effect().await.unwrap();
@@ -581,7 +557,6 @@ async fn after_side_effect_crash_never_duplicates_the_mutation_and_recovers_the_
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &|_| {},
         effect,
     )
@@ -625,7 +600,6 @@ async fn result_publication_is_durable_between_the_before_and_after_result_bound
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &move |name: &str| {
             let path = control_journal_directory(&probe_directory)
                 .join(format!("{OPERATION_ID}.journal.json"));
@@ -661,7 +635,7 @@ async fn after_result_crash_returns_the_durable_result_without_reexecution() {
         &snapshot(),
     )
     .unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     let (_invocations, applications, effect) = ledger_side_effect(&directory);
     let _ = effect().await.unwrap();
     complete(&directory, succeeded_result(OPERATION_ID, &hash('a'))).unwrap();
@@ -676,7 +650,6 @@ async fn after_result_crash_returns_the_durable_result_without_reexecution() {
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &move |name: &str| recorder.lock().unwrap().push(name.to_owned()),
         effect,
     )
@@ -728,7 +701,7 @@ fn torn_publication_windows_recover_monotonically_or_fail_closed() {
     // (b) A fully written completed temporary ahead of a published
     // executing record is adopted: the side effect finished, only the
     // rename was lost.
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     let completed = OperationJournalRecord {
         phase: "completed".to_owned(),
         result: Some(succeeded_result(OPERATION_ID, &hash('a'))),
@@ -963,6 +936,8 @@ fn concurrent_offers_have_exactly_one_creator_and_conflicts_are_deterministic() 
             let directory = Arc::clone(&directory);
             let creators = Arc::clone(&creators);
             std::thread::spawn(move || {
+                let lock = cleanup_task_lock(&directory);
+                lock.lock_exclusive().unwrap();
                 match accept(
                     &directory,
                     &operation(OPERATION_ID),
@@ -1018,7 +993,6 @@ async fn typed_result_data_is_attached_on_success_and_durable_for_recovery() {
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &|_| {},
         || async { Ok(Some(data.clone())) },
     )
@@ -1038,7 +1012,6 @@ async fn typed_result_data_is_attached_on_success_and_durable_for_recovery() {
         &operation(OPERATION_ID),
         &hash('a'),
         &snapshot(),
-        true,
         &|_| {},
         || async { panic!("a durable typed result must not repeat its side effect") },
     )
@@ -1299,6 +1272,30 @@ fn recovery_result() -> ControlResult {
 }
 
 #[test]
+fn initial_load_rejects_a_durable_record_bound_to_another_operation() {
+    let directory = temporary_directory();
+    accept(
+        &directory,
+        &operation(OPERATION_ID),
+        &hash('a'),
+        &snapshot(),
+    )
+    .unwrap();
+    let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
+    let mut record = read_record(&path).unwrap();
+    record.operation_id = OPERATION_ID_B.to_owned();
+    let bytes = serde_json::to_vec(&record).unwrap();
+    fs::write(&path, &bytes).unwrap();
+
+    assert!(matches!(
+        complete(&directory, succeeded_result(OPERATION_ID, &hash('a'))),
+        Err(JournalFlowError::OperationIdConflict)
+    ));
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
     let directory = temporary_directory();
     accept(
@@ -1308,7 +1305,7 @@ fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
         &snapshot(),
     )
     .unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     let result = recovery_result();
     complete(&directory, result.clone()).unwrap();
     let path = record_path(&control_journal_directory(&directory), OPERATION_ID);
@@ -1331,7 +1328,7 @@ fn covered_recovery_journal_requires_marker_without_changing_result_wire() {
     let old_bytes = serde_json::to_vec(&old).unwrap();
     fs::write(&path, &old_bytes).unwrap();
     assert!(status(&directory, OPERATION_ID, &hash('a')).is_err());
-    assert!(accepted_snapshot(&directory, OPERATION_ID, &hash('a')).is_err());
+    assert!(load_accepted(&directory, OPERATION_ID, &hash('a')).is_err());
     assert_eq!(
         fs::read(&path).unwrap(),
         old_bytes,
@@ -1389,8 +1386,8 @@ fn recovery_coverage_marker_is_closed_and_nonterminal_records_remain_resumable()
     }
     record.recovery_coverage_version = None;
     validate_record(&record).unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
-    begin_execution(&directory, OPERATION_ID, &hash('a'), true).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
+    begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     complete(&directory, recovery_result()).unwrap();
     record = read_record(&path).unwrap();
     for marker in [None, Some(0), Some(2)] {

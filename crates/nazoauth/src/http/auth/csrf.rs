@@ -6,7 +6,7 @@ use nazo_http_actix::json_response;
 use nazo_http_actix::{make_cookie, with_cookie_headers};
 use nazo_oauth_server::crypto::random_urlsafe_token;
 
-use serde_json::json;
+use serde::Serialize;
 // 只有已登录用户可以刷新 token，避免匿名请求制造无意义状态。
 
 #[derive(Clone, Debug)]
@@ -36,7 +36,7 @@ pub(crate) async fn csrf(
     config: Data<CsrfHttpConfig>,
     req: HttpRequest,
 ) -> HttpResponse {
-    if let Err(response) = sessions.current_user_or_login_required(&req).await {
+    if let Err(response) = sessions.current_session_or_login_required(&req).await {
         return response;
     };
 
@@ -45,8 +45,14 @@ pub(crate) async fn csrf(
 }
 
 fn csrf_response(config: &CsrfHttpConfig, csrf_token: String) -> HttpResponse {
+    #[derive(Serialize)]
+    struct CsrfResponse<'a> {
+        csrf_token: &'a str,
+    }
     with_cookie_headers(
-        json_response(json!({"csrf_token": csrf_token})),
+        json_response(CsrfResponse {
+            csrf_token: &csrf_token,
+        }),
         &[make_cookie(
             &config.cookie_name,
             &csrf_token,

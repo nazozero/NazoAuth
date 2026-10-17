@@ -265,43 +265,43 @@ fn essential_id_token_claim_requests_match_protocol_claim_values() {
         &issue,
         &client,
         false,
-        Some(&extra_claims),
+        extra_claims.as_object().unwrap(),
     ));
 
-    assert!(claim_request_value_matches(
-        &OidcClaimRequest {
+    assert!(
+        OidcClaimRequest {
             name: "department".to_owned(),
             essential: true,
             value: None,
             values: Vec::new(),
-        },
-        &json!("anything"),
-    ));
-    assert!(!claim_request_value_matches(
-        &OidcClaimRequest {
+        }
+        .matches_value(&json!("anything"))
+    );
+    assert!(
+        !OidcClaimRequest {
             name: "department".to_owned(),
             essential: true,
             value: Some(json!("finance")),
             values: Vec::new(),
-        },
-        &json!("engineering"),
-    ));
-    assert!(!claim_request_value_matches(
-        &OidcClaimRequest {
+        }
+        .matches_value(&json!("engineering"))
+    );
+    assert!(
+        !OidcClaimRequest {
             name: "department".to_owned(),
             essential: true,
             value: None,
             values: vec![json!("finance")],
-        },
-        &json!("engineering"),
-    ));
+        }
+        .matches_value(&json!("engineering"))
+    );
 
     issue.acr = Some("urn:example:loa:1".to_owned());
     assert!(!refreshed_id_token_essential_claims_satisfied(
         &issue,
         &client,
         false,
-        Some(&extra_claims),
+        extra_claims.as_object().unwrap(),
     ));
 }
 

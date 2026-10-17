@@ -102,6 +102,17 @@ pub struct CreateClientRequest {
     pub security_policy: ClientSecurityPolicy,
 }
 
+impl CreateClientRequest {
+    #[must_use]
+    pub fn requires_client_secret(&self) -> bool {
+        self.client_type == "confidential"
+            && matches!(
+                self.token_endpoint_auth_method.as_str(),
+                "client_secret_basic" | "client_secret_post"
+            )
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct PatchClientRequest {
     pub client_name: Option<String>,

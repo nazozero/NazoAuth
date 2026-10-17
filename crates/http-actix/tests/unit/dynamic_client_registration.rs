@@ -88,43 +88,20 @@ impl DynamicRegistrationClientStore for FakeStore {
         tenant_id: Uuid,
         client_id: &'a str,
         _token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, Option<OAuthClient>> {
+    ) -> DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>> {
         let found = self
             .client
             .lock()
             .expect("client lock")
             .clone()
             .filter(|client| client.tenant_id == tenant_id && client.client_id == client_id);
-        Box::pin(async move { Ok(found) })
-    }
-
-    fn has_client_secret(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, bool> {
-        let matches = self
-            .client
-            .lock()
-            .expect("client lock")
-            .as_ref()
-            .is_some_and(|client| client.tenant_id == tenant_id && client.id == client_id);
-        Box::pin(async move { Ok(matches) })
-    }
-
-    fn client_secret_salt(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, Option<String>> {
-        let salt = self
-            .client
-            .lock()
-            .expect("client lock")
-            .as_ref()
-            .filter(|client| client.tenant_id == tenant_id && client.id == client_id)
-            .map(|_| "salt".to_owned());
-        Box::pin(async move { Ok(salt) })
+        Box::pin(async move {
+            Ok(found.map(|client| nazo_auth::RegistrationClientSnapshot {
+                client,
+                has_client_secret: true,
+                secret_salt: Some("salt".to_owned()),
+            }))
+        })
     }
 
     fn client_secret_digest_matches<'a>(
@@ -234,26 +211,28 @@ impl AdminClientCryptoPort for FakeSecurity {
         ("issued-secret".to_owned(), "stored-secret-hash".to_owned())
     }
 
-    fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
-        Ok(())
+    fn inspect_jwks(
+        &self,
+        _jwks: &Value,
+        _certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        Ok(nazo_auth::ClientJwksCapabilities {
+            signing_algorithms: nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+                .iter()
+                .copied()
+                .collect(),
+            encryption_key_counts: nazo_auth::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+                .iter()
+                .map(|alg| (*alg, 1))
+                .collect(),
+            has_current_mtls_certificate: true,
+        })
     }
 
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         (!value.trim().is_empty() && value.contains('='))
             .then_some(())
             .ok_or_else(|| "invalid RFC 4514 DN".to_owned())
-    }
-
-    fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {
-        1
-    }
-
-    fn contains_signing_key(&self, _jwks: &Value) -> bool {
-        true
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &Value) -> bool {
-        true
     }
 }
 
@@ -532,6 +511,12 @@ async fn configured_initial_access_token_keeps_oauth_only_client_pkce_policy() {
     .await;
 
     assert_eq!(response.status(), StatusCode::CREATED);
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["client_secret"], "issued-secret");
+    assert_eq!(body["client_secret_expires_at"], 0);
+    assert!(body["client_id_issued_at"].is_i64());
+    assert!(body.get("jwks").is_none());
+    assert!(body.get("request_uris").is_none());
     let stored = store
         .client
         .lock()
@@ -878,6 +863,8 @@ async fn registration_and_management_methods_keep_wire_contracts() {
     let read: Value = test::read_body_json(read).await;
     assert_eq!(read["registration_access_token"], "registration-token");
     assert!(read.get("client_secret").is_none());
+    assert!(read.get("client_secret_expires_at").is_none());
+    assert!(read.get("client_id_issued_at").is_none());
     for selected in [
         "subject_type",
         "id_token_signed_response_alg",

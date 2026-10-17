@@ -149,7 +149,7 @@ impl crate::operator_task::OperatorPersistence for MemoryOperatorPersistence {
     ) -> futures_util::future::BoxFuture<
         'a,
         Result<
-            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            Option<nazo_operator_protocol::ControlResultData>,
             nazo_persistence::tenant_resources::TenantResourceExecutorError,
         >,
     > {

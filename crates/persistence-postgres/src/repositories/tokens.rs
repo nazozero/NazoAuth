@@ -258,26 +258,6 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
-    pub async fn inspect_lost_response_successor(
-        &self,
-        token: &RefreshToken,
-        client_id: Uuid,
-        now: DateTime<Utc>,
-    ) -> Result<Option<RefreshToken>, RepositoryError> {
-        if token.dpop_jkt.is_none() && token.mtls_x5t_s256.is_none() {
-            return Ok(None);
-        }
-        let mut connection = self.connection().await?;
-        let row = load_lost_response_successor(&mut connection, token, client_id, now)
-            .await
-            .map_err(map_error)?;
-        drop(connection);
-        let Some(row) = row else {
-            return Ok(None);
-        };
-        token_from_lost_response_successor(row, token, now).map_err(map_error)
-    }
-
     pub async fn family_active(
         &self,
         tenant_id: Uuid,
@@ -316,27 +296,7 @@ impl TokenRepository {
         .map_err(map_error)
     }
 
-    /// One indexed state read for both individual and principal-wide revocation.
-    /// Epoch-less tokens retain the previous JTI contract during migration.
-    pub async fn access_token_state_revoked(
-        &self,
-        key: RevocationLookupKey<'_>,
-    ) -> Result<bool, RepositoryError> {
-        let tenant_id = Uuid::parse_str(key.tenant_id)
-            .map_err(|_| RepositoryError::Consistency("invalid token tenant".to_owned()))?;
-        self.access_token_state_revoked_typed(TypedRevocationLookupKey {
-            tenant_id,
-            jti: key.jti,
-            client_id: key.client_id,
-            subject: key.subject,
-            user_id: key.user_id,
-            subject_type: key.subject_type,
-            client_epoch: key.client_epoch,
-            user_epoch: key.user_epoch,
-        })
-        .await
-    }
-
+    /// One indexed read for individual and principal-wide revocation.
     pub(super) async fn access_token_state_revoked_typed(
         &self,
         key: TypedRevocationLookupKey<'_>,
@@ -388,24 +348,13 @@ impl TokenRepository {
 
     /// Revokes a refresh-token family or records an access-token JTI in one transaction.
     /// The family lock is shared with rotation so a successor cannot escape revocation.
-    pub(crate) async fn revoke_for_client(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        raw_token: &str,
-        access_token: Option<&nazo_auth::AccessTokenRevocation>,
-    ) -> Result<usize, RepositoryError> {
-        self.revoke_for_client_with_audit(tenant_id, client_id, raw_token, access_token, None)
-            .await
-    }
-
     pub(crate) async fn revoke_for_client_with_audit(
         &self,
         tenant_id: Uuid,
         client_id: Uuid,
         raw_token: &str,
         access_token: Option<&nazo_auth::AccessTokenRevocation>,
-        audit_context: Option<(&str, &str)>,
+        audit_context: (&str, &str),
     ) -> Result<usize, RepositoryError> {
         // The revocation fact covers the token's full verifier acceptance
         // window; plain input conversion happens before a connection or
@@ -459,22 +408,21 @@ impl TokenRepository {
                     }
                     0
                 };
-                if let Some((client_public_id, source_ip_hash)) = audit_context {
-                    let event = SecurityAuditEvent {
-                        event_id: Uuid::now_v7(),
-                        event_type: "token_revoked".to_owned(),
-                        event_category: "token_lifecycle".to_owned(),
-                        payload: serde_json::json!({
-                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
-                            "event_category": "token_lifecycle", "tenant_id": tenant_id,
-                            "client_id": client_public_id,
-                            "token_hash": raw_token_blake3.to_hex().to_string(),
-                            "updated": updated, "source_ip_hash": source_ip_hash,
-                        }),
-                        occurred_at: Utc::now(),
-                    };
-                    append_fresh_security_audit_on_connection(connection, &event).await?;
-                }
+                let (client_public_id, source_ip_hash) = audit_context;
+                let event = SecurityAuditEvent {
+                    event_id: Uuid::now_v7(),
+                    event_type: "token_revoked".to_owned(),
+                    event_category: "token_lifecycle".to_owned(),
+                    payload: serde_json::json!({
+                        "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                        "event_category": "token_lifecycle", "tenant_id": tenant_id,
+                        "client_id": client_public_id,
+                        "token_hash": raw_token_blake3.to_hex().to_string(),
+                        "updated": updated, "source_ip_hash": source_ip_hash,
+                    }),
+                    occurred_at: Utc::now(),
+                };
+                append_fresh_security_audit_on_connection(connection, &event).await?;
                 Ok(updated)
             })
             .await
@@ -528,11 +476,20 @@ impl AccessTokenRevocationLookup for TokenRepository {
         key: RevocationLookupKey<'a>,
     ) -> ResourceServerPortFuture<'a, Result<bool, ProtectedResourceDependencyError>> {
         Box::pin(async move {
-            Uuid::parse_str(key.tenant_id)
+            let tenant_id = Uuid::parse_str(key.tenant_id)
                 .map_err(|_| ProtectedResourceDependencyError::InvalidTenantBoundary)?;
-            self.access_token_state_revoked(key)
-                .await
-                .map_err(|_| ProtectedResourceDependencyError::RevocationLookupUnavailable)
+            self.access_token_state_revoked_typed(TypedRevocationLookupKey {
+                tenant_id,
+                jti: key.jti,
+                client_id: key.client_id,
+                subject: key.subject,
+                user_id: key.user_id,
+                subject_type: key.subject_type,
+                client_epoch: key.client_epoch,
+                user_epoch: key.user_epoch,
+            })
+            .await
+            .map_err(|_| ProtectedResourceDependencyError::RevocationLookupUnavailable)
         })
     }
 }
@@ -622,10 +579,11 @@ fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), Re
     })?;
     // Keep this adapter's existing deterministic struct encoding. Historical
     // family references never pass through this path or have their key recomputed.
-    let bytes = serde_json::to_vec(contract).map_err(|error| {
+    let mut digest = blake3::Hasher::new();
+    serde_json::to_writer(&mut digest, contract).map_err(|error| {
         RepositoryError::Consistency(format!("refresh contract could not be encoded: {error}"))
     })?;
-    Ok((blake3::hash(&bytes).as_bytes().to_vec(), value))
+    Ok((digest.finalize().as_bytes().to_vec(), value))
 }
 
 /// Only new families serialize/hash their original contract before borrowing
@@ -1193,7 +1151,7 @@ async fn persist_refresh_token_inner(
             .values((
                 oauth_refresh_spent_tokens::tenant_id.eq(token.tenant_id),
                 oauth_refresh_spent_tokens::refresh_token_blake3
-                    .eq(family.current_token_blake3.clone()),
+                    .eq(family.current_token_blake3.as_slice()),
                 oauth_refresh_spent_tokens::token_family_id.eq(token.family_id),
                 oauth_refresh_spent_tokens::member_id.eq(family.current_member_id),
                 oauth_refresh_spent_tokens::successor_member_id.eq(token.member_id),
@@ -1234,11 +1192,11 @@ async fn persist_refresh_token_inner(
         )
         .set((
             oauth_refresh_families::current_member_id.eq(token.member_id),
-            oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().to_vec()),
+            oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().as_slice()),
             oauth_refresh_families::current_audience.eq(serde_json::json!(token.audiences)),
             oauth_refresh_families::current_issued_at.eq(token.issued_at),
             oauth_refresh_families::current_expires_at.eq(token.expires_at),
-            oauth_refresh_families::current_id_token_sid.eq(token.id_token_sid.clone()),
+            oauth_refresh_families::current_id_token_sid.eq(token.id_token_sid.as_deref()),
         ))
         .execute(connection)
         .await?;
@@ -1271,22 +1229,16 @@ async fn refresh_family_id_for_digest(
     client_id: Uuid,
     digest: &[u8],
 ) -> diesel::QueryResult<Option<Uuid>> {
-    if let Some(family_id) = oauth_refresh_families::table
-        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-        .filter(oauth_refresh_families::client_id.eq(client_id))
-        .filter(oauth_refresh_families::current_token_blake3.eq(digest))
-        .select(oauth_refresh_families::token_family_id)
-        .first::<Uuid>(connection)
-        .await
-        .optional()?
-    {
-        return Ok(Some(family_id));
-    }
     sql_query(
-        "SELECT s.token_family_id FROM oauth_refresh_spent_tokens AS s \
-         JOIN oauth_refresh_families AS f \
-           ON f.tenant_id = s.tenant_id AND f.token_family_id = s.token_family_id \
-         WHERE s.tenant_id = $1 AND s.refresh_token_blake3 = $2 AND f.client_id = $3",
+        "SELECT token_family_id FROM ( \
+             SELECT token_family_id, 0 AS priority FROM oauth_refresh_families \
+             WHERE tenant_id = $1 AND current_token_blake3 = $2 AND client_id = $3 \
+             UNION ALL \
+             SELECT s.token_family_id, 1 FROM oauth_refresh_spent_tokens AS s \
+             JOIN oauth_refresh_families AS f \
+               ON f.tenant_id = s.tenant_id AND f.token_family_id = s.token_family_id \
+             WHERE s.tenant_id = $1 AND s.refresh_token_blake3 = $2 AND f.client_id = $3 \
+         ) AS presentation ORDER BY priority LIMIT 1",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Binary, _>(digest)
@@ -1392,132 +1344,6 @@ async fn compromise_family(
     .execute(connection)
     .await?;
     Ok(())
-}
-
-/// Lost-response recovery for a spent presentation: the presented token must
-/// be a known spent proof, still inside the 60s window, and the family must
-/// still carry the named direct successor as its live current member. Sender
-/// constraints are family-level facts, so the successor cannot carry a weaker
-/// binding than the token it replaced.
-/// One statement: the presented digest's spent edge joined to the family row
-/// that still names it as the direct predecessor (`current_member_id =
-/// successor_member_id`), then to its contract. A revoked, compromised,
-/// re-rotated, or expired family simply yields no row.
-async fn load_lost_response_successor(
-    connection: &mut AsyncPgConnection,
-    token: &RefreshToken,
-    client_id: Uuid,
-    now: DateTime<Utc>,
-) -> diesel::QueryResult<Option<LostResponseJoinRow>> {
-    sql_query(
-        "SELECT \
-             f.tenant_id, f.token_family_id, f.client_id, f.user_id, \
-             f.contract_blake3, f.current_member_id, f.current_token_blake3, \
-             f.current_audience, f.current_issued_at, f.current_expires_at, \
-             f.current_id_token_sid, f.dpop_jkt, f.mtls_x5t_s256, \
-             f.client_attestation_jkt, f.revoked_at, \
-             f.reuse_detected_at, c.contract, s.spent_at \
-         FROM oauth_refresh_spent_tokens AS s \
-         JOIN oauth_refresh_families AS f \
-           ON f.tenant_id = s.tenant_id AND f.token_family_id = s.token_family_id \
-         LEFT JOIN oauth_refresh_contracts AS c \
-           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 \
-         WHERE s.tenant_id = $1 AND s.refresh_token_blake3 = $2 \
-           AND f.client_id = $3 \
-           AND f.current_member_id = s.successor_member_id \
-           AND f.revoked_at IS NULL AND f.reuse_detected_at IS NULL \
-           AND f.current_expires_at > $4",
-    )
-    .bind::<sql_types::Uuid, _>(token.tenant_id)
-    .bind::<sql_types::Binary, _>(token.token_blake3.as_slice())
-    .bind::<sql_types::Uuid, _>(client_id)
-    .bind::<sql_types::Timestamptz, _>(now)
-    .get_result::<LostResponseJoinRow>(connection)
-    .await
-    .optional()
-}
-
-fn token_from_lost_response_successor(
-    row: LostResponseJoinRow,
-    token: &RefreshToken,
-    now: DateTime<Utc>,
-) -> diesel::QueryResult<Option<RefreshToken>> {
-    if row.token_family_id != token.token_family_id {
-        return Ok(None);
-    }
-    let elapsed = now.signed_duration_since(row.spent_at);
-    if elapsed < Duration::zero() || elapsed > Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS) {
-        return Ok(None);
-    }
-    let Some(contract_json) = row.contract else {
-        return Err(diesel::result::Error::DeserializationError(
-            "refresh family references a missing contract".into(),
-        ));
-    };
-    let contract = parse_contract(contract_json).map_err(deserialization_error)?;
-    token_from_current(
-        RefreshFamilyRow {
-            tenant_id: row.tenant_id,
-            token_family_id: row.token_family_id,
-            client_id: row.client_id,
-            user_id: row.user_id,
-            contract_blake3: row.contract_blake3,
-            current_member_id: row.current_member_id,
-            current_token_blake3: row.current_token_blake3,
-            current_audience: row.current_audience,
-            current_issued_at: row.current_issued_at,
-            current_expires_at: row.current_expires_at,
-            current_id_token_sid: row.current_id_token_sid,
-            dpop_jkt: row.dpop_jkt,
-            mtls_x5t_s256: row.mtls_x5t_s256,
-            client_attestation_jkt: row.client_attestation_jkt,
-            revoked_at: row.revoked_at,
-            reuse_detected_at: row.reuse_detected_at,
-        },
-        contract,
-    )
-    .map(Some)
-    .map_err(deserialization_error)
-}
-
-#[derive(diesel::QueryableByName)]
-struct LostResponseJoinRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    tenant_id: Uuid,
-    #[diesel(sql_type = sql_types::Uuid)]
-    token_family_id: Uuid,
-    #[diesel(sql_type = sql_types::Uuid)]
-    client_id: Uuid,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    user_id: Option<Uuid>,
-    #[diesel(sql_type = sql_types::Binary)]
-    contract_blake3: Vec<u8>,
-    #[diesel(sql_type = sql_types::Uuid)]
-    current_member_id: Uuid,
-    #[diesel(sql_type = sql_types::Binary)]
-    current_token_blake3: Vec<u8>,
-    #[diesel(sql_type = sql_types::Jsonb)]
-    current_audience: Value,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    current_issued_at: DateTime<Utc>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    current_expires_at: DateTime<Utc>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    current_id_token_sid: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    dpop_jkt: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    mtls_x5t_s256: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Varchar>)]
-    client_attestation_jkt: Option<String>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    revoked_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    reuse_detected_at: Option<DateTime<Utc>>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
-    contract: Option<Value>,
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    spent_at: DateTime<Utc>,
 }
 
 fn blake3_hex(value: &str) -> String {

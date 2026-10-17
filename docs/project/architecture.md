@@ -187,7 +187,7 @@ reactivation never resets it. Online token validation combines individual JTI
 revocation with current principal activity and signed epoch checks in one read.
 The offline signature verifier retains its existing offline-only guarantee.
 
-`DbPool` records its creating runtime as the connection I/O owner. The issuance
+`DbPool` parses its immutable connection settings once at construction; malformed settings fail before checkout, while network connections remain lazy. New physical connections still load the current platform TLS roots. `DbPool` records its creating runtime as the connection I/O owner. The issuance
 transaction executes on that same runtime, so its sequential statements do not
 repeatedly wake the HTTP worker runtime. Pure contract preparation still happens
 before checkout. The request owns the transaction task through `JoinSet`:
@@ -210,8 +210,13 @@ source come from locked account facts; the HTTP adapter supplies only the
 source IP hash. Tenant-local identity events omit a cross-tenant actor, while
 the atomic ledger retains the complete actor and target attribution. The HTTP
 handler preserves the audit preflight and does not append the outcome again.
-Recovery Root approval and rotation retain their registered Required evidence
-paths; their separate transactions are not made atomic by event registration.
+Controller identity and Recovery Root services validate decoded request shapes,
+key identifiers and key material before constructing persistence commands. Each
+rotation carries its deployment once, in the proposed identity. Persistence
+rechecks current actor authority and consumes the bound approval under the
+deployment lock, then commits the mutation and canonical audit event in one
+transaction. Recovery allocation and challenge signatures are checked against
+the current root inside that same state-serialization boundary.
 
 PAR and consent are immutable preparation material. Their cache deletion is
 post-commit cleanup, not authorization or cancellation authority. Explicit
@@ -372,6 +377,28 @@ OP session before returning an authorization code; a missing session or failed
 binding cannot return the code. A committed decision is not undone by a later
 session-binding or response failure.
 
+Authorization, administrator and runtime-module guards resolve `Principal`
+through the existing tenant-scoped narrow query. Profile and MFA consumers use
+`PublicAccount` from a single full projection. Both projections pass through the
+same session metadata, pending-MFA and active-account gates; profile consumers do
+not first load a principal and then query the account again.
+
+Identity owns the resolved `CurrentSession` value. Application session resolution
+transfers that value with its authentication buffers, and logout consumes its
+session ID and client list. Stored-session payload fixtures belong to HTTP test
+support; production persistence uses the identity session record and its adapter.
+
+Authorization-code replay compares borrowed fresh proof digests against the
+receipt's checked original requirements. The legacy receipt lookup reuses the
+request's issuance-holder result; neither path reconstructs holder evidence for
+comparison or repeats its structural validation.
+
+Token grant orchestration belongs to `authorization-server::token::dispatch`;
+the core owns `GrantType` and admission policy. Rust callers use the application
+dispatcher and its form model. HTTP signature parsers return
+`ParsedSignatureInput`; signature verification and replay consumption remain with
+the key-owning verifier.
+
 High-impact administration uses one identity-owned interactive-MFA predicate:
 `mfa` plus `otp` or `recovery_code`, with an authentication age from zero through
 300 seconds inclusive. Future authentication times do not count as completed
@@ -515,17 +542,18 @@ results follow the transaction ACK. A missing required capability fails closed
 before any clear. The ordinary repository clear remains available for fixture
 setup/cleanup and is not the profile operation's accepting contract. PostgreSQL regressions cover append rollback, committed-but-unknown responses and rejection of old proofs after new enrollment.
 
-Access-request approval and rejection use neutral purpose ports whose default
-is Unavailable before any effect. The PG owner locks Pending and the current
+Access-request approval and rejection use neutral purpose ports. The PG owner
+locks Pending and the current
 tenant/realm/organization principals, checks the active administrator, commits
 the client/request change and canonical Required outcome together, and returns
 the committed view only after the full ACK. Its connection is discarded on
 error/cancellation. Approval records the canonical event UUID on the business
-row in the same transaction; the reference holds no copied payload or secret.
-Historical approvals without that reference cannot activate a staged delivery.
-The precise recovery predicate is a restricted SECURITY DEFINER boolean API
-joining that exact reference, tenant/requester/request/client, approver, active
-client and secret generation. Runtime audit-table reads remain forbidden.
+row in the same transaction. This commit marker holds no copied payload or
+secret and survives reclamation of the delivered audit event. Historical
+approvals without the marker cannot activate a staged delivery. Recovery checks
+that marker, tenant/requester/request/client ownership, active client and current
+secret generation directly on the business rows. It does not reread delivered
+audit payloads; runtime audit-table reads remain forbidden.
 Normal publication follows the Required transaction ACK. An Unknown response
 retains the same stage and original expiry; recovery checks the same owner and
 does not create another client, secret or audit event. Valkey stage/publish is
@@ -596,6 +624,10 @@ share an immutable `Arc<Value>`. Request-local refresh replaces the shared handl
 cache hits and client clones do not copy the JSON keyset. Registration wire inputs
 still own their JSON, and persistence borrows the shared value when serializing. Current account and tenant-trust decisions
 remain fresh authority reads, and Bytes/DER Arc clones remain shared storage.
+Direct TLS and request facts share the authenticated certificate chain through
+the pinned rustls `peer_certificates_shared` API. RFC 9440 decoding moves DER into
+the same certificate representation; tenant CA verification borrows that chain.
+
 
 Operator presentation holds private immutable original compact segments, decoded
 operation and canonical bytes. Request hashing and the later admitted-key signature

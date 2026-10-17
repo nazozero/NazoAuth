@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
     CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, SingleUseRedemption,
-    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort, TokenRevocation,
+    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
 };
 use uuid::Uuid;
 
@@ -221,29 +221,13 @@ impl TokenRepositoryPort for CountingTokenRepository {
         raw_token: &'a str,
         client_id: Uuid,
         retry_started_at: chrono::DateTime<chrono::Utc>,
-    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot_with_subject(
-            tenant_id,
-            raw_token,
-            client_id,
-            retry_started_at,
-            false,
-        )
-    }
-
-    fn refresh_token_snapshot_with_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        raw_token: &'a str,
-        client_id: Uuid,
-        retry_started_at: chrono::DateTime<chrono::Utc>,
         prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         self.refresh_snapshot_calls.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
             let mut result = self
                 .inner
-                .refresh_token_snapshot_with_subject(
+                .refresh_token_snapshot(
                     tenant_id,
                     raw_token,
                     client_id,
@@ -268,16 +252,6 @@ impl TokenRepositoryPort for CountingTokenRepository {
             }
             Ok(result)
         })
-    }
-
-    fn inspect_lost_response_successor<'a>(
-        &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: chrono::DateTime<chrono::Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>> {
-        self.inner
-            .inspect_lost_response_successor(token, client_id, retry_started_at)
     }
 
     fn active_subject_claims<'a>(
@@ -349,10 +323,6 @@ impl TokenRepositoryPort for CountingTokenRepository {
             .refresh_family_active(tenant_id, family_id, user_id)
     }
 
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-        self.inner.revoke_token(input)
-    }
-
     fn revoke_token_with_audit<'a>(
         &'a self,
         input: nazo_auth::TokenRevocation<'a>,
@@ -400,6 +370,13 @@ impl CountingAuthorizationRepository {
 }
 
 impl AuthorizationRepositoryPort for CountingAuthorizationRepository {
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        self.inner.active_client_presentation(client_id)
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,

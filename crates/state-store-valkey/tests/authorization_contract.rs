@@ -4,14 +4,13 @@ use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface, LuaInterface};
 use fred::prelude::{Builder, Config, Expiration};
 use nazo_auth::{
-    AuthorizationCodeState, AuthorizationPortError, AuthorizationStateStorePort, CodePayload,
-    ConsentPayload, DecisionMaterialDiscardError, DecisionMaterialDiscardOutcome,
-    PushedAuthorizationRequest,
+    AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
+    AuthorizationPortError, AuthorizationStateStorePort, CodePayload, ConsentPayload,
+    DecisionMaterialDiscardError, DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
 };
 use nazo_identity::TenantId;
 use nazo_valkey::{
-    AuthorizationCodeBegin, AuthorizationPreparationWrite, AuthorizationStateAdapter,
-    AuthorizationStore, AuthorizationTransition, ValkeyConnection,
+    AuthorizationPreparationWrite, AuthorizationStateAdapter, AuthorizationStore, ValkeyConnection,
 };
 use serde_json::json;
 
@@ -501,14 +500,14 @@ async fn concurrent_authorization_code_begin_has_one_consuming_winner() {
     assert_eq!(
         results
             .iter()
-            .filter(|r| matches!(r, AuthorizationCodeBegin::Consuming(_)))
+            .filter(|r| matches!(r, AuthorizationCodeBeginResult::Consuming(_)))
             .count(),
         1
     );
     assert_eq!(
         results
             .iter()
-            .filter(|r| matches!(r, AuthorizationCodeBegin::Busy))
+            .filter(|r| matches!(r, AuthorizationCodeBeginResult::Busy))
             .count(),
         1
     );
@@ -1122,7 +1121,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
             .mark_authorization_code(&code_hash, &consumed, 60)
             .await
             .unwrap(),
-        AuthorizationTransition::Pending
+        AuthorizationCodeTransitionResult::Pending
     );
     let original_ttl = inspector.pttl::<i64, _>(&key).await.unwrap();
     assert!((1..=30_000).contains(&original_ttl));
@@ -1131,7 +1130,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
             .begin_authorization_code(&code_hash, Utc.timestamp_opt(1_001, 0).unwrap())
             .await
             .unwrap(),
-        AuthorizationCodeBegin::Consuming(_)
+        AuthorizationCodeBeginResult::Consuming(_)
     ));
     assert!((1..=original_ttl).contains(&inspector.pttl::<i64, _>(&key).await.unwrap()));
     assert!(matches!(
@@ -1147,14 +1146,14 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
             .begin_authorization_code(&code_hash, Utc.timestamp_opt(1_002, 0).unwrap())
             .await
             .unwrap(),
-        AuthorizationCodeBegin::Busy
+        AuthorizationCodeBeginResult::Busy
     ));
     assert_eq!(
         store
             .mark_authorization_code(&code_hash, &consumed, 60)
             .await
             .unwrap(),
-        AuthorizationTransition::Applied
+        AuthorizationCodeTransitionResult::Applied
     );
     assert!((31..=60).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
     let replay = store
@@ -1162,7 +1161,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
         .await
         .unwrap();
     match replay {
-        AuthorizationCodeBegin::Consumed(AuthorizationCodeState::Consumed) => {}
+        AuthorizationCodeBeginResult::Consumed(AuthorizationCodeState::Consumed) => {}
         unexpected => panic!("expected terminal consumed marker, got {unexpected:?}"),
     }
     let failed = AuthorizationCodeState::Failed {
@@ -1174,7 +1173,7 @@ async fn authorization_code_transitions_keep_begin_ttl_and_terminal_replay_seman
             .mark_authorization_code(&code_hash, &failed, 120)
             .await
             .unwrap(),
-        AuthorizationTransition::Consumed
+        AuthorizationCodeTransitionResult::Consumed
     );
     assert_eq!(
         serde_json::to_value(
@@ -1246,14 +1245,14 @@ async fn authorization_code_begin_and_busy_retry_preserve_the_original_ttl() {
             .begin_authorization_code(&code_hash, Utc::now())
             .await
             .unwrap(),
-        AuthorizationCodeBegin::Consuming(_)
+        AuthorizationCodeBeginResult::Consuming(_)
     ));
     assert!(matches!(
         store
             .begin_authorization_code(&code_hash, Utc::now())
             .await
             .unwrap(),
-        AuthorizationCodeBegin::Busy
+        AuthorizationCodeBeginResult::Busy
     ));
     let remaining = inspector.pttl::<i64, _>(&key).await.unwrap();
     assert!(remaining > 0 && remaining <= original_ttl);
@@ -1270,7 +1269,7 @@ async fn authorization_code_begin_and_busy_retry_preserve_the_original_ttl() {
             .begin_authorization_code(&code_hash, Utc::now())
             .await
             .unwrap(),
-        AuthorizationCodeBegin::Missing
+        AuthorizationCodeBeginResult::Missing
     ));
 }
 

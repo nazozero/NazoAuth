@@ -8,14 +8,11 @@ fn catalog_keeps_static_module_dependencies() {
     let catalog = module_catalog(&settings).expect("module catalog should be valid");
 
     assert_eq!(
-        catalog
-            .spec(ModuleId::ScimSecurityEvents)
-            .unwrap()
-            .dependencies,
+        catalog.spec(ModuleId::ScimSecurityEvents).dependencies,
         BTreeSet::from([ModuleId::Scim])
     );
     assert_eq!(
-        catalog.spec(ModuleId::NativeSso).unwrap().dependencies,
+        catalog.spec(ModuleId::NativeSso).dependencies,
         BTreeSet::from([ModuleId::TokenExchange])
     );
 }
@@ -25,8 +22,11 @@ async fn reconciler_is_one_abortable_tenant_owned_task() {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     let catalog = module_catalog(&settings).expect("module catalog should be valid");
-    let pool =
-        nazo_postgres::create_pool("not a postgres url", 1).expect("a lazy test pool should build");
+    let pool = nazo_postgres::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .expect("a lazy test pool should build");
     let registry = test_support::runtime_module_registry_with_modules_for_test(
         pool.clone(),
         &settings,
@@ -59,21 +59,17 @@ fn vp_drain_horizon_uses_the_constructed_transaction_ttl_instead_of_session_ttl(
     let catalog = module_catalog(&settings).unwrap();
     assert_eq!(
         catalog.effective_disable_policy(ModuleId::Openid4vpVerifier),
-        Some(
-            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
-                max_duration: Duration::from_secs(300)
-            }
-        )
+        nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+            max_duration: Duration::from_secs(300)
+        }
     );
     settings.openid4vc.transaction_ttl_seconds = 1;
     let catalog = module_catalog(&settings).unwrap();
     assert_eq!(
         catalog.effective_disable_policy(ModuleId::Openid4vpVerifier),
-        Some(
-            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
-                max_duration: Duration::from_secs(30)
-            }
-        )
+        nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+            max_duration: Duration::from_secs(30)
+        }
     );
 }
 

@@ -17,7 +17,7 @@ use crate::{
     token::client_auth::{
         ClientAuthRequestFacts, TokenManagementClientAuthError,
         authenticate_client_with_dependencies,
-        consume_token_management_client_assertion_with_authorization_service,
+        consume_token_client_assertion_with_authorization_service,
     },
 };
 use chrono::{Duration, Utc};
@@ -51,7 +51,7 @@ pub struct PreparedParClient<'a> {
     credentials: PresentedClientCredentials,
 }
 pub struct ParRequestFacts<'a> {
-    pub client_auth: ClientAuthRequestFacts,
+    pub client_auth: ClientAuthRequestFacts<'a>,
     pub dpop: DpopRequestFacts<'a>,
     pub mtls_thumbprint: Option<String>,
     pub attestation: Option<(&'a str, &'a str)>,
@@ -190,23 +190,26 @@ impl<'a> PreparedParParameters<'a> {
             decrypted_request_object,
         } = self;
         let has_basic = transport.basic_challenge();
-        let assertion_client_id = transport
-            .client_assertion()
-            .filter(|_| {
-                transport.client_assertion_type()
-                    == Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
-            })
-            .and_then(unverified_client_assertion_client_id);
-        let mut credentials = transport
-            .presented_credentials(assertion_client_id, mtls_present.then(|| client_id.clone()));
-        if attestation_present {
-            credentials = nazo_auth::PresentedClientCredentials {
+        let credentials = if attestation_present {
+            PresentedClientCredentials {
                 client_id: Some(client_id.clone()),
                 client_secret: None,
                 client_assertion: None,
                 method: "attest_jwt_client_auth".to_owned(),
-            };
-        }
+            }
+        } else {
+            let assertion_client_id = transport
+                .client_assertion()
+                .filter(|_| {
+                    transport.client_assertion_type()
+                        == Some("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+                })
+                .and_then(unverified_client_assertion_client_id);
+            transport.presented_credentials(
+                assertion_client_id.as_deref(),
+                mtls_present.then_some(client_id.as_str()),
+            )
+        };
         if has_basic && credentials.method != "client_secret_basic" {
             return Err(OAuthEndpointError::json(
                 StatusCode::UNAUTHORIZED,
@@ -223,10 +226,6 @@ impl<'a> PreparedParParameters<'a> {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                crate::token::client_auth::perform_dummy_client_secret_verification(
-                    &credentials,
-                    &context.config.client_secret_pepper,
-                );
                 return Err(OAuthEndpointError::json(
                     StatusCode::UNAUTHORIZED,
                     "invalid_client",
@@ -270,8 +269,9 @@ impl PreparedParClient<'_> {
         } = self;
         let context = &context;
         let attestation_headers = facts.attestation;
-        let client_policy = client.security_policy.clone();
-        let fapi2_security = context.config.requires_fapi2_security(&client_policy);
+        let fapi2_security = context
+            .config
+            .requires_fapi2_security(&client.security_policy);
         let par_ttl_seconds = if fapi2_security {
             context.config.par_ttl_seconds.min(599)
         } else {
@@ -295,6 +295,7 @@ impl PreparedParClient<'_> {
             };
             let validated = match validator
                 .validate_for_client(
+                    &client.client_id,
                     attestation,
                     proof,
                     &context.config.issuer,
@@ -302,7 +303,7 @@ impl PreparedParClient<'_> {
                 )
                 .await
             {
-                Ok(validated) if validated.client_id == client.client_id => validated,
+                Ok(validated) => validated,
                 _ => {
                     return Err(OAuthEndpointError::json(
                         StatusCode::UNAUTHORIZED,
@@ -371,7 +372,7 @@ impl PreparedParClient<'_> {
                 require_request_object: client.require_par_request_object
                     || context
                         .config
-                        .requires_signed_authorization_request(&client_policy),
+                        .requires_signed_authorization_request(&client.security_policy),
                 fapi2_security,
             },
         ) {
@@ -416,9 +417,9 @@ impl PreparedParClient<'_> {
                 },
                 signed_authorization_response_required: context
                     .config
-                    .requires_signed_authorization_response(&client_policy),
+                    .requires_signed_authorization_response(&client.security_policy),
                 allowed_audiences: &client.allowed_audiences,
-                pkce_required: !client_policy.allow_confidential_oidc_without_pkce
+                pkce_required: !client.security_policy.allow_confidential_oidc_without_pkce
                     || fapi2_security
                     || client.require_dpop_bound_tokens
                     || client.require_mtls_bound_tokens
@@ -459,7 +460,7 @@ impl PreparedParClient<'_> {
                 context: DpopErrorContext::TokenEndpoint,
             });
         }
-        if let Err(error) = consume_token_management_client_assertion_with_authorization_service(
+        if let Err(error) = consume_token_client_assertion_with_authorization_service(
             context.service,
             &client,
             client_assertion.as_ref(),
@@ -496,7 +497,7 @@ impl PreparedParClient<'_> {
         };
         if let Err(error) = context
             .service
-            .store_par(&request_uri, &payload, par_ttl_seconds.max(1))
+            .store_par(&request_uri, &payload, par_ttl_seconds)
             .await
         {
             tracing::warn!(%error, "failed to persist PAR payload");

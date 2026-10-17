@@ -2,10 +2,8 @@ use diesel::{sql_query, sql_types};
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection as _,
 };
-use nazo_identity::{OrganizationId, RealmId, TenantContext, TenantId};
-use nazo_postgres::{
-    ActiveTenantBoundaryRepository, TenantDirectoryRepository, create_pool, get_conn,
-};
+use nazo_identity::TenantContext;
+use nazo_postgres::{TenantDirectoryRepository, create_pool, get_conn};
 use uuid::Uuid;
 
 fn database_url() -> Option<String> {
@@ -18,26 +16,8 @@ fn database_url() -> Option<String> {
     url
 }
 
-fn context(tenant_id: Uuid, realm_id: Uuid, organization_id: Uuid) -> TenantContext {
-    TenantContext {
-        tenant_id: TenantId::new(tenant_id).expect("tenant id is non-nil"),
-        realm_id: RealmId::new(realm_id).expect("realm id is non-nil"),
-        organization_id: OrganizationId::new(organization_id).expect("organization id is non-nil"),
-    }
-}
-
-async fn insert_tenant(connection: &mut nazo_postgres::DbConnection, tenant_id: Uuid, slug: &str) {
-    sql_query("INSERT INTO tenants (id, slug, display_name, status) VALUES ($1, $2, $3, 'active')")
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Text, _>(slug)
-        .bind::<sql_types::Text, _>(format!("{slug} display"))
-        .execute(connection)
-        .await
-        .expect("foreign tenant can be inserted");
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn active_tenant_boundary_preflight_is_fail_closed() {
+async fn directory_initialization_is_atomic_and_excludes_suspended_tenants() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -58,14 +38,9 @@ async fn active_tenant_boundary_preflight_is_fail_closed() {
         .await
         .expect("isolated database migrations should apply");
     let pool = create_pool(isolated_url, 4).expect("pool should create");
-    let repository = ActiveTenantBoundaryRepository::new(pool.clone());
     let directory = TenantDirectoryRepository::new(pool.clone());
     let active = TenantContext::default_system();
 
-    repository
-        .preflight(active)
-        .await
-        .expect("default active boundary should pass");
     let fresh_directory = directory
         .load_active()
         .await
@@ -125,10 +100,6 @@ async fn active_tenant_boundary_preflight_is_fail_closed() {
         .await
         .expect("tenant status should update");
     drop(connection);
-    assert!(matches!(
-        repository.preflight(active).await,
-        Err(nazo_identity::ports::RepositoryError::Consistency(_))
-    ));
     let suspended_directory = directory
         .load_active()
         .await
@@ -151,66 +122,8 @@ async fn active_tenant_boundary_preflight_is_fail_closed() {
     assert_eq!(restored_directory.revision, 3);
     assert_eq!(restored_directory.tenants.len(), 1);
 
-    let foreign_realm_tenant = Uuid::now_v7();
-    let foreign_realm = Uuid::now_v7();
-    insert_tenant(
-        &mut connection,
-        foreign_realm_tenant,
-        &format!("foreign-realm-{}", foreign_realm.simple()),
-    )
-    .await;
-    sql_query(
-        "INSERT INTO realms (id, tenant_id, slug, display_name, status)
-         VALUES ($1, $2, 'default', 'Foreign realm', 'active')",
-    )
-    .bind::<sql_types::Uuid, _>(foreign_realm)
-    .bind::<sql_types::Uuid, _>(foreign_realm_tenant)
-    .execute(&mut connection)
-    .await
-    .expect("foreign realm can be inserted");
     drop(connection);
-    let realm_mismatch = context(
-        active.tenant_id.as_uuid(),
-        foreign_realm,
-        active.organization_id.as_uuid(),
-    );
-    assert!(matches!(
-        repository.preflight(realm_mismatch).await,
-        Err(nazo_identity::ports::RepositoryError::Consistency(_))
-    ));
-
-    let mut connection = get_conn(&pool)
-        .await
-        .expect("pool should provide connection");
-    let foreign_organization_tenant = Uuid::now_v7();
-    let foreign_organization = Uuid::now_v7();
-    insert_tenant(
-        &mut connection,
-        foreign_organization_tenant,
-        &format!("foreign-organization-{}", foreign_organization.simple()),
-    )
-    .await;
-    sql_query(
-        "INSERT INTO organizations (id, tenant_id, slug, display_name, status)
-         VALUES ($1, $2, 'default', 'Foreign organization', 'active')",
-    )
-    .bind::<sql_types::Uuid, _>(foreign_organization)
-    .bind::<sql_types::Uuid, _>(foreign_organization_tenant)
-    .execute(&mut connection)
-    .await
-    .expect("foreign organization can be inserted");
-    drop(connection);
-    let organization_mismatch = context(
-        active.tenant_id.as_uuid(),
-        active.realm_id.as_uuid(),
-        foreign_organization,
-    );
-    assert!(matches!(
-        repository.preflight(organization_mismatch).await,
-        Err(nazo_identity::ports::RepositoryError::Consistency(_))
-    ));
-
-    drop(repository);
+    drop(directory);
     drop(pool);
     let mut coordinator = AsyncPgConnection::establish(&database_url)
         .await

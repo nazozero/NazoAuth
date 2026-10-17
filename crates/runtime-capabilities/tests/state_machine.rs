@@ -7,11 +7,11 @@ use std::task::{Context, Poll, Waker};
 use std::time::{Duration, SystemTime};
 
 use nazo_runtime_modules::{
-    ActiveModuleSnapshot, CasOutcome, DesiredMode, DesiredRevisionGuard, DesiredStateChange,
-    DesiredStateRecord, DisablePolicy, InstanceStateChange, InstanceStateMutation,
-    InstanceStateRecord, ModuleEventPage, ModuleEventRecord, ModuleEventState, ModuleEventType,
-    ModuleId, ModuleRevision, ModuleSpec, ModuleState, ModuleStateRepository, SnapshotStore,
-    StaleTransition, TransitionGuard, validate_module_specs,
+    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredRevisionGuard,
+    DesiredStateChange, DesiredStateRecord, DisablePolicy, InstanceStateChange,
+    InstanceStateMutation, InstanceStateRecord, ModuleCatalog, ModuleEventPage, ModuleEventRecord,
+    ModuleEventState, ModuleEventType, ModuleId, ModuleRevision, ModuleSpec, ModuleState,
+    ModuleStateRepository, SnapshotStore, StaleTransition, TransitionGuard,
 };
 
 fn complete_fixture_catalog() -> Vec<ModuleSpec> {
@@ -72,39 +72,48 @@ fn audit_event_catalog_is_closed_and_exhaustive() {
     assert_eq!(ModuleEventType::ALL.len(), 7);
 }
 
-#[test]
-fn complete_catalog_with_known_acyclic_dependencies_is_valid() {
-    let mut specs = complete_fixture_catalog();
-    specs[1].dependencies.insert(ModuleId::DeviceAuthorization);
-    specs[2].dependencies.insert(ModuleId::TokenExchange);
-
-    assert_eq!(specs.len(), ModuleId::ALL.len());
-    assert!(validate_module_specs(&specs).is_ok());
+fn fixed_fixture_catalog() -> ModuleCatalog {
+    ModuleCatalog::fixed(CatalogDurations {
+        device_authorization: Duration::from_secs(1),
+        ciba: Duration::from_secs(1),
+        authorization_code: Duration::from_secs(1),
+        refresh_token: Duration::from_secs(1),
+        session: Duration::from_secs(1),
+        presentation_transaction: Duration::from_secs(1),
+        scim_security_events: Duration::from_secs(1),
+    })
 }
 
 #[test]
-fn catalog_requires_exactly_one_spec_per_module() {
-    let mut missing = complete_fixture_catalog();
-    missing.pop();
-    assert!(validate_module_specs(&missing).is_err());
-
-    let mut duplicate = complete_fixture_catalog();
-    duplicate.push(duplicate[0].clone());
-    assert!(validate_module_specs(&duplicate).is_err());
+fn fixed_catalog_contains_every_module_and_accepts_acyclic_dependencies() {
+    let catalog = fixed_fixture_catalog()
+        .with_dependencies(ModuleId::TokenExchange, [ModuleId::DeviceAuthorization])
+        .unwrap()
+        .with_dependencies(ModuleId::JwtBearerGrant, [ModuleId::TokenExchange])
+        .unwrap();
+    assert_eq!(catalog.specs().len(), ModuleId::ALL.len());
+    for id in ModuleId::ALL {
+        assert_eq!(catalog.spec(id).id, id);
+    }
 }
 
 #[test]
 fn catalog_rejects_self_dependencies_and_cycles() {
-    let mut self_dependent = complete_fixture_catalog();
-    self_dependent[0]
-        .dependencies
-        .insert(ModuleId::DeviceAuthorization);
-    assert!(validate_module_specs(&self_dependent).is_err());
-
-    let mut cyclic = complete_fixture_catalog();
-    cyclic[0].dependencies.insert(ModuleId::TokenExchange);
-    cyclic[1].dependencies.insert(ModuleId::DeviceAuthorization);
-    assert!(validate_module_specs(&cyclic).is_err());
+    assert!(
+        fixed_fixture_catalog()
+            .with_dependencies(
+                ModuleId::DeviceAuthorization,
+                [ModuleId::DeviceAuthorization]
+            )
+            .is_err()
+    );
+    assert!(
+        fixed_fixture_catalog()
+            .with_dependencies(ModuleId::DeviceAuthorization, [ModuleId::TokenExchange])
+            .unwrap()
+            .with_dependencies(ModuleId::TokenExchange, [ModuleId::DeviceAuthorization])
+            .is_err()
+    );
 }
 
 #[test]
@@ -440,19 +449,19 @@ impl ModuleStateRepository for InMemoryRepository {
 
     async fn compare_and_set_instance(
         &self,
-        _required_desired_revision: ModuleRevision,
-        mutation: InstanceStateMutation,
+        mut mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let mut state = self.state.lock().expect("state lock poisoned");
         let change = mutation.change;
         let key = (change.next.instance_id.clone(), change.next.module_id);
         let current = state.instances.get(&key).cloned();
         if current.as_ref().map(|record| record.transition_revision) != change.expected_revision {
-            state.events.push(mutation.stale_event);
+            mutation.event.event_type = ModuleEventType::StaleTransitionDiscarded;
+            state.events.push(mutation.event);
             return Ok(CasOutcome::Stale { current });
         }
         state.instances.insert(key, change.next.clone());
-        state.events.push(mutation.applied_event);
+        state.events.push(mutation.event);
         Ok(CasOutcome::Applied(change.next))
     }
 
@@ -526,8 +535,7 @@ fn instance_mutation(
         occurred_at: change.next.updated_at,
     };
     InstanceStateMutation {
-        applied_event: event(event_type),
-        stale_event: event(ModuleEventType::StaleTransitionDiscarded),
+        event: event(event_type),
         change,
     }
 }
@@ -585,29 +593,23 @@ fn instance_cas_returns_current_on_revision_conflict() {
     let repository = InMemoryRepository::default();
     let starting = instance_record(3, ModuleState::Starting);
     assert_eq!(
-        block_on(repository.compare_and_set_instance(
-            ModuleRevision::new(3),
-            instance_mutation(
-                InstanceStateChange {
-                    expected_revision: None,
-                    next: starting.clone(),
-                },
-                ModuleEventType::TransitionStarted,
-            )
-        )),
+        block_on(repository.compare_and_set_instance(instance_mutation(
+            InstanceStateChange {
+                expected_revision: None,
+                next: starting.clone(),
+            },
+            ModuleEventType::TransitionStarted,
+        ))),
         Ok(CasOutcome::Applied(starting.clone()))
     );
 
-    let stale = block_on(repository.compare_and_set_instance(
-        ModuleRevision::new(4),
-        instance_mutation(
-            InstanceStateChange {
-                expected_revision: Some(ModuleRevision::new(2)),
-                next: instance_record(4, ModuleState::Enabled),
-            },
-            ModuleEventType::TransitionCompleted,
-        ),
-    ));
+    let stale = block_on(repository.compare_and_set_instance(instance_mutation(
+        InstanceStateChange {
+            expected_revision: Some(ModuleRevision::new(2)),
+            next: instance_record(4, ModuleState::Enabled),
+        },
+        ModuleEventType::TransitionCompleted,
+    )));
     assert_eq!(
         stale,
         Ok(CasOutcome::Stale {

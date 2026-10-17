@@ -8,12 +8,14 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::http::sessions::SessionHttpConfig;
 use crate::settings::Settings;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use chrono::Utc;
@@ -21,7 +23,6 @@ use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_oauth_server::domain::rows::ClientRow;
-use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::http::admin::clients::test_support::{
@@ -570,25 +571,6 @@ impl LiveAdminGrantFixture {
 }
 
 #[test]
-fn grant_json_projects_authorization_record_without_internal_ids() {
-    let row = grant_row();
-    let value = grant_json(row);
-
-    assert_eq!(value["email"], "user@example.com");
-    assert_eq!(value["client_id"], "client-1");
-    assert_eq!(value["client_name"], "Client One");
-    assert_eq!(value["authorization_count"], 3);
-    assert_eq!(value["last_scopes"], json!(["openid", "payments"]));
-    assert_eq!(
-        value["last_authorization_details"],
-        json!([{"type": "payment_initiation"}])
-    );
-    assert!(value.get("client_pk").is_none());
-    assert!(value.get("tenant_id").is_none());
-    assert!(value.get("refresh_token").is_none());
-}
-
-#[test]
 fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
     let source = include_str!("../../../../src/http/admin/grants.rs");
     let adapter = include_str!("../../../../../persistence-postgres/src/repositories/grants.rs");
@@ -609,7 +591,18 @@ fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
 
 #[actix_web::test]
 async fn grants_list_response_preserves_pagination_and_scope_projection() {
-    let response = grants_list_response(2, 50, 101, vec![grant_row()]);
+    let row = grant_row();
+    let expected = json!({
+        "user_id": row.user_id,
+        "email": "user@example.com",
+        "client_id": "client-1",
+        "client_name": "Client One",
+        "last_authorized_at": row.last_authorized_at,
+        "authorization_count": 3,
+        "last_scopes": ["openid", "payments"],
+        "last_authorization_details": [{"type": "payment_initiation"}]
+    });
+    let response = grants_list_response(2, 50, 101, vec![row]);
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = actix_web::body::to_bytes(response.into_body())
@@ -622,8 +615,7 @@ async fn grants_list_response_preserves_pagination_and_scope_projection() {
     assert_eq!(body["page_size"], json!(50));
     let items = body["items"].as_array().expect("items should be an array");
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["last_scopes"], json!(["openid", "payments"]));
-    assert!(items[0].get("oauth_token_id").is_none());
+    assert_eq!(items[0], expected);
 }
 
 #[actix_web::test]

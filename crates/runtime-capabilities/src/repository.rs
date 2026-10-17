@@ -64,15 +64,15 @@ pub struct InstanceStateChange {
     pub next: InstanceStateRecord,
 }
 
-/// Revision-bound actual-state mutation and its mutually exclusive audit records.
+/// Revision-bound actual-state mutation and its audit record.
 ///
-/// Repositories must commit the state write and `applied_event` atomically. If the
-/// revision is stale, they must leave state unchanged and append only `stale_event`.
+/// Repositories must commit the state write and `event` atomically. If the
+/// transition revision is stale, they must leave state unchanged and append
+/// the event with type `StaleTransitionDiscarded`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstanceStateMutation {
     pub change: InstanceStateChange,
-    pub applied_event: ModuleEventRecord,
-    pub stale_event: ModuleEventRecord,
+    pub event: ModuleEventRecord,
 }
 
 /// An observation of discarded work, with no desired or instance-state write.
@@ -178,7 +178,6 @@ pub trait ModuleStateRepository: Send + Sync {
 
     fn compare_and_set_instance(
         &self,
-        required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> impl Future<Output = Result<CasOutcome<InstanceStateRecord>, Self::Error>> + Send;
 

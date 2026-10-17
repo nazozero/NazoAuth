@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, future::Future, pin::Pin};
+use std::{borrow::Cow, collections::BTreeMap, future::Future, pin::Pin};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
@@ -6,7 +6,6 @@ use rand::random;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use subtle::ConstantTimeEq;
 
 use crate::{AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort};
 
@@ -110,7 +109,7 @@ pub struct VerifiedDpopProof {
     pub jkt: String,
     pub jti: String,
     pub nonce: Option<String>,
-    pub audit: DpopReplayAudit,
+    pub key_id: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -243,28 +242,31 @@ where
         .await
     {
         Ok(true) => Ok(Some(verified.jkt)),
-        Ok(false) => Err(DpopError::ReplayDetected(verified.audit)),
+        Ok(false) => Err(DpopError::ReplayDetected(DpopReplayAudit {
+            jti_hash: blake3::hash(verified.jti.as_bytes()).to_hex().to_string(),
+            key_id: verified.key_id,
+        })),
         Err(DpopStateStoreError) => Err(DpopError::InvalidProof),
     }
 }
 
-fn replay_scope(
+fn replay_scope<'a>(
     request: &DpopProofRequest<'_>,
-    verified: &VerifiedDpopProof,
-) -> Result<String, DpopError> {
+    verified: &'a VerifiedDpopProof,
+) -> Result<Cow<'a, str>, DpopError> {
     if request.access_token.is_none() {
-        return Ok(verified.jkt.clone());
+        return Ok(Cow::Borrowed(&verified.jkt));
     }
     let target = request
         .target_uris
         .first()
         .ok_or(DpopError::InvalidProof)
         .and_then(|target| normalize_htu(target))?;
-    let material = format!("{}:{target}", request.method);
-    Ok(format!(
-        "resource:{}",
-        blake3::hash(material.as_bytes()).to_hex()
-    ))
+    let mut hash = blake3::Hasher::new();
+    hash.update(request.method.as_bytes());
+    hash.update(b":");
+    hash.update(target.as_bytes());
+    Ok(Cow::Owned(format!("resource:{}", hash.finalize().to_hex())))
 }
 
 pub async fn issue_authorization_server_dpop_nonce<S>(store: &S) -> Result<String, DpopError>
@@ -298,6 +300,9 @@ where
     };
     match store.validate_nonce(nonce).await {
         Ok(true) => Ok(()),
+        // Optional mode never announces a nonce requirement that a retry can
+        // drop. A supplied invalid nonce remains an invalid proof.
+        Ok(false) if policy == DpopNoncePolicy::Optional => Err(DpopError::InvalidProof),
         Ok(false) => Err(DpopError::UseNonce(
             issue_authorization_server_dpop_nonce(store).await?,
         )),
@@ -338,23 +343,17 @@ fn verify_dpop_proof_at(
     )?;
 
     let jkt = jwk_thumbprint(&header.jwk)?;
-    if request
-        .expected_jkt
-        .is_some_and(|expected| !constant_time_eq(expected.as_bytes(), jkt.as_bytes()))
-    {
+    if request.expected_jkt.is_some_and(|expected| expected != jkt) {
         return Err(DpopError::BindingMismatch);
     }
     validate_claims(request, &claims, now)?;
 
     Ok(Some(VerifiedDpopProof {
-        audit: DpopReplayAudit {
-            jti_hash: blake3::hash(claims.jti.as_bytes()).to_hex().to_string(),
-            key_id: header
-                .jwk
-                .get("kid")
-                .and_then(Value::as_str)
-                .map(str::to_owned),
-        },
+        key_id: header
+            .jwk
+            .get("kid")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         jkt,
         jti: claims.jti,
         nonce: claims.nonce,
@@ -471,14 +470,11 @@ fn public_dpop_decoding_key(
                 .get("x")
                 .and_then(Value::as_str)
                 .ok_or(DpopError::MalformedProof)?;
-            if URL_SAFE_NO_PAD
+            let bytes = URL_SAFE_NO_PAD
                 .decode(x)
-                .ok()
-                .is_none_or(|bytes| bytes.len() != 32)
-            {
-                return Err(DpopError::InvalidProof);
-            }
-            JwtVerificationKey::from_ed_components(x).map_err(|_| DpopError::InvalidProof)
+                .map_err(|_| DpopError::InvalidProof)?;
+            let bytes = bytes.try_into().map_err(|_| DpopError::InvalidProof)?;
+            Ok(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -494,15 +490,17 @@ fn public_dpop_decoding_key(
                 .get("y")
                 .and_then(Value::as_str)
                 .ok_or(DpopError::MalformedProof)?;
-            if [x, y].iter().any(|coordinate| {
-                URL_SAFE_NO_PAD
-                    .decode(coordinate)
-                    .ok()
-                    .is_none_or(|bytes| bytes.len() != 32)
-            }) {
-                return Err(DpopError::InvalidProof);
-            }
-            JwtVerificationKey::from_ec_components(x, y).map_err(|_| DpopError::InvalidProof)
+            let x_bytes = URL_SAFE_NO_PAD
+                .decode(x)
+                .map_err(|_| DpopError::InvalidProof)?;
+            let y_bytes = URL_SAFE_NO_PAD
+                .decode(y)
+                .map_err(|_| DpopError::InvalidProof)?;
+            let x_bytes = x_bytes.try_into().map_err(|_| DpopError::InvalidProof)?;
+            let y_bytes = y_bytes.try_into().map_err(|_| DpopError::InvalidProof)?;
+            Ok(JwtVerificationKey::from_p256_coordinates(
+                &x_bytes, &y_bytes,
+            ))
         }
         _ => Err(DpopError::InvalidProof),
     }
@@ -601,14 +599,7 @@ fn normalize_htu(value: &str) -> Result<String, DpopError> {
     let mut url = url::Url::parse(value).map_err(|_| DpopError::MalformedProof)?;
     url.set_query(None);
     url.set_fragment(None);
-    Ok(url.to_string())
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-    bool::from(left.ct_eq(right))
+    Ok(url.into())
 }
 
 #[cfg(test)]

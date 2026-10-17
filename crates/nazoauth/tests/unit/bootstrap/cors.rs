@@ -135,7 +135,7 @@ async fn browser_token_management_cors_allows_post_dpop_without_credentials() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
     let app = test::init_service(
         App::new()
-            .wrap(cors_browser_token_management(&settings))
+            .wrap(CorsPolicy::from_settings(&settings).browser_token_management())
             .route(
                 "/token",
                 web::post().to(|| async { HttpResponse::Ok().finish() }),
@@ -200,7 +200,7 @@ async fn browser_userinfo_cors_allows_get_and_post_bearer_or_dpop() {
     for method in ["GET", "POST"] {
         let app = test::init_service(
             App::new()
-                .wrap(cors_browser_userinfo(&settings))
+                .wrap(CorsPolicy::from_settings(&settings).browser_userinfo())
                 .route(
                     "/userinfo",
                     web::get().to(|| async { HttpResponse::Ok().finish() }),
@@ -470,16 +470,20 @@ async fn openid_federation_route_is_not_registered() {
 #[actix_web::test]
 async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_browser_userinfo(&settings)).route(
-        "/resource",
-        web::get().to(|| async {
-            HttpResponse::Unauthorized()
-                .insert_header((header::WWW_AUTHENTICATE, "DPoP error=\"use_dpop_nonce\""))
-                .insert_header(("dpop-nonce", "nonce-1"))
-                .insert_header((header::RETRY_AFTER, "5"))
-                .finish()
-        }),
-    ))
+    let app = test::init_service(
+        App::new()
+            .wrap(CorsPolicy::from_settings(&settings).browser_userinfo())
+            .route(
+                "/resource",
+                web::get().to(|| async {
+                    HttpResponse::Unauthorized()
+                        .insert_header((header::WWW_AUTHENTICATE, "DPoP error=\"use_dpop_nonce\""))
+                        .insert_header(("dpop-nonce", "nonce-1"))
+                        .insert_header((header::RETRY_AFTER, "5"))
+                        .finish()
+                }),
+            ),
+    )
     .await;
 
     let request = test::TestRequest::get()
@@ -503,10 +507,14 @@ async fn cors_actual_response_exposes_oauth_challenge_nonce_and_retry_headers() 
 #[actix_web::test]
 async fn cors_well_known_allows_get_and_head_only() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_well_known(&settings)).route(
-        "/.well-known/openid-configuration",
-        web::get().to(|| async { HttpResponse::Ok().finish() }),
-    ))
+    let app = test::init_service(
+        App::new()
+            .wrap(CorsPolicy::from_settings(&settings).well_known())
+            .route(
+                "/.well-known/openid-configuration",
+                web::get().to(|| async { HttpResponse::Ok().finish() }),
+            ),
+    )
     .await;
 
     let allowed = test::TestRequest::default()
@@ -529,10 +537,14 @@ async fn cors_well_known_allows_get_and_head_only() {
 #[actix_web::test]
 async fn cors_admin_allows_csrf_header_for_credentialed_write_requests() {
     let settings = test_settings(vec!["https://admin.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_admin(&settings)).route(
-        "/admin/clients",
-        web::post().to(|| async { HttpResponse::Ok().finish() }),
-    ))
+    let app = test::init_service(
+        App::new()
+            .wrap(CorsPolicy::from_settings(&settings).admin())
+            .route(
+                "/admin/clients",
+                web::post().to(|| async { HttpResponse::Ok().finish() }),
+            ),
+    )
     .await;
 
     let request = test::TestRequest::default()
@@ -569,10 +581,14 @@ async fn cors_admin_allows_csrf_header_for_credentialed_write_requests() {
 #[actix_web::test]
 async fn cors_auth_api_credentials_are_limited_to_configured_origins_and_csrf_headers() {
     let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_auth_api(&settings)).route(
-        "/auth/me",
-        web::patch().to(|| async { HttpResponse::Ok().finish() }),
-    ))
+    let app = test::init_service(
+        App::new()
+            .wrap(CorsPolicy::from_settings(&settings).auth_api())
+            .route(
+                "/auth/me",
+                web::patch().to(|| async { HttpResponse::Ok().finish() }),
+            ),
+    )
     .await;
 
     let allowed = test::TestRequest::default()
@@ -808,10 +824,14 @@ async fn production_profile_routes_keep_method_cors_cache_and_security_contracts
 #[actix_web::test]
 async fn cors_scim_allows_put_without_browser_credentials() {
     let settings = test_settings(vec!["https://scim-admin.example".to_owned()]);
-    let app = test::init_service(App::new().wrap(cors_scim(&settings)).route(
-        "/scim/v2/Users/user-1",
-        web::put().to(|| async { HttpResponse::Ok().finish() }),
-    ))
+    let app = test::init_service(
+        App::new()
+            .wrap(CorsPolicy::from_settings(&settings).scim())
+            .route(
+                "/scim/v2/Users/user-1",
+                web::put().to(|| async { HttpResponse::Ok().finish() }),
+            ),
+    )
     .await;
 
     let request = test::TestRequest::default()

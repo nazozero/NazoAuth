@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::{
@@ -104,7 +104,7 @@ pub fn admit_jwt_bearer_grant<'a>(
     } else {
         requested_audiences.to_vec()
     };
-    if audiences.is_empty() || !is_subset(&audiences, policy.allowed_audiences) {
+    if !is_subset(&audiences, policy.allowed_audiences) {
         return Err(JwtBearerGrantError::InvalidTarget);
     }
     Ok(JwtBearerGrantAdmission {
@@ -168,10 +168,7 @@ pub fn validate_jwt_bearer_assertion_claims(
         subject: claims.sub,
         jti: claims.jti,
         expires_at,
-        replay_ttl_seconds: claims
-            .exp
-            .saturating_sub(policy.now)
-            .clamp(1, JWT_BEARER_ASSERTION_MAX_TTL_SECONDS) as u64,
+        replay_ttl_seconds: (claims.exp - policy.now) as u64,
     })
 }
 
@@ -192,7 +189,6 @@ pub struct TokenExchangeRequestInput<'a> {
     pub actor_token: Option<&'a str>,
     pub actor_token_type: Option<&'a str>,
     pub requested_token_type: Option<&'a str>,
-    pub scope: Option<&'a str>,
     pub audiences: &'a [String],
 }
 
@@ -213,21 +209,6 @@ pub struct TokenExchangePolicy<'a> {
     pub require_dpop_bound_tokens: bool,
     pub require_mtls_bound_tokens: bool,
     pub now: i64,
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct TokenExchangeAdmission<'a> {
-    pub subject_token: &'a str,
-    pub actor_token: Option<&'a str>,
-    pub requested_scope: Option<&'a str>,
-    pub audiences: Vec<String>,
-    pub issued_token_type: String,
-}
-
-impl std::fmt::Debug for TokenExchangeAdmission<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("TokenExchangeAdmission([REDACTED])")
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -255,25 +236,14 @@ impl TokenExchangeError {
     }
 }
 
-pub fn admit_token_exchange<'a>(
-    request: &TokenExchangeRequestInput<'a>,
+pub fn validate_token_exchange_target(
+    request: &TokenExchangeRequestInput<'_>,
     policy: TokenExchangePolicy<'_>,
-) -> Result<TokenExchangeAdmission<'a>, TokenExchangeError> {
-    validate_token_exchange_grant_prerequisites(request, policy)?;
-    let subject_token = request
-        .subject_token
-        .expect("validated token exchange request must contain subject_token");
-    validate_token_exchange_requested_scope(policy.allowed_scopes, request.scope)?;
+) -> Result<(), TokenExchangeError> {
     if request.audiences.is_empty() || !is_subset(request.audiences, policy.allowed_audiences) {
         return Err(TokenExchangeError::InvalidTarget);
     }
-    Ok(TokenExchangeAdmission {
-        subject_token,
-        actor_token: request.actor_token,
-        requested_scope: request.scope,
-        audiences: request.audiences.to_vec(),
-        issued_token_type: ACCESS_TOKEN_TYPE.to_owned(),
-    })
+    Ok(())
 }
 
 /// Checks module, client, and token-type prerequisites before a transport
@@ -312,19 +282,6 @@ pub fn validate_token_exchange_grant_prerequisites(
     Ok(())
 }
 
-fn validate_token_exchange_requested_scope(
-    client_scopes: &[String],
-    requested_scope: Option<&str>,
-) -> Result<(), TokenExchangeError> {
-    let requested = parse_scope(requested_scope.unwrap_or(""));
-    if requested.iter().any(|scope| scope == "openid")
-        || !requested.is_empty() && !is_subset(&requested, client_scopes)
-    {
-        return Err(TokenExchangeError::InvalidScope);
-    }
-    Ok(())
-}
-
 /// Resolves authoritative issuance scopes after the subject token has been
 /// cryptographically verified and checked for revocation.
 pub fn token_exchange_scopes(
@@ -336,9 +293,8 @@ pub fn token_exchange_scopes(
     let requested = parse_scope(requested_scope.unwrap_or(""));
     let scopes = if requested.is_empty() {
         subject_scopes
-            .iter()
-            .filter(|scope| *scope != "openid" && client_scopes.contains(scope))
-            .cloned()
+            .into_iter()
+            .filter(|scope| scope != "openid" && client_scopes.contains(scope))
             .collect::<Vec<_>>()
     } else {
         if requested.iter().any(|scope| scope == "openid")
@@ -355,11 +311,11 @@ pub fn token_exchange_scopes(
     Ok(scopes)
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TokenExchangeSenderBinding {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TokenExchangeSenderBinding<'a> {
     Bearer,
-    Dpop(String),
-    MutualTls(String),
+    Dpop(&'a str),
+    MutualTls(&'a str),
 }
 
 /// Internal subject ownership recovered from a verified exchange subject
@@ -373,11 +329,10 @@ pub enum TokenExchangeSubjectIdentity {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ValidatedTokenExchangeSubject {
-    pub subject: String,
+pub struct ValidatedTokenExchangeSubject<'a> {
     pub identity: TokenExchangeSubjectIdentity,
     pub scopes: Vec<String>,
-    pub sender_binding: TokenExchangeSenderBinding,
+    pub sender_binding: TokenExchangeSenderBinding<'a>,
 }
 
 pub fn validate_token_exchange_access_token(
@@ -393,11 +348,11 @@ pub fn validate_token_exchange_access_token(
     Ok(())
 }
 
-pub fn validate_token_exchange_subject(
-    claims: &Claims,
+pub fn validate_token_exchange_subject<'a>(
+    claims: &'a Claims,
     requested_scope: Option<&str>,
     policy: TokenExchangePolicy<'_>,
-) -> Result<ValidatedTokenExchangeSubject, TokenExchangeError> {
+) -> Result<ValidatedTokenExchangeSubject<'a>, TokenExchangeError> {
     validate_token_exchange_access_token(claims, policy)?;
     if claims.client_id != policy.client_id {
         return Err(TokenExchangeError::InvalidGrant);
@@ -421,38 +376,35 @@ pub fn validate_token_exchange_subject(
     let sender_binding = match claims.cnf.as_ref() {
         None => TokenExchangeSenderBinding::Bearer,
         Some(confirmation) => match (confirmation.jkt.as_ref(), confirmation.x5t_s256.as_ref()) {
-            (Some(jkt), None) => TokenExchangeSenderBinding::Dpop(jkt.clone()),
-            (None, Some(thumbprint)) => TokenExchangeSenderBinding::MutualTls(thumbprint.clone()),
+            (Some(jkt), None) => TokenExchangeSenderBinding::Dpop(jkt),
+            (None, Some(thumbprint)) => TokenExchangeSenderBinding::MutualTls(thumbprint),
             _ => return Err(TokenExchangeError::InvalidGrant),
         },
     };
     Ok(ValidatedTokenExchangeSubject {
-        subject: claims.sub.clone(),
         identity,
         scopes,
         sender_binding,
     })
 }
 
-pub fn token_exchange_issuance_binding(
-    subject_binding: &TokenExchangeSenderBinding,
-    presented: PresentedSenderConstraint<'_>,
+pub fn token_exchange_issuance_binding<'a>(
+    subject_binding: &TokenExchangeSenderBinding<'_>,
+    presented: PresentedSenderConstraint<'a>,
     policy: TokenExchangePolicy<'_>,
-) -> Result<TokenExchangeSenderBinding, TokenExchangeError> {
+) -> Result<TokenExchangeSenderBinding<'a>, TokenExchangeError> {
     let sender_policy = sender_constraint_policy(
         policy.require_dpop_bound_tokens,
         policy.require_mtls_bound_tokens,
     );
     match subject_binding {
         TokenExchangeSenderBinding::Dpop(expected)
-            if presented.dpop_jkt != Some(expected.as_str())
-                || presented.mtls_x5t_s256.is_some() =>
+            if presented.dpop_jkt != Some(*expected) || presented.mtls_x5t_s256.is_some() =>
         {
             return Err(TokenExchangeError::InvalidGrant);
         }
         TokenExchangeSenderBinding::MutualTls(expected)
-            if presented.mtls_x5t_s256 != Some(expected.as_str())
-                || presented.dpop_jkt.is_some() =>
+            if presented.mtls_x5t_s256 != Some(*expected) || presented.dpop_jkt.is_some() =>
         {
             return Err(TokenExchangeError::InvalidGrant);
         }
@@ -462,29 +414,29 @@ pub fn token_exchange_issuance_binding(
         .map_err(|_| TokenExchangeError::InvalidGrant)?;
     Ok(match applied {
         AppliedSenderConstraint::Bearer => TokenExchangeSenderBinding::Bearer,
-        AppliedSenderConstraint::Dpop(jkt) => TokenExchangeSenderBinding::Dpop(jkt.to_owned()),
+        AppliedSenderConstraint::Dpop(jkt) => TokenExchangeSenderBinding::Dpop(jkt),
         AppliedSenderConstraint::MutualTls(thumbprint) => {
-            TokenExchangeSenderBinding::MutualTls(thumbprint.to_owned())
+            TokenExchangeSenderBinding::MutualTls(thumbprint)
         }
     })
 }
 
 pub fn token_exchange_actor_claim(
-    actor: &Claims,
+    actor: Claims,
     policy: TokenExchangePolicy<'_>,
 ) -> Result<Value, TokenExchangeError> {
-    validate_token_exchange_access_token(actor, policy)?;
+    validate_token_exchange_access_token(&actor, policy)?;
     if actor.client_id != policy.client_id || actor.cnf.is_some() {
         return Err(TokenExchangeError::InvalidGrant);
     }
-    let mut claim = json!({
-        "sub": actor.sub,
-        "client_id": actor.client_id,
-    });
-    if let Some(previous_actor) = actor.act.as_ref() {
-        claim["act"] = previous_actor.clone();
+    let mut claim = Map::from_iter([
+        ("sub".to_owned(), Value::String(actor.sub)),
+        ("client_id".to_owned(), Value::String(actor.client_id)),
+    ]);
+    if let Some(previous_actor) = actor.act {
+        claim.insert("act".to_owned(), previous_actor);
     }
-    Ok(claim)
+    Ok(Value::Object(claim))
 }
 
 #[cfg(test)]

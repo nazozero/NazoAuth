@@ -13,7 +13,6 @@ fn native_sso_device_secret_hash_is_stable_and_non_raw() {
 #[test]
 fn native_sso_id_token_audience_requires_the_source_client() {
     let base = NativeSsoIdTokenClaims {
-        iss: "https://issuer.example".to_owned(),
         sub: "subject-1".to_owned(),
         aud: json!("source-client"),
         ds_hash: "hash".to_owned(),

@@ -8,14 +8,10 @@ use crate::{OAuthClient, ValidatedClientRegistration};
 pub struct SuppliedClientSecret(Vec<u8>);
 
 impl SuppliedClientSecret {
-    pub fn new(value: impl AsRef<[u8]>) -> Result<Self, &'static str> {
-        let value = value.as_ref();
-        if value.len() < 32
-            || value.len() > 512
-            || value.iter().any(|byte| {
-                *byte == 0 || *byte == b'\r' || *byte == b'\n' || (*byte).is_ascii_control()
-            })
-        {
+    pub fn new(value: impl Into<Vec<u8>>) -> Result<Self, &'static str> {
+        let secret = Self(value.into());
+        let value = &secret.0;
+        if value.len() < 32 || value.len() > 512 || value.iter().any(u8::is_ascii_control) {
             return Err("supplied client secret has invalid size or characters");
         }
         let distinct = value
@@ -25,7 +21,7 @@ impl SuppliedClientSecret {
         if distinct.len() < 16 {
             return Err("supplied client secret has insufficient entropy");
         }
-        Ok(Self(value.to_vec()))
+        Ok(secret)
     }
 
     pub(crate) fn as_str(&self) -> Result<&str, std::str::Utf8Error> {

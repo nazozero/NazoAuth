@@ -36,7 +36,7 @@ async fn seed_grant_and_family(database_url: &str) -> (FixtureIds, GrantReposito
     let fixture = fixture(database_url).await;
     let repository = GrantRepository::new(create_pool(database_url, 1).unwrap());
     repository
-        .upsert(
+        .ensure(
             Uuid::from_u128(1),
             fixture.user_id,
             fixture.client_id,

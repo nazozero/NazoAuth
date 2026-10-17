@@ -1,4 +1,5 @@
 use super::*;
+use hmac::Mac;
 use nazo_identity::PublicAccount;
 use serde_json::Value;
 use std::{sync::Arc, time::Duration};
@@ -6,6 +7,7 @@ use std::{sync::Arc, time::Duration};
 use crate::config::ConfigSource;
 use crate::schema::external_identity_links;
 use crate::settings::Settings;
+use crate::test_support::SessionPayload;
 use crate::test_support::valkey::valkey_get;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{
@@ -17,7 +19,6 @@ use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
 use nazo_oauth_server::crypto::pkce_s256;
-use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
 use nazo_valkey::test_support::oidc_federation_storage_key as oidc_state_key;
@@ -106,7 +107,7 @@ async fn federation_provider_response_limit_rejects_oversized_content_length() {
     assert!(error.to_string().contains("too large"));
 }
 
-fn normalize_federation_token(value: &str) -> Option<String> {
+fn normalize_federation_token(value: &str) -> Option<&str> {
     nazo_identity::federation::normalize_federation_token(value)
 }
 
@@ -156,11 +157,11 @@ async fn oidc_callback_after_rate_limit_for_provider(
 ) -> HttpResponse {
     super::oidc_callback_after_rate_limit_for_provider(
         crate::test_support::federation_service(&state),
-        crate::test_support::federation_http_config(&state),
+        &crate::test_support::federation_http_config(&state),
         crate::test_support::client_ip_config(&state),
         req,
         query,
-        provider,
+        &provider,
     )
     .await
 }
@@ -700,13 +701,10 @@ fn federation_token_trims_transport_whitespace_but_preserves_length_and_charset_
     let max = "b".repeat(256);
 
     assert_eq!(
-        normalize_federation_token(&format!(" \t{min}\n")).as_deref(),
+        normalize_federation_token(&format!(" \t{min}\n")),
         Some(min.as_str())
     );
-    assert_eq!(
-        normalize_federation_token(&max).as_deref(),
-        Some(max.as_str())
-    );
+    assert_eq!(normalize_federation_token(&max), Some(max.as_str()));
     assert!(
         normalize_federation_token(&"c".repeat(31)).is_none(),
         "state tokens shorter than 256 bits of base64url-like entropy must fail closed"
@@ -2151,4 +2149,20 @@ async fn federation_response_exposes_pending_mfa_and_matching_cookie_lifetime() 
         assert_eq!(body["mfa_required"], pending);
         assert_eq!(body["expires_in"], expected_ttl);
     }
+}
+
+pub(super) fn saml_gateway_signature(
+    secret: &str,
+    issuer: &str,
+    audience: &str,
+    subject: &str,
+    email: &str,
+    iat: i64,
+    exp: i64,
+) -> String {
+    URL_SAFE_NO_PAD.encode(
+        saml_gateway_mac(secret, issuer, audience, subject, email, iat, exp)
+            .finalize()
+            .into_bytes(),
+    )
 }

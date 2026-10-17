@@ -49,7 +49,7 @@ pub fn reject_non_confidential_client_credentials_client(
 pub fn client_credentials_issue_request_with_default_audience(
     default_audience: &str,
     client: &ClientRow,
-    form: &TokenForm,
+    form: TokenForm,
 ) -> Result<ClientCredentialsIssue, OAuthEndpointError> {
     let requested = parse_scope(form.scope.as_deref().unwrap_or(""));
     if !requested.is_empty() && !is_subset(&requested, &client.scopes) {
@@ -76,7 +76,7 @@ pub fn client_credentials_issue_request_with_default_audience(
     let audiences = if form.audiences.is_empty() {
         vec![default_audience.to_owned()]
     } else {
-        form.audiences.clone()
+        form.audiences
     };
     if !audiences_allowed(client, &audiences) {
         return Err(OAuthEndpointError::token(
@@ -95,7 +95,7 @@ pub async fn token_client_credentials_with_service(
     issuance: &TokenIssuanceContext<'_>,
     facts: &TokenRequestFacts<'_>,
     client: &ClientRow,
-    form: &TokenForm,
+    form: TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
     if let Some(response) = reject_non_confidential_client_credentials_client(client) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IGNORE_REGEX='(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|(^|/)cargo/registry/src/|(^|/)(?:crates/authorization-server/src/)?(schema|db|lib)\.rs$|(^|/)crates/authorization-server/src/domain/(rows|mod|state|keyset)\.rs$|(^|/)domain/(rows|mod|state|keyset)\.rs$|(^|/)crates/authorization-server/src/bootstrap/(routes|observability|mod)\.rs$|(^|/)bootstrap/(routes|observability|mod)\.rs$|(^|/)support/(valkey|mod)\.rs$|(^|/)crates/authorization-server/src/support/(valkey|mod)\.rs$|(^|/)crates/authorization-server/src/http/(mod|admin|profile|token)\.rs$|(^|/)http/(mod|admin|profile|token)\.rs$|(^|/)http/admin/clients/mod\.rs$|(^|/)crates/authorization-server/src/http/admin/clients/mod\.rs$|(^|/)http/auth/mod\.rs$|(^|/)crates/authorization-server/src/http/auth/mod\.rs$|(^|/)http/authorization/mod\.rs$|(^|/)crates/authorization-server/src/http/authorization/mod\.rs$|(^|/)main\.rs$|(^|/)crates/authorization-server/src/main\.rs$|(^|/)bin/nazo_oauth_(keyctl|migrate)\.rs$|(^|/)crates/authorization-server/src/bin/nazo_oauth_(keyctl|migrate)\.rs$'
+IGNORE_REGEX='(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|(^|/)cargo/registry/src/|(^|/)(schema|db|lib)\.rs$|(^|/)domain/(rows|mod|state|keyset)\.rs$|(^|/)bootstrap/(routes|observability|mod)\.rs$|(^|/)support/(valkey|mod)\.rs$|(^|/)http/(mod|admin|profile|token)\.rs$|(^|/)http/admin/clients/mod\.rs$|(^|/)http/auth/mod\.rs$|(^|/)http/authorization/mod\.rs$|(^|/)main\.rs$|(^|/)bin/nazo_oauth_(keyctl|migrate)\.rs$'
 
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
@@ -68,11 +68,10 @@ fi
 
 remove_owned_container() {
   local container_name="$1"
-  if ! docker inspect "$container_name" >/dev/null 2>&1; then
+  local owner
+  if ! owner="$(docker inspect --format '{{ index .Config.Labels "io.nazoauth.owner" }}' "$container_name" 2>/dev/null)"; then
     return 0
   fi
-  local owner
-  owner="$(docker inspect --format '{{ index .Config.Labels "io.nazoauth.owner" }}' "$container_name" 2>/dev/null || true)"
   if [[ "$owner" != "$CODECOV_OWNER_LABEL" ]]; then
     echo "refusing to remove unowned Docker container $container_name" >&2
     return 1
@@ -212,7 +211,7 @@ docker run -d --name "$MINIO_CONTAINER" \
 services_ready=false
 for attempt in $(seq 1 60); do
   if docker exec "$POSTGRES_CONTAINER" sh -lc \
-      'pg_isready -U postgres -d oauth >/dev/null && psql -U postgres -d oauth -c "select 1" >/dev/null' \
+      'psql -U postgres -d oauth -c "select 1" >/dev/null' \
       && docker exec "$VALKEY_CONTAINER" valkey-cli ping >/dev/null 2>&1 \
       && curl --fail --silent http://127.0.0.1:9000/minio/health/live >/dev/null
   then

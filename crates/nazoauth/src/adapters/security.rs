@@ -253,11 +253,10 @@ pub(crate) fn extract_client_credentials_with_trusted_proxies(
     {
         form_client_id
             .filter(|_| request_mtls_client_certificate(req, trusted_proxy_cidrs).is_some())
-            .map(str::to_owned)
     } else {
         None
     };
-    facts.presented_credentials(assertion_client_id, mtls_client_id)
+    facts.presented_credentials(assertion_client_id.as_deref(), mtls_client_id)
 }
 
 #[cfg(test)]

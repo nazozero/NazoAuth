@@ -6,27 +6,34 @@ use uuid::Uuid;
 use super::*;
 use crate::{
     AccountIdentity, Principal, TenantContext, UserId, UserProfile, UserRole,
-    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpEnrollment},
+    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpEnrollmentCheck},
 };
 
 struct ConfirmRepository(Mutex<TotpVerificationOutcome>);
 
 impl MfaRepositoryPort for ConfirmRepository {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
+        _code: &'a str,
+        _timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
         unreachable!()
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-        _secret: String,
-    ) -> RepositoryFuture<'_, ()> {
-        unreachable!()
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
+        assert_eq!(secret.len(), 32);
+        let started = matches!(
+            *self.0.lock().unwrap(),
+            TotpVerificationOutcome::Accepted(_)
+        );
+        Box::pin(async move { Ok(started) })
     }
 
     fn verify_and_confirm_totp<'a>(
@@ -64,16 +71,37 @@ impl MfaRepositoryPort for ConfirmRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<BackupCodeCandidate>> {
-        unreachable!()
+        Box::pin(async {
+            Ok(vec![
+                BackupCodeCandidate {
+                    id: Uuid::from_u128(1),
+                    hash: EncodedSecretHash::new("first").unwrap(),
+                },
+                BackupCodeCandidate {
+                    id: Uuid::from_u128(2),
+                    hash: EncodedSecretHash::new("second").unwrap(),
+                },
+            ])
+        })
     }
 
     fn consume_backup_code_candidate(
         &self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-        _candidate_id: Uuid,
+        candidate_id: Uuid,
     ) -> RepositoryFuture<'_, Option<Uuid>> {
-        unreachable!()
+        assert_eq!(candidate_id, Uuid::from_u128(2));
+        let previous = std::mem::replace(
+            &mut *self.0.lock().unwrap(),
+            TotpVerificationOutcome::Replay,
+        );
+        Box::pin(async move {
+            Ok(match previous {
+                TotpVerificationOutcome::Accepted(credential_id) => Some(credential_id),
+                _ => None,
+            })
+        })
     }
 
     fn record_invalid_backup_code_attempt(
@@ -81,7 +109,7 @@ impl MfaRepositoryPort for ConfirmRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
     ) -> RepositoryFuture<'_, ()> {
-        unreachable!()
+        Box::pin(async { Ok(()) })
     }
 
     fn replace_backup_code_hashes<'a>(
@@ -130,6 +158,29 @@ impl MfaRepositoryPort for ConfirmRepository {
 
 struct UnusedHasher;
 
+#[tokio::test]
+async fn begin_enrollment_uses_the_atomic_write_without_reading_the_old_secret() {
+    for (outcome, started) in [
+        (TotpVerificationOutcome::Accepted(Uuid::now_v7()), true),
+        (TotpVerificationOutcome::Replay, false),
+    ] {
+        let service = MfaService::new(
+            Arc::new(ConfirmRepository(Mutex::new(outcome))),
+            Arc::new(UnusedHasher),
+        );
+        let result = service.begin_totp(&account(), "Issuer").await;
+        if started {
+            let enrollment = result.unwrap();
+            assert!(enrollment.otpauth_uri.contains(&enrollment.secret_base32));
+        } else {
+            assert_eq!(
+                result.unwrap_err().kind(),
+                MfaServiceErrorKind::AlreadyEnabled
+            );
+        }
+    }
+}
+
 impl MfaSecretHashPort for UnusedHasher {
     fn hash_secrets(&self, _secrets: Vec<String>) -> MfaHashFuture<'_, Vec<EncodedSecretHash>> {
         unreachable!()
@@ -142,6 +193,53 @@ impl MfaSecretHashPort for UnusedHasher {
     ) -> MfaHashFuture<'_, Option<usize>> {
         unreachable!()
     }
+}
+
+#[tokio::test]
+async fn backup_code_hash_order_keeps_candidate_identity_and_single_consumption() {
+    struct SecondBackupHasher;
+    impl MfaSecretHashPort for SecondBackupHasher {
+        fn hash_secrets(&self, _: Vec<String>) -> MfaHashFuture<'_, Vec<EncodedSecretHash>> {
+            unreachable!()
+        }
+        fn find_matching_secret(
+            &self,
+            secret: String,
+            candidates: Vec<EncodedSecretHash>,
+        ) -> MfaHashFuture<'_, Option<usize>> {
+            assert_eq!(secret, "1234567890");
+            assert_eq!(
+                candidates
+                    .iter()
+                    .map(EncodedSecretHash::as_str)
+                    .collect::<Vec<_>>(),
+                ["first", "second"]
+            );
+            Box::pin(async { Ok(Some(1)) })
+        }
+    }
+    let credential_id = Uuid::now_v7();
+    let service = MfaService::new(
+        Arc::new(ConfirmRepository(Mutex::new(
+            TotpVerificationOutcome::Accepted(credential_id),
+        ))),
+        Arc::new(SecondBackupHasher),
+    );
+    let account = account();
+    let proof = service
+        .verify_factor(&account, "12345-67890", Utc::now().timestamp())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(proof.credential_id, credential_id);
+    assert_eq!(proof.method, MfaVerificationMethod::BackupCode);
+    assert!(
+        service
+            .verify_factor(&account, "12345-67890", Utc::now().timestamp())
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]

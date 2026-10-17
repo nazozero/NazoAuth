@@ -270,30 +270,43 @@ impl ScimRepository {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let event_attributes = patch.event_attributes();
+        let event_attributes = if mutation.transaction_id().is_some() {
+            patch.event_attributes()
+        } else {
+            Vec::new()
+        };
         let event_retention = self.event_retention;
         let row = connection
             .transaction::<PublicAccountRow, Error, _>(async move |connection| {
-                let current = users::table
-                    .find(user_id.as_uuid())
-                    .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                    .for_update()
-                    .select(PublicAccountRow::as_select())
-                    .first::<PublicAccountRow>(connection)
-                    .await?;
+                let current_active =
+                    if mutation.transaction_id().is_some() && patch.active.is_some() {
+                        Some(
+                            users::table
+                                .find(user_id.as_uuid())
+                                .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                                .for_update()
+                                .select(users::is_active)
+                                .first::<bool>(connection)
+                                .await?,
+                        )
+                    } else {
+                        None
+                    };
                 let row = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
                         .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid())),
                 )
                 .set((
-                    users::username.eq(patch.user_name.unwrap_or(current.username)),
-                    users::email.eq(patch.email.unwrap_or(current.email)),
+                    patch.user_name.map(|value| users::username.eq(value)),
+                    patch.email.map(|value| users::email.eq(value)),
                     users::email_verified.eq(true),
-                    users::is_active.eq(patch.active.unwrap_or(current.is_active)),
-                    users::display_name.eq(patch.display_name.or(current.display_name)),
-                    users::given_name.eq(patch.given_name.or(current.given_name)),
-                    users::family_name.eq(patch.family_name.or(current.family_name)),
+                    patch.active.map(|value| users::is_active.eq(value)),
+                    patch
+                        .display_name
+                        .map(|value| users::display_name.eq(value)),
+                    patch.given_name.map(|value| users::given_name.eq(value)),
+                    patch.family_name.map(|value| users::family_name.eq(value)),
                     users::updated_at.eq(now),
                 ))
                 .returning(PublicAccountRow::as_returning())
@@ -303,8 +316,8 @@ impl ScimRepository {
                     revoke(connection, tenant.tenant_id.as_uuid(), row.id).await?;
                 }
                 if let Some(transaction_id) = mutation.transaction_id() {
-                    let active_transition =
-                        (current.is_active != row.is_active).then_some(row.is_active);
+                    let active_transition = current_active
+                        .and_then(|before| (before != row.is_active).then_some(row.is_active));
                     insert_event(
                         connection,
                         StoredEvent::patch_notice(
@@ -348,45 +361,41 @@ impl ScimRepository {
         let event_retention = self.event_retention;
         connection
             .transaction::<bool, Error, _>(async move |connection| {
-                let current = users::table
-                    .find(user_id.as_uuid())
-                    .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                    .for_update()
-                    .select(PublicAccountRow::as_select())
-                    .first::<PublicAccountRow>(connection)
-                    .await
-                    .optional()?;
-                let Some(current) = current else {
-                    return Ok(false);
-                };
-                if !current.is_active {
-                    return Ok(true);
-                }
-                let changed = diesel::update(
+                let deactivated_at = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
-                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid())),
+                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                        .filter(users::is_active.eq(true)),
                 )
                 .set((users::is_active.eq(false), users::updated_at.eq(now)))
-                .execute(connection)
-                .await?;
-                if changed > 0 {
-                    revoke(connection, tenant.tenant_id.as_uuid(), user_id.as_uuid()).await?;
-                    if let Some(transaction_id) = mutation.transaction_id() {
-                        insert_event(
-                            connection,
-                            StoredEvent::deactivate(
-                                tenant.tenant_id.as_uuid(),
-                                user_id.as_uuid(),
-                                transaction_id,
-                                Utc::now(),
-                            ),
-                            event_retention,
-                        )
-                        .await?;
-                    }
+                .returning(users::updated_at)
+                .get_result::<chrono::DateTime<Utc>>(connection)
+                .await
+                .optional()?;
+                let Some(deactivated_at) = deactivated_at else {
+                    return diesel::select(diesel::dsl::exists(
+                        users::table
+                            .find(user_id.as_uuid())
+                            .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid())),
+                    ))
+                    .get_result(connection)
+                    .await;
+                };
+                revoke(connection, tenant.tenant_id.as_uuid(), user_id.as_uuid()).await?;
+                if let Some(transaction_id) = mutation.transaction_id() {
+                    insert_event(
+                        connection,
+                        StoredEvent::deactivate(
+                            tenant.tenant_id.as_uuid(),
+                            user_id.as_uuid(),
+                            transaction_id,
+                            deactivated_at,
+                        ),
+                        event_retention,
+                    )
+                    .await?;
                 }
-                Ok(changed > 0)
+                Ok(true)
             })
             .await
             .map_err(map_error)
@@ -458,7 +467,9 @@ async fn insert_event(
             scim_security_events::tenant_id.eq(event.tenant_id),
             scim_security_events::transaction_id.eq(event.transaction_id),
             scim_security_events::subject_uri.eq(event.subject_uri),
-            scim_security_events::events.eq(serde_json::json!(event.events)),
+            scim_security_events::events.eq(serde_json::Value::Object(
+                event.events.into_iter().collect(),
+            )),
             scim_security_events::occurred_at.eq(event.occurred_at),
             scim_security_events::expires_at.eq(expires_at),
         ))

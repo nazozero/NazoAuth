@@ -37,7 +37,8 @@ pub struct ClientCertificateFacts {
     /// forwarding adapter may supply the same RFC 9440 certificate chain.
     // Cloning request facts shares immutable DER storage. This does not cache
     // tenant trust or a client/token authorization decision.
-    pub certificate_chain_der: std::sync::Arc<Vec<Vec<u8>>>,
+    pub certificate_chain_der:
+        std::sync::Arc<Vec<nazo_crypto::certificate::CertificateDer<'static>>>,
     /// Chain verification against an explicitly configured deployment CA.
     /// This never follows merely from receiving a certificate header.
     pub deployment_trusted_chain: bool,
@@ -192,10 +193,10 @@ impl TokenClientAuthTransportFacts {
     #[must_use]
     pub fn presented_credentials(
         &self,
-        assertion_client_id: Option<String>,
-        mtls_client_id: Option<String>,
+        assertion_client_id: Option<&str>,
+        mtls_client_id: Option<&str>,
     ) -> PresentedClientCredentials {
-        self.credential_view(assertion_client_id.as_deref(), mtls_client_id.as_deref())
+        self.credential_view(assertion_client_id, mtls_client_id)
             .into_owned()
     }
 }

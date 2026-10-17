@@ -12,7 +12,6 @@ violation as ``relative/path:line-or-0: rule: detail`` sorted and deduplicated.
 import argparse
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 import verify_static_contracts as contracts
@@ -24,6 +23,8 @@ BACKEND_PACKAGES = {
     "pbkdf2", "rcgen", "ring", "rsa", "rscrypto", "scrypt",
     "web-sys", "wolfssl", "wolfssl-sys",
 }
+
+_BACKEND_ROOTS = frozenset(name.replace("-", "_") for name in BACKEND_PACKAGES)
 
 TLS_EXCEPTIONS = {
     "crates/nazoauth/src/bootstrap/transport.rs": {
@@ -84,10 +85,6 @@ _PUB_FIELD = re.compile(r"\bpub(\s*\(\s*crate\s*\))?\s+(\w+)\s*:\s*([^,})]+)")
 _ACCESS_IMPL = re.compile(r"\bimpl\b[^{]*\b(?:Deref|DerefMut|AsRef|Borrow)\b")
 
 
-def _load_manifest(path: Path) -> dict:
-    return tomllib.loads(path.read_text(encoding="utf-8"))
-
-
 def _all_dependency_packages(manifest: dict, workspace: dict) -> dict:
     """Map every declared dependency alias (normal/dev/build/target) to its package."""
     packages = {}
@@ -104,10 +101,10 @@ def _all_dependency_packages(manifest: dict, workspace: dict) -> dict:
     return packages
 
 
-def manifest_violations(root: Path) -> list:
+def manifest_violations(root: Path, read_manifest) -> list:
     """Check Cargo manifests for backend edges, feature forwarding, and identity."""
     violations = []
-    workspace = _load_manifest(root / "Cargo.toml").get("workspace", {})
+    workspace = read_manifest(root / "Cargo.toml").get("workspace", {})
     crypto_dir = (root / "crates" / "crypto").resolve()
     crypto_manifest = crypto_dir / "Cargo.toml"
     if not crypto_manifest.is_file():
@@ -117,7 +114,7 @@ def manifest_violations(root: Path) -> list:
     if fuzz_manifest.is_file():
         manifests.append(fuzz_manifest)
     for manifest_path in manifests:
-        manifest = _load_manifest(manifest_path)
+        manifest = read_manifest(manifest_path)
         name = manifest.get("package", {}).get("name", "")
         relative = manifest_path.relative_to(root).as_posix()
         is_crypto = manifest_path.parent.resolve() == crypto_dir
@@ -126,7 +123,7 @@ def manifest_violations(root: Path) -> list:
                 f"{relative}:0: crypto identity: package 'nazo-crypto' must live in crates/crypto"
             )
         dependencies = list(
-            contracts.resolved_production_dependencies(manifest_path, workspace)
+            contracts.resolved_production_dependencies(manifest_path, workspace, read_manifest)
         )
         if is_crypto:
             for package, spec in dependencies:
@@ -225,14 +222,10 @@ def _rust_aliases(masked: str, dependency_aliases: dict) -> dict:
     return aliases
 
 
-def _backend_roots() -> set:
-    return {name.replace("-", "_") for name in BACKEND_PACKAGES}
-
-
 def _is_backend_path(path: str) -> bool:
     """A path rooted at a concrete backend, or a TLS provider type."""
     return (
-        path.partition("::")[0] in _backend_roots()
+        path.partition("::")[0] in _BACKEND_ROOTS
         or path.startswith(_PROVIDER_PREFIX)
     )
 
@@ -359,15 +352,14 @@ def _crypto_source_violations(relative: str, masked: str, dependency_aliases: di
     return violations
 
 
-def source_violations(root: Path) -> list:
+def source_violations(root: Path, read_manifest) -> list:
     """Check production sources for backend paths and banned native calls."""
     violations = []
-    workspace = _load_manifest(root / "Cargo.toml").get("workspace", {})
+    workspace = read_manifest(root / "Cargo.toml").get("workspace", {})
     crypto_dir = (root / "crates" / "crypto").resolve()
-    backend_rust = _backend_roots()
     for manifest_path in sorted((root / "crates").glob("*/Cargo.toml")):
         crate_dir = manifest_path.parent
-        manifest = _load_manifest(manifest_path)
+        manifest = read_manifest(manifest_path)
         is_crypto = crate_dir.resolve() == crypto_dir
         dependency_aliases = {
             alias.replace("-", "_"): package.replace("-", "_")
@@ -409,7 +401,7 @@ def source_violations(root: Path) -> list:
                         f"native verify_signature call: {resolved} outside nazo-crypto"
                     )
                 detail = None
-                if root_name in backend_rust:
+                if root_name in _BACKEND_ROOTS:
                     detail = f"backend path {resolved}"
                 elif resolved.startswith(_PROVIDER_PREFIX):
                     allowed = TLS_EXCEPTIONS.get(relative, set())
@@ -449,7 +441,8 @@ def collect_violations(root: Path) -> list:
     saved_root = contracts.ROOT
     contracts.ROOT = Path(root).resolve()
     try:
-        return manifest_violations(contracts.ROOT) + source_violations(contracts.ROOT)
+        read_manifest = contracts.manifest_reader()
+        return manifest_violations(contracts.ROOT, read_manifest) + source_violations(contracts.ROOT, read_manifest)
     finally:
         contracts.ROOT = saved_root
 

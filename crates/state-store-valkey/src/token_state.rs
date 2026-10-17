@@ -18,7 +18,7 @@ impl TokenStateStore {
     ) -> Result<(), Error> {
         let raw = serde_json::to_string(value)
             .map_err(|e| Error::protocol(format!("failed to serialize native SSO state: {e}")))?;
-        command::set_ex_string(&self.connection, keys::native_sso(secret), raw, ttl).await
+        command::set_ex(&self.connection, keys::native_sso(secret), raw, ttl).await
     }
     pub async fn load_native_sso(&self, secret: &str) -> Result<Option<Value>, Error> {
         command::get(&self.connection, keys::native_sso(secret))

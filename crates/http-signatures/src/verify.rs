@@ -3,7 +3,7 @@ use std::fmt;
 use crate::digest::digest_matches;
 use crate::request::{
     canonical_target_uri, component, field_component, is_reserved_signature_field, is_token_byte,
-    method_component,
+    method_component, signature_base,
 };
 use crate::{BodyDigest, RequestInput, SignatureFields, VerifyError};
 use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
@@ -18,7 +18,9 @@ pub struct VerificationPolicy {
     pub future_skew_seconds: i64,
 }
 
-pub struct VerifiedInput {
+/// Parsed message and signature bytes. The key owner must still verify the
+/// signature and consume replay state before treating the request as authenticated.
+pub struct ParsedSignatureInput {
     signature_base: Vec<u8>,
     signature: Vec<u8>,
     keyid: String,
@@ -27,13 +29,13 @@ pub struct VerifiedInput {
     replay_fingerprint: [u8; 32],
 }
 
-impl fmt::Debug for VerifiedInput {
+impl fmt::Debug for ParsedSignatureInput {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("VerifiedInput { .. }")
+        formatter.write_str("ParsedSignatureInput { .. }")
     }
 }
 
-impl VerifiedInput {
+impl ParsedSignatureInput {
     pub fn signature_base(&self) -> &[u8] {
         &self.signature_base
     }
@@ -81,7 +83,7 @@ pub fn parse_request_for_verification(
     input: RequestInput<'_>,
     fields: SignatureFields,
     policy: VerificationPolicy,
-) -> Result<VerifiedInput, VerifyError> {
+) -> Result<ParsedSignatureInput, VerifyError> {
     parse_request_for_verification_with_digest(input, fields, policy, None)
 }
 
@@ -93,7 +95,7 @@ pub fn parse_request_for_verification_with_digest(
     fields: SignatureFields,
     policy: VerificationPolicy,
     digest: Option<&BodyDigest<'_>>,
-) -> Result<VerifiedInput, VerifyError> {
+) -> Result<ParsedSignatureInput, VerifyError> {
     let signature_input: Dictionary = Parser::new(&fields.signature_input)
         .parse()
         .map_err(|_| VerifyError::MalformedSignature)?;
@@ -116,7 +118,10 @@ pub fn parse_request_for_verification_with_digest(
         .first()
         .ok_or(VerifyError::MissingSignature)?;
     let signature_entry = signatures
-        .get(label.as_str())
+        .into_iter()
+        .next()
+        .filter(|(name, _)| name == label)
+        .map(|(_, entry)| entry)
         .ok_or(VerifyError::MissingSignature)?;
 
     let params = match input_entry {
@@ -126,7 +131,7 @@ pub fn parse_request_for_verification_with_digest(
     if top_level_parameter_count(&fields.signature_input) != params.params.len() {
         return Err(VerifyError::MalformedSignature);
     }
-    let signature = signature_bytes(signature_entry)?.to_vec();
+    let signature = signature_bytes(signature_entry)?;
     let components = component_names(params)?;
     let created = integer_parameter(params, "created").ok_or(VerifyError::InvalidCreated)?;
     let keyid = string_parameter(params, "keyid")
@@ -147,9 +152,6 @@ pub fn parse_request_for_verification_with_digest(
     validate_time(params, created, policy)?;
     let supplied_digest = validate_digest(&input, digest)?;
 
-    unique_header(input.headers, "authorization")
-        .map_err(|_| VerifyError::MissingComponent)?
-        .ok_or(VerifyError::MissingComponent)?;
     let dpop = unique_header(input.headers, "dpop").map_err(|_| VerifyError::MissingComponent)?;
     let mut required = vec!["@method", "@target-uri", "authorization"];
     if dpop.is_some() {
@@ -162,17 +164,17 @@ pub fn parse_request_for_verification_with_digest(
     let target_uri =
         canonical_target_uri(input.target_uri).map_err(|_| VerifyError::MissingComponent)?;
     let mut reconstructed = Vec::with_capacity(components.len());
-    for name in &components {
-        if !seen.insert(name.as_str()) {
+    for name in components {
+        if !seen.insert(name) {
             return Err(VerifyError::MissingComponent);
         }
-        let value = match name.as_str() {
+        let value = match name {
             "@method" => method_component(input.method),
             "@target-uri" => component("@target-uri", &target_uri),
             name if name.starts_with('@')
                 || name.is_empty()
                 || is_reserved_signature_field(name)
-                || name != name.to_ascii_lowercase()
+                || name.bytes().any(|byte| byte.is_ascii_uppercase())
                 || !name.bytes().all(is_token_byte) =>
             {
                 return Err(VerifyError::MissingComponent);
@@ -198,18 +200,11 @@ pub fn parse_request_for_verification_with_digest(
         .strip_prefix(label.as_str())
         .and_then(|value| value.strip_prefix('='))
         .ok_or(VerifyError::MalformedSignature)?;
-    let mut signature_base = reconstructed
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n")
-        .into_bytes();
-    signature_base.extend_from_slice(b"\n\"@signature-params\": ");
-    signature_base.extend_from_slice(signature_params.as_bytes());
+    let signature_base = signature_base(&reconstructed, signature_params);
 
     let replay_fingerprint = fingerprint(&signature_base, keyid.as_bytes());
 
-    Ok(VerifiedInput {
+    Ok(ParsedSignatureInput {
         signature_base,
         signature,
         keyid: keyid.to_owned(),
@@ -219,21 +214,17 @@ pub fn parse_request_for_verification_with_digest(
     })
 }
 
-pub(crate) fn signature_bytes(entry: &ListEntry) -> Result<&[u8], VerifyError> {
+pub(crate) fn signature_bytes(entry: ListEntry) -> Result<Vec<u8>, VerifyError> {
     match entry {
-        ListEntry::Item(item)
-            if item.params.is_empty() && matches!(item.bare_item, BareItem::ByteSequence(_)) =>
-        {
-            match &item.bare_item {
-                BareItem::ByteSequence(bytes) => Ok(bytes),
-                _ => unreachable!(),
-            }
-        }
+        ListEntry::Item(item) if item.params.is_empty() => match item.bare_item {
+            BareItem::ByteSequence(bytes) => Ok(bytes),
+            _ => Err(VerifyError::MalformedSignature),
+        },
         _ => Err(VerifyError::MalformedSignature),
     }
 }
 
-fn component_names(inner: &InnerList) -> Result<Vec<String>, VerifyError> {
+fn component_names(inner: &InnerList) -> Result<Vec<&str>, VerifyError> {
     inner
         .items
         .iter()
@@ -242,7 +233,7 @@ fn component_names(inner: &InnerList) -> Result<Vec<String>, VerifyError> {
                 return Err(VerifyError::MalformedSignature);
             }
             match &item.bare_item {
-                BareItem::String(value) => Ok(value.as_str().to_owned()),
+                BareItem::String(value) => Ok(value.as_str()),
                 _ => Err(VerifyError::MalformedSignature),
             }
         })

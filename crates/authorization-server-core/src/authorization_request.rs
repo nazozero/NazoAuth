@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use nazo_crypto::jwt::{Validation, decode, decode_header};
+use nazo_crypto::jwt::{Algorithm, Validation, decode};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -86,7 +86,6 @@ pub struct VerifiedRequestObject {
 pub enum RequestObjectVerificationError {
     InvalidCompact,
     InvalidHeader,
-    InvalidClaims,
     InvalidAlgorithm,
     MissingKeyId,
     InvalidKey,
@@ -96,6 +95,14 @@ pub enum RequestObjectVerificationError {
 #[derive(Deserialize)]
 struct RequestObjectHeader {
     alg: String,
+    kid: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RequestObjectClient {
+    client_id: String,
+    iss: Option<String>,
+    sub: Option<String>,
 }
 
 /// Parses and verifies a compact authorization Request Object.
@@ -108,13 +115,15 @@ pub fn verify_request_object(
 ) -> Result<VerifiedRequestObject, RequestObjectVerificationError> {
     let (header_part, payload_part, signature_part) = split_compact_jwt(input.request_object)
         .ok_or(RequestObjectVerificationError::InvalidCompact)?;
-    let decoded_header = decode_request_object_header(header_part)?;
-    if decoded_header.alg == "none" || payload_part.is_empty() || signature_part.is_empty() {
+    let header = decode_request_object_header(header_part)?;
+    if payload_part.is_empty() || signature_part.is_empty() {
         return Err(RequestObjectVerificationError::InvalidAlgorithm);
     }
-    let header = decode_header(input.request_object)
+    let algorithm: Algorithm = header
+        .alg
+        .parse()
         .map_err(|_| RequestObjectVerificationError::InvalidAlgorithm)?;
-    let Some(algorithm_name) = supported_client_jwt_algorithm_name(header.alg) else {
+    let Some(algorithm_name) = supported_client_jwt_algorithm_name(algorithm) else {
         return Err(RequestObjectVerificationError::InvalidAlgorithm);
     };
     if input
@@ -130,9 +139,9 @@ pub fn verify_request_object(
     if kid.trim().is_empty() || kid.trim() != kid {
         return Err(RequestObjectVerificationError::InvalidKey);
     }
-    let decoding_key = client_jwt_decoding_key(input.client, kid, header.alg)
+    let decoding_key = client_jwt_decoding_key(input.client, kid, algorithm)
         .ok_or(RequestObjectVerificationError::InvalidKey)?;
-    let mut validation = Validation::new(header.alg);
+    let mut validation = Validation::new(algorithm);
     validation.validate_aud = false;
     validation.validate_exp = false;
     validation.validate_nbf = false;
@@ -150,7 +159,8 @@ pub fn unverified_signed_request_object_client_id(request_object: &str) -> Optio
     if header.alg == "none" || signature.is_empty() {
         return None;
     }
-    let claims = decode_request_object_claims(payload).ok()?;
+    let bytes = URL_SAFE_NO_PAD.decode(payload).ok()?;
+    let claims: RequestObjectClient = serde_json::from_slice(&bytes).ok()?;
     let issuer_matches = claims
         .iss
         .as_deref()
@@ -175,9 +185,8 @@ pub fn unverified_signed_request_object_kid(request_object: &str) -> Option<Stri
         return None;
     }
     let header = decode_request_object_header(header).ok()?;
-    (header.alg != "none")
-        .then(|| nazo_crypto::jwt::decode_header(request_object).ok()?.kid)
-        .flatten()
+    header.alg.parse::<Algorithm>().ok()?;
+    header.kid
 }
 
 fn split_compact_jwt(token: &str) -> Option<(&str, &str, &str)> {
@@ -198,15 +207,6 @@ fn decode_request_object_header(
         .decode(header)
         .map_err(|_| RequestObjectVerificationError::InvalidHeader)?;
     serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidHeader)
-}
-
-fn decode_request_object_claims(
-    payload: &str,
-) -> Result<RequestObjectClaims, RequestObjectVerificationError> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(payload)
-        .map_err(|_| RequestObjectVerificationError::InvalidClaims)?;
-    serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidClaims)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -261,59 +261,23 @@ impl AuthorizationRequestError {
     }
 }
 
-/// Applies request-object claim and parameter policy after signature handling.
-/// No replay state is mutated until all pure validation has succeeded.
+/// Applies request-object policy while reusing the verified claims and outer map.
+/// Policy failures leave the caller's outer parameters untouched.
 pub fn normalize_request_object(
-    outer: &HashMap<String, String>,
-    claims: &RequestObjectClaims,
-    policy: RequestObjectPolicy<'_>,
-) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-    let mut outer = outer.clone();
-    normalize_request_object_owned(&mut outer, claims, policy)
-}
-
-/// Applies request-object policy while reusing the caller's parameter map.
-///
-/// The map is moved only after all validation (including replay metadata
-/// derivation) succeeds, so policy failures leave the caller's outer
-/// parameters untouched.
-pub fn normalize_request_object_owned(
     outer: &mut HashMap<String, String>,
-    claims: &RequestObjectClaims,
+    claims: RequestObjectClaims,
     policy: RequestObjectPolicy<'_>,
 ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-    let plan = prepare_request_object(outer, claims, policy)?;
-    Ok(apply_request_object_plan(outer, plan))
-}
-
-pub(crate) struct RequestObjectNormalizationPlan {
-    request_parameters: HashMap<String, String>,
-    replay: Option<RequestObjectReplay>,
-    require_integrity_protected_parameters: bool,
-}
-
-impl RequestObjectNormalizationPlan {
-    pub(crate) fn replay(&self) -> Option<&RequestObjectReplay> {
-        self.replay.as_ref()
-    }
-}
-
-pub(crate) fn prepare_request_object(
-    outer: &HashMap<String, String>,
-    claims: &RequestObjectClaims,
-    policy: RequestObjectPolicy<'_>,
-) -> Result<RequestObjectNormalizationPlan, AuthorizationRequestError> {
     if claims.client_id != policy.client_id
-        || !request_object_party_claims_valid(claims, policy)
-        || !request_object_audience_valid(claims, policy)
-        || !request_object_times_valid(claims, policy)
-        || !request_object_jti_valid(claims, policy)
+        || !request_object_party_claims_valid(&claims, policy)
+        || !request_object_audience_valid(&claims, policy)
+        || !request_object_times_valid(&claims, policy)
+        || !request_object_jti_valid(&claims, policy)
     {
         return Err(AuthorizationRequestError::RequestObjectClaims);
     }
 
-    let mut request_parameters = request_object_parameters(claims)?;
-    request_parameters.insert("client_id".to_owned(), claims.client_id.clone());
+    let mut request_parameters = request_object_parameters(claims.parameters)?;
     if outer
         .get("client_id")
         .is_some_and(|outer_client_id| outer_client_id != &claims.client_id)
@@ -329,29 +293,22 @@ pub(crate) fn prepare_request_object(
         return Err(AuthorizationRequestError::OuterAuthorizationParametersConflict);
     }
 
-    let replay = request_object_replay(claims, policy)?;
-    Ok(RequestObjectNormalizationPlan {
-        request_parameters,
-        replay,
-        require_integrity_protected_parameters: policy.require_integrity_protected_parameters,
-    })
-}
-
-pub(crate) fn apply_request_object_plan(
-    outer: &mut HashMap<String, String>,
-    plan: RequestObjectNormalizationPlan,
-) -> NormalizedRequestObject {
+    let replay = claims.jti.map(|jti| RequestObjectReplay {
+        client_id: claims.client_id.clone(),
+        jti,
+        expires_at: claims
+            .exp
+            .expect("request object time policy already validated"),
+    });
+    request_parameters.insert("client_id".to_owned(), claims.client_id);
     let mut parameters = std::mem::take(outer);
-    if plan.require_integrity_protected_parameters {
+    if policy.require_integrity_protected_parameters {
         parameters.retain(|key, _| matches!(key.as_str(), "request" | "client_id"));
     } else {
-        parameters.retain(|key, _| key == "request" || !plan.request_parameters.contains_key(key));
+        parameters.retain(|key, _| key == "request" || !request_parameters.contains_key(key));
     }
-    parameters.extend(plan.request_parameters);
-    NormalizedRequestObject {
-        parameters,
-        replay: plan.replay,
-    }
+    parameters.extend(request_parameters);
+    Ok(NormalizedRequestObject { parameters, replay })
 }
 
 fn request_object_party_claims_valid(
@@ -371,11 +328,12 @@ fn request_object_audience_valid(
 ) -> bool {
     match &claims.aud {
         Some(Value::String(audience)) => {
-            audience == policy.issuer || audience == &format!("{}/authorize", policy.issuer)
+            audience == policy.issuer || audience.strip_suffix("/authorize") == Some(policy.issuer)
         }
         Some(Value::Array(audiences)) => audiences.iter().any(|audience| {
             audience.as_str().is_some_and(|audience| {
-                audience == policy.issuer || audience == format!("{}/authorize", policy.issuer)
+                audience == policy.issuer
+                    || audience.strip_suffix("/authorize") == Some(policy.issuer)
             })
         }),
         _ => false,
@@ -423,44 +381,28 @@ fn request_object_jti_valid(claims: &RequestObjectClaims, policy: RequestObjectP
     }
 }
 
-fn request_object_replay(
-    claims: &RequestObjectClaims,
-    policy: RequestObjectPolicy<'_>,
-) -> Result<Option<RequestObjectReplay>, AuthorizationRequestError> {
-    let Some(jti) = claims.jti.as_ref() else {
-        return Ok(None);
-    };
-    let expires_at = claims
-        .exp
-        .filter(|expiry| *expiry > policy.now)
-        .ok_or(AuthorizationRequestError::RequestObjectClaims)?;
-    Ok(Some(RequestObjectReplay {
-        client_id: claims.client_id.clone(),
-        jti: jti.clone(),
-        expires_at,
-    }))
-}
-
 fn request_object_parameters(
-    claims: &RequestObjectClaims,
+    claims: HashMap<String, Value>,
 ) -> Result<HashMap<String, String>, AuthorizationRequestError> {
-    if claims.parameters.contains_key("request_uri") {
+    if claims.contains_key("request_uri") {
         return Err(AuthorizationRequestError::RequestObjectContainsRequestUri);
     }
     let mut parameters = HashMap::new();
-    for key in AUTHORIZATION_REQUEST_PARAMETERS {
-        if matches!(*key, "request" | "request_uri" | "client_id") {
+    for (key, value) in claims {
+        if matches!(key.as_str(), "request" | "client_id")
+            || !AUTHORIZATION_REQUEST_PARAMETERS.contains(&key.as_str())
+        {
             continue;
         }
-        let Some(value) = claims.parameters.get(*key) else {
-            continue;
-        };
-        let value = if *key == "resource" {
+        let value = if key == "resource" {
             let values = match value {
-                Value::String(value) => vec![value.clone()],
+                Value::String(value) => vec![value],
                 Value::Array(values) => values
-                    .iter()
-                    .map(|value| value.as_str().map(ToOwned::to_owned))
+                    .into_iter()
+                    .map(|value| match value {
+                        Value::String(value) => Some(value),
+                        _ => None,
+                    })
                     .collect::<Option<Vec<_>>>()
                     .ok_or(AuthorizationRequestError::RequestObjectParameterType)?,
                 _ => return Err(AuthorizationRequestError::RequestObjectParameterType),
@@ -469,14 +411,14 @@ fn request_object_parameters(
                 .ok_or(AuthorizationRequestError::RequestObjectParameterType)?
         } else {
             match value {
-                Value::String(value) => value.clone(),
+                Value::String(value) => value,
                 Value::Number(value) => value.to_string(),
-                Value::Object(_) if *key == "claims" => value.to_string(),
-                Value::Array(_) if *key == "authorization_details" => value.to_string(),
+                Value::Object(_) if key == "claims" => value.to_string(),
+                Value::Array(_) if key == "authorization_details" => value.to_string(),
                 _ => return Err(AuthorizationRequestError::RequestObjectParameterType),
             }
         };
-        parameters.insert((*key).to_owned(), value);
+        parameters.insert(key, value);
     }
     Ok(parameters)
 }

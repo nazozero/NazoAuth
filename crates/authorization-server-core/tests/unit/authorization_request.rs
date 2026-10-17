@@ -6,6 +6,14 @@ use uuid::Uuid;
 
 use crate::ValidatedClientRegistration;
 
+fn normalize_request_object(
+    outer: &HashMap<String, String>,
+    claims: &RequestObjectClaims,
+    policy: RequestObjectPolicy<'_>,
+) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
+    super::normalize_request_object(&mut outer.clone(), claims.clone(), policy)
+}
+
 const JAR_SIGNING_KEY: [u8; 32] = [29; 32];
 
 fn request_object_client(jwks: Value) -> OAuthClient {
@@ -172,9 +180,13 @@ fn owned_normalizer_reuses_outer_map_without_consuming_it_on_policy_failure() {
         ("request".to_owned(), "jwt".to_owned()),
         ("state".to_owned(), "outer-state".to_owned()),
     ]);
-    let normalized =
-        normalize_request_object_owned(&mut outer, &signed_claims(now), signed_policy(now))
-            .expect("valid signed request object");
+    let claims = signed_claims(now);
+    let scope_ptr = claims.parameters["scope"].as_str().unwrap().as_ptr();
+    let jti_ptr = claims.jti.as_ref().unwrap().as_ptr();
+    let normalized = super::normalize_request_object(&mut outer, claims, signed_policy(now))
+        .expect("valid signed request object");
+    assert_eq!(normalized.parameters["scope"].as_ptr(), scope_ptr);
+    assert_eq!(normalized.replay.as_ref().unwrap().jti.as_ptr(), jti_ptr);
     assert!(outer.is_empty());
     assert_eq!(
         normalized.parameters.get("scope").map(String::as_str),
@@ -186,7 +198,7 @@ fn owned_normalizer_reuses_outer_map_without_consuming_it_on_policy_failure() {
     let mut invalid_claims = signed_claims(now);
     invalid_claims.parameters.remove("redirect_uri");
     assert_eq!(
-        normalize_request_object_owned(&mut invalid_outer, &invalid_claims, signed_policy(now)),
+        super::normalize_request_object(&mut invalid_outer, invalid_claims, signed_policy(now)),
         Err(AuthorizationRequestError::SignedRequestObjectMissingRedirectUri)
     );
     assert_eq!(
@@ -364,6 +376,31 @@ fn unsigned_request_objects_are_rejected_for_every_client_profile() {
         Some("client")
     );
     assert_eq!(unverified_signed_request_object_client_id(&unsigned), None);
+    assert_eq!(
+        unverified_signed_request_object_kid(&signed).as_deref(),
+        Some("jar-key")
+    );
+    assert_eq!(unverified_signed_request_object_kid(&unsigned), None);
+}
+
+#[test]
+fn client_selection_hint_does_not_accept_invalid_signed_claims() {
+    let mut claims = signed_request_object_json(1_700_000_000);
+    claims["exp"] = json!("invalid");
+    let token = signed_request_object(&claims, json!({"alg": "EdDSA", "kid": "jar-key"}));
+    let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+    assert_eq!(
+        unverified_signed_request_object_client_id(&token).as_deref(),
+        Some("client")
+    );
+    assert_eq!(
+        verify_request_object(RequestObjectVerificationInput {
+            request_object: &token,
+            client: &client,
+            expected_signing_algorithm: None,
+        }),
+        Err(RequestObjectVerificationError::InvalidSignature)
+    );
 }
 
 #[test]

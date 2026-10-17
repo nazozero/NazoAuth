@@ -108,7 +108,7 @@ fn preflight(mode: AuditAnchorMode, max_lag: u64) -> AuditAnchorPreflight {
     .unwrap()
 }
 
-fn event_at(name: &str, occurred_at: DateTime<Utc>) -> QueuedAuditEvent {
+fn event_at(name: &str, occurred_at: DateTime<Utc>) -> SecurityAuditEvent {
     let mut event = prepare_event(name, serde_json::Map::new()).unwrap();
     event.occurred_at = occurred_at;
     event

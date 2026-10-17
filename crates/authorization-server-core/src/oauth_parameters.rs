@@ -60,7 +60,7 @@ pub fn token_audience_contains(audience: &Value, expected: &str) -> bool {
 pub fn has_duplicate_oauth_parameter(raw_query: &str, parameter_names: &[&str]) -> bool {
     let mut seen = HashSet::new();
     for (key, _) in url::form_urlencoded::parse(raw_query.as_bytes()) {
-        if parameter_names.contains(&key.as_ref()) && !seen.insert(key.into_owned()) {
+        if parameter_names.contains(&key.as_ref()) && !seen.insert(key) {
             return true;
         }
     }

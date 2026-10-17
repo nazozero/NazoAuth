@@ -1,7 +1,8 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use nazo_auth::{
-    AuthorizationCodeState, AuthorizationStateSnapshot, CodePayload, ConsentPayload,
-    DecisionMaterialDiscardError, DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
+    AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
+    AuthorizationStateSnapshot, ConsentPayload, DecisionMaterialDiscardError,
+    DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
 };
 
 use crate::{Error, ValkeyConnection, command, keys};
@@ -86,27 +87,6 @@ redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
 return 'ok'
 "#;
 
-#[derive(Debug)]
-pub enum AuthorizationCodeBegin {
-    Consuming(CodePayload),
-    Busy,
-    Consumed(AuthorizationCodeState),
-    Failed,
-    Missing,
-    Malformed,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AuthorizationTransition {
-    Applied,
-    Missing,
-    Malformed,
-    Pending,
-    Consuming,
-    Consumed,
-    Failed,
-}
-
 /// A completed immutable preparation write may still reject an existing identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[must_use]
@@ -149,12 +129,6 @@ impl AuthorizationStore {
         request_id: &str,
     ) -> Result<Option<AuthorizationStateSnapshot<ConsentPayload>>, Error> {
         self.load_snapshot(keys::consent(request_id)).await
-    }
-
-    /// Removes transient material only. Deletion is not an authorization
-    /// decision, consumption fence, or cancellation of an observed preparation.
-    pub async fn take_consent(&self, request_id: &str) -> Result<Option<ConsentPayload>, Error> {
-        self.take_json(keys::consent(request_id)).await
     }
 
     /// Best-effort cleanup after a durable decision; this does not authorize
@@ -261,7 +235,7 @@ impl AuthorizationStore {
         &self,
         code_hash: &str,
         consuming_at: DateTime<Utc>,
-    ) -> Result<AuthorizationCodeBegin, Error> {
+    ) -> Result<AuthorizationCodeBeginResult, Error> {
         let reply = command::eval_string(
             &self.connection,
             BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT,
@@ -277,7 +251,7 @@ impl AuthorizationStore {
         code_hash: &str,
         replacement: &AuthorizationCodeState,
         ttl_seconds: u64,
-    ) -> Result<AuthorizationTransition, Error> {
+    ) -> Result<AuthorizationCodeTransitionResult, Error> {
         let raw = serde_json::to_string(replacement).map_err(|error| {
             Error::protocol(format!("failed to serialize authorization code: {error}"))
         })?;
@@ -289,13 +263,13 @@ impl AuthorizationStore {
         )
         .await?;
         match reply.as_str() {
-            "ok" => Ok(AuthorizationTransition::Applied),
-            "missing" => Ok(AuthorizationTransition::Missing),
-            "malformed" => Ok(AuthorizationTransition::Malformed),
-            "pending" => Ok(AuthorizationTransition::Pending),
-            "consuming" => Ok(AuthorizationTransition::Consuming),
-            "consumed" => Ok(AuthorizationTransition::Consumed),
-            "failed" => Ok(AuthorizationTransition::Failed),
+            "ok" => Ok(AuthorizationCodeTransitionResult::Applied),
+            "missing" => Ok(AuthorizationCodeTransitionResult::Missing),
+            "malformed" => Ok(AuthorizationCodeTransitionResult::Malformed),
+            "pending" => Ok(AuthorizationCodeTransitionResult::Pending),
+            "consuming" => Ok(AuthorizationCodeTransitionResult::Consuming),
+            "consumed" => Ok(AuthorizationCodeTransitionResult::Consumed),
+            "failed" => Ok(AuthorizationCodeTransitionResult::Failed),
             other => Err(Error::unexpected(format!(
                 "unexpected authorization-code transition {other:?}"
             ))),
@@ -308,7 +282,7 @@ impl AuthorizationStore {
         started_at: i64,
         ttl_seconds: u64,
     ) -> Result<(), Error> {
-        command::set_ex_string(
+        command::set_ex(
             &self.connection,
             keys::reauth_nonce(nonce),
             format!("micros-v1:{started_at}"),
@@ -344,7 +318,7 @@ impl AuthorizationStore {
                 "failed to serialize authorization preparation: {error}"
             ))
         })?;
-        if command::set_ex_nx_string(&self.connection, key, raw, ttl_seconds).await? {
+        if command::set_ex_nx(&self.connection, key, raw, ttl_seconds).await? {
             Ok(AuthorizationPreparationWrite::Stored)
         } else {
             Ok(AuthorizationPreparationWrite::Conflict)
@@ -360,7 +334,7 @@ impl AuthorizationStore {
         let raw = serde_json::to_string(value).map_err(|error| {
             Error::protocol(format!("failed to serialize authorization state: {error}"))
         })?;
-        command::set_ex_string(&self.connection, key, raw, ttl_seconds).await
+        command::set_ex(&self.connection, key, raw, ttl_seconds).await
     }
 
     async fn load_json<T: serde::de::DeserializeOwned>(
@@ -395,20 +369,6 @@ impl AuthorizationStore {
             .transpose()
     }
 
-    async fn take_json<T: serde::de::DeserializeOwned>(
-        &self,
-        key: String,
-    ) -> Result<Option<T>, Error> {
-        command::take(&self.connection, key)
-            .await?
-            .map(|raw| {
-                serde_json::from_str(&raw).map_err(|error| {
-                    Error::corrupt_data(format!("malformed consumed authorization state: {error}"))
-                })
-            })
-            .transpose()
-    }
-
     async fn compare_delete(&self, key: String, expected: &str) -> Result<bool, Error> {
         command::compare_delete(&self.connection, key, expected)
             .await
@@ -435,26 +395,28 @@ fn parse_decision_material_discard_reply(
     }
 }
 
-fn parse_authorization_code_begin_reply(reply: &str) -> Result<AuthorizationCodeBegin, Error> {
+fn parse_authorization_code_begin_reply(
+    reply: &str,
+) -> Result<AuthorizationCodeBeginResult, Error> {
     if let Some(raw) = reply.strip_prefix("consuming|") {
         return serde_json::from_str(raw)
-            .map(AuthorizationCodeBegin::Consuming)
+            .map(AuthorizationCodeBeginResult::Consuming)
             .map_err(|error| {
                 Error::corrupt_data(format!("malformed consuming authorization code: {error}"))
             });
     }
     if let Some(raw) = reply.strip_prefix("consumed|") {
         return serde_json::from_str(raw)
-            .map(AuthorizationCodeBegin::Consumed)
+            .map(AuthorizationCodeBeginResult::Consumed)
             .map_err(|error| {
                 Error::corrupt_data(format!("malformed consumed authorization code: {error}"))
             });
     }
     match reply {
-        "busy" => Ok(AuthorizationCodeBegin::Busy),
-        "failed" => Ok(AuthorizationCodeBegin::Failed),
-        "missing" => Ok(AuthorizationCodeBegin::Missing),
-        "malformed" => Ok(AuthorizationCodeBegin::Malformed),
+        "busy" => Ok(AuthorizationCodeBeginResult::Busy),
+        "failed" => Ok(AuthorizationCodeBeginResult::Failed),
+        "missing" => Ok(AuthorizationCodeBeginResult::Missing),
+        "malformed" => Ok(AuthorizationCodeBeginResult::Malformed),
         other => Err(Error::unexpected(format!(
             "unexpected authorization-code begin reply {other:?}"
         ))),

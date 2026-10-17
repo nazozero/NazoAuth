@@ -53,14 +53,8 @@ where
     ) -> LocalRegistrationFuture<'_, Result<RegisteredAccount, RegisterLocalAccountError>> {
         Box::pin(async move {
             let result = self.service.register_local_account(input).await;
-            match &result {
-                Err(RegisterLocalAccountError::Create(error)) => {
-                    tracing::warn!(%error, "failed to create user");
-                }
-                Err(RegisterLocalAccountError::Consistency) => {
-                    tracing::warn!("created user returned outside the default tenant context");
-                }
-                _ => {}
+            if let Err(RegisterLocalAccountError::Create(error)) = &result {
+                tracing::warn!(%error, "failed to create user");
             }
             result.map(RegisteredAccount::from)
         })

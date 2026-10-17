@@ -89,11 +89,6 @@ impl ServerAuthorizationDecisionOperations {
                 tracing::error!(%error, "authorization decision audit preflight failed");
                 AuthorizationDecisionError::AuditUnavailable
             })?;
-        let decision = match command.decision {
-            UserAuthorizationDecision::Approve => "approve",
-            UserAuthorizationDecision::Deny => "deny",
-        };
-
         // 1. Non-destructive preview: consent + PAR are loaded and validated,
         //    nothing is consumed yet.
         let preview = match self
@@ -149,48 +144,23 @@ impl ServerAuthorizationDecisionOperations {
 
         // Prepare the immutable committed-decision fact. No authority is
         // consumed and no usable code is published before its durable commit.
-        let mut intent_fields = audit_fields(&[
-            ("request_id_hash", json!(blake3_hex(&command.request_id))),
-            ("user_id", json!(session.user().id())),
-            ("client_id", json!(preview.consent().client_id.clone())),
-            ("decision", json!(decision)),
-            ("scope", json!(preview.consent().scopes.join(" "))),
-            ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
-        ]);
-        if !preview.consent().resource_indicators.is_empty() {
-            intent_fields.insert(
-                "resource_digest".to_owned(),
-                json!(blake3_hex(
-                    &preview.consent().resource_indicators.join("\u{1f}")
-                )),
-            );
-        }
-        if preview
-            .consent()
-            .authorization_details
-            .as_array()
-            .is_some_and(|details| !details.is_empty())
-        {
-            intent_fields.insert(
-                "authorization_details_digest".to_owned(),
-                json!(blake3_hex(
-                    &preview.consent().authorization_details.to_string()
-                )),
-            );
-        }
+        // The repository binds request/resource digests to the committed data;
+        // SQL derives actor, client, decision and scope from those same facts.
+        let mut intent_fields =
+            audit_fields([("source_ip_hash", json!(blake3_hex(&command.source_ip)))]);
         if let Some(digest) = preview.consent().pushed_request_digest.as_deref() {
             intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
         }
         let valid_until = preview.valid_until();
         let retain_until = preview.retain_until();
-        let payload = preview.consent().clone();
+        let payload = preview.consent();
         let now = Utc::now();
         let event_id = Uuid::now_v7();
         let code =
             (command.decision == UserAuthorizationDecision::Approve).then(random_urlsafe_token);
         let prepared = code.as_ref().map(|code| {
             prepare_authorization_code(AuthorizationApprovalInput {
-                consent: &payload,
+                consent: payload,
                 code_hash: &blake3_hex(code),
                 code_id: &event_id.to_string(),
                 issued_at: now,
@@ -253,7 +223,7 @@ impl ServerAuthorizationDecisionOperations {
         }
         let Some(code) = code else {
             return self
-                .response_location(&payload, None, Some("access_denied"), None)
+                .response_location(payload, None, Some("access_denied"), None)
                 .await;
         };
 
@@ -271,7 +241,7 @@ impl ServerAuthorizationDecisionOperations {
             return Err(AuthorizationDecisionError::LoginRequired);
         }
 
-        self.response_location(&payload, Some(&code), None, payload.oidc_sid.as_deref())
+        self.response_location(payload, Some(&code), None, payload.oidc_sid.as_deref())
             .await
     }
 
@@ -396,7 +366,7 @@ impl ServerAuthorizationDecisionOperations {
                 })? {
                     Some(key) => encrypt_compact_jwe(
                         &key,
-                        signed.as_bytes(),
+                        signed.into_bytes(),
                         JwePayloadKind::NestedJwt,
                     )
                     .map_err(|error| {

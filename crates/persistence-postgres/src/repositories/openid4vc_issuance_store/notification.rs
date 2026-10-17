@@ -75,12 +75,14 @@ impl Openid4vciRepository {
                         if !matches!(status, 200 | 202) {
                             return Err(invalid());
                         }
+                        let mut body = row.body_ciphertext;
+                        let plaintext_len = unprotect_payload(&self.data_key, row.issuance_id, &mut body)?.len();
                         Ok(Some(StoredCredentialResponse {
                             selection,
                             issuance_id: row.issuance_id,
                             token_id: row.token_id,
                             request_digest: row.request_digest,
-                            body: unprotect_payload(&self.data_key, row.issuance_id, &row.body_ciphertext)?,
+                            body: bytes::Bytes::from(body).slice(12..12 + plaintext_len),
                             encoding,
                             status,
                             dpop_nonce: row.dpop_nonce,
@@ -90,52 +92,6 @@ impl Openid4vciRepository {
                 )
                 .await
                 .map_err(map_stored_credential_error)
-        })
-    }
-
-    pub(super) fn notification_finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let notification_id = handle.notification_id.clone();
-            let notification_selection = serde_json::json!(handle.selection);
-            let token_id = handle.token_id;
-            let expires_at = handle.expires_at;
-            connection
-                .transaction::<bool, diesel::result::Error, _>(async move |connection| {
-                    sql_query(
-                        "INSERT INTO openid4vci_notifications \
-                         (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
-                    )
-                    .bind::<sql_types::Text, _>(&notification_id)
-                    .bind::<sql_types::Uuid, _>(token_id)
-                    .bind::<sql_types::Timestamptz, _>(expires_at)
-                    .bind::<sql_types::Jsonb, _>(notification_selection)
-                    .execute(connection)
-                    .await?;
-                    let changed = sql_query(
-                        "UPDATE openid4vci_nonces SET consumed_at = GREATEST($3, created_at), claim_id = NULL, claim_expires_at = NULL \
-                         WHERE nonce_hash = $1 AND claim_id = $2 AND consumed_at IS NULL AND expires_at > $3",
-                    )
-                    .bind::<sql_types::Text, _>(nonce_hash)
-                    .bind::<sql_types::Text, _>(claim_id)
-                    .bind::<sql_types::Timestamptz, _>(now)
-                    .execute(connection)
-                    .await?;
-                    if changed != 1 {
-                        return Err(diesel::result::Error::RollbackTransaction);
-                    }
-                    Ok(true)
-                })
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)
         })
     }
 
@@ -156,13 +112,13 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
             let token_id = response.token_id;
-            let request_digest = response.request_digest.clone();
+            let request_digest = &response.request_digest;
             let response_selection = serde_json::json!(response.selection);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let dpop_nonce = response.dpop_nonce.clone();
+            let dpop_nonce = response.dpop_nonce.as_deref();
             let expires_at = response.expires_at;
-            let notification_id = handle.notification_id.clone();
+            let notification_id = &handle.notification_id;
             let notification_selection = serde_json::json!(handle.selection);
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
@@ -174,11 +130,11 @@ impl Openid4vciRepository {
                             selection: response_selection,
                             issuance_id,
                             token_id,
-                            request_digest: &request_digest,
+                            request_digest,
                             body_ciphertext,
                             encoding,
                             status,
-                            dpop_nonce: dpop_nonce.as_deref(),
+                            dpop_nonce,
                             expires_at,
                         },
                     )
@@ -187,7 +143,7 @@ impl Openid4vciRepository {
                         "INSERT INTO openid4vci_notifications \
                          (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
                     )
-                    .bind::<sql_types::Text, _>(&notification_id)
+                    .bind::<sql_types::Text, _>(notification_id)
                     .bind::<sql_types::Uuid, _>(notification_token_id)
                     .bind::<sql_types::Timestamptz, _>(notification_expires_at)
                     .bind::<sql_types::Jsonb, _>(notification_selection)
@@ -229,11 +185,11 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
             let token_id = response.token_id;
-            let request_digest = response.request_digest.clone();
+            let request_digest = &response.request_digest;
             let response_selection = serde_json::json!(response.selection);
-            let dpop_nonce = response.dpop_nonce.clone();
+            let dpop_nonce = response.dpop_nonce.as_deref();
             let expires_at = response.expires_at;
-            let notification_id = handle.notification_id.clone();
+            let notification_id = &handle.notification_id;
             let notification_selection = serde_json::json!(handle.selection);
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
@@ -245,11 +201,11 @@ impl Openid4vciRepository {
                             selection: response_selection,
                             issuance_id,
                             token_id,
-                            request_digest: &request_digest,
+                            request_digest,
                             body_ciphertext,
                             encoding,
                             status,
-                            dpop_nonce: dpop_nonce.as_deref(),
+                            dpop_nonce,
                             expires_at,
                         },
                     )
@@ -258,63 +214,13 @@ impl Openid4vciRepository {
                         "INSERT INTO openid4vci_notifications \
                          (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
                     )
-                    .bind::<sql_types::Text, _>(&notification_id)
+                    .bind::<sql_types::Text, _>(notification_id)
                     .bind::<sql_types::Uuid, _>(notification_token_id)
                     .bind::<sql_types::Timestamptz, _>(notification_expires_at)
                     .bind::<sql_types::Jsonb, _>(notification_selection)
                     .execute(connection)
                     .await?;
                     Ok(())
-                })
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)
-        })
-    }
-
-    pub(super) fn notification_finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let notification_id = handle.notification_id.clone();
-            let notification_selection = serde_json::json!(handle.selection);
-            let notification_token_id = handle.token_id;
-            let notification_expires_at = handle.expires_at;
-            connection
-                .transaction::<bool, diesel::result::Error, _>(async move |connection| {
-                    sql_query(
-                        "INSERT INTO openid4vci_notifications \
-                         (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
-                    )
-                    .bind::<sql_types::Text, _>(&notification_id)
-                    .bind::<sql_types::Uuid, _>(notification_token_id)
-                    .bind::<sql_types::Timestamptz, _>(notification_expires_at)
-                    .bind::<sql_types::Jsonb, _>(notification_selection)
-                    .execute(connection)
-                    .await?;
-                    let changed = sql_query(
-                        "UPDATE openid4vci_deferred_transactions \
-                         SET consumed_at = GREATEST($4, ready_at), claim_id = NULL, claim_expires_at = NULL, claim_token_id = NULL \
-                         WHERE transaction_hash = $1 AND COALESCE(claim_token_id, token_id) = $2 AND claim_id = $3 \
-                           AND consumed_at IS NULL AND expires_at > $4",
-                    )
-                    .bind::<sql_types::Text, _>(transaction_hash)
-                    .bind::<sql_types::Uuid, _>(token_id)
-                    .bind::<sql_types::Text, _>(claim_id)
-                    .bind::<sql_types::Timestamptz, _>(now)
-                    .execute(connection)
-                    .await?;
-                    if changed != 1 {
-                        return Err(diesel::result::Error::RollbackTransaction);
-                    }
-                    Ok(true)
                 })
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)
@@ -341,11 +247,11 @@ impl Openid4vciRepository {
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
             let response_token_id = response.token_id;
-            let request_digest = response.request_digest.clone();
+            let request_digest = &response.request_digest;
             let response_selection = serde_json::json!(response.selection);
-            let dpop_nonce = response.dpop_nonce.clone();
+            let dpop_nonce = response.dpop_nonce.as_deref();
             let response_expires_at = response.expires_at;
-            let notification_id = handle.notification_id.clone();
+            let notification_id = &handle.notification_id;
             let notification_selection = serde_json::json!(handle.selection);
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
@@ -357,11 +263,11 @@ impl Openid4vciRepository {
                             selection: response_selection,
                             issuance_id,
                             token_id: response_token_id,
-                            request_digest: &request_digest,
+                            request_digest,
                             body_ciphertext,
                             encoding,
                             status,
-                            dpop_nonce: dpop_nonce.as_deref(),
+                            dpop_nonce,
                             expires_at: response_expires_at,
                         },
                     )
@@ -370,7 +276,7 @@ impl Openid4vciRepository {
                         "INSERT INTO openid4vci_notifications \
                          (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
                     )
-                    .bind::<sql_types::Text, _>(&notification_id)
+                    .bind::<sql_types::Text, _>(notification_id)
                     .bind::<sql_types::Uuid, _>(notification_token_id)
                     .bind::<sql_types::Timestamptz, _>(notification_expires_at)
                     .bind::<sql_types::Jsonb, _>(notification_selection)
@@ -449,29 +355,6 @@ impl Openid4vciRepository {
                 })
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)
-        })
-    }
-
-    pub(super) fn notification_issue_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            sql_query(
-                "INSERT INTO openid4vci_notifications \
-                 (notification_id, token_id, expires_at, credential_selection) VALUES ($1,$2,$3,$4)",
-            )
-            .bind::<sql_types::Text, _>(&handle.notification_id)
-            .bind::<sql_types::Uuid, _>(handle.token_id)
-            .bind::<sql_types::Timestamptz, _>(handle.expires_at)
-            .bind::<sql_types::Jsonb, _>(serde_json::json!(handle.selection))
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(())
         })
     }
 }

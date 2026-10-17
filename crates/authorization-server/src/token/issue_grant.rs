@@ -270,26 +270,12 @@ pub async fn issue_token_response(
         }
     };
     let issuance_id = Uuid::now_v7();
-    // Commit-owned issuance: when the final commit transaction carries both
-    // the principal-version check and required `token_issued` append, the
-    // commit itself is the fail-closed writer check, so the per-request
-    // static capability probe is redundant. Normal refresh rotation and
-    // preserving an existing refresh token join the no-refresh shape: any
-    // family lock and spent-proof bookkeeping are owned by
-    // that same commit transaction. Any path
-    // with a preceding durable side effect (authorization-code consumption,
-    // Native SSO device-secret persistence) keeps the full storage
-    // preflight, and `RotateLostResponse` stays on it as well — the retry
-    // proves its direct-predecessor edge inside the commit but the
-    // lost-response recovery path is deliberately kept conservative.
+    // These paths write their refresh state and required audit in the same
+    // commit. Earlier authorization-code consumption or Native SSO persistence
+    // still requires the full preflight before those independent effects.
     let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
         && issue.authorization_code_hash.is_none()
-        && issue.native_sso.is_none()
-        && (!will_issue_refresh
-            || matches!(
-                issue.refresh_token_policy,
-                RefreshTokenPolicy::PreserveExisting | RefreshTokenPolicy::Rotate { .. }
-            ));
+        && issue.native_sso.is_none();
     let audit_ready = if commit_owned {
         context.security_audit.ensure_transactional_ready().await
     } else {
@@ -336,7 +322,9 @@ pub async fn issue_token_response(
         .map(|source| source.family_id)
         .or_else(|| refresh_family.as_ref().map(|(family, _, _)| *family))
         .unwrap_or(issuance_id);
-    let next_dpop_nonce = if issue.dpop_jkt.is_some() {
+    let next_dpop_nonce = if issue.dpop_jkt.is_some()
+        && context.config.dpop_nonce_policy == DpopNoncePolicy::Required
+    {
         match issue_authorization_server_dpop_nonce(context.authorization).await {
             Ok(nonce) => Some(nonce),
             Err(error) => {
@@ -441,29 +429,25 @@ pub async fn issue_token_response(
         let loaded_claims = subject_claims_snapshot
             .as_ref()
             .expect("openid token issues have a validated subject snapshot");
-        let mut user_claims = Some(oidc_id_token_user_claims(
+        let mut user_claims = oidc_id_token_user_claims(
             &loaded_claims.claims,
             id_token_claim_scopes,
             &issue.subject,
             &issue.id_token_claim_requests,
-        ));
+        );
         if let Some(native_sso) = issue.native_sso.as_ref() {
-            let claims = user_claims.get_or_insert_with(|| json!({}));
-            if let Some(claims) = claims.as_object_mut() {
-                claims.insert("ds_hash".to_owned(), json!(native_sso.ds_hash));
-            }
+            user_claims.insert("ds_hash".to_owned(), json!(native_sso.ds_hash));
         }
         let frontchannel_logout_enabled =
             context.permits(nazo_runtime_modules::ModuleId::FrontchannelLogout);
-        let id_token_sid = id_token_session_sid(client, &issue, frontchannel_logout_enabled)
-            .map(ToOwned::to_owned);
-        issued_id_token_sid = id_token_sid.clone();
+        let id_token_sid = id_token_session_sid(client, &issue, frontchannel_logout_enabled);
+        issued_id_token_sid = id_token_sid;
         if issue.refresh_authority.is_some()
             && !refreshed_id_token_essential_claims_satisfied(
                 &issue,
                 client,
                 frontchannel_logout_enabled,
-                user_claims.as_ref(),
+                &user_claims,
             )
         {
             mark_failed_authorization_code_if_needed(
@@ -480,15 +464,14 @@ pub async fn issue_token_response(
                 false,
             ));
         }
+        let user_claims = Value::Object(user_claims);
         let signed_id_token = match token_service
             .sign_id_token(nazo_auth::IdTokenSignInput {
                 issuer: &context.config.issuer,
                 subject: &issue.subject,
                 client_id: &client.client_id,
-                // OIDC Core 12.2 says a refreshed ID Token SHOULD omit
-                // nonce.  The original value remains in `issue.nonce` so
-                // the successor refresh contract can retain it, but it is
-                // never emitted for a refresh issuance.
+                // OIDC Core 12.2 omits the first-response nonce on refresh;
+                // the immutable refresh contract never stores it.
                 nonce: if issue.refresh_authority.is_some() {
                     None
                 } else {
@@ -496,9 +479,9 @@ pub async fn issue_token_response(
                 },
                 auth_time: issue.auth_time,
                 amr: &issue.amr,
-                sid: id_token_sid.as_deref(),
+                sid: id_token_sid,
                 acr: issue.acr.as_deref(),
-                extra_claims: user_claims.as_ref(),
+                extra_claims: Some(&user_claims),
                 ttl_seconds: context.config.id_token_ttl_seconds,
                 signing_algorithm: signing_algorithm_name(id_token_signing_alg_for_client(client)),
             })
@@ -529,9 +512,11 @@ pub async fn issue_token_response(
             "id_token",
         )
         .and_then(|key| match key {
-            Some(key) => {
-                encrypt_compact_jwe(&key, signed_id_token.as_bytes(), JwePayloadKind::NestedJwt)
-            }
+            Some(key) => encrypt_compact_jwe(
+                &key,
+                signed_id_token.into_bytes(),
+                JwePayloadKind::NestedJwt,
+            ),
             None => Ok(signed_id_token),
         }) {
             Ok(token) => token,
@@ -567,7 +552,7 @@ pub async fn issue_token_response(
             expires_at: now + Duration::seconds(context.config.refresh_token_ttl_seconds),
         };
         let id_token_sid_for_refresh_persistence =
-            persisted_id_token_sid(&issue, issued_id_token_sid.as_deref());
+            persisted_id_token_sid(&issue, issued_id_token_sid);
         let refresh_token = prepare_refresh_token(
             client,
             &issue,
@@ -699,7 +684,12 @@ pub async fn issue_token_response(
                         if redemption.authorization_code_holder.as_ref().is_some_and(
                             |expected| {
                                 crate::token::authorization_code::holder_matches_original(
-                                    expected, holder,
+                                    expected,
+                                    holder.authenticated_client(),
+                                    holder.pkce_s256(),
+                                    holder.dpop_jkt(),
+                                    holder.mtls_x5t_s256(),
+                                    holder.client_attestation_jkt(),
                                 )
                             },
                         ) =>

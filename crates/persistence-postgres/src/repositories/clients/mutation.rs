@@ -255,10 +255,7 @@ impl OAuthClientRepository {
             .returning(OAuthClientRecord::as_returning())
             .load::<OAuthClientRecord>(connection)
             .await?;
-        if records.len() != 1 {
-            return Err(diesel::result::Error::NotFound);
-        }
-        Ok(records.pop().expect("one acknowledged client row"))
+        records.pop().ok_or(diesel::result::Error::NotFound)
     }
 
     pub async fn upsert(
@@ -270,22 +267,6 @@ impl OAuthClientRepository {
         upsert_client_on_connection(&mut connection, client, client_secret_hash)
             .await
             .map_err(map_error)
-    }
-
-    pub async fn update_metadata(
-        &self,
-        client: &OAuthClient,
-    ) -> Result<OAuthClient, RepositoryError> {
-        self.replace(client, None).await
-    }
-
-    async fn replace(
-        &self,
-        client: &OAuthClient,
-        credentials: Option<(Option<&str>, Option<&str>)>,
-    ) -> Result<OAuthClient, RepositoryError> {
-        let mut connection = self.connection().await?;
-        Self::replace_on_connection(&mut connection, client, credentials).await
     }
 
     pub async fn update_metadata_if_current(
@@ -334,12 +315,9 @@ impl OAuthClientRepository {
                     .select(OAuthClientRecord::as_select())
                     .load::<OAuthClientRecord>(connection)
                     .await?;
-                if rows.len() != 1 {
-                    return Err(MetadataUpdateError::Repository(RepositoryError::Conflict));
-                }
                 let current = rows
                     .pop()
-                    .expect("one client authority row")
+                    .ok_or(MetadataUpdateError::Repository(RepositoryError::Conflict))?
                     .into_domain()
                     .map_err(MetadataUpdateError::Repository)?;
                 if current != *expected {
@@ -348,7 +326,7 @@ impl OAuthClientRepository {
                 if let Some((actor_id, _)) = audit {
                     authorize_admin_client_actor(connection, &current, actor_id).await?;
                 }
-                let written = Self::replace_on_connection(connection, client, None)
+                let written = Self::replace_on_connection(connection, client)
                     .await
                     .map_err(MetadataUpdateError::Repository)?;
                 if let Some((actor_id, source_ip_hash)) = audit {
@@ -374,7 +352,6 @@ impl OAuthClientRepository {
     async fn replace_on_connection(
         connection: &mut AsyncPgConnection,
         client: &OAuthClient,
-        credentials: Option<(Option<&str>, Option<&str>)>,
     ) -> Result<OAuthClient, RepositoryError> {
         let target = oauth_clients::table
             .filter(oauth_clients::tenant_id.eq(client.tenant_id))
@@ -459,38 +436,17 @@ impl OAuthClientRepository {
             oauth_clients::is_active.eq(client.is_active),
             oauth_clients::updated_at.eq(diesel::dsl::now),
         );
-        let mut records = if let Some((secret_hash, access_token_hash)) = credentials {
-            diesel::update(target)
-                .set((
-                    metadata,
-                    oauth_clients::client_secret_hash.eq(secret_hash),
-                    oauth_clients::registration_access_token_blake3.eq(access_token_hash),
-                ))
-                .returning(OAuthClientRecord::as_returning())
-                .load::<OAuthClientRecord>(connection)
-                .await
-        } else {
-            diesel::update(target)
-                .set(metadata)
-                .returning(OAuthClientRecord::as_returning())
-                .load::<OAuthClientRecord>(connection)
-                .await
-        }
-        .map_err(map_error)?;
+        let mut records = diesel::update(target)
+            .set(metadata)
+            .returning(OAuthClientRecord::as_returning())
+            .load::<OAuthClientRecord>(connection)
+            .await
+            .map_err(map_error)?;
         // Drain the complete RETURNING stream, including a delayed statement
         // error, before any accepting transaction can commit a success view.
-        if records.len() != 1 {
-            return Err(if records.is_empty() {
-                RepositoryError::NotFound
-            } else {
-                RepositoryError::Consistency(
-                    "client replacement returned more than one authority row".to_owned(),
-                )
-            });
-        }
         records
             .pop()
-            .expect("one completely received client row")
+            .ok_or(RepositoryError::NotFound)?
             .into_domain()
     }
 
@@ -723,8 +679,7 @@ impl OAuthClientRepository {
                 )
                 .load::<OAuthClientRecord>(connection)
                 .await?;
-        if records.len() != 1 { return Err(MetadataUpdateError::Diesel(diesel::result::Error::NotFound)); }
-        let client = records.pop().expect("one acknowledged registration row").into_domain().map_err(MetadataUpdateError::Repository)?;
+        let client = records.pop().ok_or(diesel::result::Error::NotFound)?.into_domain().map_err(MetadataUpdateError::Repository)?;
         if let Some(source_ip_hash) = source_ip_hash {
             append_dynamic_registration_audit(connection, "dynamic_client_configuration_updated", &client, source_ip_hash).await?;
         }
@@ -812,12 +767,9 @@ impl OAuthClientRepository {
                 .returning(OAuthClientRecord::as_returning())
                 .load::<OAuthClientRecord>(connection)
                 .await?;
-                if records.len() != 1 {
-                    return Err(MetadataUpdateError::Diesel(diesel::result::Error::NotFound));
-                }
                 let client = records
                     .pop()
-                    .expect("one acknowledged deactivated client row")
+                    .ok_or(diesel::result::Error::NotFound)?
                     .into_domain()
                     .map_err(MetadataUpdateError::Repository)?;
                 revoke_client_dependents_on_connection(connection, tenant_id, id).await?;
@@ -1099,7 +1051,7 @@ async fn authorize_admin_client_actor(
     client: &OAuthClient,
     actor_id: Uuid,
 ) -> Result<(), MetadataUpdateError> {
-    let rows = users::table
+    let mut rows = users::table
         .filter(users::id.eq(actor_id))
         .filter(users::tenant_id.eq(client.tenant_id))
         .filter(users::realm_id.eq(client.realm_id))
@@ -1109,12 +1061,11 @@ async fn authorize_admin_client_actor(
         .load::<PrincipalRow>(connection)
         .await?;
     let allowed = rows
-        .into_iter()
+        .pop()
         .map(crate::convert::identity::principal_row)
-        .collect::<Result<Vec<_>, _>>()
+        .transpose()
         .map_err(|error| MetadataUpdateError::Repository(RepositoryError::Consistency(error.0)))?
-        .into_iter()
-        .any(|principal| {
+        .is_some_and(|principal| {
             principal.active && principal.admin_level().is_some_and(|level| level > 0)
         });
     if allowed {

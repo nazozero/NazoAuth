@@ -530,7 +530,7 @@ async fn worker_iteration_anchors_genesis_before_polling_empty_outbox() {
     assert_eq!(outcome, IterationOutcome::Poll(config.poll_interval));
     let checkpoint = last_anchored.expect("genesis checkpoint is retained");
     assert_eq!(checkpoint.sequence, 0);
-    assert_eq!(checkpoint.hash, encode_hash(&[9; 32]));
+    assert_eq!(checkpoint.hash, vec![9; 32]);
     let request = server.await.expect("genesis endpoint completes");
     let header_end = request
         .windows(4)
@@ -684,7 +684,7 @@ async fn worker_iteration_reuses_current_genesis_and_tolerates_health_publish_fa
     let config =
         iteration_config(Url::parse("https://unused-anchor.example.test/checkpoint").unwrap());
     let snapshot = genesis_snapshot();
-    let expected = AnchorCheckpoint::genesis(encode_hash(&snapshot.head_hash));
+    let expected = AnchorCheckpoint::genesis(snapshot.head_hash.clone());
     let repository =
         ScriptedRepository::with_health(Ok(snapshot), Ok(SecurityAuditBatchClaim::Empty));
     let mut last_anchored = Some(expected.clone());
@@ -1028,32 +1028,33 @@ async fn worker_iteration_retries_health_and_claim_failures() {
     );
 }
 
-#[tokio::test]
-async fn worker_outer_rejects_invalid_config_before_repository_preflight() {
-    let pool = nazo_postgres::create_pool("not a postgres url", 1).unwrap();
-    let repository = AuditLedgerRepository::new(pool);
-    let config = AuditAnchorWorkerConfig {
-        preflight: required_config(),
-        endpoint: Url::parse("http://anchor.example.test/checkpoint").unwrap(),
-        auth_secret: vec![0; 15],
-        receipt_verify_key: test_verify_key(),
-        ca_bundle_pem: None,
-        poll_interval: Duration::from_secs(1),
-        request_timeout: Duration::from_secs(1),
-        batch_size: 1,
-        max_envelope_bytes: 1024 * 1024,
-        lock_timeout_seconds: 1,
-    };
-
-    let error = super::worker::run_worker(repository, config)
-        .await
-        .expect_err("invalid worker configuration must fail before preflight");
+#[test]
+fn worker_source_rejects_insecure_endpoint_before_database_configuration() {
+    let verify_key = encode_hash(&test_verify_key().to_bytes());
+    let source = crate::config::ConfigSource::from_owned_pairs_for_test(
+        [
+            ("AUDIT_ANCHOR_MODE", "required"),
+            ("DEPLOYMENT_ID", "deployment-test"),
+            ("AUDIT_ANCHOR_URL", "http://anchor.example.test/checkpoint"),
+            ("AUDIT_ANCHOR_TOKEN", "anchor-secret-that-is-long-enough"),
+            ("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY", verify_key.as_str()),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value.to_owned())),
+    );
+    let error = super::config::worker_config_from_source(&source)
+        .err()
+        .expect("insecure endpoint must fail at configuration admission");
     assert!(error.to_string().contains("HTTPS"));
 }
 
 #[tokio::test]
 async fn worker_outer_rejects_repository_preflight_failure() {
-    let pool = nazo_postgres::create_pool("not a postgres url", 1).unwrap();
+    let pool = nazo_postgres::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .unwrap();
     let repository = AuditLedgerRepository::new(pool);
     let config = iteration_config(Url::parse("https://anchor.example.test/checkpoint").unwrap());
 
@@ -1276,7 +1277,11 @@ fn preflight_source_uses_safe_defaults_and_requires_identity_when_enabled() {
         ("DEPLOYMENT_ID", "deployment-test"),
         ("AUDIT_ANCHOR_FRESHNESS_SECONDS", "0"),
     ]);
-    assert!(super::config::preflight_config_from_source(&invalid_freshness).is_err());
+    assert!(
+        super::config::preflight_config_from_source(&invalid_freshness)
+            .and_then(AuditAnchorPreflight::new)
+            .is_err()
+    );
 }
 
 #[test]
@@ -1355,6 +1360,89 @@ fn worker_source_loads_sidecar_only_values_and_rejects_invalid_inputs() {
         ("AUDIT_ANCHOR_DATABASE_URL", "postgres://exporter@db/audit"),
     ]);
     assert!(super::config::worker_config_from_source(&bad_envelope).is_err());
+}
+
+#[test]
+fn receipt_key_configuration_accepts_base64_and_hex_without_ambiguous_decoding() {
+    let bytes = test_verify_key().to_bytes();
+    let hex = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let valid = [encode_hash(&bytes), hex.clone(), hex.to_uppercase()];
+    let invalid = [
+        encode_hash(&bytes[..31]),
+        encode_hash(&[0; 33]),
+        format!("{}=", encode_hash(&bytes)),
+        format!("{}g", &hex[..63]),
+        "é".repeat(32),
+    ];
+    for (value, accepted) in valid
+        .into_iter()
+        .map(|value| (value, true))
+        .chain(invalid.into_iter().map(|value| (value, false)))
+    {
+        let source = crate::config::ConfigSource::from_owned_pairs_for_test(
+            [
+                ("AUDIT_ANCHOR_MODE", "required"),
+                ("DEPLOYMENT_ID", "deployment-test"),
+                ("AUDIT_ANCHOR_URL", "https://anchor.example.test/checkpoint"),
+                ("AUDIT_ANCHOR_TOKEN", "anchor-secret-that-is-long-enough"),
+                ("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY", value.as_str()),
+                ("AUDIT_ANCHOR_DATABASE_URL", "postgres://exporter@db/audit"),
+            ]
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value.to_owned())),
+        );
+        let result = super::config::worker_config_from_source(&source);
+        if accepted {
+            assert_eq!(result.unwrap().2.receipt_verify_key, test_verify_key());
+        } else {
+            assert!(
+                result.is_err(),
+                "invalid public key encoding must be rejected"
+            );
+        }
+    }
+}
+
+#[test]
+fn receipt_signature_size_and_unicode_rejection_reason_are_bounded() {
+    let batch = batch(vec![delivery(7)]);
+    let expectation = batch_expectation("deployment-1", &batch);
+    let good: Value = serde_json::from_slice(&accepted_batch_receipt(&batch)).unwrap();
+    for size in [0, 63, 65] {
+        let mut wrong = good.clone();
+        wrong["signature"] = json!(encode_hash(&vec![0; size]));
+        assert_eq!(
+            verify_receipt(
+                &serde_json::to_vec(&wrong).unwrap(),
+                &test_verify_key(),
+                &expectation
+            ),
+            Err(super::protocol::ReceiptError::Malformed),
+        );
+    }
+    let rejected = signed_receipt(
+        "rejected",
+        "batch",
+        "deployment-1",
+        batch.first_sequence,
+        batch.last_sequence,
+        batch.event_count(),
+        encode_hash(&batch.last_hash),
+        encode_hash(&batch.digest),
+        Some(&"拒".repeat(129)),
+        true,
+        &test_signing_key(),
+    );
+    assert_eq!(
+        verify_receipt(&rejected, &test_verify_key(), &expectation).unwrap(),
+        ReceiptVerdict::Rejected {
+            reason: "拒".repeat(128),
+            permanent: true
+        },
+    );
 }
 
 #[test]
@@ -1698,8 +1786,12 @@ fn retry_delay_and_batch_lag_are_monotonic_and_bounded() {
 }
 
 #[tokio::test]
-async fn repository_adapter_forwards_invalid_pool_calls_without_panicking() {
-    let pool = nazo_postgres::create_pool("not a postgres url", 1).unwrap();
+async fn repository_adapter_forwards_connection_failures_without_panicking() {
+    let pool = nazo_postgres::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .unwrap();
     let repository = AuditLedgerRepository::new(pool);
 
     assert!(

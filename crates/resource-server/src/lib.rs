@@ -269,14 +269,14 @@ impl ResourceServerVerifier {
             return Err(ResourceServerVerifierError::IssuerMismatch);
         }
         let audiences =
-            audience_values(&claims.aud).ok_or(ResourceServerVerifierError::AudienceMismatch)?;
+            audience_values(claims.aud).ok_or(ResourceServerVerifierError::AudienceMismatch)?;
         if !audiences
             .iter()
             .any(|aud| self.audiences.iter().any(|expected| expected == aud))
         {
             return Err(ResourceServerVerifierError::AudienceMismatch);
         }
-        let skew = self.clock_skew_seconds.max(0);
+        let skew = self.clock_skew_seconds;
         if claims.exp <= now.saturating_sub(skew) {
             return Err(ResourceServerVerifierError::Expired);
         }
@@ -377,12 +377,12 @@ pub fn authorize_http_request<B>(
     request: &mut http::Request<B>,
 ) -> Result<VerifiedAccessToken, ResourceServerRequestError> {
     let headers = http_authorization_headers(request.headers())?;
+    let default_proof = VerifiedSenderConstraintProof::default();
     let proof = request
         .extensions()
         .get::<VerifiedSenderConstraintProof>()
-        .cloned()
-        .unwrap_or_default();
-    let verified = authorize_resource_request(verifier, &headers, request.uri().query(), &proof)?;
+        .unwrap_or(&default_proof);
+    let verified = authorize_resource_request(verifier, &headers, request.uri().query(), proof)?;
     request.extensions_mut().insert(verified.clone());
     Ok(verified)
 }
@@ -457,16 +457,14 @@ fn validate_confirmation_policy(
     }
 }
 
-fn audience_values(value: &Value) -> Option<Vec<String>> {
+fn audience_values(value: Value) -> Option<Vec<String>> {
     match value {
-        Value::String(value) if !value.trim().is_empty() => Some(vec![value.clone()]),
+        Value::String(value) if !value.trim().is_empty() => Some(vec![value]),
         Value::Array(values) if !values.is_empty() => values
-            .iter()
-            .map(|value| {
-                value
-                    .as_str()
-                    .filter(|value| !value.trim().is_empty())
-                    .map(ToOwned::to_owned)
+            .into_iter()
+            .map(|value| match value {
+                Value::String(value) if !value.trim().is_empty() => Some(value),
+                _ => None,
             })
             .collect(),
         _ => None,
@@ -493,11 +491,7 @@ fn valid_thumbprint(value: &str) -> bool {
 }
 
 fn scope_values(value: &str) -> Vec<String> {
-    value
-        .split_whitespace()
-        .map(ToOwned::to_owned)
-        .filter(|scope| !scope.is_empty())
-        .collect()
+    value.split_whitespace().map(ToOwned::to_owned).collect()
 }
 
 #[cfg(test)]

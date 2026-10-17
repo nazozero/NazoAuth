@@ -14,16 +14,24 @@ pub(crate) struct PasskeySettings {
 }
 
 impl PasskeySettings {
-    pub(super) fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
-        let origin = config
-            .optional_string("PASSKEY_ORIGIN")
-            .unwrap_or_else(|| issuer.trim_end_matches('/').to_owned());
-        validate_issuer_url(&origin)?;
+    pub(super) fn from_config(
+        config: &ConfigSource,
+        issuer: &str,
+        issuer_url: &url::Url,
+    ) -> anyhow::Result<Self> {
+        let configured_origin_url;
+        let (origin, origin_url) = match config.optional_string("PASSKEY_ORIGIN") {
+            Some(origin) => {
+                configured_origin_url = validate_issuer_url(&origin)?;
+                (origin, &configured_origin_url)
+            }
+            None => (issuer.to_owned(), issuer_url),
+        };
         let rp_id = match config.optional_string("PASSKEY_RP_ID") {
             Some(value) => value,
-            None => passkey_auth::RpId::try_from_url(&origin)
-                .map_err(|error| anyhow::anyhow!("PASSKEY_ORIGIN cannot derive RP ID: {error}"))?
-                .as_str()
+            None => origin_url
+                .host_str()
+                .expect("validated origin has a host")
                 .to_owned(),
         };
         if rp_id.trim().is_empty()

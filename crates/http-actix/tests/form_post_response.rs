@@ -33,7 +33,7 @@ async fn form_post_response_escapes_values_and_sets_hardening_headers() {
     assert!(csp.contains("frame-ancestors 'none'"));
 
     let body = String::from_utf8(to_bytes(response.into_body()).await.unwrap().to_vec()).unwrap();
-    assert!(body.contains("name=\"code\" value=\"a&amp;&lt;&quot;&#x27;b\""));
+    assert!(body.contains("name=\"code\" value=\"a&amp;&lt;&quot;&#39;b\""));
     assert!(body.contains("name=\"session_state\" value=\"session-state\""));
     assert!(!body.contains("a&<\"'b"));
 }

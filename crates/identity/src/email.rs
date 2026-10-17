@@ -15,8 +15,7 @@ impl Error for EmailAddressError {}
 
 pub fn normalize_email_address(raw: &str) -> Result<String, EmailAddressError> {
     let normalized = raw.trim().to_ascii_lowercase();
-    normalized
-        .parse::<Address>()
+    Address::try_from(normalized)
         .map(|address| address.to_string())
         .map_err(|_| EmailAddressError)
 }

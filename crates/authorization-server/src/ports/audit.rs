@@ -24,11 +24,11 @@ pub trait SecurityAudit: Send + Sync {
     ) -> AuditFuture<'a>;
 }
 
-pub fn audit_fields(
-    items: &[(&str, serde_json::Value)],
+pub fn audit_fields<'a>(
+    items: impl IntoIterator<Item = (&'a str, serde_json::Value)>,
 ) -> serde_json::Map<String, serde_json::Value> {
     items
-        .iter()
-        .map(|(key, value)| ((*key).to_owned(), value.clone()))
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
         .collect()
 }

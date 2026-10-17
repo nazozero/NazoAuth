@@ -80,6 +80,14 @@ impl ClientSecurityPolicy {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct ClientPresentation {
+    pub client_name: String,
+    pub logo_uri: Option<String>,
+    pub policy_uri: Option<String>,
+    pub tos_uri: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct ClientPresentationMetadata {
     pub logo_uri: Option<String>,

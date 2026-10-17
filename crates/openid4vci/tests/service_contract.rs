@@ -12,9 +12,9 @@ use nazo_openid4vci::{
     CredentialAccess, CredentialConfiguration, CredentialDatasetPort, CredentialError,
     CredentialIdentifier, CredentialIssuance, CredentialIssuanceError, CredentialIssuerService,
     CredentialRequest, CredentialStoreError, CredentialStoreFuture, CredentialStorePort,
-    DeferredCredential, IssuanceCommit, IssuanceDisposition, IssuanceIdentity,
-    IssuanceNotification, NonceRecord, NotificationHandle, ProofError, ProofTypeMetadata,
-    ProofValidatorPort, Proofs, StoredCredentialOffer, StoredCredentialResponse, ValidatedProof,
+    DeferredCredential, IssuanceCommit, IssuanceDisposition, IssuanceNotification, NonceRecord,
+    NotificationHandle, ProofError, ProofTypeMetadata, ProofValidatorPort, Proofs,
+    StoredCredentialOffer, StoredCredentialResponse, ValidatedProof,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -129,33 +129,7 @@ impl CredentialStorePort for RecordingStore {
             }
         })
     }
-    fn finalize_nonce<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a str,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            *self.nonce_finalized.lock().unwrap() += 1;
-            Ok(true)
-        })
-    }
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        _: &'a str,
-        _: &'a str,
-        handle: &'a NotificationHandle,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.notification_exists(handle) {
-                return Ok(false);
-            }
-            *self.nonce_finalized.lock().unwrap() += 1;
-            self.notifications.lock().unwrap().push(handle.clone());
-            Ok(true)
-        })
-    }
+
     fn find_response<'a>(
         &'a self,
         _: Uuid,
@@ -226,34 +200,6 @@ impl CredentialStorePort for RecordingStore {
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async { Ok(None) })
     }
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.deferred_exists(credential) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            self.deferred.lock().unwrap().push(credential.clone());
-            Ok(())
-        })
-    }
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        _: &'a str,
-        _: &'a str,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.deferred_exists(credential) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            self.deferred.lock().unwrap().push(credential.clone());
-            *self.nonce_finalized.lock().unwrap() += 1;
-            Ok(())
-        })
-    }
 
     fn store_deferred_and_finalize_nonce_with_response<'a>(
         &'a self,
@@ -307,15 +253,7 @@ impl CredentialStorePort for RecordingStore {
     > {
         Box::pin(async { Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid) })
     }
-    fn finalize_deferred<'a>(
-        &'a self,
-        _: &'a str,
-        _: Uuid,
-        _: &'a str,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async { Ok(true) })
-    }
+
     fn release_deferred<'a>(
         &'a self,
         _: &'a str,
@@ -324,22 +262,6 @@ impl CredentialStorePort for RecordingStore {
         _: chrono::DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async { Ok(true) })
-    }
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        _: &'a str,
-        _: Uuid,
-        _: &'a str,
-        handle: &'a NotificationHandle,
-        _: chrono::DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.notification_exists(handle) {
-                return Ok(false);
-            }
-            self.notifications.lock().unwrap().push(handle.clone());
-            Ok(true)
-        })
     }
 
     fn finalize_deferred_with_notification_and_response<'a>(
@@ -368,18 +290,6 @@ impl CredentialStorePort for RecordingStore {
         _: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async { Ok(true) })
-    }
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if !self.commit_is_allowed() || self.notification_exists(handle) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            self.notifications.lock().unwrap().push(handle.clone());
-            Ok(())
-        })
     }
 }
 
@@ -500,7 +410,12 @@ impl CredentialSignerPort for ErrorSigner {
 
 fn fixture(
     now: chrono::DateTime<Utc>,
-) -> (CredentialAccess, CredentialIssuance, CredentialRequest) {
+) -> (
+    CredentialAccess,
+    CredentialConfiguration,
+    CredentialIssuance,
+    CredentialRequest,
+) {
     let configuration = CredentialConfiguration {
         format: CredentialFormat::SdJwtVc,
         scope: Some("pid".to_owned()),
@@ -531,9 +446,9 @@ fn fixture(
             dpop_jkt: None,
             expires_at: now + Duration::minutes(5),
         },
+        configuration,
         CredentialIssuance {
             configuration_id: "pid".to_owned(),
-            configuration,
             disposition: IssuanceDisposition::Immediate,
             status: None,
             expires_at: now + Duration::days(30),
@@ -553,15 +468,19 @@ fn fixture(
 
 fn non_bound_fixture(
     now: chrono::DateTime<Utc>,
-) -> (CredentialAccess, CredentialIssuance, CredentialRequest) {
-    let (access, mut issuance, mut request) = fixture(now);
-    issuance.configuration.proof_types_supported.clear();
-    issuance
-        .configuration
+) -> (
+    CredentialAccess,
+    CredentialConfiguration,
+    CredentialIssuance,
+    CredentialRequest,
+) {
+    let (access, mut configuration, issuance, mut request) = fixture(now);
+    configuration.proof_types_supported.clear();
+    configuration
         .cryptographic_binding_methods_supported
         .clear();
     request.proofs = None;
-    (access, issuance, request)
+    (access, configuration, issuance, request)
 }
 
 fn response_for_pending(
@@ -575,24 +494,17 @@ fn response_for_pending(
         } => notification_handle.token_id,
         IssuanceCommit::Deferred { credential, .. } => credential.access.token_id,
     };
+    let issuance_id = Uuid::now_v7();
     StoredCredentialResponse {
         selection: None,
-        issuance_id: pending.issuance_id,
+        issuance_id,
         token_id,
-        request_digest: pending.request_digest.clone(),
-        body: br#"{"credentials":[]}"#.to_vec(),
+        request_digest: format!("test-{issuance_id}"),
+        body: br#"{"credentials":[]}"#.as_slice().into(),
         encoding: nazo_openid4vci::CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
         expires_at: now + Duration::minutes(10),
-    }
-}
-
-fn test_issuance_identity() -> IssuanceIdentity {
-    let issuance_id = Uuid::now_v7();
-    IssuanceIdentity {
-        issuance_id,
-        request_digest: format!("test-{issuance_id}"),
     }
 }
 
@@ -639,21 +551,24 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
         "https://issuer.example".to_owned(),
         4,
     );
-    let (access, issuance, request) = fixture(now);
+    let (access, configuration, issuance, request) = fixture(now);
 
     let pending = service
         .issue_pending(
             &access,
             &request,
-            &issuance,
+            issuance.clone(),
+            &configuration,
             "nonce",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     assert_eq!(*store.nonce_finalized.lock().unwrap(), 0);
-    service.commit_pending(&pending, now).await.unwrap();
+    service
+        .commit_pending(&pending.commit, &response_for_pending(&pending, now), now)
+        .await
+        .unwrap();
     let response = pending.response;
     assert_eq!(*store.nonce_finalized.lock().unwrap(), 1);
     assert_eq!(response.credentials.as_ref().map(Vec::len), Some(2));
@@ -680,9 +595,9 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now,
             )
             .await
@@ -705,16 +620,16 @@ async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_f
         "https://issuer.example".to_owned(),
         4,
     );
-    let (access, issuance, request) = fixture(now);
+    let (access, configuration, issuance, request) = fixture(now);
 
     assert_eq!(
         service
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now,
             )
             .await
@@ -735,7 +650,7 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
         "https://issuer.example".to_owned(),
         4,
     );
-    let (access, issuance, request) = fixture(now);
+    let (access, configuration, issuance, request) = fixture(now);
 
     let mut ambiguous = request.clone();
     ambiguous.credential_identifier = Some(CredentialIdentifier("pid-1".to_owned()));
@@ -744,9 +659,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &access,
                 &ambiguous,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -762,9 +677,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &expired_access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -778,9 +693,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &wrong_configuration,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -794,9 +709,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &access,
                 &missing_proofs,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -812,9 +727,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &access,
                 &empty_proofs,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -833,9 +748,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &access,
                 &unsupported_type,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -854,9 +769,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &access,
                 &multiple_types,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -875,9 +790,9 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
             .issue_pending(
                 &access,
                 &too_many,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -898,15 +813,15 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
         "https://issuer.example".to_owned(),
         4,
     );
-    let (access, issuance, request) = non_bound_fixture(now);
+    let (access, configuration, issuance, request) = non_bound_fixture(now);
 
     let pending = service
         .issue_pending(
             &access,
             &request,
-            &issuance,
+            issuance.clone(),
+            &configuration,
             "unused",
-            test_issuance_identity(),
             now,
         )
         .await
@@ -923,9 +838,9 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
             .issue_pending(
                 &access,
                 &supplied_proof,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "unused",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -934,9 +849,8 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
         ))
     );
 
-    let mut binding_required = issuance.clone();
+    let mut binding_required = configuration.clone();
     binding_required
-        .configuration
         .cryptographic_binding_methods_supported
         .push("jwk".to_owned());
     assert_eq!(
@@ -944,9 +858,9 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
             .issue_pending(
                 &access,
                 &request,
+                issuance.clone(),
                 &binding_required,
                 "unused",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -959,7 +873,7 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
 #[tokio::test]
 async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() {
     let now = Utc::now();
-    let (access, issuance, request) = fixture(now);
+    let (access, configuration, issuance, request) = fixture(now);
 
     let proof_error_service = CredentialIssuerService::new(
         RecordingStore::default(),
@@ -974,9 +888,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -996,9 +910,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -1024,9 +938,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -1051,9 +965,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -1077,9 +991,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
             .issue_pending(
                 &access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -1098,17 +1012,17 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
         "https://issuer.example".to_owned(),
         4,
     );
-    let mut missing_type = issuance.clone();
-    missing_type.configuration.vct = None;
-    missing_type.configuration.doctype = None;
+    let mut missing_type = configuration.clone();
+    missing_type.vct = None;
+    missing_type.doctype = None;
     assert_eq!(
         invalid_configuration_service
             .issue_pending(
                 &access,
                 &request,
+                issuance.clone(),
                 &missing_type,
                 "nonce",
-                test_issuance_identity(),
                 now
             )
             .await,
@@ -1136,9 +1050,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
             .issue_pending(
                 &late_access,
                 &request,
-                &issuance,
+                issuance.clone(),
+                &configuration,
                 "nonce",
-                test_issuance_identity(),
                 Utc::now() - Duration::minutes(10),
             )
             .await,
@@ -1147,13 +1061,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
 }
 
 #[tokio::test]
-async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback() {
+async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollback() {
     let now = Utc::now();
-    let identity = IssuanceIdentity {
-        issuance_id: Uuid::now_v7(),
-        request_digest: "digest-1".to_owned(),
-    };
-    let (access, issuance, request) = fixture(now);
+    let (access, configuration, issuance, request) = fixture(now);
 
     let immediate_store = RecordingStore::default();
     let immediate_service = CredentialIssuerService::new(
@@ -1167,12 +1077,19 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         4,
     );
     let immediate_pending = immediate_service
-        .issue_pending(&access, &request, &issuance, "nonce", identity, now)
+        .issue_pending(
+            &access,
+            &request,
+            issuance.clone(),
+            &configuration,
+            "nonce",
+            now,
+        )
         .await
         .unwrap();
     let immediate_response = response_for_pending(&immediate_pending, now);
     immediate_service
-        .commit_pending_with_response(&immediate_pending, &immediate_response, now)
+        .commit_pending(&immediate_pending.commit, &immediate_response, now)
         .await
         .unwrap();
     assert_eq!(*immediate_store.nonce_finalized.lock().unwrap(), 1);
@@ -1181,26 +1098,17 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         immediate_response
     );
 
-    let mut wrong_response = immediate_response.clone();
-    wrong_response.request_digest = "wrong".to_owned();
     assert_eq!(
         immediate_service
-            .commit_pending_with_response(&immediate_pending, &wrong_response, now)
-            .await,
-        Err(CredentialIssuanceError::Store(
-            CredentialStoreError::InvalidTransition
-        ))
-    );
-    assert_eq!(
-        immediate_service
-            .commit_pending_with_response(&immediate_pending, &immediate_response, now)
+            .commit_pending(&immediate_pending.commit, &immediate_response, now)
             .await,
         Err(CredentialIssuanceError::Store(
             CredentialStoreError::InvalidTransition
         ))
     );
 
-    let (unbound_access, unbound_issuance, unbound_request) = non_bound_fixture(now);
+    let (unbound_access, unbound_configuration, unbound_issuance, unbound_request) =
+        non_bound_fixture(now);
     let unbound_store = RecordingStore::default();
     let unbound_service = CredentialIssuerService::new(
         unbound_store.clone(),
@@ -1214,22 +1122,29 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &unbound_access,
             &unbound_request,
-            &unbound_issuance,
+            unbound_issuance.clone(),
+            &unbound_configuration,
             "unused",
-            IssuanceIdentity {
-                issuance_id: Uuid::now_v7(),
-                request_digest: "digest-2".to_owned(),
-            },
             now,
         )
         .await
         .unwrap();
     unbound_service
-        .commit_pending(&unbound_pending, now)
+        .commit_pending(
+            &unbound_pending.commit,
+            &response_for_pending(&unbound_pending, now),
+            now,
+        )
         .await
         .unwrap();
     assert_eq!(
-        unbound_service.commit_pending(&unbound_pending, now).await,
+        unbound_service
+            .commit_pending(
+                &unbound_pending.commit,
+                &response_for_pending(&unbound_pending, now),
+                now
+            )
+            .await,
         Err(CredentialIssuanceError::Store(
             CredentialStoreError::InvalidTransition
         ))
@@ -1238,22 +1153,19 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &unbound_access,
             &unbound_request,
-            &unbound_issuance,
+            unbound_issuance.clone(),
+            &unbound_configuration,
             "unused",
-            IssuanceIdentity {
-                issuance_id: Uuid::now_v7(),
-                request_digest: "digest-2-response".to_owned(),
-            },
             now,
         )
         .await
         .unwrap();
     let unbound_response = response_for_pending(&unbound_response_pending, now);
     unbound_service
-        .commit_pending_with_response(&unbound_response_pending, &unbound_response, now)
+        .commit_pending(&unbound_response_pending.commit, &unbound_response, now)
         .await
         .unwrap();
-    assert_eq!(unbound_store.responses.lock().unwrap().len(), 1);
+    assert_eq!(unbound_store.responses.lock().unwrap().len(), 2);
 
     let mut deferred_issuance = issuance.clone();
     deferred_issuance.disposition = IssuanceDisposition::Deferred {
@@ -1274,15 +1186,19 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &access,
             &request,
-            &deferred_issuance,
+            deferred_issuance.clone(),
+            &configuration,
             "nonce",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     deferred_service
-        .commit_pending(&deferred_pending, now)
+        .commit_pending(
+            &deferred_pending.commit,
+            &response_for_pending(&deferred_pending, now),
+            now,
+        )
         .await
         .unwrap();
     assert_eq!(deferred_store.deferred.lock().unwrap().len(), 1);
@@ -1311,16 +1227,16 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &access,
             &request,
-            &deferred_issuance,
+            deferred_issuance.clone(),
+            &configuration,
             "nonce-2",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     let deferred_response = response_for_pending(&deferred_response_pending, now);
     deferred_response_service
-        .commit_pending_with_response(&deferred_response_pending, &deferred_response, now)
+        .commit_pending(&deferred_response_pending.commit, &deferred_response, now)
         .await
         .unwrap();
     assert_eq!(deferred_response_store.deferred.lock().unwrap().len(), 1);
@@ -1330,8 +1246,12 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         deferred_response
     );
 
-    let (unbound_deferred_access, mut unbound_deferred_issuance, unbound_deferred_request) =
-        non_bound_fixture(now);
+    let (
+        unbound_deferred_access,
+        unbound_deferred_configuration,
+        mut unbound_deferred_issuance,
+        unbound_deferred_request,
+    ) = non_bound_fixture(now);
     unbound_deferred_issuance.disposition = IssuanceDisposition::Deferred {
         ready_at: now + Duration::minutes(2),
     };
@@ -1348,20 +1268,28 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &unbound_deferred_access,
             &unbound_deferred_request,
-            &unbound_deferred_issuance,
+            unbound_deferred_issuance.clone(),
+            &unbound_deferred_configuration,
             "unused",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     unbound_deferred_service
-        .commit_pending(&unbound_deferred_pending, now)
+        .commit_pending(
+            &unbound_deferred_pending.commit,
+            &response_for_pending(&unbound_deferred_pending, now),
+            now,
+        )
         .await
         .unwrap();
     assert_eq!(
         unbound_deferred_service
-            .commit_pending(&unbound_deferred_pending, now)
+            .commit_pending(
+                &unbound_deferred_pending.commit,
+                &response_for_pending(&unbound_deferred_pending, now),
+                now
+            )
             .await,
         Err(CredentialIssuanceError::Store(
             CredentialStoreError::InvalidTransition
@@ -1371,26 +1299,26 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &unbound_deferred_access,
             &unbound_deferred_request,
-            &unbound_deferred_issuance,
+            unbound_deferred_issuance.clone(),
+            &unbound_deferred_configuration,
             "unused",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     let unbound_deferred_response = response_for_pending(&unbound_deferred_response_pending, now);
     unbound_deferred_service
-        .commit_pending_with_response(
-            &unbound_deferred_response_pending,
+        .commit_pending(
+            &unbound_deferred_response_pending.commit,
             &unbound_deferred_response,
             now,
         )
         .await
         .unwrap();
     assert_eq!(unbound_deferred_store.deferred.lock().unwrap().len(), 2);
-    assert_eq!(unbound_deferred_store.responses.lock().unwrap().len(), 1);
+    assert_eq!(unbound_deferred_store.responses.lock().unwrap().len(), 2);
     assert_eq!(
-        unbound_deferred_store.responses.lock().unwrap()[0].clone(),
+        unbound_deferred_store.responses.lock().unwrap()[1].clone(),
         unbound_deferred_response
     );
 
@@ -1409,15 +1337,15 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &access,
             &request,
-            &issuance,
+            issuance.clone(),
+            &configuration,
             "nonce",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     rollback_service
-        .rollback_pending(&rollback_pending, now)
+        .rollback_pending(&rollback_pending.commit, now)
         .await
         .unwrap();
     assert_eq!(*rollback_store.nonce_released.lock().unwrap(), 1);
@@ -1438,23 +1366,27 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &access,
             &request,
-            &issuance,
+            issuance.clone(),
+            &configuration,
             "nonce",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     assert_eq!(
         failing_commit_service
-            .commit_pending(&failing_pending, now)
+            .commit_pending(
+                &failing_pending.commit,
+                &response_for_pending(&failing_pending, now),
+                now
+            )
             .await,
         Err(CredentialIssuanceError::Store(
             CredentialStoreError::InvalidTransition
         ))
     );
     failing_commit_service
-        .rollback_pending(&failing_pending, now)
+        .rollback_pending(&failing_pending.commit, now)
         .await
         .unwrap();
     assert_eq!(*failing_commit_store.nonce_released.lock().unwrap(), 1);
@@ -1472,15 +1404,19 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &access,
             &request,
-            &issuance,
+            issuance.clone(),
+            &configuration,
             "nonce",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     failing_commit_service
-        .commit_pending(&successful_pending, now)
+        .commit_pending(
+            &successful_pending.commit,
+            &response_for_pending(&successful_pending, now),
+            now,
+        )
         .await
         .unwrap();
     assert_eq!(*failing_commit_store.nonce_finalized.lock().unwrap(), 1);
@@ -1506,16 +1442,20 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
         .issue_pending(
             &access,
             &request,
-            &deferred_failure_issuance,
+            deferred_failure_issuance.clone(),
+            &configuration,
             "deferred-failure",
-            test_issuance_identity(),
             now,
         )
         .await
         .unwrap();
     assert_eq!(
         deferred_failure_service
-            .commit_pending(&deferred_failure_pending, now)
+            .commit_pending(
+                &deferred_failure_pending.commit,
+                &response_for_pending(&deferred_failure_pending, now),
+                now
+            )
             .await,
         Err(CredentialIssuanceError::Store(
             CredentialStoreError::InvalidTransition
@@ -1525,7 +1465,11 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     assert_eq!(*deferred_failure_store.nonce_finalized.lock().unwrap(), 0);
     *deferred_failure_store.commit_success.lock().unwrap() = None;
     deferred_failure_service
-        .commit_pending(&deferred_failure_pending, now)
+        .commit_pending(
+            &deferred_failure_pending.commit,
+            &response_for_pending(&deferred_failure_pending, now),
+            now,
+        )
         .await
         .unwrap();
     assert_eq!(deferred_failure_store.deferred.lock().unwrap().len(), 1);
@@ -1535,9 +1479,9 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
 #[tokio::test]
 async fn doctype_is_used_when_vct_is_absent() {
     let now = Utc::now();
-    let (access, mut issuance, request) = fixture(now);
-    issuance.configuration.vct = None;
-    issuance.configuration.doctype = Some("org.example.pid".to_owned());
+    let (access, mut configuration, issuance, request) = fixture(now);
+    configuration.vct = None;
+    configuration.doctype = Some("org.example.pid".to_owned());
     let service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![ValidatedProof {
@@ -1552,9 +1496,9 @@ async fn doctype_is_used_when_vct_is_absent() {
         .issue_pending(
             &access,
             &request,
-            &issuance,
+            issuance.clone(),
+            &configuration,
             "nonce",
-            test_issuance_identity(),
             now,
         )
         .await

@@ -27,7 +27,7 @@ pub(super) async fn run(
     process: Arc<ProcessRuntime>,
     registry: TenantRuntimeRegistry,
     refresher: Arc<TenantRuntimeRefresher>,
-    backchannel_logout_worker: Option<tokio::task::JoinHandle<()>>,
+    backchannel_logout_worker: tokio::task::JoinHandle<()>,
     security_state_worker: tokio::task::JoinHandle<()>,
 ) -> anyhow::Result<()> {
     let refresh_task = spawn_directory_refresher(refresher.clone());
@@ -37,10 +37,8 @@ pub(super) async fn run(
     refresher.shutdown().await;
     security_state_worker.abort();
     await_aborted_task(security_state_worker, "security-state maintenance worker").await;
-    if let Some(worker) = backchannel_logout_worker {
-        worker.abort();
-        await_aborted_task(worker, "back-channel logout worker").await;
-    }
+    backchannel_logout_worker.abort();
+    await_aborted_task(backchannel_logout_worker, "back-channel logout worker").await;
     result
 }
 

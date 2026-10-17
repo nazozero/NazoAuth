@@ -23,6 +23,11 @@ fn credential_proof_requires_scalar_audience_and_matching_present_issuer() {
                 Algorithm::ES256,
                 None,
             );
+            let unsigned = format!("{}.", proof.rsplit_once('.').unwrap().0);
+            assert_eq!(
+                validate_jwt_proof(&validator, unsigned, &metadata).await,
+                Err(ProofError::InvalidSignature)
+            );
             assert_eq!(
                 validate_jwt_proof(&validator, proof, &metadata)
                     .await

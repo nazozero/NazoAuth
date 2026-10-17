@@ -1,7 +1,6 @@
 use nazo_identity::TenantContext;
-use serde_json::Value;
 
-use super::{AdminClientCryptoPort, AdminClientError};
+use super::AdminClientError;
 use crate::{
     ClientProfile, ClientSecurityPolicy, SecurityProfile, SenderConstraintPolicy,
     validate_token_request_profile,
@@ -35,13 +34,12 @@ pub(super) struct ClientSecurityPolicyContext<'a> {
     pub(super) require_dpop_bound_tokens: bool,
     pub(super) require_mtls_bound_tokens: bool,
     pub(super) jwks_uri: Option<&'a str>,
-    pub(super) jwks: Option<&'a Value>,
+    pub(super) has_signing_key: bool,
 }
 
-pub(super) fn validate_composable_security_policy<C: AdminClientCryptoPort + ?Sized>(
+pub(super) fn validate_composable_security_policy(
     policy: &ClientSecurityPolicy,
     context: ClientSecurityPolicyContext<'_>,
-    crypto: &C,
 ) -> Result<(), AdminClientError> {
     if policy.requires_fapi2_security() {
         let sender_constraint = match (
@@ -65,9 +63,7 @@ pub(super) fn validate_composable_security_policy<C: AdminClientCryptoPort + ?Si
     }
     if policy.require_signed_authorization_request
         && context.jwks_uri.is_none()
-        && !context
-            .jwks
-            .is_some_and(|jwks| crypto.contains_signing_key(jwks))
+        && !context.has_signing_key
     {
         return Err(AdminClientError::InvalidRequest(
             "signed authorization requests require a client signing key".to_owned(),

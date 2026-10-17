@@ -50,7 +50,6 @@ pub struct SecurityStateMaintenanceRepository {
 
 // Cursors only schedule a bounded pass; PostgreSQL remains the authority for
 // expiry and references. Clones share progress, and restart simply rescans.
-#[derive(Clone)]
 struct ContractSweepCursor {
     cutoff: DateTime<Utc>,
     created_at: DateTime<Utc>,
@@ -72,7 +71,6 @@ struct ContractSweepRow {
     locked: bool,
 }
 
-#[derive(Clone)]
 struct GrantSweepCursor {
     cutoff: DateTime<Utc>,
     expires_at: DateTime<Utc>,
@@ -167,7 +165,7 @@ impl SecurityStateMaintenanceRepository {
             .bind::<sql_types::Bool, _>(scope == nazo_persistence::CleanupScope::IncludingHistory)
             .load::<GenericCleanupCounts>(connection)
             .await
-            .and_then(single_cleanup_row)
+            .map(single_cleanup_row)
             .map_err(map_error)
     }
 
@@ -178,10 +176,9 @@ impl SecurityStateMaintenanceRepository {
         let row = sql_query("SELECT public.nazo_cleanup_authorization_decisions() AS deleted")
             .load::<DecisionCleanupCount>(connection)
             .await
-            .and_then(single_cleanup_row)
+            .map(single_cleanup_row)
             .map_err(map_error)?;
-        debug_assert!((0..=CLEANUP_BATCH_LIMIT).contains(&row.deleted));
-        Ok(row.deleted.max(0) as u64)
+        Ok(row.deleted as u64)
     }
 
     async fn presentation_cleanup(
@@ -193,10 +190,9 @@ impl SecurityStateMaintenanceRepository {
         )
         .load::<PresentationCleanupCount>(connection)
         .await
-        .and_then(single_cleanup_row)
+        .map(single_cleanup_row)
         .map_err(map_error)?;
-        debug_assert!((0..=CLEANUP_BATCH_LIMIT as i32).contains(&count.deleted_transactions));
-        Ok(count.deleted_transactions.max(0) as u64)
+        Ok(count.deleted_transactions as u64)
     }
 
     /// Delete spent proofs at their own expiry. An expired proof's only
@@ -343,8 +339,11 @@ impl SecurityStateMaintenanceRepository {
                 // LATERAL probes ix_orst_family for each locked parent. The
                 // outer LIMIT is global, so this never becomes 256 proofs per
                 // family. Child locks and deletes share this transaction.
-                let deleted_proofs = sql_query(
-                    "WITH limited_proofs AS MATERIALIZED ( \
+                let deleted_proofs = if proof_budget == 0 {
+                    0
+                } else {
+                    sql_query(
+                        "WITH limited_proofs AS MATERIALIZED ( \
                          SELECT proof.tenant_id, proof.refresh_token_blake3 \
                          FROM UNNEST($1::uuid[], $2::uuid[]) \
                               AS family(tenant_id, token_family_id) \
@@ -361,12 +360,13 @@ impl SecurityStateMaintenanceRepository {
                      USING limited_proofs AS due \
                      WHERE target.tenant_id = due.tenant_id \
                        AND target.refresh_token_blake3 = due.refresh_token_blake3",
-                )
-                .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_tenants)
-                .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_families)
-                .bind::<sql_types::BigInt, _>(proof_budget)
-                .execute(connection)
-                .await? as u64;
+                    )
+                    .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_tenants)
+                    .bind::<sql_types::Array<sql_types::Uuid>, _>(&terminal_families)
+                    .bind::<sql_types::BigInt, _>(proof_budget)
+                    .execute(connection)
+                    .await? as u64
+                };
 
                 // Child existence, not the prior candidate snapshot, decides
                 // whether each parent may now be deleted without a cascade.
@@ -409,12 +409,12 @@ impl SecurityStateMaintenanceRepository {
     ) -> Result<(u64, bool), RepositoryError> {
         // The cursor only orders scans; the bounded batch already owns its lease.
         let mut cursor = self.contract_cursor.lock().await;
-        let after = cursor.clone();
+        let after = cursor.as_ref();
         let (deleted, saturated, next) = connection
             .build_transaction()
             .read_committed()
             .run::<_, diesel::result::Error, _>(async |connection| {
-                let page = sql_query(
+                let mut page = sql_query(
                     "WITH scan AS MATERIALIZED ( \
                          SELECT tenant_id, contract_blake3, created_at, \
                                 COALESCE($2, CURRENT_TIMESTAMP) AS cutoff \
@@ -437,21 +437,13 @@ impl SecurityStateMaintenanceRepository {
                      ORDER BY scan.created_at, scan.tenant_id, scan.contract_blake3",
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.map(|row| row.cutoff))
                 .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
-                    after.as_ref().map(|row| row.cutoff),
+                    after.map(|row| row.created_at),
                 )
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
-                    after.as_ref().map(|row| row.created_at),
-                )
-                .bind::<sql_types::Uuid, _>(
-                    after
-                        .as_ref()
-                        .map_or(uuid::Uuid::nil(), |row| row.tenant_id),
-                )
+                .bind::<sql_types::Uuid, _>(after.map_or(uuid::Uuid::nil(), |row| row.tenant_id))
                 .bind::<sql_types::Binary, _>(
-                    after
-                        .as_ref()
-                        .map_or(&[][..], |row| row.contract_blake3.as_slice()),
+                    after.map_or(&[][..], |row| row.contract_blake3.as_slice()),
                 )
                 .load::<ContractSweepRow>(connection)
                 .await?;
@@ -459,45 +451,42 @@ impl SecurityStateMaintenanceRepository {
                 // Advance past referenced and locked parents too. A fixed
                 // cutoff closes this pass even as new contracts mature; a
                 // short final page resets it so skipped parents are revisited.
-                let next = if saturated {
-                    page.last().map(|row| ContractSweepCursor {
-                        cutoff: row.cutoff,
-                        created_at: row.created_at,
-                        tenant_id: row.tenant_id,
-                        contract_blake3: row.contract_blake3.clone(),
-                    })
-                } else {
-                    None
-                };
-                let locked = page
-                    .into_iter()
-                    .filter(|row| row.locked)
-                    .collect::<Vec<_>>();
-                if locked.is_empty() {
-                    return Ok((0, saturated, next));
-                }
-                let tenant_ids = locked.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
-                let digests = locked
+                let (tenant_ids, digests): (Vec<_>, Vec<_>) = page
                     .iter()
-                    .map(|row| row.contract_blake3.clone())
-                    .collect::<Vec<_>>();
+                    .filter(|row| row.locked)
+                    .map(|row| (row.tenant_id, row.contract_blake3.as_slice()))
+                    .unzip();
                 // The held UPDATE locks conflict with both the writer's
                 // contract-ensure KEY SHARE and family FK checks. This fresh
                 // READ COMMITTED snapshot also sees references that committed
                 // while the first statement was acquiring those locks.
-                let deleted = sql_query(
-                    "DELETE FROM oauth_refresh_contracts AS target \
+                let deleted = if tenant_ids.is_empty() {
+                    0
+                } else {
+                    sql_query(
+                        "DELETE FROM oauth_refresh_contracts AS target \
                      USING UNNEST($1::uuid[], $2::bytea[]) AS due(tenant_id, contract_blake3) \
                      WHERE target.tenant_id = due.tenant_id \
                        AND target.contract_blake3 = due.contract_blake3 \
                        AND NOT EXISTS (SELECT 1 FROM oauth_refresh_families AS family \
                                        WHERE family.tenant_id = target.tenant_id \
                                          AND family.contract_blake3 = target.contract_blake3)",
-                )
-                .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
-                .bind::<sql_types::Array<sql_types::Binary>, _>(&digests)
-                .execute(connection)
-                .await?;
+                    )
+                    .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
+                    .bind::<sql_types::Array<sql_types::Binary>, _>(&digests)
+                    .execute(connection)
+                    .await?
+                };
+                let next = if saturated {
+                    page.pop().map(|row| ContractSweepCursor {
+                        cutoff: row.cutoff,
+                        created_at: row.created_at,
+                        tenant_id: row.tenant_id,
+                        contract_blake3: row.contract_blake3,
+                    })
+                } else {
+                    None
+                };
                 Ok((deleted as u64, saturated, next))
             })
             .await
@@ -513,7 +502,7 @@ impl SecurityStateMaintenanceRepository {
         connection: &mut AsyncPgConnection,
     ) -> Result<CredentialCleanupCounts, RepositoryError> {
         let mut cursor = self.grant_cursor.lock().await;
-        let after = cursor.clone();
+        let after = cursor.as_ref();
         // One statement handles the independent expiry categories. This also
         // avoids five empty round trips on deployments that have never enabled
         // credential issuance. Grants run afterwards, after child deletions are
@@ -562,7 +551,7 @@ impl SecurityStateMaintenanceRepository {
         .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
         .load::<CredentialExpiryCounts>(connection)
         .await
-        .and_then(single_cleanup_row)
+        .map(single_cleanup_row)
         .map_err(map_error)?;
         let mut counts = CredentialCleanupCounts {
             offers: expired.offers as u64,
@@ -611,9 +600,9 @@ impl SecurityStateMaintenanceRepository {
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
                 .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.cutoff))
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.expires_at))
-                .bind::<sql_types::Uuid, _>(after.as_ref().map_or(uuid::Uuid::nil(), |row| row.token_id))
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.map(|row| row.cutoff))
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.map(|row| row.expires_at))
+                .bind::<sql_types::Uuid, _>(after.map_or(uuid::Uuid::nil(), |row| row.token_id))
                 .load::<GrantSweepRow>(connection)
                 .await?;
                 let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;
@@ -710,16 +699,16 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     || credentials.saturated;
                 Ok(CleanupBatchResult {
                     authorization_decisions,
-                    issuances: generic.deleted_issuances.max(0) as u64,
+                    issuances: generic.deleted_issuances as u64,
                     refresh_tokens,
                     spent_refresh_proofs,
                     refresh_contracts,
-                    revocations: generic.deleted_access_token_revocations.max(0) as u64,
-                    scim_audit_events: generic.deleted_scim_audit_events.max(0) as u64,
-                    remembered_mfa_devices: generic.deleted_remembered_mfa_devices.max(0) as u64,
-                    identity_approvals: generic.deleted_identity_approvals.max(0) as u64,
-                    logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
-                    scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
+                    revocations: generic.deleted_access_token_revocations as u64,
+                    scim_audit_events: generic.deleted_scim_audit_events as u64,
+                    remembered_mfa_devices: generic.deleted_remembered_mfa_devices as u64,
+                    identity_approvals: generic.deleted_identity_approvals as u64,
+                    logout_deliveries: generic.deleted_backchannel_logout_deliveries as u64,
+                    scim_security_events: generic.deleted_scim_security_events as u64,
                     presentations,
                     credential_offers: credentials.offers,
                     credential_nonces: credentials.nonces,
@@ -741,13 +730,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
 
 // These independent SELECTs perform writes. Consume the complete implicit
 // transaction before trusting its counts or returning the guarded connection.
-fn single_cleanup_row<T>(rows: Vec<T>) -> Result<T, diesel::result::Error> {
-    let [row]: [T; 1] = rows.try_into().map_err(|_: Vec<T>| {
-        diesel::result::Error::DeserializationError(
-            "security-state cleanup returned an unexpected row count".into(),
-        )
-    })?;
-    Ok(row)
+fn single_cleanup_row<T>(mut rows: Vec<T>) -> T {
+    rows.pop().expect("cleanup SELECT returns one row")
 }
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {

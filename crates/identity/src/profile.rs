@@ -7,13 +7,11 @@ use sha2::Sha256;
 use uuid::Uuid;
 
 use crate::{
-    AccessRequest, AccessRequestStatus, NewAccessRequest, PostalAddress, PublicAccount, UserId,
-    UserProfile,
+    AccessRequest, AccessRequestStatus, NewAccessRequest, Principal, PublicAccount, UserId,
     ports::{
         AccessRequestRepositoryPort, AuthorizedApplication, AuthorizedApplicationRepositoryPort,
-        DeliveryConsume, DeliveryStorePort, FederationLink, FederationLinkRepositoryPort,
-        FederationLinkSummary, GrantSummaryRepositoryPort, ProfileRepositoryPort, ProfileUpdate,
-        RepositoryError,
+        DeliveryConsume, DeliveryStorePort, FederationLinkRepositoryPort, FederationLinkSummary,
+        GrantSummaryRepositoryPort, ProfileRepositoryPort, RepositoryError,
     },
 };
 
@@ -171,14 +169,16 @@ impl From<AuthorizedApplication> for AuthorizedApplicationView {
         Self {
             client_id: application.client_id,
             client_name: application.client_name,
-            last_scopes: application
-                .last_scopes
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .collect(),
+            last_scopes: match application.last_scopes {
+                Value::Array(values) => values
+                    .into_iter()
+                    .filter_map(|value| match value {
+                        Value::String(scope) => Some(scope),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
             last_authorized_at: application.last_authorized_at,
             authorization_count: application.authorization_count,
         }
@@ -260,18 +260,13 @@ impl AccountProfileService {
 
     pub async fn update(
         &self,
-        account: &PublicAccount,
+        principal: &Principal,
         patch: ProfilePatch,
     ) -> Result<AccountOverview, UpdateProfileError> {
-        let profile =
-            normalize_profile_patch(account, patch).map_err(UpdateProfileError::Validation)?;
+        let profile = normalize_profile_patch(patch).map_err(UpdateProfileError::Validation)?;
         let account = self
             .profiles
-            .update_profile(
-                account.tenant().tenant_id,
-                account.user_id(),
-                ProfileUpdate { profile },
-            )
+            .update_profile(principal.tenant.tenant_id, principal.user_id, profile)
             .await
             .map_err(UpdateProfileError::UpdateRepository)?;
         self.overview(account)
@@ -281,63 +276,48 @@ impl AccountProfileService {
 
     pub async fn applications(
         &self,
-        account: &PublicAccount,
+        principal: &Principal,
     ) -> Result<Vec<AuthorizedApplication>, RepositoryError> {
         self.applications
-            .applications_for_user(account.tenant().tenant_id, account.id())
+            .applications_for_user(principal.tenant.tenant_id, principal.user_id.as_uuid())
             .await
     }
 }
 
-fn normalize_profile_patch(
-    account: &PublicAccount,
-    patch: ProfilePatch,
-) -> Result<UserProfile, ProfileValidationError> {
-    let display_name = profile_text(patch.display_name, 80, "display_name")?;
-    let given_name = profile_text(patch.given_name, 80, "given_name")?;
-    let family_name = profile_text(patch.family_name, 80, "family_name")?;
-    let middle_name = profile_text(patch.middle_name, 80, "middle_name")?;
-    let nickname = profile_text(patch.nickname, 80, "nickname")?;
-    let profile_url = normalize_profile_url(patch.profile_url, "profile_url")?;
-    let website_url = normalize_profile_url(patch.website_url, "website_url")?;
-    let gender = profile_text(patch.gender, 40, "gender")?;
-    let birthdate = profile_text(patch.birthdate, 10, "birthdate")?;
-    let zoneinfo = profile_text(patch.zoneinfo, 64, "zoneinfo")?;
-    let locale = profile_text(patch.locale, 35, "locale")?;
-    let address_formatted = profile_text(patch.address_formatted, 512, "address_formatted")?;
-    let address_street_address =
-        profile_text(patch.address_street_address, 256, "address_street_address")?;
-    let address_locality = profile_text(patch.address_locality, 128, "address_locality")?;
-    let address_region = profile_text(patch.address_region, 128, "address_region")?;
-    let address_postal_code = profile_text(patch.address_postal_code, 64, "address_postal_code")?;
-    let address_country = profile_text(patch.address_country, 64, "address_country")?;
-    let phone_number = profile_text(patch.phone_number, 32, "phone_number")?;
-    let phone_number_verified =
-        account.profile.phone_number_verified && account.profile.phone_number == phone_number;
-    Ok(UserProfile {
-        display_name,
-        avatar_url: account.profile.avatar_url.clone(),
-        given_name,
-        family_name,
-        middle_name,
-        nickname,
-        profile_url,
-        website_url,
-        gender,
-        birthdate,
-        zoneinfo,
-        locale,
-        address: PostalAddress {
-            formatted: address_formatted,
-            street_address: address_street_address,
-            locality: address_locality,
-            region: address_region,
-            postal_code: address_postal_code,
-            country: address_country,
-        },
-        phone_number,
-        phone_number_verified,
+fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileValidationError> {
+    Ok(ProfilePatch {
+        display_name: profile_text(patch.display_name, 80, "display_name")?,
+        given_name: profile_text(patch.given_name, 80, "given_name")?,
+        family_name: profile_text(patch.family_name, 80, "family_name")?,
+        middle_name: profile_text(patch.middle_name, 80, "middle_name")?,
+        nickname: profile_text(patch.nickname, 80, "nickname")?,
+        profile_url: normalize_profile_url(patch.profile_url, "profile_url")?,
+        website_url: normalize_profile_url(patch.website_url, "website_url")?,
+        gender: profile_text(patch.gender, 40, "gender")?,
+        birthdate: profile_text(patch.birthdate, 10, "birthdate")?,
+        zoneinfo: profile_text(patch.zoneinfo, 64, "zoneinfo")?,
+        locale: profile_text(patch.locale, 35, "locale")?,
+        address_formatted: profile_text(patch.address_formatted, 512, "address_formatted")?,
+        address_street_address: profile_text(
+            patch.address_street_address,
+            256,
+            "address_street_address",
+        )?,
+        address_locality: profile_text(patch.address_locality, 128, "address_locality")?,
+        address_region: profile_text(patch.address_region, 128, "address_region")?,
+        address_postal_code: profile_text(patch.address_postal_code, 64, "address_postal_code")?,
+        address_country: profile_text(patch.address_country, 64, "address_country")?,
+        phone_number: profile_text(patch.phone_number, 32, "phone_number")?,
     })
+}
+
+pub(crate) fn trim_text(mut value: String) -> String {
+    value.truncate(value.trim_end().len());
+    let start = value.len() - value.trim_start().len();
+    if start != 0 {
+        value.drain(..start);
+    }
+    value
 }
 
 fn profile_text(
@@ -345,10 +325,7 @@ fn profile_text(
     max_bytes: usize,
     field: &'static str,
 ) -> Result<Option<String>, ProfileValidationError> {
-    let Some(value) = value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(value) = value.map(trim_text).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
     if value.len() > max_bytes {
@@ -433,7 +410,7 @@ fn required_access_request_text(
     max_bytes: usize,
     field: &'static str,
 ) -> Result<String, AccessRequestValidationError> {
-    let value = value.trim().to_owned();
+    let value = trim_text(value);
     if value.is_empty() {
         return Err(AccessRequestValidationError::Empty(field));
     }
@@ -501,12 +478,12 @@ where
 
     pub async fn list(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
     ) -> Result<Vec<AccessRequestWithDelivery>, AccessRequestListError> {
         const DELIVERY_LOOKUP_BATCH_SIZE: usize = 128;
         let rows = self
             .requests
-            .list_for_user(account.tenant().tenant_id, account.user_id())
+            .list_for_user(account.tenant.tenant_id, account.user_id)
             .await
             .map_err(AccessRequestListError::Repository)?;
         let candidates = rows
@@ -543,15 +520,15 @@ where
 
     pub async fn create(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
         input: NewAccessRequestInput,
     ) -> Result<AccessRequest, AccessRequestCreateError> {
         let input =
             validate_access_request_input(input).map_err(AccessRequestCreateError::Validation)?;
         self.requests
             .create(NewAccessRequest {
-                tenant_id: account.tenant().tenant_id,
-                user_id: account.user_id(),
+                tenant_id: account.tenant.tenant_id,
+                user_id: account.user_id,
                 site_name: input.site_name,
                 site_url: input.site_url,
                 request_description: input.request_description,
@@ -562,17 +539,17 @@ where
 
     pub async fn claim_delivery(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
         request_id: Uuid,
     ) -> Result<Value, DeliveryReadError> {
         let token = access_delivery_token(
             &self.client_secret_pepper,
-            account.user_id().as_uuid(),
+            account.user_id.as_uuid(),
             request_id,
         );
         let stored = self
             .deliveries
-            .load(account.user_id(), &token)
+            .load(account.user_id, &token)
             .await
             .map_err(DeliveryReadError::DeliveryStore)?
             .ok_or(DeliveryReadError::Invalid)?;
@@ -583,28 +560,28 @@ where
             if stored.value.get("delivery_state").and_then(Value::as_str) == Some("committed") {
                 let _ = self
                     .deliveries
-                    .retire(account.user_id(), &token, &stored)
+                    .retire(account.user_id, &token, &stored)
                     .await;
             }
             return Err(DeliveryReadError::Invalid);
         };
         if claim.request_id != request_id
-            || stored.value["user_id"] != serde_json::json!(account.user_id().as_uuid())
+            || stored.value["user_id"] != serde_json::json!(account.user_id.as_uuid())
         {
             let _ = self
                 .deliveries
-                .retire(account.user_id(), &token, &stored)
+                .retire(account.user_id, &token, &stored)
                 .await;
             return Err(DeliveryReadError::Invalid);
         }
         match self
             .requests
             .approved_delivery_with_required_audit_matches(
-                account.tenant().tenant_id,
-                account.user_id(),
+                account.tenant.tenant_id,
+                account.user_id,
                 claim.request_id,
                 claim.approved_client_id,
-                &claim.client_id,
+                claim.client_id,
                 stored.secret_binding.as_deref(),
             )
             .await
@@ -613,7 +590,7 @@ where
             Ok(false) => {
                 let _ = self
                     .deliveries
-                    .retire(account.user_id(), &token, &stored)
+                    .retire(account.user_id, &token, &stored)
                     .await;
                 return Err(DeliveryReadError::Invalid);
             }
@@ -621,10 +598,10 @@ where
         }
         match self
             .deliveries
-            .consume(account.user_id(), &token, &stored)
+            .consume(account.user_id, &token, &stored)
             .await
         {
-            Ok(DeliveryConsume::Consumed(value)) => Ok(value),
+            Ok(DeliveryConsume::Consumed) => Ok(stored.value),
             Ok(DeliveryConsume::MissingOrChanged) => Err(DeliveryReadError::Invalid),
             Err(error) => Err(DeliveryReadError::DeliveryStore(error)),
         }
@@ -655,10 +632,10 @@ struct DeliveryCandidate {
     token: String,
 }
 
-struct DeliveryClaim {
+struct DeliveryClaim<'a> {
     request_id: Uuid,
     approved_client_id: Uuid,
-    client_id: String,
+    client_id: &'a str,
 }
 
 fn delivery_payload_matches(candidate: &DeliveryCandidate, payload: &Value) -> bool {
@@ -668,15 +645,14 @@ fn delivery_payload_matches(candidate: &DeliveryCandidate, payload: &Value) -> b
         && payload["approved_client_id"] == serde_json::json!(candidate.approved_client_id)
 }
 
-fn delivery_claim(value: &Value) -> Option<DeliveryClaim> {
+fn delivery_claim(value: &Value) -> Option<DeliveryClaim<'_>> {
     if value.get("delivery_state")?.as_str()? != "committed" {
         return None;
     }
     Some(DeliveryClaim {
-        request_id: serde_json::from_value(value.get("request_id")?.clone()).ok()?,
-        approved_client_id: serde_json::from_value(value.get("approved_client_id")?.clone())
-            .ok()?,
-        client_id: value.get("client_id")?.as_str()?.to_owned(),
+        request_id: Uuid::parse_str(value.get("request_id")?.as_str()?).ok()?,
+        approved_client_id: Uuid::parse_str(value.get("approved_client_id")?.as_str()?).ok()?,
+        client_id: value.get("client_id")?.as_str()?,
     })
 }
 
@@ -707,31 +683,22 @@ impl FederationLinksService {
         Self { links }
     }
 
-    pub async fn list(
-        &self,
-        account: &PublicAccount,
-    ) -> Result<Vec<FederationLink>, RepositoryError> {
-        self.links
-            .list(account.tenant().tenant_id, account.user_id())
-            .await
-    }
-
     pub async fn list_summaries(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
     ) -> Result<Vec<FederationLinkSummary>, RepositoryError> {
         self.links
-            .list_summaries(account.tenant().tenant_id, account.user_id())
+            .list_summaries(account.tenant.tenant_id, account.user_id)
             .await
     }
 
     pub async fn unlink(
         &self,
-        account: &PublicAccount,
+        account: &Principal,
         link_id: Uuid,
-    ) -> Result<Option<FederationLink>, RepositoryError> {
+    ) -> Result<Option<FederationLinkSummary>, RepositoryError> {
         self.links
-            .delete(account.tenant().tenant_id, account.user_id(), link_id)
+            .delete(account.tenant.tenant_id, account.user_id, link_id)
             .await
     }
 }

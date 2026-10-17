@@ -13,14 +13,14 @@ use crate::{
 };
 
 #[must_use]
-pub fn normalize_federation_token(value: &str) -> Option<String> {
+pub fn normalize_federation_token(value: &str) -> Option<&str> {
     let value = value.trim();
     (value.len() >= 32
         && value.len() <= 256
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_'))
-    .then_some(value.to_owned())
+    .then_some(value)
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -203,29 +203,26 @@ where
         browser_binding_seed: &[u8; 32],
         now: DateTime<Utc>,
     ) -> Result<OidcFederationStart, FederationError> {
-        let start = OidcFederationStart {
-            state: random_urlsafe_token(),
+        let state = random_urlsafe_token();
+        let stored = OidcFederationState {
+            browser_binding_hash: Some(browser_binding_hash(
+                self.config.tenant.tenant_id,
+                browser_binding_seed,
+            )),
+            provider_id: Some(provider_id),
             nonce: random_urlsafe_token(),
             pkce_verifier: random_urlsafe_token(),
+            created_at: now.timestamp(),
         };
         self.states
-            .store_oidc(
-                &start.state,
-                &OidcFederationState {
-                    browser_binding_hash: Some(browser_binding_hash(
-                        self.config.tenant.tenant_id,
-                        browser_binding_seed,
-                    )),
-                    provider_id: Some(provider_id),
-                    nonce: start.nonce.clone(),
-                    pkce_verifier: start.pkce_verifier.clone(),
-                    created_at: now.timestamp(),
-                },
-                self.config.state_ttl_seconds,
-            )
+            .store_oidc(&state, &stored, self.config.state_ttl_seconds)
             .await
             .map_err(FederationError::State)?;
-        Ok(start)
+        Ok(OidcFederationStart {
+            state,
+            nonce: stored.nonce,
+            pkce_verifier: stored.pkce_verifier,
+        })
     }
 
     pub async fn consume_oidc(
@@ -240,7 +237,7 @@ where
             browser_binding_hash(self.config.tenant.tenant_id, browser_binding_seed);
         let stored = self
             .states
-            .take_oidc(&state, &expected_browser_binding_hash)
+            .take_oidc(state, &expected_browser_binding_hash)
             .await
             .map_err(ceremony_error)?
             .ok_or(FederationError::StateExpired)?;
@@ -268,27 +265,24 @@ where
         browser_binding_seed: &[u8; 32],
         now: DateTime<Utc>,
     ) -> Result<SocialFederationStart, FederationError> {
-        let start = SocialFederationStart {
-            state: random_urlsafe_token(),
+        let state = random_urlsafe_token();
+        let stored = SocialFederationState {
+            browser_binding_hash: Some(browser_binding_hash(
+                self.config.tenant.tenant_id,
+                browser_binding_seed,
+            )),
+            provider_id,
             pkce_verifier: random_urlsafe_token(),
+            created_at: now.timestamp(),
         };
         self.states
-            .store_social(
-                &start.state,
-                &SocialFederationState {
-                    browser_binding_hash: Some(browser_binding_hash(
-                        self.config.tenant.tenant_id,
-                        browser_binding_seed,
-                    )),
-                    provider_id,
-                    pkce_verifier: start.pkce_verifier.clone(),
-                    created_at: now.timestamp(),
-                },
-                self.config.state_ttl_seconds,
-            )
+            .store_social(&state, &stored, self.config.state_ttl_seconds)
             .await
             .map_err(FederationError::State)?;
-        Ok(start)
+        Ok(SocialFederationStart {
+            state,
+            pkce_verifier: stored.pkce_verifier,
+        })
     }
 
     pub async fn consume_social(
@@ -303,7 +297,7 @@ where
             browser_binding_hash(self.config.tenant.tenant_id, browser_binding_seed);
         let stored = self
             .states
-            .take_social(&state, &expected_browser_binding_hash)
+            .take_social(state, &expected_browser_binding_hash)
             .await
             .map_err(ceremony_error)?
             .ok_or(FederationError::StateExpired)?;
@@ -385,10 +379,10 @@ where
         }
         let login = FederationLogin {
             tenant: self.config.tenant,
-            provider_type: identity.provider_type.clone(),
-            provider_id: identity.provider_id.clone(),
-            subject: identity.subject.clone(),
-            email: identity.email.clone(),
+            provider_type: identity.provider_type,
+            provider_id: identity.provider_id,
+            subject: identity.subject,
+            email: identity.email,
             claims: identity.claims,
         };
         let existing = self
@@ -396,13 +390,13 @@ where
             .resolve_existing(&login)
             .await
             .map_err(FederationError::Account)?;
-        let (account, linked) = if let Some(account) = existing {
-            (account, false)
+        let (account, linked_provider) = if let Some(account) = existing {
+            (account, None)
         } else {
             if existing_only {
                 return Err(FederationError::VerifiedEmailRequired);
             }
-            let email = identity
+            let email = login
                 .email
                 .clone()
                 .ok_or(FederationError::VerifiedEmailRequired)?;
@@ -414,8 +408,8 @@ where
             {
                 self.audit
                     .record_required(FederationAuditEvent::RelinkDenied {
-                        provider_type: identity.provider_type,
-                        provider_id: identity.provider_id,
+                        provider_type: login.provider_type,
+                        provider_id: login.provider_id,
                         email,
                     })
                     .await
@@ -427,6 +421,7 @@ where
                 .hash_bootstrap_secret()
                 .await
                 .map_err(FederationError::Password)?;
+            let linked_provider = (login.provider_type.clone(), login.provider_id.clone());
             let account = self
                 .accounts
                 .create_federated(NewFederatedIdentity {
@@ -437,7 +432,7 @@ where
                 })
                 .await
                 .map_err(FederationError::Account)?;
-            (account, true)
+            (account, Some(linked_provider))
         };
         // Every account-producing branch converges here, including an
         // adapter's unique-conflict recovery. Upstream proof is already
@@ -449,12 +444,12 @@ where
                 FederationError::LoginFailed
             });
         }
-        if linked {
+        if let Some((provider_type, provider_id)) = linked_provider {
             self.audit
                 .record_required(FederationAuditEvent::IdentityLinked {
                     user_id: account.user_id(),
-                    provider_type: identity.provider_type,
-                    provider_id: identity.provider_id,
+                    provider_type,
+                    provider_id,
                 })
                 .await
                 .map_err(FederationError::State)?;

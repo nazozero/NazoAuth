@@ -25,7 +25,7 @@ fn client_display_projects_only_registered_public_metadata() {
             tos_uri: None,
         }
     );
-    assert_eq!(fixture.ports.calls(), ["client"]);
+    assert_eq!(fixture.ports.calls(), ["client_presentation"]);
 }
 
 #[test]

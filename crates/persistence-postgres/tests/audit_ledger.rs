@@ -1906,6 +1906,13 @@ async fn fresh_claim_finalizer_updates_once_and_rolls_back_every_mutation() {
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     connection.batch_execute("BEGIN").await.unwrap();
 
+    // Reconstruct the earlier schema for this historical finalizer upgrade test.
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261017000300_retire_split_audit_claim/down.sql"
+        ))
+        .await
+        .unwrap();
     // Keep legacy identity/ACL and the newest lock-relative ACK clock/observer.
     let identities = legacy_claim_identities(&mut connection).await;
     connection
@@ -2261,14 +2268,21 @@ async fn fresh_claim_keeps_chained_prefix_and_concurrent_reclaim_bytes() {
         previous_hash = hash.clone();
         hashes.push(hash);
     }
-    sql_query("SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)")
-        .bind::<diesel::sql_types::BigInt, _>(before.head_sequence)
-        .bind::<diesel::sql_types::Binary, _>(&before.head_hash)
-        .bind::<diesel::sql_types::Array<SqlUuid>, _>(ids[..2].to_vec())
-        .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(hashes)
-        .execute(&mut connection)
-        .await
-        .unwrap();
+    // Seed the pre-finalizer leftover state as the database owner. Runtime roles
+    // only receive the atomic finalizer; no split-claim API remains deployed.
+    sql_query(
+        "WITH staged AS (SELECT * FROM public.nazo_stage_security_audit_chain($1, $2, $3, $4)) \
+         UPDATE public.security_audit_chain_state AS state \
+         SET last_sequence = staged.last_sequence, last_hash = staged.last_hash \
+         FROM staged WHERE state.singleton",
+    )
+    .bind::<diesel::sql_types::BigInt, _>(before.head_sequence)
+    .bind::<diesel::sql_types::Binary, _>(&before.head_hash)
+    .bind::<diesel::sql_types::Array<SqlUuid>, _>(ids[..2].to_vec())
+    .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(hashes)
+    .execute(&mut connection)
+    .await
+    .unwrap();
     // Only chained leftovers are selected; empty new arrays must open a prefix
     // whose tail is legitimately below the existing global chain head.
     for (offset, id) in ids[..2].iter().enumerate() {

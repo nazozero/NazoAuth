@@ -6,10 +6,10 @@ use base64::{
 };
 use hmac::{Hmac, Mac};
 use nazo_auth::{
-    AdminClientCryptoPort, ClientSecretDigesterPort, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-    client_jwe_encryption_key_matches_alg,
+    AdminClientCryptoPort, ClientJwksCapabilities, ClientSecretDigesterPort,
+    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, client_jwe_encryption_key_matches_alg,
 };
-use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
+use nazo_crypto::jwt::Algorithm;
 use serde_json::Value;
 use sha2::Sha256;
 
@@ -85,28 +85,16 @@ impl AdminClientCryptoPort for ClientRegistrationCrypto {
         (secret, digest)
     }
 
-    fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
-        validate_client_jwks(jwks)
+    fn inspect_jwks(
+        &self,
+        jwks: &Value,
+        certificate_auth: bool,
+    ) -> Result<ClientJwksCapabilities, String> {
+        inspect_client_jwks(jwks, certificate_auth)
     }
 
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         validate_rfc4514_dn(value)
-    }
-
-    fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
-        client_jwks_matching_encryption_key_count(jwks, algorithm)
-    }
-
-    fn contains_signing_key(&self, jwks: &Value) -> bool {
-        client_jwks_contains_signing_key(jwks)
-    }
-
-    fn contains_signing_key_for_algorithm(&self, jwks: &Value, algorithm: &str) -> bool {
-        client_jwks_contains_signing_key_for_algorithm(jwks, algorithm)
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
-        validate_self_signed_mtls_jwks(jwks)
     }
 }
 
@@ -116,56 +104,51 @@ impl ClientSecretDigesterPort for ClientRegistrationCrypto {
     }
 }
 
-#[must_use]
-pub fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usize {
-    jwks.get("keys")
+pub fn inspect_client_jwks(
+    jwks: &Value,
+    certificate_auth: bool,
+) -> Result<ClientJwksCapabilities, String> {
+    if !certificate_auth {
+        return validate_client_jwks(jwks);
+    }
+    let mut capabilities = ClientJwksCapabilities::default();
+    for key in jwks
+        .get("keys")
         .and_then(Value::as_array)
-        .map_or(0, |keys| {
-            keys.iter()
-                .filter(|key| client_jwe_encryption_key_matches_alg(key, alg))
-                .count()
-        })
+        .into_iter()
+        .flatten()
+    {
+        if !capabilities.has_current_mtls_certificate {
+            capabilities.has_current_mtls_certificate = key
+                .get("x5c")
+                .and_then(Value::as_array)
+                .and_then(|chain| chain.first())
+                .and_then(Value::as_str)
+                .is_some_and(valid_current_x5c_certificate);
+        }
+        let Some(alg) = key.get("alg").and_then(Value::as_str) else {
+            continue;
+        };
+        if let Some((name, algorithm)) = client_jwt_algorithm_from_name(alg) {
+            if valid_client_signing_key(key, algorithm) {
+                capabilities.signing_algorithms.insert(name);
+            }
+        } else if let Some(algorithm) = SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+            .iter()
+            .copied()
+            .find(|value| *value == alg)
+            && client_jwe_encryption_key_matches_alg(key, algorithm)
+        {
+            *capabilities
+                .encryption_key_counts
+                .entry(algorithm)
+                .or_default() += 1;
+        }
+    }
+    Ok(capabilities)
 }
 
-#[must_use]
-pub fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
-    jwks.get("keys")
-        .and_then(Value::as_array)
-        .is_some_and(|keys| {
-            keys.iter().any(|key| {
-                let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
-                let Some(algorithm) = key
-                    .get("alg")
-                    .and_then(Value::as_str)
-                    .and_then(client_jwt_algorithm_from_name)
-                else {
-                    return false;
-                };
-                public_key_use == "sig" && jwt_decoding_key_from_jwk(key, algorithm).is_some()
-            })
-        })
-}
-
-#[must_use]
-pub fn client_jwks_contains_signing_key_for_algorithm(jwks: &Value, expected: &str) -> bool {
-    jwks.get("keys")
-        .and_then(Value::as_array)
-        .is_some_and(|keys| {
-            keys.iter().any(|key| {
-                let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
-                let algorithm_name = key.get("alg").and_then(Value::as_str);
-                let Some(algorithm) = algorithm_name.and_then(client_jwt_algorithm_from_name)
-                else {
-                    return false;
-                };
-                public_key_use == "sig"
-                    && algorithm_name == Some(expected)
-                    && jwt_decoding_key_from_jwk(key, algorithm).is_some()
-            })
-        })
-}
-
-pub fn validate_client_jwks(jwks: &Value) -> Result<(), String> {
+pub fn validate_client_jwks(jwks: &Value) -> Result<ClientJwksCapabilities, String> {
     let keys = jwks
         .get("keys")
         .and_then(Value::as_array)
@@ -173,6 +156,7 @@ pub fn validate_client_jwks(jwks: &Value) -> Result<(), String> {
     if keys.is_empty() {
         return Err("jwks.keys 不能为空".to_owned());
     }
+    let mut capabilities = ClientJwksCapabilities::default();
     let mut seen_kids = HashSet::new();
     let mut unidentified_key_classes = HashSet::new();
     for key in keys {
@@ -201,35 +185,43 @@ pub fn validate_client_jwks(jwks: &Value) -> Result<(), String> {
             .get("alg")
             .and_then(Value::as_str)
             .ok_or_else(|| "jwks 公钥必须声明 alg".to_owned())?;
-        if kid.is_none()
-            && !unidentified_key_classes.insert((public_key_use.to_owned(), alg.to_owned()))
-        {
+        if kid.is_none() && !unidentified_key_classes.insert((public_key_use, alg)) {
             return Err("省略 kid 时，相同 use 与 alg 的公钥必须唯一".to_owned());
         }
         match public_key_use {
             "sig" => {
-                let Some(algorithm) = client_jwt_algorithm_from_name(alg) else {
+                let Some((name, algorithm)) = client_jwt_algorithm_from_name(alg) else {
                     return Err(format!(
                         "jwks alg 必须是 {} 或 {}",
                         SUPPORTED_CLIENT_JWT_SIGNING_ALGS.join(", "),
                         SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.join(", ")
                     ));
                 };
-                if jwt_decoding_key_from_jwk(key, algorithm).is_none() {
+                if !valid_client_signing_key(key, algorithm) {
                     return Err("jwks 公钥材料与 alg 不匹配".to_owned());
                 }
+                capabilities.signing_algorithms.insert(name);
             }
             "enc" => {
-                if !SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.contains(&alg)
-                    || !client_jwe_encryption_key_matches_alg(key, alg)
-                {
+                let Some(algorithm) = SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+                    .iter()
+                    .copied()
+                    .find(|value| *value == alg)
+                else {
+                    return Err("jwks 公钥材料与 alg 不匹配".to_owned());
+                };
+                if !client_jwe_encryption_key_matches_alg(key, algorithm) {
                     return Err("jwks 公钥材料与 alg 不匹配".to_owned());
                 }
+                *capabilities
+                    .encryption_key_counts
+                    .entry(algorithm)
+                    .or_default() += 1;
             }
             _ => return Err("jwks 公钥 use 必须为 sig 或 enc".to_owned()),
         }
     }
-    Ok(())
+    Ok(capabilities)
 }
 
 pub fn validate_rfc4514_dn(value: &str) -> Result<(), String> {
@@ -264,21 +256,6 @@ fn parse_rfc4514_dn(value: &str) -> Option<String> {
     Some(name.to_string().to_lowercase())
 }
 
-#[must_use]
-pub fn validate_self_signed_mtls_jwks(jwks: &Value) -> bool {
-    jwks.get("keys")
-        .and_then(Value::as_array)
-        .is_some_and(|keys| {
-            keys.iter().any(|key| {
-                key.get("x5c")
-                    .and_then(Value::as_array)
-                    .and_then(|x5c| x5c.first())
-                    .and_then(Value::as_str)
-                    .is_some_and(valid_current_x5c_certificate)
-            })
-        })
-}
-
 fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> Result<(), String> {
     const PRIVATE_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
     if PRIVATE_MEMBERS
@@ -290,74 +267,62 @@ fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> Result<(), 
     Ok(())
 }
 
-fn client_jwt_algorithm_from_name(value: &str) -> Option<Algorithm> {
+fn client_jwt_algorithm_from_name(value: &str) -> Option<(&'static str, Algorithm)> {
     match value {
-        "EdDSA" => Some(Algorithm::EdDSA),
-        "RS256" => Some(Algorithm::RS256),
-        "ES256" => Some(Algorithm::ES256),
-        "PS256" => Some(Algorithm::PS256),
+        "EdDSA" => Some(("EdDSA", Algorithm::EdDSA)),
+        "RS256" => Some(("RS256", Algorithm::RS256)),
+        "ES256" => Some(("ES256", Algorithm::ES256)),
+        "PS256" => Some(("PS256", Algorithm::PS256)),
         _ => None,
     }
 }
 
-fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerificationKey> {
-    let expected_alg = match alg {
-        Algorithm::EdDSA => "EdDSA",
-        Algorithm::RS256 => "RS256",
-        Algorithm::ES256 => "ES256",
-        Algorithm::PS256 => "PS256",
-        _ => return None,
-    };
-    if key.get("alg").and_then(Value::as_str) != Some(expected_alg)
-        || key.get("d").is_some()
+fn valid_client_signing_key(key: &Value, alg: Algorithm) -> bool {
+    if key.get("d").is_some()
         || key
             .get("use")
             .and_then(Value::as_str)
             .is_some_and(|value| value != "sig")
     {
-        return None;
+        return false;
     }
+    let coordinate = |name: &str| {
+        key.get(name).and_then(Value::as_str).is_some_and(|value| {
+            URL_SAFE_NO_PAD
+                .decode_slice(value, &mut [0_u8; 32])
+                .is_ok_and(|length| length == 32)
+        })
+    };
     match alg {
         Algorithm::EdDSA => {
-            if key.get("kty").and_then(Value::as_str) != Some("OKP")
-                || key.get("crv").and_then(Value::as_str) != Some("Ed25519")
-            {
-                return None;
-            }
-            let x = key.get("x").and_then(Value::as_str)?;
-            (URL_SAFE_NO_PAD.decode(x).ok()?.len() == 32)
-                .then(|| JwtVerificationKey::from_ed_components(x).ok())
-                .flatten()
+            key.get("kty").and_then(Value::as_str) == Some("OKP")
+                && key.get("crv").and_then(Value::as_str) == Some("Ed25519")
+                && coordinate("x")
         }
         Algorithm::RS256 | Algorithm::PS256 => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
-                return None;
+                return false;
             }
-            let n = key.get("n").and_then(Value::as_str)?;
-            let e = key.get("e").and_then(Value::as_str)?;
-            if URL_SAFE_NO_PAD.decode(n).ok()?.len() < 256
-                || URL_SAFE_NO_PAD.decode(e).ok()?.is_empty()
-            {
-                return None;
-            }
-            JwtVerificationKey::from_rsa_components(n, e).ok()
+            let (Some(n), Some(e)) = (
+                key.get("n").and_then(Value::as_str),
+                key.get("e").and_then(Value::as_str),
+            ) else {
+                return false;
+            };
+            let (Ok(modulus), Ok(exponent)) =
+                (URL_SAFE_NO_PAD.decode(n), URL_SAFE_NO_PAD.decode(e))
+            else {
+                return false;
+            };
+            modulus.len() >= 256 && !exponent.is_empty()
         }
         Algorithm::ES256 => {
-            if key.get("kty").and_then(Value::as_str) != Some("EC")
-                || key.get("crv").and_then(Value::as_str) != Some("P-256")
-            {
-                return None;
-            }
-            let x = key.get("x").and_then(Value::as_str)?;
-            let y = key.get("y").and_then(Value::as_str)?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
-                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
-            {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            key.get("kty").and_then(Value::as_str) == Some("EC")
+                && key.get("crv").and_then(Value::as_str) == Some("P-256")
+                && coordinate("x")
+                && coordinate("y")
         }
-        _ => None,
+        _ => false,
     }
 }
 
@@ -385,14 +350,46 @@ fn hash_client_secret(secret: &str, pepper: &str) -> String {
     client_secret_digest(secret, pepper, &salt)
 }
 
-fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
+/// Persisted client-secret verifier used by registration and authentication.
+pub fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
+    let mac = client_secret_mac(secret, pepper, salt)
+        .finalize()
+        .into_bytes();
+    let digest = base64::display::Base64Display::new(&mac, &URL_SAFE_NO_PAD);
+    format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{digest}")
+}
+
+/// Check a delivered secret against the stored issuance generation.
+pub fn client_secret_matches_digest(secret: &str, pepper: &str, encoded: &str) -> bool {
+    let mut parts = encoded.split(':');
+    if parts.next() != Some(CLIENT_SECRET_HASH_VERSION) {
+        return false;
+    }
+    let Some(salt) = parts.next().filter(|salt| !salt.is_empty()) else {
+        return false;
+    };
+    let Some(encoded_mac) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    let mut mac = [0_u8; 32];
+    if URL_SAFE_NO_PAD.decode_slice(encoded_mac, &mut mac) != Ok(mac.len()) {
+        return false;
+    }
+    client_secret_mac(secret, pepper, salt)
+        .verify_slice(&mac)
+        .is_ok()
+}
+
+fn client_secret_mac(secret: &str, pepper: &str, salt: &str) -> Hmac<Sha256> {
     let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(pepper.as_bytes())
         .expect("HMAC accepts any key");
     mac.update(salt.as_bytes());
     mac.update(b":");
     mac.update(secret.as_bytes());
-    let digest = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
-    format!("{CLIENT_SECRET_HASH_VERSION}:{salt}:{digest}")
+    mac
 }
 
 #[cfg(test)]

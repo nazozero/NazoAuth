@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 pub(crate) async fn verify_confidential_client(
     state: &TestInfrastructure,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
@@ -55,7 +55,7 @@ pub(crate) async fn verify_confidential_client(
 
 async fn verify_confidential_client_with_resolver(
     state: &TestInfrastructure,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &ClientRow,
     credentials: &ClientCredentials,
     resolver: &dyn nazo_oauth_server::contracts::dynamic_client_registration::RemoteJwksResolverPort,
@@ -156,10 +156,10 @@ fn token_management_state() -> TestInfrastructure {
     )
 }
 
-fn request_facts(
+fn request_facts<'a>(
     state: &TestInfrastructure,
-    request: &actix_web::HttpRequest,
-) -> ClientAuthRequestFacts {
+    request: &'a actix_web::HttpRequest,
+) -> ClientAuthRequestFacts<'a> {
     crate::http::token::client_auth_request_facts(
         request,
         &state.settings.endpoint.trusted_proxy_cidrs,

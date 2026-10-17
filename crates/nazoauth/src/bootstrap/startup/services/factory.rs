@@ -29,7 +29,7 @@ const HTTP_MAX_CONNECTIONS_PER_WORKER: usize = 4_096;
 #[derive(Default)]
 struct WorkerTenantDataCache {
     index: Option<Arc<TenantHostIndex>>,
-    by_host: HashMap<String, Rc<Extensions>>,
+    by_host: HashMap<String, (Rc<Extensions>, Arc<Settings>)>,
 }
 
 impl WorkerTenantDataCache {
@@ -47,14 +47,16 @@ impl WorkerTenantDataCache {
             self.by_host.clear();
         }
 
-        let runtime = index.by_host.get(host)?;
-        Some((
-            self.by_host
-                .entry(host.to_owned())
-                .or_insert_with(|| runtime.assembly().app_data_container())
-                .clone(),
-            Arc::clone(&runtime.assembly().startup.settings),
-        ))
+        if let Some(data) = self.by_host.get(host) {
+            return Some(data.clone());
+        }
+        let assembly = index.by_host.get(host)?.assembly();
+        let data = (
+            assembly.app_data_container(),
+            Arc::clone(&assembly.startup.settings),
+        );
+        self.by_host.insert(host.to_owned(), data.clone());
+        Some(data)
     }
 }
 
@@ -94,10 +96,7 @@ where
             .map_into_right_body());
     };
 
-    let tenant_id = container
-        .get::<web::Data<nazo_identity::TenantContext>>()
-        .ok_or_else(|| actix_web::error::ErrorInternalServerError("tenant context is unavailable"))?
-        .tenant_id;
+    let tenant_id = cors_settings.tenant.context.tenant_id;
     request.add_data_container(container);
     Ok(crate::bootstrap::cors::REQUEST_CORS_SETTINGS
         .scope(cors_settings, async {
@@ -139,15 +138,15 @@ pub(super) async fn run(
     process: Arc<ProcessRuntime>,
     registry: TenantRuntimeRegistry,
 ) -> anyhow::Result<()> {
-    let config = process.config.clone();
+    let config = &process.config;
     let route_settings = process.route_settings.clone();
     let control_discovery = process.control_discovery.clone();
     let control_tenant_id = web::Data::new(crate::bootstrap::routes::ControlTenantId::new(
         process.control_tenant_id,
     ));
-    let bind = config.string("BIND", "0.0.0.0:8000");
+    let bind = config.get("BIND").unwrap_or("0.0.0.0:8000");
     let addr: SocketAddr = bind.parse()?;
-    let direct_tls = crate::bootstrap::direct_tls_listeners(&config, &route_settings)?;
+    let direct_tls = crate::bootstrap::direct_tls_listeners(config, &route_settings)?;
     let client_verifier = match direct_tls.as_ref() {
         Some(listeners) => Some(listeners.client_verifier.clone()),
         None => config
@@ -161,7 +160,7 @@ pub(super) async fn run(
             .transpose()?,
     };
     let proxy_client_verifier = client_verifier.clone();
-    let ui_static_dir = crate::bootstrap::ui_release::resolve(&config).await?;
+    let ui_static_dir = crate::bootstrap::ui_release::resolve(config).await?;
     tracing::info!("nazo-oauth-server(actix-web) listening on {addr}");
 
     let server = HttpServer::new(move || {

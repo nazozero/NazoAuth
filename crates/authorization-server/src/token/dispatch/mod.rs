@@ -12,7 +12,6 @@ use crate::token::client_auth::{
     ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
     authenticate_client_with_dependencies,
     consume_token_client_assertion_with_authorization_service,
-    perform_dummy_client_secret_verification,
 };
 use crate::token::client_credentials::token_client_credentials_with_service;
 use crate::token::device_issuance::token_device_code_with_service;
@@ -237,10 +236,6 @@ impl TokenEndpointHandles {
         {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
             Ok(None) => {
-                perform_dummy_client_secret_verification(
-                    credentials,
-                    issuance_config.client_secret_pepper(),
-                );
                 return Err(OAuthEndpointError::token(
                     StatusCode::UNAUTHORIZED,
                     "invalid_client",
@@ -270,7 +265,8 @@ impl TokenEndpointHandles {
         } else {
             validate_token_client_enabled(&client, &form.grant_type)?;
         }
-        let auth_request = ClientAuthRequestFacts::new(facts.dpop.path, facts.certificate.clone());
+        let auth_request =
+            ClientAuthRequestFacts::borrowed(facts.dpop.path, facts.certificate.as_ref());
         let mut client_attestation_jkt = None;
         let client_assertion = if let Some((attestation, proof)) = attestation_headers {
             if client.token_endpoint_auth_method != "attest_jwt_client_auth" {
@@ -291,6 +287,7 @@ impl TokenEndpointHandles {
             };
             let validated = match validator
                 .validate_for_client(
+                    &client.client_id,
                     attestation,
                     proof,
                     issuance_config.issuer(),
@@ -298,7 +295,7 @@ impl TokenEndpointHandles {
                 )
                 .await
             {
-                Ok(validated) if validated.client_id == client.client_id => validated,
+                Ok(validated) => validated,
                 _ => {
                     return Err(OAuthEndpointError::token(
                         StatusCode::UNAUTHORIZED,
@@ -319,7 +316,7 @@ impl TokenEndpointHandles {
                     false,
                 ));
             }
-            client_attestation_jkt = Some(validated.client_instance_key_thumbprint.clone());
+            client_attestation_jkt = Some(validated.client_instance_key_thumbprint);
             match authorization_service
                 .consume_client_attestation_proof(
                     &validated.client_id,
@@ -457,7 +454,7 @@ impl TokenEndpointHandles {
                     &issuance,
                     &facts,
                     &client,
-                    &form,
+                    form,
                     client_assertion.as_ref(),
                 )
                 .await
@@ -530,7 +527,7 @@ impl TokenEndpointHandles {
                 execute_pre_authorized(
                     endpoint.as_ref(),
                     pre_authorized,
-                    Some(client.client_id.clone()),
+                    Some(client.registration.client_id),
                     sender.dpop_jkt,
                     sender.mtls_x5t_s256,
                 )

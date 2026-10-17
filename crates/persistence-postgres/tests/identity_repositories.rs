@@ -6,11 +6,11 @@ use diesel::{
 use diesel_async::RunQueryDsl;
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_identity::{
-    AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, RealmId, TenantContext, TenantId,
-    UserId, UserProfile,
+    AdminPolicyError, AdminUserUpdateOutcome, OrganizationId, ProfilePatch, RealmId, TenantContext,
+    TenantId, UserId, UserProfile,
     ports::{
         AdminUserUpdate, EncodedSecretHash, FederationLogin, MfaRepositoryPort,
-        NewFederatedIdentity, NewFederationLink, ProfileUpdate, RepositoryError,
+        NewFederatedIdentity, NewFederationLink, RepositoryError, TotpEnrollmentCheck,
     },
     scim::NormalizedScimUser,
 };
@@ -90,6 +90,79 @@ fn mfa_repository(pool: nazo_postgres::DbPool) -> MfaRepository {
     let current = MfaTotpKey::new("test-current", [0x11; 32]).expect("test key id is valid");
     let key_ring = MfaTotpKeyRing::new(current, None).expect("test key ring is valid");
     MfaRepository::with_totp_key_ring(pool, Some(key_ring))
+}
+
+#[tokio::test]
+async fn password_login_projection_tracks_current_state_and_tenant() {
+    use nazo_identity::ports::{LoginAccountRepositoryPort, LoginAccountState};
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = UserRepository::new(pool.clone());
+    assert_eq!(
+        repository
+            .login_state_by_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        Some(LoginAccountState {
+            active: true,
+            mfa_enabled: false
+        })
+    );
+    assert!(
+        repository
+            .login_state_by_id(TenantId::new(Uuid::now_v7()).unwrap(), user_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let public = repository
+        .public_account_by_id(tenant.tenant_id, user_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let credential = repository
+        .authentication_by_email(tenant.tenant_id, &public.account.email)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(credential.user_id, user_id);
+    assert!(credential.active);
+    assert!(
+        repository
+            .authentication_by_email(
+                TenantId::new(Uuid::now_v7()).unwrap(),
+                &public.account.email
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET is_active = FALSE, mfa_enabled = TRUE WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    assert_eq!(
+        repository
+            .login_state_by_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        Some(LoginAccountState {
+            active: false,
+            mfa_enabled: true
+        })
+    );
+    cleanup(&pool, user_id).await;
+    assert!(
+        repository
+            .login_state_by_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 async fn cleanup(pool: &nazo_postgres::DbPool, user_id: UserId) {
@@ -282,11 +355,7 @@ async fn fixture_mfa_generation(
         return row.id;
     }
     mfa_repository(pool.clone())
-        .begin_totp_enrollment(
-            tenant_id,
-            user_id,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
-        )
+        .begin_totp_enrollment(tenant_id, user_id, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         .await
         .unwrap();
     let mut connection = get_conn(pool).await.unwrap();
@@ -514,8 +583,10 @@ async fn profile_update_persists_only_the_typed_profile_projection() {
         .update_profile(
             tenant.tenant_id,
             user_id,
-            ProfileUpdate {
-                profile: profile.clone(),
+            ProfilePatch {
+                display_name: profile.display_name.clone(),
+                phone_number: profile.phone_number.clone(),
+                ..ProfilePatch::default()
             },
         )
         .await
@@ -550,9 +621,10 @@ async fn client_secret_comparison_returns_only_salt_and_database_equality() {
 
     assert_eq!(
         repository
-            .client_secret_salt(client.tenant_id, client.id)
+            .authentication_snapshot(client.tenant_id, &client.client_id)
             .await
             .unwrap()
+            .and_then(|(_, salt, _)| salt)
             .as_deref(),
         Some("c2FsdA")
     );
@@ -631,7 +703,7 @@ async fn totp_last_step_compare_and_set_has_one_concurrent_winner() {
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            nazo_identity::mfa::base32_encode(&secret),
+            &nazo_identity::mfa::base32_encode(&secret),
         )
         .await
         .unwrap();
@@ -698,7 +770,7 @@ async fn totp_verification_classification_and_audit_are_atomic_and_replay_safe()
     let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", STEP).unwrap();
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET.to_owned())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET)
         .await
         .unwrap();
     let mut connection = get_conn(&pool).await.unwrap();
@@ -766,7 +838,7 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
         .begin_totp_enrollment(
             tenant.tenant_id,
             user_id,
-            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_owned(),
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
         )
         .await
         .unwrap();
@@ -786,13 +858,13 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
             .unwrap(),
         nazo_identity::ports::TotpVerificationOutcome::Invalid
     );
-    let enrollment = repository
-        .totp_enrollment(tenant.tenant_id, user_id)
-        .await
-        .unwrap()
-        .expect("pending enrollment remains available");
-    assert!(!enrollment.confirmed);
-    assert!(enrollment.last_used_step.is_none());
+    assert_eq!(
+        repository
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
+            .await
+            .unwrap(),
+        TotpEnrollmentCheck::InvalidCode
+    );
     let events = identity_security_events(&pool, user_id).await;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type, "mfa_totp_attempt");
@@ -809,7 +881,7 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
     const SECRET: &str = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET.to_owned())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET)
         .await
         .unwrap();
     let step = chrono::Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
@@ -1017,38 +1089,39 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     let other_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     let trait_repository: &dyn MfaRepositoryPort = &repository;
 
-    assert!(
+    assert_eq!(
         trait_repository
-            .totp_enrollment(tenant.tenant_id, user_id)
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
-    assert!(
+    assert_eq!(
         trait_repository
-            .totp_enrollment(other_tenant, user_id)
+            .check_totp_enrollment(other_tenant, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
 
     trait_repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, secret_base32.clone())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, &secret_base32)
         .await
         .unwrap();
     trait_repository
-        .begin_totp_enrollment(tenant.tenant_id, user_id, secret_base32.clone())
+        .begin_totp_enrollment(tenant.tenant_id, user_id, &secret_base32)
         .await
         .unwrap();
-    let enrollment = trait_repository
-        .totp_enrollment(tenant.tenant_id, user_id)
-        .await
-        .unwrap()
-        .expect("the pending encrypted enrollment should be readable");
-    assert_eq!(enrollment.secret_base32, secret_base32);
-    assert!(!enrollment.confirmed);
-
     let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let code = nazo_identity::mfa::totp_for_step(&secret, step).unwrap();
+    assert_eq!(
+        trait_repository
+            .check_totp_enrollment(tenant.tenant_id, user_id, &code, timestamp)
+            .await
+            .unwrap(),
+        TotpEnrollmentCheck::ValidCode
+    );
+
     let invalid_hashes = (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
         .map(|index| EncodedSecretHash::new(format!("invalid-{index}")).unwrap())
         .collect();
@@ -1083,13 +1156,20 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await
         )
     );
-    let credential = trait_repository
-        .totp_enrollment(tenant.tenant_id, user_id)
-        .await
-        .unwrap()
-        .expect("confirmed TOTP credential should be readable");
-    assert_eq!(credential.secret_base32, secret_base32);
-    assert_eq!(credential.last_used_step, Some(step));
+    assert!(
+        !trait_repository
+            .begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP")
+            .await
+            .unwrap(),
+        "starting enrollment must preserve the confirmed credential"
+    );
+    assert_eq!(
+        trait_repository
+            .check_totp_enrollment(tenant.tenant_id, user_id, &code, timestamp)
+            .await
+            .unwrap(),
+        TotpEnrollmentCheck::AlreadyConfirmed
+    );
     assert_eq!(
         trait_repository
             .verify_and_confirm_totp(
@@ -1300,12 +1380,12 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         )
         .await
         .unwrap();
-    assert!(
+    assert_eq!(
         trait_repository
-            .totp_enrollment(tenant.tenant_id, user_id)
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
     assert!(
         trait_repository
@@ -1459,6 +1539,13 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
     let link_port: &dyn FederationLinkRepositoryPort = &links;
     assert_eq!(
         passkey_port
+            .credential_ids(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        vec![credential.credential.id.clone()],
+    );
+    assert_eq!(
+        passkey_port
             .list_summaries(tenant.tenant_id, user_id)
             .await
             .unwrap(),
@@ -1486,13 +1573,31 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
         .unwrap();
     assert_eq!(stored.credential, corrupt_payload);
     drop(conn);
-    assert_eq!(
-        links.list(tenant.tenant_id, user_id).await.unwrap(),
-        vec![link]
-    );
+    let mut conn = get_conn(&pool).await.unwrap();
+    let stored = sql_query("SELECT claims AS credential FROM external_identity_links WHERE id=$1")
+        .bind::<diesel::sql_types::Uuid, _>(link.id)
+        .get_result::<StoredPayload>(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(stored.credential, link.claims);
+    drop(conn);
     let foreign_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     let foreign_user = UserId::new(Uuid::now_v7()).unwrap();
     for (tenant_id, scoped_user) in [(foreign_tenant, user_id), (tenant.tenant_id, foreign_user)] {
+        assert!(
+            link_port
+                .delete(tenant_id, scoped_user, link.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            passkey_port
+                .credential_ids(tenant_id, scoped_user)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         assert!(
             passkey_port
                 .list_summaries(tenant_id, scoped_user)
@@ -1508,6 +1613,13 @@ async fn identity_display_projections_preserve_metadata_and_tenant_user_scope() 
                 .is_empty()
         );
     }
+    assert_eq!(
+        link_port
+            .delete(tenant.tenant_id, user_id, link.id)
+            .await
+            .unwrap(),
+        Some(FederationLinkSummary::from(link))
+    );
     cleanup(&pool, user_id).await;
 }
 
@@ -1746,15 +1858,11 @@ async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
         .unwrap();
     drop(connection);
     let (left, right) = tokio::join!(
-        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP".into(),),
-        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "GEZDGNBVGY3TQOJQ".into(),)
+        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "JBSWY3DPEHPK3PXP",),
+        repository.begin_totp_enrollment(tenant.tenant_id, user_id, "GEZDGNBVGY3TQOJQ",)
     );
-    assert!(
-        left.is_ok() || right.is_ok(),
-        "left={left:?}, right={right:?}"
-    );
-    assert!(matches!(left, Ok(()) | Err(RepositoryError::Conflict)));
-    assert!(matches!(right, Ok(()) | Err(RepositoryError::Conflict)));
+    assert_eq!(left, Ok(true));
+    assert_eq!(right, Ok(true));
     cleanup(&pool, user_id).await;
 }
 
@@ -1802,8 +1910,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
 
     assert_eq!(
         repository
-            .admin_update_authorized(
-                tenant.tenant_id,
+            .admin_update_with_required_audit(
+                tenant,
                 actor_id,
                 user_id,
                 AdminUserUpdate {
@@ -1811,6 +1919,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                     admin_level: None,
                     active: None,
                 },
+                "fixture-source".to_owned(),
             )
             .await
             .unwrap(),
@@ -1825,8 +1934,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
     assert_eq!(unchanged.admin_level(), 0);
 
     let promoted = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             user_id,
             AdminUserUpdate {
@@ -1834,6 +1943,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                 admin_level: Some(5),
                 active: None,
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
@@ -1844,8 +1954,8 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
     assert_eq!(promoted.admin_level(), 5);
 
     let level_only = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             user_id,
             AdminUserUpdate {
@@ -1853,6 +1963,7 @@ async fn admin_partial_update_validates_final_role_level_before_commit() {
                 admin_level: Some(7),
                 active: None,
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
@@ -1884,8 +1995,8 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
     let repository = UserRepository::new(pool.clone());
     let (foreign_tenant, foreign_user_id) = foreign_tenant_user_fixture(&pool).await;
     let cross_tenant = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             foreign_user_id,
             AdminUserUpdate {
@@ -1893,6 +2004,7 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: Some(1),
                 active: Some(false),
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
@@ -1909,8 +2021,8 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
     assert!(foreign.principal.active);
 
     let promoted = repository
-        .admin_update_authorized(
-            tenant.tenant_id,
+        .admin_update_with_required_audit(
+            tenant,
             actor_id,
             target_id,
             AdminUserUpdate {
@@ -1918,14 +2030,15 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: Some(5),
                 active: None,
             },
+            "fixture-source".to_owned(),
         )
         .await
         .unwrap();
     assert!(matches!(promoted, AdminUserUpdateOutcome::Updated(_)));
 
     let (higher_actor, lower_actor) = tokio::join!(
-        repository.admin_update_authorized(
-            tenant.tenant_id,
+        repository.admin_update_with_required_audit(
+            tenant,
             actor_id,
             target_id,
             AdminUserUpdate {
@@ -1933,9 +2046,10 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: Some(4),
                 active: None,
             },
+            "fixture-source".to_owned(),
         ),
-        repository.admin_update_authorized(
-            tenant.tenant_id,
+        repository.admin_update_with_required_audit(
+            tenant,
             target_id,
             actor_id,
             AdminUserUpdate {
@@ -1943,6 +2057,7 @@ async fn authorized_admin_update_serializes_hierarchy_and_audit_in_one_transacti
                 admin_level: None,
                 active: Some(false),
             },
+            "fixture-source".to_owned(),
         )
     );
     assert!(matches!(
@@ -1995,7 +2110,11 @@ fn admin_user_page_is_tenant_scoped_at_the_query_boundary() {
     let page = source
         .split("pub async fn page(")
         .nth(1)
-        .and_then(|source| source.split("pub async fn admin_update_authorized(").next())
+        .and_then(|source| {
+            source
+                .split("pub async fn admin_update_with_required_audit(")
+                .next()
+        })
         .expect("page repository function remains present");
     assert_eq!(
         page.matches(".filter(users::tenant_id.eq(tenant_id.as_uuid()))")
@@ -2790,11 +2909,11 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     assert!(!userinfo.contains(".active_subject_claims("));
     assert!(!userinfo.contains(".active_subject_claims_by_access_token("));
     assert!(!userinfo.contains(".client_by_protocol_id("));
-    // The VCI UUID access branch only needs the narrow principal projection.
+    // The VCI UUID access branch only needs tenant-scoped active presence.
     assert!(vci_access.contains(".active_subject_id("));
     assert!(!vci_access.contains(".active_subject_claims("));
     assert!(token_issuance.contains(".active_subject_claims_by_tenant_id("));
-    assert!(token_issuance.contains(".active_subject_id_by_tenant_id("));
+    assert!(token_issuance.contains(".is_active_by_tenant_id("));
     assert!(token_issuance.contains("fn userinfo_snapshot"));
     assert!(!token_issuance.contains("clients: OAuthClientRepository"));
 }
@@ -2820,21 +2939,11 @@ fn client_registration_keeps_plaintext_out_of_protocol_core_and_postgres() {
     assert!(postgres_approval.contains("client.registration_access_token_blake3.as_deref()"));
 }
 
-/// ID-01: the narrow active-subject read resolves the live principal's user
-/// id, and the token-port adapter forwards to the same read.
 #[tokio::test]
-async fn active_subject_id_by_tenant_id_returns_the_live_principal_subject() {
+async fn active_subject_id_returns_the_live_subject() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
     };
-    let repository = UserRepository::new(pool.clone());
-    assert_eq!(
-        repository
-            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
-            .await
-            .unwrap(),
-        Some(user_id.as_uuid())
-    );
     let issuance = nazo_postgres::TokenIssuanceRepository::new(pool.clone());
     assert_eq!(
         nazo_auth::TokenRepositoryPort::active_subject_id(
@@ -2844,169 +2953,8 @@ async fn active_subject_id_by_tenant_id_returns_the_live_principal_subject() {
         )
         .await
         .unwrap(),
-        Some(user_id.as_uuid()),
-        "the token port adapter must forward to active_subject_id_by_tenant_id"
+        Some(user_id.as_uuid())
     );
-    cleanup(&pool, user_id).await;
-}
-
-/// ID-01/ID-05: `active_subject_id_by_tenant_id` is a single query filtered on
-/// tenant + user + `is_active` that projects only the seven `PrincipalRow`
-/// columns — no profile, email, username, or credential columns are decoded.
-#[test]
-fn active_subject_id_read_projects_only_the_seven_principal_columns() {
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))
-        .expect("user repository source is readable");
-    let body = users
-        .split("pub async fn active_subject_id_by_tenant_id(")
-        .nth(1)
-        .and_then(|source| source.split("pub async fn is_active_by_tenant_id(").next())
-        .expect("active_subject_id_by_tenant_id remains present");
-
-    for required in [
-        ".filter(users::tenant_id.eq(tenant_id.as_uuid()))",
-        ".filter(users::is_active.eq(true))",
-        "PrincipalRow::as_select()",
-        "identity::principal_row",
-        "principal.user_id.as_uuid()",
-    ] {
-        assert!(
-            body.contains(required),
-            "the narrow active-subject read must contain `{required}`"
-        );
-    }
-    for absent in [
-        "realm_id.eq",
-        "organization_id.eq",
-        "SubjectClaimsRow",
-        "PublicAccountRow",
-        "AuthenticationIdentityRow",
-        "username",
-        "email",
-        "password_hash",
-        "display_name",
-        "mfa_enabled",
-        "profile_url",
-    ] {
-        assert!(
-            !body.contains(absent),
-            "the narrow active-subject read must not select `{absent}`"
-        );
-    }
-
-    let rows = std::fs::read_to_string(manifest.join("src/rows/identity.rs"))
-        .expect("identity row source is readable");
-    let record = rows
-        .split("struct PrincipalRow")
-        .nth(1)
-        .and_then(|source| source.split('}').next())
-        .expect("PrincipalRow remains present");
-    for field in [
-        "id",
-        "tenant_id",
-        "realm_id",
-        "organization_id",
-        "is_active",
-        "role",
-        "admin_level",
-    ] {
-        assert!(
-            record.contains(&format!("{field}:")),
-            "PrincipalRow must keep the `{field}` column"
-        );
-    }
-    assert_eq!(
-        record.matches("pub(crate)").count(),
-        7,
-        "PrincipalRow must stay at exactly the seven principal columns:\n{record}"
-    );
-    for absent in [
-        "username",
-        "email",
-        "password",
-        "display_name",
-        "profile_url",
-        "phone_number",
-        "address_",
-        "birthdate",
-        "zoneinfo",
-        "locale",
-        "gender",
-        "avatar",
-        "nickname",
-        "verified",
-        "mfa",
-    ] {
-        assert!(
-            !record.contains(absent),
-            "PrincipalRow must not carry `{absent}`:\n{record}"
-        );
-    }
-
-    // The token-issuance adapter wiring forwards to the same read.
-    let token_issuance =
-        std::fs::read_to_string(manifest.join("src/repositories/token_issuance.rs"))
-            .expect("token issuance repository source is readable");
-    let port = token_issuance
-        .split("fn active_subject_id(")
-        .nth(1)
-        .and_then(|source| source.split("fn active_subject_id_by_access_token(").next())
-        .expect("the TokenRepositoryPort::active_subject_id adapter remains present");
-    assert!(
-        port.contains(".active_subject_id_by_tenant_id("),
-        "the port adapter must forward to UserRepository::active_subject_id_by_tenant_id"
-    );
-}
-
-/// ID-02: a persisted row that violates the role/admin_level invariant fails
-/// the same principal conversion the subject-claims read uses — the narrow
-/// read surfaces `Consistency`, never a live subject id.
-#[tokio::test]
-async fn active_subject_id_fails_closed_on_corrupt_principal_rows() {
-    let Some((pool, tenant, user_id)) = database_fixture().await else {
-        return;
-    };
-    let repository = UserRepository::new(pool.clone());
-    assert!(
-        repository
-            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
-            .await
-            .unwrap()
-            .is_some()
-    );
-
-    // Same corrupt-row seeding as
-    // `subject_claims_reject_invalid_persisted_role_invariant`, plus the
-    // mirrored invalid combination.
-    for (role, admin_level) in [("admin", 0_i32), ("user", 2_i32)] {
-        let mut connection = get_conn(&pool).await.unwrap();
-        sql_query("UPDATE users SET role = $1, admin_level = $2 WHERE id = $3")
-            .bind::<Text, _>(role)
-            .bind::<diesel::sql_types::Integer, _>(admin_level)
-            .bind::<SqlUuid, _>(user_id.as_uuid())
-            .execute(&mut connection)
-            .await
-            .unwrap();
-        drop(connection);
-
-        let error = repository
-            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(error, RepositoryError::Consistency(_)),
-            "corrupt ({role}, {admin_level}) must fail conversion, got {error:?}"
-        );
-        let claims_error = repository
-            .subject_claims_by_id(tenant, user_id)
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(claims_error, RepositoryError::Consistency(_)),
-            "the subject-claims read must fail the same way, got {claims_error:?}"
-        );
-    }
     cleanup(&pool, user_id).await;
 }
 
@@ -3016,10 +2964,11 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
     };
-    let repository = UserRepository::new(pool.clone());
+    use nazo_auth::TokenRepositoryPort as _;
+    let repository = nazo_postgres::TokenIssuanceRepository::new(pool.clone());
     assert!(
         repository
-            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .active_subject_id(tenant.tenant_id.as_uuid(), user_id.as_uuid())
             .await
             .unwrap()
             .is_some()
@@ -3028,7 +2977,7 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
     let missing = UserId::new(Uuid::now_v7()).unwrap();
     assert_eq!(
         repository
-            .active_subject_id_by_tenant_id(tenant.tenant_id, missing)
+            .active_subject_id(tenant.tenant_id.as_uuid(), missing.as_uuid())
             .await
             .unwrap(),
         None
@@ -3036,7 +2985,7 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
     let foreign_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     assert_eq!(
         repository
-            .active_subject_id_by_tenant_id(foreign_tenant, user_id)
+            .active_subject_id(foreign_tenant.as_uuid(), user_id.as_uuid())
             .await
             .unwrap(),
         None,
@@ -3052,22 +3001,10 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
     drop(connection);
     assert_eq!(
         repository
-            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .active_subject_id(tenant.tenant_id.as_uuid(), user_id.as_uuid())
             .await
             .unwrap(),
         None
-    );
-    let issuance = nazo_postgres::TokenIssuanceRepository::new(pool.clone());
-    assert_eq!(
-        nazo_auth::TokenRepositoryPort::active_subject_id(
-            &issuance,
-            tenant.tenant_id.as_uuid(),
-            user_id.as_uuid()
-        )
-        .await
-        .unwrap(),
-        None,
-        "the port adapter must also resolve inactive subjects to None"
     );
     cleanup(&pool, user_id).await;
 }
@@ -3077,7 +3014,7 @@ async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users()
 /// return, stays tenant-scoped, suppresses the salt for inactive clients, and
 /// `client_secret_salt` keeps serving the DCR path directly.
 #[tokio::test]
-async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
+async fn authentication_snapshot_preserves_client_metadata_salt_and_epoch() {
     let Some((pool, tenant, user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
@@ -3123,10 +3060,6 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
         .await
         .unwrap()
         .unwrap();
-    let split_salt = repository
-        .client_secret_salt(client.tenant_id, client.id)
-        .await
-        .unwrap();
     assert_eq!(
         serde_json::to_value(&snapshot_client.registration).unwrap(),
         serde_json::to_value(&split_client.registration).unwrap(),
@@ -3140,9 +3073,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
         split_client.organization_id
     );
     assert_eq!(snapshot_client.is_active, split_client.is_active);
-    // CA-02/CA-07: the snapshot salt is exactly what client_secret_salt reads.
-    assert_eq!(snapshot_salt, split_salt);
-    assert_eq!(split_salt.as_deref(), Some("ca-salt"));
+    assert_eq!(snapshot_salt.as_deref(), Some("ca-salt"));
 
     // The authorization-flow port adapter forwards the same snapshot.
     let flow = nazo_postgres::AuthorizationFlowRepository::new(pool.clone(), client.tenant_id);
@@ -3156,7 +3087,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     assert_eq!(ported.client.id, client.id);
     assert_eq!(ported.secret_salt.as_deref(), Some("ca-salt"));
 
-    // CA-02: a wrong-tenant lookup resolves nothing on either read.
+    // A wrong-tenant lookup resolves no authentication snapshot.
     let foreign_tenant = Uuid::now_v7();
     assert!(
         repository
@@ -3164,13 +3095,6 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
             .await
             .unwrap()
             .is_none()
-    );
-    assert_eq!(
-        repository
-            .client_secret_salt(foreign_tenant, client.id)
-            .await
-            .unwrap(),
-        None
     );
     // An unknown client id resolves nothing.
     assert!(
@@ -3190,8 +3114,7 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     assert_eq!(public_salt, None);
 
     // An inactive client still returns its row (callers reject it via
-    // `is_active`) but the snapshot suppresses the salt, matching the split
-    // reads: client_secret_salt filters on is_active.
+    // `is_active`) but the snapshot suppresses the salt.
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
         .bind::<SqlUuid, _>(client.id)
@@ -3209,13 +3132,6 @@ async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
     assert_eq!(
         inactive_salt, None,
         "an inactive client must not leak a usable secret salt"
-    );
-    assert_eq!(
-        repository
-            .client_secret_salt(client.tenant_id, client.id)
-            .await
-            .unwrap(),
-        None
     );
 
     let mut connection = get_conn(&pool).await.unwrap();
@@ -3400,20 +3316,12 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
     .await
     .unwrap();
     drop(conn);
-    let snapshot = repo
-        .public_account_by_id(tenant.tenant_id, user)
-        .await
-        .unwrap()
-        .unwrap()
-        .profile;
+    let snapshot = ProfilePatch {
+        phone_number: Some("+15550000001".to_owned()),
+        ..ProfilePatch::default()
+    };
     let same = repo
-        .update_profile(
-            tenant.tenant_id,
-            user,
-            ProfileUpdate {
-                profile: snapshot.clone(),
-            },
-        )
+        .update_profile(tenant.tenant_id, user, snapshot.clone())
         .await
         .unwrap();
     assert!(
@@ -3443,7 +3351,7 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
         let mut stale = snapshot.clone();
         stale.nickname = Some("nickname-only-patch".to_owned());
         let result = repo
-            .update_profile(tenant.tenant_id, user, ProfileUpdate { profile: stale })
+            .update_profile(tenant.tenant_id, user, stale)
             .await
             .unwrap();
         assert!(
@@ -3452,12 +3360,12 @@ async fn profile_update_cannot_restore_stale_phone_verification() {
         );
     }
     // Existing nullable phone semantics remain unchanged; NULL is never
-    // newly verified by the profile endpoint's supplied old snapshot flag.
+    // newly verified by a profile write.
     let mut empty = snapshot;
     empty.phone_number = None;
     assert!(
         !repo
-            .update_profile(tenant.tenant_id, user, ProfileUpdate { profile: empty })
+            .update_profile(tenant.tenant_id, user, empty)
             .await
             .unwrap()
             .profile
@@ -3730,12 +3638,12 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
             .await
             .unwrap()
     );
-    assert!(
+    assert_eq!(
         repository
-            .totp_enrollment(tenant.tenant_id, user_id)
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
     blocker
         .batch_execute(&format!(

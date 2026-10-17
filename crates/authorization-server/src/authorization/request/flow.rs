@@ -17,8 +17,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{
-    AuthorizationRequestContext, AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
-    apply_request_object_with_context, authorization_login_query,
+    AuthorizationRequestContext, AuthorizationResponseRedirect, apply_request_object_with_context,
     authorization_login_url_with_context, authorization_oauth_error_redirect,
     authorization_response_redirect_with_context, consume_reauth_nonce_with_context,
     credential_configuration_ids, is_pushed_authorization_request_uri,
@@ -172,14 +171,14 @@ pub(crate) async fn authorize_request_with_context(
             "该客户端未启用 authorization_code 授权类型.",
         ));
     }
-    let client_policy = client.security_policy.clone();
-    let fapi2_security = context.config.requires_fapi2_security(&client_policy);
+    let client_policy = &client.security_policy;
+    let fapi2_security = context.config.requires_fapi2_security(client_policy);
     let signed_request_required = context
         .config
-        .requires_signed_authorization_request(&client_policy);
+        .requires_signed_authorization_request(client_policy);
     let signed_response_required = context
         .config
-        .requires_signed_authorization_response(&client_policy);
+        .requires_signed_authorization_response(client_policy);
     if fapi2_security && pending_external_request_uri.is_some() {
         consumed_request_uri_error = Some("request_uri_not_supported");
         pending_external_request_uri = None;
@@ -213,6 +212,7 @@ pub(crate) async fn authorize_request_with_context(
     if let Some(response) = runtime_authorization_capability_error(context, q) {
         return Err(response);
     }
+    let client_policy = &client.security_policy;
     let request_dpop_jkt = match q.get("dpop_jkt") {
         Some(value) if is_valid_dpop_jkt(value) => Some(value.clone()),
         Some(_) => {
@@ -257,20 +257,33 @@ pub(crate) async fn authorize_request_with_context(
         };
 
     if let Some(error) = consumed_request_uri_error {
-        return authorization_oauth_error_redirect(context, &redirect_uri, error, q).await;
+        return authorization_oauth_error_redirect(context, &mut client, &redirect_uri, error, q)
+            .await;
     }
     if (fapi2_security || client_policy.require_pushed_authorization_requests)
         && !used_pushed_authorization_request
     {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
-            .await;
+        return authorization_oauth_error_redirect(
+            context,
+            &mut client,
+            &redirect_uri,
+            "invalid_request",
+            q,
+        )
+        .await;
     }
     if signed_request_required
         && !used_pushed_authorization_request
         && !direct_request_object_present
     {
-        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
-            .await;
+        return authorization_oauth_error_redirect(
+            context,
+            &mut client,
+            &redirect_uri,
+            "invalid_request",
+            q,
+        )
+        .await;
     }
     if let Some(error_response) = request_object_error {
         if let OAuthEndpointError::Json(fields)
@@ -279,7 +292,14 @@ pub(crate) async fn authorize_request_with_context(
         | OAuthEndpointError::Bearer(fields) = &error_response
         {
             let error = &fields.error;
-            return authorization_oauth_error_redirect(context, &redirect_uri, error, q).await;
+            return authorization_oauth_error_redirect(
+                context,
+                &mut client,
+                &redirect_uri,
+                error,
+                q,
+            )
+            .await;
         }
         return Err(error_response);
     }
@@ -319,6 +339,7 @@ pub(crate) async fn authorize_request_with_context(
         Err(error) => {
             return authorization_oauth_error_redirect(
                 context,
+                &mut client,
                 &redirect_uri,
                 error.oauth_error(),
                 q,
@@ -359,23 +380,14 @@ pub(crate) async fn authorize_request_with_context(
         AuthorizationSessionDecision::LoginRequired => {
             return authorization_response_redirect_with_context(
                 context,
+                &mut client,
                 AuthorizationResponseRedirect {
                     redirect_uri: &redirect_uri,
-                    client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
                     response_mode: q.get("response_mode").map(String::as_str),
                     code: None,
                     error: Some("login_required"),
                     state: q.get("state").map(String::as_str),
                     oidc_sid: None,
-                    client_policy: Some(AuthorizationResponseClientPolicy {
-                        signed_response_required,
-                        session_management_allowed: client_policy.session_management,
-                        ttl_seconds: if fapi2_security {
-                            context.config.auth_code_ttl_seconds.min(60)
-                        } else {
-                            context.config.auth_code_ttl_seconds
-                        },
-                    }),
                 },
             )
             .await;
@@ -385,11 +397,7 @@ pub(crate) async fn authorize_request_with_context(
         } => {
             return match authorization_login_url_with_context(
                 context,
-                &authorization_login_query(
-                    q,
-                    original_authorization_query.as_ref(),
-                    pending_pushed_request_uri.as_ref(),
-                ),
+                original_authorization_query.as_ref().unwrap_or(q),
                 fresh_authentication,
             )
             .await
@@ -403,8 +411,14 @@ pub(crate) async fn authorize_request_with_context(
     if let Some(replay) = request_object_replay.as_ref()
         && let Err(error) = context.service.consume_request_object_replay(replay).await
     {
-        return authorization_oauth_error_redirect(context, &redirect_uri, error.oauth_error(), q)
-            .await;
+        return authorization_oauth_error_redirect(
+            context,
+            &mut client,
+            &redirect_uri,
+            error.oauth_error(),
+            q,
+        )
+        .await;
     }
     let session = session.expect("authorization session policy allowed continuation");
     if let Some(issuer_state) = q.get("issuer_state") {
@@ -414,6 +428,7 @@ pub(crate) async fn authorize_request_with_context(
         ) {
             return authorization_oauth_error_redirect(
                 context,
+                &mut client,
                 &redirect_uri,
                 "invalid_request",
                 q,
@@ -423,6 +438,7 @@ pub(crate) async fn authorize_request_with_context(
         let Some(offers) = context.credential_authorization_offers else {
             return authorization_oauth_error_redirect(
                 context,
+                &mut client,
                 &redirect_uri,
                 "temporarily_unavailable",
                 q,
@@ -443,6 +459,7 @@ pub(crate) async fn authorize_request_with_context(
             Ok(None) => {
                 return authorization_oauth_error_redirect(
                     context,
+                    &mut client,
                     &redirect_uri,
                     "invalid_request",
                     q,
@@ -453,6 +470,7 @@ pub(crate) async fn authorize_request_with_context(
                 tracing::warn!(%error, "failed to resolve OpenID4VCI issuer_state");
                 return authorization_oauth_error_redirect(
                     context,
+                    &mut client,
                     &redirect_uri,
                     "temporarily_unavailable",
                     q,
@@ -469,6 +487,7 @@ pub(crate) async fn authorize_request_with_context(
         }) {
             return authorization_oauth_error_redirect(
                 context,
+                &mut client,
                 &redirect_uri,
                 "invalid_request",
                 q,
@@ -539,6 +558,7 @@ pub(crate) async fn authorize_request_with_context(
         ) {
             return authorization_oauth_error_redirect(
                 context,
+                &mut client,
                 &redirect_uri,
                 "consent_required",
                 q,
@@ -549,6 +569,7 @@ pub(crate) async fn authorize_request_with_context(
         // existing consent_required outcome when current coverage is absent.
         return issue_authorization_code_without_interaction_with_context(
             context,
+            &mut client,
             facts,
             payload,
             pending_pushed_request_expires_at,

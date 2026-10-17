@@ -3,12 +3,10 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use nazo_persistence::{SecurityAuditAnchorHealth, SecurityAuditBatch};
 
-use super::protocol::encode_hash;
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AnchorCheckpoint {
     pub(super) sequence: i64,
-    pub(super) hash: String,
+    pub(super) hash: Vec<u8>,
 }
 
 impl AnchorCheckpoint {
@@ -18,18 +16,18 @@ impl AnchorCheckpoint {
         snapshot.last_exported_at?;
         Some(Self {
             sequence: snapshot.last_exported_sequence?,
-            hash: encode_hash(snapshot.last_exported_hash.as_deref()?),
+            hash: snapshot.last_exported_hash.as_ref()?.clone(),
         })
     }
 
     pub(super) fn from_batch(batch: &SecurityAuditBatch) -> Self {
         Self {
             sequence: batch.last_sequence,
-            hash: encode_hash(&batch.last_hash),
+            hash: batch.last_hash.clone(),
         }
     }
 
-    pub(super) fn genesis(hash: String) -> Self {
+    pub(super) fn genesis(hash: Vec<u8>) -> Self {
         Self { sequence: 0, hash }
     }
 }

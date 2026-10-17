@@ -50,7 +50,7 @@ impl AvatarProfileService {
 
     pub(crate) async fn complete_direct_upload(
         &self,
-        account: &nazo_identity::PublicAccount,
+        account: nazo_identity::PublicAccount,
         upload_id: &str,
     ) -> Result<nazo_identity::AccountOverview, nazo_identity::DirectAvatarUploadError> {
         match self {

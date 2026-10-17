@@ -168,7 +168,7 @@ async fn scim_outbox_is_atomic_receiver_scoped_and_terminally_acknowledged() {
     );
 
     let activate_mutation = MutationContext::enabled();
-    ScimRepository::new(pool.clone())
+    let patched = ScimRepository::new(pool.clone())
         .patch_with_mutation(
             tenant,
             user_id,
@@ -180,6 +180,12 @@ async fn scim_outbox_is_atomic_receiver_scoped_and_terminally_acknowledged() {
         )
         .await
         .unwrap();
+    assert_eq!(
+        patched.account.email,
+        format!("scim-event-replaced-{suffix}@example.test")
+    );
+    assert!(patched.principal.active);
+
     let activated = store
         .apply_dispositions_and_poll(&first, &request)
         .await
@@ -203,21 +209,71 @@ async fn scim_outbox_is_atomic_receiver_scoped_and_terminally_acknowledged() {
         .await
         .unwrap();
 
-    let deactivate_mutation = MutationContext::enabled();
-    assert!(
-        ScimRepository::new(pool.clone())
-            .deactivate_with_mutation(tenant, user_id, deactivate_mutation)
-            .await
-            .unwrap()
+    let renamed = ScimRepository::new(pool.clone())
+        .patch_with_mutation(
+            tenant,
+            user_id,
+            ScimPatch {
+                display_name: Some("Updated profile".to_owned()),
+                ..ScimPatch::default()
+            },
+            MutationContext::enabled(),
+        )
+        .await
+        .unwrap();
+    assert!(renamed.principal.active);
+    assert_eq!(renamed.account.email, patched.account.email);
+    assert_eq!(
+        renamed.profile.display_name.as_deref(),
+        Some("Updated profile")
     );
+    let renamed_events = store
+        .apply_dispositions_and_poll(&first, &request)
+        .await
+        .unwrap();
+    assert_eq!(renamed_events.events.len(), 1);
+    assert!(
+        renamed_events.events[0]
+            .events
+            .contains_key(PATCH_NOTICE_EVENT)
+    );
+    assert!(!renamed_events.events[0].events.contains_key(ACTIVATE_EVENT));
+    assert!(
+        !renamed_events.events[0]
+            .events
+            .contains_key(DEACTIVATE_EVENT)
+    );
+    store
+        .apply_dispositions_and_poll(
+            &first,
+            &ValidatedPollRequest {
+                ack: vec![renamed_events.events[0].id],
+                ..request.clone()
+            },
+        )
+        .await
+        .unwrap();
+
+    let deactivate_mutation = MutationContext::enabled();
+    let concurrent_mutation = MutationContext::enabled();
+    let repository = ScimRepository::new(pool.clone());
+    let (first_delete, second_delete) = tokio::join!(
+        repository.deactivate_with_mutation(tenant, user_id, deactivate_mutation),
+        repository.deactivate_with_mutation(tenant, user_id, concurrent_mutation),
+    );
+    assert!(first_delete.unwrap());
+    assert!(second_delete.unwrap());
     let deactivated = store
         .apply_dispositions_and_poll(&first, &request)
         .await
         .unwrap();
     assert_eq!(deactivated.events.len(), 1);
-    assert_eq!(
-        deactivated.events[0].transaction_id,
-        deactivate_mutation.transaction_id().unwrap()
+    assert!(
+        [
+            deactivate_mutation.transaction_id(),
+            concurrent_mutation.transaction_id()
+        ]
+        .contains(&Some(deactivated.events[0].transaction_id))
     );
     assert_eq!(deactivated.events[0].events.len(), 1);
     assert!(deactivated.events[0].events.contains_key(DEACTIVATE_EVENT));

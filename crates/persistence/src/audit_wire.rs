@@ -1,6 +1,6 @@
 //! Borrowed audit anchor JSON shared by new-batch sizing and delivery.
 use crate::{SecurityAuditBatch, SecurityAuditPendingDelivery};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{display::Base64Display, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Serialize, Serializer, ser::SerializeSeq};
 use std::io::{self, Write};
 
@@ -16,17 +16,22 @@ struct BatchEnvelope<'a> {
     first_sequence: i64,
     last_sequence: i64,
     event_count: i64,
-    previous_hash: String,
-    last_hash: String,
-    batch_digest: String,
+    #[serde(serialize_with = "serialize_base64")]
+    previous_hash: &'a [u8],
+    #[serde(serialize_with = "serialize_base64")]
+    last_hash: &'a [u8],
+    #[serde(serialize_with = "serialize_base64")]
+    batch_digest: &'a [u8],
     events: Events<'a>,
 }
 #[derive(Serialize)]
 struct Event<'a> {
     event_id: uuid::Uuid,
     sequence: i64,
-    previous_hash: String,
-    event_hash: String,
+    #[serde(serialize_with = "serialize_base64")]
+    previous_hash: &'a [u8],
+    #[serde(serialize_with = "serialize_base64")]
+    event_hash: &'a [u8],
     event_type: &'a str,
     event_category: &'a str,
     occurred_at: chrono::DateTime<chrono::Utc>,
@@ -37,8 +42,8 @@ impl<'a> From<&'a SecurityAuditPendingDelivery> for Event<'a> {
         Self {
             event_id: delivery.event_id,
             sequence: delivery.sequence,
-            previous_hash: URL_SAFE_NO_PAD.encode(&delivery.previous_hash),
-            event_hash: URL_SAFE_NO_PAD.encode(&delivery.event_hash),
+            previous_hash: &delivery.previous_hash,
+            event_hash: &delivery.event_hash,
             event_type: &delivery.event_type,
             event_category: &delivery.event_category,
             occurred_at: delivery.occurred_at,
@@ -46,6 +51,10 @@ impl<'a> From<&'a SecurityAuditPendingDelivery> for Event<'a> {
         }
     }
 }
+fn serialize_base64<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(&Base64Display::new(bytes, &URL_SAFE_NO_PAD))
+}
+
 struct Events<'a>(&'a [SecurityAuditPendingDelivery]);
 impl Serialize for Events<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -98,9 +107,9 @@ pub fn security_audit_empty_envelope_wire_length(
             first_sequence: first.sequence,
             last_sequence: last.sequence,
             event_count,
-            previous_hash: URL_SAFE_NO_PAD.encode(&first.previous_hash),
-            last_hash: URL_SAFE_NO_PAD.encode(&last.event_hash),
-            batch_digest: URL_SAFE_NO_PAD.encode([0_u8; 32]),
+            previous_hash: &first.previous_hash,
+            last_hash: &last.event_hash,
+            batch_digest: &[0_u8; 32],
             events: Events(&[]),
         },
     )?;
@@ -118,9 +127,9 @@ pub fn security_audit_batch_body(
         first_sequence: batch.first_sequence,
         last_sequence: batch.last_sequence,
         event_count: batch.event_count(),
-        previous_hash: URL_SAFE_NO_PAD.encode(&batch.previous_hash),
-        last_hash: URL_SAFE_NO_PAD.encode(&batch.last_hash),
-        batch_digest: URL_SAFE_NO_PAD.encode(&batch.digest),
+        previous_hash: &batch.previous_hash,
+        last_hash: &batch.last_hash,
+        batch_digest: &batch.digest,
         events: Events(&batch.deliveries),
     })
 }

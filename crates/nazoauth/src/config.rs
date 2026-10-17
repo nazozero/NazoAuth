@@ -107,16 +107,10 @@ impl ServerConfigExtension {
 static SERVER_CONFIG_EXTENSION: OnceLock<ServerConfigExtension> = OnceLock::new();
 
 pub fn install_server_config_extension(extension: ServerConfigExtension) -> anyhow::Result<()> {
-    if let Some(installed) = SERVER_CONFIG_EXTENSION.get() {
-        if installed == &extension {
-            return Ok(());
-        }
-        anyhow::bail!("server configuration extension is already installed");
-    }
-    match SERVER_CONFIG_EXTENSION.set(extension.clone()) {
+    match SERVER_CONFIG_EXTENSION.set(extension) {
         Ok(()) => Ok(()),
-        Err(_) if SERVER_CONFIG_EXTENSION.get() == Some(&extension) => Ok(()),
-        Err(_) => anyhow::bail!("server configuration extension installation raced"),
+        Err(extension) if SERVER_CONFIG_EXTENSION.get() == Some(&extension) => Ok(()),
+        Err(_) => anyhow::bail!("server configuration extension is already installed"),
     }
 }
 
@@ -553,11 +547,7 @@ impl ConfigSource {
     }
 
     pub fn required_string(&self, key: &str) -> anyhow::Result<String> {
-        let Some(value) = self
-            .get(key)
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty())
-        else {
+        let Some(value) = self.optional_string(key) else {
             bail!("{key} is required");
         };
         Ok(value)
@@ -578,20 +568,21 @@ impl ConfigSource {
 
     pub fn optional_string(&self, key: &str) -> Option<String> {
         self.get(key)
-            .map(|value| value.trim().to_owned())
+            .map(str::trim)
             .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
     }
 
-    pub fn get(&self, key: &str) -> Option<String> {
+    pub fn get(&self, key: &str) -> Option<&str> {
         self.env_values
             .get(key)
             .or_else(|| self.file_values.get(key))
             .or_else(|| self.generated_values.get(key))
-            .cloned()
+            .map(String::as_str)
     }
 
     pub fn string(&self, key: &str, default: &str) -> String {
-        self.get(key).unwrap_or_else(|| default.to_owned())
+        self.get(key).unwrap_or(default).to_owned()
     }
 
     pub fn parse<T>(&self, key: &str, default: T) -> anyhow::Result<T>
@@ -611,7 +602,7 @@ impl ConfigSource {
         let Some(value) = self.get(key) else {
             return Ok(default);
         };
-        let Some(parsed) = parse_bool(&value) else {
+        let Some(parsed) = parse_bool(value) else {
             bail!("{key} must be a boolean value");
         };
         Ok(parsed)
@@ -630,15 +621,15 @@ impl ConfigSource {
     }
 
     fn normalize_persistent_paths(&mut self) -> anyhow::Result<()> {
-        let config_dir = self.config_dir.clone();
+        let config_dir = &self.config_dir;
         for key in PERSISTENT_PATH_CONFIG_KEYS {
             if let Some(value) = self.file_values.get_mut(*key) {
-                *value = resolve_persistent_path(&config_dir, key, value)?
+                *value = resolve_persistent_path(config_dir, key, value)?
                     .display()
                     .to_string();
             }
             if let Some(value) = self.env_values.get_mut(*key) {
-                *value = resolve_persistent_path(&config_dir, key, value)?
+                *value = resolve_persistent_path(config_dir, key, value)?
                     .display()
                     .to_string();
             }
@@ -669,7 +660,7 @@ impl ConfigSource {
             if !include_worker_config && AUDIT_ANCHOR_WORKER_CONFIG_KEYS.contains(&key) {
                 continue;
             }
-            let value = yaml_value_to_string(key, &value)?;
+            let value = yaml_value_to_string(key, value)?;
             self.file_values.insert(key.to_owned(), value);
         }
         Ok(())
@@ -761,9 +752,9 @@ impl ConfigSource {
             32,
             &secrets_dir,
         )?;
-        if self.bool("ENABLE_OPENID4VCI_ISSUER", false)?
-            || self.bool("ENABLE_OPENID4VP_VERIFIER", false)?
-        {
+        let enable_issuer = self.bool("ENABLE_OPENID4VCI_ISSUER", false)?;
+        let enable_verifier = self.bool("ENABLE_OPENID4VP_VERIFIER", false)?;
+        if enable_issuer || enable_verifier {
             self.generate_secret_if_absent(
                 "OPENID4VC_DATA_ENCRYPTION_KEY",
                 "openid4vc-data-encryption-key",
@@ -771,7 +762,7 @@ impl ConfigSource {
                 &secrets_dir,
             )?;
         }
-        if self.bool("ENABLE_OPENID4VCI_ISSUER", false)? {
+        if enable_issuer {
             self.generate_secret_if_absent(
                 "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN",
                 "openid4vci-issuer-management-token",
@@ -779,7 +770,7 @@ impl ConfigSource {
                 &secrets_dir,
             )?;
         }
-        if self.bool("ENABLE_OPENID4VP_VERIFIER", false)? {
+        if enable_verifier {
             self.generate_secret_if_absent(
                 "OPENID4VP_VERIFIER_MANAGEMENT_TOKEN",
                 "openid4vp-verifier-management-token",
@@ -818,7 +809,7 @@ impl ConfigSource {
         let Some(value) = self.get(key) else {
             return;
         };
-        let digest = blake3::hash(value.as_bytes()).to_hex().to_string();
+        let digest = blake3::hash(value.as_bytes()).to_hex();
         self.generated_values
             .insert(id_key.to_owned(), format!("generated-{}", &digest[..16]));
     }
@@ -1067,14 +1058,14 @@ fn restrict_secret_permissions(_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn yaml_value_to_string(key: &str, value: &YamlValue) -> anyhow::Result<String> {
+fn yaml_value_to_string(key: &str, value: YamlValue) -> anyhow::Result<String> {
     match value {
-        YamlValue::String(value) => Ok(value.clone()),
+        YamlValue::String(value) => Ok(value),
         YamlValue::Bool(value) => Ok(value.to_string()),
         YamlValue::Number(value) => Ok(value.to_string()),
         YamlValue::Sequence(values) => {
             let values = values
-                .iter()
+                .into_iter()
                 .map(|value| yaml_value_to_string(key, value))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             Ok(values.join(","))
@@ -1084,10 +1075,19 @@ fn yaml_value_to_string(key: &str, value: &YamlValue) -> anyhow::Result<String> 
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => Some(true),
-        "0" | "false" | "no" | "off" => Some(false),
-        _ => None,
+    let value = value.trim();
+    if ["1", "true", "yes", "on"]
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
+    {
+        Some(true)
+    } else if ["0", "false", "no", "off"]
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
+    {
+        Some(false)
+    } else {
+        None
     }
 }
 

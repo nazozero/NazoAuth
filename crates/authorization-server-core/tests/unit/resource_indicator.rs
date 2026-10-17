@@ -3,16 +3,23 @@ use super::*;
 #[test]
 fn resource_indicators_require_absolute_unique_fragmentless_uris() {
     assert_eq!(
-        parse_resource_indicators(&["https://api.example".to_owned()]).unwrap(),
+        parse_resource_indicators(vec!["https://api.example".to_owned()]).unwrap(),
         ["https://api.example"]
     );
     assert_eq!(
-        parse_resource_indicators(&["relative".to_owned()]),
+        parse_resource_indicators(vec!["relative".to_owned()]),
         Err(ResourceIndicatorError::Invalid)
     );
     assert_eq!(
-        parse_resource_indicators(&["https://api.example#fragment".to_owned()]),
+        parse_resource_indicators(vec!["https://api.example#fragment".to_owned()]),
         Err(ResourceIndicatorError::Invalid)
+    );
+    assert_eq!(
+        parse_resource_indicators(vec![
+            "https://api.example".to_owned(),
+            "https://api.example".to_owned()
+        ]),
+        Err(ResourceIndicatorError::Duplicate)
     );
 }
 

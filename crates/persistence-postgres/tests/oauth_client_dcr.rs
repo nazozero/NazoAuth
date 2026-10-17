@@ -154,6 +154,13 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
     let shared_protocol_id = format!("tenant-boundary-{}", Uuid::now_v7());
     default_client.client_id = shared_protocol_id.clone();
     other_client.client_id = shared_protocol_id.clone();
+    default_client.client_name = "Default tenant client".to_owned();
+    default_client.presentation = nazo_auth::ClientPresentationMetadata {
+        logo_uri: Some("https://client.example/logo.svg".to_owned()),
+        policy_uri: Some("https://client.example/privacy".to_owned()),
+        tos_uri: Some("https://client.example/terms".to_owned()),
+    };
+    other_client.client_name = "Other tenant client".to_owned();
     let secret_hash = "client-secret-v1:tenant-salt:tenant-digest";
     repository
         .insert(&default_client, Some(secret_hash), None)
@@ -176,25 +183,50 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
         .unwrap();
     assert_eq!(default_lookup.id, default_client.id);
     assert_eq!(other_lookup.id, other_client.id);
+    assert_eq!(
+        repository
+            .active_client_presentation(default_client.tenant_id, &shared_protocol_id)
+            .await
+            .unwrap(),
+        Some(nazo_auth::ClientPresentation {
+            client_name: "Default tenant client".to_owned(),
+            logo_uri: Some("https://client.example/logo.svg".to_owned()),
+            policy_uri: Some("https://client.example/privacy".to_owned()),
+            tos_uri: Some("https://client.example/terms".to_owned()),
+        })
+    );
+    assert_eq!(
+        repository
+            .active_client_presentation(other_client.tenant_id, &shared_protocol_id)
+            .await
+            .unwrap(),
+        Some(nazo_auth::ClientPresentation {
+            client_name: "Other tenant client".to_owned(),
+            logo_uri: None,
+            policy_uri: None,
+            tos_uri: None,
+        })
+    );
+    assert!(
+        repository
+            .active_client_presentation(Uuid::now_v7(), &shared_protocol_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        repository
+            .active_client_presentation(default_client.tenant_id, "missing-presentation-client")
+            .await
+            .unwrap()
+            .is_none()
+    );
     assert!(
         repository
             .by_id(other_client.tenant_id, default_client.id)
             .await
             .unwrap()
             .is_none()
-    );
-    assert!(
-        !repository
-            .has_client_secret(other_client.tenant_id, default_client.id)
-            .await
-            .unwrap()
-    );
-    assert_eq!(
-        repository
-            .client_secret_salt(other_client.tenant_id, default_client.id)
-            .await
-            .unwrap(),
-        None
     );
     assert!(
         !repository
@@ -264,6 +296,18 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
     );
 
     let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
+        .bind::<SqlUuid, _>(default_client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .active_client_presentation(default_client.tenant_id, &shared_protocol_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
     sql_query("DELETE FROM user_client_grants WHERE user_id = $1")
         .bind::<SqlUuid, _>(user_id)
         .execute(&mut connection)
@@ -514,13 +558,7 @@ async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
         .await
         .unwrap()
         .expect("active registration access token should resolve its client");
-    assert_eq!(registered.id, client.id);
-    assert!(
-        !repository
-            .has_client_secret(client.tenant_id, client.id)
-            .await
-            .unwrap()
-    );
+    assert_eq!(registered.client.id, client.id);
     assert!(
         repository
             .active_for_tenant_user(client.tenant_id, Uuid::now_v7())
@@ -629,36 +667,17 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
     .unwrap();
     assert_eq!(inserted.client_id, template.client_id);
     assert_eq!(inserted.tenant_id, tenant.tenant_id.as_uuid());
-    assert!(
-        DynamicRegistrationClientStore::by_registration_access_token(
-            &repository,
-            tenant.tenant_id.as_uuid(),
-            &inserted.client_id,
-            &initial_token,
-        )
-        .await
-        .unwrap()
-        .is_some()
-    );
-    assert!(
-        DynamicRegistrationClientStore::has_client_secret(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        Some("initial-salt".to_owned())
-    );
+    let snapshot = DynamicRegistrationClientStore::by_registration_access_token(
+        &repository,
+        tenant.tenant_id.as_uuid(),
+        &inserted.client_id,
+        &initial_token,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(snapshot.has_client_secret);
+    assert_eq!(snapshot.secret_salt.as_deref(), Some("initial-salt"));
     assert!(
         DynamicRegistrationClientStore::client_secret_digest_matches(
             &repository,
@@ -703,27 +722,17 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         .unwrap()
         .is_none()
     );
-    assert!(
-        DynamicRegistrationClientStore::by_registration_access_token(
-            &repository,
-            inserted.tenant_id,
-            &inserted.client_id,
-            &rotated_token,
-        )
-        .await
-        .unwrap()
-        .is_some()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        Some("rotated-salt".to_owned())
-    );
+    let snapshot = DynamicRegistrationClientStore::by_registration_access_token(
+        &repository,
+        inserted.tenant_id,
+        &inserted.client_id,
+        &rotated_token,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(snapshot.has_client_secret);
+    assert_eq!(snapshot.secret_salt.as_deref(), Some("rotated-salt"));
     assert!(
         DynamicRegistrationClientStore::client_secret_digest_matches(
             &repository,
@@ -761,27 +770,17 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         .unwrap()
         .is_none()
     );
-    assert!(
-        DynamicRegistrationClientStore::by_registration_access_token(
-            &repository,
-            inserted.tenant_id,
-            &inserted.client_id,
-            &replacement_token,
-        )
-        .await
-        .unwrap()
-        .is_some()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        Some("replacement-salt".to_owned())
-    );
+    let snapshot = DynamicRegistrationClientStore::by_registration_access_token(
+        &repository,
+        inserted.tenant_id,
+        &inserted.client_id,
+        &replacement_token,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(snapshot.has_client_secret);
+    assert_eq!(snapshot.secret_salt.as_deref(), Some("replacement-salt"));
     assert!(
         DynamicRegistrationClientStore::client_secret_digest_matches(
             &repository,
@@ -814,25 +813,6 @@ async fn dynamic_registration_store_round_trips_registration_and_secret_material
         .await
         .unwrap()
         .is_none()
-    );
-    assert!(
-        !DynamicRegistrationClientStore::has_client_secret(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap()
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            inserted.tenant_id,
-            inserted.id,
-        )
-        .await
-        .unwrap(),
-        None
     );
     assert!(
         !DynamicRegistrationClientStore::client_secret_digest_matches(
@@ -886,8 +866,16 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
         RepositoryError::Unavailable
     );
     assert_eq!(
-        repository.update_metadata(&template).await.unwrap_err(),
-        RepositoryError::Unavailable
+        nazo_auth::AdminClientRepositoryPort::update_with_required_audit(
+            &repository,
+            &template,
+            &template,
+            Uuid::now_v7(),
+            "fixture-source-ip-hash",
+        )
+        .await
+        .unwrap_err(),
+        nazo_auth::AdminClientPortError::Unavailable
     );
     assert_eq!(
         DynamicRegistrationClientStore::by_registration_access_token(
@@ -895,26 +883,6 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
             tenant.tenant_id.as_uuid(),
             &template.client_id,
             &initial_token,
-        )
-        .await
-        .unwrap_err(),
-        DynamicRegistrationDependencyError::Unavailable
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::has_client_secret(
-            &repository,
-            template.tenant_id,
-            template.id,
-        )
-        .await
-        .unwrap_err(),
-        DynamicRegistrationDependencyError::Unavailable
-    );
-    assert_eq!(
-        DynamicRegistrationClientStore::client_secret_salt(
-            &repository,
-            template.tenant_id,
-            template.id,
         )
         .await
         .unwrap_err(),
@@ -1062,9 +1030,10 @@ async fn replace_registration_returns_the_committed_row() {
     // The credential bindings changed through the same single statement.
     assert_eq!(
         repository
-            .client_secret_salt(client.tenant_id, client.id)
+            .authentication_snapshot(client.tenant_id, &client.client_id)
             .await
-            .unwrap(),
+            .unwrap()
+            .and_then(|(_, salt, _)| salt),
         Some("dc01-salt".to_owned())
     );
     let state = client_credential_state(&pool, client.id).await;

@@ -36,4 +36,15 @@ if ($quotedLiteral -ne "'a'\''b'") {
     throw "single quote escaping changed unexpectedly: $quotedLiteral"
 }
 
-Write-Output "deploy_live shell literal tests passed"
+# Exercise the real wrapper with an SSH stub: no remote action is performed.
+function global:ssh {
+    $global:DeployLiveCapturedSshArguments = @($args)
+    $global:LASTEXITCODE = 0
+}
+$config = "/etc/nazo auth/a'b.json"
+& $scriptPath -Action plan -SshHost audit-host -Config $config -Version "v1.2.3+build.4"
+$expected = "'sudo' 'nazoauthctl' '--config' '/etc/nazo auth/a'\''b.json' 'update' '--plan' '--to' 'v1.2.3+build.4'"
+if ($global:DeployLiveCapturedSshArguments[-1] -ne $expected) {
+    throw "wrapper must preserve the config path and delegate release validation"
+}
+Write-Output "deploy_live shell literal and invocation tests passed"

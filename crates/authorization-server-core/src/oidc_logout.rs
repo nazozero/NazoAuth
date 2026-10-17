@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
@@ -8,10 +10,10 @@ use uuid::Uuid;
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LogoutClient {
-    pub redirect_uris: Vec<String>,
-    pub subject_type: String,
-    pub sector_identifier_host: Option<String>,
+pub struct LogoutClient<'a> {
+    pub redirect_uris: &'a [String],
+    pub subject_type: &'a str,
+    pub sector_identifier_host: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -57,16 +59,16 @@ impl std::fmt::Display for LogoutPolicyError {
 
 impl std::error::Error for LogoutPolicyError {}
 
-pub fn resolve_logout_client_id(
-    client_id: Option<&str>,
+pub fn resolve_logout_client_id<'a>(
+    client_id: Option<&'a str>,
     post_logout_redirect_uri_present: bool,
-    hint: Option<&IdTokenHintClaims>,
-) -> Result<Option<String>, LogoutPolicyError> {
+    hint: Option<&'a IdTokenHintClaims>,
+) -> Result<Option<&'a str>, LogoutPolicyError> {
     match (client_id, hint) {
         (Some(client_id), Some(hint)) if !audience_contains(&hint.aud, client_id) => {
             Err(LogoutPolicyError::ClientAudienceMismatch)
         }
-        (Some(client_id), _) => Ok(Some(client_id.to_owned())),
+        (Some(client_id), _) => Ok(Some(client_id)),
         (None, Some(hint)) => single_audience(&hint.aud)
             .map(Some)
             .ok_or(LogoutPolicyError::AmbiguousAudience),
@@ -87,20 +89,13 @@ pub fn audience_contains(aud: &Value, client_id: &str) -> bool {
 }
 
 #[must_use]
-pub fn single_audience(aud: &Value) -> Option<String> {
+pub fn single_audience(aud: &Value) -> Option<&str> {
     match aud {
-        Value::String(value) => Some(value.clone()),
+        Value::String(value) => Some(value),
         Value::Array(values) => {
-            let audiences = values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .take(2)
-                .collect::<Vec<_>>();
-            match audiences.as_slice() {
-                [audience] => Some(audience.clone()),
-                _ => None,
-            }
+            let mut audiences = values.iter().filter_map(Value::as_str);
+            let first = audiences.next()?;
+            audiences.next().is_none().then_some(first)
         }
         _ => None,
     }
@@ -130,7 +125,7 @@ pub fn validate_post_logout_redirect(
 pub fn id_token_hint_matches_session(
     issuer: &str,
     pairwise_subject_secret: Option<&str>,
-    client: Option<&LogoutClient>,
+    client: Option<&LogoutClient<'_>>,
     user_id: Uuid,
     oidc_sid: &str,
     hint: &IdTokenHintClaims,
@@ -152,35 +147,59 @@ pub fn unique_logout_subject_for_client(
     issuer: &str,
     pairwise_subject_secret: Option<&str>,
     user_id: Uuid,
-    client: &LogoutClient,
+    client: &LogoutClient<'_>,
 ) -> Result<Option<String>, LogoutPolicyError> {
-    let subjects = logout_subjects_for_client(issuer, pairwise_subject_secret, user_id, client)?;
-    match subjects.as_slice() {
-        [subject] => Ok(Some(subject.clone())),
-        _ => Ok(None),
-    }
+    let mut subjects =
+        logout_subjects_for_client(issuer, pairwise_subject_secret, user_id, client)?;
+    Ok(if subjects.len() == 1 {
+        subjects.pop()
+    } else {
+        None
+    })
 }
 
 pub fn logout_subjects_for_client(
     issuer: &str,
     pairwise_subject_secret: Option<&str>,
     user_id: Uuid,
-    client: &LogoutClient,
+    client: &LogoutClient<'_>,
 ) -> Result<Vec<String>, LogoutPolicyError> {
-    let redirect_uris = if client.redirect_uris.is_empty() {
-        vec![String::new()]
-    } else {
-        client.redirect_uris.clone()
-    };
-    let mut subjects = Vec::with_capacity(redirect_uris.len());
-    for redirect_uri in redirect_uris {
+    if client.subject_type != "pairwise"
+        || client
+            .sector_identifier_host
+            .is_some_and(|host| !host.is_empty())
+        || client.redirect_uris.len() <= 1
+    {
+        return oidc_subject_for_client(
+            issuer,
+            pairwise_subject_secret,
+            user_id,
+            client.subject_type,
+            client.sector_identifier_host,
+            client.redirect_uris.first().map_or("", String::as_str),
+        )
+        .map(|subject| vec![subject]);
+    }
+    // Redirects in one sector produce the same subject; derive it only once.
+    let sectors: BTreeSet<_> = client
+        .redirect_uris
+        .iter()
+        .map(|uri| {
+            url::Url::parse(uri)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_owned))
+                .unwrap_or_default()
+        })
+        .collect();
+    let mut subjects = Vec::with_capacity(sectors.len());
+    for sector in sectors {
         subjects.push(oidc_subject_for_client(
             issuer,
             pairwise_subject_secret,
             user_id,
-            &client.subject_type,
-            client.sector_identifier_host.as_deref(),
-            &redirect_uri,
+            client.subject_type,
+            Some(&sector),
+            "",
         )?);
     }
     subjects.sort();
@@ -217,16 +236,18 @@ pub fn oidc_subject_for_client(
             let secret = pairwise_subject_secret
                 .filter(|secret| secret.len() >= 32)
                 .ok_or(LogoutPolicyError::PairwiseSecretMissing)?;
-            let host = sector_identifier_host
-                .filter(|host| !host.is_empty())
-                .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    url::Url::parse(redirect_uri)
-                        .ok()
-                        .and_then(|url| url.host_str().map(str::to_owned))
+            let parsed;
+            let host = match sector_identifier_host.filter(|host| !host.is_empty()) {
+                Some(host) => host,
+                None => {
+                    parsed = url::Url::parse(redirect_uri).ok();
+                    parsed
+                        .as_ref()
+                        .and_then(url::Url::host_str)
                         .unwrap_or_default()
-                });
-            Ok(pairwise_subject(secret.as_bytes(), issuer, &host, user_id))
+                }
+            };
+            Ok(pairwise_subject(secret.as_bytes(), issuer, host, user_id))
         }
         _ => Err(LogoutPolicyError::UnsupportedSubjectType),
     }
@@ -245,7 +266,12 @@ pub fn pairwise_subject(
     mac.update(b"\x1f");
     mac.update(sector_identifier_host.as_bytes());
     mac.update(b"\x1f");
-    mac.update(user_id.to_string().as_bytes());
+    mac.update(
+        user_id
+            .hyphenated()
+            .encode_lower(&mut Uuid::encode_buffer())
+            .as_bytes(),
+    );
     URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
 }
 

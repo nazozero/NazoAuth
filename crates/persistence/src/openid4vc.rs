@@ -43,6 +43,14 @@ pub struct ManagedCredentialDatasetWrite {
 /// Encrypted issuer dataset capability. Encryption, actor authorization and
 /// the corresponding audit record are adapter-owned implementation details.
 pub trait Openid4vciDatasetStore: Send + Sync {
+    /// Availability preflight for an offer; issuance reads and decrypts the current data.
+    fn datasets_available<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        subject_id: Uuid,
+        credential_configuration_ids: &'a [String],
+    ) -> BoxFuture<'a, Result<bool, CredentialStoreError>>;
+
     fn dataset<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -80,7 +88,7 @@ pub trait Openid4vciDatasetStore: Send + Sync {
     ) -> BoxFuture<'a, Result<bool, CredentialStoreError>>;
 }
 
-/// Minimal subject projection required before creating offers or datasets.
+/// Minimal subject projection required before creating offers.
 pub trait Openid4vcSubjectStore: Send + Sync {
     fn is_active(
         &self,

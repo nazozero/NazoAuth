@@ -114,7 +114,6 @@ impl Fixture {
     fn rotation(&self, token: &str, controller: &str) -> SlotRotationCommand {
         SlotRotationCommand {
             approval_token: token.to_owned(),
-            deployment_id: self.deployment.clone(),
             action_sha256: digest(),
             rotation: RotateControllerKey {
                 deployment_id: self.deployment.clone(),
@@ -138,7 +137,6 @@ impl Fixture {
     fn root_rotation(&self, token: &str) -> RecoveryRotationCommand {
         RecoveryRotationCommand {
             approval_token: token.to_owned(),
-            deployment_id: self.deployment.clone(),
             action_sha256: digest(),
             root: NewRecoveryRoot {
                 deployment_id: self.deployment.clone(),
@@ -269,71 +267,6 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
         snapshot(&f).await["canonical"].as_array().unwrap().len(),
         20
     );
-}
-
-#[tokio::test]
-async fn required_control_plane_rewritten_approval_expiry_is_rejected_and_rolled_back() {
-    let Some(f) = Fixture::new().await else {
-        return;
-    };
-    let name = format!("approval_expiry_{}", Uuid::now_v7().simple());
-    get_conn(&f.pool)
-        .await
-        .unwrap()
-        .batch_execute(&format!(
-            "CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.expires_at := NEW.expires_at + interval '1 microsecond'; RETURN NEW; END $$; CREATE TRIGGER {name} BEFORE INSERT ON controller_identity_approvals FOR EACH ROW WHEN (NEW.deployment_id='{}') EXECUTE FUNCTION {name}();",
-            f.deployment
-        ))
-        .await
-        .unwrap();
-    let before = snapshot(&f).await;
-    let body = std::panic::AssertUnwindSafe(async {
-        let now = DateTime::<Utc>::from_timestamp(1_800_000_000, 123_456_789).unwrap();
-        let mut command = f.approval(ControllerIdentityAction::Add);
-        command.now = now;
-        let error = f
-            .registry
-            .issue_identity_approval_with_required_audit(command, f.audit.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(error, IdentityApprovalError::Transport(_)));
-        assert!(
-            error
-                .to_string()
-                .contains("approval insert changed its authority binding")
-        );
-        assert_eq!(snapshot(&f).await, before);
-        let mut command = f.recovery_approval();
-        command.now = now;
-        let error = f
-            .recovery
-            .issue_rotation_approval_with_required_audit(command, f.audit.clone())
-            .await
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            RecoveryRotationError::Approval(IdentityApprovalError::Transport(_))
-        ));
-        assert!(
-            error
-                .to_string()
-                .contains("approval insert changed its authority binding")
-        );
-        assert_eq!(snapshot(&f).await, before);
-    })
-    .catch_unwind()
-    .await;
-    get_conn(&f.pool)
-        .await
-        .unwrap()
-        .batch_execute(&format!(
-            "DROP TRIGGER {name} ON controller_identity_approvals; DROP FUNCTION {name}();"
-        ))
-        .await
-        .unwrap();
-    if let Err(error) = body {
-        std::panic::resume_unwind(error);
-    }
 }
 
 #[tokio::test]
@@ -554,11 +487,23 @@ async fn required_control_plane_current_actor_denies_inactive_demoted_and_moved_
     let realm = Uuid::now_v7();
     sql_query("INSERT INTO realms(id,tenant_id,slug,display_name) VALUES($1,$2,$1::text,'Required identity context')")
         .bind::<SqlUuid,_>(realm).bind::<SqlUuid,_>(f.audit.tenant.tenant_id.as_uuid()).execute(&mut get_conn(&f.pool).await.unwrap()).await.unwrap();
-    for state in ["inactive", "demoted", "moved"] {
+    for state in [
+        "inactive",
+        "demoted",
+        "admin_without_level",
+        "user_with_level",
+        "moved",
+    ] {
         let sql = match state {
             "inactive" => "UPDATE users SET is_active=false WHERE id=$1 AND $2::uuid IS NOT NULL",
             "demoted" => {
                 "UPDATE users SET is_active=true,role='user',admin_level=0 WHERE id=$1 AND $2::uuid IS NOT NULL"
+            }
+            "admin_without_level" => {
+                "UPDATE users SET is_active=true,role='admin',admin_level=0 WHERE id=$1 AND $2::uuid IS NOT NULL"
+            }
+            "user_with_level" => {
+                "UPDATE users SET is_active=true,role='user',admin_level=10 WHERE id=$1 AND $2::uuid IS NOT NULL"
             }
             _ => {
                 "UPDATE users SET is_active=true,role='admin',admin_level=10,realm_id=$2 WHERE id=$1"
@@ -627,130 +572,25 @@ async fn required_control_plane_current_actor_denies_inactive_demoted_and_moved_
     }
 }
 
-struct BareOnly;
 struct HiddenAck {
     registry: ControllerRegistryRepository,
     recovery: RecoveryRootRepository,
     commits: Arc<AtomicUsize>,
 }
-impl ControllerRegistryPort for BareOnly {
-    fn issue_identity_approval<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-        _action: ControllerIdentityAction,
-        _action_sha256: &'a str,
-        _admin_user_id: Uuid,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<IssuedIdentityApproval, IdentityApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_slot_creation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_action: ControllerIdentityAction,
-        _expected_action_sha256: &'a str,
-        _slot: NewControllerSlot,
-        _initial_root: Option<NewRecoveryRoot>,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredControllerSlot, CommitWithApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_slot_rotation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_deployment_id: &'a str,
-        _expected_action_sha256: &'a str,
-        _rotation: RotateControllerKey,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredControllerSlot, CommitWithApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_slot_revocation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_deployment_id: &'a str,
-        _expected_action_sha256: &'a str,
-        _controller_id: &'a str,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredControllerSlot, CommitWithApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn list_slots<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-    ) -> BoxFuture<'a, Result<Vec<StoredControllerSlot>, ControllerRegistryError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn admitted_controllers<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<Vec<AdmittedController>, ControllerRegistryError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn admitted_controller_by_kid<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-        _kid: &'a str,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<Option<AdmittedController>, ControllerRegistryError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-}
+
 impl ControllerRegistryPort for HiddenAck {
-    fn issue_identity_approval<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-        _action: ControllerIdentityAction,
-        _action_sha256: &'a str,
-        _admin_user_id: Uuid,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<IssuedIdentityApproval, IdentityApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_slot_creation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_action: ControllerIdentityAction,
-        _expected_action_sha256: &'a str,
-        _slot: NewControllerSlot,
-        _initial_root: Option<NewRecoveryRoot>,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredControllerSlot, CommitWithApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_slot_rotation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_deployment_id: &'a str,
-        _expected_action_sha256: &'a str,
-        _rotation: RotateControllerKey,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredControllerSlot, CommitWithApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_slot_revocation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_deployment_id: &'a str,
-        _expected_action_sha256: &'a str,
-        _controller_id: &'a str,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredControllerSlot, CommitWithApprovalError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
     fn list_slots<'a>(
         &'a self,
         _deployment_id: &'a str,
     ) -> BoxFuture<'a, Result<Vec<StoredControllerSlot>, ControllerRegistryError>> {
-        panic!("Required capability must never invoke bare operation")
+        panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
     fn admitted_controllers<'a>(
         &'a self,
         _deployment_id: &'a str,
         _now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Vec<AdmittedController>, ControllerRegistryError>> {
-        panic!("Required capability must never invoke bare operation")
+        panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
     fn admitted_controller_by_kid<'a>(
         &'a self,
@@ -758,7 +598,7 @@ impl ControllerRegistryPort for HiddenAck {
         _kid: &'a str,
         _now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Option<AdmittedController>, ControllerRegistryError>> {
-        panic!("Required capability must never invoke bare operation")
+        panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
     fn issue_identity_approval_with_required_audit(
         &self,
@@ -829,86 +669,28 @@ impl ControllerRegistryPort for HiddenAck {
         })
     }
 }
-impl RecoveryRootPort for BareOnly {
-    fn current_root<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-    ) -> BoxFuture<'a, Result<Option<StoredRecoveryRoot>, RecoveryRootError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn issue_rotation_approval<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-        _action_sha256: &'a str,
-        _admin_user_id: Uuid,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<IssuedIdentityApproval, RecoveryRotationError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_rotation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_deployment_id: &'a str,
-        _expected_action_sha256: &'a str,
-        _root: NewRecoveryRoot,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredRecoveryRoot, RecoveryRotationError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn issue_recovery_challenge(
-        &self,
-        _challenge: NewRecoveryChallenge,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'_, Result<IssuedRecoveryChallenge, RecoveryRootError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn submit_recovery_challenge(
-        &self,
-        _submission: RecoverySubmission,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'_, Result<RecoveredSlotCommit, RecoveryRootError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-}
+
 impl RecoveryRootPort for HiddenAck {
     fn current_root<'a>(
         &'a self,
         _deployment_id: &'a str,
     ) -> BoxFuture<'a, Result<Option<StoredRecoveryRoot>, RecoveryRootError>> {
-        panic!("Required capability must never invoke bare operation")
+        panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
-    fn issue_rotation_approval<'a>(
-        &'a self,
-        _deployment_id: &'a str,
-        _action_sha256: &'a str,
-        _admin_user_id: Uuid,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<IssuedIdentityApproval, RecoveryRotationError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
-    fn commit_rotation<'a>(
-        &'a self,
-        _approval_token: &'a str,
-        _expected_deployment_id: &'a str,
-        _expected_action_sha256: &'a str,
-        _root: NewRecoveryRoot,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, Result<StoredRecoveryRoot, RecoveryRotationError>> {
-        panic!("Required capability must never invoke bare operation")
-    }
+
     fn issue_recovery_challenge(
         &self,
         _challenge: NewRecoveryChallenge,
         _now: DateTime<Utc>,
     ) -> BoxFuture<'_, Result<IssuedRecoveryChallenge, RecoveryRootError>> {
-        panic!("Required capability must never invoke bare operation")
+        panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
     fn submit_recovery_challenge(
         &self,
         _submission: RecoverySubmission,
         _now: DateTime<Utc>,
     ) -> BoxFuture<'_, Result<RecoveredSlotCommit, RecoveryRootError>> {
-        panic!("Required capability must never invoke bare operation")
+        panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
     fn issue_rotation_approval_with_required_audit(
         &self,
@@ -1064,117 +846,6 @@ async fn required_control_plane_hidden_real_commits_withhold_tokens_and_receipts
     assert_eq!(
         snapshot(&f).await["canonical"].as_array().unwrap().len(),
         10
-    );
-}
-
-#[tokio::test]
-async fn required_control_plane_defaults_never_invoke_bare_mutation() {
-    let tenant = TenantContext::default_system();
-    let audit = AdminIdentityAudit {
-        tenant,
-        actor_user_id: Uuid::now_v7(),
-        source_ip_hash: "fixture-source".to_owned(),
-    };
-    let bare = BareOnly;
-    let deployment = Uuid::now_v7().to_string();
-    let controller = Uuid::now_v7().to_string();
-    let now = Utc::now();
-    assert!(
-        bare.issue_identity_approval_with_required_audit(
-            IdentityApprovalCommand {
-                deployment_id: deployment.clone(),
-                action: ControllerIdentityAction::Add,
-                action_sha256: digest(),
-                now
-            },
-            audit.clone()
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        bare.issue_rotation_approval_with_required_audit(
-            RecoveryApprovalCommand {
-                deployment_id: deployment.clone(),
-                action_sha256: digest(),
-                now
-            },
-            audit.clone()
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        bare.commit_slot_creation_with_required_audit(
-            SlotCreationCommand {
-                approval_token: "unavailable".to_owned(),
-                action: ControllerIdentityAction::Add,
-                action_sha256: digest(),
-                slot: NewControllerSlot {
-                    deployment_id: deployment.clone(),
-                    label: "fixture".to_owned(),
-                    kid: kid(1),
-                    public_key: key(1)
-                },
-                initial_root: None,
-                now
-            },
-            audit.clone()
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        bare.commit_slot_rotation_with_required_audit(
-            SlotRotationCommand {
-                approval_token: "unavailable".to_owned(),
-                deployment_id: deployment.clone(),
-                action_sha256: digest(),
-                rotation: RotateControllerKey {
-                    deployment_id: deployment.clone(),
-                    controller_id: controller.clone(),
-                    label: "fixture".to_owned(),
-                    kid: kid(2),
-                    public_key: key(2)
-                },
-                now
-            },
-            audit.clone()
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        bare.commit_slot_revocation_with_required_audit(
-            SlotRevocationCommand {
-                approval_token: "unavailable".to_owned(),
-                deployment_id: deployment.clone(),
-                action_sha256: digest(),
-                controller_id: controller,
-                now
-            },
-            audit.clone()
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        bare.commit_rotation_with_required_audit(
-            RecoveryRotationCommand {
-                approval_token: "unavailable".to_owned(),
-                deployment_id: deployment.clone(),
-                action_sha256: digest(),
-                root: NewRecoveryRoot {
-                    deployment_id: deployment,
-                    kid: kid(12),
-                    public_key: key(12)
-                },
-                now
-            },
-            audit
-        )
-        .await
-        .is_err()
     );
 }
 

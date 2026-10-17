@@ -84,7 +84,7 @@ fn validate_key_attestation(
     metadata: &nazo_openid4vci::ProofTypeMetadata,
     now: chrono::DateTime<Utc>,
     context: KeyAttestationContext,
-) -> Result<Value, ProofError> {
+) -> Result<Vec<Value>, ProofError> {
     validator.validate_key_attestation_with(
         &validator.key_attestation_jwks,
         encoded,
@@ -382,7 +382,8 @@ fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {
         CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, vec![7; 32], vec![11; 32])
             .build();
 
-    let holder = mdoc_holder_key(Some(&key)).expect("device key must be retained");
+    let holder =
+        mdoc_holder_key(Some(key.clone().to_vec().unwrap())).expect("device key must be retained");
     let encoded = holder
         .get("cose_key")
         .and_then(Value::as_str)
@@ -606,7 +607,7 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
     });
     let cbor = json_to_cbor(&value).expect("JSON value should map to CBOR");
     assert_eq!(
-        cbor_to_json(&cbor).expect("CBOR should map back to JSON"),
+        cbor_to_json(cbor).expect("CBOR should map back to JSON"),
         value
     );
 
@@ -621,11 +622,11 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         ),
     ]);
     assert_eq!(
-        cbor_to_json(&cbor).expect("bytes and tags should map to JSON"),
+        cbor_to_json(cbor).expect("bytes and tags should map to JSON"),
         json!({"bytes": URL_SAFE_NO_PAD.encode([1_u8, 2, 3]), "tagged": "tag"})
     );
     assert!(matches!(
-        cbor_to_json(&ciborium::Value::Map(vec![(
+        cbor_to_json(ciborium::Value::Map(vec![(
             ciborium::Value::Integer(1.into()),
             ciborium::Value::Null,
         ),])),
@@ -634,7 +635,7 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
     let too_negative = ciborium::value::Integer::try_from(-9_223_372_036_854_775_809_i128)
         .expect("value fits CBOR integer representation");
     assert!(matches!(
-        cbor_to_json(&ciborium::Value::Integer(too_negative)),
+        cbor_to_json(ciborium::Value::Integer(too_negative)),
         Err(CredentialTrustError::InvalidEncoding)
     ));
 }

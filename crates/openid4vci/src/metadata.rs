@@ -74,7 +74,7 @@ impl Serialize for CredentialConfiguration {
     where
         S: Serializer,
     {
-        let mut size = 5;
+        let mut size = 2;
         size += usize::from(self.scope.is_some());
         size += usize::from(!self.cryptographic_binding_methods_supported.is_empty());
         size += usize::from(!self.proof_types_supported.is_empty());
@@ -134,8 +134,7 @@ impl CredentialConfiguration {
     pub fn validate(&self) -> Result<(), MetadataError> {
         let binding_declared = !self.cryptographic_binding_methods_supported.is_empty();
         let proofs_declared = !self.proof_types_supported.is_empty();
-        if self.credential_signing_alg_values_supported.is_empty()
-            || self.credential_signing_alg_values_supported != ["ES256"]
+        if self.credential_signing_alg_values_supported != ["ES256"]
             || binding_declared != proofs_declared
             || self
                 .cryptographic_binding_methods_supported
@@ -263,19 +262,15 @@ impl CredentialIssuerMetadata {
                 return Err(MetadataError::InvalidHttpsEndpoint);
             }
         }
-        for encryption in [self.credential_response_encryption.as_ref()]
-            .into_iter()
-            .flatten()
-        {
-            if encryption.alg_values_supported != ["ECDH-ES"]
+        if let Some(encryption) = self.credential_response_encryption.as_ref()
+            && (encryption.alg_values_supported != ["ECDH-ES"]
                 || encryption.enc_values_supported != ["A256GCM"]
                 || encryption
                     .zip_values_supported
                     .iter()
-                    .any(|zip| zip != "DEF")
-            {
-                return Err(MetadataError::EmptyAlgorithmSet);
-            }
+                    .any(|zip| zip != "DEF"))
+        {
+            return Err(MetadataError::EmptyAlgorithmSet);
         }
         if let Some(encryption) = self.credential_request_encryption.as_ref()
             && (encryption.enc_values_supported != ["A256GCM"]

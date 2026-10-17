@@ -90,6 +90,29 @@ impl Ports {
     }
 }
 impl AuthorizationRepositoryPort for Ports {
+    fn active_client_presentation<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        self.record("client_presentation");
+        Box::pin(async {
+            self.client
+                .as_ref()
+                .map(|client| {
+                    client
+                        .as_ref()
+                        .filter(|client| client.is_active)
+                        .map(|client| nazo_auth::ClientPresentation {
+                            client_name: client.client_name.clone(),
+                            logo_uri: client.presentation.logo_uri.clone(),
+                            policy_uri: client.presentation.policy_uri.clone(),
+                            tos_uri: client.presentation.tos_uri.clone(),
+                        })
+                })
+                .map_err(|error| *error)
+        })
+    }
+
     fn client_by_id<'a>(
         &'a self,
         _client_id: &'a str,
@@ -257,12 +280,6 @@ impl AuthorizationStateStorePort for Ports {
             stored.push((request_uri.into(), payload.clone(), ttl_seconds));
             Ok(())
         })
-    }
-    fn take_consent<'a>(
-        &'a self,
-        _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        panic!("unexpected AuthorizationStateStorePort::take_consent call")
     }
     fn compare_and_delete_consent<'a>(
         &'a self,
@@ -486,7 +503,7 @@ impl SessionStorePort for Ports {
     fn rotate<'a>(
         &'a self,
         _old_session_id: &'a nazo_identity::session::SessionId,
-        _expected: &'a nazo_identity::session::SessionSnapshot,
+        _expected: &'a nazo_identity::session::SessionVersion,
         _new_session_id: &'a nazo_identity::session::SessionId,
         _replacement: &'a nazo_identity::session::SessionRecord,
         _ttl_seconds: u64,
@@ -496,7 +513,7 @@ impl SessionStorePort for Ports {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a nazo_identity::session::SessionId,
-        expected: &'a nazo_identity::session::SessionSnapshot,
+        expected: &'a nazo_identity::session::SessionVersion,
         replacement: &'a nazo_identity::session::SessionRecord,
     ) -> RepositoryFuture<'a, nazo_identity::session::SessionUpdateOutcome> {
         self.record("session_compare_and_set");
@@ -514,7 +531,7 @@ impl SessionStorePort for Ports {
             let Some(current) = stored.as_ref() else {
                 return Ok(SessionUpdateOutcome::Missing);
             };
-            if current.version() != expected.version() {
+            if current.version() != expected {
                 return Ok(SessionUpdateOutcome::Conflict);
             }
             *stored = Some(SessionSnapshot::new(
@@ -526,6 +543,18 @@ impl SessionStorePort for Ports {
     }
 }
 impl SessionAccountPort for Ports {
+    fn principal_by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         _tenant: TenantId,

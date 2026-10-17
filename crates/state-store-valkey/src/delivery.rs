@@ -122,13 +122,15 @@ impl DeliveryStore {
         expected: &DeliveryRecord,
         approved_client_id: Uuid,
     ) -> Result<DeliveryPublish, Error> {
-        let mut envelope = decode(&expected.opaque_version)?;
-        if envelope.value["delivery_state"] != "staged"
-            || envelope.expires_at <= Utc::now()
-            || envelope.attempt_id != expected.attempt_id
-        {
+        if expected.value["delivery_state"] != "staged" || expected.expires_at <= Utc::now() {
             return Ok(DeliveryPublish::MissingOrChanged);
         }
+        let mut envelope = DeliveryEnvelope {
+            attempt_id: expected.attempt_id,
+            expires_at: expected.expires_at,
+            secret_binding: expected.secret_binding.clone(),
+            value: expected.value.clone(),
+        };
         envelope.value["delivery_state"] = serde_json::json!("committed");
         envelope.value["approved_client_id"] = serde_json::json!(approved_client_id);
         let raw = envelope.encode()?;
@@ -198,14 +200,13 @@ impl DeliveryStore {
         token: &str,
         expected: &DeliveryRecord,
     ) -> Result<DeliveryConsume, Error> {
-        let envelope = decode(&expected.opaque_version)?;
-        if envelope.value["delivery_state"] != "committed" || envelope.expires_at <= Utc::now() {
+        if expected.value["delivery_state"] != "committed" || expected.expires_at <= Utc::now() {
             return Ok(DeliveryConsume::MissingOrChanged);
         }
         if !self.retire_record(user, token, expected).await? {
             return Ok(DeliveryConsume::MissingOrChanged);
         }
-        Ok(DeliveryConsume::Consumed(envelope.value))
+        Ok(DeliveryConsume::Consumed)
     }
 }
 

@@ -67,7 +67,7 @@ impl RequestLeaseTracker {
             .unwrap_or_default()
     }
 
-    pub async fn wait_until_zero(&self, module_id: ModuleId, _generation: ModuleRevision) {
+    pub async fn wait_until_zero(&self, module_id: ModuleId) {
         poll_fn(|context| {
             let mut state = self.state.lock().expect("request lease lock poisoned");
             if !state.active.keys().any(|(id, _)| *id == module_id) {
@@ -99,9 +99,10 @@ impl RequestLease {
 impl Drop for RequestLease {
     fn drop(&mut self) {
         let mut state = self.state.lock().expect("request lease lock poisoned");
-        let Some(active) = state.active.get_mut(&self.key) else {
-            return;
-        };
+        let active = state
+            .active
+            .get_mut(&self.key)
+            .expect("a live lease owns an active count");
         *active -= 1;
         if *active == 0 {
             state.active.remove(&self.key);

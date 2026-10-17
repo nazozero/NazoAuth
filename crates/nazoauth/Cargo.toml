@@ -12,11 +12,11 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+hex.workspace = true
 http.workspace = true
 actix-cors = { workspace = true }
 actix-files = { workspace = true }
 actix-multipart = "0.8.5"
-actix-rt = { workspace = true }
 actix-tls = { workspace = true, features = ["accept", "rustls-0_23"] }
 actix-web = { workspace = true, features = ["cookies", "rustls-0_23"] }
 anyhow = { workspace = true }
@@ -98,7 +98,6 @@ tokio = { workspace = true, features = ["test-util"] }
 chrono = { workspace = true }
 diesel = { workspace = true, features = ["64-column-tables", "chrono", "postgres_backend", "serde_json", "uuid"] }
 diesel-async = { workspace = true, features = ["deadpool", "postgres"] }
-diesel_migrations = { workspace = true }
 fred = { workspace = true, features = ["i-scripts"] }
 nazo-key-management = { workspace = true, features = ["test-support"] }
 pkcs8 = { workspace = true }

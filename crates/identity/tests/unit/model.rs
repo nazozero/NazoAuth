@@ -2,15 +2,11 @@ use super::*;
 use argon2::{Argon2, PasswordHasher};
 
 #[test]
-fn login_identity_debug_never_exposes_password_hash() {
+fn authentication_identity_debug_never_exposes_password_hash() {
     let secret = "$argon2id$v=19$m=19456,t=2,p=1$secret-salt$secret-digest";
-    let login = LoginIdentity {
-        account: AccountIdentity {
-            username: "alice".to_owned(),
-            email: "alice@example.test".to_owned(),
-            email_verified: true,
-            mfa_enabled: false,
-        },
+    let login = AuthenticationIdentity {
+        user_id: UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        active: true,
         password_hash: PasswordHash::new(secret).unwrap(),
     };
 

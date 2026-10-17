@@ -5,8 +5,8 @@ use nazo_auth::{
 };
 
 use crate::{
-    AuthorizationCodeBegin, AuthorizationStore, AuthorizationTransition, Error, ErrorKind,
-    RateDimension, RateLimitStore, TokenStateStore, ValkeyConnection,
+    AuthorizationStore, Error, ErrorKind, RateDimension, RateLimitStore, TokenStateStore,
+    ValkeyConnection,
 };
 
 /// Valkey mechanisms required by token issuance. Business policy remains in `nazo-auth`.
@@ -50,7 +50,6 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
             self.authorization
                 .begin_authorization_code(code_hash, consuming_at)
                 .await
-                .map(map_begin)
                 .map_err(map_error)
         })
     }
@@ -65,7 +64,6 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
             self.authorization
                 .mark_authorization_code(code_hash, replacement, ttl_seconds)
                 .await
-                .map(map_transition)
                 .map_err(map_error)
         })
     }
@@ -112,31 +110,6 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
         secret: &'a str,
     ) -> TokenFuture<'a, Option<serde_json::Value>> {
         Box::pin(async move { self.tokens.load_native_sso(secret).await.map_err(map_error) })
-    }
-}
-
-fn map_begin(result: AuthorizationCodeBegin) -> AuthorizationCodeBeginResult {
-    match result {
-        AuthorizationCodeBegin::Consuming(payload) => {
-            AuthorizationCodeBeginResult::Consuming(payload)
-        }
-        AuthorizationCodeBegin::Busy => AuthorizationCodeBeginResult::Busy,
-        AuthorizationCodeBegin::Consumed(state) => AuthorizationCodeBeginResult::Consumed(state),
-        AuthorizationCodeBegin::Failed => AuthorizationCodeBeginResult::Failed,
-        AuthorizationCodeBegin::Missing => AuthorizationCodeBeginResult::Missing,
-        AuthorizationCodeBegin::Malformed => AuthorizationCodeBeginResult::Malformed,
-    }
-}
-
-fn map_transition(result: AuthorizationTransition) -> AuthorizationCodeTransitionResult {
-    match result {
-        AuthorizationTransition::Applied => AuthorizationCodeTransitionResult::Applied,
-        AuthorizationTransition::Missing => AuthorizationCodeTransitionResult::Missing,
-        AuthorizationTransition::Malformed => AuthorizationCodeTransitionResult::Malformed,
-        AuthorizationTransition::Pending => AuthorizationCodeTransitionResult::Pending,
-        AuthorizationTransition::Consuming => AuthorizationCodeTransitionResult::Consuming,
-        AuthorizationTransition::Consumed => AuthorizationCodeTransitionResult::Consumed,
-        AuthorizationTransition::Failed => AuthorizationCodeTransitionResult::Failed,
     }
 }
 

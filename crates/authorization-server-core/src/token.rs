@@ -261,22 +261,6 @@ impl std::fmt::Debug for BackchannelLogoutDelivery {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
-pub struct PendingBackchannelLogoutDelivery {
-    pub tenant_id: Uuid,
-    pub client_id: Uuid,
-    pub client_public_id: String,
-    pub logout_uri: String,
-    pub logout_token: String,
-    pub expires_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for PendingBackchannelLogoutDelivery {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("PendingBackchannelLogoutDelivery([REDACTED])")
-    }
-}
-
 #[cfg(test)]
 #[path = "../tests/unit/token.rs"]
 mod tests;

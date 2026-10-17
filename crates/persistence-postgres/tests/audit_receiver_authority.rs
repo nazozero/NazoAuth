@@ -11,7 +11,7 @@ const CUTOVER: &str =
 const ACK: &str =
     "public.nazo_ack_security_audit_batch(bigint,bigint,bigint,integer,bytea,bytea,text)";
 const GENESIS: &str = "public.nazo_record_security_audit_genesis(text,bytea)";
-const EXPORT: &str = "public.nazo_security_audit_shared_privilege_preflight(boolean,boolean,boolean),public.nazo_security_audit_chain_head_for_update(),public.nazo_security_audit_batch_members(),public.nazo_claim_security_audit_pending(bigint),public.nazo_open_security_audit_batch(bigint,bigint,integer,bytea,integer),public.nazo_finalize_security_audit_claim(bigint,bytea,uuid[],bytea[],bigint,bigint,integer,bytea,integer),public.nazo_reclaim_security_audit_batch(bytea,integer),public.nazo_append_security_audit_chain(bigint,bytea,uuid[],bytea[]),public.nazo_fail_security_audit_batch(bigint,timestamptz,text,boolean),public.nazo_observe_security_audit_anchor(text),public.nazo_security_audit_shared_anchor_health()";
+const EXPORT: &str = "public.nazo_security_audit_shared_privilege_preflight(boolean,boolean,boolean),public.nazo_security_audit_chain_head_for_update(),public.nazo_security_audit_batch_members(),public.nazo_claim_security_audit_pending(bigint),public.nazo_finalize_security_audit_claim(bigint,bytea,uuid[],bytea[],bigint,bigint,integer,bytea,integer),public.nazo_reclaim_security_audit_batch(bytea,integer),public.nazo_fail_security_audit_batch(bigint,timestamptz,text,boolean),public.nazo_observe_security_audit_anchor(text),public.nazo_security_audit_shared_anchor_health()";
 const HEALTH: &str = "public.nazo_security_audit_shared_anchor_health()";
 
 #[tokio::test]
@@ -31,6 +31,13 @@ async fn exporter_ack_is_denied_until_independent_receiver_confirms() {
     url.set_path(&database);
     run_pending_migrations(url.as_str()).await.unwrap();
     let mut owner = AsyncPgConnection::establish(url.as_str()).await.unwrap();
+    // Recreate the schema whose receiver-authority cutover is under test.
+    owner
+        .batch_execute(include_str!(
+            "../../../migrations/20261017000300_retire_split_audit_claim/down.sql"
+        ))
+        .await
+        .unwrap();
     owner.batch_execute(&format!("CREATE ROLE {exporter} LOGIN PASSWORD '{tag}' NOSUPERUSER NOINHERIT; CREATE ROLE {receiver} LOGIN PASSWORD '{tag}' NOSUPERUSER NOINHERIT; GRANT USAGE ON SCHEMA public TO {exporter},{receiver}; GRANT EXECUTE ON FUNCTION {EXPORT},{ACK},{GENESIS} TO {exporter}; GRANT EXECUTE ON FUNCTION {ACK},{GENESIS},{HEALTH} TO {receiver};")).await.unwrap();
     let writer = AuditLedgerRepository::new(create_pool(url.as_str().to_owned(), 2).unwrap());
     let role_repo = |role: &str| {
@@ -73,6 +80,12 @@ async fn exporter_ack_is_denied_until_independent_receiver_confirms() {
             assert!(!writer.anchor_health().await.unwrap().pending_exists);
         } else {
             owner.batch_execute(CUTOVER).await.unwrap();
+            owner
+                .batch_execute(include_str!(
+                    "../../../migrations/20261017000300_retire_split_audit_claim/up.sql"
+                ))
+                .await
+                .unwrap();
             exported.check_exporter_available().await.unwrap();
             assert!(exported.ack_batch(ack.clone()).await.is_err());
             assert!(exported.confirm_batch(ack.clone()).await.is_err());

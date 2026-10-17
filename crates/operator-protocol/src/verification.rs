@@ -90,15 +90,29 @@ fn verify_compact<T: DeserializeOwned>(
     if header.kid != expected_key_id || header.typ != expected_type {
         return Err(ProtocolError::Header);
     }
-    let signature_bytes = URL_SAFE_NO_PAD
-        .decode(signature)
-        .map_err(|_| ProtocolError::Base64)?;
-    key.verify(
-        format!("{protected}.{payload}").as_bytes(),
-        &signature_bytes,
-    )
-    .map_err(|_| ProtocolError::Signature)?;
+    verify_signature(
+        &compact.as_bytes()[..protected.len() + 1 + payload.len()],
+        signature,
+        key,
+    )?;
     decode_json(payload)
+}
+
+pub(crate) fn verify_signature(
+    signing_input: &[u8],
+    signature: &str,
+    key: &VerifyingKey,
+) -> Result<(), ProtocolError> {
+    let mut signature_bytes = [0_u8; 64];
+    match URL_SAFE_NO_PAD.decode_slice(signature, &mut signature_bytes) {
+        Ok(64) => {}
+        Ok(_) | Err(base64::DecodeSliceError::OutputSliceTooSmall) => {
+            return Err(ProtocolError::Signature);
+        }
+        Err(_) => return Err(ProtocolError::Base64),
+    }
+    key.verify(signing_input, &signature_bytes)
+        .map_err(|_| ProtocolError::Signature)
 }
 
 pub(crate) fn validate_discovery_statement(
@@ -121,8 +135,8 @@ pub(crate) fn validate_discovery_statement(
     if expected_nonce.is_some_and(|expected| statement.nonce != expected) {
         return Err(ProtocolError::Policy("control discovery nonce mismatch"));
     }
-    if statement.expires_at < statement.issued_at
-        || statement.expires_at - statement.issued_at > MAX_DISCOVERY_LIFETIME_SECONDS
+    let lifetime = i128::from(statement.expires_at) - i128::from(statement.issued_at);
+    if !(0..=i128::from(MAX_DISCOVERY_LIFETIME_SECONDS)).contains(&lifetime)
         || now < statement.issued_at
         || now > statement.expires_at
     {
@@ -200,8 +214,7 @@ fn validate_protocol_versions(
     required: u32,
     error: &'static str,
 ) -> Result<(), ProtocolError> {
-    if versions.is_empty()
-        || versions.len() > 16
+    if versions.len() > 16
         || !versions.windows(2).all(|pair| pair[0] < pair[1])
         || !versions.contains(&required)
     {
@@ -216,14 +229,9 @@ fn validate_discovery_nonce(nonce: &str) -> Result<(), ProtocolError> {
             "control discovery nonce must encode 32 bytes",
         ));
     }
-    let bytes = URL_SAFE_NO_PAD
-        .decode(nonce)
+    URL_SAFE_NO_PAD
+        .decode_slice(nonce, &mut [0_u8; 32])
         .map_err(|_| ProtocolError::Policy("control discovery nonce is not base64url"))?;
-    if bytes.len() != 32 {
-        return Err(ProtocolError::Policy(
-            "control discovery nonce must encode 32 bytes",
-        ));
-    }
     Ok(())
 }
 
@@ -243,14 +251,13 @@ pub fn validate_openid4vc_trust_policy(policy: &Openid4vcTrustPolicy) -> Result<
         &policy.credential_trust_anchor_pem,
         "invalid OpenID4VC trust policy credential anchor",
     )?;
-    let encoded = serde_json::to_vec(policy).map_err(|_| ProtocolError::Json)?;
-    if encoded.len() > 32 * 1024 {
+    if crate::serialized_json_size(policy)? > 32 * 1024 {
         return Err(ProtocolError::Policy(
             "OpenID4VC trust policy exceeds 32 KiB",
         ));
     }
-    validate_openid4vc_trust_jwks_with_options(&policy.client_attestation_jwks, true, true)?;
-    validate_openid4vc_trust_jwks_with_options(&policy.key_attestation_jwks, false, true)?;
+    validate_openid4vc_trust_jwks(&policy.client_attestation_jwks, true)?;
+    validate_openid4vc_trust_jwks(&policy.key_attestation_jwks, false)?;
     Ok(())
 }
 
@@ -294,7 +301,7 @@ fn validate_openid4vc_wallet_authorization_origins(
         if origin.is_empty()
             || origin.len() > MAX_ORIGIN_LENGTH
             || !origin.is_ascii()
-            || origin != &origin.to_ascii_lowercase()
+            || origin.bytes().any(|byte| byte.is_ascii_uppercase())
             || !origin.starts_with("https://")
             || origin
                 .bytes()
@@ -386,7 +393,7 @@ fn validate_openid4vc_wallet_authorization_origins(
                     "invalid OpenID4VC wallet authorization origin",
                 ));
             }
-            if parsed == 443 || port != parsed.to_string() {
+            if parsed == 443 || port.starts_with('0') {
                 return Err(ProtocolError::Policy(
                     "invalid OpenID4VC wallet authorization origin",
                 ));
@@ -416,7 +423,11 @@ fn validate_public_certificate_bundle(
     {
         return Err(ProtocolError::Policy(message));
     }
-    let normalized = value.replace("\r\n", "\n");
+    let normalized = if value.contains("\r\n") {
+        std::borrow::Cow::Owned(value.replace("\r\n", "\n"))
+    } else {
+        std::borrow::Cow::Borrowed(value)
+    };
     if normalized.contains('\r') || !normalized.starts_with(BEGIN) {
         return Err(ProtocolError::Policy(message));
     }
@@ -428,7 +439,7 @@ fn validate_public_certificate_bundle(
         return Err(ProtocolError::Policy(message));
     }
 
-    let mut remainder = normalized.as_str();
+    let mut remainder = normalized.as_ref();
     let mut encoded_certificates = std::collections::BTreeSet::new();
     for _ in 0..certificate_count {
         remainder = remainder.trim_start_matches(|character: char| character.is_ascii_whitespace());
@@ -445,13 +456,10 @@ fn validate_public_certificate_bundle(
             return Err(ProtocolError::Policy(message));
         }
         let encoded_body = certificate_body.lines().map(str::trim).collect::<String>();
-        if !encoded_certificates.insert(encoded_body.clone()) {
-            return Err(ProtocolError::Policy(message));
-        }
         let decoded = STANDARD
             .decode(encoded_body.as_bytes())
             .map_err(|_| ProtocolError::Policy(message))?;
-        if decoded.first() != Some(&0x30) {
+        if decoded.first() != Some(&0x30) || !encoded_certificates.insert(encoded_body) {
             return Err(ProtocolError::Policy(message));
         }
         remainder = &body[end_offset + END.len()..];
@@ -462,20 +470,17 @@ fn validate_public_certificate_bundle(
     Ok(())
 }
 
-fn validate_openid4vc_trust_jwks_with_options(
+fn validate_openid4vc_trust_jwks(
     jwks: &serde_json::Value,
     client_attestation: bool,
-    reject_unknown: bool,
 ) -> Result<(), ProtocolError> {
-    if reject_unknown {
-        let object = jwks.as_object().ok_or(ProtocolError::Policy(
-            "OpenID4VC trust policy JWKS must be an object",
-        ))?;
-        if object.keys().any(|name| name != "keys") {
-            return Err(ProtocolError::Policy(
-                "OpenID4VC trust policy JWKS contains an unknown member",
-            ));
-        }
+    let object = jwks.as_object().ok_or(ProtocolError::Policy(
+        "OpenID4VC trust policy JWKS must be an object",
+    ))?;
+    if object.keys().any(|name| name != "keys") {
+        return Err(ProtocolError::Policy(
+            "OpenID4VC trust policy JWKS contains an unknown member",
+        ));
     }
     let keys = jwks
         .get("keys")
@@ -489,18 +494,9 @@ fn validate_openid4vc_trust_jwks_with_options(
         let object = key.as_object().ok_or(ProtocolError::Policy(
             "OpenID4VC trust policy must contain public keys only",
         ))?;
-        if ["d", "p", "q", "dp", "dq", "qi", "oth", "k"]
-            .iter()
-            .any(|name| object.contains_key(*name))
-        {
-            return Err(ProtocolError::Policy(
-                "OpenID4VC trust policy must contain public keys only",
-            ));
-        }
-        if reject_unknown
-            && object
-                .keys()
-                .any(|name| !matches!(name.as_str(), "alg" | "crv" | "kid" | "kty" | "x" | "y"))
+        if object
+            .keys()
+            .any(|name| !matches!(name.as_str(), "alg" | "crv" | "kid" | "kty" | "x" | "y"))
         {
             return Err(ProtocolError::Policy(
                 "OpenID4VC trust policy contains an unknown JWK member",
@@ -511,7 +507,7 @@ fn validate_openid4vc_trust_jwks_with_options(
             .and_then(serde_json::Value::as_str)
             .filter(|kid| !kid.is_empty() && kid.len() <= 256);
         if let Some(kid) = kid {
-            if !key_ids.insert(kid.to_owned()) {
+            if !key_ids.insert(kid) {
                 return Err(ProtocolError::Policy(
                     "OpenID4VC trust policy keys require unique key ids",
                 ));
@@ -533,8 +529,8 @@ fn validate_openid4vc_trust_jwks_with_options(
         match (key_type, algorithm) {
             (Some("EC"), "ES256")
                 if object.get("crv").and_then(serde_json::Value::as_str) == Some("P-256")
-                    && valid_jwk_coordinate(object.get("x"), 32)
-                    && valid_jwk_coordinate(object.get("y"), 32) =>
+                    && valid_jwk_coordinate(object.get("x"))
+                    && valid_jwk_coordinate(object.get("y")) =>
             {
                 // Key-attestation ES256 keys may omit alg; the JWT header
                 // still selects the supported algorithm at verification.
@@ -542,7 +538,7 @@ fn validate_openid4vc_trust_jwks_with_options(
             (Some("OKP"), "EdDSA")
                 if !client_attestation
                     && object.get("crv").and_then(serde_json::Value::as_str) == Some("Ed25519")
-                    && valid_jwk_coordinate(object.get("x"), 32) =>
+                    && valid_jwk_coordinate(object.get("x")) =>
             {
                 // Supported holder key-attestation Ed25519 key.
             }
@@ -556,13 +552,13 @@ fn validate_openid4vc_trust_jwks_with_options(
     Ok(())
 }
 
-fn valid_jwk_coordinate(value: Option<&serde_json::Value>, expected_len: usize) -> bool {
+fn valid_jwk_coordinate(value: Option<&serde_json::Value>) -> bool {
     let Some(value) = value.and_then(serde_json::Value::as_str) else {
         return false;
     };
     base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(value)
-        .is_ok_and(|decoded| decoded.len() == expected_len)
+        .decode_slice(value, &mut [0_u8; 32])
+        .is_ok_and(|length| length == 32)
 }
 
 pub(crate) fn validate_identifier(value: &str) -> Result<(), ProtocolError> {

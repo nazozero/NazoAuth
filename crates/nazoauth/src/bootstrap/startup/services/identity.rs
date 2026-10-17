@@ -10,7 +10,6 @@ use nazo_oauth_server::services::{
 /// Identity, session, administration, and local-login endpoints.  These
 /// adapters share session/cookie policy and are kept together so that the
 /// factory only has to register the already-composed handles.
-#[derive(Clone)]
 pub(super) struct IdentityServices {
     pub(super) profile_logout_endpoint: web::Data<SessionLogoutEndpoint>,
     pub(super) runtime_module_admin_endpoint: web::Data<RuntimeModuleAdminEndpoint>,
@@ -133,7 +132,7 @@ pub(super) async fn build(
     let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&startup.settings));
     let session_profiles = web::Data::new(SessionProfileHandles::new(
         session_resolver.clone(),
-        session_http_config.clone(),
+        session_http_config,
     ));
     let session_management_endpoint = web::Data::new(SessionManagementEndpoint::new(
         Arc::new(ServerSessionManagementOperations::new(
@@ -147,10 +146,10 @@ pub(super) async fn build(
         ),
     ));
     let oidc_logout_operations = OidcLogoutHandles::new(
-        session_resolver.clone(),
+        session_resolver,
         persistence.logout_clients(),
         persistence.logout_outbox(),
-        keyset.clone(),
+        keyset,
         OidcLogoutConfig {
             issuer: settings.endpoint.issuer.as_str().into(),
             pairwise_subject_secret: settings
@@ -270,7 +269,7 @@ pub(super) async fn build(
             startup.remote_client_documents.clone(),
             core.security_audit.clone(),
         )),
-        session_cookie_config.clone(),
+        session_cookie_config,
         client_ip_config.get_ref().clone(),
     ));
     let identity_settings = &settings.identity;

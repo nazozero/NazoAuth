@@ -185,6 +185,32 @@ impl PasskeyRepository {
 }
 
 impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
+    fn credential_ids(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<passkey_auth::CredentialId>> {
+        Box::pin(async move {
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| RepositoryError::Unavailable)?;
+            user_passkey_credentials::table
+                .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
+                .order(user_passkey_credentials::created_at.asc())
+                .select(user_passkey_credentials::credential_id)
+                .load::<String>(&mut connection)
+                .await
+                .map_err(map_error)?
+                .into_iter()
+                .map(|id| {
+                    passkey_auth::CredentialId::from_b64url(&id)
+                        .map_err(|error| RepositoryError::Consistency(error.to_string()))
+                })
+                .collect()
+        })
+    }
+
     fn list(
         &self,
         tenant_id: TenantId,

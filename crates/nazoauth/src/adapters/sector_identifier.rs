@@ -4,20 +4,13 @@ pub(crate) const MAX_RESPONSE_BYTES: u64 = 128 * 1024;
 
 #[derive(Debug)]
 pub(crate) enum SectorIdentifierError {
-    InvalidContentType,
-    ResponseTooLarge,
     InvalidJson,
     #[allow(dead_code)]
     InvalidEntry(String),
 }
 
 pub(crate) fn is_blocked_host(host: &str) -> bool {
-    if host.eq_ignore_ascii_case("localhost")
-        || host.eq_ignore_ascii_case("127.0.0.1")
-        || host == "0.0.0.0"
-        || host == "::1"
-        || host == "::"
-    {
+    if host.eq_ignore_ascii_case("localhost") {
         return true;
     }
     if let Ok(ip) = host.parse::<IpAddr>() {
@@ -79,7 +72,6 @@ fn is_globally_reachable_ipv6(address: std::net::Ipv6Addr) -> bool {
     // Mirror the IANA IPv6 Special-Purpose Address Registry. Only the listed
     // exceptions inside 2001::/23 and the well-known translation prefix remain
     // reachable in addition to ordinary global unicast space.
-    let value = u128::from(address);
     let ietf_exception =
         matches!(
             address.segments(),
@@ -98,35 +90,19 @@ fn is_globally_reachable_ipv6(address: std::net::Ipv6Addr) -> bool {
     }
     let is_global_unicast = ipv6_in_prefix(address, 0x2000_0000_0000_0000_0000_0000_0000_0000, 3);
     is_global_unicast
-        && value != 0
         && ![
-            (0x0064_ff9b_0001_0000_0000_0000_0000_0000, 48),
-            (0x0100_0000_0000_0000_0000_0000_0000_0000, 64),
-            (0x0100_0000_0000_0001_0000_0000_0000_0000, 64),
             (0x2001_0000_0000_0000_0000_0000_0000_0000, 23),
             (0x2001_0db8_0000_0000_0000_0000_0000_0000, 32),
             (0x2002_0000_0000_0000_0000_0000_0000_0000, 16),
             (0x3fff_0000_0000_0000_0000_0000_0000_0000, 20),
-            (0x5f00_0000_0000_0000_0000_0000_0000_0000, 16),
-            (0xfc00_0000_0000_0000_0000_0000_0000_0000, 7),
-            (0xfe80_0000_0000_0000_0000_0000_0000_0000, 10),
-            (0xff00_0000_0000_0000_0000_0000_0000_0000, 8),
         ]
         .into_iter()
         .any(|(network, prefix_length)| ipv6_in_prefix(address, network, prefix_length))
 }
 
 pub(crate) fn parse_sector_identifier_document(
-    content_type: &str,
     body: &[u8],
 ) -> Result<Vec<String>, SectorIdentifierError> {
-    let media_type = content_type.split(';').next().unwrap_or_default().trim();
-    if !media_type.eq_ignore_ascii_case("application/json") {
-        return Err(SectorIdentifierError::InvalidContentType);
-    }
-    if body.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err(SectorIdentifierError::ResponseTooLarge);
-    }
     let uris: Vec<String> =
         serde_json::from_slice(body).map_err(|_| SectorIdentifierError::InvalidJson)?;
     for entry in &uris {

@@ -13,10 +13,6 @@ pub struct LifecycleFailure {
 }
 
 pub trait ModuleLifecycle: Send + Sync {
-    fn initialize(&self, module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>>;
-
-    fn stop(&self, module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>>;
-
     fn drain_stored_transactions(
         &self,
         module_id: ModuleId,
@@ -29,17 +25,6 @@ pub trait ModuleLifecycle: Send + Sync {
 pub struct NoopModuleLifecycle;
 
 impl ModuleLifecycle for NoopModuleLifecycle {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async { Ok(()) })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async { Ok(()) })
-    }
-
     fn drain_stored_transactions(
         &self,
         _module_id: ModuleId,
@@ -67,7 +52,6 @@ pub enum RegistryError<E> {
         compensation: Box<RegistryError<E>>,
     },
     MissingDesiredState(ModuleId),
-    MissingCatalogSpec(ModuleId),
     RuntimeDisableBlocked(ModuleId),
     ServiceNotConstructed(ModuleId),
     ActiveDependent {

@@ -14,11 +14,11 @@ pub use patch::prepare_client_patch;
 pub use policy::AdminClientPolicy;
 pub use ports::{
     AdminClientCryptoPort, AdminClientFuture, AdminClientPortError, AdminClientRepositoryPort,
-    SectorIdentifierFuture, SectorIdentifierResolverPort,
+    ClientJwksCapabilities, SectorIdentifierFuture, SectorIdentifierResolverPort,
 };
 pub use registration::prepare_client_registration;
 pub use requests::{CreateClientRequest, PatchClientRequest};
-pub use service::{AdminClientService, insert_prepared_client};
+pub use service::AdminClientService;
 pub use types::{
     CreatedClient, PendingClientSecret, PreparedClientRegistration, PreparedClientWrite,
     SuppliedClientSecret,

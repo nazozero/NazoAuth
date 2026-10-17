@@ -4,7 +4,7 @@ use crate::http::admin::require_transactional_audit_or_unavailable;
 use crate::http::sessions::{
     AdminSessionHandles, require_admin_with_recent_mfa_or_forbidden_with_handles,
 };
-use crate::http::views::client_json;
+use crate::http::views::{ClientView, client_json};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
@@ -13,7 +13,15 @@ use nazo_http_actix::client_ip_with_config;
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response_status, oauth_error};
 use nazo_oauth_server::crypto::blake3_hex;
-use serde_json::json;
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct CreatedClientResponse<'a> {
+    #[serde(flatten)]
+    client: ClientView<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_secret: Option<&'a str>,
+}
 
 pub(crate) async fn admin_create_client(
     admin_sessions: Data<AdminSessionHandles>,
@@ -46,13 +54,13 @@ pub(crate) async fn admin_create_client(
         .create_with_required_audit(payload, admin.id(), &source_ip_hash)
         .await
     {
-        Ok(created) => {
-            let mut body = client_json(&created.client);
-            if let Some(secret) = created.issued_secret.as_deref() {
-                body["client_secret"] = json!(secret);
-            }
-            json_response_status(StatusCode::CREATED, body)
-        }
+        Ok(created) => json_response_status(
+            StatusCode::CREATED,
+            CreatedClientResponse {
+                client: client_json(&created.client),
+                client_secret: created.issued_secret.as_deref(),
+            },
+        ),
         Err(error) => create_error_response(error),
     }
 }

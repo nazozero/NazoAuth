@@ -186,37 +186,27 @@ fn persisted_id_token_sid<'a>(
     })
 }
 
-fn claim_request_value_matches(request: &nazo_auth::OidcClaimRequest, actual: &Value) -> bool {
-    match (&request.value, request.values.as_slice()) {
-        (Some(expected), _) => expected == actual,
-        (None, []) => true,
-        (None, values) => values.iter().any(|expected| expected == actual),
-    }
-}
-
 fn refreshed_id_token_essential_claims_satisfied(
     issue: &TokenIssue,
     client: &ClientRow,
     frontchannel_logout_enabled: bool,
-    extra_claims: Option<&Value>,
+    extra_claims: &serde_json::Map<String, Value>,
 ) -> bool {
     issue
         .id_token_claim_requests
         .iter()
         .filter(|request| request.essential)
         .all(|request| {
+            use std::borrow::Cow;
             let actual = match request.name.as_str() {
-                "auth_time" => issue.auth_time.map(|value| json!(value)),
-                "amr" if !issue.amr.is_empty() => Some(json!(&issue.amr)),
-                "acr" => issue.acr.as_ref().map(|value| json!(value)),
+                "auth_time" => issue.auth_time.map(|value| Cow::Owned(json!(value))),
+                "amr" if !issue.amr.is_empty() => Some(Cow::Owned(json!(&issue.amr))),
+                "acr" => issue.acr.as_ref().map(|value| Cow::Owned(json!(value))),
                 "sid" => id_token_session_sid(client, issue, frontchannel_logout_enabled)
-                    .map(|value| json!(value)),
-                _ => extra_claims
-                    .and_then(Value::as_object)
-                    .and_then(|claims| claims.get(&request.name))
-                    .cloned(),
+                    .map(|value| Cow::Owned(json!(value))),
+                _ => extra_claims.get(&request.name).map(Cow::Borrowed),
             };
-            actual.is_some_and(|actual| claim_request_value_matches(request, &actual))
+            actual.is_some_and(|actual| request.matches_value(&actual))
         })
 }
 

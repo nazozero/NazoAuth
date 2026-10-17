@@ -5,14 +5,23 @@ use nazo_identity::{TenantId, ports::RepositoryError};
 use nazo_postgres::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite,
-    OperatorManagedTrustAnchor, TenantResourceBinding, TenantResourceBindingDeactivate,
-    TenantResourceRepository, create_pool, delete_operator_managed_dataset_on_connection, get_conn,
+    OperatorManagedTrustAnchor, TenantResourceBinding, TenantResourceRepository, create_pool,
+    delete_operator_managed_dataset_on_connection, get_conn,
     insert_operator_managed_trust_anchor_on_connection, protect_dataset_claims,
     revoke_operator_managed_trust_anchor_on_connection, run_pending_migrations,
     unprotect_dataset_claims, upsert_operator_managed_dataset_on_connection,
 };
 use serde_json::json;
 use uuid::Uuid;
+
+#[path = "support/query_counter.rs"]
+mod query_counter;
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = sql_types::BigInt)]
+    count: i64,
+}
 
 #[derive(Debug)]
 enum TestTransactionError {
@@ -65,6 +74,38 @@ async fn insert_tenant(connection: &mut AsyncPgConnection, tenant_id: Uuid) -> Q
     .map(|_| ())
 }
 
+#[tokio::test]
+async fn revision_cas_conflicts_do_not_reload_discarded_state() {
+    let url = database_url();
+    run_pending_migrations(&url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let counter = query_counter::QueryCounter::new();
+    connection.set_instrumentation(counter.clone());
+    let result = connection
+        .transaction::<(), TestTransactionError, _>(async move |connection| {
+            let tenant_id = Uuid::now_v7();
+            insert_tenant(connection, tenant_id).await?;
+            let digest = "a".repeat(64);
+            for (expected, outcome) in [(5, None), (0, Some(1)), (0, None), (1, Some(2))] {
+                let before = counter.snapshot();
+                let actual = TenantResourceRepository::compare_and_set_state_on_connection(
+                    connection, tenant_id, expected, &digest,
+                )
+                .await?;
+                assert_eq!(actual, outcome);
+                assert_eq!(counter.since(before).data_queries, 1);
+            }
+            let state = TenantResourceRepository::state_on_connection(connection, tenant_id)
+                .await?
+                .unwrap();
+            assert_eq!(state.revision, 2);
+            assert_eq!(state.resource_manifest_sha256, digest);
+            Err(TestTransactionError::Rollback)
+        })
+        .await;
+    assert!(matches!(result, Err(TestTransactionError::Rollback)));
+}
+
 async fn upsert_binding_in_transaction(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
@@ -75,7 +116,14 @@ async fn upsert_binding_in_transaction(
 ) -> Result<TenantResourceBinding, TestTransactionError> {
     connection
         .transaction::<_, TestTransactionError, _>(async move |connection| {
-            Ok(TenantResourceRepository::upsert_binding_on_connection(
+            TenantResourceRepository::lock_binding_identity_on_connection(
+                connection,
+                tenant_id,
+                resource_kind,
+                resource_id,
+            )
+            .await?;
+            TenantResourceRepository::upsert_binding_on_connection(
                 connection,
                 NewTenantResourceBinding {
                     tenant_id,
@@ -86,7 +134,18 @@ async fn upsert_binding_in_transaction(
                     locator,
                 },
             )
-            .await?)
+            .await?;
+            // Inspect committed fields for lifecycle assertions; production callers
+            // need no returned binding and perform no inspection query.
+            Ok(
+                TenantResourceRepository::active_bindings_on_connection(connection, tenant_id)
+                    .await?
+                    .into_iter()
+                    .find(|row| {
+                        row.resource_kind == resource_kind && row.resource_id == resource_id
+                    })
+                    .expect("the fixture binding is active"),
+            )
         })
         .await
 }
@@ -97,9 +156,16 @@ async fn deactivate_binding_in_transaction(
     resource_kind: &str,
     resource_id: &str,
     expected_digest: &str,
-) -> Result<TenantResourceBindingDeactivate, TestTransactionError> {
+) -> Result<bool, TestTransactionError> {
     connection
         .transaction::<_, TestTransactionError, _>(async move |connection| {
+            TenantResourceRepository::lock_binding_identity_on_connection(
+                connection,
+                tenant_id,
+                resource_kind,
+                resource_id,
+            )
+            .await?;
             Ok(TenantResourceRepository::deactivate_binding_on_connection(
                 connection,
                 tenant_id,
@@ -277,7 +343,7 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
             tenant_uuid,
             user_id,
             configuration_id,
-            &probe.claims_ciphertext,
+            probe.claims_ciphertext,
         )
         .expect("operator dataset should decrypt"),
         claims
@@ -383,6 +449,9 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
         .await
         .expect("tenant should insert");
 
+    let counter = query_counter::QueryCounter::new();
+    connection.set_instrumentation(counter.clone());
+    let before = counter.snapshot();
     let inserted = upsert_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -393,6 +462,11 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
     )
     .await
     .expect("first binding should insert");
+    assert_eq!(
+        counter.since(before).data_queries,
+        3,
+        "one lock, one insert, and the test-only state inspection"
+    );
     let replayed = upsert_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -419,6 +493,25 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
         Err(TestTransactionError::Repository(RepositoryError::Conflict))
     ));
 
+    let before = counter.snapshot();
+    assert!(
+        !deactivate_binding_in_transaction(
+            &mut connection,
+            tenant_id,
+            resource_kind,
+            &resource_id,
+            &second_digest,
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(
+        counter.since(before).data_queries,
+        2,
+        "lock and rejected update only"
+    );
+
+    let before = counter.snapshot();
     let deactivated = deactivate_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -428,10 +521,12 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
     )
     .await
     .expect("first binding should deactivate");
-    assert!(matches!(
-        deactivated,
-        TenantResourceBindingDeactivate::Deactivated(_)
-    ));
+    assert_eq!(
+        counter.since(before).data_queries,
+        2,
+        "one lock and one update"
+    );
+    assert!(deactivated);
     let same_digest_reapplied = upsert_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -600,13 +695,10 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     .await
     .expect("trust policy client should insert");
     assert_eq!(
-        TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-            &mut connection,
-            tenant_id,
-            &public_client_id,
-        )
-        .await
-        .expect("unbound trust client lookup should succeed"),
+        TenantResourceRepository::new(pool.clone())
+            .openid4vc_trust_policy_for_client(tenant_id, &public_client_id)
+            .await
+            .expect("unbound trust client lookup should succeed"),
         Openid4vcTrustPolicyForClient::Unbound
     );
 
@@ -620,8 +712,20 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     let first_digest = "a".repeat(64);
     let second_digest = "b".repeat(64);
     let wallet_origins = vec!["https://wallet.example/".to_owned()];
+    let counter = query_counter::QueryCounter::new();
+    connection.set_instrumentation(counter.clone());
     connection
         .transaction::<(), TestTransactionError, _>(async |connection| {
+            for resource_id in ["alternate-trust", "wallet-trust"] {
+                TenantResourceRepository::lock_binding_identity_on_connection(
+                    connection,
+                    tenant_id,
+                    "openid4vc-trust-policy",
+                    resource_id,
+                )
+                .await?;
+            }
+            let before = counter.snapshot();
             let applied = TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
                 connection,
                 NewStoredOpenid4vcTrustPolicy {
@@ -635,6 +739,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
             .await?;
             assert!(matches!(applied, Openid4vcTrustPolicyWrite::Applied(_)));
 
+            assert_eq!(
+                counter.since(before).data_queries,
+                2,
+                "policy read and insert; no repeated lock or size query"
+            );
+            let before = counter.snapshot();
             let bound = TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
                 connection,
                 tenant_id,
@@ -643,6 +753,11 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 oauth_client_id,
             )
             .await?;
+            assert_eq!(
+                counter.since(before).data_queries,
+                4,
+                "client row lock, policy read, binding read and insert"
+            );
             let Openid4vcTrustPolicyClientBind::Bound { binding_id } = bound else {
                 return Err(TestTransactionError::Assertion(format!(
                     "initial trust client binding returned {bound:?}"
@@ -660,17 +775,6 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 Openid4vcTrustPolicyClientBind::Replayed {
                     binding_id: replayed_id
                 } if replayed_id == binding_id
-            ));
-            assert!(matches!(
-                TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-                    connection,
-                    tenant_id,
-                    &public_client_id,
-                )
-                .await?,
-                Openid4vcTrustPolicyForClient::Active(ref policy)
-                    if policy.resource_id == "wallet-trust"
-                        && policy.resource_digest == first_digest
             ));
 
             let alternate = TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
@@ -712,16 +816,31 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
             .await?;
             assert!(matches!(replay, Openid4vcTrustPolicyWrite::Replayed(_)));
 
-            let cross_tenant = TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
+            let cross_tenant = TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
                 connection,
                 other_tenant_id,
                 "wallet-trust",
+                &wallet_origins[0],
+                &first_digest,
             )
             .await?;
             assert!(
                 cross_tenant.is_none(),
                 "tenant trust must not cross boundaries"
             );
+
+            for (origin, digest) in [
+                ("https://unknown-wallet.example/", first_digest.as_str()),
+                (wallet_origins[0].as_str(), second_digest.as_str()),
+            ] {
+                assert!(TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
+                    connection, tenant_id, "wallet-trust", origin, digest,
+                ).await?.is_none());
+            }
+            let visible = TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
+                connection, tenant_id, "wallet-trust", &wallet_origins[0], &first_digest,
+            ).await?.expect("exact active origin and digest should resolve");
+            assert_eq!(visible.public_material, material);
 
             let drift = TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
                 connection,
@@ -734,16 +853,7 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 },
             )
             .await?;
-            match drift {
-                Openid4vcTrustPolicyWrite::Conflict(current) => {
-                    assert_eq!(current.resource_digest, first_digest);
-                }
-                other => {
-                    return Err(TestTransactionError::Assertion(format!(
-                        "digest drift returned {other:?}"
-                    )));
-                }
-            }
+            assert_eq!(drift, Openid4vcTrustPolicyWrite::Conflict);
 
             let stale = TenantResourceRepository::revoke_openid4vc_trust_policy_on_connection(
                 connection,
@@ -752,7 +862,7 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 &second_digest,
             )
             .await?;
-            assert!(matches!(stale, Openid4vcTrustPolicyRevoke::Conflict(_)));
+            assert!(matches!(stale, Openid4vcTrustPolicyRevoke::Conflict));
             let revoked = TenantResourceRepository::revoke_openid4vc_trust_policy_on_connection(
                 connection,
                 tenant_id,
@@ -765,20 +875,13 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                     "exact trust policy revoke did not revoke".to_owned(),
                 ));
             };
-            assert_eq!(
-                TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
-                    connection,
-                    tenant_id,
-                    &public_client_id,
-                )
-                .await?,
-                Openid4vcTrustPolicyForClient::BoundInactive
-            );
             assert!(
-                TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
+                TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
                     connection,
                     tenant_id,
                     "wallet-trust",
+                    &wallet_origins[0],
+                    &first_digest,
                 )
                 .await?
                 .is_none()
@@ -807,13 +910,16 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                     "revoked trust policy did not create a new generation".to_owned(),
                 ));
             };
-            assert_ne!(reapplied.id, revoked.id, "revoked binding IDs stay frozen");
-            assert!(
-                TenantResourceRepository::active_openid4vc_trust_policy_binding_on_connection(
-                    connection, tenant_id, revoked.id,
-                )
-                .await?
-                .is_none(),
+            assert_ne!(reapplied, revoked, "revoked binding IDs stay frozen");
+            let old_active = sql_query(
+                "SELECT COUNT(*)::BIGINT AS count FROM openid4vc_trust_policies
+                 WHERE id = $1 AND active",
+            )
+            .bind::<sql_types::Uuid, _>(revoked)
+            .get_result::<CountRow>(connection)
+            .await?;
+            assert_eq!(
+                old_active.count, 0,
                 "reapply must not reactivate an old frozen binding ID"
             );
             Ok(())
@@ -849,10 +955,19 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
     connection
         .transaction::<(), TestTransactionError, _>(async |connection| {
             // Management keeps its policy/binding locks throughout this transaction.
-            TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
+            TenantResourceRepository::lock_binding_identity_on_connection(
                 connection,
                 tenant_id,
-                &public_client_id,
+                "openid4vc-trust-policy",
+                "wallet-trust",
+            )
+            .await?;
+            TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
+                connection,
+                tenant_id,
+                "wallet-trust",
+                &first_digest,
+                oauth_client_id,
             )
             .await?;
             let resolved = tokio::time::timeout(
@@ -901,10 +1016,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
         .await;
     assert!(matches!(rolled_back, Err(TestTransactionError::Rollback)));
     assert!(
-        TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
+        TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
             &mut connection,
             tenant_id,
             "rolled-back-trust",
+            &wallet_origins[0],
+            &second_digest,
         )
         .await
         .expect("rolled-back policy lookup should succeed")

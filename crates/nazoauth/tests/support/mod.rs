@@ -1,3 +1,5 @@
+mod session_payload;
+pub(crate) use session_payload::SessionPayload;
 pub(crate) mod admin_mutations;
 pub(crate) mod federation_binding;
 pub(crate) mod local_avatar;

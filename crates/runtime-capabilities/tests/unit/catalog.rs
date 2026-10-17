@@ -11,23 +11,23 @@ fn security_profile_block_is_reflected_only_in_effective_policy() {
         presentation_transaction: Duration::from_secs(5),
         scim_security_events: Duration::from_secs(6),
     };
-    let base = ModuleCatalog::fixed(durations).unwrap();
+    let base = ModuleCatalog::fixed(durations);
     assert_eq!(
         base.effective_disable_policy(ModuleId::Jarm),
-        Some(DisablePolicy::DrainStoredTransactions {
+        DisablePolicy::DrainStoredTransactions {
             max_duration: Duration::from_secs(3)
-        })
+        }
     );
 
     let profiled = base.clone().with_runtime_disable_blocked([ModuleId::Jarm]);
     assert_eq!(
-        profiled.spec(ModuleId::Jarm).unwrap().disable_policy,
+        profiled.spec(ModuleId::Jarm).disable_policy,
         DisablePolicy::DrainStoredTransactions {
             max_duration: Duration::from_secs(3)
         }
     );
     assert_eq!(
         profiled.effective_disable_policy(ModuleId::Jarm),
-        Some(DisablePolicy::NotRuntimeDisableable)
+        DisablePolicy::NotRuntimeDisableable
     );
 }

@@ -24,8 +24,9 @@ required-intent append failure prevents the business mutation. Silent
 `prompt=none` authorization applies the same dynamic readiness gate before its
 atomic decision commit. Fresh token
 issuance without earlier authorization-code consumption or Native SSO persistence
-also uses it for no-refresh, normal rotation, and `PreserveExisting` policies.
-Other issuance shapes retain the full storage preflight.
+also uses it for every refresh policy, including new families and lost-response
+rotation: their required audit and state changes share the commit. Issuance with
+earlier grant consumption or Native SSO persistence retains the full storage preflight.
 
 Where the mutation and ledger do not share a transaction, the caller records a
 required `*_intent` before changing state and emits an outcome afterward. An
@@ -146,7 +147,7 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | `identity_lifecycle` | `external_identity_linked`, `external_identity_relink_denied`, `external_identity_unlinked` |
 | `provisioning` | `scim_token_denied`, `scim_token_used` |
 | `session_lifecycle` | `oidc_logout` |
-| `token_lifecycle` | `token_issued`, `token_issuance_intent`, `token_revoked`, `refresh_family_security_revoked` |
+| `token_lifecycle` | `token_issued`, `token_revoked`, `refresh_family_security_revoked` |
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 

@@ -146,7 +146,7 @@ async fn hidden_committed_trust_ack_is_503_for_approve_reject_and_revoke_with_re
     let sid = format!("trust-required-sid-{suffix}");
     let csrf = format!("trust-required-csrf-{suffix}");
     let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
-    let payload = nazo_oauth_server::sessions::SessionPayload {
+    let payload = crate::test_support::SessionPayload {
         user_id: admin.as_uuid(),
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
@@ -384,7 +384,7 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
          .bind::<SqlUuid,_>(admin).bind::<Text,_>(format!("bundle-{suffix}")).bind::<Text,_>(format!("bundle-{suffix}@example.test")).execute(&mut connection).await.unwrap();
     let sid = format!("bundle-{suffix}");
     let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
-    let payload = nazo_oauth_server::sessions::SessionPayload {
+    let payload = crate::test_support::SessionPayload {
         user_id: admin,
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".into()],

@@ -378,10 +378,28 @@ fn client_attestation_validate_for_client_uses_static_trust_when_client_is_unbou
     futures_executor::block_on(async {
         let (validator, attestation, proof, _, _, now) = valid_client_attestation_fixture();
         let validated = validator
-            .validate_for_client(&attestation, &proof, "https://issuer.example", now)
+            .validate_for_client(
+                "wallet-client",
+                &attestation,
+                &proof,
+                "https://issuer.example",
+                now,
+            )
             .await
             .expect("static trust fallback should validate");
         assert_eq!(validated.client_id, "wallet-client");
+        assert!(
+            validator
+                .validate_for_client(
+                    "different-client",
+                    &attestation,
+                    &proof,
+                    "https://issuer.example",
+                    now
+                )
+                .await
+                .is_err()
+        );
     });
 }
 

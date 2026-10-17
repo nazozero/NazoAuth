@@ -598,7 +598,6 @@ def main() -> int:
     if not bin_sha:
         print(json.dumps({"error": "binary sha256 unavailable"}))
         return 2
-    sis.dc("volume", "create", pr.KEYSET_VOLUME, check=False)
 
     diag = diagnose_pg()
     manifest["postgres_diag"] = diag
@@ -782,7 +781,6 @@ def _run_single(args, spec: dict) -> int:
         sis.jdump(sis.RESULTS / spec["verdict_file"], out)
         print(json.dumps(out))
         return 2
-    sis.dc("volume", "create", pr.KEYSET_VOLUME, check=False)
     diag = diagnose_pg()
     sis.jdump(sis.RESULTS / spec["manifest_file"], {
         "task": spec["task"], "app_sha": args.app_sha,

@@ -92,11 +92,7 @@ async fn federation_response_bytes(response: reqwest::Response) -> anyhow::Resul
     }
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await? {
-        let length = body
-            .len()
-            .checked_add(chunk.len())
-            .ok_or_else(|| anyhow::anyhow!("federation provider response length overflow"))?;
-        if length > MAX_FEDERATION_PROVIDER_RESPONSE_BYTES {
+        if chunk.len() > MAX_FEDERATION_PROVIDER_RESPONSE_BYTES - body.len() {
             anyhow::bail!("federation provider response is too large");
         }
         body.extend_from_slice(&chunk);
@@ -119,22 +115,26 @@ async fn federation_text_response(response: reqwest::Response) -> anyhow::Result
 }
 
 #[derive(Serialize)]
-struct FederationProviderView {
-    provider_id: String,
-    display_name: String,
+struct FederationProviderView<'a> {
+    provider_id: &'a str,
+    display_name: &'a str,
     adapter_type: &'static str,
-    icon: Option<String>,
+    icon: Option<&'a str>,
     display_order: i32,
     start_url: String,
 }
 
 pub(crate) async fn federation_provider_list(config: Data<FederationHttpConfig>) -> HttpResponse {
+    #[derive(Serialize)]
+    struct ProviderList<'a> {
+        providers: Vec<FederationProviderView<'a>>,
+    }
     let providers = config
         .providers
         .enabled_public_providers()
         .map(provider_view)
         .collect::<Vec<_>>();
-    json_response_no_store(json!({ "providers": providers }))
+    json_response_no_store(ProviderList { providers })
 }
 
 pub(crate) async fn federation_provider_start(
@@ -212,8 +212,9 @@ fn read_federation_binding_seed(
     if value.len() != 43 {
         return None;
     }
-    let seed: [u8; 32] = URL_SAFE_NO_PAD.decode(value).ok()?.try_into().ok()?;
-    (URL_SAFE_NO_PAD.encode(seed) == value).then_some(seed)
+    let mut seed = [0; 32];
+    URL_SAFE_NO_PAD.decode_slice(value, &mut seed).ok()?;
+    Some(seed)
 }
 
 fn federation_start_response(
@@ -248,20 +249,20 @@ pub(crate) async fn federation_provider_callback(
         return response;
     }
     let provider_id = path.into_inner();
-    let Some(provider) = config.providers.enabled_provider(&provider_id).cloned() else {
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
         return unknown_provider_response();
     };
-    match provider.adapter {
+    match &provider.adapter {
         ExternalLoginProviderAdapter::Oidc(provider) => {
             oidc_callback_after_rate_limit_for_provider(
-                service, config, client_ip, req, query, provider,
+                service, &config, client_ip, req, query, provider,
             )
             .await
         }
         ExternalLoginProviderAdapter::Social(provider) => {
             social_callback_after_rate_limit(
                 service,
-                config,
+                &config,
                 client_ip,
                 req,
                 query,
@@ -275,22 +276,22 @@ pub(crate) async fn federation_provider_callback(
 
 async fn oidc_callback_after_rate_limit_for_provider(
     service: Data<LocalFederationService>,
-    config: Data<FederationHttpConfig>,
+    config: &FederationHttpConfig,
     client_ip: Data<ClientIpConfig>,
     req: HttpRequest,
     query: OidcCallbackQuery,
-    provider: OidcFederationSettings,
+    provider: &OidcFederationSettings,
 ) -> HttpResponse {
     let input = match validate_oidc_callback_input(&query) {
         Ok(input) => input,
         Err(response) => return response,
     };
-    let Some(browser_binding_seed) = read_federation_binding_seed(&req, &config) else {
+    let Some(browser_binding_seed) = read_federation_binding_seed(&req, config) else {
         return federation_state_error(FederationError::InvalidState);
     };
     let stored = match service
         .consume_oidc(
-            &input.state_token,
+            input.state_token,
             &provider.provider_id,
             &browser_binding_seed,
             Utc::now(),
@@ -302,8 +303,8 @@ async fn oidc_callback_after_rate_limit_for_provider(
     };
     let token = match exchange_oidc_code(
         &config.client,
-        &provider,
-        &input.code,
+        provider,
+        input.code,
         &stored.pkce_verifier,
     )
     .await
@@ -318,7 +319,7 @@ async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let jwks = match fetch_oidc_jwks(&config.client, &provider).await {
+    let jwks = match fetch_oidc_jwks(&config.client, provider).await {
         Ok(jwks) => jwks,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC JWKS fetch failed");
@@ -329,7 +330,7 @@ async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let claims = match verify_oidc_id_token(&provider, &jwks, &token.id_token, &stored.nonce) {
+    let claims = match verify_oidc_id_token(provider, &jwks, &token.id_token, &stored.nonce) {
         Ok(claims) => claims,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC ID Token verification failed");
@@ -363,10 +364,10 @@ async fn oidc_callback_after_rate_limit_for_provider(
     }
     complete_federation(
         service.get_ref(),
-        config.get_ref(),
+        config,
         VerifiedExternalIdentity {
             provider_type: "oidc".to_owned(),
-            provider_id: provider.provider_id,
+            provider_id: provider.provider_id.clone(),
             subject: claims.sub.clone(),
             email: Some(email.clone()),
             display_name: claims.name.clone(),
@@ -388,23 +389,23 @@ async fn oidc_callback_after_rate_limit_for_provider(
 
 async fn social_callback_after_rate_limit(
     service: Data<LocalFederationService>,
-    config: Data<FederationHttpConfig>,
+    config: &FederationHttpConfig,
     client_ip: Data<ClientIpConfig>,
     req: HttpRequest,
     query: OidcCallbackQuery,
     provider_id: String,
-    provider: SocialProviderSettings,
+    provider: &SocialProviderSettings,
 ) -> HttpResponse {
     let input = match validate_oidc_callback_input(&query) {
         Ok(input) => input,
         Err(response) => return response,
     };
-    let Some(browser_binding_seed) = read_federation_binding_seed(&req, &config) else {
+    let Some(browser_binding_seed) = read_federation_binding_seed(&req, config) else {
         return federation_state_error(FederationError::InvalidState);
     };
     let stored = match service
         .consume_social(
-            &input.state_token,
+            input.state_token,
             &provider_id,
             &browser_binding_seed,
             Utc::now(),
@@ -414,32 +415,28 @@ async fn social_callback_after_rate_limit(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
-    let identity = match resolve_social_identity(
-        &config.client,
-        &provider,
-        &input.code,
-        &stored.pkce_verifier,
-    )
-    .await
-    {
-        Ok(identity) => identity,
-        Err(error) => {
-            tracing::warn!(
-                %provider_id,
-                upstream_http_error = error.is::<reqwest::Error>(),
-                "OAuth2 social federation failed"
-            );
-            return oauth_error(
-                StatusCode::UNAUTHORIZED,
-                "access_denied",
-                "social federation failed.",
-            );
-        }
-    };
+    let identity =
+        match resolve_social_identity(&config.client, provider, input.code, &stored.pkce_verifier)
+            .await
+        {
+            Ok(identity) => identity,
+            Err(error) => {
+                tracing::warn!(
+                    %provider_id,
+                    upstream_http_error = error.is::<reqwest::Error>(),
+                    "OAuth2 social federation failed"
+                );
+                return oauth_error(
+                    StatusCode::UNAUTHORIZED,
+                    "access_denied",
+                    "social federation failed.",
+                );
+            }
+        };
     let existing_only = identity.email.is_none();
     complete_federation(
         service.get_ref(),
-        config.get_ref(),
+        config,
         VerifiedExternalIdentity {
             provider_type: "oauth2_social".to_owned(),
             provider_id,
@@ -583,12 +580,12 @@ fn federation_session_response(
 }
 
 #[derive(PartialEq, Eq)]
-struct OidcCallbackInput {
-    state_token: String,
-    code: String,
+struct OidcCallbackInput<'a> {
+    state_token: &'a str,
+    code: &'a str,
 }
 
-impl std::fmt::Debug for OidcCallbackInput {
+impl std::fmt::Debug for OidcCallbackInput<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("OidcCallbackInput([REDACTED])")
     }
@@ -596,7 +593,7 @@ impl std::fmt::Debug for OidcCallbackInput {
 
 fn validate_oidc_callback_input(
     query: &OidcCallbackQuery,
-) -> Result<OidcCallbackInput, HttpResponse> {
+) -> Result<OidcCallbackInput<'_>, HttpResponse> {
     if query.error.is_some() {
         return Err(oauth_error(
             StatusCode::UNAUTHORIZED,
@@ -621,7 +618,6 @@ fn validate_oidc_callback_input(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .filter(|value| value.len() <= 4096)
-        .map(ToOwned::to_owned)
         .ok_or_else(|| {
             oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -632,12 +628,12 @@ fn validate_oidc_callback_input(
     Ok(OidcCallbackInput { state_token, code })
 }
 
-fn provider_view(provider: &ExternalLoginProvider) -> FederationProviderView {
+fn provider_view(provider: &ExternalLoginProvider) -> FederationProviderView<'_> {
     FederationProviderView {
-        provider_id: provider.provider_id.clone(),
-        display_name: provider.display_name.clone(),
+        provider_id: &provider.provider_id,
+        display_name: &provider.display_name,
         adapter_type: provider.adapter_type(),
-        icon: provider.icon.clone(),
+        icon: provider.icon.as_deref(),
         display_order: provider.display_order,
         start_url: format!("/auth/federation/{}/start", provider.provider_id),
     }

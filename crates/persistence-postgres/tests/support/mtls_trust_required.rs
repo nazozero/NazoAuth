@@ -3,6 +3,9 @@ use super::*;
 use diesel_async::{AsyncConnection, AsyncPgConnection, SimpleAsyncConnection};
 use futures_util::FutureExt as _;
 
+#[path = "query_counter.rs"]
+mod query_counter;
+
 #[derive(QueryableByName)]
 struct SnapshotRow {
     #[diesel(sql_type=Jsonb)]
@@ -46,13 +49,30 @@ async fn fixture(url: &str, revoke: bool) -> TrustFixture {
     sql_query("INSERT INTO client_access_requests (tenant_id,user_id,site_name,site_url,request_description,status,resolved_by_user_id,approved_client_id,resolved_at) VALUES ($1,$2,'required trust','https://client.example','fixture',1,$3,$4,now())")
         .bind::<SqlUuid,_>(tenant.tenant_id.as_uuid()).bind::<SqlUuid,_>(requester.as_uuid())
         .bind::<SqlUuid,_>(admin.as_uuid()).bind::<SqlUuid,_>(client).execute(&mut connection).await.unwrap();
-    let repository = MtlsTrustAnchorRepository::new(create_pool(url, 1).unwrap());
-    let id = repository
+    let pool = create_pool(url, 1).unwrap();
+    let counter = query_counter::QueryCounter::new();
+    {
+        let mut pooled = get_conn(&pool).await.unwrap();
+        pooled.set_instrumentation(counter.clone());
+    }
+    let repository = MtlsTrustAnchorRepository::new(pool);
+    let baseline = counter.snapshot();
+    let created = repository
         .create_for_owned_client(request(tenant, requester, &client_id, 'a'))
         .await
-        .unwrap()
-        .id;
+        .unwrap();
+    let id = created.id;
+    let delta = counter.since(baseline);
+    assert_eq!(delta.data_queries, 2, "lock plus insert; no display reread");
+    assert_eq!(delta.begins, 1);
+    assert_eq!(delta.commits, 1);
+    assert_eq!(delta.failed_queries, 0);
+    assert_eq!(
+        repository.by_id(tenant.tenant_id, id).await.unwrap(),
+        Some(created)
+    );
     if revoke {
+        let baseline = counter.snapshot();
         repository
             .approve(
                 tenant.tenant_id,
@@ -62,6 +82,11 @@ async fn fixture(url: &str, revoke: bool) -> TrustFixture {
             )
             .await
             .unwrap();
+        assert_eq!(
+            counter.since(baseline).data_queries,
+            4,
+            "tenant lock, actor/request lock, timed update, Required audit"
+        );
     }
     TrustFixture {
         tenant,

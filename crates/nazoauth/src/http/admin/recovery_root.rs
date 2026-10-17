@@ -108,11 +108,11 @@ pub(crate) async fn admin_recovery_root_approval(
     match recovery
         .issue_rotation_approval_with_required_audit(
             AdminIdentityAudit {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 actor_user_id: admin.id(),
                 source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
             },
-            &body,
+            body,
             Utc::now(),
         )
         .await
@@ -154,17 +154,17 @@ pub(crate) async fn admin_recovery_root_rotate(
         return response;
     }
     let change = RecoveryRootChangeRequest {
-        deployment_id: body.deployment_id.clone(),
-        recovery_public_key: body.recovery_public_key.clone(),
-        kid: body.kid.clone(),
+        deployment_id: body.deployment_id,
+        recovery_public_key: body.recovery_public_key,
+        kid: body.kid,
     };
     match recovery
         .commit_rotation_with_required_audit(
-            &body.approval_token,
-            &change,
+            body.approval_token,
+            change,
             Utc::now(),
             AdminIdentityAudit {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 actor_user_id: admin.id(),
                 source_ip_hash: blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
             },

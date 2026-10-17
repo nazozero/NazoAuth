@@ -3,36 +3,27 @@ use super::*;
 struct TenantOverride {
     context: nazo_identity::TenantContext,
     issuer: String,
-    host: String,
+    issuer_url: url::Url,
 }
 
 impl TenantOverride {
-    fn from_issuer(context: nazo_identity::TenantContext, issuer: String) -> anyhow::Result<Self> {
+    fn from_issuer(context: nazo_identity::TenantContext, issuer: &str) -> anyhow::Result<Self> {
         let issuer = issuer.trim().to_owned();
-        validate_issuer_url(&issuer)?;
-        let parsed = Url::parse(&issuer)?;
-        let issuer_host = parsed
-            .host()
-            .ok_or_else(|| anyhow::anyhow!("tenant issuer must include a host"))?;
-        let host = match issuer_host {
-            url::Host::Domain(domain) => canonical_tenant_host(domain)?,
-            url::Host::Ipv4(address) => canonical_tenant_host(&address.to_string())?,
-            url::Host::Ipv6(address) => canonical_tenant_host(&format!("[{address}]"))?,
-        };
+        let issuer_url = validate_issuer_url(&issuer)?;
         Ok(Self {
             context,
             issuer,
-            host,
+            issuer_url,
         })
     }
 
     fn from_directory(binding: &nazo_identity::TenantDirectoryBinding) -> anyhow::Result<Self> {
-        let override_ = Self::from_issuer(binding.tenant, binding.issuer.clone())?;
+        let override_ = Self::from_issuer(binding.tenant, &binding.issuer)?;
+        let host = nazo_identity::tenant_host_from_issuer(&override_.issuer_url)?;
         let external_host = canonical_tenant_host(&binding.external_host)?;
-        if override_.host != external_host {
+        if host != external_host {
             bail!(
-                "tenant directory issuer host {} does not match external_host {external_host}",
-                override_.host
+                "tenant directory issuer host {host} does not match external_host {external_host}"
             );
         }
         Ok(override_)
@@ -84,9 +75,7 @@ fn derive_tenant_secret(
     tenant_id: nazo_identity::TenantId,
     purpose: &'static [u8],
 ) -> [u8; 32] {
-    nazo_operator_protocol::hkdf_sha256_v1(root, tenant_id.as_uuid().as_bytes(), purpose, 32)
-        .try_into()
-        .expect("HKDF output length is fixed to 32 bytes")
+    nazo_operator_protocol::hkdf_sha256_v1(root, tenant_id.as_uuid().as_bytes(), purpose)
 }
 
 fn derive_tenant_management_token(
@@ -106,14 +95,18 @@ impl Settings {
         config: &ConfigSource,
     ) -> anyhow::Result<nazo_identity::TenantDirectoryBinding> {
         let tenant = nazo_identity::TenantContext::default_system();
-        let public_base_url = config.string("PUBLIC_BASE_URL", "http://127.0.0.1:8000");
-        let override_ =
-            TenantOverride::from_issuer(tenant, config.string("ISSUER", &public_base_url))?;
+        let issuer = config
+            .get("ISSUER")
+            .or_else(|| config.get("PUBLIC_BASE_URL"))
+            .unwrap_or("http://127.0.0.1:8000");
+        let override_ = TenantOverride::from_issuer(tenant, issuer)?;
+        let external_host =
+            nazo_identity::tenant_host_from_issuer(&override_.issuer_url)?.to_owned();
         Ok(nazo_identity::TenantDirectoryBinding {
             tenant,
             runtime_revision: 1,
             issuer: override_.issuer,
-            external_host: override_.host,
+            external_host,
         })
     }
 
@@ -132,38 +125,50 @@ impl Settings {
         tenant_override: Option<TenantOverride>,
     ) -> anyhow::Result<Self> {
         let tenant_specific = tenant_override.is_some();
-        let public_base_url = tenant_override
-            .as_ref()
-            .map(|tenant| tenant.issuer.clone())
-            .unwrap_or_else(|| config.string("PUBLIC_BASE_URL", "http://127.0.0.1:8000"));
-        validate_issuer_url(&public_base_url)?;
-        let public_origin = url_origin(&public_base_url)?;
-
-        let issuer = tenant_override
-            .as_ref()
-            .map(|tenant| tenant.issuer.clone())
-            .unwrap_or_else(|| config.string("ISSUER", &public_base_url));
-        validate_issuer_url(&issuer)?;
-        let transport_mode =
-            TransportMode::from_config(config.get("TRANSPORT_MODE").as_deref(), &issuer);
-        let tenant = match tenant_override {
-            Some(tenant) => TenantSettings {
-                context: tenant.context,
-            },
-            None => TenantSettings {
-                context: nazo_identity::TenantContext::default_system(),
-            },
+        let (public_base_url, public_origin, issuer, issuer_url, context) = match tenant_override {
+            Some(tenant) => (
+                tenant.issuer.clone(),
+                tenant.issuer_url.origin().ascii_serialization(),
+                tenant.issuer,
+                tenant.issuer_url,
+                tenant.context,
+            ),
+            None => {
+                let public_base_url = config.string("PUBLIC_BASE_URL", "http://127.0.0.1:8000");
+                let public_url = validate_issuer_url(&public_base_url)?;
+                let public_origin = public_url.origin().ascii_serialization();
+                let issuer = config.string("ISSUER", &public_base_url);
+                let issuer_url = if issuer == public_base_url {
+                    public_url
+                } else {
+                    validate_issuer_url(&issuer)?
+                };
+                (
+                    public_base_url,
+                    public_origin,
+                    issuer,
+                    issuer_url,
+                    nazo_identity::TenantContext::default_system(),
+                )
+            }
         };
-        let mtls_endpoint_base_url = if tenant_specific
+        // Issuer admission permits HTTP only for loopback hosts.
+        let issuer_is_loopback_http = issuer_url.scheme() == "http";
+        let transport_mode = TransportMode::from_config(
+            config.get("TRANSPORT_MODE"),
+            &issuer,
+            issuer_is_loopback_http,
+        );
+        let tenant = TenantSettings { context };
+        let (mtls_endpoint_base_url, mtls_endpoint_is_https) = if tenant_specific
             && matches!(&transport_mode, Ok(TransportMode::DirectTls))
             && let Some(configured_mtls) = config.optional_string("MTLS_ENDPOINT_BASE_URL")
         {
-            validate_issuer_url(&configured_mtls)?;
-            let configured_mtls = Url::parse(&configured_mtls)?;
+            let configured_mtls = validate_issuer_url(&configured_mtls)?;
             if configured_mtls.scheme() != "https" {
                 bail!("direct-tls transport requires an HTTPS MTLS_ENDPOINT_BASE_URL");
             }
-            let mut tenant_mtls = Url::parse(&issuer)?;
+            let mut tenant_mtls = issuer_url.clone();
             // The directory owns the tenant host; the deployment owns its
             // externally published mTLS listener port. Using the tenant's
             // ordinary HTTPS port would advertise a listener that never
@@ -171,46 +176,42 @@ impl Settings {
             tenant_mtls
                 .set_port(configured_mtls.port())
                 .map_err(|()| anyhow::anyhow!("invalid tenant mTLS endpoint port"))?;
-            tenant_mtls.to_string().trim_end_matches('/').to_owned()
-        } else if tenant_specific {
-            issuer.clone()
-        } else {
-            config
-                .optional_string("MTLS_ENDPOINT_BASE_URL")
-                .unwrap_or_else(|| issuer.clone())
-        };
-        validate_issuer_url(&mtls_endpoint_base_url)?;
-        let frontend_base_url = if tenant_specific {
-            format!("{}/ui/", public_base_url.trim_end_matches('/'))
-        } else {
-            config.string(
-                "FRONTEND_BASE_URL",
-                &format!("{}/ui/", public_base_url.trim_end_matches('/')),
+            (
+                tenant_mtls.to_string().trim_end_matches('/').to_owned(),
+                tenant_mtls.scheme() == "https",
             )
-        };
-        validate_frontend_base_url(&frontend_base_url)?;
-        let cors_allowed_origins = if tenant_specific {
-            vec![public_origin]
+        } else if tenant_specific {
+            (issuer.clone(), issuer_url.scheme() == "https")
+        } else if let Some(configured_mtls) = config.optional_string("MTLS_ENDPOINT_BASE_URL") {
+            let is_https = validate_issuer_url(&configured_mtls)?.scheme() == "https";
+            (configured_mtls, is_https)
         } else {
-            config
-                .get("CORS_ALLOWED_ORIGINS")
-                .map(|value| {
-                    value
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(ToOwned::to_owned)
-                        .collect()
-                })
-                .filter(|values: &Vec<String>| !values.is_empty())
-                .unwrap_or_else(|| vec![public_origin])
+            (issuer.clone(), issuer_url.scheme() == "https")
         };
-        for origin in &cors_allowed_origins {
-            validate_cors_origin(origin)?;
+        let frontend_base_url =
+            if !tenant_specific && let Some(frontend) = config.get("FRONTEND_BASE_URL") {
+                validate_frontend_base_url(frontend)?;
+                frontend.to_owned()
+            } else {
+                format!("{}/ui/", public_base_url.trim_end_matches('/'))
+            };
+        let mut cors_allowed_origins = Vec::new();
+        if !tenant_specific && let Some(origins) = config.get("CORS_ALLOWED_ORIGINS") {
+            for origin in origins
+                .split(',')
+                .map(str::trim)
+                .filter(|origin| !origin.is_empty())
+            {
+                validate_cors_origin(origin)?;
+                cors_allowed_origins.push(origin.to_owned());
+            }
+        }
+        if cors_allowed_origins.is_empty() {
+            cors_allowed_origins.push(public_origin);
         }
         let default_cookie_secure = issuer.starts_with("https://");
         let cookie_secure = config.bool("COOKIE_SECURE", default_cookie_secure)?;
-        if !cookie_secure && !is_loopback_http_url(&issuer) {
+        if !cookie_secure && !issuer_is_loopback_http {
             bail!("COOKIE_SECURE=false 只允许用于 loopback HTTP 本地开发 issuer");
         }
         let session_cookie_name = config
@@ -250,18 +251,20 @@ impl Settings {
         let client_secret_pepper = match config.optional_string("CLIENT_SECRET_PEPPER") {
             Some(secret) if secret.len() >= 32 => secret,
             Some(_) => bail!("CLIENT_SECRET_PEPPER must be at least 32 bytes"),
-            None if is_loopback_http_url(&issuer) => {
-                LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned()
-            }
+            None if issuer_is_loopback_http => LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned(),
             None => bail!("CLIENT_SECRET_PEPPER is required for non-loopback issuers"),
         };
         let authorization_server_profile =
             profile::authorization_server_profile_from_config(config)?;
         let ciba_security_profile = profile::ciba_security_profile_from_config(config)?;
-        let protected_resource_identifier = config
-            .optional_string("PROTECTED_RESOURCE_IDENTIFIER")
-            .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
-        validate_protected_resource_identifier(&protected_resource_identifier)?;
+        let protected_resource_identifier =
+            match config.optional_string("PROTECTED_RESOURCE_IDENTIFIER") {
+                Some(value) => {
+                    validate_protected_resource_identifier(&value)?;
+                    value
+                }
+                None => default_protected_resource_identifier(&issuer),
+            };
         // RFC 6749 section 3.3: ASCII space separates scope-token values.
         // This is public discovery policy, never a client authorization allowlist.
         let additional_scopes_supported = config
@@ -328,24 +331,25 @@ impl Settings {
                     .collect()
             })
             .unwrap_or_default();
-        let _ = mfa_totp_key_ring(config)?;
+        let enable_openid4vci_issuer = config.bool("ENABLE_OPENID4VCI_ISSUER", false)?;
         let enable_directory_openid4vci_issuer = config.bool(
             "ENABLE_DIRECTORY_OPENID4VCI_ISSUER",
-            config.bool("ENABLE_OPENID4VCI_ISSUER", false)?,
+            enable_openid4vci_issuer,
         )?;
         let enable_openid4vci_issuer = if tenant_specific {
             enable_directory_openid4vci_issuer
         } else {
-            config.bool("ENABLE_OPENID4VCI_ISSUER", false)?
+            enable_openid4vci_issuer
         };
+        let enable_openid4vp_verifier = config.bool("ENABLE_OPENID4VP_VERIFIER", false)?;
         let enable_directory_openid4vp_verifier = config.bool(
             "ENABLE_DIRECTORY_OPENID4VP_VERIFIER",
-            config.bool("ENABLE_OPENID4VP_VERIFIER", false)?,
+            enable_openid4vp_verifier,
         )?;
         let enable_openid4vp_verifier = if tenant_specific {
             enable_directory_openid4vp_verifier
         } else {
-            config.bool("ENABLE_OPENID4VP_VERIFIER", false)?
+            enable_openid4vp_verifier
         };
         let register_openid4vci_routes =
             enable_openid4vci_issuer || enable_directory_openid4vci_issuer;
@@ -483,15 +487,14 @@ impl Settings {
         }
         let email_code_dev_response_enabled =
             config.bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?;
-        if email_code_dev_response_enabled
-            && (!cfg!(debug_assertions) || !is_loopback_http_url(&issuer))
+        if email_code_dev_response_enabled && (!cfg!(debug_assertions) || !issuer_is_loopback_http)
         {
             bail!(
                 "EMAIL_CODE_DEV_RESPONSE_ENABLED=true requires a debug build and loopback HTTP issuer"
             );
         }
-        let passkey = PasskeySettings::from_config(config, &issuer)?;
-        let email = EmailSettings::from_config(config, &issuer)?;
+        let passkey = PasskeySettings::from_config(config, &issuer, &issuer_url)?;
+        let email = EmailSettings::from_config(config, issuer_is_loopback_http)?;
         let federation = FederationSettings::from_config(config)?;
         let task_key_settings = key_settings_from_config(config)?;
         let fapi_http_signature_max_age_seconds =
@@ -553,7 +556,7 @@ impl Settings {
                 let transport_mode = transport_mode?;
                 let configured_mtls_source = config
                     .get("MTLS_CERTIFICATE_SOURCE")
-                    .map(|value| value.trim().to_owned())
+                    .map(str::trim)
                     .filter(|value| !value.is_empty());
                 let mtls_certificate_source = match transport_mode {
                     TransportMode::LoopbackHttp => {
@@ -568,19 +571,13 @@ impl Settings {
                         MtlsCertificateSourceMode::Disabled
                     }
                     TransportMode::DirectTls => {
-                        if !Url::parse(&mtls_endpoint_base_url)?
-                            .scheme()
-                            .eq_ignore_ascii_case("https")
-                        {
+                        if !mtls_endpoint_is_https {
                             bail!("direct-tls transport requires an HTTPS MTLS_ENDPOINT_BASE_URL");
                         }
                         if !trusted_proxy_cidrs.is_empty() {
                             bail!("direct-tls transport must not configure TRUSTED_PROXY_CIDRS");
                         }
-                        if configured_mtls_source
-                            .as_deref()
-                            .is_some_and(|value| value != "direct-tls")
-                        {
+                        if configured_mtls_source.is_some_and(|value| value != "direct-tls") {
                             bail!("direct-tls transport cannot use a proxy certificate source");
                         }
                         MtlsCertificateSourceMode::DirectTls
@@ -591,7 +588,7 @@ impl Settings {
                                 "trusted-proxy transport requires at least one TRUSTED_PROXY_CIDRS entry"
                             );
                         }
-                        let Some(value) = configured_mtls_source.as_deref() else {
+                        let Some(value) = configured_mtls_source else {
                             bail!(
                                 "trusted-proxy transport requires an explicit MTLS_CERTIFICATE_SOURCE"
                             );
@@ -612,7 +609,7 @@ impl Settings {
                     cors_allowed_origins,
                     trusted_proxy_cidrs,
                     client_ip_header_mode: ClientIpHeaderMode::parse(
-                        &config.string("CLIENT_IP_HEADER_MODE", "none"),
+                        config.get("CLIENT_IP_HEADER_MODE").unwrap_or("none"),
                     )?,
                     transport_mode,
                     mtls_certificate_source,
@@ -637,7 +634,6 @@ impl Settings {
                     "REFRESH_TOKEN_TTL_SECONDS",
                 )?,
                 client_secret_pepper,
-                subject_type,
                 pairwise_subject_secret,
                 par_ttl_seconds,
                 require_pushed_authorization_requests,

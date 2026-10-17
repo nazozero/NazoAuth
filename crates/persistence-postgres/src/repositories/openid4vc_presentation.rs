@@ -4,18 +4,12 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_openid4vp::{
     PresentationCreateIdempotency, PresentationCreateOutcome, PresentationResult,
     PresentationStoreError, PresentationStoreFuture, PresentationStorePort,
-    PresentationTransaction, StoredPresentation,
+    PresentationTransaction,
 };
 use rand::Rng;
 use uuid::Uuid;
 
 use crate::{DbPool, get_conn};
-
-#[derive(QueryableByName)]
-struct PresentationCompletionId {
-    #[diesel(sql_type = sql_types::Uuid)]
-    id: Uuid,
-}
 
 #[derive(Clone)]
 pub struct Openid4vpRepository {
@@ -39,7 +33,6 @@ impl Openid4vpRepository {
         transaction: &PresentationTransaction,
         idempotency: PresentationCreateIdempotency<'_>,
     ) -> Result<PresentationCreateOutcome, PresentationStoreError> {
-        validate_create_idempotency(idempotency)?;
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -56,7 +49,7 @@ impl Openid4vpRepository {
             .to_string();
         let protected_private_key = transaction
             .response_encryption_private_key
-            .as_deref()
+            .as_ref()
             .map(|key| {
                 protect_payload(
                     &self.data_key,
@@ -107,21 +100,14 @@ impl Openid4vpRepository {
         .bind::<sql_types::Timestamptz, _>(transaction.created_at)
         .execute(&mut connection)
         .await
-        .map_err(|error| match error {
-            diesel::result::Error::DatabaseError(
-                diesel::result::DatabaseErrorKind::UniqueViolation,
-                _,
-            ) => PresentationStoreError::Unavailable,
-            _ => PresentationStoreError::Unavailable,
-        })?;
-        match inserted {
-            1 => Ok(PresentationCreateOutcome::Created),
-            0 => self
-                .load_idempotent_create(&mut connection, idempotency)
+        .map_err(|_| PresentationStoreError::Unavailable)?;
+        if inserted == 1 {
+            Ok(PresentationCreateOutcome::Created)
+        } else {
+            self.load_idempotent_create(&mut connection, idempotency)
                 .await?
                 .map(|transaction| PresentationCreateOutcome::Existing(Box::new(transaction)))
-                .ok_or(PresentationStoreError::InvalidTransition),
-            _ => Err(PresentationStoreError::InvalidTransition),
+                .ok_or(PresentationStoreError::InvalidTransition)
         }
     }
 
@@ -130,7 +116,6 @@ impl Openid4vpRepository {
         connection: &mut diesel_async::AsyncPgConnection,
         idempotency: PresentationCreateIdempotency<'_>,
     ) -> Result<Option<PresentationTransaction>, PresentationStoreError> {
-        validate_create_idempotency(idempotency)?;
         let row = load_presentation_by_create_request(
             connection,
             self.tenant_id,
@@ -147,7 +132,7 @@ impl Openid4vpRepository {
         {
             return Err(PresentationStoreError::IdempotencyConflict);
         }
-        row.transaction().map(Some)
+        row.transaction.transaction().map(Some)
     }
 }
 
@@ -199,25 +184,13 @@ impl PresentationStorePort for Openid4vpRepository {
         transaction_id: Uuid,
         wallet_nonce: &'a str,
         now: DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
-    {
+    ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
-            let Some(mut row) =
-                load_presentation(&mut connection, self.tenant_id, transaction_id, now)
-                    .await
-                    .map_err(|_| PresentationStoreError::Unavailable)?
-            else {
-                return Ok(None);
-            };
-            let mut request = row.transaction()?.request;
-            request.wallet_nonce = Some(wallet_nonce.to_owned());
-            let encoded = serde_json::to_value(&request)
-                .map_err(|_| PresentationStoreError::InvalidTransition)?;
             let changed = sql_query(
-                "UPDATE openid4vp_transactions SET request = $4 \
+                "UPDATE openid4vp_transactions SET request = jsonb_set(request, '{wallet_nonce}', to_jsonb($4::text)) \
                  WHERE id = $1 AND tenant_id = $2 AND completed_at IS NULL AND expires_at > $3 \
                    AND openid4vc_presentation_trust_policy_is_active( \
                        tenant_id, openid4vc_trust_policy_binding_id, \
@@ -226,17 +199,11 @@ impl PresentationStorePort for Openid4vpRepository {
             .bind::<sql_types::Uuid, _>(transaction_id)
             .bind::<sql_types::Uuid, _>(self.tenant_id)
             .bind::<sql_types::Timestamptz, _>(now)
-            .bind::<sql_types::Jsonb, _>(&encoded)
+            .bind::<sql_types::Text, _>(wallet_nonce)
             .execute(&mut connection)
             .await
             .map_err(|_| PresentationStoreError::Unavailable)?;
-            drop(connection);
-            if changed != 1 {
-                return Ok(None);
-            }
-            row.request = encoded;
-            row.transaction_with_key(&self.data_key, self.tenant_id)
-                .map(Some)
+            Ok(changed == 1)
         })
     }
 
@@ -276,9 +243,9 @@ impl PresentationStorePort for Openid4vpRepository {
                     .bind::<sql_types::Uuid, _>(transaction_id)
                     .bind::<sql_types::Uuid, _>(self.tenant_id)
                     .bind::<sql_types::Text, _>(state_hash)
-                    .load::<PresentationCompletionId>(connection)
+                    .execute(connection)
                     .await?;
-                    if !locked.iter().any(|row| row.id == transaction_id) {
+                    if locked == 0 {
                         return Ok(false);
                     }
                     let changed = sql_query(
@@ -311,18 +278,31 @@ impl PresentationStorePort for Openid4vpRepository {
         &'a self,
         transaction_id: Uuid,
         now: DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<StoredPresentation>, PresentationStoreError>>
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>
     {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
-            let row = load_presentation(&mut connection, self.tenant_id, transaction_id, now)
-                .await
-                .map_err(|_| PresentationStoreError::Unavailable)?;
+            let row = sql_query(
+                "SELECT result_ciphertext, completed_at FROM openid4vp_transactions \
+                 WHERE id = $1 AND tenant_id = $2 AND expires_at > $3 \
+                   AND openid4vc_presentation_trust_policy_is_active( \
+                       tenant_id, openid4vc_trust_policy_binding_id, \
+                       openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest)",
+            )
+            .bind::<sql_types::Uuid, _>(transaction_id)
+            .bind::<sql_types::Uuid, _>(self.tenant_id)
+            .bind::<sql_types::Timestamptz, _>(now)
+            .get_result::<PresentationResultRow>(&mut connection)
+            .await
+            .optional()
+            .map_err(|_| PresentationStoreError::Unavailable)?;
             drop(connection);
-            row.map(|value| value.stored(&self.data_key, self.tenant_id))
-                .transpose()
+            match row {
+                Some(row) => row.decode(&self.data_key, self.tenant_id, transaction_id),
+                None => Ok(None),
+            }
         })
     }
 }
@@ -337,10 +317,6 @@ struct PresentationRow {
     request_method: String,
     #[diesel(sql_type = sql_types::Text)]
     wallet_authorization_endpoint: String,
-    #[diesel(sql_type = sql_types::Text)]
-    create_request_sha256: String,
-    #[diesel(sql_type = sql_types::Text)]
-    create_request_canonical_json: String,
     #[diesel(sql_type = sql_types::Jsonb)]
     request: serde_json::Value,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
@@ -356,14 +332,28 @@ struct PresentationRow {
 
     #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
     ephemeral_private_key_ciphertext: Option<Vec<u8>>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
-    result_ciphertext: Option<Vec<u8>>,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    completed_at: Option<DateTime<Utc>>,
     #[diesel(sql_type = sql_types::Timestamptz)]
     expires_at: DateTime<Utc>,
     #[diesel(sql_type = sql_types::Timestamptz)]
     created_at: DateTime<Utc>,
+}
+
+#[derive(QueryableByName)]
+struct PresentationCreateRow {
+    #[diesel(embed)]
+    transaction: PresentationRow,
+    #[diesel(sql_type = sql_types::Text)]
+    create_request_sha256: String,
+    #[diesel(sql_type = sql_types::Text)]
+    create_request_canonical_json: String,
+}
+
+#[derive(QueryableByName)]
+struct PresentationResultRow {
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
+    result_ciphertext: Option<Vec<u8>>,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
+    completed_at: Option<DateTime<Utc>>,
 }
 
 async fn clear_expired_create_request(
@@ -386,86 +376,81 @@ async fn clear_expired_create_request(
 }
 
 impl PresentationRow {
-    fn transaction(&self) -> Result<PresentationTransaction, PresentationStoreError> {
+    fn transaction(self) -> Result<PresentationTransaction, PresentationStoreError> {
         Ok(PresentationTransaction {
             id: self.id,
-            client_id_prefix: parse_client_id_prefix(&self.client_id_prefix)?,
+            client_id_prefix: self
+                .client_id_prefix
+                .parse()
+                .map_err(|_| PresentationStoreError::InvalidTransition)?,
             request_method: self
                 .request_method
                 .parse()
                 .map_err(|_| PresentationStoreError::InvalidTransition)?,
 
-            wallet_authorization_endpoint: self.wallet_authorization_endpoint.clone(),
-            request: serde_json::from_value(self.request.clone())
+            wallet_authorization_endpoint: self.wallet_authorization_endpoint,
+            request: serde_json::from_value(self.request)
                 .map_err(|_| PresentationStoreError::InvalidTransition)?,
-            request_object: self.request_object.clone(),
-            request_uri: self.request_uri.clone(),
+            request_object: self.request_object,
+            request_uri: self.request_uri,
             openid4vc_trust_policy_binding_id: self.openid4vc_trust_policy_binding_id,
-            openid4vc_trust_policy_resource_id: self.openid4vc_trust_policy_resource_id.clone(),
-            openid4vc_trust_policy_digest: self.openid4vc_trust_policy_digest.clone(),
+            openid4vc_trust_policy_resource_id: self.openid4vc_trust_policy_resource_id,
+            openid4vc_trust_policy_digest: self.openid4vc_trust_policy_digest,
             response_encryption_private_key: None,
             created_at: self.created_at,
             expires_at: self.expires_at,
         })
     }
     fn transaction_with_key(
-        &self,
+        mut self,
         data_key: &[u8; 32],
         tenant_id: Uuid,
     ) -> Result<PresentationTransaction, PresentationStoreError> {
-        let mut transaction = self.transaction()?;
-        transaction.response_encryption_private_key = self
+        let private_key = self
             .ephemeral_private_key_ciphertext
-            .as_deref()
-            .map(|value| {
+            .take()
+            .map(|mut value| {
                 unprotect_payload(
                     data_key,
                     b"nazo-openid4vp-ephemeral-v2",
                     tenant_id,
                     self.id,
-                    value,
-                )
+                    &mut value,
+                )?
+                .try_into()
+                .map_err(|_| PresentationStoreError::Unavailable)
             })
             .transpose()?;
+        let mut transaction = self.transaction()?;
+        transaction.response_encryption_private_key = private_key;
         Ok(transaction)
     }
-    fn stored(
-        self,
+}
+
+impl PresentationResultRow {
+    fn decode(
+        mut self,
         data_key: &[u8; 32],
         tenant_id: Uuid,
-    ) -> Result<StoredPresentation, PresentationStoreError> {
+        transaction_id: Uuid,
+    ) -> Result<Option<PresentationResult>, PresentationStoreError> {
         let decrypted = self
             .result_ciphertext
-            .as_deref()
+            .as_deref_mut()
             .map(|value| {
                 unprotect_payload(
                     data_key,
                     b"nazo-openid4vp-result-v2",
                     tenant_id,
-                    self.id,
+                    transaction_id,
                     value,
                 )
             })
             .transpose()?;
         let completed = decrypted
-            .as_deref()
             .map(serde_json::from_slice)
             .transpose()
             .map_err(|_| PresentationStoreError::InvalidTransition)?;
-        let mut transaction = self.transaction()?;
-        transaction.response_encryption_private_key = self
-            .ephemeral_private_key_ciphertext
-            .as_deref()
-            .map(|value| {
-                unprotect_payload(
-                    data_key,
-                    b"nazo-openid4vp-ephemeral-v2",
-                    tenant_id,
-                    self.id,
-                    value,
-                )
-            })
-            .transpose()?;
         if completed
             .as_ref()
             .map(|result: &PresentationResult| result.completed_at.timestamp_micros())
@@ -475,10 +460,7 @@ impl PresentationRow {
         {
             return Err(PresentationStoreError::InvalidTransition);
         }
-        Ok(StoredPresentation {
-            transaction,
-            completed,
-        })
+        Ok(completed)
     }
 }
 
@@ -490,10 +472,9 @@ async fn load_presentation(
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
         "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
-         create_request_sha256, create_request_canonical_json, \
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
-         ephemeral_private_key_ciphertext, result_ciphertext, completed_at, expires_at, created_at \
+         ephemeral_private_key_ciphertext, expires_at, created_at \
          FROM openid4vp_transactions WHERE id = $1 AND tenant_id = $2 AND expires_at > $3 \
            AND openid4vc_presentation_trust_policy_is_active( \
                tenant_id, openid4vc_trust_policy_binding_id, \
@@ -512,13 +493,13 @@ async fn load_presentation_by_create_request(
     tenant_id: Uuid,
     request_jti: &str,
     now: DateTime<Utc>,
-) -> Result<Option<PresentationRow>, diesel::result::Error> {
+) -> Result<Option<PresentationCreateRow>, diesel::result::Error> {
     sql_query(
         "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
          create_request_sha256, create_request_canonical_json, \
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
-         ephemeral_private_key_ciphertext, result_ciphertext, completed_at, expires_at, created_at \
+         ephemeral_private_key_ciphertext, expires_at, created_at \
          FROM openid4vp_transactions WHERE tenant_id = $1 AND create_request_jti = $2 \
            AND expires_at > $3",
     )
@@ -528,45 +509,6 @@ async fn load_presentation_by_create_request(
     .get_result(connection)
     .await
     .optional()
-}
-
-fn validate_create_idempotency(
-    idempotency: PresentationCreateIdempotency<'_>,
-) -> Result<(), PresentationStoreError> {
-    nazo_operator_protocol::validate_openid4vp_create_request_jti(idempotency.request_jti)
-        .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    if idempotency.request_sha256.len() != 64
-        || !idempotency
-            .request_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
-        || idempotency.canonical_request.is_empty()
-        || idempotency.canonical_request.len()
-            > nazo_operator_protocol::MAX_OPENID4VP_NORMALIZED_CREATE_REQUEST_BYTES
-    {
-        return Err(PresentationStoreError::InvalidTransition);
-    }
-    let normalized: nazo_operator_protocol::Openid4vpNormalizedCreateRequest =
-        serde_json::from_str(idempotency.canonical_request)
-            .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    let (canonical, sha256) =
-        nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&normalized)
-            .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    if canonical != idempotency.canonical_request || sha256 != idempotency.request_sha256 {
-        return Err(PresentationStoreError::InvalidTransition);
-    }
-    Ok(())
-}
-
-fn parse_client_id_prefix(
-    value: &str,
-) -> Result<nazo_openid4vp::ClientIdPrefix, PresentationStoreError> {
-    match value {
-        "redirect_uri" => Ok(nazo_openid4vp::ClientIdPrefix::RedirectUri),
-        "x509_san_dns" => Ok(nazo_openid4vp::ClientIdPrefix::X509SanDns),
-        "x509_hash" => Ok(nazo_openid4vp::ClientIdPrefix::X509Hash),
-        _ => Err(PresentationStoreError::InvalidTransition),
-    }
 }
 
 fn payload_aad(domain: &[u8], tenant_id: Uuid, transaction_id: Uuid) -> Vec<u8> {
@@ -586,35 +528,24 @@ fn protect_payload(
 ) -> Result<Vec<u8>, PresentationStoreError> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    let mut protected = nonce.to_vec();
-    protected.extend_from_slice(
-        &nazo_crypto::aead::encrypt(
-            key,
-            &nonce,
-            &payload_aad(domain, tenant_id, transaction_id),
-            plaintext,
-        )
-        .map_err(|_| PresentationStoreError::Unavailable)?,
-    );
-    Ok(protected)
+    nazo_crypto::aead::encrypt_prefixed(
+        key,
+        &nonce,
+        &payload_aad(domain, tenant_id, transaction_id),
+        plaintext,
+        &nonce,
+    )
+    .map_err(|_| PresentationStoreError::Unavailable)
 }
 
-fn unprotect_payload(
+fn unprotect_payload<'a>(
     key: &[u8; 32],
     domain: &[u8],
     tenant_id: Uuid,
     transaction_id: Uuid,
-    protected: &[u8],
-) -> Result<Vec<u8>, PresentationStoreError> {
-    let (nonce, ciphertext) = protected
-        .split_at_checked(12)
-        .ok_or(PresentationStoreError::InvalidTransition)?;
-    let nonce: &[u8; 12] = nonce
-        .try_into()
-        .map_err(|_| PresentationStoreError::InvalidTransition)?;
+    protected: &'a mut [u8],
+) -> Result<&'a [u8], PresentationStoreError> {
     let aad = payload_aad(domain, tenant_id, transaction_id);
-    nazo_crypto::aead::decrypt(key, nonce, &aad, ciphertext).map_err(|error| match error {
-        nazo_crypto::CryptoError::InvalidKey => PresentationStoreError::Unavailable,
-        _ => PresentationStoreError::InvalidTransition,
-    })
+    nazo_crypto::aead::decrypt_nonce_prefixed(key, &aad, protected)
+        .map_err(|_| PresentationStoreError::InvalidTransition)
 }

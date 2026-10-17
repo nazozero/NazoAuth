@@ -5,7 +5,7 @@ use super::{
 };
 
 fn assert_present(
-    actual: ResourceAccessToken,
+    actual: ResourceAccessToken<'_>,
     expected_scheme: AccessTokenAuthScheme,
     expected_token: &str,
 ) {
@@ -63,7 +63,7 @@ fn bearer_and_dpop_authorization_schemes_are_case_insensitive() {
             .to_http_request();
         assert_eq!(
             super::authorization_access_token(request.headers()),
-            Some((expected, "token".to_owned()))
+            Some((expected, "token"))
         );
     }
 }

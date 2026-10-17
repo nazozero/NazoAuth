@@ -104,16 +104,47 @@ pub fn verify(
     message: &[u8],
     signature: &[u8],
 ) -> crate::Result<()> {
+    use aws_lc_rs::signature as backend;
+    use jsonwebtoken::DecodingKeyKind;
+
     match algorithm {
         Algorithm::EdDSA | Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 => {}
         _ => return Err(CryptoError::UnsupportedAlgorithm),
     }
-    let encoded = URL_SAFE_NO_PAD.encode(signature);
-    match jsonwebtoken::crypto::verify(&encoded, message, &key.inner, algorithm) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(CryptoError::InvalidSignature),
-        Err(_) => Err(CryptoError::InvalidInput),
+    if key.inner.family() != algorithm.family() {
+        return Err(CryptoError::InvalidInput);
     }
+    // Borrow the retained key and raw signature directly. The JWT provider's
+    // factory clones the key and boxes a verifier whose interface requires Vec.
+    let result = match algorithm {
+        Algorithm::EdDSA | Algorithm::ES256 => {
+            let bytes = key
+                .inner
+                .try_get_as_bytes()
+                .map_err(|_| CryptoError::InvalidInput)?;
+            let verifier: &dyn backend::VerificationAlgorithm = match algorithm {
+                Algorithm::EdDSA => &backend::ED25519,
+                _ => &backend::ECDSA_P256_SHA256_FIXED,
+            };
+            verifier.verify_sig(bytes, message, signature)
+        }
+        Algorithm::RS256 | Algorithm::PS256 => {
+            let parameters = match algorithm {
+                Algorithm::RS256 => &backend::RSA_PKCS1_2048_8192_SHA256,
+                _ => &backend::RSA_PSS_2048_8192_SHA256,
+            };
+            match key.inner.kind() {
+                DecodingKeyKind::SecretOrDer(bytes) => {
+                    backend::UnparsedPublicKey::new(parameters, bytes).verify(message, signature)
+                }
+                DecodingKeyKind::RsaModulusExponent { n, e } => {
+                    backend::RsaPublicKeyComponents { n, e }.verify(parameters, message, signature)
+                }
+            }
+        }
+        _ => unreachable!("unsupported algorithms were rejected above"),
+    };
+    result.map_err(|_| CryptoError::InvalidSignature)
 }
 
 pub fn generate_private_key(algorithm: Algorithm) -> crate::Result<Vec<u8>> {
@@ -159,13 +190,12 @@ pub fn public_jwk(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<ser
             let jwk = jsonwebtoken::jwk::Jwk::from_encoding_key(&key, algorithm)
                 .map_err(|_| CryptoError::InvalidKey)?;
             let value = serde_json::to_value(jwk).map_err(|_| CryptoError::OperationFailed)?;
-            let object = value.as_object().ok_or(CryptoError::OperationFailed)?;
-            let mut public = serde_json::Map::new();
-            for member in ["kty", "n", "e", "crv", "x", "y"] {
-                if let Some(value) = object.get(member) {
-                    public.insert(member.to_owned(), value.clone());
-                }
-            }
+            let serde_json::Value::Object(mut public) = value else {
+                return Err(CryptoError::OperationFailed);
+            };
+            public.retain(|member, _| {
+                matches!(member.as_str(), "kty" | "n" | "e" | "crv" | "x" | "y")
+            });
             Ok(serde_json::Value::Object(public))
         }
         _ => Err(CryptoError::UnsupportedAlgorithm),

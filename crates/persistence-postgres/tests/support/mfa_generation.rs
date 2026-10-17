@@ -91,7 +91,7 @@ async fn install_generation(
     step: i64,
 ) -> (Uuid, String) {
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned())
+        .begin_totp_enrollment(tenant.tenant_id, user, SECRET)
         .await
         .unwrap();
     let account = account(pool, tenant, user).await;
@@ -99,7 +99,7 @@ async fn install_generation(
     let code = totp(step);
     let now = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let prepared = service
-        .prepare_totp_confirmation(&account, &code, now)
+        .prepare_totp_confirmation(&account, code, now)
         .await
         .unwrap();
     let TotpConfirmationOutcome::Accepted { backup_codes } =
@@ -432,7 +432,7 @@ async fn mfa_clear_failure_after_dependent_deletes_rolls_back_every_generation_f
 
 use chrono::{DateTime, Utc};
 use nazo_identity::ports::{
-    BackupCodeCandidate, RepositoryFuture, TotpEnrollment, TotpVerificationOutcome,
+    BackupCodeCandidate, RepositoryFuture, TotpEnrollmentCheck, TotpVerificationOutcome,
 };
 
 struct UnknownMfaCommitAck {
@@ -441,20 +441,22 @@ struct UnknownMfaCommitAck {
 }
 
 impl MfaRepositoryPort for UnknownMfaCommitAck {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
-        MfaRepositoryPort::totp_enrollment(&self.inner, tenant_id, user_id)
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
+        MfaRepositoryPort::check_totp_enrollment(&self.inner, tenant_id, user_id, code, timestamp)
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()> {
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
         MfaRepositoryPort::begin_totp_enrollment(&self.inner, tenant_id, user_id, secret)
     }
 
@@ -894,7 +896,7 @@ async fn mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_co
     };
     let repository = mfa_repository(pool.clone());
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned())
+        .begin_totp_enrollment(tenant.tenant_id, user, SECRET)
         .await
         .unwrap();
     let admitted = account(&pool, tenant, user).await;
@@ -905,7 +907,7 @@ async fn mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_co
     let mut connection = get_conn(&pool).await.unwrap();
     connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture confirmation ledger failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='mfa_totp_enabled' AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();",user.as_uuid())).await.unwrap();
     let rollback=std::panic::AssertUnwindSafe(async {
-        let prepared=service.prepare_totp_confirmation(&admitted,&totp(STEP),STEP*30).await.unwrap();
+        let prepared=service.prepare_totp_confirmation(&admitted,totp(STEP),STEP*30).await.unwrap();
         let error=service.confirm_totp_with_required_audit(&admitted,prepared,STEP*30,"fixture-source-hash".to_owned()).await.unwrap_err();
         assert_eq!(error.kind(),MfaServiceErrorKind::Repository);
         assert_eq!(snapshot(&pool,tenant,user).await,before,
@@ -925,7 +927,7 @@ async fn mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_co
     removed.unwrap();
     let actor_check = std::panic::AssertUnwindSafe(async {
         let prepared = service
-            .prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            .prepare_totp_confirmation(&admitted, totp(STEP), STEP * 30)
             .await
             .unwrap();
         sql_query("UPDATE users SET is_active=FALSE WHERE tenant_id=$1 AND id=$2")
@@ -957,7 +959,7 @@ async fn mfa_confirmation_required_ledger_and_inactive_actor_roll_back_before_co
             .await
             .unwrap();
         let prepared = service
-            .prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            .prepare_totp_confirmation(&admitted, totp(STEP), STEP * 30)
             .await
             .unwrap();
         let TotpConfirmationOutcome::Accepted { backup_codes } = service
@@ -1130,7 +1132,7 @@ async fn mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes(
     let repository = mfa_repository(pool.clone());
     let body = std::panic::AssertUnwindSafe(async {
         repository
-            .begin_totp_enrollment(tenant.tenant_id, user, SECRET.to_owned())
+            .begin_totp_enrollment(tenant.tenant_id, user, SECRET)
             .await
             .unwrap();
         let admitted = account(&pool, tenant, user).await;
@@ -1145,7 +1147,7 @@ async fn mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes(
             Arc::new(FixtureHasher),
         );
         let prepared = real
-            .prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            .prepare_totp_confirmation(&admitted, totp(STEP), STEP * 30)
             .await
             .unwrap();
         let error = hidden
@@ -1171,7 +1173,7 @@ async fn mfa_confirm_and_regenerate_hidden_committed_ack_return_no_backup_codes(
             required_mutation_ledger(&pool, tenant, user, generation, "mfa_totp_enabled").await;
         assert_required_mutation(&ledger, tenant, user, generation);
         assert_eq!(
-            real.prepare_totp_confirmation(&admitted, &totp(STEP), STEP * 30)
+            real.prepare_totp_confirmation(&admitted, totp(STEP), STEP * 30)
                 .await
                 .unwrap_err()
                 .kind(),

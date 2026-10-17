@@ -35,6 +35,7 @@ use crate::http::sessions::SessionHttpConfig;
 use crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test;
 use crate::settings::Settings;
 use crate::test_support::DatabaseUserFixture;
+use crate::test_support::SessionPayload;
 use crate::test_support::TestInfrastructure;
 use crate::test_support::initialize_audit_dependencies;
 use crate::test_support::valkey::valkey_set_ex;
@@ -48,7 +49,6 @@ use nazo_oauth_server::domain::openid4vc_endpoints::PutCredentialDatasetRequest;
 use nazo_oauth_server::domain::openid4vc_endpoints::ServerCredentialIssuerOperations;
 use nazo_oauth_server::services::ServerAuthorizationService;
 use nazo_oauth_server::services::ServerTokenService;
-use nazo_oauth_server::sessions::SessionPayload;
 
 use nazo_postgres::{create_pool, get_conn};
 

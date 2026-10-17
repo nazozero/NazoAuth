@@ -146,18 +146,19 @@ pub enum SessionUpdateOutcome {
     Missing,
 }
 
+/// Account and authentication metadata resolved by `SessionService`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CurrentSession {
-    user: PublicAccount,
-    pending_mfa: bool,
-    auth_time: i64,
-    auth_time_micros: Option<i64>,
-    amr: Vec<String>,
-    oidc_sid: String,
-    logged_in_client_ids: Vec<String>,
+pub struct CurrentSession<A = PublicAccount> {
+    pub user: A,
+    pub pending_mfa: bool,
+    pub auth_time: i64,
+    pub auth_time_micros: Option<i64>,
+    pub amr: Vec<String>,
+    pub oidc_sid: String,
+    pub logged_in_client_ids: Vec<String>,
 }
 
-impl CurrentSession {
+impl<A> CurrentSession<A> {
     /// MFA flows may resolve either state from one validated storage snapshot.
     #[must_use]
     pub const fn pending_mfa(&self) -> bool {
@@ -165,12 +166,12 @@ impl CurrentSession {
     }
 
     #[must_use]
-    pub fn user(&self) -> &PublicAccount {
+    pub fn user(&self) -> &A {
         &self.user
     }
 
     #[must_use]
-    pub fn into_user(self) -> PublicAccount {
+    pub fn into_user(self) -> A {
         self.user
     }
 
@@ -201,8 +202,8 @@ impl CurrentSession {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SessionResolution {
-    Present(Box<CurrentSession>),
+pub enum SessionResolution<A = PublicAccount> {
+    Present(Box<CurrentSession<A>>),
     Missing,
     Invalidated,
 }
@@ -220,6 +221,14 @@ impl std::fmt::Debug for SessionRotation {
 }
 
 impl SessionRotation {
+    #[must_use]
+    pub fn into_tokens(self) -> (String, String) {
+        (
+            self.session_id.0.into_string(),
+            self.csrf_token.into_string(),
+        )
+    }
+
     #[must_use]
     pub fn session_id(&self) -> &SessionId {
         &self.session_id
@@ -275,19 +284,16 @@ impl SessionService {
             let Some(snapshot) = self.load_fail_closed(session_id).await? else {
                 return Ok(false);
             };
-            if snapshot
-                .record()
-                .logged_in_client_ids()
-                .iter()
-                .any(|id| id == client_id)
-            {
+            let SessionSnapshot {
+                mut record,
+                version,
+            } = snapshot;
+            if !record.add_logged_in_client(client_id) {
                 return Ok(true);
             }
-            let mut replacement = snapshot.record().clone();
-            replacement.add_logged_in_client(client_id);
             match self
                 .sessions
-                .compare_and_set(session_id, &snapshot, &replacement)
+                .compare_and_set(session_id, &version, &record)
                 .await?
             {
                 SessionUpdateOutcome::Applied => return Ok(true),
@@ -305,7 +311,22 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, Some(false)).await
+        self.resolve(session_id, now, Some(false), |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
+    }
+
+    /// Resolve an identity/authorization guard without loading profile data.
+    pub async fn current_principal(
+        &self,
+        session_id: &SessionId,
+        now: i64,
+    ) -> Result<SessionResolution<crate::Principal>, RepositoryError> {
+        self.resolve(session_id, now, Some(false), |id| {
+            self.accounts.principal_by_id(self.tenant_id, id)
+        })
+        .await
     }
 
     pub async fn pending_mfa(
@@ -313,7 +334,10 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, Some(true)).await
+        self.resolve(session_id, now, Some(true), |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
     }
 
     /// Resolve active or pending MFA state with one session read and one active
@@ -323,7 +347,10 @@ impl SessionService {
         session_id: &SessionId,
         now: i64,
     ) -> Result<SessionResolution, RepositoryError> {
-        self.resolve(session_id, now, None).await
+        self.resolve(session_id, now, None, |id| {
+            self.accounts.public_account_by_id(self.tenant_id, id)
+        })
+        .await
     }
 
     pub async fn step_up(
@@ -337,7 +364,10 @@ impl SessionService {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(None);
         };
-        let mut replacement = snapshot.record().clone();
+        let SessionSnapshot {
+            record: mut replacement,
+            version,
+        } = snapshot;
         if !valid_authentication_metadata(
             replacement.auth_time(),
             replacement.amr(),
@@ -357,7 +387,7 @@ impl SessionService {
             .sessions
             .rotate(
                 session_id,
-                &snapshot,
+                &version,
                 &new_session_id,
                 &replacement,
                 ttl_seconds,
@@ -375,16 +405,17 @@ impl SessionService {
         }
     }
 
-    async fn resolve(
-        &self,
+    async fn resolve<'a, A: AsRef<crate::Principal>>(
+        &'a self,
         session_id: &SessionId,
         now: i64,
         expected_pending_mfa: Option<bool>,
-    ) -> Result<SessionResolution, RepositoryError> {
+        load_account: impl FnOnce(UserId) -> crate::ports::RepositoryFuture<'a, Option<A>>,
+    ) -> Result<SessionResolution<A>, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(SessionResolution::Missing);
         };
-        let record = snapshot.record();
+        let record = snapshot.record;
         if !valid_authentication_metadata(record.auth_time(), record.amr(), record.oidc_sid(), now)
         {
             let _ = self.sessions.delete(session_id).await;
@@ -393,11 +424,9 @@ impl SessionService {
         if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
         }
-        let Some(user) = self
-            .accounts
-            .public_account_by_id(self.tenant_id, record.user_id())
+        let Some(user) = load_account(record.user_id())
             .await?
-            .filter(|account| account.principal.active)
+            .filter(|account| account.as_ref().active)
         else {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);
@@ -407,12 +436,9 @@ impl SessionService {
             pending_mfa: record.pending_mfa(),
             auth_time: record.auth_time(),
             auth_time_micros: record.auth_time_micros(),
-            amr: record.amr().to_vec(),
-            oidc_sid: record
-                .oidc_sid()
-                .expect("validated session has an OIDC sid")
-                .to_owned(),
-            logged_in_client_ids: record.logged_in_client_ids().to_vec(),
+            amr: record.amr,
+            oidc_sid: record.oidc_sid.expect("validated session has an OIDC sid"),
+            logged_in_client_ids: record.logged_in_client_ids,
         })))
     }
 
@@ -491,10 +517,16 @@ impl SessionRecord {
         &self.logged_in_client_ids
     }
 
-    pub fn add_logged_in_client(&mut self, client_id: &str) {
-        if !self.logged_in_client_ids.iter().any(|id| id == client_id) {
-            self.logged_in_client_ids.push(client_id.to_owned());
+    pub fn add_logged_in_client(&mut self, client_id: impl AsRef<str> + Into<String>) -> bool {
+        if self
+            .logged_in_client_ids
+            .iter()
+            .any(|id| id == client_id.as_ref())
+        {
+            return false;
         }
+        self.logged_in_client_ids.push(client_id.into());
+        true
     }
 
     /// Record an authentication event without losing ordering within an OIDC second.

@@ -179,12 +179,14 @@ where
             .map_err(AuthenticatePasswordError::AccountLookup)?;
         let authenticatable = authentication
             .as_ref()
-            .is_some_and(|identity| identity.principal.active);
-        let password_hash = authentication
-            .as_ref()
-            .filter(|_| authenticatable)
-            .map(|identity| identity.login.password_hash.clone())
-            .unwrap_or_else(|| self.config.dummy_password_hash.clone());
+            .is_some_and(|identity| identity.active);
+        let (user_id, password_hash) = match authentication {
+            Some(identity) if identity.active => (Some(identity.user_id), identity.password_hash),
+            identity => (
+                identity.map(|identity| identity.user_id),
+                self.config.dummy_password_hash.clone(),
+            ),
+        };
         let password_valid = self
             .verifier
             .verify_secret(input.password, password_hash)
@@ -205,17 +207,14 @@ where
             self.audit.record(AuthenticationAuditEvent::Failure {
                 email: input.email,
                 source_ip: input.source_ip,
-                user_id: authentication.as_ref().map(|value| value.principal.user_id),
+                user_id,
             });
             return Err(AuthenticatePasswordError::InvalidCredentials);
         }
-        let authenticated = authentication.expect("active authenticated identity must exist");
+        let user_id = user_id.expect("active authenticated identity must exist");
         let account = self
             .accounts
-            .public_account_by_id(
-                authenticated.principal.tenant.tenant_id,
-                authenticated.principal.user_id,
-            )
+            .login_state_by_id(self.config.tenant_id, user_id)
             .await
             .map_err(AuthenticatePasswordError::AccountLookup)?
             .ok_or(AuthenticatePasswordError::InvalidCredentials)?;
@@ -223,15 +222,16 @@ where
             .throttles
             .clear_failure(&input.email, &input.source_ip)
             .await;
-        if !account.principal.active {
+        if !account.active {
             return Err(AuthenticatePasswordError::InactiveAccount);
         }
 
-        let remembered_mfa = if account.account.mfa_enabled {
+        let remembered_mfa = if account.mfa_enabled {
             if let Some(proof) = input.remembered_mfa.as_ref() {
                 self.remembered_mfa
                     .is_valid(
-                        &account,
+                        self.config.tenant_id,
+                        user_id,
                         &proof.token_hash,
                         proof.user_agent_hash.as_deref(),
                         input.now,
@@ -250,10 +250,10 @@ where
             amr.push("mfa".to_owned());
         }
         let mut session = SessionRecord::new(
-            account.user_id(),
+            user_id,
             input.now.timestamp(),
             amr,
-            account.account.mfa_enabled && !remembered_mfa,
+            account.mfa_enabled && !remembered_mfa,
             Some(random_urlsafe_token()),
         );
         session.record_authentication_at(input.now);
@@ -281,7 +281,7 @@ where
             }
         }
         self.audit.record(AuthenticationAuditEvent::Success {
-            user_id: account.user_id(),
+            user_id,
             source_ip: input.source_ip,
             amr: session.amr().to_vec(),
         });

@@ -7,4 +7,4 @@
 
 mod s3;
 
-pub use s3::{S3AvatarObjectStore, S3AvatarObjectStoreConfig};
+pub use s3::{S3AvatarObjectStore, S3AvatarObjectStoreClient, S3AvatarObjectStoreConfig};

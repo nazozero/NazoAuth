@@ -388,3 +388,23 @@ fn dependency_error_is_closed_and_non_http() {
         LogoutDependencyError::Unavailable
     );
 }
+
+#[test]
+fn logout_operation_key_preserves_its_domain_separated_bytes() {
+    let mut session = LogoutSession {
+        user_id: Uuid::from_bytes(*b"0123456789abcdef"),
+        oidc_sid: "session\0with-boundaries".to_owned(),
+        logged_in_client_ids: vec!["client-a".to_owned()],
+    };
+    let expected = blake3::hash(
+        b"oidc-logout:v1\0\
+        0123456789abcdefsession\0with-boundaries",
+    )
+    .to_hex()
+    .to_string();
+    assert_eq!(nazo_auth::logout_operation_key(&session), expected);
+    session.logged_in_client_ids.push("client-b".to_owned());
+    assert_eq!(nazo_auth::logout_operation_key(&session), expected);
+    session.oidc_sid.push('x');
+    assert_ne!(nazo_auth::logout_operation_key(&session), expected);
+}

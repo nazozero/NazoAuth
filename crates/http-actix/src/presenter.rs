@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use actix_web::{
     HttpResponse,
     http::{
@@ -8,14 +6,33 @@ use actix_web::{
     },
 };
 use serde::Serialize;
-use serde_json::json;
+
+#[derive(Serialize)]
+struct OAuthErrorBody<'a> {
+    error: &'a str,
+    error_description: &'a str,
+}
+
+impl<'a> OAuthErrorBody<'a> {
+    fn new(error: &'a str, description: &'a str) -> Self {
+        Self {
+            error,
+            error_description: oauth_error_description(description),
+        }
+    }
+
+    fn bearer_challenge(&self) -> HeaderValue {
+        HeaderValue::from_str(&format!(
+            r#"Bearer error="{}", error_description="{}""#,
+            oauth_error_description(self.error),
+            self.error_description,
+        ))
+        .expect("OAuth challenge fields contain only allowed ASCII")
+    }
+}
 
 pub fn oauth_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
-    let description = oauth_error_description(description);
-    json_response_status(
-        status,
-        json!({"error": error, "error_description": description}),
-    )
+    json_response_status(status, OAuthErrorBody::new(error, description))
 }
 
 pub fn authorization_error_response(
@@ -32,8 +49,7 @@ pub fn oauth_token_error(
     description: &str,
     basic_challenge: bool,
 ) -> HttpResponse {
-    let description = oauth_error_description(description);
-    let mut response = no_store(oauth_error(status, error, &description));
+    let mut response = no_store(oauth_error(status, error, description));
     if basic_challenge {
         response.headers_mut().insert(
             header::WWW_AUTHENTICATE,
@@ -44,11 +60,12 @@ pub fn oauth_token_error(
 }
 
 pub fn oauth_bearer_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
-    let mut response = oauth_error(status, error, description);
-    response.headers_mut().insert(
-        header::WWW_AUTHENTICATE,
-        bearer_challenge(error, description),
-    );
+    let body = OAuthErrorBody::new(error, description);
+    let challenge = body.bearer_challenge();
+    let mut response = json_response_status(status, body);
+    response
+        .headers_mut()
+        .insert(header::WWW_AUTHENTICATE, challenge);
     response
 }
 
@@ -102,7 +119,7 @@ pub fn empty_response(status: StatusCode) -> HttpResponse {
     HttpResponse::build(status).finish()
 }
 
-fn no_store(mut response: HttpResponse) -> HttpResponse {
+pub(crate) fn no_store(mut response: HttpResponse) -> HttpResponse {
     response
         .headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -114,29 +131,15 @@ fn no_store(mut response: HttpResponse) -> HttpResponse {
 
 #[doc(hidden)]
 pub fn bearer_challenge(error: &str, description: &str) -> HeaderValue {
-    let description = oauth_error_description(description);
-    HeaderValue::from_str(&format!(
-        r#"Bearer error="{}", error_description="{}""#,
-        oauth_challenge_param(error),
-        oauth_challenge_param(&description)
-    ))
-    .unwrap_or_else(|_| HeaderValue::from_static("Bearer"))
+    OAuthErrorBody::new(error, description).bearer_challenge()
 }
 
 #[doc(hidden)]
-pub fn oauth_error_description(description: &str) -> Cow<'_, str> {
+pub fn oauth_error_description(description: &str) -> &str {
     if description.bytes().all(is_oauth_error_description_byte) {
-        Cow::Borrowed(description)
+        description
     } else {
-        Cow::Borrowed("Request failed.")
-    }
-}
-
-fn oauth_challenge_param(value: &str) -> Cow<'_, str> {
-    if value.bytes().all(is_oauth_error_description_byte) {
-        Cow::Borrowed(value)
-    } else {
-        Cow::Borrowed("Request failed.")
+        "Request failed."
     }
 }
 

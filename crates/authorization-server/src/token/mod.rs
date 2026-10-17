@@ -4,7 +4,6 @@ pub const TOKEN_EXCHANGE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:to
 
 use crate::contracts::oauth_error::OAuthEndpointError;
 use crate::contracts::token_endpoint::TokenRequestFacts;
-use crate::crypto::constant_time_eq;
 use crate::domain::rows::ClientRow;
 use crate::token::client_auth::TokenManagementClientAuthError;
 use http::StatusCode;
@@ -73,17 +72,13 @@ pub async fn validate_token_sender_constraints(
             facts
                 .certificate
                 .as_ref()
-                .and_then(|certificate| certificate.thumbprint.clone())
+                .and_then(|certificate| certificate.thumbprint.as_deref())
         })
         .flatten();
     let mtls_x5t_s256 = match (expected_mtls_x5t_s256, request_mtls_x5t_s256) {
-        (Some(expected), Some(actual))
-            if constant_time_eq(expected.as_bytes(), actual.as_bytes()) =>
-        {
-            Some(expected.to_owned())
-        }
+        (Some(expected), Some(actual)) if expected == actual => Some(actual.to_owned()),
         (Some(_), _) => return Err(SenderConstraintValidationError::MissingMtls),
-        (None, actual) => actual,
+        (None, actual) => actual.map(str::to_owned),
     };
 
     let has_dpop = dpop_jkt.is_some();

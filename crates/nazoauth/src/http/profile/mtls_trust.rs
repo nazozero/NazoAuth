@@ -27,12 +27,12 @@ pub(crate) async fn my_mtls_trust_requests(
     service: Data<MtlsTrustAnchorService>,
     req: HttpRequest,
 ) -> HttpResponse {
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     match service
-        .list_for_user(user.tenant().tenant_id, user.user_id())
+        .list_for_user(user.tenant.tenant_id, user.user_id)
         .await
     {
         Ok(items) => {
@@ -58,8 +58,8 @@ pub(crate) async fn create_mtls_trust_request(
     if !sessions.has_valid_csrf_token(&req, None) {
         return csrf_error();
     }
-    let user = match sessions.current_user_or_login_required(&req).await {
-        Ok(user) => user,
+    let user = match sessions.current_session_or_login_required(&req).await {
+        Ok(session) => session.user,
         Err(response) => return response,
     };
     let client_id = payload.client_id.trim();
@@ -82,8 +82,8 @@ pub(crate) async fn create_mtls_trust_request(
         }
     };
     let request = nazo_identity::NewMtlsTrustAnchorRequest {
-        tenant_id: user.tenant().tenant_id,
-        user_id: user.user_id(),
+        tenant_id: user.tenant.tenant_id,
+        user_id: user.user_id,
         client_id: client_id.to_owned(),
         certificate_pem: validated.certificate_pem,
         certificate_sha256: validated.certificate_sha256,
@@ -95,7 +95,7 @@ pub(crate) async fn create_mtls_trust_request(
         Ok(created) => {
             if audit_event_required(
                 "mtls_trust_anchor_requested",
-                audit_fields(&[
+                audit_fields([
                     ("request_id", serde_json::json!(created.id)),
                     ("requester_user_id", serde_json::json!(user.id())),
                     ("client_id", serde_json::json!(&created.client_id)),

@@ -6,11 +6,9 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeState, AuthorizationRequestError, AuthorizationResponsePolicyError,
-    ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError, NormalizedRequestObject,
+    ClientPresentation, ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError,
     OAuthClient, PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
-    RequestObjectClaims, RequestObjectPolicy, SignedJarmAuthorizationResponse,
-    ValidatedJwtBearerAssertion, authorization_details_empty,
-    authorization_request::{apply_request_object_plan, prepare_request_object},
+    SignedJarmAuthorizationResponse, ValidatedJwtBearerAssertion, authorization_details_empty,
     canonical_authorization_details, high_risk_authorization_details,
 };
 
@@ -269,9 +267,10 @@ pub fn pushed_authorization_request_digest(
         issued_at: &request.issued_at,
         expires_at: &request.expires_at,
     };
-    serde_json::to_vec(&canonical)
-        .map(|encoded| blake3::hash(&encoded).to_hex().to_string())
-        .map_err(|_| AuthorizationPortError::Unexpected)
+    let mut digest = blake3::Hasher::new();
+    serde_json::to_writer(&mut digest, &canonical)
+        .map_err(|_| AuthorizationPortError::Unexpected)?;
+    Ok(digest.finalize().to_hex().to_string())
 }
 
 #[derive(Clone, Copy)]
@@ -321,6 +320,10 @@ pub trait AuthorizationRepositoryPort: Send + Sync {
         &'a self,
         client_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<OAuthClient>>;
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<ClientPresentation>>;
     fn client_authentication_snapshot<'a>(
         &'a self,
         client_id: &'a str,
@@ -359,10 +362,6 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         &'a self,
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>>;
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>>;
     /// Consume only the exact storage version returned by `load_consent`.
     fn compare_and_delete_consent<'a>(
         &'a self,
@@ -509,13 +508,6 @@ where
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.as_ref().load_consent(request_id)
-    }
-
-    fn take_consent<'a>(
-        &'a self,
-        request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        self.as_ref().take_consent(request_id)
     }
 
     fn compare_and_delete_consent<'a>(
@@ -705,6 +697,13 @@ where
         self.repository.client_by_id(client_id).await
     }
 
+    pub async fn active_client_presentation(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<ClientPresentation>, AuthorizationPortError> {
+        self.repository.active_client_presentation(client_id).await
+    }
+
     pub async fn client_authentication_snapshot(
         &self,
         client_id: &str,
@@ -770,7 +769,8 @@ where
             {
                 return Err(AuthorizationPortError::CorruptData);
             }
-            let encoded = serde_json::to_vec(&code.payload)
+            let mut digest = blake3::Hasher::new();
+            serde_json::to_writer(&mut digest, &code.payload)
                 .map_err(|_| AuthorizationPortError::CorruptData)?;
             let fields = input
                 .audit_fields
@@ -783,7 +783,7 @@ where
             fields.insert("code_hash".to_owned(), Value::String(code.hash.clone()));
             fields.insert(
                 "code_payload_digest".to_owned(),
-                Value::String(blake3::hash(&encoded).to_hex().to_string()),
+                Value::String(digest.finalize().to_hex().to_string()),
             );
             input.retain_until = input.retain_until.max(code.payload.expires_at);
         }
@@ -964,12 +964,6 @@ where
             .await?
             .map(|snapshot| snapshot.payload))
     }
-    pub async fn take_consent(
-        &self,
-        id: &str,
-    ) -> Result<Option<ConsentPayload>, AuthorizationPortError> {
-        self.state.take_consent(id).await
-    }
     pub async fn store_consent(
         &self,
         id: &str,
@@ -999,34 +993,6 @@ where
         expires_at: i64,
     ) -> Result<bool, AuthorizationPortError> {
         self.state.consume_jar(client_id, jti, expires_at).await
-    }
-
-    /// Validates a verified request object and commits its replay marker only
-    /// after all pure claim and outer-parameter policy has succeeded.
-    pub async fn admit_request_object(
-        &self,
-        outer: &std::collections::HashMap<String, String>,
-        claims: &RequestObjectClaims,
-        policy: RequestObjectPolicy<'_>,
-    ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-        let mut outer = outer.clone();
-        self.admit_request_object_owned(&mut outer, claims, policy)
-            .await
-    }
-
-    /// Validates a verified request object while reusing the caller's outer
-    /// parameter map. Policy failures leave the map untouched.
-    pub async fn admit_request_object_owned(
-        &self,
-        outer: &mut std::collections::HashMap<String, String>,
-        claims: &RequestObjectClaims,
-        policy: RequestObjectPolicy<'_>,
-    ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-        let plan = prepare_request_object(outer, claims, policy)?;
-        if let Some(replay) = plan.replay() {
-            self.consume_request_object_replay(replay).await?;
-        }
-        Ok(apply_request_object_plan(outer, plan))
     }
 
     /// Commits the verified request object's replay claim at the application

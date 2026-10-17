@@ -122,14 +122,11 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
                 },
                 issued_at.timestamp(),
             );
-            let snapshot = self.keys.snapshot();
-            let mut header = nazo_crypto::jwt::Header::new(snapshot.active_alg);
-            header.typ = Some("logout+jwt".to_owned());
-            header.kid = Some(snapshot.active_kid.clone());
             self.keys
-                .encode_jwt(
+                .encode_response_jwt(
                     nazo_auth::SigningPurpose::LogoutToken,
-                    &header,
+                    None,
+                    "logout+jwt",
                     &serde_json::Value::Object(claims),
                 )
                 .await
@@ -180,10 +177,10 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                     },
                     id_token_hint,
                     id_token_hint_expired,
-                    session: current_session.as_ref().map(|session| LogoutSession {
+                    session: current_session.map(|session| LogoutSession {
                         user_id: session.user.id(),
-                        oidc_sid: session.oidc_sid.clone(),
-                        logged_in_client_ids: session.logged_in_client_ids.clone(),
+                        oidc_sid: session.oidc_sid,
+                        logged_in_client_ids: session.logged_in_client_ids,
                     }),
                     csrf_authorized: command.csrf_authorized,
                     user_confirmed: command.user_confirmed,
@@ -201,7 +198,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                 // persisted before the irreversible session delete: an
                 // append failure aborts the logout while the session can
                 // still be retried instead of completing unaudited.
-                let mut fields = audit_fields(&[
+                let mut fields = audit_fields([
                     ("operation_key", json!(operation_key)),
                     ("client_id", json!(audit_client_id)),
                 ]);

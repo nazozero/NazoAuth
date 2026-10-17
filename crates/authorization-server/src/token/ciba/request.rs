@@ -47,10 +47,7 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
         ));
     }
     let replay = CibaRequestObjectReplay {
-        jti: claims
-            .jti
-            .clone()
-            .expect("validated CIBA request object has jti"),
+        jti: claims.jti.expect("validated CIBA request object has jti"),
         expires_at: claims.exp.expect("validated CIBA request object has exp"),
     };
     if let Some(binding_message) = claims.binding_message.as_deref()
@@ -162,10 +159,7 @@ pub(crate) fn unverified_signed_ciba_request_object_client_id(
     }
     let bytes = URL_SAFE_NO_PAD.decode(payload_part).ok()?;
     let claims: UnverifiedCibaAuthenticationRequestClaims = serde_json::from_slice(&bytes).ok()?;
-    let issuer = claims.iss?.trim().to_owned();
-    if issuer.is_empty() {
-        return None;
-    }
+    let issuer = request_object_string(claims.iss).ok()??;
     let subject_matches = claims
         .sub
         .as_deref()
@@ -306,24 +300,27 @@ pub(crate) fn validate_ciba_binding_message(
 fn request_object_string(value: Option<String>) -> Result<Option<String>, OAuthEndpointError> {
     value
         .map(|value| {
-            let value = value.trim().to_owned();
-            if value.is_empty() {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
                 return Err(ciba_invalid_request(
                     "CIBA request object parameter is empty.",
                 ));
             }
-            Ok(value)
+            if trimmed.len() == value.len() {
+                Ok(value)
+            } else {
+                Ok(trimmed.to_owned())
+            }
         })
         .transpose()
 }
 
 pub(crate) fn ciba_requested_expiry_seconds(value: &Value) -> Option<u64> {
     match value {
-        Value::Number(number) => number.as_u64(),
+        Value::Number(number) => number.as_u64().filter(|seconds| *seconds > 0),
         Value::String(value) => parse_requested_expiry_string(value),
         _ => None,
     }
-    .filter(|seconds| *seconds > 0)
 }
 
 pub fn parse_requested_expiry_string(value: &str) -> Option<u64> {

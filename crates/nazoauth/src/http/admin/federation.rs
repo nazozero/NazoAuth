@@ -6,6 +6,7 @@ use crate::http::sessions::{AdminSessionHandles, require_admin_or_forbidden_with
 use crate::settings::{ExternalLoginProviderAdapter, Settings};
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -43,7 +44,13 @@ pub(crate) async fn admin_federation_providers(
     }
     // 管理端 onboarding 需要能核对 callback 与 adapter 类型，但不能读取
     // client_secret、第三方 access token 或 JWKS 原始内容。
-    json_response_no_store(json!({ "providers": config.providers() }))
+    #[derive(Serialize)]
+    struct ProvidersResponse<'a> {
+        providers: &'a [Value],
+    }
+    json_response_no_store(ProvidersResponse {
+        providers: config.providers(),
+    })
 }
 
 fn admin_provider_view(provider: &crate::settings::ExternalLoginProvider) -> Value {

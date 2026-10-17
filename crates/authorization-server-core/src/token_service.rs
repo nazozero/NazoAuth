@@ -231,7 +231,22 @@ impl AuthorizationCodeHolderEvidence {
         mtls_x5t_s256: Option<String>,
         client_attestation_jkt: Option<String>,
     ) -> Option<Self> {
-        let value = Self {
+        let proofs = [
+            &pkce_s256,
+            &dpop_jkt,
+            &mtls_x5t_s256,
+            &client_attestation_jkt,
+        ];
+        if proofs
+            .iter()
+            .any(|proof| proof.as_ref().is_some_and(String::is_empty))
+            || (client_authentication == AuthorizationCodeClientAuthentication::Public
+                && proofs.iter().all(|proof| proof.is_none()))
+            || (dpop_jkt.is_some() && mtls_x5t_s256.is_some())
+        {
+            return None;
+        }
+        Some(Self {
             version: 1,
             authenticated_client: client_authentication
                 == AuthorizationCodeClientAuthentication::Authenticated,
@@ -239,8 +254,7 @@ impl AuthorizationCodeHolderEvidence {
             dpop_jkt,
             mtls_x5t_s256,
             client_attestation_jkt,
-        };
-        value.is_well_formed().then_some(value)
+        })
     }
 
     /// Restore persisted requirements through the same checked boundary.
@@ -283,22 +297,6 @@ impl AuthorizationCodeHolderEvidence {
     #[must_use]
     pub fn client_attestation_jkt(&self) -> Option<&str> {
         self.client_attestation_jkt.as_deref()
-    }
-
-    #[must_use]
-    pub fn is_well_formed(&self) -> bool {
-        let proofs = [
-            &self.pkce_s256,
-            &self.dpop_jkt,
-            &self.mtls_x5t_s256,
-            &self.client_attestation_jkt,
-        ];
-        self.version == 1
-            && proofs
-                .iter()
-                .all(|proof| proof.as_ref().is_none_or(|value| !value.is_empty()))
-            && (self.authenticated_client || proofs.iter().any(|proof| proof.is_some()))
-            && !(self.dpop_jkt.is_some() && self.mtls_x5t_s256.is_some())
     }
 }
 
@@ -508,38 +506,16 @@ pub trait TokenRepositoryPort: Send + Sync {
         raw_token: &'a str,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
 
-    /// Read current-or-spent presentation and its direct successor candidate
-    /// from one storage snapshot. Unsupported adapters fail before issuance.
+    /// Read the presentation and direct successor from one storage snapshot.
+    /// The subject hint lets the adapter prepare OIDC claims in that read.
     fn refresh_token_snapshot<'a>(
-        &'a self,
-        _tenant_id: Uuid,
-        _raw_token: &'a str,
-        _client_id: Uuid,
-        _retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>> {
-        Box::pin(async { Err(TokenPortError::Unavailable) })
-    }
-
-    /// Optionally prepare OIDC claims during an ordinary refresh presentation
-    /// read. The hint carries no storage detail; adapters without this
-    /// optimization retain the original snapshot and later claims path.
-    fn refresh_token_snapshot_with_subject<'a>(
         &'a self,
         tenant_id: Uuid,
         raw_token: &'a str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
-        _prepare_oidc_subject: bool,
-    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
-    }
-
-    fn inspect_lost_response_successor<'a>(
-        &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>>;
+        prepare_oidc_subject: bool,
+    ) -> TokenFuture<'a, Option<RefreshTokenSnapshot>>;
 
     fn active_subject_claims<'a>(
         &'a self,
@@ -579,19 +555,14 @@ pub trait TokenRepositoryPort: Send + Sync {
         user_id: Uuid,
     ) -> TokenFuture<'_, bool>;
 
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize>;
-
-    /// Own the required revocation event in the same atomic commit as access
-    /// denial or refresh-family invalidation. Unsupported adapters fail before
-    /// effects; never emulate this by calling the ordinary mutation then audit.
+    /// Own required revocation evidence and access denial or family invalidation
+    /// in one atomic commit.
     fn revoke_token_with_audit<'a>(
         &'a self,
-        _input: TokenRevocation<'a>,
-        _client_public_id: &'a str,
-        _source_ip_hash: &'a str,
-    ) -> TokenFuture<'a, usize> {
-        Box::pin(async { Err(TokenPortError::Unavailable) })
-    }
+        input: TokenRevocation<'a>,
+        client_public_id: &'a str,
+        source_ip_hash: &'a str,
+    ) -> TokenFuture<'a, usize>;
 }
 
 pub trait TokenStateStorePort: Send + Sync {
@@ -773,22 +744,10 @@ where
         raw_token: &str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
-    ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
-        self.repository
-            .refresh_token_snapshot(tenant_id, raw_token, client_id, retry_started_at)
-            .await
-    }
-
-    pub async fn refresh_token_snapshot_with_subject(
-        &self,
-        tenant_id: Uuid,
-        raw_token: &str,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
         prepare_oidc_subject: bool,
     ) -> Result<Option<RefreshTokenSnapshot>, TokenPortError> {
         self.repository
-            .refresh_token_snapshot_with_subject(
+            .refresh_token_snapshot(
                 tenant_id,
                 raw_token,
                 client_id,
@@ -822,17 +781,6 @@ where
 
     pub async fn load_native_sso(&self, secret: &str) -> Result<Option<Value>, TokenPortError> {
         self.state.load_native_sso(secret).await
-    }
-
-    pub async fn inspect_lost_refresh_successor(
-        &self,
-        token: &RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> Result<Option<RefreshToken>, TokenPortError> {
-        self.repository
-            .inspect_lost_response_successor(token, client_id, retry_started_at)
-            .await
     }
 
     pub async fn active_subject_claims(
@@ -1078,39 +1026,6 @@ where
             issued_at: token.issued_at.timestamp(),
             subject: token.contract.subject,
         })
-    }
-
-    pub async fn revoke_token(
-        &self,
-        issuer: &str,
-        raw_token: &str,
-        client: &OAuthClient,
-    ) -> Result<usize, TokenPortError> {
-        let access_token = self
-            .verified_revocation_target(issuer, raw_token, client)
-            .await?;
-        if let Some(access_token) = access_token {
-            self.repository
-                .revoke_issued_tokens(
-                    client.tenant_id,
-                    client.id,
-                    &access_token.jti,
-                    Some(access_token.expires_at),
-                    None,
-                )
-                .await?;
-            // The audit count records revoked refresh-family members. An
-            // access-only revocation has always reported zero updated members.
-            return Ok(0);
-        }
-        self.repository
-            .revoke_token(TokenRevocation {
-                tenant_id: client.tenant_id,
-                client_id: client.id,
-                raw_token,
-                access_token: None,
-            })
-            .await
     }
 
     /// The authenticated endpoint uses this command so Required evidence cannot

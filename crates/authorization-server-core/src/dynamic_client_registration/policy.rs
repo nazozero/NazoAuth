@@ -160,28 +160,27 @@ pub fn prepare_dynamic_client_registration(
             "jwks_uri and jwks must not both be present.",
         ));
     }
-    let jwks_uri = request
-        .jwks_uri
-        .map(|uri| validate_https_metadata_uri("jwks_uri", uri, false))
-        .transpose()?;
-    let request_uris = validate_request_uris(request.request_uris.unwrap_or_default())?;
-    let initiate_login_uri = request
-        .initiate_login_uri
-        .map(|uri| validate_https_metadata_uri("initiate_login_uri", uri, false))
-        .transpose()?;
+    for (field, uri) in [
+        ("jwks_uri", request.jwks_uri.as_deref()),
+        ("initiate_login_uri", request.initiate_login_uri.as_deref()),
+        ("logo_uri", request.logo_uri.as_deref()),
+        ("policy_uri", request.policy_uri.as_deref()),
+        ("tos_uri", request.tos_uri.as_deref()),
+        (
+            "backchannel_client_notification_endpoint",
+            request.backchannel_client_notification_endpoint.as_deref(),
+        ),
+    ] {
+        if let Some(uri) = uri {
+            validate_https_metadata_uri(field, uri, false, 2048)?;
+        }
+    }
+    let request_uris = request.request_uris.unwrap_or_default();
+    validate_request_uris(&request_uris)?;
     let presentation = ClientPresentationMetadata {
-        logo_uri: request
-            .logo_uri
-            .map(|uri| validate_https_metadata_uri("logo_uri", uri, false))
-            .transpose()?,
-        policy_uri: request
-            .policy_uri
-            .map(|uri| validate_https_metadata_uri("policy_uri", uri, false))
-            .transpose()?,
-        tos_uri: request
-            .tos_uri
-            .map(|uri| validate_https_metadata_uri("tos_uri", uri, false))
-            .transpose()?,
+        logo_uri: request.logo_uri,
+        policy_uri: request.policy_uri,
+        tos_uri: request.tos_uri,
     };
     let backchannel_token_delivery_mode = request
         .backchannel_token_delivery_mode
@@ -191,12 +190,7 @@ pub fn prepare_dynamic_client_registration(
             "backchannel_token_delivery_mode must be poll or ping; push is not supported.",
         ));
     }
-    let backchannel_client_notification_endpoint = request
-        .backchannel_client_notification_endpoint
-        .map(|uri| {
-            validate_https_metadata_uri("backchannel_client_notification_endpoint", uri, false)
-        })
-        .transpose()?;
+    let backchannel_client_notification_endpoint = request.backchannel_client_notification_endpoint;
     match (
         backchannel_token_delivery_mode.as_str(),
         backchannel_client_notification_endpoint.as_ref(),
@@ -333,10 +327,10 @@ pub fn prepare_dynamic_client_registration(
             tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
             tls_client_auth_san_ip: request.tls_client_auth_san_ip.into_iter().collect(),
             tls_client_auth_san_email: request.tls_client_auth_san_email.into_iter().collect(),
-            jwks_uri,
+            jwks_uri: request.jwks_uri,
             jwks: request.jwks,
             request_uris,
-            initiate_login_uri,
+            initiate_login_uri: request.initiate_login_uri,
             presentation,
             id_token_signed_response_alg: request.id_token_signed_response_alg,
             id_token_encrypted_response_alg: request.id_token_encrypted_response_alg,
@@ -396,16 +390,16 @@ pub(super) fn negotiate_metadata_choice(
 
 fn validate_https_metadata_uri(
     field: &str,
-    value: String,
+    value: &str,
     allow_fragment: bool,
-) -> Result<String, DynamicRegistrationError> {
-    const MAX_URI_LENGTH: usize = 2048;
-    if value.len() > MAX_URI_LENGTH {
+    max_bytes: usize,
+) -> Result<(), DynamicRegistrationError> {
+    if value.len() > max_bytes {
         return Err(DynamicRegistrationError::invalid_client_metadata(format!(
-            "{field} exceeds {MAX_URI_LENGTH} bytes."
+            "{field} exceeds {max_bytes} bytes."
         )));
     }
-    let parsed = url::Url::parse(&value).map_err(|_| {
+    let parsed = url::Url::parse(value).map_err(|_| {
         DynamicRegistrationError::invalid_client_metadata(format!(
             "{field} must be an absolute HTTPS URI."
         ))
@@ -421,10 +415,10 @@ fn validate_https_metadata_uri(
             if allow_fragment { "" } else { " or fragment" }
         )));
     }
-    Ok(value)
+    Ok(())
 }
 
-fn validate_request_uris(values: Vec<String>) -> Result<Vec<String>, DynamicRegistrationError> {
+fn validate_request_uris(values: &[String]) -> Result<(), DynamicRegistrationError> {
     const MAX_REQUEST_URIS: usize = 10;
     const MAX_REQUEST_URI_LENGTH: usize = 512;
     if values.len() > MAX_REQUEST_URIS {
@@ -433,20 +427,15 @@ fn validate_request_uris(values: Vec<String>) -> Result<Vec<String>, DynamicRegi
         )));
     }
     let mut unique = std::collections::BTreeSet::new();
-    for value in &values {
-        if value.len() > MAX_REQUEST_URI_LENGTH {
-            return Err(DynamicRegistrationError::invalid_client_metadata(format!(
-                "request_uris entries must not exceed {MAX_REQUEST_URI_LENGTH} bytes."
-            )));
-        }
-        validate_https_metadata_uri("request_uris entry", value.clone(), true)?;
+    for value in values {
+        validate_https_metadata_uri("request_uris entry", value, true, MAX_REQUEST_URI_LENGTH)?;
         if !unique.insert(value) {
             return Err(DynamicRegistrationError::invalid_client_metadata(
                 "request_uris must not contain duplicates.",
             ));
         }
     }
-    Ok(values)
+    Ok(())
 }
 
 fn validate_response_type_relationship(

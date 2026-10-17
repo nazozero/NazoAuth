@@ -7,14 +7,14 @@ use nazo_oauth_server::contracts::fapi_resource::{
 
 use actix_web::{
     HttpRequest, HttpResponse,
-    body::to_bytes,
+    body::{MessageBody, to_bytes},
     http::{StatusCode, header},
     web::{Bytes, Data},
 };
 use chrono::Utc;
 use nazo_http_signatures::{
-    BodyDigest, OriginalRequest, RequestInput, ResponseInput, ResponsePolicy, SignatureFields,
-    VerificationPolicy, VerifiedInput, parse_request_for_verification_with_digest,
+    BodyDigest, OriginalRequest, ParsedSignatureInput, RequestInput, ResponseInput, ResponsePolicy,
+    SignatureFields, VerificationPolicy, parse_request_for_verification_with_digest,
     prepare_response_with_digests,
 };
 use nazo_resource_server::{
@@ -451,7 +451,7 @@ impl<'body> CapturedRequest<'body> {
         Ok(headers)
     }
 
-    fn parse(&self, max_age_seconds: i64) -> Result<VerifiedInput, ()> {
+    fn parse(&self, max_age_seconds: i64) -> Result<ParsedSignatureInput, ()> {
         let fields = self.signature_fields()?;
         let headers = self.verification_headers()?;
         let digest = self.valid_digest();
@@ -494,11 +494,13 @@ async fn sign_response(
     original: &CapturedRequest<'_>,
     response: HttpResponse,
 ) -> HttpResponse {
-    let status = response.status();
-    let response_headers = response.headers().clone();
-    let response_body = match to_bytes(response.into_body()).await {
+    let (mut response, body) = response.into_parts();
+    let response_body = match body.try_into_bytes() {
         Ok(body) => body,
-        Err(_) => return HttpResponse::ServiceUnavailable().finish(),
+        Err(body) => match to_bytes(body).await {
+            Ok(body) => body,
+            Err(_) => return HttpResponse::ServiceUnavailable().finish(),
+        },
     };
     let digest = (!response_body.is_empty()).then(|| BodyDigest::for_body(&response_body));
     let mut signature_headers = digest
@@ -507,7 +509,8 @@ async fn sign_response(
         .unwrap_or_default();
     let mut covered_headers = Vec::new();
     for name in ["content-type", "x-fapi-interaction-id"] {
-        if let Some(value) = response_headers
+        if let Some(value) = response
+            .headers()
             .get(name)
             .and_then(|value| value.to_str().ok())
         {
@@ -534,7 +537,7 @@ async fn sign_response(
     };
     let signing = match prepare_response_with_digests(
         ResponseInput {
-            status: status.as_u16(),
+            status: response.status().as_u16(),
             headers: &signature_headers,
             body: &response_body,
         },
@@ -567,23 +570,27 @@ async fn sign_response(
         }
     };
     let fields = signing.finish(&signature);
-    let mut builder = HttpResponse::build(status);
-    for (name, value) in &response_headers {
-        if name != header::CONTENT_LENGTH
-            && !matches!(
-                name.as_str(),
-                "content-digest" | "signature-input" | "signature"
-            )
-        {
-            builder.append_header((name.clone(), value.clone()));
-        }
-    }
+    let headers = response.headers_mut();
+    headers.remove(header::CONTENT_LENGTH);
+    headers.remove(header_name("content-digest"));
     if let Some(digest) = digest {
-        builder.insert_header(("content-digest", digest.field_value()));
+        headers.insert(
+            header_name("content-digest"),
+            header::HeaderValue::from_str(digest.field_value())
+                .expect("serialized digest is a valid header value"),
+        );
     }
-    builder.insert_header(("signature-input", fields.signature_input));
-    builder.insert_header(("signature", fields.signature));
-    builder.body(response_body)
+    headers.insert(
+        header_name("signature-input"),
+        header::HeaderValue::try_from(fields.signature_input)
+            .expect("serialized signature input is a valid header value"),
+    );
+    headers.insert(
+        header_name("signature"),
+        header::HeaderValue::try_from(fields.signature)
+            .expect("serialized signature is a valid header value"),
+    );
+    response.set_body(response_body).map_into_boxed_body()
 }
 
 fn single_header<'a>(request: &'a HttpRequest, name: &str) -> Result<Option<&'a str>, ()> {
@@ -605,8 +612,8 @@ fn interaction_id(request: &HttpRequest) -> header::HeaderValue {
     request
         .headers()
         .get("x-fapi-interaction-id")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| header::HeaderValue::from_str(value).ok())
+        .filter(|value| value.to_str().is_ok())
+        .cloned()
         .unwrap_or_else(|| {
             header::HeaderValue::from_str(&uuid::Uuid::now_v7().to_string())
                 .expect("UUID is a valid header value")

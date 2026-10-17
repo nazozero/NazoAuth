@@ -5,14 +5,15 @@ use diesel::{
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, AdminGrantRepositoryPort, CommitTokenIssuance,
-    CommitTokenIssuanceResult, NewRefreshToken, PendingBackchannelLogoutDelivery, RefreshContract,
-    RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
+    CommitTokenIssuanceResult, IdempotentBackchannelLogoutDelivery, NewRefreshToken,
+    RefreshContract, RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
     TokenIssuanceMode, TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
 };
 use nazo_postgres::{
     AuditRepository, AuthorizationRepository, GrantRepository, TokenIssuanceRepository,
     TokenRepository, create_pool,
 };
+use nazo_resource_server::AccessTokenRevocationLookup;
 use serde_json::json;
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -582,7 +583,7 @@ async fn assert_deactivation_batches_and_repeated_owners() {
         eprintln!("deactivation fixture: checking principal epoch");
         assert!(
             tokens
-                .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+                .is_revoked(nazo_resource_server::RevocationLookupKey {
                     tenant_id: &tenant.to_string(),
                     jti: &fresh.access_token_jti,
                     client_id: &owner.client_public_id,
@@ -1505,7 +1506,7 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert!(
         tokens
-            .access_token_state_revoked(nazo_resource_server::RevocationLookupKey {
+            .is_revoked(nazo_resource_server::RevocationLookupKey {
                 tenant_id: &tenant_id.to_string(),
                 jti: &access_token_jti,
                 client_id: &fixture.client_public_id,
@@ -1530,7 +1531,7 @@ async fn client_deactivation_waits_for_issuance_and_revokes_committed_credential
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn grants_upsert_cover_and_revoke_tokens_atomically() {
+async fn grants_ensure_updates_authorization_idempotently_and_revokes_tokens_atomically() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1539,18 +1540,18 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
     let repository = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     repository
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
-            &["openid".to_owned(), "offline_access".to_owned()],
-            &["resource://default".to_owned()],
-            &json!([]),
+            &["openid".to_owned()],
+            &[],
+            &json!([{"type": "previous"}]),
         )
         .await
         .expect("grant should insert");
     repository
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
@@ -1587,7 +1588,24 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
         .await
         .expect("grant should load")
         .expect("grant should exist");
-    assert_eq!(stored.authorization_count, 2);
+    assert_eq!(stored.authorization_count, 1);
+    assert_eq!(stored.scopes, json!(["openid", "offline_access"]));
+    assert_eq!(stored.resource_indicators, json!(["resource://default"]));
+    assert_eq!(stored.authorization_details, json!([]));
+    assert_eq!(
+        repository
+            .authorized_client_count(tenant_id, fixture.user_id)
+            .await
+            .unwrap(),
+        1,
+    );
+    assert_eq!(
+        repository
+            .authorized_client_count(tenant_id, Uuid::now_v7())
+            .await
+            .unwrap(),
+        0,
+    );
 
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
@@ -1641,7 +1659,7 @@ async fn grant_revoke_skips_already_revoked_family_lock() {
     );
     let grants = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     grants
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
@@ -1727,7 +1745,7 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
 
     let grants = GrantRepository::new(create_pool(&database_url, 4).unwrap());
     grants
-        .upsert(
+        .ensure(
             tenant_id,
             fixture.user_id,
             fixture.client_id,
@@ -1938,12 +1956,16 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
 
     let foreign_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let foreign_result = foreign_repository
-        .revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: foreign.client_id,
-            raw_token: &first,
-            access_token: None,
-        })
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: foreign.client_id,
+                raw_token: &first,
+                access_token: None,
+            },
+            "revocation-test-client",
+            "test-source-hash",
+        )
         .await
         .expect("foreign revocation must remain non-disclosing");
     assert_eq!(foreign_result, 0);
@@ -1951,18 +1973,26 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let first_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let second_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let (first_result, second_result) = tokio::join!(
-        first_repository.revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: owner.client_id,
-            raw_token: &first,
-            access_token: None,
-        }),
-        second_repository.revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: owner.client_id,
-            raw_token: &second,
-            access_token: None,
-        }),
+        first_repository.revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &first,
+                access_token: None,
+            },
+            "revocation-test-client",
+            "test-source-hash"
+        ),
+        second_repository.revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: owner.client_id,
+                raw_token: &second,
+                access_token: None,
+            },
+            "revocation-test-client",
+            "test-source-hash"
+        ),
     );
     assert_eq!(
         first_result.unwrap() + second_result.unwrap(),
@@ -1973,12 +2003,16 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     assert_eq!(
         repository
-            .revoke_token(TokenRevocation {
-                tenant_id,
-                client_id: owner.client_id,
-                raw_token: &first,
-                access_token: None,
-            })
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id,
+                    client_id: owner.client_id,
+                    raw_token: &first,
+                    access_token: None,
+                },
+                "revocation-test-client",
+                "test-source-hash"
+            )
             .await
             .expect("repeat family revocation should be idempotent"),
         0
@@ -1987,15 +2021,19 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let access_jti = format!("revocation-access-{}", Uuid::now_v7());
     for _ in 0..2 {
         repository
-            .revoke_token(TokenRevocation {
-                tenant_id,
-                client_id: owner.client_id,
-                raw_token: "opaque-access-token",
-                access_token: Some(AccessTokenRevocation {
-                    jti: access_jti.clone(),
-                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
-                }),
-            })
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id,
+                    client_id: owner.client_id,
+                    raw_token: "opaque-access-token",
+                    access_token: Some(AccessTokenRevocation {
+                        jti: access_jti.clone(),
+                        expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                    }),
+                },
+                "revocation-test-client",
+                "test-source-hash",
+            )
             .await
             .expect("access-token revocation should be idempotent");
     }
@@ -2203,14 +2241,15 @@ async fn audit_repository_reads_active_scim_credentials_and_drives_logout_outbox
 
     let logout_token = format!("logout-token-test-{}", Uuid::now_v7());
     repository
-        .enqueue_backchannel_logout(
+        .enqueue_idempotent_backchannel_logout_batch(&[IdempotentBackchannelLogoutDelivery {
             tenant_id,
-            fixture.client_id,
-            &fixture.client_public_id,
-            "https://client.example/backchannel-logout",
-            &logout_token,
-            chrono::Utc::now() + chrono::Duration::minutes(2),
-        )
+            client_id: fixture.client_id,
+            client_public_id: fixture.client_public_id.clone(),
+            logout_uri: "https://client.example/backchannel-logout".to_owned(),
+            logout_token: logout_token.clone(),
+            operation_key: format!("test-{}", Uuid::now_v7()),
+            expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+        }])
         .await
         .expect("backchannel delivery should enqueue");
     let claimed = repository
@@ -2246,21 +2285,23 @@ async fn backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid() {
     let marker = format!("logout-atomic-{}", Uuid::now_v7());
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(2);
     let result = repository
-        .enqueue_backchannel_logout_batch(&[
-            PendingBackchannelLogoutDelivery {
+        .enqueue_idempotent_backchannel_logout_batch(&[
+            IdempotentBackchannelLogoutDelivery {
                 tenant_id,
                 client_id: fixture.client_id,
                 client_public_id: fixture.client_public_id,
                 logout_uri: "https://client.example/backchannel-logout".to_owned(),
                 logout_token: marker.clone(),
+                operation_key: marker.clone(),
                 expires_at,
             },
-            PendingBackchannelLogoutDelivery {
+            IdempotentBackchannelLogoutDelivery {
                 tenant_id,
                 client_id: Uuid::now_v7(),
                 client_public_id: "missing-client".to_owned(),
                 logout_uri: "https://missing.example/backchannel-logout".to_owned(),
                 logout_token: format!("{marker}-invalid"),
+                operation_key: marker.clone(),
                 expires_at,
             },
         ])
@@ -2338,14 +2379,15 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
     let repository = AuditRepository::new(create_pool(&database_url, 4).unwrap());
     let logout_token = format!("logout-reclaim-token-{}", Uuid::now_v7());
     repository
-        .enqueue_backchannel_logout(
+        .enqueue_idempotent_backchannel_logout_batch(&[IdempotentBackchannelLogoutDelivery {
             tenant_id,
-            fixture.client_id,
-            &fixture.client_public_id,
-            "https://client.example/backchannel-logout",
-            &logout_token,
-            chrono::Utc::now() + chrono::Duration::minutes(2),
-        )
+            client_id: fixture.client_id,
+            client_public_id: fixture.client_public_id.clone(),
+            logout_uri: "https://client.example/backchannel-logout".to_owned(),
+            logout_token: logout_token.clone(),
+            operation_key: format!("test-{}", Uuid::now_v7()),
+            expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+        }])
         .await
         .expect("delivery should enqueue");
     let first = repository
@@ -3510,7 +3552,7 @@ async fn bound_rotation_fixture(
     tenant_id: Uuid,
     family_id: Uuid,
     dpop_jkt: &str,
-) -> (nazo_auth::RefreshToken, nazo_auth::RefreshToken) {
+) -> (String, nazo_auth::RefreshToken, nazo_auth::RefreshToken) {
     let tokens = TokenRepository::new(create_pool(database_url, 2).unwrap());
     let root_raw = format!("bound-root-{}", Uuid::now_v7());
     let mut root = refresh_token_fixture(fixture, tenant_id, family_id, root_raw.clone(), None);
@@ -3544,7 +3586,7 @@ async fn bound_rotation_fixture(
         .await
         .unwrap()
         .unwrap();
-    (original, successor)
+    (root_raw, original, successor)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3557,16 +3599,25 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let family_id = Uuid::now_v7();
     let dpop_jkt = format!("lost-response-jkt-{}", Uuid::now_v7().simple());
-    let (original, successor) =
+    let (original_raw, original, successor) =
         bound_rotation_fixture(&database_url, &fixture, tenant_id, family_id, &dpop_jkt).await;
-    let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+    let tokens = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
 
     // Outer snapshot: the unconsumed successor of the revoked original.
     let retry_started_at = chrono::Utc::now();
     let inspected = tokens
-        .inspect_lost_response_successor(&original, fixture.client_id, retry_started_at)
+        .refresh_token_snapshot(
+            tenant_id,
+            &original_raw,
+            fixture.client_id,
+            retry_started_at,
+            false,
+        )
         .await
-        .expect("outer successor snapshot should load");
+        .expect("outer snapshot should load")
+        .expect("original presentation exists")
+        .successor
+        .expect("successor projection should load");
     assert_eq!(
         inspected.as_ref().map(|token| token.id),
         Some(successor.id),
@@ -3646,9 +3697,7 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     );
 }
 
-/// Stages a revoked original refresh row plus `successor_count` successor rows
-/// in a fresh family and returns the original's domain token together with the
-/// inserted successor ids.
+/// Stages a family and spent edge, returning the raw presentation and successor IDs.
 #[allow(clippy::too_many_arguments)]
 async fn stage_lost_response(
     database_url: &str,
@@ -3661,7 +3710,7 @@ async fn stage_lost_response(
     successor_expires_offset_seconds: i32,
     successor_reuse_detected: bool,
     successor_count: usize,
-) -> (nazo_auth::RefreshToken, Vec<Uuid>) {
+) -> (String, Vec<Uuid>) {
     let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
     let family_id = Uuid::now_v7();
     let original_raw = format!("{label}-original-{}", Uuid::now_v7());
@@ -3683,12 +3732,7 @@ async fn stage_lost_response(
         successor_row.reuse_detected = successor_reuse_detected;
         successor_ids.push(insert_refresh_row(&mut connection, &successor_row).await);
     }
-    let original = TokenRepository::new(create_pool(database_url, 1).unwrap())
-        .by_raw_refresh_token(tenant_id, &original_raw)
-        .await
-        .expect("staged original should load")
-        .expect("staged original should exist");
-    (original, successor_ids)
+    (original_raw, successor_ids)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3699,14 +3743,14 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
-    let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
+    let tokens = TokenIssuanceRepository::new(create_pool(&database_url, 4).unwrap());
     let jkt = "lost-successor-jkt";
     // The retry timestamp must follow the staged `revoked_at` for the
     // sixty-second recovery window to be entered at all.
     let now = || chrono::Utc::now();
 
     // Zero successors → nothing to recover.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3721,15 +3765,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "no successor may be reported when none exists"
     );
 
     // Exactly one bound, unexpired, unrevoked successor → recovered.
-    let (original, successor_ids) = stage_lost_response(
+    let (original_raw, successor_ids) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3743,14 +3790,17 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     )
     .await;
     let recovered = tokens
-        .inspect_lost_response_successor(&original, fixture.client_id, now())
+        .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
         .await
-        .expect("successor lookup should load")
+        .expect("snapshot lookup should load")
+        .expect("original presentation exists")
+        .successor
+        .expect("successor projection should load")
         .expect("exactly one bound successor must be recoverable");
     assert_eq!(recovered.id, successor_ids[0]);
 
-    // Two competing successors trip the LIMIT 2 + exactly-one constraint.
-    let (original, _) = stage_lost_response(
+    // Competing successor fixtures compromise the family, so neither is recoverable.
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3765,15 +3815,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
-        "two candidate successors must fail the exactly-one constraint"
+        "a compromised family must not expose a successor"
     );
 
     // An expired successor does not count.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3788,15 +3841,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "an expired successor must not be recovered"
     );
 
     // Without any holder binding on the original there is no successor proof.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3811,9 +3867,12 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "an unbound original has no recoverable successor"
     );
@@ -3865,7 +3924,7 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
 
     // A client different from the original's owner sees nothing.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3880,15 +3939,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, Uuid::now_v7(), now())
+            .refresh_token_snapshot(tenant_id, &original_raw, Uuid::now_v7(), now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "a different client id must not recover the successor"
     );
 
     // A retry started outside the sixty-second window recovers nothing.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3903,15 +3965,18 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "a successor outside the retry window must not be recovered"
     );
 
     // A family already flagged for reuse hides the successor entirely.
-    let (original, _) = stage_lost_response(
+    let (original_raw, _) = stage_lost_response(
         &database_url,
         &fixture,
         tenant_id,
@@ -3926,9 +3991,12 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
     .await;
     assert!(
         tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .refresh_token_snapshot(tenant_id, &original_raw, fixture.client_id, now(), false)
             .await
-            .expect("successor lookup should load")
+            .expect("snapshot lookup should load")
+            .expect("original presentation exists")
+            .successor
+            .expect("successor projection should load")
             .is_none(),
         "a compromised family must hide every successor"
     );
@@ -4150,16 +4218,20 @@ async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
         "an unknown jti is not revoked"
     );
     retry_token_infra(|| {
-        issuance.revoke_token(TokenRevocation {
-            tenant_id,
-            client_id: fixture.client_id,
-            raw_token: "revoked-jti-unused-refresh",
-            access_token: Some(AccessTokenRevocation {
-                jti: jti.clone(),
-                // Already past even after the verifier clock-skew deadline.
-                expires_at: chrono::Utc::now() - chrono::Duration::hours(2),
-            }),
-        })
+        issuance.revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id: fixture.client_id,
+                raw_token: "revoked-jti-unused-refresh",
+                access_token: Some(AccessTokenRevocation {
+                    jti: jti.clone(),
+                    // Already past even after the verifier clock-skew deadline.
+                    expires_at: chrono::Utc::now() - chrono::Duration::hours(2),
+                }),
+            },
+            "revocation-test-client",
+            "test-source-hash",
+        )
     })
     .await
     .expect("revocation should commit");
@@ -4723,7 +4795,7 @@ async fn refresh_contract_reference_survives_last_reference_reclaim_race() {
 }
 
 #[tokio::test]
-async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
+async fn refresh_contract_ensure_rolls_back_with_caller_and_preserves_constraints() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -4756,16 +4828,22 @@ async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
         "a rolled-back ensure must not leave an orphan contract row"
     );
 
-    // Invalid arguments raise instead of silently referencing nothing.
-    let invalid = sql_query(
-        "SELECT public.nazo_oauth_refresh_contract_ensure($1, '\\x01'::bytea, '{}'::jsonb)",
-    )
-    .bind::<SqlUuid, _>(tenant_id)
-    .execute(&mut connection)
-    .await;
+    // The table constraint rejects an invalid new content key.
+    let invalid =
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, '\\x01'::bytea, $2)")
+            .bind::<SqlUuid, _>(tenant_id)
+            .bind::<diesel::sql_types::Jsonb, _>(&contract_json)
+            .execute(&mut connection)
+            .await;
     let error = invalid.expect_err("a short digest must be rejected");
     assert!(
-        error.to_string().contains("arguments are invalid"),
+        matches!(
+            error,
+            diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::CheckViolation,
+                _
+            )
+        ),
         "unexpected ensure error classification: {error}"
     );
 }

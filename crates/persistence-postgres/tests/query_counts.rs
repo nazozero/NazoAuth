@@ -10,6 +10,9 @@
 //! Tests serialize their database fixtures. Production pool acquisition timing
 //! and counters are absent; checkout counts are not inferred or fabricated.
 
+#[path = "support/credential_response.rs"]
+mod credential_response;
+
 // Other helpers in `support` serve sibling test binaries; this binary only
 // needs `query_counter`.
 #[allow(dead_code)]
@@ -27,9 +30,8 @@ use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
-    OAuthClient, RefreshToken, RefreshTokenAuthenticationContext, TokenIssuanceMode,
-    TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef,
-    ValidatedClientRegistration,
+    OAuthClient, RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
+    TokenRepositoryPort, TokenRevocation, UserinfoSubjectRef, ValidatedClientRegistration,
 };
 use nazo_digital_credentials::CredentialFormat;
 use nazo_identity::{AccessRequestStatus, TenantContext, TenantId, UserId};
@@ -532,9 +534,9 @@ async fn cleanup_seed(database_url: &str, tenant: TenantContext, seed: &Seed) {
 // ---------------------------------------------------------------------------
 
 /// A verified access token is access-only authority: its bytes are never
-/// reinterpreted as a refresh token. The JTI retention upsert is one statement.
+/// reinterpreted as a refresh token. The JTI retention upsert and audit append are two statements.
 #[tokio::test]
-async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
+async fn rv09_access_revocation_skips_refresh_probes_and_appends_audit() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -557,11 +559,15 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
             expires_at: Utc::now() + Duration::minutes(5),
         }),
     };
-    let (result, delta) = measure(&counter, repository.revoke_token(input)).await;
+    let (result, delta) = measure(
+        &counter,
+        repository.revoke_token_with_audit(input, "revocation-test-client", "test-source-hash"),
+    )
+    .await;
 
     assert_eq!(result.expect("revocation succeeds"), 0);
     assert_eq!(
-        delta.data_queries, 1,
+        delta.data_queries, 2,
         "verified access authority never probes refresh families"
     );
     assert_eq!(delta.begins, 1);
@@ -571,11 +577,11 @@ async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
 }
 
 /// RV-09 (refresh-family path): revoking a presented refresh token is family
-/// lookup + `pg_advisory_xact_lock` + one UPDATE — 3 data statements in one
+/// lookup + `pg_advisory_xact_lock` + one UPDATE + audit — 4 data statements in one
 /// transaction on one pooled connection. A verified access-token input cannot
 /// borrow refresh-family authority even when its bytes collide with that family.
 #[tokio::test]
-async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
+async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update_with_audit() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -585,68 +591,134 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
         .expect("migrations should apply");
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
-    let family_id = Uuid::now_v7();
-    let raw_token = format!("qc-refresh-{}", Uuid::now_v7());
-    {
-        let mut connection = connect(&database_url).await;
-        seed_refresh_token_row(
-            &mut connection,
-            tenant,
-            &seed,
-            Uuid::now_v7(),
-            family_id,
-            &raw_token,
-            None,
-            None,
-            None,
+    for spent in [false, true] {
+        let family_id = Uuid::now_v7();
+        let member_id = Uuid::now_v7();
+        let raw_token = format!("qc-refresh-{}", Uuid::now_v7());
+        {
+            let mut connection = connect(&database_url).await;
+            seed_refresh_token_row(
+                &mut connection,
+                tenant,
+                &seed,
+                member_id,
+                family_id,
+                &raw_token,
+                None,
+                None,
+                None,
+            )
+            .await;
+            if spent {
+                seed_refresh_token_row(
+                    &mut connection,
+                    tenant,
+                    &seed,
+                    Uuid::now_v7(),
+                    family_id,
+                    &format!("qc-successor-{}", Uuid::now_v7()),
+                    Some(member_id),
+                    None,
+                    None,
+                )
+                .await;
+            }
+        }
+        let (pool, counter) = instrumented_pool(&database_url).await;
+        let repository = TokenIssuanceRepository::new(pool);
+
+        for (tenant_id, client_id, token) in [
+            (
+                tenant.tenant_id.as_uuid(),
+                Uuid::now_v7(),
+                raw_token.as_str(),
+            ),
+            (Uuid::now_v7(), seed.client.id, raw_token.as_str()),
+            (
+                tenant.tenant_id.as_uuid(),
+                seed.client.id,
+                "unknown-refresh",
+            ),
+        ] {
+            let (result, delta) = measure(
+                &counter,
+                repository.revoke_token_with_audit(
+                    TokenRevocation {
+                        tenant_id,
+                        client_id,
+                        raw_token: token,
+                        access_token: None,
+                    },
+                    &seed.client.client_id,
+                    "test-source-hash",
+                ),
+            )
+            .await;
+            assert_eq!(result.unwrap(), 0);
+            assert_eq!(
+                delta.data_queries, 2,
+                "one family lookup plus required audit on a miss"
+            );
+            assert_eq!(delta.begins, 1);
+            assert_eq!(delta.commits, 1);
+            assert_clean(delta);
+        }
+
+        let access_input = TokenRevocation {
+            tenant_id: tenant.tenant_id.as_uuid(),
+            client_id: seed.client.id,
+            raw_token: &raw_token,
+            access_token: Some(AccessTokenRevocation {
+                jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
+                expires_at: Utc::now() + Duration::minutes(5),
+            }),
+        };
+        let (result, access_delta) = measure(
+            &counter,
+            repository.revoke_token_with_audit(
+                access_input,
+                &seed.client.client_id,
+                "test-source-hash",
+            ),
         )
         .await;
+        assert_eq!(result.expect("verified access revocation succeeds"), 0);
+        assert_eq!(access_delta.data_queries, 2);
+        assert_eq!(access_delta.begins, 1);
+        assert_eq!(access_delta.commits, 1);
+        assert_clean(access_delta);
+        assert!(
+            repository
+                .refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
+                .await
+                .expect("refresh family state remains readable"),
+            "verified access authority must leave the colliding refresh family active"
+        );
+        let input = TokenRevocation {
+            tenant_id: tenant.tenant_id.as_uuid(),
+            client_id: seed.client.id,
+            raw_token: &raw_token,
+            access_token: None,
+        };
+        let (result, delta) = measure(
+            &counter,
+            repository.revoke_token_with_audit(input, &seed.client.client_id, "test-source-hash"),
+        )
+        .await;
+
+        assert_eq!(
+            result.expect("family revocation succeeds"),
+            1,
+            "one family member was marked revoked"
+        );
+        // 4 data statements: SELECT token_family_id, SELECT pg_advisory_xact_lock,
+        // UPDATE oauth_refresh_families SET revoked_at + audit append. The access-token upsert never runs
+        // because the raw token resolved to a refresh family first.
+        assert_eq!(delta.data_queries, 4);
+        assert_eq!(delta.begins, 1);
+        assert_eq!(delta.commits, 1);
+        assert_clean(delta);
     }
-    let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = TokenIssuanceRepository::new(pool);
-
-    let access_input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(),
-        client_id: seed.client.id,
-        raw_token: &raw_token,
-        access_token: Some(AccessTokenRevocation {
-            jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
-            expires_at: Utc::now() + Duration::minutes(5),
-        }),
-    };
-    let (result, access_delta) = measure(&counter, repository.revoke_token(access_input)).await;
-    assert_eq!(result.expect("verified access revocation succeeds"), 0);
-    assert_eq!(access_delta.data_queries, 1);
-    assert_eq!(access_delta.begins, 1);
-    assert_eq!(access_delta.commits, 1);
-    assert_clean(access_delta);
-    assert!(
-        repository
-            .refresh_family_active(tenant.tenant_id.as_uuid(), family_id, seed.user_id)
-            .await
-            .expect("refresh family state remains readable"),
-        "verified access authority must leave the colliding refresh family active"
-    );
-    let input = TokenRevocation {
-        tenant_id: tenant.tenant_id.as_uuid(),
-        client_id: seed.client.id,
-        raw_token: &raw_token,
-        access_token: None,
-    };
-    let (result, delta) = measure(&counter, repository.revoke_token(input)).await;
-
-    assert_eq!(
-        result.expect("family revocation succeeds"),
-        1,
-        "one family member was marked revoked"
-    );
-    // 3 data statements: SELECT token_family_id, SELECT pg_advisory_xact_lock,
-    // UPDATE oauth_refresh_families SET revoked_at. The access-token upsert never runs
-    // because the raw token resolved to a refresh family first.
-    assert_eq!(delta.data_queries, 3);
-    assert_eq!(delta.begins, 1);
-    assert_eq!(delta.commits, 1);
-    assert_clean(delta);
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 
@@ -960,7 +1032,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
 // ---------------------------------------------------------------------------
 
 /// RF-06: the spent edge, active direct-successor family and contract are read
-/// in one joined statement. Without sender binding recovery needs no checkout.
+/// in one statement, including unbound presentations that cannot recover a successor.
 #[tokio::test]
 async fn rf06_lost_response_successor_is_single_read() {
     let _serial = SERIAL.lock().await;
@@ -1010,8 +1082,6 @@ async fn rf06_lost_response_successor_is_single_read() {
     }
 
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = TokenRepository::new(pool.clone());
-    // R05: the production port reads presentation and candidate together.
     let snapshots = TokenIssuanceRepository::new(pool.clone());
     let retry_started_at = Utc::now();
     for (raw, expected_member, expected_successor) in [
@@ -1020,7 +1090,13 @@ async fn rf06_lost_response_successor_is_single_read() {
     ] {
         let (result, delta) = measure(
             &counter,
-            snapshots.refresh_token_snapshot(tenant_id, raw, seed.client.id, retry_started_at),
+            snapshots.refresh_token_snapshot(
+                tenant_id,
+                raw,
+                seed.client.id,
+                retry_started_at,
+                false,
+            ),
         )
         .await;
         let snapshot = result.unwrap().expect("presentation exists");
@@ -1044,7 +1120,7 @@ async fn rf06_lost_response_successor_is_single_read() {
     ] {
         let (result, delta) = measure(
             &counter,
-            snapshots.refresh_token_snapshot(tenant_id, &parent_raw, client_id, at),
+            snapshots.refresh_token_snapshot(tenant_id, &parent_raw, client_id, at, false),
         )
         .await;
         let snapshot = result.unwrap().expect("original presentation still exists");
@@ -1095,6 +1171,7 @@ async fn rf06_lost_response_successor_is_single_read() {
                 &parent_raw,
                 seed.client.id,
                 persisted_spent_at + elapsed,
+                false,
             ),
         )
         .await;
@@ -1136,7 +1213,13 @@ async fn rf06_lost_response_successor_is_single_read() {
     ] {
         let (result, delta) = measure(
             &counter,
-            snapshots.refresh_token_snapshot(lookup_tenant, raw, seed.client.id, retry_started_at),
+            snapshots.refresh_token_snapshot(
+                lookup_tenant,
+                raw,
+                seed.client.id,
+                retry_started_at,
+                false,
+            ),
         )
         .await;
         assert!(result.unwrap().is_none());
@@ -1144,65 +1227,6 @@ async fn rf06_lost_response_successor_is_single_read() {
         assert_no_transaction(delta);
         assert_clean(delta);
     }
-
-    let parent = RefreshToken {
-        id_token_sid: None,
-        id: parent_id,
-        token_blake3: *blake3::hash(parent_raw.as_bytes()).as_bytes(),
-        tenant_id,
-        token_family_id: family_id,
-        client_id: seed.client.id,
-        user_id: Some(seed.user_id),
-        contract_key: [0; 32],
-        audience: serde_json::from_value(json!(["resource://default"])).unwrap(),
-        issued_at: revoked_at - Duration::minutes(5),
-        expires_at: revoked_at + Duration::hours(1),
-        revoked_at: Some(revoked_at),
-        dpop_jkt: Some(dpop_jkt),
-        mtls_x5t_s256: None,
-        client_attestation_jkt: None,
-
-        contract: nazo_auth::RefreshContract {
-            audiences: vec!["resource://default".to_owned()],
-            scopes: serde_json::from_value(json!(["openid", "offline_access"])).unwrap(),
-            authorization_details: json!([]),
-            subject: seed.user_id.to_string(),
-            authentication_context: refresh_context(&seed.client.client_id),
-        },
-    };
-
-    let (result, delta) = measure(
-        &counter,
-        repository.inspect_lost_response_successor(&parent, seed.client.id, Utc::now()),
-    )
-    .await;
-
-    let successor = result.expect("successor lookup succeeds");
-    assert_eq!(
-        successor.map(|token| token.id),
-        Some(child_id),
-        "the seeded non-compromised child must be found"
-    );
-    // One joined statement keeps the spent edge, current family and immutable
-    // contract in one snapshot, including the compromise and expiry predicates.
-    assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-    let mut unbound_parent = parent;
-    unbound_parent.dpop_jkt = None;
-    let (result, delta) = measure(
-        &counter,
-        repository.inspect_lost_response_successor(&unbound_parent, seed.client.id, Utc::now()),
-    )
-    .await;
-    assert!(
-        result
-            .expect("unbound presentations cannot recover successors")
-            .is_none()
-    );
-    assert_eq!(delta.data_queries, 0);
-    assert_no_transaction(delta);
-    assert_clean(delta);
 
     // Current digest identity wins even if another presentation also has a
     // spent proof with those bytes. Restore the actual digest before cleanup.
@@ -1213,7 +1237,13 @@ async fn rf06_lost_response_successor_is_single_read() {
         .execute(&mut connection).await.unwrap();
     let (result, delta) = measure(
         &counter,
-        snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
+        snapshots.refresh_token_snapshot(
+            tenant_id,
+            &parent_raw,
+            seed.client.id,
+            retry_started_at,
+            false,
+        ),
     )
     .await;
     let snapshot = result.unwrap().expect("current presentation has priority");
@@ -1228,7 +1258,13 @@ async fn rf06_lost_response_successor_is_single_read() {
         .execute(&mut connection).await.unwrap();
     let (result, delta) = measure(
         &counter,
-        snapshots.refresh_token_snapshot(tenant_id, &parent_raw, seed.client.id, retry_started_at),
+        snapshots.refresh_token_snapshot(
+            tenant_id,
+            &parent_raw,
+            seed.client.id,
+            retry_started_at,
+            false,
+        ),
     )
     .await;
     let snapshot = result
@@ -1528,8 +1564,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
         ready_at,
         expires_at: ready_at + Duration::minutes(5),
     };
-    issuer
-        .store_deferred(&deferred)
+    credential_response::persist_deferred(&issuer, &deferred)
         .await
         .expect("deferred transaction should persist");
     // Persist a valid future schedule, then model preparation already elapsed.
@@ -1557,8 +1592,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
     else {
         panic!("the accepting owner must classify the ready fixture as Claimed");
     };
-    assert_eq!(claim.credential.id, deferred.id);
-    assert_eq!(claim.claim_id, "claim-1");
+    assert_eq!(claim.id, deferred.id);
     // Historical 3-vs-1 failure is preserved in remediation evidence. The
     // accepted V02 contract costs two statements: locked facts + authorized
     // lease. The independent intent SELECT was removed, rather than allowing
@@ -1575,7 +1609,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
 // ---------------------------------------------------------------------------
 
 /// EXS-04: `family_active`, `access_token_revoked`, and
-/// `approved_delivery_matches` are each exactly one read-only SELECT — no
+/// `approved_delivery_with_required_audit_matches` are each exactly one read-only SELECT — no
 /// transaction, one pooled checkout.
 #[tokio::test]
 async fn exs04_existence_checks_are_single_statements() {
@@ -1633,10 +1667,11 @@ async fn exs04_existence_checks_are_single_statements() {
     assert_no_transaction(delta);
     assert_clean(delta);
 
-    // approved_delivery_matches — request joined to the approved client.
+    // The seeded historical approval has no Required outcome. One predicate
+    // checks linkage and evidence together and rejects it.
     let (result, delta) = measure(
         &counter,
-        requests.approved_delivery_matches(
+        requests.approved_delivery_with_required_audit_matches(
             TenantId::new(tenant_id).expect("tenant id"),
             UserId::new(seed.user_id).expect("user id"),
             request_id,
@@ -1649,9 +1684,8 @@ async fn exs04_existence_checks_are_single_statements() {
         ),
     )
     .await;
-    assert!(result.expect("approved_delivery_matches succeeds"));
-    // 1 data statement: SELECT EXISTS over client_access_requests joined to
-    // oauth_clients with the approved-client predicates.
+    assert!(!result.expect("an unaudited fixture must not authorize delivery"));
+    // 1 data statement: the narrow Required approval evidence predicate.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_clean(delta);
@@ -1981,9 +2015,9 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
 // ID-01: active subject lookup
 // ---------------------------------------------------------------------------
 
-/// ID-01: `active_subject_id_by_tenant_id` is one read-only SELECT over users.
+/// ID-01: `active_subject_id` is one read-only SELECT over users.
 #[tokio::test]
-async fn id01_active_subject_id_by_tenant_id_is_single_read() {
+async fn id01_active_subject_id_is_single_read() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1994,13 +2028,14 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let repository = UserRepository::new(pool);
+    let repository = nazo_postgres::TokenIssuanceRepository::new(pool);
 
     let (result, delta) = measure(
         &counter,
-        repository.active_subject_id_by_tenant_id(
-            TenantId::new(tenant.tenant_id.as_uuid()).expect("tenant id"),
-            UserId::new(seed.user_id).expect("user id"),
+        nazo_auth::TokenRepositoryPort::active_subject_id(
+            &repository,
+            tenant.tenant_id.as_uuid(),
+            seed.user_id,
         ),
     )
     .await;
@@ -2010,8 +2045,7 @@ async fn id01_active_subject_id_by_tenant_id_is_single_read() {
         Some(seed.user_id),
         "the seeded active user must resolve"
     );
-    // 1 data statement: SELECT user principal row WHERE (id, tenant_id,
-    // is_active) — the subject id projection is computed in the same read.
+    // One existence query scoped by user, tenant, and active status.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_clean(delta);
@@ -2158,13 +2192,7 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
         }
         let (result, delta) = measure(
             &counter,
-            repository.refresh_token_snapshot_with_subject(
-                tenant_id,
-                &raw,
-                seed.client.id,
-                Utc::now(),
-                true,
-            ),
+            repository.refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now(), true),
         )
         .await;
         let snapshot = result.unwrap().unwrap();
@@ -2179,7 +2207,7 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
         assert_clean(delta);
         let (_, baseline) = measure(&counter, async {
             let original = repository
-                .refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now())
+                .refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now(), false)
                 .await
                 .unwrap()
                 .unwrap();
@@ -2242,13 +2270,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     ] {
         let (r, q) = measure(
             &counter,
-            repo.refresh_token_snapshot_with_subject(
-                lookup_tenant,
-                &raw,
-                lookup_client,
-                Utc::now(),
-                hint,
-            ),
+            repo.refresh_token_snapshot(lookup_tenant, &raw, lookup_client, Utc::now(), hint),
         )
         .await;
         assert!(r.unwrap().is_none_or(|s| s.prepared_subject.is_none()));
@@ -2262,7 +2284,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         .unwrap();
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2287,7 +2309,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     }
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2304,7 +2326,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     .await;
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2344,7 +2366,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         .unwrap();
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2399,7 +2421,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
         .unwrap();
     let repo = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
     let early = repo
-        .refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true)
+        .refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true)
         .await
         .unwrap()
         .unwrap();
@@ -2426,7 +2448,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
             .unwrap()
             .2;
         let source = repo
-            .refresh_token_snapshot_with_subject(id, &raw, seed.client.id, Utc::now(), true)
+            .refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true)
             .await
             .unwrap()
             .unwrap();
@@ -2575,13 +2597,7 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
         for (member, raw) in &fixtures {
             for prepared in [false, true] {
                 let result = repository
-                    .refresh_token_snapshot_with_subject(
-                        tenant_id,
-                        raw,
-                        seed.client.id,
-                        Utc::now(),
-                        prepared,
-                    )
+                    .refresh_token_snapshot(tenant_id, raw, seed.client.id, Utc::now(), prepared)
                     .await;
                 let snapshot = result.unwrap().unwrap();
                 assert_eq!(snapshot.presented.id, *member);
@@ -2597,25 +2613,13 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
             (tenant_id, unknown.as_str()),
         ] {
             let result = repository
-                .refresh_token_snapshot_with_subject(
-                    lookup_tenant,
-                    raw,
-                    seed.client.id,
-                    Utc::now(),
-                    prepared,
-                )
+                .refresh_token_snapshot(lookup_tenant, raw, seed.client.id, Utc::now(), prepared)
                 .await;
             assert!(result.unwrap().is_none());
         }
     }
     let result = repository
-        .refresh_token_snapshot_with_subject(
-            tenant_id,
-            &fixtures[0].1,
-            Uuid::now_v7(),
-            Utc::now(),
-            true,
-        )
+        .refresh_token_snapshot(tenant_id, &fixtures[0].1, Uuid::now_v7(), Utc::now(), true)
         .await;
     let foreign_client = result.unwrap().unwrap();
     assert_eq!(foreign_client.presented.id, fixtures[0].0);
@@ -2812,4 +2816,173 @@ fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
         issued_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
         expires_at: chrono::DateTime::from_timestamp(1_700_003_600, 0).unwrap(),
     }
+}
+
+#[tokio::test]
+async fn session_principal_projection_is_tenant_scoped_and_single_read() {
+    use nazo_identity::ports::SessionAccountPort;
+    let _serial = SERIAL.lock().await;
+    let Some(url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&url, tenant).await;
+    let (pool, counter) = instrumented_pool(&url).await;
+    let repository = UserRepository::new(pool);
+    for (scope, expected) in [
+        (tenant.tenant_id, true),
+        (TenantId::new(Uuid::now_v7()).unwrap(), false),
+    ] {
+        let (result, delta) = measure(
+            &counter,
+            SessionAccountPort::principal_by_id(
+                &repository,
+                scope,
+                UserId::new(seed.user_id).unwrap(),
+            ),
+        )
+        .await;
+        assert_eq!(result.unwrap().is_some(), expected);
+        assert_eq!(delta.data_queries, 1);
+        assert_no_transaction(delta);
+        assert_clean(delta);
+    }
+    cleanup_seed(&url, tenant, &seed).await;
+}
+
+#[tokio::test]
+async fn registration_authentication_reads_client_and_secret_metadata_once() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&database_url, tenant).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = OAuthClientRepository::new(pool.clone());
+    let salt = format!("qc-salt-{}", seed.client.id);
+    for (secret, expected_present, expected_salt) in [
+        (
+            Some(format!("client-secret-v1:{salt}:digest")),
+            true,
+            Some(salt.as_str()),
+        ),
+        (Some("legacy-verifier".to_owned()), true, None),
+        (None, false, None),
+    ] {
+        let mut connection = get_conn(&pool).await.unwrap();
+        sql_query("UPDATE oauth_clients SET client_secret_hash = $2 WHERE id = $1")
+            .bind::<sql_types::Uuid, _>(seed.client.id)
+            .bind::<sql_types::Nullable<sql_types::Text>, _>(secret)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        drop(connection);
+        for attempt in 0..2 {
+            let (result, delta) = measure(
+                &counter,
+                repository.by_registration_access_token(
+                    seed.client.tenant_id,
+                    &seed.client.client_id,
+                    &seed.registration_access_token_blake3,
+                ),
+            )
+            .await;
+            let snapshot = result.unwrap().unwrap();
+            assert_eq!(snapshot.client.id, seed.client.id);
+            assert_eq!(snapshot.has_client_secret, expected_present);
+            assert_eq!(snapshot.secret_salt.as_deref(), expected_salt);
+            assert_eq!(delta.data_queries, 1);
+            if attempt == 1 {
+                assert_eq!(
+                    delta.cache_queries, 0,
+                    "the fixed projection reuses its statement"
+                );
+            }
+            assert_no_transaction(delta);
+            assert_clean(delta);
+        }
+    }
+    for (tenant_id, token) in [
+        (
+            Uuid::now_v7(),
+            seed.registration_access_token_blake3.as_str(),
+        ),
+        (seed.client.tenant_id, "wrong-token"),
+    ] {
+        let (result, delta) = measure(
+            &counter,
+            repository.by_registration_access_token(tenant_id, &seed.client.client_id, token),
+        )
+        .await;
+        assert!(result.unwrap().is_none());
+        assert_eq!(delta.data_queries, 1);
+        assert_clean(delta);
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(seed.client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    assert!(
+        repository
+            .by_registration_access_token(
+                seed.client.tenant_id,
+                &seed.client.client_id,
+                &seed.registration_access_token_blake3
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
+#[tokio::test]
+async fn access_request_creation_uses_the_foreign_key_without_a_preflight_read() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let user_id = UserId::new(Uuid::now_v7()).unwrap();
+    let mut connection = connect(&database_url).await;
+    seed_user(&mut connection, tenant, user_id.as_uuid()).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = AccessRequestRepository::new(pool);
+    let new_request = |user_id| nazo_identity::NewAccessRequest {
+        tenant_id: tenant.tenant_id,
+        user_id,
+        site_name: "Single insert".to_owned(),
+        site_url: "https://single.example.test".to_owned(),
+        request_description: "Query count".to_owned(),
+    };
+    let (result, delta) = measure(&counter, repository.create(new_request(user_id))).await;
+    let created = result.unwrap();
+    assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+    repository
+        .cancel_pending(tenant.tenant_id, user_id, created.id)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id=$1")
+        .bind::<sql_types::Uuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let (result, delta) = measure(&counter, repository.create(new_request(user_id))).await;
+    assert_eq!(
+        result.unwrap_err(),
+        nazo_identity::ports::RepositoryError::NotFound
+    );
+    // RETURNING reports FinishQuery when the stream opens; an FK error can
+    // arrive while consuming it. Count the statement, not its event category.
+    assert_eq!(delta.data_queries + delta.failed_queries, 1);
+    assert_no_transaction(delta);
 }

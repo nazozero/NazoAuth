@@ -6,6 +6,7 @@ import json
 import re
 import tomllib
 from pathlib import Path
+from functools import cache
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
@@ -165,13 +166,21 @@ def production_dependency_entries(manifest: dict, workspace: dict):
                 yield alias, spec.get("package", alias), spec, kind, target
 
 
-def resolved_production_dependencies(manifest_path: Path, workspace: dict):
+def manifest_reader():
+    """Read each Cargo manifest once within one guard run."""
+    @cache
+    def read(path: Path):
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+    return read
+
+
+def resolved_production_dependencies(manifest_path: Path, workspace: dict, read_manifest):
     """Resolve Cargo aliases and local package identity once for both architecture guards.
 
     Returned specs also carry _alias, _kind, _target and the resolved absolute crate
     directory _path. These are guard metadata, not Cargo manifest fields.
     """
-    manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = read_manifest(manifest_path)
     for alias, package, spec, kind, target in production_dependency_entries(manifest, workspace):
         local_path = None
         if "path" in spec:
@@ -179,7 +188,7 @@ def resolved_production_dependencies(manifest_path: Path, workspace: dict):
             local_path = (base / spec["path"]).resolve()
             candidate = local_path / "Cargo.toml"
             if candidate.is_file():
-                package = tomllib.loads(candidate.read_text(encoding="utf-8"))["package"]["name"]
+                package = read_manifest(candidate)["package"]["name"]
         yield package, {
             **spec, "_alias": alias, "_kind": kind, "_target": target,
             "_path": str(local_path) if local_path is not None else None,
@@ -190,18 +199,18 @@ def package_manifests():
     return sorted((ROOT / "crates").glob("*/Cargo.toml"))
 
 
-def check_package_roles() -> None:
+def check_package_roles(read_manifest) -> None:
     """Enforce the workspace role model and the inner-layer execution denylist."""
-    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    workspace = read_manifest(ROOT / "Cargo.toml")["workspace"]
     violations = []
     for path in package_manifests():
-        manifest = tomllib.loads(path.read_text(encoding="utf-8"))
+        manifest = read_manifest(path)
         package = manifest["package"]["name"]
         role = PACKAGE_ROLES.get(package)
         if role is None:
             violations.append(f"unclassified local package requires owner review: {package}")
             continue
-        for dependency, spec in resolved_production_dependencies(path, workspace):
+        for dependency, spec in resolved_production_dependencies(path, workspace, read_manifest):
             dependency_role = PACKAGE_ROLES.get(dependency)
             edge = (
                 f"{package} ({role}) -> {dependency} "
@@ -268,13 +277,13 @@ def resolved_rust_path(path: str, aliases: dict[str, str]) -> str:
     return path
 
 
-def check_inner_source_boundaries() -> None:
+def check_inner_source_boundaries(read_manifest) -> None:
     """Inner layers must not call concrete runtime/storage/Host surfaces.
 
     Detection is based on Cargo dependencies and resolved Rust paths, not on
     bare identifiers: a type named like a framework type is not a violation.
     """
-    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    workspace = read_manifest(ROOT / "Cargo.toml")["workspace"]
     concrete_crates = {name.replace("-", "_") for name in EXECUTION_DEPENDENCIES}
     concrete_crates.update(
         name.replace("-", "_")
@@ -285,12 +294,12 @@ def check_inner_source_boundaries() -> None:
     imports = re.compile(r"\buse\s+([^;]+);", re.DOTALL)
     qualified = re.compile(r"(?<!\w)(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)+")
     for manifest_path in package_manifests():
-        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = read_manifest(manifest_path)
         if PACKAGE_ROLES.get(manifest["package"]["name"]) not in INNER_ROLES:
             continue
         dependency_aliases = {
             spec["_alias"].replace("-", "_"): name.replace("-", "_")
-            for name, spec in resolved_production_dependencies(manifest_path, workspace)
+            for name, spec in resolved_production_dependencies(manifest_path, workspace, read_manifest)
         }
         for path in sorted((manifest_path.parent / "src").rglob("*.rs")):
             source = rust_production_source(path.read_text(encoding="utf-8"))
@@ -409,8 +418,11 @@ def check_toolchain_pins() -> None:
 
     workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     rust_actions = []
+    referenced_workflows = set()
     for path in workflows:
         text = path.read_text(encoding="utf-8")
+        if "dtolnay/rust-toolchain@" in text:
+            referenced_workflows.add(path)
         rust_actions.extend(
             (path, match.group("revision"), match.group("version"))
             for match in re.finditer(
@@ -421,11 +433,6 @@ def check_toolchain_pins() -> None:
         )
     if not rust_actions:
         raise SystemExit("CI has no immutable dtolnay/rust-toolchain revision pin")
-    referenced_workflows = {
-        path
-        for path in workflows
-        if "dtolnay/rust-toolchain@" in path.read_text(encoding="utf-8")
-    }
     parsed_workflows = {path for path, _, _ in rust_actions}
     if referenced_workflows != parsed_workflows:
         missing = sorted(path.relative_to(ROOT) for path in referenced_workflows - parsed_workflows)
@@ -481,24 +488,22 @@ def check_toolchain_pins() -> None:
         raise SystemExit("Renovate must update the coordinated Rust stable pins")
 
 
-def check_aggregate_package_boundary() -> None:
+def check_aggregate_package_boundary(read_manifest) -> None:
     """nazoauth stays the single aggregate host binary; direction is checked by roles."""
-    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    workspace = read_manifest(ROOT / "Cargo.toml")["workspace"]
     if workspace.get("default-members") != ["crates/nazoauth"]:
         raise SystemExit("workspace default-members must contain only the nazoauth aggregate")
 
-    manifest = tomllib.loads(
-        (ROOT / "crates" / "nazoauth" / "Cargo.toml").read_text(encoding="utf-8")
-    )
+    manifest = read_manifest(ROOT / "crates" / "nazoauth" / "Cargo.toml")
     if "bin" not in manifest or manifest["bin"][0]["name"] != "nazoauth":
         raise SystemExit("Native Host must retain the nazoauth executable")
 
 
-def check_workspace_package_metadata() -> None:
-    workspace_manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+def check_workspace_package_metadata(read_manifest) -> None:
+    workspace_manifest = read_manifest(ROOT / "Cargo.toml")
     for member in workspace_manifest["workspace"]["members"]:
         manifest_path = ROOT / member / "Cargo.toml"
-        package = tomllib.loads(manifest_path.read_text(encoding="utf-8"))["package"]
+        package = read_manifest(manifest_path)["package"]
         for field in ("version", "edition", "license", "repository"):
             if package.get(field) != {"workspace": True}:
                 raise SystemExit(
@@ -726,13 +731,14 @@ def main() -> None:
     if args.append_migration:
         append_migration(args.append_migration)
     if args.check:
+        read_manifest = manifest_reader()
         check_migration_checksums()
         check_documentation_boundaries()
         check_toolchain_pins()
-        check_package_roles()
-        check_inner_source_boundaries()
-        check_aggregate_package_boundary()
-        check_workspace_package_metadata()
+        check_package_roles(read_manifest)
+        check_inner_source_boundaries(read_manifest)
+        check_aggregate_package_boundary(read_manifest)
+        check_workspace_package_metadata(read_manifest)
         check_rust_test_structure()
         check_ciba_ping_connection_pinning()
         check_rfc9967_matrix()

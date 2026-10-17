@@ -74,9 +74,8 @@ pub fn validate_jwt_bearer_assertion_with_issuer(
     issuer: &str,
     client: &ClientRow,
     assertion: &str,
+    header: nazo_crypto::jwt::Header,
 ) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
-    let header =
-        nazo_crypto::jwt::decode_header(assertion).map_err(|_| JwtBearerAssertionError::Invalid)?;
     if header.typ.as_deref() != Some(JWT_BEARER_ASSERTION_TYP) {
         return Err(JwtBearerAssertionError::Invalid);
     }
@@ -203,7 +202,8 @@ pub async fn token_jwt_bearer_with_service(
         .assertion
         .as_deref()
         .expect("validated JWT bearer grant must contain assertion");
-    if let Ok(header) = nazo_crypto::jwt::decode_header(assertion)
+    let header = nazo_crypto::jwt::decode_header(assertion);
+    if let Ok(header) = &header
         && header.kid.is_some()
         && let Err(error) = refresh_client_jwks(
             client,
@@ -242,11 +242,16 @@ pub async fn token_jwt_bearer_with_service(
             }
         };
     let policy = jwt_bearer_policy(issuance, client, Utc::now().timestamp());
-    let assertion = match validate_jwt_bearer_assertion_with_issuer(
-        issuance.config.issuer(),
-        client,
-        assertion,
-    ) {
+    let assertion = match header
+        .map_err(|_| JwtBearerAssertionError::Invalid)
+        .and_then(|header| {
+            validate_jwt_bearer_assertion_with_issuer(
+                issuance.config.issuer(),
+                client,
+                assertion,
+                header,
+            )
+        }) {
         Ok(assertion) => assertion,
         Err(_) => {
             return Err(OAuthEndpointError::token(
@@ -257,11 +262,6 @@ pub async fn token_jwt_bearer_with_service(
             ));
         }
     };
-    let jwt_bearer_grant_key = jwt_bearer_grant_key(
-        &assertion.jti,
-        sender.dpop_jkt.as_deref(),
-        sender.mtls_x5t_s256.as_deref(),
-    );
     // Known invalid scope/target input does not burn either replay role.
     // The cryptographic validator and sender proof above still run first;
     // distinct client-assertion and grant replay consumers remain below.
@@ -313,7 +313,11 @@ pub async fn token_jwt_bearer_with_service(
         token_service,
         client,
         TokenIssuanceMode::SingleUse {
-            grant_key: jwt_bearer_grant_key,
+            grant_key: jwt_bearer_grant_key(
+                &assertion.jti,
+                sender.dpop_jkt.as_deref(),
+                sender.mtls_x5t_s256.as_deref(),
+            ),
             grant_expires_at: assertion.expires_at,
         },
         TokenIssue {

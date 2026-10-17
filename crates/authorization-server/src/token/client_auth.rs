@@ -1,6 +1,7 @@
 //! token 管理端点复用的客户端认证。
-use crate::crypto::blake3_hex;
-use crate::crypto::client_secret_digest;
+use std::borrow::Cow;
+
+use crate::crypto::{blake3_hex, client_secret_digest};
 use crate::domain::client_policy::refresh_client_jwks;
 use crate::domain::rows::ClientRow;
 use crate::security::client_assertion::ClientAssertionError;
@@ -26,19 +27,29 @@ pub enum TokenManagementClientAuthError {
 }
 
 #[derive(Clone, Debug)]
-pub struct ClientAuthRequestFacts {
-    endpoint_path: String,
-    client_certificate: Option<ClientCertificateFacts>,
+pub struct ClientAuthRequestFacts<'a> {
+    endpoint_path: Cow<'a, str>,
+    client_certificate: Option<Cow<'a, ClientCertificateFacts>>,
 }
 
-impl ClientAuthRequestFacts {
+impl<'a> ClientAuthRequestFacts<'a> {
     pub fn new(
-        endpoint_path: impl Into<String>,
+        endpoint_path: impl Into<Cow<'a, str>>,
         client_certificate: Option<ClientCertificateFacts>,
     ) -> Self {
         Self {
             endpoint_path: endpoint_path.into(),
-            client_certificate,
+            client_certificate: client_certificate.map(Cow::Owned),
+        }
+    }
+
+    pub fn borrowed(
+        endpoint_path: &'a str,
+        client_certificate: Option<&'a ClientCertificateFacts>,
+    ) -> Self {
+        Self {
+            endpoint_path: Cow::Borrowed(endpoint_path),
+            client_certificate: client_certificate.map(Cow::Borrowed),
         }
     }
 
@@ -85,36 +96,10 @@ impl<'a> ClientAuthConfig<'a> {
     }
 }
 
-fn dummy_client_secret_salt(client_id: Option<&str>) -> String {
-    blake3_hex(client_id.unwrap_or(""))
-}
-
-/// Equalizes the CPU work for an unknown secret-authenticated client without touching storage.
-/// The result is deliberately consumed so release optimization cannot remove the calculation.
-pub fn perform_dummy_client_secret_verification<'credential>(
-    credentials: impl Into<PresentedClientCredentialsView<'credential>>,
-    client_secret_pepper: &str,
-) {
-    let credentials = credentials.into();
-    if matches!(
-        credentials.method,
-        "client_secret_basic" | "client_secret_post"
-    ) && let Some(secret) = credentials.client_secret
-    {
-        let dummy_salt = dummy_client_secret_salt(credentials.client_id);
-        drop(std::hint::black_box(client_secret_digest(
-            secret,
-            client_secret_pepper,
-            &dummy_salt,
-        )));
-    }
-}
-
-#[allow(dead_code)]
 pub async fn authenticate_introspection_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     secret_salt: Option<&str>,
@@ -129,7 +114,7 @@ pub async fn authenticate_introspection_client_with_dependencies<'credential>(
         secret_salt,
     )
     .await?;
-    consume_token_management_client_assertion_with_authorization_service(
+    consume_token_client_assertion_with_authorization_service(
         service,
         client,
         assertion.as_ref(),
@@ -144,11 +129,10 @@ pub async fn authenticate_introspection_client_with_dependencies<'credential>(
     })
 }
 
-#[allow(dead_code)]
 pub async fn authenticate_revocation_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     secret_salt: Option<&str>,
@@ -163,7 +147,7 @@ pub async fn authenticate_revocation_client_with_dependencies<'credential>(
         secret_salt,
     )
     .await?;
-    consume_token_management_client_assertion_with_authorization_service(
+    consume_token_client_assertion_with_authorization_service(
         service,
         client,
         assertion.as_ref(),
@@ -175,7 +159,7 @@ pub async fn authenticate_revocation_client_with_dependencies<'credential>(
 pub async fn authenticate_client_with_dependencies<'credential>(
     service: &crate::services::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: impl Into<PresentedClientCredentialsView<'credential>>,
     context: ClientAuthenticationContext,
@@ -239,13 +223,7 @@ pub async fn authenticate_client_with_dependencies<'credential>(
                         .client_secret_digest_matches(client.id, &candidate_digest)
                         .await
                 }
-                None => {
-                    perform_dummy_client_secret_verification(
-                        credentials,
-                        config.client_secret_pepper,
-                    );
-                    Ok(false)
-                }
+                None => Ok(false),
             };
             if client_secret_auth_result(secret_match)? {
                 Ok(None)
@@ -315,7 +293,7 @@ fn client_assertion_error_reason(error: &ClientAssertionError) -> &'static str {
 }
 
 fn log_client_auth_rejection(
-    request: &ClientAuthRequestFacts,
+    request: &ClientAuthRequestFacts<'_>,
     client: &ClientRow,
     credentials: &PresentedClientCredentialsView<'_>,
     reason: &'static str,
@@ -329,22 +307,6 @@ fn log_client_auth_rejection(
         client.token_endpoint_auth_method,
         credentials.method
     );
-}
-
-pub async fn consume_token_management_client_assertion_with_authorization_service(
-    service: &crate::services::ServerAuthorizationService,
-    client: &ClientRow,
-    assertion: Option<&ValidatedClientAssertion>,
-    audit: &dyn crate::ports::audit::SecurityAudit,
-) -> Result<(), TokenManagementClientAuthError> {
-    let Some(assertion) = assertion else {
-        return Ok(());
-    };
-    crate::security::client_assertion::consume_private_key_jwt_with_authorization_service(
-        service, client, assertion, audit,
-    )
-    .await
-    .map_err(token_management_client_assertion_error)
 }
 
 fn token_management_client_assertion_error(

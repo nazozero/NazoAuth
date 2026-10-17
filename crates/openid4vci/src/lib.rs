@@ -30,15 +30,13 @@ pub use offer::{
 pub use proof::{ProofError, ProofValidatorPort, ValidatedProof};
 pub use service::{
     CredentialDatasetPort, CredentialIssuance, CredentialIssuanceError, CredentialIssuerService,
-    DeferredPayload, IssuanceClaim, IssuanceCommit, IssuanceDisposition, IssuanceIdentity,
-    PendingCredentialIssuance,
+    DeferredPayload, IssuanceClaim, IssuanceCommit, IssuanceDisposition, PendingCredentialIssuance,
 };
 pub use store::{
     AuthorizationOfferPort, CredentialAccess, CredentialAuthorization, CredentialProofOrigin,
     CredentialResponseEncoding, CredentialSelection, CredentialStoreError, CredentialStoreFuture,
-    CredentialStorePort, DeferredClaimOutcome, DeferredCredential, DeferredCredentialClaim,
-    IssuanceNotification, NonceRecord, NotificationHandle, StoredCredentialOffer,
-    StoredCredentialResponse,
+    CredentialStorePort, DeferredClaimOutcome, DeferredCredential, IssuanceNotification,
+    NonceRecord, NotificationHandle, StoredCredentialOffer, StoredCredentialResponse,
 };
 
 pub const PRE_AUTHORIZED_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:pre-authorized_code";

@@ -1,5 +1,5 @@
 use super::*;
-use nazo_oauth_server::sessions::SessionPayload;
+use crate::test_support::SessionPayload;
 use std::sync::Arc;
 use uuid::Uuid;
 

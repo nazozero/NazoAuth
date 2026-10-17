@@ -3,7 +3,7 @@ use super::helpers::*;
 use std::sync::Arc;
 
 use chrono::Utc;
-use nazo_identity::{TenantId, UserId};
+use nazo_identity::UserId;
 use nazo_openid4vci::CredentialConfiguration;
 use nazo_openid4vci::application::CredentialHttpError;
 use serde_json::Value;
@@ -47,22 +47,8 @@ impl CredentialDatasetAdminService {
             ));
         };
         validate_managed_dataset(configuration, &request)?;
-        let tenant = TenantId::new(self.tenant_id)
-            .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
-        let subject = UserId::new(subject_id)
+        UserId::new(subject_id)
             .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
-        if !self
-            .users
-            .is_active(tenant, subject)
-            .await
-            .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
-        {
-            return Err(vci_error(
-                404,
-                "invalid_request",
-                "Credential subject is not active.",
-            ));
-        }
         let stored = self
             .datasets
             .upsert_managed_dataset(nazo_persistence::ManagedCredentialDatasetWrite {
@@ -200,7 +186,8 @@ pub(crate) fn validate_managed_dataset(
         ));
     };
     let mut nodes = 0;
-    if serde_json::to_vec(&request.claims).map_or(true, |value| value.len() > 64 * 1024)
+    if nazo_operator_protocol::serialized_json_size(&request.claims)
+        .map_or(true, |size| size > 64 * 1024)
         || !bounded_json(&request.claims, 0, &mut nodes)
     {
         return Err(vci_error(

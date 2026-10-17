@@ -14,7 +14,6 @@ sys.path.insert(0,str(R/'perf/tools'))
 import single_instance_scaling as sis,point_runner as points,short_baseline as sb
 from blackbox_contract import CONTRACT
 assert M.get('collection_contract') == CONTRACT
-points.KEYSET_VOLUME=P+'-keys'
 RAW=sis.dc;SECRETS=[];OUTS={};VOLS={};SYNCING=False
 INSPECT_SKIPS=[];COPY_OPS=[];COPY_FAILURES=[];TERMINAL_CAPTURED=set();TERMINATION_ERRORS=[]
 CLEANING=False;CLEANUP_DEADLINE=None
@@ -264,8 +263,6 @@ def drain(*args,**kwargs):
     result=ORIG_DRAIN(*args,**kwargs);sync_samplers();return result
 sis.audit_drain=drain
 def setup():
-    for suffix in ['keys']:
-        RAW('volume','create','--label','diag.owner='+P,P+'-'+suffix,timeout=15)
     sis.cmd_pinset_build()
     helper=P+'-input-copy'
     RAW('run','-d','--name',helper,'--label','diag.owner='+P,'-v',PIN_VOL+':/pin','-v',SCRIPT_VOL+':/scripts','--entrypoint','sh',M['runner_image'],'-c','tail -f /dev/null',timeout=15)
@@ -273,7 +270,7 @@ def setup():
         RAW('cp',str(E/'bin')+'/.',helper+':/pin/',timeout=20)
         RAW('cp',str(R/'perf/tools')+'/.',helper+':/scripts/',timeout=20)
     finally:RAW('rm','-f',helper,check=False,timeout=15)
-    override='services:\n  keyset:\n    image: '+M['helpers']['keyset']+'\n  nazoauth:\n    volumes:\n      - '+PIN_VOL+':/pinbin:ro\n  audit-receiver:\n    image: '+M['helpers']['receiver']+'\n    volumes:\n      - '+TLS_VOL+':/run/anchor-tls:ro\n  audit-worker:\n    image: '+M['app_image']+'\n    volumes:\n      - '+TLS_VOL+':/run/anchor-tls:ro\nvolumes:\n  '+PIN_VOL+':\n    external: true\n  '+TLS_VOL+':\n    external: true\n'
+    override='services:\n  nazoauth:\n    volumes:\n      - '+PIN_VOL+':/pinbin:ro\n  audit-receiver:\n    image: '+M['helpers']['receiver']+'\n    volumes:\n      - '+TLS_VOL+':/run/anchor-tls:ro\n  audit-worker:\n    image: '+M['app_image']+'\n    volumes:\n      - '+TLS_VOL+':/run/anchor-tls:ro\nvolumes:\n  '+PIN_VOL+':\n    external: true\n  '+TLS_VOL+':\n    external: true\n'
     (E/'environment.override.yml').write_text(override)
     allowed=sis.format_cpu_list(M['cpus']['allowed'])
     q=RAW('run','--rm','--label','diag.owner='+P,'-v',PIN_VOL+':/pin:ro','--entrypoint','/pin/pinset',M['runner_image'],allowed,'--all',timeout=20)

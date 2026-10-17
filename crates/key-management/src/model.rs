@@ -415,6 +415,7 @@ pub(crate) struct KeyGeneration {
     openid4vc_public: Option<Arc<Openid4vcPublicMaterial>>,
     openid4vc_revocation:
         Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>,
+    openid4vc_signing_revoked: bool,
     expires_at: Option<Instant>,
 }
 
@@ -476,13 +477,12 @@ impl HttpSigningLease {
 pub struct Openid4vcSigningLease {
     generation: Arc<KeyGeneration>,
     health: Arc<LifecycleHealth>,
-    kid: String,
 }
 
 impl Openid4vcSigningLease {
     #[must_use]
     pub fn kid(&self) -> &str {
-        &self.kid
+        &self.material().signing_kid
     }
 
     #[must_use]
@@ -505,9 +505,9 @@ impl Openid4vcSigningLease {
         encode_jwt_for_generation(
             &self.generation,
             &self.health,
-            Some(&self.kid),
+            Some(self.kid()),
             purpose,
-            header,
+            header.clone(),
             claims,
         )
         .await
@@ -534,7 +534,7 @@ impl Signer for Openid4vcSigningLease {
             .generation
             .loaded
             .selected_key(request.purpose, algorithm)
-            .filter(|selected| selected.kid == self.kid)
+            .filter(|selected| selected.kid == self.kid())
             .ok_or(SignError::KeyUnavailable)?;
         sign_selected(&selected, &self.generation.snapshot, request.signing_input).await
     }
@@ -627,7 +627,7 @@ pub(crate) fn parse_openid4vc_certificate_chain(
                     block.tag()
                 );
             }
-            let der = block.contents().to_vec();
+            let der = block.into_contents();
             let (rest, _) = x509_parser::parse_x509_certificate(&der).map_err(|error| {
                 anyhow::anyhow!("failed to parse OpenID4VC {description} certificate: {error}")
             })?;
@@ -641,7 +641,7 @@ pub(crate) fn parse_openid4vc_certificate_chain(
         .collect()
 }
 
-pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow::Result<[u8; 65]> {
     let object = jwk
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("{description} public JWK must be an object"))?;
@@ -652,68 +652,67 @@ pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow
     {
         anyhow::bail!("{description} public JWK must be an ES256 signing key");
     }
-    let x = URL_SAFE_NO_PAD
-        .decode(
-            object
-                .get("x")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow::anyhow!("{description} public JWK is missing x"))?,
-        )
-        .map_err(|error| anyhow::anyhow!("{description} public JWK x is invalid: {error}"))?;
-    let y = URL_SAFE_NO_PAD
-        .decode(
-            object
-                .get("y")
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow::anyhow!("{description} public JWK is missing y"))?,
-        )
-        .map_err(|error| anyhow::anyhow!("{description} public JWK y is invalid: {error}"))?;
-    if x.len() != 32 || y.len() != 32 {
-        anyhow::bail!("{description} public JWK coordinates must be 32 bytes");
+    let mut point = [0_u8; 65];
+    point[0] = 4;
+    let (x, y) = point[1..].split_at_mut(32);
+    for (name, coordinate) in [("x", x), ("y", y)] {
+        let encoded = object
+            .get(name)
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("{description} public JWK is missing {name}"))?;
+        let length = URL_SAFE_NO_PAD
+            .decode_slice(encoded, coordinate)
+            .map_err(|error| {
+                anyhow::anyhow!("{description} public JWK {name} is invalid: {error}")
+            })?;
+        if length != 32 {
+            anyhow::bail!("{description} public JWK coordinates must be 32 bytes");
+        }
     }
-    let mut point = Vec::with_capacity(1 + x.len() + y.len());
-    point.push(4);
-    point.extend_from_slice(&x);
-    point.extend_from_slice(&y);
-    Ok(nazo_crypto::ec::normalize_p256_public_key(&point)
-        .map_err(|error| anyhow::anyhow!("{description} public JWK point is invalid: {error}"))?
-        .to_vec())
+    nazo_crypto::ec::normalize_p256_public_key(&point)
+        .map_err(|error| anyhow::anyhow!("{description} public JWK point is invalid: {error}"))
 }
 
 pub(crate) fn p256_public_key_from_certificate(
     der: &[u8],
     description: &str,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<[u8; 65]> {
     let (rest, certificate) = x509_parser::parse_x509_certificate(der)
         .map_err(|error| anyhow::anyhow!("failed to parse {description}: {error}"))?;
     if !rest.is_empty() {
         anyhow::bail!("{description} contains trailing bytes after a certificate");
     }
     let point = certificate.public_key().subject_public_key.data.as_ref();
-    Ok(nazo_crypto::ec::normalize_p256_public_key(point)
-        .map_err(|error| anyhow::anyhow!("{description} is not an ES256 certificate: {error}"))?
-        .to_vec())
+    nazo_crypto::ec::normalize_p256_public_key(point)
+        .map_err(|error| anyhow::anyhow!("{description} is not an ES256 certificate: {error}"))
 }
 
 pub(crate) fn openid4vc_material_is_revoked(material: &Openid4vcMaterial) -> anyhow::Result<bool> {
     let Some(snapshot) = material.public.revocation_snapshot.as_ref() else {
         return Ok(false);
     };
+    let mut revoked = snapshot
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.status == nazo_digital_credentials::CertificateRevocationStatus::Revoked
+        })
+        .peekable();
+    if revoked.peek().is_none() {
+        return Ok(false);
+    }
     let certificates = parse_openid4vc_certificate_chain(
         &material.public.certificate_chain_pem,
         "certificate chain",
     )?;
     let identity = nazo_digital_credentials::certificate_identity(&certificates[0]);
-    Ok(snapshot.entries.iter().any(|entry| {
-        entry.certificate == identity
-            && entry.status == nazo_digital_credentials::CertificateRevocationStatus::Revoked
-    }))
+    Ok(revoked.any(|entry| entry.certificate == identity))
 }
 
 impl KeyManager {
     /// Read operator key metadata from the repository-backed keyset.
     pub async fn database_list_keys(&self) -> anyhow::Result<Vec<KeyRecord>> {
-        crate::database::list(&self.inner.settings, &self.inner.database).await
+        crate::database::list(&self.inner.database).await
     }
 
     /// Register an external signer in the repository-backed keyset.
@@ -721,12 +720,7 @@ impl KeyManager {
         &self,
         registration: ExternalKeyRegistration,
     ) -> anyhow::Result<()> {
-        let loaded = crate::database::register_external(
-            &self.inner.settings,
-            &self.inner.database,
-            registration,
-        )
-        .await?;
+        let loaded = crate::database::register_external(&self.inner.database, registration).await?;
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)?));
@@ -749,12 +743,8 @@ impl KeyManager {
         &self,
         registration: LocalKeyRegistration,
     ) -> anyhow::Result<(String, String)> {
-        let (kid, loaded, revision) = crate::database::register_local(
-            &self.inner.settings,
-            &self.inner.database,
-            registration,
-        )
-        .await?;
+        let (kid, loaded, revision) =
+            crate::database::register_local(&self.inner.database, registration).await?;
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)?));
@@ -771,7 +761,7 @@ impl KeyManager {
     /// keyset. The persisted revocation timestamps are returned unchanged;
     /// request handling uses the generation-pinned projection instead.
     pub async fn database_openid4vc_state(&self) -> anyhow::Result<Openid4vcState> {
-        crate::database::openid4vc_state(&self.inner.database, &self.inner.settings).await
+        crate::database::openid4vc_state(&self.inner.database).await
     }
 
     /// Read one fresh authoritative generation for the selected CRL issuer.
@@ -838,7 +828,7 @@ impl KeyManager {
         loaded.openid4vc_material = Some(material.into());
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded).expect(
+            .store(Arc::new(KeyGeneration::from_loaded(loaded).expect(
                 "test fixture generation must contain valid key material",
             )));
     }
@@ -879,14 +869,12 @@ impl KeyManager {
                 "OpenID4VC signing certificate does not match one credential and presentation-request ES256 key"
             );
         }
-        if openid4vc_material_is_revoked(material)? {
+        if generation.openid4vc_signing_revoked {
             anyhow::bail!("OpenID4VC signing certificate is revoked");
         }
-        let kid = credential.kid.to_owned();
         Ok(Openid4vcSigningLease {
             generation,
             health: Arc::clone(&self.inner.health),
-            kid,
         })
     }
 
@@ -1031,7 +1019,7 @@ impl KeyManager {
     /// Validate the sealed repository generation, including its public/private
     /// correspondence and request-object key material.
     pub async fn database_validate(&self) -> anyhow::Result<()> {
-        crate::database::validate(&self.inner.settings, &self.inner.database).await
+        crate::database::validate(&self.inner.database).await
     }
 
     /// Opaque repository generation revision for an operator result.
@@ -1107,6 +1095,28 @@ impl KeyManager {
         Arc::clone(&self.inner.generation.load().snapshot)
     }
 
+    pub async fn encode_response_jwt<T: Serialize>(
+        &self,
+        purpose: SigningPurpose,
+        algorithm: Option<nazo_crypto::jwt::Algorithm>,
+        typ: &str,
+        claims: &T,
+    ) -> nazo_crypto::Result<String> {
+        let generation = self.inner.generation.load_full();
+        let mut header =
+            nazo_crypto::jwt::Header::new(algorithm.unwrap_or(generation.loaded.active_alg));
+        header.typ = Some(typ.to_owned());
+        encode_jwt_for_generation(
+            &generation,
+            &self.inner.health,
+            None,
+            purpose,
+            header,
+            claims,
+        )
+        .await
+    }
+
     pub async fn encode_jwt<T: Serialize>(
         &self,
         purpose: SigningPurpose,
@@ -1119,7 +1129,7 @@ impl KeyManager {
             &self.inner.health,
             None,
             purpose,
-            header,
+            header.clone(),
             claims,
         )
         .await
@@ -1172,7 +1182,7 @@ pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     health: &LifecycleHealth,
     expected_kid: Option<&str>,
     purpose: SigningPurpose,
-    header: &nazo_crypto::jwt::Header,
+    mut header: nazo_crypto::jwt::Header,
     claims: &T,
 ) -> nazo_crypto::Result<String> {
     if generation.is_expired() || !health.snapshot().is_healthy() {
@@ -1198,8 +1208,9 @@ pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     {
         return Err(nazo_crypto::CryptoError::UnsupportedAlgorithm);
     }
-    let mut header = header.clone();
-    header.kid = Some(selected.kid.to_owned());
+    if header.kid.is_none() {
+        header.kid = Some(selected.kid.to_owned());
+    }
     let header_json =
         serde_json::to_vec(&header).map_err(|_| nazo_crypto::CryptoError::InvalidInput)?;
     let claims_json =
@@ -1287,7 +1298,24 @@ impl KeyGeneration {
     /// Prepares all per-generation material before publication. A failure
     /// rejects the whole generation; a partially initialized object is never
     /// handed to `ArcSwap`.
-    fn database(loaded: LoadedKeyset) -> anyhow::Result<Self> {
+    fn database(mut loaded: LoadedKeyset) -> anyhow::Result<Self> {
+        if let Some(snapshot) = loaded
+            .openid4vc_material
+            .as_mut()
+            .and_then(|material| material.public.revocation_snapshot.as_mut())
+        {
+            // Only the observation window is local. Revocation facts remain unchanged.
+            let now = Utc::now();
+            snapshot.this_update = now;
+            snapshot.next_update = now
+                + chrono::Duration::seconds(
+                    crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS,
+                );
+        }
+        Self::from_loaded(loaded)
+    }
+
+    fn from_loaded(loaded: LoadedKeyset) -> anyhow::Result<Self> {
         let snapshot = Arc::new(snapshot_from_loaded(&loaded)?);
         let openid4vc_public = loaded
             .openid4vc_material
@@ -1303,11 +1331,18 @@ impl KeyGeneration {
                     )),
                 )
             });
+        let openid4vc_signing_revoked = loaded
+            .openid4vc_material
+            .as_ref()
+            .map(openid4vc_material_is_revoked)
+            .transpose()?
+            .unwrap_or(false);
         Ok(Self {
             loaded,
             snapshot,
             openid4vc_public,
             openid4vc_revocation,
+            openid4vc_signing_revoked,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),
         })
     }

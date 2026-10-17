@@ -15,6 +15,14 @@ pub enum DynamicRegistrationDependencyError {
     StaleCredentials,
 }
 
+/// Client and non-secret verifier metadata from the same authenticated read.
+#[derive(Debug)]
+pub struct RegistrationClientSnapshot {
+    pub client: OAuthClient,
+    pub has_client_secret: bool,
+    pub secret_salt: Option<String>,
+}
+
 /// Persistence boundary for RFC 7591 registration and RFC 7592 client management.
 /// Insert, replacement and deactivation own their required lifecycle event in
 /// the same atomic commit as the effect. `source_ip_hash` contains no credential.
@@ -32,19 +40,7 @@ pub trait DynamicRegistrationClientStore: Send + Sync {
         tenant_id: Uuid,
         client_id: &'a str,
         token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, Option<OAuthClient>>;
-
-    fn has_client_secret(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, bool>;
-
-    fn client_secret_salt(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, Option<String>>;
+    ) -> DynamicRegistrationFuture<'a, Option<RegistrationClientSnapshot>>;
 
     fn client_secret_digest_matches<'a>(
         &'a self,

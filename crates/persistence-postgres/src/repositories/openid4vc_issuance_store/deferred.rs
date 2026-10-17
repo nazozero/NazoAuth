@@ -2,61 +2,19 @@ use chrono::{DateTime, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_openid4vci::{
-    CredentialStoreError, CredentialStoreFuture, DeferredCredential, DeferredCredentialClaim,
-    StoredCredentialResponse,
+    CredentialStoreError, CredentialStoreFuture, DeferredCredential, StoredCredentialResponse,
 };
 use uuid::Uuid;
 
 use super::super::Openid4vciRepository;
 use super::super::crypto::map_stored_credential_error;
 use super::{
-    DeferredLeaseReceipt, DeferredLockedProjectionRow, LockedContinuationGrant,
-    NewIssuanceResponse, decode_error, decode_selection, insert_issuance_response, protect_payload,
-    response_encoding_name,
+    DeferredLockedProjectionRow, LockedContinuationGrant, NewIssuanceResponse, decode_error,
+    decode_selection, insert_issuance_response, protect_payload, response_encoding_name,
 };
 use crate::{get_conn, pool::DiscardOnDrop};
 
 impl Openid4vciRepository {
-    pub(super) fn deferred_store<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let protected_payload = protect_payload(
-                &self.data_key,
-                credential.id,
-                &serde_json::to_vec(&credential.payload)
-                    .map_err(|_| CredentialStoreError::Unavailable)?,
-            )?;
-            sql_query(
-                "INSERT INTO openid4vci_deferred_transactions \
-                 (id, transaction_hash, token_id, credential_configuration_id, credential_format, \
-                  holder_bindings, payload_ciphertext, ready_at, expires_at, authorization_id, credential_selection) \
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-            )
-            .bind::<sql_types::Uuid, _>(credential.id)
-            .bind::<sql_types::Text, _>(&credential.transaction_hash)
-            .bind::<sql_types::Uuid, _>(credential.access.token_id)
-            .bind::<sql_types::Text, _>(&credential.configuration_id)
-            .bind::<sql_types::Text, _>(credential.format.as_str())
-            .bind::<sql_types::Jsonb, _>(serde_json::Value::Array(
-                credential.holder_bindings.clone(),
-            ))
-            .bind::<sql_types::Binary, _>(protected_payload)
-            .bind::<sql_types::Timestamptz, _>(credential.ready_at)
-            .bind::<sql_types::Timestamptz, _>(credential.expires_at)
-            .bind::<sql_types::Nullable<sql_types::Uuid>, _>(credential.access.authorization_id)
-            .bind::<sql_types::Jsonb, _>(serde_json::json!(credential.selection))
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(())
-        })
-    }
-
     pub(super) fn deferred_store_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -76,10 +34,10 @@ impl Openid4vciRepository {
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
             let id = credential.id;
-            let transaction_hash = credential.transaction_hash.clone();
+            let transaction_hash = &credential.transaction_hash;
             let token_id = credential.access.token_id;
-            let configuration_id = credential.configuration_id.clone();
-            let format = credential.format.as_str().to_owned();
+            let configuration_id = &credential.configuration_id;
+            let format = credential.format.as_str();
             let holder_bindings = serde_json::Value::Array(credential.holder_bindings.clone());
             let ready_at = credential.ready_at;
             let expires_at = credential.expires_at;
@@ -87,9 +45,9 @@ impl Openid4vciRepository {
             let selection = serde_json::json!(credential.selection);
             let issuance_id = response.issuance_id;
             let response_token_id = response.token_id;
-            let request_digest = response.request_digest.clone();
+            let request_digest = &response.request_digest;
             let response_selection = serde_json::json!(response.selection);
-            let dpop_nonce = response.dpop_nonce.clone();
+            let dpop_nonce = response.dpop_nonce.as_deref();
             let response_expires_at = response.expires_at;
             let mut connection = get_conn(&self.pool)
                 .await
@@ -103,10 +61,10 @@ impl Openid4vciRepository {
                          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
                     )
                     .bind::<sql_types::Uuid, _>(id)
-                    .bind::<sql_types::Text, _>(&transaction_hash)
+                    .bind::<sql_types::Text, _>(transaction_hash)
                     .bind::<sql_types::Uuid, _>(token_id)
-                    .bind::<sql_types::Text, _>(&configuration_id)
-                    .bind::<sql_types::Text, _>(&format)
+                    .bind::<sql_types::Text, _>(configuration_id)
+                    .bind::<sql_types::Text, _>(format)
                     .bind::<sql_types::Jsonb, _>(holder_bindings)
                     .bind::<sql_types::Binary, _>(protected_payload)
                     .bind::<sql_types::Timestamptz, _>(ready_at)
@@ -121,82 +79,15 @@ impl Openid4vciRepository {
                             selection: response_selection,
                             issuance_id,
                             token_id: response_token_id,
-                            request_digest: &request_digest,
+                            request_digest,
                             body_ciphertext: response_ciphertext,
                             encoding,
                             status,
-                            dpop_nonce: dpop_nonce.as_deref(),
+                            dpop_nonce,
                             expires_at: response_expires_at,
                         },
                     )
                     .await?;
-                    Ok(())
-                })
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)
-        })
-    }
-
-    pub(super) fn deferred_store_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let protected_payload = protect_payload(
-                &self.data_key,
-                credential.id,
-                &serde_json::to_vec(&credential.payload)
-                    .map_err(|_| CredentialStoreError::Unavailable)?,
-            )?;
-            let id = credential.id;
-            let transaction_hash = credential.transaction_hash.clone();
-            let token_id = credential.access.token_id;
-            let configuration_id = credential.configuration_id.clone();
-            let format = credential.format.as_str().to_owned();
-            let holder_bindings = serde_json::Value::Array(credential.holder_bindings.clone());
-            let ready_at = credential.ready_at;
-            let expires_at = credential.expires_at;
-            let authorization_id = credential.access.authorization_id;
-            let selection = serde_json::json!(credential.selection);
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection
-                .transaction::<(), diesel::result::Error, _>(async move |connection| {
-                    sql_query(
-                        "INSERT INTO openid4vci_deferred_transactions \
-                         (id, transaction_hash, token_id, credential_configuration_id, credential_format, \
-                          holder_bindings, payload_ciphertext, ready_at, expires_at, authorization_id, credential_selection) \
-                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
-                    )
-                    .bind::<sql_types::Uuid, _>(id)
-                    .bind::<sql_types::Text, _>(&transaction_hash)
-                    .bind::<sql_types::Uuid, _>(token_id)
-                    .bind::<sql_types::Text, _>(&configuration_id)
-                    .bind::<sql_types::Text, _>(&format)
-                    .bind::<sql_types::Jsonb, _>(holder_bindings)
-                    .bind::<sql_types::Binary, _>(protected_payload)
-                    .bind::<sql_types::Timestamptz, _>(ready_at)
-                    .bind::<sql_types::Timestamptz, _>(expires_at)
-                    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(authorization_id)
-                    .bind::<sql_types::Jsonb, _>(selection)
-                    .execute(connection)
-                    .await?;
-                    let changed = sql_query(
-                        "UPDATE openid4vci_nonces SET consumed_at = GREATEST($3, created_at), claim_id = NULL, claim_expires_at = NULL \
-                         WHERE nonce_hash = $1 AND claim_id = $2 AND consumed_at IS NULL AND expires_at > $3",
-                    )
-                    .bind::<sql_types::Text, _>(nonce_hash)
-                    .bind::<sql_types::Text, _>(claim_id)
-                    .bind::<sql_types::Timestamptz, _>(now)
-                    .execute(connection)
-                    .await?;
-                    if changed != 1 {
-                        return Err(diesel::result::Error::RollbackTransaction);
-                    }
                     Ok(())
                 })
                 .await
@@ -225,10 +116,10 @@ impl Openid4vciRepository {
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
             let id = credential.id;
-            let transaction_hash = credential.transaction_hash.clone();
+            let transaction_hash = &credential.transaction_hash;
             let token_id = credential.access.token_id;
-            let configuration_id = credential.configuration_id.clone();
-            let format = credential.format.as_str().to_owned();
+            let configuration_id = &credential.configuration_id;
+            let format = credential.format.as_str();
             let holder_bindings = serde_json::Value::Array(credential.holder_bindings.clone());
             let ready_at = credential.ready_at;
             let expires_at = credential.expires_at;
@@ -236,9 +127,9 @@ impl Openid4vciRepository {
             let selection = serde_json::json!(credential.selection);
             let issuance_id = response.issuance_id;
             let response_token_id = response.token_id;
-            let request_digest = response.request_digest.clone();
+            let request_digest = &response.request_digest;
             let response_selection = serde_json::json!(response.selection);
-            let dpop_nonce = response.dpop_nonce.clone();
+            let dpop_nonce = response.dpop_nonce.as_deref();
             let response_expires_at = response.expires_at;
             let mut connection = get_conn(&self.pool)
                 .await
@@ -252,10 +143,10 @@ impl Openid4vciRepository {
                          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
                     )
                     .bind::<sql_types::Uuid, _>(id)
-                    .bind::<sql_types::Text, _>(&transaction_hash)
+                    .bind::<sql_types::Text, _>(transaction_hash)
                     .bind::<sql_types::Uuid, _>(token_id)
-                    .bind::<sql_types::Text, _>(&configuration_id)
-                    .bind::<sql_types::Text, _>(&format)
+                    .bind::<sql_types::Text, _>(configuration_id)
+                    .bind::<sql_types::Text, _>(format)
                     .bind::<sql_types::Jsonb, _>(holder_bindings)
                     .bind::<sql_types::Binary, _>(protected_payload)
                     .bind::<sql_types::Timestamptz, _>(ready_at)
@@ -270,11 +161,11 @@ impl Openid4vciRepository {
                             selection: response_selection,
                             issuance_id,
                             token_id: response_token_id,
-                            request_digest: &request_digest,
+                            request_digest,
                             body_ciphertext: response_ciphertext,
                             encoding,
                             status,
-                            dpop_nonce: dpop_nonce.as_deref(),
+                            dpop_nonce,
                             expires_at: response_expires_at,
                         },
                     )
@@ -320,7 +211,7 @@ impl Openid4vciRepository {
                         // A single ordered stream is fully aggregated before the
                         // dependent deferred locking subquery can execute. No outer
                         // reread borrows grant metadata from the statement snapshot.
-                        let rows = sql_query(
+                        let mut rows = sql_query(
                             "WITH hint AS MATERIALIZED ( \
                                SELECT id, token_id FROM openid4vci_deferred_transactions \
                                WHERE transaction_hash = $1 \
@@ -360,28 +251,24 @@ impl Openid4vciRepository {
                         .bind::<sql_types::Uuid, _>(token_id)
                         .load::<DeferredLockedProjectionRow>(connection)
                         .await?;
-                        let mut rows = rows.into_iter();
-                        let Some(row) = rows.next() else {
+                        let Some(mut row) = rows.pop() else {
                             return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
                         };
-                        if rows.next().is_some() {
-                            return Err(diesel::result::Error::DeserializationError(Box::new(
-                                std::io::Error::other("deferred locked projection is ambiguous"))));
-                        }
                         let locked: Vec<LockedContinuationGrant> =
                             serde_json::from_value(row.grants).map_err(decode_error)?;
-                        let accesses = locked.into_iter().map(|grant| {
+                        let mut accesses = locked.into_iter().map(|grant| {
                             Ok((nazo_openid4vci::CredentialAccess::try_from(grant.access)?, grant.revoked_at))
                         }).collect::<Result<Vec<_>, diesel::result::Error>>()?;
-                        let Some((original, _)) = accesses.iter()
-                            .find(|(access, _)| access.token_id == row.deferred.token_id) else {
+                        let Some(original_index) = accesses.iter()
+                            .position(|(access, _)| access.token_id == row.deferred.token_id) else {
                             return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
                         };
+                        let original = &accesses[original_index].0;
                         let Some((current, revoked_at)) = accesses.iter()
                             .find(|(access, _)| access.token_id == token_id) else {
                             return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
                         };
-                        let selection = decode_selection(row.deferred.credential_selection.clone())?;
+                        let selection = decode_selection(row.deferred.credential_selection.take())?;
                         // One authority policy, after all relevant lock waits and
                         // before Pending/Busy classification or any lease write.
                         if row.deferred.authorization_id != original.authorization_id
@@ -410,12 +297,13 @@ impl Openid4vciRepository {
                         }
                         let current_expires_at = current.expires_at;
                         let original_token_id = original.token_id;
-                        let deferred = row.deferred.into_domain(original.clone(), &self.data_key)?;
+                        let (original, _) = accesses.swap_remove(original_index);
+                        let deferred = row.deferred.into_domain(original, selection, &self.data_key)?;
                         // The second data statement owns only the lease. Recheck
                         // temporal facts at acceptance; locks still protect all
-                        // authorization and final-state facts. Drain RETURNING,
-                        // then let transaction() await the full COMMIT reply.
-                        let receipts = sql_query(
+                        // authorization and final-state facts. Await the UPDATE
+                        // command and the full COMMIT reply before returning.
+                        let changed = sql_query(
                             "WITH accepted AS MATERIALIZED (SELECT clock_timestamp() AS accepted_at) \
                              UPDATE openid4vci_deferred_transactions AS target \
                              SET claim_id = $4, claim_token_id = $3, \
@@ -424,8 +312,7 @@ impl Openid4vciRepository {
                                AND target.token_id = $5 AND target.consumed_at IS NULL \
                                AND target.ready_at <= accepted.accepted_at \
                                AND target.expires_at > accepted.accepted_at AND $6 > accepted.accepted_at \
-                               AND (target.claim_id IS NULL OR target.claim_expires_at <= accepted.accepted_at) \
-                             RETURNING target.id, target.claim_id, target.claim_token_id"
+                               AND (target.claim_id IS NULL OR target.claim_expires_at <= accepted.accepted_at)"
                         )
                         .bind::<sql_types::Uuid, _>(deferred.id)
                         .bind::<sql_types::Text, _>(transaction_hash)
@@ -433,18 +320,12 @@ impl Openid4vciRepository {
                         .bind::<sql_types::Text, _>(claim_id)
                         .bind::<sql_types::Uuid, _>(original_token_id)
                         .bind::<sql_types::Timestamptz, _>(current_expires_at)
-                        .load::<DeferredLeaseReceipt>(connection)
+                        .execute(connection)
                         .await?;
-                        if receipts.is_empty() {
+                        if changed == 0 {
                             return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
                         }
-                        if receipts.len() != 1 || receipts[0].id != deferred.id
-                            || receipts[0].claim_id != claim_id || receipts[0].claim_token_id != token_id {
-                            return Err(diesel::result::Error::RollbackTransaction);
-                        }
-                        Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(DeferredCredentialClaim {
-                            credential: deferred, claim_id: claim_id.to_owned(),
-                        })))
+                        Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(deferred)))
                     },
                 )
                 .await;
@@ -452,34 +333,6 @@ impl Openid4vciRepository {
                 guarded.return_to_pool();
             }
             result.map_err(map_stored_credential_error)
-        })
-    }
-
-    pub(super) fn deferred_finalize<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let changed = sql_query(
-                "UPDATE openid4vci_deferred_transactions \
-                 SET consumed_at = GREATEST($4, ready_at), claim_id = NULL, claim_expires_at = NULL, claim_token_id = NULL \
-                 WHERE transaction_hash = $1 AND COALESCE(claim_token_id, token_id) = $2 AND claim_id = $3 \
-                   AND consumed_at IS NULL AND expires_at > $4",
-            )
-            .bind::<sql_types::Text, _>(transaction_hash)
-            .bind::<sql_types::Uuid, _>(token_id)
-            .bind::<sql_types::Text, _>(claim_id)
-            .bind::<sql_types::Timestamptz, _>(now)
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(changed == 1)
         })
     }
 

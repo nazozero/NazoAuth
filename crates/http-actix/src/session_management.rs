@@ -1,3 +1,7 @@
+use std::fmt::Write as _;
+
+use crate::html::JsString;
+
 use nazo_oauth_server::contracts::session_management::{
     SessionManagementError, SessionManagementOperations,
 };
@@ -130,26 +134,12 @@ fn status_response(status: OidcSessionStatus) -> HttpResponse {
 
 fn session_management_iframe_document(status_endpoint: &str) -> String {
     let head = include_str!("session_management_iframe.head.html").trim_end_matches(['\r', '\n']);
-    format!(
-        "{}{}{}{}",
-        head,
-        escape_js_string(status_endpoint),
-        include_str!("session_management_iframe.tail.html"),
-        ""
-    )
-}
-
-fn escape_js_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('\r', "\\r")
-        .replace('\n', "\\n")
-        .replace('\'', "\\'")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029")
+    let tail = include_str!("session_management_iframe.tail.html");
+    let mut document = String::with_capacity(head.len() + status_endpoint.len() + tail.len());
+    document.push_str(head);
+    write!(document, "{}", JsString(status_endpoint)).expect("String formatting is infallible");
+    document.push_str(tail);
+    document
 }
 
 #[cfg(test)]

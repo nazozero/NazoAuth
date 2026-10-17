@@ -44,7 +44,9 @@ fn validate_jwt_bearer_assertion(
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
-    validate_jwt_bearer_assertion_with_issuer(&settings.endpoint.issuer, client, assertion)
+    let header =
+        nazo_crypto::jwt::decode_header(assertion).map_err(|_| JwtBearerAssertionError::Invalid)?;
+    validate_jwt_bearer_assertion_with_issuer(&settings.endpoint.issuer, client, assertion, header)
 }
 
 async fn consume_jwt_bearer_assertion(

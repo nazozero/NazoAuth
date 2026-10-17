@@ -411,15 +411,11 @@ where
     ) -> Result<PasskeyRegistrationBegin, PasskeyError> {
         let label =
             normalize_passkey_label(label.as_deref()).map_err(|_| PasskeyError::InvalidLabel)?;
-        let rows = self
+        let existing_ids = self
             .credentials
-            .list(account.tenant().tenant_id, account.user_id())
+            .credential_ids(account.tenant().tenant_id, account.user_id())
             .await
             .map_err(PasskeyError::State)?;
-        let existing_ids = rows
-            .into_iter()
-            .map(|row| row.credential.id)
-            .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
         let (challenge, state) = self.webauthn.start_registration(
             &user_handle,
@@ -513,16 +509,6 @@ where
         Ok(row)
     }
 
-    pub async fn list(
-        &self,
-        account: &PublicAccount,
-    ) -> Result<Vec<PasskeyCredential>, PasskeyError> {
-        self.credentials
-            .list(account.tenant().tenant_id, account.user_id())
-            .await
-            .map_err(PasskeyError::State)
-    }
-
     pub async fn list_summaries(
         &self,
         account: &PublicAccount,
@@ -558,7 +544,8 @@ where
             if let Some(proof) = remembered_mfa.as_ref() {
                 self.remembered_mfa
                     .is_valid(
-                        &account,
+                        account.tenant().tenant_id,
+                        account.user_id(),
                         &proof.token_hash,
                         proof.user_agent_hash.as_deref(),
                         now,

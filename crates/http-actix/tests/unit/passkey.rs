@@ -5,6 +5,7 @@ use nazo_identity::{
     PasskeyLoginBegin, PasskeyRegistrationBegin, TenantId, UserId, session::SessionRecord,
 };
 use nazo_oauth_server::contracts::passkey::PasskeyFuture;
+use serde_json::Value;
 
 use super::*;
 
@@ -79,7 +80,10 @@ impl PasskeyProfileOperations for ProfileOperations {
         Box::pin(async { Err(PasskeyEndpointError::SessionMissing) })
     }
 
-    fn list(&self, context: PasskeyProfileContext) -> PasskeyFuture<'_, Vec<PasskeyCredential>> {
+    fn list_summaries(
+        &self,
+        context: PasskeyProfileContext,
+    ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>> {
         self.contexts.lock().unwrap().push(context);
         Box::pin(async { Err(PasskeyEndpointError::SessionMissing) })
     }
@@ -316,7 +320,8 @@ async fn public_passkey_projection_excludes_tenant_user_and_credential_material(
         updated_at: now,
     };
     let summary = PasskeyCredentialSummary::from(credential.clone());
-    let public = passkey_public_json(&summary);
+    let list = response_json(passkey_list_response(std::slice::from_ref(&summary))).await;
+    let public = &list["passkeys"][0];
     let public = public.as_object().unwrap();
     assert_eq!(public.len(), 7);
     assert_eq!(public["id"], json!(credential.id));
@@ -329,6 +334,8 @@ async fn public_passkey_projection_excludes_tenant_user_and_credential_material(
             "must not expose {forbidden}"
         );
     }
+    let created = response_json(passkey_created_response(credential.clone())).await;
+    assert_eq!(created, list["passkeys"][0]);
 
     for response in [
         passkey_list_response(std::slice::from_ref(&summary)),

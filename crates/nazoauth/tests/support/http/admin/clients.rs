@@ -4,10 +4,7 @@ use super::{
 use crate::settings::Settings;
 use crate::test_support::hash_client_secret_fixture as hash_client_secret;
 use nazo_auth::AdminClientCryptoPort;
-use nazo_key_management::{
-    client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
-    validate_client_jwks, validate_self_signed_mtls_jwks,
-};
+use nazo_key_management::inspect_client_jwks;
 use nazo_oauth_server::crypto::random_urlsafe_token;
 use serde_json::Value;
 use std::sync::Arc;
@@ -103,32 +100,31 @@ impl AdminClientCryptoPort for TestAdminClientCrypto<'_> {
         (secret, digest)
     }
 
-    fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
-        validate_client_jwks(jwks).map_err(|error| error.to_string())
+    fn inspect_jwks(
+        &self,
+        jwks: &Value,
+        certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        inspect_client_jwks(jwks, certificate_auth)
     }
 
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         nazo_key_management::validate_rfc4514_dn(value)
-    }
-
-    fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
-        client_jwks_matching_encryption_key_count(jwks, algorithm)
-    }
-
-    fn contains_signing_key(&self, jwks: &Value) -> bool {
-        client_jwks_contains_signing_key(jwks)
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
-        validate_self_signed_mtls_jwks(jwks)
     }
 }
 
 pub(crate) async fn insert_prepared_client(
     repository: &nazo_postgres::OAuthClientRepository,
     prepared: &PreparedClientRegistration,
-) -> Result<nazo_auth::OAuthClient, InsertClientError> {
-    nazo_auth::insert_prepared_client(repository, prepared).await
+) -> anyhow::Result<nazo_auth::OAuthClient> {
+    let prepared = prepared.clone().into_write();
+    Ok(repository
+        .insert(
+            &prepared.client,
+            prepared.client_secret_hash.as_deref(),
+            prepared.registration_access_token_blake3.as_deref(),
+        )
+        .await?)
 }
 
 pub(crate) async fn prepare_client_patch(

@@ -85,6 +85,34 @@ fn slot_requests_reject_kids_that_do_not_bind_to_their_key_material() {
 }
 
 #[test]
+fn slot_request_labels_and_deployment_are_validated_at_admission() {
+    for label in ["", "bad\u{0007}label", &"x".repeat(129)] {
+        assert!(
+            validate_slot_request("deployment-ok", label, &kid_text(1), &public_key_text(1))
+                .is_err()
+        );
+    }
+    assert!(
+        validate_slot_request(
+            "deployment-ok",
+            &"x".repeat(128),
+            &kid_text(1),
+            &public_key_text(1)
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_slot_request(
+            "bad deployment id!",
+            "primary",
+            &kid_text(1),
+            &public_key_text(1)
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn action_digests_are_deterministic_and_discriminate_every_field() {
     let request = slot_request("deployment-a", "ops", 1);
     let bind = IdentityChange::Bind(request.clone());
@@ -166,4 +194,49 @@ fn expiry_warnings_fire_at_seven_days_and_twenty_four_hours() {
 fn deployment_binding_accepts_local_and_rejects_foreign_callers() {
     assert!(ensure_local_deployment("deployment-a", "deployment-a").is_ok());
     assert!(ensure_local_deployment("deployment-a", "deployment-b").is_err());
+}
+
+#[test]
+fn action_digests_preserve_existing_approval_bytes() {
+    let mut request = slot_request("deployment-a", "运维 \"primary\"", 1);
+    request.recovery_public_key = Some(public_key_text(2));
+    request.recovery_kid = Some(kid_text(2));
+    let changes = [
+        IdentityChange::Bind(request.clone()),
+        IdentityChange::Add(request.clone()),
+        IdentityChange::Rotate(RotateRequest {
+            deployment_id: request.deployment_id,
+            controller_id: CONTROLLER_ID.to_owned(),
+            label: request.label,
+            public_key: request.public_key,
+            kid: request.kid,
+        }),
+        IdentityChange::Revoke(RevokeRequest {
+            deployment_id: "deployment-a".to_owned(),
+            controller_id: CONTROLLER_ID.to_owned(),
+        }),
+    ];
+    let expected = [
+        "8492c0297d2bbc4d89ab0718a140b6afbd755f4055fdc6801cfe4b4671151209",
+        "50819e4489b22cf8f079e4c48e11eeeb921a1a9d50902372c7a82b810ba3e73e",
+        "9486e59ac479508e396a1b0fd8a716c0efcd3d5f487fdb99502743d73a8525c0",
+        "1f288471a3a1c9e4decd70bb62a909bdc80b04a1383694e39a86177d32e70dc4",
+    ];
+    for (change, expected) in changes.into_iter().zip(expected) {
+        assert_eq!(change.action_sha256(), expected);
+    }
+}
+
+#[test]
+fn slot_validation_returns_bound_keys_and_requires_atomic_recovery_enrollment() {
+    let mut request = slot_request("deployment-a", "primary", 1);
+    assert_eq!(request.validate(false).unwrap(), ([1; 32], None));
+    assert!(request.validate(true).is_err());
+    request.recovery_public_key = Some(public_key_text(2));
+    assert!(request.validate(true).is_err());
+    request.recovery_kid = Some(kid_text(3));
+    assert!(request.validate(true).is_err());
+    request.recovery_kid = Some(kid_text(2));
+    assert_eq!(request.validate(true).unwrap(), ([1; 32], Some([2; 32])));
+    assert!(request.validate(false).is_err());
 }

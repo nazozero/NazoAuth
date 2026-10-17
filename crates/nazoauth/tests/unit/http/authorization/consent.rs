@@ -12,7 +12,7 @@ use crate::test_support::valkey::valkey_set_ex;
 
 use chrono::{Duration, Utc};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
     raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
@@ -32,8 +32,8 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::test_support::SessionPayload;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::{create_pool, get_conn};
 
 async fn authorize_consent(
@@ -523,7 +523,7 @@ async fn authorize_consent_requires_login() {
 }
 
 #[actix_web::test]
-async fn authorize_consent_fails_closed_when_session_user_lookup_fails() {
+async fn authorize_consent_fails_closed_when_session_principal_lookup_fails() {
     let schema = format!("consent_user_lookup_failure_{}", Uuid::now_v7().simple());
     let Some(fixture) = ConsentLiveFixture::new_isolated(&schema).await else {
         return;
@@ -533,7 +533,7 @@ async fn authorize_consent_fails_closed_when_session_user_lookup_fails() {
         .store_session(&user, "sid-user-lookup-failure", Utc::now().timestamp())
         .await;
     fixture
-        .rename_column("users", "email", "email_broken")
+        .rename_column("users", "is_active", "is_active_broken")
         .await;
 
     let req = fixture

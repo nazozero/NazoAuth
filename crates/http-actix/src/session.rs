@@ -147,18 +147,6 @@ pub fn login_required_response(cookies: &SessionCookieConfig) -> HttpResponse {
     )
 }
 
-#[must_use]
-pub fn session_lookup_error_response(
-    error: &nazo_identity::ports::RepositoryError,
-) -> HttpResponse {
-    let _ = error;
-    oauth_error(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "server_error",
-        "会话查询失败.",
-    )
-}
-
 #[cfg(test)]
 #[path = "../tests/unit/session.rs"]
 mod tests;

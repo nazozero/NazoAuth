@@ -29,7 +29,7 @@ fn redirect_state_is_appended_without_replacing_registered_query() {
 
 #[test]
 fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
-    let user_id = Uuid::now_v7();
+    let user_id = Uuid::nil();
     let secret = b"this-is-a-long-enough-secret-key-for-hmac-sha256!!";
 
     let first = pairwise_subject(secret, "https://issuer.example", "client.example", user_id);
@@ -37,8 +37,71 @@ fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
     let third = pairwise_subject(secret, "https://issuer.example", "other.example", user_id);
 
     assert_eq!(first, second);
+    assert_eq!(first, "ueLqFom86MNO_OCs6rKD1wCWP2OyXVvnQgkKrf3GZ30");
     assert_ne!(first, third);
     assert_ne!(first, user_id.to_string());
+}
+
+#[test]
+fn logout_subjects_preserve_sector_identity_and_ambiguity() {
+    let issuer = "https://issuer.example";
+    let secret = "this-is-a-long-enough-secret-key-for-hmac-sha256!!";
+    let user_id = Uuid::nil();
+    let redirects = [
+        "https://one.example/callback".to_owned(),
+        "https://one.example/other".to_owned(),
+        "https://two.example/callback".to_owned(),
+    ];
+    let mut client = LogoutClient {
+        redirect_uris: &redirects,
+        subject_type: "public",
+        sector_identifier_host: None,
+    };
+    assert_eq!(
+        logout_subjects_for_client(issuer, None, user_id, &client).unwrap(),
+        vec![user_id.to_string()]
+    );
+    client.subject_type = "pairwise";
+    let mut expected = vec![
+        pairwise_subject(secret.as_bytes(), issuer, "one.example", user_id),
+        pairwise_subject(secret.as_bytes(), issuer, "two.example", user_id),
+    ];
+    expected.sort();
+    assert_eq!(
+        logout_subjects_for_client(issuer, Some(secret), user_id, &client).unwrap(),
+        expected
+    );
+    assert_eq!(
+        unique_logout_subject_for_client(issuer, Some(secret), user_id, &client).unwrap(),
+        None
+    );
+    client.redirect_uris = &redirects[..2];
+    assert_eq!(
+        unique_logout_subject_for_client(issuer, Some(secret), user_id, &client).unwrap(),
+        Some(pairwise_subject(
+            secret.as_bytes(),
+            issuer,
+            "one.example",
+            user_id
+        ))
+    );
+    client.redirect_uris = &redirects;
+    client.sector_identifier_host = Some("sector.example");
+    assert_eq!(
+        unique_logout_subject_for_client(issuer, Some(secret), user_id, &client).unwrap(),
+        Some(pairwise_subject(
+            secret.as_bytes(),
+            issuer,
+            "sector.example",
+            user_id
+        ))
+    );
+    client.redirect_uris = &[];
+    client.sector_identifier_host = None;
+    assert_eq!(
+        unique_logout_subject_for_client(issuer, Some(secret), user_id, &client).unwrap(),
+        Some(pairwise_subject(secret.as_bytes(), issuer, "", user_id))
+    );
 }
 
 #[test]

@@ -245,7 +245,7 @@ async fn insert_device_user(state: &TestInfrastructure, user_id: Uuid) {
 }
 
 async fn store_device_session(state: &TestInfrastructure, session_id: &str, user_id: Uuid) {
-    let payload = nazo_oauth_server::sessions::SessionPayload {
+    let payload = crate::test_support::SessionPayload {
         user_id,
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".to_owned()],
@@ -456,7 +456,7 @@ async fn device_denial_consumes_pending_request_after_audited_user_decision() {
     let device_code = format!("device-code-{}", Uuid::now_v7());
     let user_code = format!("DEVICE-{}", Uuid::now_v7().simple());
     let (_, stored_user_code) = device_service
-        .create_unique(&payload, 600, || device_code.clone(), || user_code.clone())
+        .create_unique(payload, 600, || device_code.clone(), || user_code.clone())
         .await
         .expect("device request should be stored");
 

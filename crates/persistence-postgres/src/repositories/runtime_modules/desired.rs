@@ -19,7 +19,7 @@ use crate::{
 use super::{
     RuntimeModuleRepository, events,
     mapping::{self, parse_optional_uuid},
-    transaction::{RuntimeTransactionError, lock_key},
+    transaction::RuntimeTransactionError,
 };
 
 pub(super) async fn read_desired(
@@ -92,56 +92,55 @@ pub(super) async fn compare_and_set_desired(
     required_revisions: Vec<DesiredRevisionGuard>,
 ) -> Result<CasOutcome<DesiredStateRecord>, RepositoryError> {
     let expected_next = next_desired_revision(change.expected_revision)?;
-    let mut locked_modules = required_revisions
-        .iter()
-        .map(|guard| guard.module_id)
-        .collect::<Vec<_>>();
-    locked_modules.push(change.next.module_id);
-    locked_modules.sort_unstable();
-    locked_modules.dedup();
     let mut connection = repository.connection().await?;
     connection
         .transaction::<CasOutcome<DesiredStateRecord>, RuntimeTransactionError, _>(
             async |connection| {
-                for locked_module in &locked_modules {
-                    let lock = format!("{}:{}", repository.tenant_id(), module_id(*locked_module));
-                    lock_key(connection, &lock).await?;
-                }
-                let current = runtime_module_desired_states::table
-                    .find((repository.tenant_id(), module_id(change.next.module_id)))
+                // Desired rows are created with the tenant. Lock the target and
+                // its policy guards in one database order before inspecting them.
+                let rows = runtime_module_desired_states::table
+                    .filter(runtime_module_desired_states::tenant_id.eq(repository.tenant_id()))
+                    .filter(
+                        runtime_module_desired_states::module_id.eq_any(
+                            std::iter::once(module_id(change.next.module_id)).chain(
+                                required_revisions
+                                    .iter()
+                                    .map(|guard| module_id(guard.module_id)),
+                            ),
+                        ),
+                    )
+                    .order(runtime_module_desired_states::module_id.asc())
                     .select(DesiredStateRow::as_select())
                     .for_update()
-                    .first::<DesiredStateRow>(connection)
-                    .await
-                    .optional()?
-                    .map(mapping::desired_from_row)
-                    .transpose()
-                    .map_err(RuntimeTransactionError::Repository)?;
-                let current = current.ok_or_else(|| {
-                    RuntimeTransactionError::Repository(RepositoryError::Consistency(
-                        "runtime desired state is missing".to_owned(),
-                    ))
-                })?;
-                if Some(current.revision) != change.expected_revision {
-                    return Ok(CasOutcome::Stale {
-                        current: Some(current),
-                    });
-                }
+                    .load::<DesiredStateRow>(connection)
+                    .await?;
+                let mut guards_match = true;
                 for guard in &required_revisions {
-                    let guarded_revision = runtime_module_desired_states::table
-                        .find((repository.tenant_id(), module_id(guard.module_id)))
-                        .select(runtime_module_desired_states::revision)
-                        .first::<i64>(connection)
-                        .await
-                        .optional()?
-                        .map(mapping::parse_revision)
+                    let guarded_revision = rows
+                        .iter()
+                        .find(|row| row.module_id == module_id(guard.module_id))
+                        .map(|row| mapping::parse_revision(row.revision))
                         .transpose()
                         .map_err(RuntimeTransactionError::Repository)?;
                     if guarded_revision != guard.expected_revision {
-                        return Ok(CasOutcome::Stale {
-                            current: Some(current),
-                        });
+                        guards_match = false;
+                        break;
                     }
+                }
+                let current = rows
+                    .into_iter()
+                    .find(|row| row.module_id == module_id(change.next.module_id))
+                    .ok_or_else(|| {
+                        RuntimeTransactionError::Repository(RepositoryError::Consistency(
+                            "runtime desired state is missing".to_owned(),
+                        ))
+                    })?;
+                let current = mapping::desired_from_row(current)
+                    .map_err(RuntimeTransactionError::Repository)?;
+                if Some(current.revision) != change.expected_revision || !guards_match {
+                    return Ok(CasOutcome::Stale {
+                        current: Some(current),
+                    });
                 }
 
                 if current.mode == change.next.mode {

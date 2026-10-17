@@ -56,6 +56,14 @@ async fn request_object_decryption_rejects_tampered_ciphertext() {
     let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let jwk = manager.snapshot().request_object_encryption_jwk.clone();
     let mut compact = encrypt(&jwk, b"header.claims.signature");
+    for (segment, lengths) in [(2, [0, 11, 13]), (4, [0, 15, 17])] {
+        for length in lengths {
+            let encoded = URL_SAFE_NO_PAD.encode(vec![0_u8; length]);
+            let mut segments: Vec<_> = compact.split('.').collect();
+            segments[segment] = &encoded;
+            assert!(manager.decrypt_request_object(&segments.join(".")).is_err());
+        }
+    }
     let replacement = if compact.ends_with('A') { 'B' } else { 'A' };
     compact.pop();
     compact.push(replacement);

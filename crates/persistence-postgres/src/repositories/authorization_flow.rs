@@ -160,6 +160,18 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
         })
     }
 
+    fn active_client_presentation<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientPresentation>> {
+        Box::pin(async move {
+            self.clients
+                .active_client_presentation(self.tenant_id, client_id)
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,
@@ -281,24 +293,36 @@ fn bind_decision_audit_digests(input: &mut AuthorizationDecisionCommit) {
         .as_object_mut()
         .expect("validated audit object");
     fields.insert("request_id_hash".to_owned(), digest(&input.request_id));
+    let resource_digest = (!input.resource_indicators.is_empty()).then(|| {
+        let mut hasher = blake3::Hasher::new();
+        for (index, resource) in input.resource_indicators.iter().enumerate() {
+            if index > 0 {
+                hasher.update(b"\x1f");
+            }
+            hasher.update(resource.as_bytes());
+        }
+        serde_json::Value::String(hasher.finalize().to_hex().to_string())
+    });
+    let authorization_details_digest = input
+        .authorization_details
+        .as_array()
+        .filter(|details| !details.is_empty())
+        .map(|_| {
+            let mut hasher = blake3::Hasher::new();
+            serde_json::to_writer(&mut hasher, &input.authorization_details)
+                .expect("JSON value serializes into BLAKE3");
+            serde_json::Value::String(hasher.finalize().to_hex().to_string())
+        });
     for (key, value) in [
+        ("resource_digest", resource_digest),
+        ("authorization_details_digest", authorization_details_digest),
         (
-            "resource_digest",
-            (!input.resource_indicators.is_empty())
-                .then(|| input.resource_indicators.join("\u{1f}")),
+            "pushed_request_uri_hash",
+            input.pushed_request_uri.as_deref().map(digest),
         ),
-        (
-            "authorization_details_digest",
-            input
-                .authorization_details
-                .as_array()
-                .filter(|details| !details.is_empty())
-                .map(|_| input.authorization_details.to_string()),
-        ),
-        ("pushed_request_uri_hash", input.pushed_request_uri.clone()),
     ] {
         if let Some(value) = value {
-            fields.insert(key.to_owned(), digest(&value));
+            fields.insert(key.to_owned(), value);
         } else {
             fields.remove(key);
         }
@@ -336,23 +360,14 @@ async fn execute_decision(
     connection: &mut diesel_async::AsyncPgConnection,
     input: &AuthorizationDecisionCommit,
 ) -> diesel::QueryResult<AuthorizationDecisionCommitResult> {
-    let rows = AuthorizationDecisionQuery {
+    let mut rows = AuthorizationDecisionQuery {
         input,
         scopes: serde_json::json!(input.scopes),
         resources: serde_json::json!(input.resource_indicators),
     }
     .load::<DecisionOutcomeRow>(connection)
     .await?;
-    let mut rows = rows.into_iter();
-    let row = rows.next().ok_or(diesel::result::Error::NotFound)?;
-    if rows.next().is_some() {
-        return Err(diesel::result::Error::DeserializationError(Box::new(
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "multiple decision outcomes",
-            ),
-        )));
-    }
+    let row = rows.pop().expect("scalar decision query returns one row");
     match row.outcome.as_str() {
         "committed" => Ok(AuthorizationDecisionCommitResult::Committed),
         "conflict" => Ok(AuthorizationDecisionCommitResult::Conflict),

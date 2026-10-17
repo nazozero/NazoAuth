@@ -48,10 +48,10 @@ pub fn dpop_error_response(error: DpopError, context: DpopErrorContext) -> HttpR
         (DpopError::NonceStoreUnavailable, _) => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::BAD_REQUEST,
     };
-    let error_code = match &error {
-        DpopError::UseNonce(_) => "use_dpop_nonce",
-        DpopError::NonceStoreUnavailable => "server_error",
-        _ => "invalid_dpop_proof",
+    let (error_code, challenge) = match &error {
+        DpopError::UseNonce(_) => ("use_dpop_nonce", "DPoP error=\"use_dpop_nonce\""),
+        DpopError::NonceStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
+        _ => ("invalid_dpop_proof", "DPoP error=\"invalid_dpop_proof\""),
     };
     let mut response = oauth_error(status, error_code, description);
     if context == DpopErrorContext::TokenEndpoint {
@@ -71,8 +71,7 @@ pub fn dpop_error_response(error: DpopError, context: DpopErrorContext) -> HttpR
     }
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        HeaderValue::from_str(&format!("DPoP error=\"{error_code}\""))
-            .unwrap_or_else(|_| HeaderValue::from_static("DPoP")),
+        HeaderValue::from_static(challenge),
     );
     response
 }

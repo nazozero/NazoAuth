@@ -22,6 +22,6 @@ pub use response::{
     prepare_response, prepare_response_with_digests,
 };
 pub use verify::{
-    VerificationPolicy, VerifiedInput, parse_request_for_verification,
+    ParsedSignatureInput, VerificationPolicy, parse_request_for_verification,
     parse_request_for_verification_with_digest,
 };

@@ -33,6 +33,33 @@ use nazo_operator_protocol::Openid4vcTrustPolicy;
 
 pub const MAX_SECURITY_AUDIT_PAYLOAD_BYTES: usize = 64 * 1024;
 
+/// Check compact JSON size without allocating the encoded payload. Stop at the
+/// queue/storage boundary instead of serializing the rest of an oversized value.
+pub fn security_audit_payload_within_limit(payload: &serde_json::Value) -> bool {
+    struct RemainingBytes(usize);
+    impl std::io::Write for RemainingBytes {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if bytes.len() > self.0 {
+                return Err(std::io::Error::other(
+                    "audit payload exceeds its byte limit",
+                ));
+            }
+            self.0 -= bytes.len();
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    // Value has no fallible custom serializers; only this writer can fail.
+    serde_json::to_writer(
+        &mut RemainingBytes(MAX_SECURITY_AUDIT_PAYLOAD_BYTES),
+        payload,
+    )
+    .is_ok()
+}
+
 #[derive(Clone, Debug)]
 pub struct SecurityAuditEvent {
     pub event_id: uuid::Uuid,
@@ -317,7 +344,6 @@ pub trait RuntimeModuleStore: Send + Sync {
 
     fn compare_and_set_instance(
         &self,
-        required_desired_revision: nazo_runtime_modules::ModuleRevision,
         mutation: nazo_runtime_modules::InstanceStateMutation,
     ) -> BoxFuture<
         '_,
@@ -358,23 +384,15 @@ pub trait DatabaseHealthPort: Send + Sync {
     fn check(&self) -> BoxFuture<'_, Result<(), DatabaseHealthError>>;
 }
 
-/// Startup admission check for the configured tenant, realm, and organization.
-/// The adapter must fail closed if any configured boundary is missing, inactive,
-/// or belongs to another tenant.
-pub trait ActiveTenantBoundaryStore: Send + Sync {
-    fn preflight(
-        &self,
-        context: nazo_identity::TenantContext,
-    ) -> BoxFuture<'_, Result<(), RepositoryError>>;
-}
-
 /// Authoritative read side of the dynamic tenant directory.
 pub trait TenantDirectoryStore: Send + Sync {
     fn current_revision(&self) -> BoxFuture<'_, Result<u64, RepositoryError>>;
 
     /// Return the revision and all active bindings from one coherent storage
-    /// snapshot. Its revision may be newer than a preceding current_revision
-    /// read, but rows from different revisions must never be combined.
+    /// snapshot. Each binding must have active tenant, realm and organization
+    /// rows belonging to the same tenant. Its revision may be newer than a
+    /// preceding current_revision read, but rows from different revisions
+    /// must never be combined.
     fn load_active(
         &self,
     ) -> BoxFuture<'_, Result<nazo_identity::TenantDirectorySnapshot, RepositoryError>>;
@@ -491,9 +509,10 @@ pub struct AdminAccessRequestApproval {
 /// result stream and transaction acknowledgement; authority/recovery reads are
 /// separate capabilities and cannot be replaced by this response snapshot.
 pub trait AdminAccessRequestStore: Send + Sync {
-    /// Verify the current Approved request, active client and exact secret
-    /// generation before recovering an unpublished credential delivery.
-    fn approved_delivery_matches<'a>(
+    /// Recover only the exact committed approval whose accepting owner also
+    /// committed its canonical Required outcome. This narrow predicate exposes
+    /// no ledger records and never reconstructs a credential delivery.
+    fn approved_delivery_with_required_audit_matches<'a>(
         &'a self,
         tenant_id: nazo_identity::TenantId,
         user_id: nazo_identity::UserId,
@@ -503,46 +522,26 @@ pub trait AdminAccessRequestStore: Send + Sync {
         secret_binding: Option<&'a str>,
     ) -> BoxFuture<'a, Result<bool, RepositoryError>>;
 
-    /// Recover only the exact committed approval whose accepting owner also
-    /// committed its canonical Required outcome. This narrow predicate exposes
-    /// no ledger records and never reconstructs a credential delivery.
-    fn approved_delivery_with_required_audit_matches<'a>(
-        &'a self,
-        _tenant_id: nazo_identity::TenantId,
-        _user_id: nazo_identity::UserId,
-        _request_id: uuid::Uuid,
-        _approved_client_id: uuid::Uuid,
-        _client_id: &'a str,
-        _secret_binding: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<bool, RepositoryError>> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
-
     /// Client creation, Pending resolution and the complete Required outcome
     /// share one accepting owner. Success follows the complete transaction ACK;
     /// unavailable/unknown does not establish a known non-commit.
     fn approve_with_required_audit<'a>(
         &'a self,
-        _tenant: nazo_identity::TenantContext,
-        _request_id: uuid::Uuid,
-        _actor_user_id: nazo_identity::UserId,
-        _client: &'a nazo_auth::PreparedClientRegistration,
-        _source_ip_hash: String,
-    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
+        tenant: nazo_identity::TenantContext,
+        request_id: uuid::Uuid,
+        actor_user_id: nazo_identity::UserId,
+        client: &'a nazo_auth::PreparedClientRegistration,
+        source_ip_hash: String,
+    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>>;
 
     /// Resolve Pending and persist the complete Required rejection together.
-    /// A missing capability fails before the effect, with no unaudited fallback.
     fn reject_with_required_audit(
         &self,
-        _tenant: nazo_identity::TenantContext,
-        _request_id: uuid::Uuid,
-        _actor_user_id: nazo_identity::UserId,
-        _admin_note: String,
-    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
+        tenant: nazo_identity::TenantContext,
+        request_id: uuid::Uuid,
+        actor_user_id: nazo_identity::UserId,
+        admin_note: String,
+    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>>;
 
     fn page<'a>(
         &'a self,
@@ -558,22 +557,6 @@ pub trait AdminAccessRequestStore: Send + Sync {
         tenant_id: nazo_identity::TenantId,
         id: uuid::Uuid,
     ) -> BoxFuture<'_, Result<Option<nazo_identity::AccessRequest>, RepositoryError>>;
-
-    fn approve<'a>(
-        &'a self,
-        tenant: nazo_identity::TenantContext,
-        request_id: uuid::Uuid,
-        actor_user_id: nazo_identity::UserId,
-        client: &'a nazo_auth::PreparedClientRegistration,
-    ) -> BoxFuture<'a, Result<AdminAccessRequestApproval, RepositoryError>>;
-
-    fn reject(
-        &self,
-        tenant_id: nazo_identity::TenantId,
-        request_id: uuid::Uuid,
-        actor_user_id: nazo_identity::UserId,
-        admin_note: String,
-    ) -> BoxFuture<'_, Result<nazo_identity::AccessRequest, RepositoryError>>;
 }
 
 /// Durable delivery queue used by the back-channel logout worker. Claiming a

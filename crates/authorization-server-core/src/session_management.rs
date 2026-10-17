@@ -17,9 +17,17 @@ pub fn oidc_session_state(
     op_browser_state: &str,
     salt: &str,
 ) -> String {
-    let input = format!("{client_id} {client_origin} {op_browser_state} {salt}");
-    let digest = Sha256::digest(input.as_bytes());
-    format!("{}.{}", URL_SAFE_NO_PAD.encode(digest), salt)
+    let mut hash = Sha256::new();
+    for part in [client_id, client_origin, op_browser_state] {
+        hash.update(part.as_bytes());
+        hash.update(b" ");
+    }
+    hash.update(salt.as_bytes());
+    let mut state = String::with_capacity(44 + salt.len());
+    URL_SAFE_NO_PAD.encode_string(hash.finalize(), &mut state);
+    state.push('.');
+    state.push_str(salt);
+    state
 }
 
 /// Issues session state only for redirect URIs with a browser origin.

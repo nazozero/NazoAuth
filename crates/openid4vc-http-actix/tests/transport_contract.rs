@@ -523,12 +523,16 @@ impl CredentialIssuerOperations for SuccessfulIssuer {
 }
 
 fn immediate_response() -> CredentialResponseBody {
-    CredentialResponseBody::Json(CredentialResponse {
-        credentials: Some(Vec::new()),
-        transaction_id: None,
-        notification_id: None,
-        interval: None,
-    })
+    CredentialResponseBody::Json(
+        serde_json::to_vec(&CredentialResponse {
+            credentials: Some(Vec::new()),
+            transaction_id: None,
+            notification_id: None,
+            interval: None,
+        })
+        .unwrap()
+        .into(),
+    )
 }
 
 impl CredentialIssuerOperations for NotificationIssuer {
@@ -822,22 +826,26 @@ async fn credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses()
     for (response_body, content_type, status) in [
         (immediate_response(), "application/json", Issued),
         (
-            CredentialResponseBody::Jwt("encrypted.credential.response".to_owned()),
+            CredentialResponseBody::Jwt("encrypted.credential.response".into()),
             "application/jwt",
             Issued,
         ),
         (
-            CredentialResponseBody::Json(nazo_openid4vci::CredentialResponse {
-                credentials: None,
-                transaction_id: Some("pending".to_owned()),
-                notification_id: None,
-                interval: Some(5),
-            }),
+            CredentialResponseBody::Json(
+                serde_json::to_vec(&nazo_openid4vci::CredentialResponse {
+                    credentials: None,
+                    transaction_id: Some("pending".to_owned()),
+                    notification_id: None,
+                    interval: Some(5),
+                })
+                .unwrap()
+                .into(),
+            ),
             "application/json",
             Deferred,
         ),
         (
-            CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".to_owned()),
+            CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".into()),
             "application/jwt",
             Deferred,
         ),
@@ -1212,6 +1220,27 @@ async fn direct_post_preserves_json_vp_token_and_jwt_response_shapes() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+
+    for payload in [
+        "vp_token=not-json&state=state",
+        "vp_token=%7Bbroken&state=state",
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/response/{id}"))
+                .insert_header(("content-type", "application/x-www-form-urlencoded"))
+                .set_payload(payload)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            verifier.responses.lock().unwrap().len(),
+            1,
+            "malformed JSON must not reach transaction or trust-policy lookup"
+        );
+    }
 
     let response = test::call_service(
         &app,

@@ -12,7 +12,6 @@ nazo-crypto = { workspace = true, features = ["jose"] }
 serde_json.workspace = true
 sfv = "0.16.0"
 sha2.workspace = true
-subtle = "2.6.1"
 thiserror.workspace = true
 url.workspace = true
 

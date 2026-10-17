@@ -46,7 +46,7 @@ fn drain_waits_for_all_retained_generations_and_rejects_delayed_acquisition() {
     tracker.close_generation(ModuleId::Ciba, ModuleRevision::new(8));
     assert!(tracker.acquire(snapshot(7), ModuleId::Ciba).is_none());
     assert!(tracker.acquire(snapshot(8), ModuleId::Ciba).is_none());
-    let mut drain = std::pin::pin!(tracker.wait_until_zero(ModuleId::Ciba, ModuleRevision::new(8)));
+    let mut drain = std::pin::pin!(tracker.wait_until_zero(ModuleId::Ciba));
     let mut context = Context::from_waker(Waker::noop());
     assert!(matches!(drain.as_mut().poll(&mut context), Poll::Pending));
     drop(newer);

@@ -1,10 +1,11 @@
 //! authorization_code grant 处理。
+use std::borrow::Cow;
+
 use crate::contracts::{
     oauth_error::OAuthEndpointError, token_endpoint::TokenEndpointSuccess,
     token_endpoint::TokenRequestFacts,
 };
 use crate::crypto::blake3_hex;
-use crate::crypto::constant_time_eq;
 use crate::crypto::pkce_s256;
 use crate::domain::client_policy::audiences_allowed;
 use nazo_auth::ValidatedClientAssertion;
@@ -159,67 +160,61 @@ pub fn legacy_authorization_code_redemption_key(
 
 /// Facts from this request's validated client, PKCE candidate, sender proof and
 /// certificate transport. Never deserialize a receipt into these fresh facts.
-struct FreshCodeHolderFacts {
+struct FreshCodeHolderFacts<'a> {
     client_authentication: nazo_auth::AuthorizationCodeClientAuthentication,
-    pkce_s256: Option<String>,
-    dpop_jkt: Option<String>,
-    certificate_thumbprint: Option<String>,
-    client_attestation_jkt: Option<String>,
+    pkce_s256: Option<Cow<'a, str>>,
+    dpop_jkt: Option<&'a str>,
+    certificate_thumbprint: Option<&'a str>,
+    client_attestation_jkt: Option<&'a str>,
 }
 
-impl FreshCodeHolderFacts {
+impl FreshCodeHolderFacts<'_> {
     fn requirements(
         &self,
         mtls_binding: Option<&str>,
     ) -> Option<nazo_auth::AuthorizationCodeHolderEvidence> {
         nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
             self.client_authentication,
-            self.pkce_s256.clone(),
-            self.dpop_jkt.clone(),
+            self.pkce_s256.as_deref().map(ToOwned::to_owned),
+            self.dpop_jkt.map(ToOwned::to_owned),
             mtls_binding.map(ToOwned::to_owned),
-            self.client_attestation_jkt.clone(),
+            self.client_attestation_jkt.map(ToOwned::to_owned),
         )
     }
 
     /// Project only the receipt's original required mask, retaining the fresh
     /// verified certificate even when current client policy no longer binds it.
     fn matches(&self, expected: &nazo_auth::AuthorizationCodeHolderEvidence) -> bool {
-        let candidate = nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
-            self.client_authentication,
-            expected.pkce_s256().and(self.pkce_s256.clone()),
-            expected.dpop_jkt().and(self.dpop_jkt.clone()),
-            expected
-                .mtls_x5t_s256()
-                .and(self.certificate_thumbprint.clone()),
-            expected
-                .client_attestation_jkt()
-                .and(self.client_attestation_jkt.clone()),
-        );
-        candidate
-            .as_ref()
-            .is_some_and(|candidate| holder_matches_original(expected, candidate))
+        holder_matches_original(
+            expected,
+            self.client_authentication
+                == nazo_auth::AuthorizationCodeClientAuthentication::Authenticated,
+            self.pkce_s256.as_deref(),
+            self.dpop_jkt,
+            self.certificate_thumbprint,
+            self.client_attestation_jkt,
+        )
     }
 }
 
+/// Original requirements are structurally checked when created or restored.
+/// Matching borrows fresh facts and ignores proofs the original receipt did not require.
 pub(super) fn holder_matches_original(
     expected: &nazo_auth::AuthorizationCodeHolderEvidence,
-    candidate: &nazo_auth::AuthorizationCodeHolderEvidence,
+    authenticated_client: bool,
+    pkce_s256: Option<&str>,
+    dpop_jkt: Option<&str>,
+    mtls_x5t_s256: Option<&str>,
+    client_attestation_jkt: Option<&str>,
 ) -> bool {
     fn matches(expected: Option<&str>, candidate: Option<&str>) -> bool {
-        expected.is_none_or(|expected| {
-            candidate.is_some_and(|candidate| {
-                constant_time_eq(expected.as_bytes(), candidate.as_bytes())
-            })
-        })
+        expected.is_none_or(|expected| candidate == Some(expected))
     }
-    (!expected.authenticated_client() || candidate.authenticated_client())
-        && matches(expected.pkce_s256(), candidate.pkce_s256())
-        && matches(expected.dpop_jkt(), candidate.dpop_jkt())
-        && matches(expected.mtls_x5t_s256(), candidate.mtls_x5t_s256())
-        && matches(
-            expected.client_attestation_jkt(),
-            candidate.client_attestation_jkt(),
-        )
+    (!expected.authenticated_client() || authenticated_client)
+        && matches(expected.pkce_s256(), pkce_s256)
+        && matches(expected.dpop_jkt(), dpop_jkt)
+        && matches(expected.mtls_x5t_s256(), mtls_x5t_s256)
+        && matches(expected.client_attestation_jkt(), client_attestation_jkt)
 }
 
 /// A durable code receipt is the consumption authority. A fresh request may
@@ -229,8 +224,8 @@ async fn committed_single_use_redemption(
     client: &ClientRow,
     code_identity: &str,
     legacy_key: impl FnOnce() -> String,
-    candidate: &FreshCodeHolderFacts,
-    selected_mtls: Option<&str>,
+    candidate: &FreshCodeHolderFacts<'_>,
+    issuance_holder: Option<&nazo_auth::AuthorizationCodeHolderEvidence>,
 ) -> Result<Option<SingleUseRedemption>, OAuthEndpointError> {
     let unavailable = |error| {
         tracing::warn!(%error, "failed to read single-use grant redemption");
@@ -255,7 +250,7 @@ async fn committed_single_use_redemption(
     // No public-client empty proof can qualify for legacy revocation. The
     // compatibility key still demands the original exact request proof set.
     // TODO: Remove this fallback after all receipts without holder facts expire.
-    if candidate.requirements(selected_mtls).is_none() {
+    if issuance_holder.is_none() {
         return Ok(None);
     }
     let legacy_key = legacy_key();
@@ -307,11 +302,11 @@ pub struct AuthorizationCodeIssueInput {
 pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> TokenIssue {
     // RFC 8707 section 2.2: a code may mint a narrower AT, while a returned
     // refresh token retains the full original resource grant.
-    let refresh_grant_audiences = (!input.payload.resource_indicators.is_empty())
-        .then(|| input.payload.resource_indicators.clone());
     let native_sso = native_sso_requested(&input.payload.scopes)
         .then(|| new_native_sso_token_binding(input.payload.oidc_sid.as_deref()))
         .flatten();
+    let refresh_grant_audiences = (!input.payload.resource_indicators.is_empty())
+        .then_some(input.payload.resource_indicators);
     TokenIssue {
         native_sso_source: None,
         user_id: Some(input.payload.user_id),
@@ -367,10 +362,10 @@ fn authorization_code_audiences_with_default(
 pub fn refresh_token_dpop_binding(
     client: &ClientRow,
     payload: &CodePayload,
-    dpop_jkt: Option<String>,
+    dpop_jkt: Option<&str>,
 ) -> Option<String> {
     if client.client_type == "public" || payload.dpop_jkt.is_some() {
-        dpop_jkt
+        dpop_jkt.map(ToOwned::to_owned)
     } else {
         None
     }
@@ -463,17 +458,17 @@ pub async fn token_authorization_code_with_service(
     };
     let expected_dpop_jkt = expected_payload
         .as_ref()
-        .and_then(|payload| payload.dpop_jkt.clone());
+        .and_then(|payload| payload.dpop_jkt.as_deref());
     let expected_mtls_x5t_s256 = expected_payload
         .as_ref()
-        .and_then(|payload| payload.mtls_x5t_s256.clone());
+        .and_then(|payload| payload.mtls_x5t_s256.as_deref());
     let sender = match validate_token_sender_constraints(
         issuance,
         facts,
         client,
         None,
-        expected_dpop_jkt.as_deref(),
-        expected_mtls_x5t_s256.as_deref(),
+        expected_dpop_jkt,
+        expected_mtls_x5t_s256,
     )
     .await
     {
@@ -502,19 +497,19 @@ pub async fn token_authorization_code_with_service(
         // A pending request has already proved this digest in parameter
         // validation. Replays without a pending payload must derive it.
         pkce_s256: match expected_payload.as_deref() {
-            Some(payload) => payload.pkce.challenge().map(ToOwned::to_owned),
+            Some(payload) => payload.pkce.challenge().map(Cow::Borrowed),
             None => form
                 .code_verifier
                 .as_deref()
                 .filter(|verifier| is_valid_pkce_value(verifier))
-                .map(pkce_s256),
+                .map(|verifier| Cow::Owned(pkce_s256(verifier))),
         },
-        dpop_jkt: dpop_jkt.clone(),
+        dpop_jkt: dpop_jkt.as_deref(),
         certificate_thumbprint: facts
             .certificate
             .as_ref()
-            .and_then(|certificate| certificate.thumbprint.clone()),
-        client_attestation_jkt: client_attestation_jkt.map(ToOwned::to_owned),
+            .and_then(|certificate| certificate.thumbprint.as_deref()),
+        client_attestation_jkt,
     };
     let issuance_holder = holder.requirements(mtls_x5t_s256.as_deref());
     if expected_payload.is_some() && issuance_holder.is_none() {
@@ -552,7 +547,7 @@ pub async fn token_authorization_code_with_service(
             &code_identity,
             &legacy_key,
             &holder,
-            mtls_x5t_s256.as_deref(),
+            issuance_holder.as_ref(),
         )
         .await?
         {
@@ -577,7 +572,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
-                    mtls_x5t_s256.as_deref(),
+                    issuance_holder.as_ref(),
                 )
                 .await?
                 {
@@ -600,7 +595,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
-                    mtls_x5t_s256.as_deref(),
+                    issuance_holder.as_ref(),
                 )
                 .await?
                 {
@@ -628,7 +623,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
-                    mtls_x5t_s256.as_deref(),
+                    issuance_holder.as_ref(),
                 )
                 .await?
                 {
@@ -651,7 +646,7 @@ pub async fn token_authorization_code_with_service(
                     &code_identity,
                     &legacy_key,
                     &holder,
-                    mtls_x5t_s256.as_deref(),
+                    issuance_holder.as_ref(),
                 )
                 .await?
                 {
@@ -688,7 +683,7 @@ pub async fn token_authorization_code_with_service(
             &code_identity,
             &legacy_key,
             &holder,
-            mtls_x5t_s256.as_deref(),
+            issuance_holder.as_ref(),
         )
         .await?
         {
@@ -708,7 +703,7 @@ pub async fn token_authorization_code_with_service(
             false,
         ));
     }
-    let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
+    let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.as_deref());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
     // begin only yields Consuming from a Pending state, so the pure audience
     // facts computed before the sender proof must exist here.  Subject

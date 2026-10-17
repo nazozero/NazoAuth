@@ -36,10 +36,9 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/nazozero/NazoAuth"
 
 [workspace.dependencies]
+hex = "0.4.3"
 actix-cors = "0.7.2"
 actix-files = "0.7.0"
-# Actix 2.15 gates server net/signal APIs; each HTTP adapter opts in explicitly.
-actix-rt = { version = "2.15.0", default-features = false, features = ["net", "signal"] }
 actix-web = "4.15.0"
 actix-tls = "3.6.1"
 anyhow = "1.0.104"
@@ -62,6 +61,7 @@ fs2 = "0.4.3"
 futures-util = "0.3.34"
 futures-executor = "0.3.34"
 hmac = "0.13.0"
+hkdf = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "11.1.0", default-features = false }
@@ -99,9 +99,8 @@ passkey-auth = "0.1.3"
 process-wrap = { version = "10.0.1", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
 proptest = "1.11.0"
 rand = "0.10.3"
-rpassword = "7.5.4"
 rustix = { version = "1.1.5", features = ["fs", "process"] }
-rustls = { version = "0.23.45", default-features = false, features = ["aws_lc_rs", "std"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 webpki = { package = "rustls-webpki", version = "0.103.15" }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
 semver = "1.0.28"
@@ -119,7 +118,6 @@ tracing = "0.1.44"
 url = "2.5.8"
 urlencoding = "2.1.3"
 uuid = "1.27.0"
-wait-timeout = "0.2.1"
 x509-cert = "0.3.0"
 x509-parser = "0.18.1"
 yasna = "0.6.0"
@@ -140,5 +138,8 @@ panic = "abort"
 # Reviewed Actix h2 0.4 port, pinned to an immutable upstream fork revision.
 [patch.crates-io]
 actix-http = { git = "https://github.com/nazozero/actix-web", rev = "8b4f61be8de6b4bf6279c472c144dfea133b34aa" }
-# Reviewed mdoc-rs coset 0.4 port, pinned to an immutable upstream fork revision.
-mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "40e5ac7e1739150870c41544219345c2b6de4c9b" }
+# Reviewed mdoc-rs coset 0.4 and borrowed-transcript changes, pinned to a fork commit.
+mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "c5d460cfd667324e51e590e8ecbbdb21f63bbdbe" }
+
+# Immutable certificate-chain sharing at the TLS-to-HTTP boundary.
+rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

@@ -49,62 +49,16 @@ struct CasPause {
 }
 
 struct ReadPause {
-    module_id: ModuleId,
     entered: mpsc::SyncSender<()>,
     release: mpsc::Receiver<()>,
 }
 
-struct InitializePause {
-    entered: mpsc::SyncSender<()>,
-    release: Mutex<mpsc::Receiver<()>>,
-    stopped: AtomicBool,
-}
-
-impl ModuleLifecycle for InitializePause {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        Box::pin(async move {
-            self.entered.send(()).unwrap();
-            self.release.lock().unwrap().recv().unwrap();
-            Ok(())
-        })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        self.stopped.store(true, Ordering::Release);
-        Box::pin(async { Ok(()) })
-    }
-
-    fn drain_stored_transactions(
-        &self,
-        _module_id: ModuleId,
-        _revision: ModuleRevision,
-        _remaining_duration: Duration,
-    ) -> LifecycleFuture<'_, Result<bool, LifecycleFailure>> {
-        Box::pin(async { Ok(true) })
-    }
-}
-
 #[derive(Default)]
 struct ScriptedLifecycle {
-    initializes: Mutex<VecDeque<Result<(), LifecycleFailure>>>,
-    stops: Mutex<VecDeque<Result<(), LifecycleFailure>>>,
     drains: Mutex<VecDeque<Result<bool, LifecycleFailure>>>,
 }
 
 impl ScriptedLifecycle {
-    fn with_initialize(self, result: Result<(), LifecycleFailure>) -> Self {
-        self.initializes.lock().unwrap().push_back(result);
-        self
-    }
-
-    fn with_stop(self, result: Result<(), LifecycleFailure>) -> Self {
-        self.stops.lock().unwrap().push_back(result);
-        self
-    }
-
     fn with_drain(self, result: Result<bool, LifecycleFailure>) -> Self {
         self.drains.lock().unwrap().push_back(result);
         self
@@ -112,24 +66,6 @@ impl ScriptedLifecycle {
 }
 
 impl ModuleLifecycle for ScriptedLifecycle {
-    fn initialize(
-        &self,
-        _module_id: ModuleId,
-    ) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        let result = self
-            .initializes
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or(Ok(()));
-        Box::pin(async move { result })
-    }
-
-    fn stop(&self, _module_id: ModuleId) -> LifecycleFuture<'_, Result<(), LifecycleFailure>> {
-        let result = self.stops.lock().unwrap().pop_front().unwrap_or(Ok(()));
-        Box::pin(async move { result })
-    }
-
     fn drain_stored_transactions(
         &self,
         _module_id: ModuleId,
@@ -155,7 +91,8 @@ struct TestRepository {
     reconcile_reads: AtomicUsize,
     desired_after_reconcile_read: Mutex<Option<DesiredStateRecord>>,
     cas_pause: Mutex<Option<CasPause>>,
-    read_pauses: Mutex<Vec<ReadPause>>,
+    read_pause: Mutex<Option<ReadPause>>,
+    instance_pause: Mutex<Option<ReadPause>>,
     desired_transaction: Mutex<()>,
     instance_outcomes: Mutex<VecDeque<CasOutcome<InstanceStateRecord>>>,
 }
@@ -179,17 +116,6 @@ impl ModuleStateRepository for TestRepository {
             .iter()
             .find(|record| record.module_id == module_id)
             .cloned();
-        let pause = {
-            let mut configured = self.read_pauses.lock().unwrap();
-            configured
-                .iter()
-                .position(|pause| pause.module_id == module_id)
-                .map(|position| configured.remove(position))
-        };
-        if let Some(pause) = pause {
-            pause.entered.send(()).unwrap();
-            pause.release.recv().unwrap();
-        }
         Ok(current)
     }
 
@@ -198,7 +124,13 @@ impl ModuleStateRepository for TestRepository {
         if self.fail_bulk_desired.load(Ordering::Relaxed) {
             return Err(TestError::Unavailable);
         }
-        Ok(self.state.lock().unwrap().desired.clone())
+        let snapshot = self.state.lock().unwrap().desired.clone();
+        let pause = self.read_pause.lock().unwrap().take();
+        if let Some(pause) = pause {
+            pause.entered.send(()).unwrap();
+            pause.release.recv().unwrap();
+        }
+        Ok(snapshot)
     }
 
     async fn read_reconcile_state(
@@ -346,7 +278,6 @@ impl ModuleStateRepository for TestRepository {
 
     async fn compare_and_set_instance(
         &self,
-        _required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
         let InstanceStateChange { next, .. } = mutation.change;
@@ -367,6 +298,11 @@ impl ModuleStateRepository for TestRepository {
             } else {
                 state.instances.push(next.clone());
             }
+        }
+        let pause = self.instance_pause.lock().unwrap().take();
+        if let Some(pause) = pause {
+            pause.entered.send(()).unwrap();
+            pause.release.recv().unwrap();
         }
         Ok(CasOutcome::Applied(next))
     }
@@ -411,8 +347,7 @@ fn management(
         session: Duration::from_secs(600),
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
-    })
-    .unwrap();
+    });
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
         Arc::new(NoopModuleLifecycle),
@@ -476,7 +411,6 @@ fn fixed_catalog() -> ModuleCatalog {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
 }
 
 fn registry(
@@ -533,6 +467,47 @@ fn settled_repository() -> Arc<TestRepository> {
     }
     drop(state);
     repository
+}
+
+#[test]
+fn settled_reconcile_reads_dependency_policy_once() {
+    for enabled in [true, false] {
+        let repository = settled_repository();
+        if !enabled {
+            let mut state = repository.state.lock().unwrap();
+            for desired in &mut state.desired {
+                desired.mode = DesiredMode::Disabled;
+            }
+            for instance in &mut state.instances {
+                instance.state = ModuleState::Disabled;
+            }
+        }
+        let catalog = fixed_catalog()
+            .with_dependencies(ModuleId::Ciba, [ModuleId::RequestObjects, ModuleId::Jarm])
+            .unwrap()
+            .with_dependencies(ModuleId::Jarm, [ModuleId::RequestObjects])
+            .unwrap();
+        let registry = registry(
+            repository.clone(),
+            catalog,
+            if enabled {
+                ModuleId::ALL.into_iter().collect()
+            } else {
+                BTreeSet::new()
+            },
+        );
+        let module_id = if enabled {
+            ModuleId::Ciba
+        } else {
+            ModuleId::RequestObjects
+        };
+        assert_eq!(
+            block_on(registry.reconcile_once(module_id)).unwrap(),
+            ReconcileOutcome::NoChange
+        );
+        assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 1);
+        assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 1);
+    }
 }
 
 #[test]
@@ -916,7 +891,6 @@ fn management_view_reports_the_security_profiles_effective_disable_policy() {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
     .with_runtime_disable_blocked([ModuleId::Ciba]);
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
@@ -1006,7 +980,6 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
     .with_dependencies(ModuleId::Jarm, [ModuleId::RequestObjects])
     .unwrap();
     let initial_snapshot = ActiveModuleSnapshot {
@@ -1050,22 +1023,12 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
         })
     };
     entered_rx.recv().unwrap();
-    let (dependency_read_tx, dependency_read_rx) = mpsc::sync_channel(1);
-    let (dependency_release_tx, dependency_release_rx) = mpsc::sync_channel(1);
-    let (target_read_tx, target_read_rx) = mpsc::sync_channel(1);
-    let (target_release_tx, target_release_rx) = mpsc::sync_channel(1);
-    repository.read_pauses.lock().unwrap().extend([
-        ReadPause {
-            module_id: ModuleId::RequestObjects,
-            entered: dependency_read_tx,
-            release: dependency_release_rx,
-        },
-        ReadPause {
-            module_id: ModuleId::Jarm,
-            entered: target_read_tx,
-            release: target_release_rx,
-        },
-    ]);
+    let (snapshot_read_tx, snapshot_read_rx) = mpsc::sync_channel(1);
+    let (snapshot_release_tx, snapshot_release_rx) = mpsc::sync_channel(1);
+    *repository.read_pause.lock().unwrap() = Some(ReadPause {
+        entered: snapshot_read_tx,
+        release: snapshot_release_rx,
+    });
     let enabling = {
         let registry = enabling_registry;
         std::thread::spawn(move || {
@@ -1079,22 +1042,22 @@ fn concurrent_dependency_disable_and_dependent_enable_cannot_both_commit() {
             ))
         })
     };
-    dependency_read_rx.recv().unwrap();
-    dependency_release_tx.send(()).unwrap();
-    target_read_rx.recv().unwrap();
-    target_release_tx.send(()).unwrap();
+    snapshot_read_rx.recv().unwrap();
     release_tx.send(()).unwrap();
 
     assert!(matches!(
         disabling.join().unwrap(),
         Ok(CasOutcome::Applied(_))
     ));
+    snapshot_release_tx.send(()).unwrap();
     assert!(matches!(
         enabling.join().unwrap(),
         Ok(CasOutcome::Stale { current: Some(current) })
             if current.module_id == ModuleId::Jarm
                 && current.revision == ModuleRevision::new(1)
     ));
+    assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 2);
     let state = repository.state.lock().unwrap();
     assert_eq!(
         state
@@ -1124,8 +1087,7 @@ fn snapshot_revision_exhaustion_returns_instead_of_spinning() {
         session: Duration::from_secs(600),
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
-    })
-    .unwrap();
+    });
     let registry = RuntimeModuleRegistry::new(
         repository,
         Arc::new(NoopModuleLifecycle),
@@ -1145,7 +1107,7 @@ fn snapshot_revision_exhaustion_returns_instead_of_spinning() {
 }
 
 #[test]
-fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
+fn dependency_loss_during_starting_commit_is_rechecked_and_fails_closed() {
     let repository = Arc::new(TestRepository::default());
     {
         let mut state = repository.state.lock().unwrap();
@@ -1177,19 +1139,17 @@ fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
         presentation_transaction: Duration::from_secs(600),
         scim_security_events: Duration::from_secs(600),
     })
-    .unwrap()
     .with_dependencies(ModuleId::Jarm, [ModuleId::RequestObjects])
     .unwrap();
     let (entered_tx, entered_rx) = mpsc::sync_channel(1);
     let (release_tx, release_rx) = mpsc::sync_channel(1);
-    let lifecycle = Arc::new(InitializePause {
+    *repository.instance_pause.lock().unwrap() = Some(ReadPause {
         entered: entered_tx,
-        release: Mutex::new(release_rx),
-        stopped: AtomicBool::new(false),
+        release: release_rx,
     });
     let registry = Arc::new(RuntimeModuleRegistry::new(
         repository.clone(),
-        lifecycle.clone(),
+        Arc::new(NoopModuleLifecycle),
         catalog,
         "instance-a".to_owned(),
         ActiveModuleSnapshot {
@@ -1219,7 +1179,6 @@ fn dependency_loss_during_initialize_is_rechecked_and_fails_closed() {
         Ok(ReconcileOutcome::Failed)
     ));
     assert!(!registry.snapshot().admits(ModuleId::Jarm));
-    assert!(lifecycle.stopped.load(Ordering::Acquire));
 }
 
 #[test]
@@ -1318,28 +1277,6 @@ fn reconcile_propagates_desired_state_repository_failures() {
 }
 
 #[test]
-fn enable_lifecycle_failure_is_persisted_as_failed() {
-    let repository = Arc::new(TestRepository::default());
-    repository
-        .state
-        .lock()
-        .unwrap()
-        .desired
-        .push(desired(1, DesiredMode::Enabled));
-    let lifecycle = Arc::new(
-        ScriptedLifecycle::default().with_initialize(Err(LifecycleFailure {
-            code: "initialize_failed",
-        })),
-    );
-    let registry = registry_with_lifecycle(repository, lifecycle, fixed_catalog(), BTreeSet::new());
-
-    assert_eq!(
-        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
-        ReconcileOutcome::Failed
-    );
-}
-
-#[test]
 fn enable_stale_final_cas_withdraws_admission() {
     let repository = Arc::new(TestRepository::default());
     repository
@@ -1392,7 +1329,7 @@ fn active_enabled_instance() -> InstanceStateRecord {
 }
 
 #[test]
-fn disable_drains_stored_transactions_before_stopping() {
+fn disable_drains_stored_transactions_before_disabled_commit() {
     let repository = Arc::new(TestRepository::default());
     repository
         .state
@@ -1470,40 +1407,6 @@ fn disable_drain_lifecycle_error_is_persisted() {
             ScriptedLifecycle::default().with_drain(Err(LifecycleFailure {
                 code: "drain_failed",
             })),
-        ),
-        fixed_catalog(),
-        BTreeSet::from([ModuleId::Ciba]),
-    );
-
-    assert_eq!(
-        block_on(registry.reconcile_once(ModuleId::Ciba)).unwrap(),
-        ReconcileOutcome::Failed
-    );
-}
-
-#[test]
-fn disable_stop_failure_is_persisted_after_drain() {
-    let repository = Arc::new(TestRepository::default());
-    repository
-        .state
-        .lock()
-        .unwrap()
-        .desired
-        .push(desired(1, DesiredMode::Disabled));
-    repository
-        .state
-        .lock()
-        .unwrap()
-        .instances
-        .push(active_enabled_instance());
-    let registry = registry_with_lifecycle(
-        repository,
-        Arc::new(
-            ScriptedLifecycle::default()
-                .with_drain(Ok(true))
-                .with_stop(Err(LifecycleFailure {
-                    code: "stop_failed",
-                })),
         ),
         fixed_catalog(),
         BTreeSet::from([ModuleId::Ciba]),

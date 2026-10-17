@@ -370,7 +370,7 @@ async fn fence_native_sso_source(
     }
 }
 
-fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryError> {
+fn validate_commit_input(input: &CommitTokenIssuance) -> Result<DateTime<Utc>, RepositoryError> {
     if input.issuance_id.is_nil()
         || input.tenant_id.is_nil()
         || input.client_id.is_nil()
@@ -406,15 +406,11 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
             "authorization codes require the code identity and holder contract".to_owned(),
         ));
     }
-    if let TokenIssuanceMode::AuthorizationCode {
-        code_identity,
-        holder,
-        ..
-    } = &input.mode
-        && (!code_identity.starts_with("authorization_code:v2:") || !holder.is_well_formed())
+    if let TokenIssuanceMode::AuthorizationCode { code_identity, .. } = &input.mode
+        && !code_identity.starts_with("authorization_code:v2:")
     {
         return Err(RepositoryError::Consistency(
-            "authorization code holder contract is malformed".to_owned(),
+            "authorization code identity is malformed".to_owned(),
         ));
     }
     let expected_authorization_id = input
@@ -471,8 +467,7 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
     }
     DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
         RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
-    })?;
-    Ok(())
+    })
 }
 
 /// One durable audit event per committed issuance. A rotation is the same
@@ -554,10 +549,8 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
         Box::pin(async move {
-            validate_commit_input(&input).map_err(map_repository_error)?;
             let access_token_expires_at =
-                DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0)
-                    .ok_or(TokenPortError::CorruptData)?;
+                validate_commit_input(&input).map_err(map_repository_error)?;
             let ownership_horizon = access_token_expires_at
                 .checked_add_signed(chrono::Duration::seconds(
                     MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
@@ -780,7 +773,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let row = oauth_token_issuances::table
                 .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
                 .filter(oauth_token_issuances::client_id.eq(client_id))
-                .filter(oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().to_vec()))
+                .filter(
+                    oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().as_slice()),
+                )
                 // Expiry closes replay authority even while physical
                 // reclamation has not visited this receipt. Keep the complete
                 // safety horizon, not merely the access-token expiration.
@@ -811,14 +806,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             nazo_auth::AuthorizationCodeHolderEvidence::from_persisted(value)
                                 .ok_or(TokenPortError::CorruptData)
                         })
-                        .transpose()
-                        .map_err(|_| TokenPortError::CorruptData)?;
-                    if authorization_code_holder
-                        .as_ref()
-                        .is_some_and(|holder| !holder.is_well_formed())
-                    {
-                        return Err(TokenPortError::CorruptData);
-                    }
+                        .transpose()?;
                     Ok(SingleUseRedemption {
                         authorization_code_holder,
                         access_token_jti,
@@ -861,22 +849,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         raw_token: &'a str,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
-        self.refresh_token_snapshot_with_subject(
-            tenant_id,
-            raw_token,
-            client_id,
-            retry_started_at,
-            false,
-        )
-    }
-
-    fn refresh_token_snapshot_with_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        raw_token: &'a str,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
         prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         Box::pin(async move {
@@ -900,19 +872,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         })
     }
 
-    fn inspect_lost_response_successor<'a>(
-        &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> TokenFuture<'a, Option<RefreshToken>> {
-        Box::pin(async move {
-            self.tokens
-                .inspect_lost_response_successor(token, client_id, retry_started_at)
-                .await
-                .map_err(map_repository_error)
-        })
-    }
     fn active_subject_claims<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -944,8 +903,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let tenant_id = TenantId::new(tenant_id).map_err(|_| TokenPortError::CorruptData)?;
             let user_id = UserId::new(user_id).map_err(|_| TokenPortError::CorruptData)?;
             self.users
-                .active_subject_id_by_tenant_id(tenant_id, user_id)
+                .is_active_by_tenant_id(tenant_id, user_id)
                 .await
+                .map(|active| active.then_some(user_id.as_uuid()))
                 .map_err(map_repository_error)
         })
     }
@@ -1018,19 +978,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
-        Box::pin(async move {
-            self.tokens
-                .revoke_for_client(
-                    input.tenant_id,
-                    input.client_id,
-                    input.raw_token,
-                    input.access_token.as_ref(),
-                )
-                .await
-                .map_err(map_repository_error)
-        })
-    }
     fn revoke_token_with_audit<'a>(
         &'a self,
         input: TokenRevocation<'a>,
@@ -1044,7 +991,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     input.client_id,
                     input.raw_token,
                     input.access_token.as_ref(),
-                    Some((client_public_id, source_ip_hash)),
+                    (client_public_id, source_ip_hash),
                 )
                 .await
                 .map_err(map_repository_error)

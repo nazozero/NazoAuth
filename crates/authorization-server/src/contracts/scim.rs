@@ -58,7 +58,8 @@ pub enum ScimDependencyError {
 
 pub trait ScimCursorProtector: Send + Sync {
     fn protect(&self, plaintext: &[u8]) -> Result<Vec<u8>, ScimDependencyError>;
-    fn unprotect(&self, protected: &[u8]) -> Result<Vec<u8>, ScimDependencyError>;
+    /// Authenticate in place and borrow the plaintext. Discard the input on error.
+    fn unprotect<'a>(&self, protected: &'a mut [u8]) -> Result<&'a [u8], ScimDependencyError>;
 }
 
 pub trait ScimBootstrapPasswordProvider: Send + Sync {

@@ -8,24 +8,16 @@ pub(super) fn protect_payload(
 ) -> Result<Vec<u8>, CredentialStoreError> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    let mut protected = nonce.to_vec();
-    protected.extend_from_slice(
-        &nazo_crypto::aead::encrypt(key, &nonce, transaction_id.as_bytes(), plaintext)
-            .map_err(|_| CredentialStoreError::Unavailable)?,
-    );
-    Ok(protected)
+    nazo_crypto::aead::encrypt_prefixed(key, &nonce, transaction_id.as_bytes(), plaintext, &nonce)
+        .map_err(|_| CredentialStoreError::Unavailable)
 }
 
-pub(super) fn unprotect_payload(
+pub(super) fn unprotect_payload<'a>(
     key: &[u8; 32],
     transaction_id: Uuid,
-    protected: &[u8],
-) -> Result<Vec<u8>, diesel::result::Error> {
-    let (nonce, ciphertext) = protected
-        .split_at_checked(12)
-        .ok_or_else(corrupt_stored_credential)?;
-    let nonce: &[u8; 12] = nonce.try_into().map_err(|_| corrupt_stored_credential())?;
-    nazo_crypto::aead::decrypt(key, nonce, transaction_id.as_bytes(), ciphertext)
+    protected: &'a mut [u8],
+) -> Result<&'a [u8], diesel::result::Error> {
+    nazo_crypto::aead::decrypt_nonce_prefixed(key, transaction_id.as_bytes(), protected)
         .map_err(|_| corrupt_stored_credential())
 }
 

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -17,8 +18,8 @@ use nazo_runtime_modules::{
     DesiredMode, DesiredStateUpdate, DesiredStateUpdateOutcome, DisablePolicy, ModuleEventRecord,
     ModuleEventState, ModuleEventType, ModuleId, ModuleRevision, ModuleState, RuntimeModuleView,
 };
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
+use serde_json::json;
 
 use crate::{
     SessionCookieConfig, csrf_error, json_response_no_store, json_response_status_no_store,
@@ -86,9 +87,7 @@ pub async fn admin_runtime_modules(
         return response;
     }
     match endpoint.administration.list().await {
-        Ok(items) => json_response_no_store(json!({
-            "items": items.iter().map(runtime_module_json).collect::<Vec<_>>(),
-        })),
+        Ok(items) => json_response_no_store(RuntimeModuleList { items: &items }),
         Err(error) => management_error(error),
     }
 }
@@ -116,12 +115,12 @@ pub async fn admin_runtime_module_events(
         .events(offset, i64::from(page_size))
         .await
     {
-        Ok(result) => json_response_no_store(json!({
-            "total": result.total,
-            "page": page,
-            "page_size": page_size,
-            "items": result.events.iter().map(runtime_event_json).collect::<Vec<_>>(),
-        })),
+        Ok(result) => json_response_no_store(RuntimeEventPage {
+            total: result.total,
+            page,
+            page_size,
+            items: &result.events,
+        }),
         Err(error) => management_error(error),
     }
 }
@@ -130,7 +129,7 @@ pub async fn admin_patch_runtime_module(
     endpoint: Data<RuntimeModuleAdminEndpoint>,
     request: HttpRequest,
     path: Path<String>,
-    Json(payload): Json<RuntimeModulePatch>,
+    Json(mut payload): Json<RuntimeModulePatch>,
 ) -> HttpResponse {
     if !endpoint.cookies.has_valid_csrf_token(&request, None) {
         return no_store(csrf_error());
@@ -146,16 +145,13 @@ pub async fn admin_patch_runtime_module(
             "Unknown runtime module.",
         ));
     };
-    let reason = match validated_reason(&payload) {
-        Ok(reason) => reason,
-        Err(description) => {
-            return no_store(oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                description,
-            ));
-        }
-    };
+    if let Err(description) = validate_reason(&mut payload.reason, payload.cascade) {
+        return no_store(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            description,
+        ));
+    }
     let now = (endpoint.now)();
     let update = DesiredStateUpdate {
         module_id,
@@ -163,7 +159,7 @@ pub async fn admin_patch_runtime_module(
         expected_revision: (payload.expected_revision != 0)
             .then(|| ModuleRevision::new(payload.expected_revision)),
         actor_id: admin.user().id().to_string(),
-        reason,
+        reason: payload.reason,
         changed_at: now,
     };
     match endpoint.administration.update_desired(update).await {
@@ -173,10 +169,10 @@ pub async fn admin_patch_runtime_module(
         }) => json_response_status_no_store(
             StatusCode::ACCEPTED,
             json!({
-                "module_id": module_id_name(module_id),
-                "desired_state": desired_mode_name(desired.mode),
+                "module_id": module_id,
+                "desired_state": desired.mode,
                 "revision": desired.revision.get(),
-                "actual_state": actual_state_name(actual_state),
+                "actual_state": actual_state,
                 "status_url": "/admin/runtime-modules",
             }),
         ),
@@ -196,13 +192,17 @@ async fn require_runtime_admin(
     endpoint: &RuntimeModuleAdminEndpoint,
     request: &HttpRequest,
     require_recent_mfa: bool,
-) -> Result<Box<CurrentSession>, HttpResponse> {
+) -> Result<Box<CurrentSession<nazo_identity::Principal>>, HttpResponse> {
     let Some(session_id) = endpoint.cookies.session_id(request) else {
         return Err(admin_required());
     };
     let now = (endpoint.now)();
     let now_seconds = unix_timestamp(now);
-    let session = match endpoint.sessions.current(&session_id, now_seconds).await {
+    let session = match endpoint
+        .sessions
+        .current_principal(&session_id, now_seconds)
+        .await
+    {
         Ok(SessionResolution::Present(session)) => session,
         Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
             return Err(admin_required());
@@ -215,7 +215,7 @@ async fn require_runtime_admin(
             )));
         }
     };
-    if session.user().admin_level() < 2 {
+    if session.user().admin_level().unwrap_or(0) < 2 {
         return Err(no_store(oauth_error(
             StatusCode::FORBIDDEN,
             "access_denied",
@@ -240,19 +240,23 @@ fn admin_required() -> HttpResponse {
     ))
 }
 
-fn recent_mfa(session: &CurrentSession, now: i64) -> bool {
+fn recent_mfa(session: &CurrentSession<nazo_identity::Principal>, now: i64) -> bool {
     nazo_identity::session::recent_interactive_mfa(session.auth_time(), session.amr(), now)
 }
 
-fn validated_reason(payload: &RuntimeModulePatch) -> Result<String, &'static str> {
-    let reason = payload.reason.trim();
-    if reason.is_empty() || reason.chars().count() > MAX_REASON_CHARS {
+fn validate_reason(reason: &mut String, cascade: bool) -> Result<(), &'static str> {
+    let trimmed = reason.trim();
+    if trimmed.is_empty() || trimmed.chars().take(MAX_REASON_CHARS + 1).count() > MAX_REASON_CHARS {
         return Err("reason must contain between 1 and 500 characters.");
     }
-    if payload.cascade {
+    if cascade {
         return Err("cascade is not supported; change dependent modules explicitly.");
     }
-    Ok(reason.to_owned())
+    let start = reason.len() - reason.trim_start().len();
+    let end = start + trimmed.len();
+    reason.truncate(end);
+    reason.drain(..start);
+    Ok(())
 }
 
 fn management_error(error: RuntimeModuleAdminError) -> HttpResponse {
@@ -280,40 +284,96 @@ fn management_error(error: RuntimeModuleAdminError) -> HttpResponse {
     }
 }
 
-fn runtime_module_json(module: &RuntimeModuleView) -> Value {
-    json!({
-        "module_id": module_id_name(module.module_id),
-        "description": module_description(module.module_id),
-        "desired_state": desired_mode_name(module.desired_state),
-        "resolved_enabled": module.resolved_enabled,
-        "actual_state": actual_state_name(module.actual_state),
-        "revision": module.revision.map_or(0, ModuleRevision::get),
-        "transition_revision": module.transition_revision.map(ModuleRevision::get),
-        "applied_revision": module.applied_revision.map(ModuleRevision::get),
-        "dependencies": module.dependencies.iter().copied().map(module_id_name).collect::<Vec<_>>(),
-        "dependents": module.dependents.iter().copied().map(module_id_name).collect::<Vec<_>>(),
-        "allowed_actions": module.allowed_actions.iter().copied().map(action_name).collect::<Vec<_>>(),
-        "disable_policy": disable_policy_name(module.disable_policy),
-        "drain_deadline": module.drain_deadline.map(timestamp),
-        "failure_code": module.failure_code,
-        "updated_at": timestamp(module.updated_at),
-    })
+#[derive(Serialize)]
+struct RuntimeModuleList<'a> {
+    #[serde(serialize_with = "serialize_modules")]
+    items: &'a [RuntimeModuleView],
 }
 
-fn runtime_event_json(event: &ModuleEventRecord) -> Value {
-    json!({
-        "event_id": event.event_id,
-        "module_id": module_id_name(event.module_id),
-        "event_type": event_type_name(event.event_type),
-        "instance_id": event.instance_id,
-        "actor_id": event.actor_id,
-        "reason": event.reason,
-        "before_state": event.before.map(event_state_name),
-        "after_state": event.after.map(event_state_name),
-        "revision": event.revision.get(),
-        "outcome_code": event.outcome_code,
-        "created_at": timestamp(event.occurred_at),
-    })
+fn serialize_modules<S: Serializer>(
+    items: &[RuntimeModuleView],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(items.iter().map(RuntimeModuleResponse))
+}
+
+#[derive(Serialize)]
+struct RuntimeEventPage<'a> {
+    total: i64,
+    page: i32,
+    page_size: i32,
+    #[serde(serialize_with = "serialize_events")]
+    items: &'a [ModuleEventRecord],
+}
+
+fn serialize_events<S: Serializer>(
+    items: &[ModuleEventRecord],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(items.iter().map(RuntimeEventResponse))
+}
+
+struct AllowedActions<'a>(&'a [DesiredMode]);
+
+impl Serialize for AllowedActions<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().copied().map(action_name))
+    }
+}
+
+struct RuntimeModuleResponse<'a>(&'a RuntimeModuleView);
+
+impl Serialize for RuntimeModuleResponse<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let module = self.0;
+        let mut map = serializer.serialize_map(Some(15))?;
+        map.serialize_entry("module_id", &module.module_id)?;
+        map.serialize_entry("description", &module_description(module.module_id))?;
+        map.serialize_entry("desired_state", &module.desired_state)?;
+        map.serialize_entry("resolved_enabled", &module.resolved_enabled)?;
+        map.serialize_entry("actual_state", &module.actual_state)?;
+        map.serialize_entry("revision", &module.revision.map_or(0, ModuleRevision::get))?;
+        map.serialize_entry(
+            "transition_revision",
+            &module.transition_revision.map(ModuleRevision::get),
+        )?;
+        map.serialize_entry(
+            "applied_revision",
+            &module.applied_revision.map(ModuleRevision::get),
+        )?;
+        map.serialize_entry("dependencies", &module.dependencies)?;
+        map.serialize_entry("dependents", &module.dependents)?;
+        map.serialize_entry("allowed_actions", &AllowedActions(&module.allowed_actions))?;
+        map.serialize_entry(
+            "disable_policy",
+            &disable_policy_name(module.disable_policy),
+        )?;
+        map.serialize_entry("drain_deadline", &module.drain_deadline.map(timestamp))?;
+        map.serialize_entry("failure_code", &module.failure_code)?;
+        map.serialize_entry("updated_at", &timestamp(module.updated_at))?;
+        map.end()
+    }
+}
+
+struct RuntimeEventResponse<'a>(&'a ModuleEventRecord);
+
+impl Serialize for RuntimeEventResponse<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let event = self.0;
+        let mut map = serializer.serialize_map(Some(11))?;
+        map.serialize_entry("event_id", &event.event_id)?;
+        map.serialize_entry("module_id", &event.module_id)?;
+        map.serialize_entry("event_type", &event_type_name(event.event_type))?;
+        map.serialize_entry("instance_id", &event.instance_id)?;
+        map.serialize_entry("actor_id", &event.actor_id)?;
+        map.serialize_entry("reason", &event.reason)?;
+        map.serialize_entry("before_state", &event.before.map(event_state_name))?;
+        map.serialize_entry("after_state", &event.after.map(event_state_name))?;
+        map.serialize_entry("revision", &event.revision.get())?;
+        map.serialize_entry("outcome_code", &event.outcome_code)?;
+        map.serialize_entry("created_at", &timestamp(event.occurred_at))?;
+        map.end()
+    }
 }
 
 fn no_store(mut response: HttpResponse) -> HttpResponse {
@@ -329,46 +389,8 @@ fn no_store(mut response: HttpResponse) -> HttpResponse {
 }
 
 fn parse_module_id(value: &str) -> Option<ModuleId> {
-    match value {
-        "device_authorization" => Some(ModuleId::DeviceAuthorization),
-        "token_exchange" => Some(ModuleId::TokenExchange),
-        "jwt_bearer_grant" => Some(ModuleId::JwtBearerGrant),
-        "ciba" => Some(ModuleId::Ciba),
-        "dynamic_client_registration" => Some(ModuleId::DynamicClientRegistration),
-        "request_objects" => Some(ModuleId::RequestObjects),
-        "jarm" => Some(ModuleId::Jarm),
-        "authorization_details" => Some(ModuleId::AuthorizationDetails),
-        "http_message_signatures" => Some(ModuleId::HttpMessageSignatures),
-        "scim" => Some(ModuleId::Scim),
-        "scim_security_events" => Some(ModuleId::ScimSecurityEvents),
-        "native_sso" => Some(ModuleId::NativeSso),
-        "frontchannel_logout" => Some(ModuleId::FrontchannelLogout),
-        "session_management" => Some(ModuleId::SessionManagement),
-        "openid4vci_issuer" => Some(ModuleId::Openid4vciIssuer),
-        "openid4vp_verifier" => Some(ModuleId::Openid4vpVerifier),
-        _ => None,
-    }
-}
-
-const fn module_id_name(value: ModuleId) -> &'static str {
-    match value {
-        ModuleId::DeviceAuthorization => "device_authorization",
-        ModuleId::TokenExchange => "token_exchange",
-        ModuleId::JwtBearerGrant => "jwt_bearer_grant",
-        ModuleId::Ciba => "ciba",
-        ModuleId::DynamicClientRegistration => "dynamic_client_registration",
-        ModuleId::RequestObjects => "request_objects",
-        ModuleId::Jarm => "jarm",
-        ModuleId::AuthorizationDetails => "authorization_details",
-        ModuleId::HttpMessageSignatures => "http_message_signatures",
-        ModuleId::Scim => "scim",
-        ModuleId::ScimSecurityEvents => "scim_security_events",
-        ModuleId::NativeSso => "native_sso",
-        ModuleId::FrontchannelLogout => "frontchannel_logout",
-        ModuleId::SessionManagement => "session_management",
-        ModuleId::Openid4vciIssuer => "openid4vci_issuer",
-        ModuleId::Openid4vpVerifier => "openid4vp_verifier",
-    }
+    ModuleId::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(value))
+        .ok()
 }
 
 const fn module_description(value: ModuleId) -> &'static str {
@@ -392,13 +414,6 @@ const fn module_description(value: ModuleId) -> &'static str {
     }
 }
 
-const fn desired_mode_name(value: DesiredMode) -> &'static str {
-    match value {
-        DesiredMode::Enabled => "enabled",
-        DesiredMode::Disabled => "disabled",
-    }
-}
-
 const fn action_name(value: DesiredMode) -> &'static str {
     match value {
         DesiredMode::Enabled => "enable",
@@ -416,14 +431,15 @@ const fn actual_state_name(value: ModuleState) -> &'static str {
     }
 }
 
-fn disable_policy_name(value: DisablePolicy) -> String {
+fn disable_policy_name(value: DisablePolicy) -> Cow<'static, str> {
     match value {
-        DisablePolicy::Immediate => "immediate".to_owned(),
-        DisablePolicy::FinishExecutingRequests => "finish_executing_requests".to_owned(),
-        DisablePolicy::DrainStoredTransactions { max_duration } => {
-            format!("drain_stored_transactions:{}s", max_duration.as_secs())
-        }
-        DisablePolicy::NotRuntimeDisableable => "not_runtime_disableable".to_owned(),
+        DisablePolicy::Immediate => Cow::Borrowed("immediate"),
+        DisablePolicy::FinishExecutingRequests => Cow::Borrowed("finish_executing_requests"),
+        DisablePolicy::DrainStoredTransactions { max_duration } => Cow::Owned(format!(
+            "drain_stored_transactions:{}s",
+            max_duration.as_secs()
+        )),
+        DisablePolicy::NotRuntimeDisableable => Cow::Borrowed("not_runtime_disableable"),
     }
 }
 

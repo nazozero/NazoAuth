@@ -88,14 +88,18 @@ impl<'a> CorsPolicy<'a> {
 }
 
 pub(crate) fn canonical_request_host(request: &RequestHead) -> Option<String> {
-    let authority = request
-        .headers
-        .get(HOST)
-        .and_then(|value| value.to_str().ok())
-        .filter(|_| request.version < Version::HTTP_2)
-        .or_else(|| request.uri.authority().map(|authority| authority.as_str()))?
-        .parse::<Authority>()
-        .ok()?;
+    let header_authority;
+    let authority = if request.version < Version::HTTP_2
+        && let Some(value) = request
+            .headers
+            .get(HOST)
+            .and_then(|value| value.to_str().ok())
+    {
+        header_authority = value.parse::<Authority>().ok()?;
+        &header_authority
+    } else {
+        request.uri.authority()?
+    };
     if authority.as_str().contains('@') {
         return None;
     }
@@ -114,36 +118,6 @@ fn origin_predicate() -> impl Fn(&HeaderValue, &RequestHead) -> bool + 'static {
             })
             .unwrap_or(false)
     }
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_well_known(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).well_known()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_browser_token_management(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).browser_token_management()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_browser_userinfo(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).browser_userinfo()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_auth_api(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).auth_api()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_admin(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).admin()
-}
-
-#[allow(dead_code)]
-pub(crate) fn cors_scim(settings: &Settings) -> Cors {
-    CorsPolicy::from_settings(settings).scim()
 }
 
 #[cfg(test)]

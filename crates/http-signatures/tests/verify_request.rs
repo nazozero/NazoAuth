@@ -55,7 +55,9 @@ fn fixture() -> (Vec<u8>, SignatureFields) {
     (base, prepared.finish(&[0xde, 0xad, 0xbe, 0xef]))
 }
 
-fn parse(fields: SignatureFields) -> Result<nazo_http_signatures::VerifiedInput, VerifyError> {
+fn parse(
+    fields: SignatureFields,
+) -> Result<nazo_http_signatures::ParsedSignatureInput, VerifyError> {
     let headers = headers();
     parse_request_for_verification(
         request("POST", "https://api.example/fapi/resource", &headers, BODY),
@@ -826,7 +828,7 @@ fn verified_input_debug_output_is_fully_redacted() {
     let parsed = parse(fields).unwrap();
     let debug = format!("{parsed:?}");
 
-    assert_eq!(debug, "VerifiedInput { .. }");
+    assert_eq!(debug, "ParsedSignatureInput { .. }");
     for sensitive in [
         "client-ed25519",
         "opaque",

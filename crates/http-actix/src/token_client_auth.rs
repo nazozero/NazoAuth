@@ -49,21 +49,17 @@ fn basic_authorization_credentials(request: &HttpRequest) -> BasicAuthorizationC
     if !bytes[start..end].eq_ignore_ascii_case(b"Basic") {
         return BasicAuthorizationCredentials::Absent;
     }
-    let Some(encoded) = raw.to_str().ok().and_then(|value| {
-        let mut parts = value.trim_start().splitn(2, char::is_whitespace);
-        parts.next()?;
-        let credentials = parts.next()?.trim();
-        (!credentials.is_empty() && credentials.split_whitespace().count() == 1)
-            .then_some(credentials)
-    }) else {
-        return BasicAuthorizationCredentials::Malformed;
-    };
-    let Some((client_id, client_secret)) = STANDARD.decode(encoded).ok().and_then(|decoded| {
-        let separator = decoded.iter().position(|byte| *byte == b':')?;
-        let client_id = form_urlencoded_component(&decoded[..separator])?;
-        let client_secret = form_urlencoded_component(&decoded[separator + 1..])?;
-        Some((client_id, client_secret))
-    }) else {
+    let Some((client_id, client_secret)) = raw
+        .to_str()
+        .ok()
+        .and_then(|value| STANDARD.decode(value[end..].trim()).ok())
+        .and_then(|decoded| {
+            let separator = decoded.iter().position(|byte| *byte == b':')?;
+            let client_id = form_urlencoded_component(&decoded[..separator])?;
+            let client_secret = form_urlencoded_component(&decoded[separator + 1..])?;
+            Some((client_id, client_secret))
+        })
+    else {
         return BasicAuthorizationCredentials::Malformed;
     };
     BasicAuthorizationCredentials::Present {

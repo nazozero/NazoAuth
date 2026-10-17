@@ -1,7 +1,7 @@
 use super::*;
 
 async fn store_ciba_session(state: &TestInfrastructure, sid: &str, user_id: Uuid) {
-    let payload = nazo_oauth_server::sessions::SessionPayload {
+    let payload = crate::test_support::SessionPayload {
         user_id,
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],

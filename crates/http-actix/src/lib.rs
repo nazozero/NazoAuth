@@ -15,6 +15,7 @@ mod dynamic_client_registration;
 mod extract;
 mod fapi_resource;
 mod form_post_response;
+mod html;
 mod local_registration;
 mod metadata;
 mod mfa_profile;
@@ -104,7 +105,7 @@ pub use scim::{
 };
 pub use session::{
     SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,
-    profile_logout, session_lookup_error_response,
+    profile_logout,
 };
 pub use session_management::{
     CheckSessionStatusQuery, SessionManagementConfig, SessionManagementEndpoint,

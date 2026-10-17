@@ -159,7 +159,7 @@ impl Openid4vcSigningMaterial {
             .into_iter()
             .flat_map(|extension| extension.value.general_names.iter())
             .find_map(|name| match name {
-                x509_parser::extensions::GeneralName::DNSName(name) => Some((*name).to_owned()),
+                x509_parser::extensions::GeneralName::DNSName(name) => Some(*name),
                 _ => None,
             })
             .filter(|name| !name.is_empty())
@@ -169,11 +169,11 @@ impl Openid4vcSigningMaterial {
 }
 
 fn signing_material(lease: Openid4vcSigningLease) -> anyhow::Result<Openid4vcSigningMaterial> {
-    let certificates = parse_pem_certificates(lease.material().certificate_chain_pem.as_bytes())?;
-    let leaf_der = certificates
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("OpenID4VC signing certificate chain is empty"))?
-        .clone();
+    let mut certificates =
+        parse_pem_certificates(lease.material().certificate_chain_pem.as_bytes())?;
+    if certificates.is_empty() {
+        anyhow::bail!("OpenID4VC signing certificate chain is empty");
+    }
     let trust_anchors = parse_trust_anchors(lease.material())?;
     verify_openid4vc_chain(&certificates, &trust_anchors)?;
     let x5c = certificates
@@ -181,9 +181,7 @@ fn signing_material(lease: Openid4vcSigningLease) -> anyhow::Result<Openid4vcSig
         .filter(|certificate| !trust_anchors.contains(certificate))
         .map(|certificate| STANDARD.encode(certificate))
         .collect::<Vec<_>>();
-    if x5c.is_empty() {
-        anyhow::bail!("OpenID4VC x5c chain must contain a non-anchor leaf certificate");
-    }
+    let leaf_der = certificates.swap_remove(0);
     Ok(Openid4vcSigningMaterial {
         lease,
         x5c,

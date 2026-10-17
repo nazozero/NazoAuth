@@ -16,7 +16,6 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
         mtls_enabled: false,
         profile: MetadataAuthorizationServerProfile::Oauth2Baseline,
         ciba_profile: CibaMetadataProfile::FapiCiba,
-        subject_type: MetadataSubjectType::Public,
         pairwise_subject_enabled: false,
         protected_resource_identifier: "https://issuer.example/fapi/resource",
         additional_scopes_supported: &[],
@@ -496,7 +495,6 @@ fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preser
     let metadata = authorization_server_metadata(
         AuthorizationServerMetadataInput {
             mtls_enabled: true,
-            subject_type: MetadataSubjectType::Pairwise,
             pairwise_subject_enabled: true,
             signing_algorithms: MetadataSigningAlgorithms {
                 active: ACTIVE_PS256,

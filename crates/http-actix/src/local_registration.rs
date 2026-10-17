@@ -181,11 +181,6 @@ pub async fn register(
             "server_error",
             "用户创建失败.",
         ),
-        Err(RegisterLocalAccountError::Consistency) => oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "用户创建失败.",
-        ),
     }
 }
 

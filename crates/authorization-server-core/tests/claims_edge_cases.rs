@@ -354,6 +354,7 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
         "openid".to_owned(),
         "email".to_owned(),
         "address".to_owned(),
+        "openid".to_owned(),
     ];
     let claims = access_token_claims(
         "https://issuer.example",
@@ -380,6 +381,7 @@ fn access_token_claims_scope_is_sorted_alphabetically() {
     );
 
     assert_eq!(claims.scope, "address email openid profile");
+    assert_eq!(scopes, ["profile", "openid", "email", "address", "openid"]);
 }
 
 #[test]

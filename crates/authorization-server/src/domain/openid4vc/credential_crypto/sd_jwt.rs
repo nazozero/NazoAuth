@@ -23,7 +23,6 @@ use super::Openid4vcCredentialCrypto;
 pub(super) struct ValidatedSdJwtChain {
     pub(super) decoding_key: JwtVerificationKey,
     pub(super) certificates: Vec<Vec<u8>>,
-    pub(super) leaf_der: Vec<u8>,
     pub(super) scoped_anchor_authenticated: bool,
 }
 
@@ -45,7 +44,9 @@ pub(super) async fn sign(
             serde_json::to_vec(&(URL_SAFE_NO_PAD.encode(salt), name, value))
                 .map_err(|_| CredentialTrustError::InvalidEncoding)?,
         );
-        digests.push(URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes())));
+        digests.push(Value::String(
+            URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes())),
+        ));
         disclosures.push(disclosure);
     }
     let mut credential = Map::from_iter([
@@ -55,7 +56,7 @@ pub(super) async fn sign(
         ("exp".to_owned(), json!(input.expires_at.timestamp())),
         ("vct".to_owned(), json!(input.payload.credential_type)),
         ("_sd_alg".to_owned(), json!("sha-256")),
-        ("_sd".to_owned(), json!(digests)),
+        ("_sd".to_owned(), Value::Array(digests)),
     ]);
     if let Some(HolderBinding::Jwk { jwk }) = &input.payload.holder_binding {
         credential.insert("cnf".to_owned(), json!({"jwk": jwk}));
@@ -72,17 +73,25 @@ pub(super) async fn sign(
     let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
     header.typ = Some("dc+sd-jwt".to_owned());
     header.x5c = Some(material.x5c);
-    let jwt = material
+    let mut jwt = material
         .lease
         .encode_jwt(nazo_auth::SigningPurpose::Credential, &header, &credential)
         .await
         .map_err(|_| CredentialTrustError::Unavailable)?;
-    Ok(format!("{jwt}~{}~", disclosures.join("~")))
+    jwt.push('~');
+    for (index, disclosure) in disclosures.iter().enumerate() {
+        if index != 0 {
+            jwt.push('~');
+        }
+        jwt.push_str(disclosure);
+    }
+    jwt.push('~');
+    Ok(jwt)
 }
 
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
-    presentation: &PresentedCredential,
+    presentation: &PresentedCredential<'_>,
 ) -> Result<VerifiedCredential, CredentialTrustError> {
     let parts = presentation.encoded.split('~').collect::<Vec<_>>();
     if parts.len() < 2 || parts[0].is_empty() || parts.last().is_some_and(|part| part.is_empty()) {
@@ -99,7 +108,6 @@ pub(super) fn verify(
     let ValidatedSdJwtChain {
         decoding_key: key,
         certificates,
-        leaf_der,
         scoped_anchor_authenticated,
     } = validate_sd_jwt_chain(
         crypto,
@@ -124,7 +132,7 @@ pub(super) fn verify(
         .ok_or(CredentialTrustError::InvalidEncoding)?;
     crypto
         .issuer_trust_policy
-        .validate(issuer, &leaf_der)
+        .validate(issuer, &certificates[0])
         .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
     let holder_jwk = credential
         .pointer("/cnf/jwk")
@@ -408,8 +416,7 @@ pub(super) fn validate_sd_jwt_chain(
         .collect::<Result<Vec<_>, _>>()?;
     let leaf_der = certificates
         .first()
-        .ok_or(CredentialTrustError::UntrustedIssuer)?
-        .clone();
+        .ok_or(CredentialTrustError::UntrustedIssuer)?;
     let anchors = crypto.combined_trust_anchors(additional_trust_anchors)?;
     let authenticated_anchor = super::super::crypto_helpers::verify_openid4vc_chain_with_scoped(
         &certificates,
@@ -420,14 +427,13 @@ pub(super) fn validate_sd_jwt_chain(
     let scoped_anchor_authenticated = additional_trust_anchors
         .iter()
         .any(|anchor| anchor.as_slice() == authenticated_anchor);
-    let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der)
+    let (_, leaf) = x509_parser::parse_x509_certificate(leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     Ok(ValidatedSdJwtChain {
         decoding_key: JwtVerificationKey::from_ec_sec1(
             leaf.public_key().subject_public_key.data.as_ref(),
         ),
         certificates,
-        leaf_der,
         scoped_anchor_authenticated,
     })
 }

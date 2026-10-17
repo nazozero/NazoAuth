@@ -55,30 +55,6 @@ impl Openid4vciRepository {
         })
     }
 
-    pub(super) fn nonce_finalize<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let changed = sql_query(
-                "UPDATE openid4vci_nonces SET consumed_at = GREATEST($3, created_at), claim_id = NULL, claim_expires_at = NULL \
-                 WHERE nonce_hash = $1 AND claim_id = $2 AND consumed_at IS NULL AND expires_at > $3",
-            )
-            .bind::<sql_types::Text, _>(nonce_hash)
-            .bind::<sql_types::Text, _>(claim_id)
-            .bind::<sql_types::Timestamptz, _>(now)
-            .execute(&mut connection)
-            .await
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            Ok(changed == 1)
-        })
-    }
-
     pub(super) fn nonce_release<'a>(
         &'a self,
         nonce_hash: &'a str,

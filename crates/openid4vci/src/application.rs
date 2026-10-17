@@ -37,8 +37,9 @@ impl std::fmt::Debug for CredentialRequestContext {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CredentialResponseBody {
-    Json(CredentialResponse),
-    Jwt(String),
+    /// Encoded once by the issuer and shared with its durable retry response.
+    Json(bytes::Bytes),
+    Jwt(bytes::Bytes),
 }
 
 /// Issuance outcome selected before response encryption and retained on replay.

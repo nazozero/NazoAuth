@@ -216,7 +216,7 @@ async fn delete_preparation_and_unknown_outcomes_retain_files_until_affirmative_
     let user = fixture.account.user_id();
     let mutation = fixture
         .storage
-        .begin_delete(user, Some(&old), "../unused-revision")
+        .begin_delete(user, Some(&old))
         .await
         .unwrap();
     assert_eq!(fixture.storage.read(user, &old).await.unwrap().bytes, png());
@@ -312,7 +312,7 @@ async fn restart_reads_legacy_active_and_matching_backup_without_using_version_t
     .await
     .unwrap();
     let retired = restarted
-        .begin_delete(user, Some(historical), "unused")
+        .begin_delete(user, Some(historical))
         .await
         .unwrap();
     restarted.commit(&retired).await.unwrap();
@@ -410,7 +410,7 @@ async fn candidate_versions_are_exclusive_and_partial_or_mismatched_versions_fai
 }
 
 #[tokio::test]
-async fn tenant_and_user_roots_are_isolated_and_mutations_cannot_cross_storage_bindings() {
+async fn tenant_and_user_roots_are_isolated() {
     let first = LocalFixture::new();
     let second = LocalFixture::new();
     let user = first.account.user_id();
@@ -425,10 +425,6 @@ async fn tenant_and_user_roots_are_isolated_and_mutations_cannot_cross_storage_b
         .begin_replace(user, None, object(&version))
         .await
         .unwrap();
-    assert_eq!(
-        second.storage.rollback(&mutation).await,
-        Err(AvatarStorageError::InvalidState)
-    );
     assert_eq!(
         second.storage.read(user, &version).await.unwrap().bytes,
         png()

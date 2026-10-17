@@ -45,14 +45,11 @@ impl BackchannelLogoutWorker {
             .await
             .context("failed to claim back-channel logout deliveries")?;
         let processed = deliveries.len();
-        let results = stream::iter(deliveries)
+        stream::iter(deliveries)
             .map(|delivery| async move { self.process_delivery(delivery).await })
             .buffer_unordered(DELIVERY_CONCURRENCY)
-            .collect::<Vec<_>>()
-            .await;
-        if let Some(error) = results.into_iter().find_map(Result::err) {
-            return Err(error);
-        }
+            .fold(Ok(()), |result, next| async { result.and(next) })
+            .await?;
         Ok(processed)
     }
 
@@ -71,7 +68,7 @@ impl BackchannelLogoutWorker {
                 let now = Utc::now();
                 let (next_attempt_at, delivery_error) =
                     delivery_failure_state(outcome, delivery.attempts, now, delivery.expires_at);
-                let last_error = truncate_error(&delivery_error.to_string());
+                let last_error = truncate_error(delivery_error.to_string());
                 tracing::warn!(
                     retry_scheduled = next_attempt_at.is_some(),
                     failure_recorded_at = %now,
@@ -163,8 +160,11 @@ fn next_retry_at(
     (next_attempt_at < expires_at).then_some(next_attempt_at)
 }
 
-fn truncate_error(error: &str) -> String {
-    error.chars().take(ERROR_MAX_CHARS).collect()
+fn truncate_error(mut error: String) -> String {
+    if let Some((end, _)) = error.char_indices().nth(ERROR_MAX_CHARS) {
+        error.truncate(end);
+    }
+    error
 }
 
 #[cfg(test)]

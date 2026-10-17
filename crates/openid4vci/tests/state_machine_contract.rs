@@ -9,9 +9,9 @@ use chrono::{DateTime, Duration, Utc};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialIdentifier, CredentialResponseEncoding, CredentialStoreError,
-    CredentialStoreFuture, CredentialStorePort, DeferredCredential, DeferredCredentialClaim,
-    IssuanceNotification, NonceRecord, NotificationEvent, NotificationHandle,
-    StoredCredentialOffer, StoredCredentialResponse,
+    CredentialStoreFuture, CredentialStorePort, DeferredCredential, IssuanceNotification,
+    NonceRecord, NotificationEvent, NotificationHandle, StoredCredentialOffer,
+    StoredCredentialResponse,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -169,7 +169,7 @@ impl TransitionStore {
         nonce_hash: &str,
         claim_id: &str,
         handle: &NotificationHandle,
-        response: Option<&StoredCredentialResponse>,
+        response: &StoredCredentialResponse,
         now: DateTime<Utc>,
     ) -> Result<bool, CredentialStoreError> {
         let mut state = self.state.lock().unwrap();
@@ -189,16 +189,12 @@ impl TransitionStore {
         {
             return Err(CredentialStoreError::InvalidTransition);
         }
-        if let Some(response) = response {
-            let key = (response.token_id, response.request_digest.clone());
-            if state.responses.contains_key(&key) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
+        let key = (response.token_id, response.request_digest.clone());
+        if state.responses.contains_key(&key) {
+            return Err(CredentialStoreError::InvalidTransition);
         }
         Self::store_notification_locked(&mut state, handle)?;
-        if let Some(response) = response {
-            Self::store_response_locked(&mut state, response)?;
-        }
+        Self::store_response_locked(&mut state, response)?;
         Ok(Self::finalize_nonce_locked(
             &mut state, nonce_hash, claim_id, now,
         ))
@@ -208,8 +204,7 @@ impl TransitionStore {
         &self,
         credential: &DeferredCredential,
         claim: Option<(&str, &str)>,
-        handle: Option<&NotificationHandle>,
-        response: Option<&StoredCredentialResponse>,
+        response: &StoredCredentialResponse,
         now: DateTime<Utc>,
     ) -> Result<(), CredentialStoreError> {
         let mut state = self.state.lock().unwrap();
@@ -220,18 +215,9 @@ impl TransitionStore {
         if state.deferred.contains_key(&key) {
             return Err(CredentialStoreError::InvalidTransition);
         }
-        if let Some(handle) = handle
-            && state
-                .notifications
-                .contains_key(&(handle.notification_id.clone(), handle.token_id))
-        {
+        let response_key = (response.token_id, response.request_digest.clone());
+        if state.responses.contains_key(&response_key) {
             return Err(CredentialStoreError::InvalidTransition);
-        }
-        if let Some(response) = response {
-            let response_key = (response.token_id, response.request_digest.clone());
-            if state.responses.contains_key(&response_key) {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
         }
         if let Some((nonce_hash, claim_id)) = claim {
             let nonce = state
@@ -254,12 +240,7 @@ impl TransitionStore {
                 claim_expires_at: None,
             },
         );
-        if let Some(handle) = handle {
-            Self::store_notification_locked(&mut state, handle)?;
-        }
-        if let Some(response) = response {
-            Self::store_response_locked(&mut state, response)?;
-        }
+        Self::store_response_locked(&mut state, response)?;
         if let Some((nonce_hash, claim_id)) = claim
             && !Self::finalize_nonce_locked(&mut state, nonce_hash, claim_id, now)
         {
@@ -356,22 +337,6 @@ impl CredentialStorePort for TransitionStore {
         })
     }
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            Ok(Self::finalize_nonce_locked(
-                &mut self.state.lock().unwrap(),
-                nonce_hash,
-                claim_id,
-                now,
-            ))
-        })
-    }
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -389,18 +354,6 @@ impl CredentialStorePort for TransitionStore {
             nonce.claim_id = None;
             nonce.claim_expires_at = None;
             Ok(true)
-        })
-    }
-
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            self.commit_nonce_with_side_effects(nonce_hash, claim_id, handle, None, now)
         })
     }
 
@@ -431,7 +384,7 @@ impl CredentialStorePort for TransitionStore {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            self.commit_nonce_with_side_effects(nonce_hash, claim_id, handle, Some(response), now)
+            self.commit_nonce_with_side_effects(nonce_hash, claim_id, handle, response, now)
         })
     }
 
@@ -463,53 +416,6 @@ impl CredentialStorePort for TransitionStore {
         Box::pin(async { Ok(None) })
     }
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let key = (
-                credential.transaction_hash.clone(),
-                credential.access.token_id,
-            );
-            let mut state = self.state.lock().unwrap();
-            if state
-                .deferred
-                .insert(
-                    key,
-                    DeferredState {
-                        credential: credential.clone(),
-                        consumed_at: None,
-                        claim_id: None,
-                        claim_expires_at: None,
-                    },
-                )
-                .is_some()
-            {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            Ok(())
-        })
-    }
-
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            self.commit_deferred_with_side_effects(
-                credential,
-                Some((nonce_hash, claim_id)),
-                None,
-                None,
-                now,
-            )
-        })
-    }
-
     fn store_deferred_and_finalize_nonce_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -522,8 +428,7 @@ impl CredentialStorePort for TransitionStore {
             self.commit_deferred_with_side_effects(
                 credential,
                 Some((nonce_hash, claim_id)),
-                None,
-                Some(response),
+                response,
                 now,
             )
         })
@@ -535,9 +440,9 @@ impl CredentialStorePort for TransitionStore {
         response: &'a StoredCredentialResponse,
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            self.commit_deferred_with_side_effects(credential, None, None, Some(response), now)
-        })
+        Box::pin(
+            async move { self.commit_deferred_with_side_effects(credential, None, response, now) },
+        )
     }
 
     fn claim_ready_deferred<'a>(
@@ -575,39 +480,8 @@ impl CredentialStorePort for TransitionStore {
             deferred.claim_id = Some(claim_id.to_owned());
             deferred.claim_expires_at = Some(now + nonce_claim_ttl());
             Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(
-                DeferredCredentialClaim {
-                    credential: deferred.credential.clone(),
-                    claim_id: claim_id.to_owned(),
-                },
+                deferred.credential.clone(),
             )))
-        })
-    }
-
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            let Some(deferred) = state
-                .deferred
-                .get_mut(&(transaction_hash.to_owned(), token_id))
-            else {
-                return Ok(false);
-            };
-            if deferred.consumed_at.is_some()
-                || deferred.credential.expires_at <= now
-                || deferred.claim_id.as_deref() != Some(claim_id)
-            {
-                return Ok(false);
-            }
-            deferred.consumed_at = Some(now);
-            deferred.claim_id = None;
-            deferred.claim_expires_at = None;
-            Ok(true)
         })
     }
 
@@ -629,38 +503,6 @@ impl CredentialStorePort for TransitionStore {
             if deferred.consumed_at.is_some() || deferred.claim_id.as_deref() != Some(claim_id) {
                 return Ok(false);
             }
-            deferred.claim_id = None;
-            deferred.claim_expires_at = None;
-            Ok(true)
-        })
-    }
-
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            let Some(deferred) = state.deferred.get(&(transaction_hash.to_owned(), token_id))
-            else {
-                return Ok(false);
-            };
-            if deferred.consumed_at.is_some()
-                || deferred.credential.expires_at <= now
-                || deferred.claim_id.as_deref() != Some(claim_id)
-            {
-                return Ok(false);
-            }
-            Self::store_notification_locked(&mut state, handle)?;
-            let deferred = state
-                .deferred
-                .get_mut(&(transaction_hash.to_owned(), token_id))
-                .expect("deferred checked above");
-            deferred.consumed_at = Some(now);
             deferred.claim_id = None;
             deferred.claim_expires_at = None;
             Ok(true)
@@ -729,15 +571,6 @@ impl CredentialStorePort for TransitionStore {
             Ok(true)
         })
     }
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(
-            async move { Self::store_notification_locked(&mut self.state.lock().unwrap(), handle) },
-        )
-    }
 }
 
 fn block_on<T>(future: impl Future<Output = T>) -> T {
@@ -789,7 +622,7 @@ fn response_fixture(
         issuance_id,
         token_id,
         request_digest: "request-digest".to_owned(),
-        body: br#"{"credentials":[]}"#.to_vec(),
+        body: br#"{"credentials":[]}"#.as_slice().into(),
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
@@ -803,6 +636,13 @@ fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
         .unwrap()
         .with_timezone(&Utc);
     let store = TransitionStore::default();
+    let response = response_fixture(Uuid::now_v7(), Uuid::now_v7(), now);
+    let handle = NotificationHandle {
+        selection: None,
+        notification_id: "nonce-completion".to_owned(),
+        token_id: response.token_id,
+        expires_at: response.expires_at,
+    };
     let hash = "nonce-hash";
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
@@ -813,8 +653,26 @@ fn nonce_claim_is_single_owner_until_lease_timeout_then_replay_is_rejected() {
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
     assert!(!block_on(store.claim_nonce(hash, "claim-b", now + Duration::minutes(1))).unwrap());
     assert!(block_on(store.claim_nonce(hash, "claim-b", now + nonce_claim_ttl())).unwrap());
-    assert!(!block_on(store.finalize_nonce(hash, "claim-a", now + nonce_claim_ttl())).unwrap());
-    assert!(block_on(store.finalize_nonce(hash, "claim-b", now + nonce_claim_ttl())).unwrap());
+    assert!(
+        !block_on(store.finalize_nonce_with_notification_and_response(
+            hash,
+            "claim-a",
+            &handle,
+            &response,
+            now + nonce_claim_ttl()
+        ))
+        .unwrap()
+    );
+    assert!(
+        block_on(store.finalize_nonce_with_notification_and_response(
+            hash,
+            "claim-b",
+            &handle,
+            &response,
+            now + nonce_claim_ttl()
+        ))
+        .unwrap()
+    );
     assert!(!block_on(store.claim_nonce(hash, "claim-c", now + nonce_claim_ttl())).unwrap());
     assert!(store.nonce(hash).consumed_at.is_some());
 }
@@ -831,6 +689,7 @@ fn nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effe
         token_id,
         expires_at: now + Duration::minutes(10),
     };
+    let response = response_fixture(Uuid::now_v7(), token_id, now);
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
         expires_at: now + Duration::hours(1),
@@ -839,18 +698,32 @@ fn nonce_notification_commit_is_atomic_and_rejects_wrong_claim_without_side_effe
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
 
     assert!(
-        !block_on(store.finalize_nonce_with_notification(hash, "wrong-claim", &handle, now,))
-            .unwrap()
+        !block_on(store.finalize_nonce_with_notification_and_response(
+            hash,
+            "wrong-claim",
+            &handle,
+            &response,
+            now
+        ))
+        .unwrap()
     );
     assert_eq!(store.notification_count(), 0);
+    assert_eq!(store.response_count(), 0);
     assert!(store.nonce(hash).consumed_at.is_none());
 
     assert!(
-        block_on(store.finalize_nonce_with_notification(hash, "claim-a", &handle, now)).unwrap()
+        block_on(store.finalize_nonce_with_notification_and_response(
+            hash, "claim-a", &handle, &response, now
+        ))
+        .unwrap()
     );
     assert_eq!(store.notification_count(), 1);
+    assert_eq!(store.response_count(), 1);
     assert!(
-        !block_on(store.finalize_nonce_with_notification(hash, "claim-a", &handle, now)).unwrap()
+        !block_on(store.finalize_nonce_with_notification_and_response(
+            hash, "claim-a", &handle, &response, now
+        ))
+        .unwrap()
     );
 }
 
@@ -861,7 +734,16 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
     let deferred = deferred_fixture(now);
     let tx_hash = deferred.transaction_hash.clone();
     let token_id = deferred.access.token_id;
-    block_on(store.store_deferred(&deferred)).unwrap();
+    let mut completion_response = response_fixture(Uuid::now_v7(), token_id, now);
+    completion_response.request_digest = "deferred-completion".to_owned();
+    let handle = NotificationHandle {
+        selection: deferred.selection.clone(),
+        notification_id: "deferred-completion".to_owned(),
+        token_id,
+        expires_at: deferred.expires_at,
+    };
+    let pending_response = response_fixture(Uuid::now_v7(), token_id, now);
+    block_on(store.store_deferred_with_response(&deferred, &pending_response, now)).unwrap();
 
     assert!(
         claim_payload(
@@ -901,19 +783,23 @@ fn deferred_claim_is_ready_single_owner_reclaimable_and_finalized_once() {
         .is_some()
     );
     assert!(
-        !block_on(store.finalize_deferred(
+        !block_on(store.finalize_deferred_with_notification_and_response(
             &tx_hash,
             token_id,
             "claim-a",
+            &handle,
+            &completion_response,
             ready_at + nonce_claim_ttl(),
         ))
         .unwrap()
     );
     assert!(
-        block_on(store.finalize_deferred(
+        block_on(store.finalize_deferred_with_notification_and_response(
             &tx_hash,
             token_id,
             "claim-b",
+            &handle,
+            &completion_response,
             ready_at + nonce_claim_ttl(),
         ))
         .unwrap()
@@ -932,6 +818,7 @@ fn deferred_nonce_commit_rolls_back_all_state_when_claim_is_invalid() {
     let now = Utc::now();
     let store = TransitionStore::default();
     let deferred = deferred_fixture(now);
+    let response = response_fixture(Uuid::now_v7(), deferred.access.token_id, now);
     let hash = "nonce-hash";
     block_on(store.issue_nonce(&NonceRecord {
         nonce_hash: hash.to_owned(),
@@ -941,7 +828,13 @@ fn deferred_nonce_commit_rolls_back_all_state_when_claim_is_invalid() {
     assert!(block_on(store.claim_nonce(hash, "claim-a", now)).unwrap());
 
     assert_eq!(
-        block_on(store.store_deferred_and_finalize_nonce(&deferred, hash, "wrong-claim", now,)),
+        block_on(store.store_deferred_and_finalize_nonce_with_response(
+            &deferred,
+            hash,
+            "wrong-claim",
+            &response,
+            now
+        )),
         Err(CredentialStoreError::InvalidTransition)
     );
     assert!(
@@ -950,14 +843,19 @@ fn deferred_nonce_commit_rolls_back_all_state_when_claim_is_invalid() {
             .is_none()
     );
     assert!(store.nonce(hash).consumed_at.is_none());
+    assert_eq!(store.response_count(), 0);
 
-    block_on(store.store_deferred_and_finalize_nonce(&deferred, hash, "claim-a", now)).unwrap();
+    block_on(store.store_deferred_and_finalize_nonce_with_response(
+        &deferred, hash, "claim-a", &response, now,
+    ))
+    .unwrap();
     assert!(
         store
             .deferred(&deferred.transaction_hash, deferred.access.token_id)
             .is_some()
     );
     assert!(store.nonce(hash).consumed_at.is_some());
+    assert_eq!(store.response_count(), 1);
 }
 
 #[test]
@@ -1030,7 +928,9 @@ fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
         expires_at: now + Duration::minutes(10),
     };
     let first = response_fixture(Uuid::now_v7(), token_id, now);
-    block_on(store.issue_notification_handle(&handle)).unwrap();
+    let mut seed = response_fixture(Uuid::now_v7(), token_id, now);
+    seed.request_digest = "seed-request".to_owned();
+    block_on(store.store_response_with_notification(&handle, &seed, now)).unwrap();
     let mut second = response_fixture(Uuid::now_v7(), token_id, now);
     second.request_digest = "request-digest-2".to_owned();
 
@@ -1038,20 +938,20 @@ fn response_commit_rejects_duplicate_notification_atomically_and_can_retry() {
         block_on(store.store_response_with_notification(&handle, &second, now)),
         Err(CredentialStoreError::InvalidTransition)
     );
-    assert_eq!(store.response_count(), 0);
+    assert_eq!(store.response_count(), 1);
 
     let retry_handle = NotificationHandle {
         notification_id: "notification-retry".to_owned(),
         ..handle
     };
     block_on(store.store_response_with_notification(&retry_handle, &first, now)).unwrap();
-    assert_eq!(store.response_count(), 1);
+    assert_eq!(store.response_count(), 2);
     let second_retry_handle = NotificationHandle {
         notification_id: "notification-retry-2".to_owned(),
         ..retry_handle
     };
     block_on(store.store_response_with_notification(&second_retry_handle, &second, now)).unwrap();
-    assert_eq!(store.response_count(), 2);
+    assert_eq!(store.response_count(), 3);
 }
 
 #[test]
@@ -1103,7 +1003,8 @@ fn notification_retains_one_event_accepts_identical_retries_and_expires_with_the
         token_id,
         expires_at: now + Duration::minutes(1),
     };
-    block_on(store.issue_notification_handle(&handle)).unwrap();
+    let response = response_fixture(Uuid::now_v7(), token_id, now);
+    block_on(store.store_response_with_notification(&handle, &response, now)).unwrap();
     let notification = IssuanceNotification {
         notification_id: handle.notification_id.clone(),
         token_id,
@@ -1237,7 +1138,7 @@ fn pre_authorized_persist_forwards_arguments_and_errors() {
 // regressions additionally check Pending/Busy/Invalid and unchanged owner state.
 fn claim_payload(
     outcome: nazo_openid4vci::DeferredClaimOutcome,
-) -> Option<nazo_openid4vci::DeferredCredentialClaim> {
+) -> Option<nazo_openid4vci::DeferredCredential> {
     match outcome {
         nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => Some(*claim),
         _ => None,

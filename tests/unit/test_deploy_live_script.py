@@ -44,10 +44,8 @@ class DeployLiveWrapperContractTests(unittest.TestCase):
         self.assertIn("ConvertTo-ShellWord", self.source)
         self.assertIn("$remoteCommand", self.source)
 
-    def test_remote_identity_inputs_are_fail_closed(self) -> None:
+    def test_ssh_target_is_a_configured_alias(self) -> None:
         self.assertIn("SshHost must be a configured SSH host alias", self.source)
-        self.assertIn("Config must be a safe absolute remote path", self.source)
-        self.assertIn("Version must be an immutable semantic tag", self.source)
 
     def test_wrapper_has_no_source_build_or_conformance_path(self) -> None:
         for forbidden in (

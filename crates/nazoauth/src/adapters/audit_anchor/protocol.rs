@@ -10,7 +10,7 @@ use uuid::Uuid;
 pub(super) use nazo_persistence::audit_wire::AUDIT_ANCHOR_SCHEMA_VERSION as CHECKPOINT_SCHEMA_VERSION;
 pub(super) const RECEIPT_SCHEMA_VERSION: &str = "nazo.audit.anchor.receipt.v1";
 pub(super) const GENESIS_EVENT_ID: Uuid = Uuid::from_u128(0);
-pub(super) const MAX_REJECT_REASON_BYTES: usize = 128;
+pub(super) const MAX_REJECT_REASON_CHARS: usize = 128;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -21,8 +21,8 @@ pub(super) struct GenesisCheckpointEnvelope<'a> {
     pub(super) event_id: Uuid,
     pub(super) deployment_id: &'a str,
     pub(super) sequence: i64,
-    pub(super) previous_hash: String,
-    pub(super) event_hash: String,
+    pub(super) previous_hash: &'a str,
+    pub(super) event_hash: &'a str,
     pub(super) occurred_at: DateTime<Utc>,
 }
 
@@ -109,8 +109,8 @@ pub(super) fn genesis_body(
         event_id: GENESIS_EVENT_ID,
         deployment_id,
         sequence: 0,
-        previous_hash: hash.clone(),
-        event_hash: hash,
+        previous_hash: &hash,
+        event_hash: &hash,
         occurred_at: DateTime::<Utc>::UNIX_EPOCH,
     })
 }
@@ -184,11 +184,13 @@ pub(super) fn verify_receipt(
     if receipt.schema_version != RECEIPT_SCHEMA_VERSION {
         return Err(ReceiptError::SchemaMismatch);
     }
-    let signature: [u8; 64] = URL_SAFE_NO_PAD
-        .decode(receipt.signature.as_bytes())
-        .map_err(|_| ReceiptError::Malformed)?
-        .try_into()
+    let mut signature = [0; 64];
+    let signature_len = URL_SAFE_NO_PAD
+        .decode_slice(&receipt.signature, &mut signature)
         .map_err(|_| ReceiptError::Malformed)?;
+    if signature_len != signature.len() {
+        return Err(ReceiptError::Malformed);
+    }
     let signing_body = receipt_signing_body(&receipt).map_err(|_| ReceiptError::Malformed)?;
     verify_key
         .verify_strict(&signing_body, &signature)
@@ -206,15 +208,18 @@ pub(super) fn verify_receipt(
     match receipt.status.as_str() {
         "accepted" => Ok(ReceiptVerdict::Accepted { duplicate: false }),
         "duplicate" => Ok(ReceiptVerdict::Accepted { duplicate: true }),
-        "rejected" => Ok(ReceiptVerdict::Rejected {
-            reason: receipt
+        "rejected" => {
+            let mut reason = receipt
                 .reject_reason
-                .unwrap_or_else(|| "rejected".to_owned())
-                .chars()
-                .take(MAX_REJECT_REASON_BYTES)
-                .collect(),
-            permanent: receipt.permanent,
-        }),
+                .unwrap_or_else(|| "rejected".to_owned());
+            if let Some((end, _)) = reason.char_indices().nth(MAX_REJECT_REASON_CHARS) {
+                reason.truncate(end);
+            }
+            Ok(ReceiptVerdict::Rejected {
+                reason,
+                permanent: receipt.permanent,
+            })
+        }
         _ => Err(ReceiptError::Malformed),
     }
 }

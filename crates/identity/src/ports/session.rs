@@ -58,6 +58,12 @@ where
 
 /// Reads the minimum account projection required to resolve an authenticated session.
 pub trait SessionAccountPort: Send + Sync {
+    fn principal_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<crate::Principal>>;
+
     fn public_account_by_id(
         &self,
         tenant_id: TenantId,
@@ -67,7 +73,7 @@ pub trait SessionAccountPort: Send + Sync {
 
 /// Persistence boundary for session lookup, deletion, and atomic rotation.
 ///
-/// Implementations must treat expected as an opaque compare-and-swap snapshot.
+/// Implementations must treat expected as an opaque compare-and-swap version.
 /// A successful rotation must create the replacement and delete the old session
 /// atomically; it must never expose both or neither as a partial success.
 pub trait SessionStorePort: Send + Sync {
@@ -84,7 +90,7 @@ pub trait SessionStorePort: Send + Sync {
     fn rotate<'a>(
         &'a self,
         old_session_id: &'a crate::session::SessionId,
-        expected: &'a crate::session::SessionSnapshot,
+        expected: &'a crate::session::SessionVersion,
         new_session_id: &'a crate::session::SessionId,
         replacement: &'a crate::session::SessionRecord,
         ttl_seconds: u64,
@@ -95,7 +101,7 @@ pub trait SessionStorePort: Send + Sync {
     fn compare_and_set<'a>(
         &'a self,
         session_id: &'a crate::session::SessionId,
-        expected: &'a crate::session::SessionSnapshot,
+        expected: &'a crate::session::SessionVersion,
         replacement: &'a crate::session::SessionRecord,
     ) -> RepositoryFuture<'a, crate::session::SessionUpdateOutcome>;
 }
@@ -121,7 +127,7 @@ where
     fn rotate<'a>(
         &'a self,
         old_session_id: &'a crate::session::SessionId,
-        expected: &'a crate::session::SessionSnapshot,
+        expected: &'a crate::session::SessionVersion,
         new_session_id: &'a crate::session::SessionId,
         replacement: &'a crate::session::SessionRecord,
         ttl_seconds: u64,
@@ -138,7 +144,7 @@ where
     fn compare_and_set<'a>(
         &'a self,
         session_id: &'a crate::session::SessionId,
-        expected: &'a crate::session::SessionSnapshot,
+        expected: &'a crate::session::SessionVersion,
         replacement: &'a crate::session::SessionRecord,
     ) -> RepositoryFuture<'a, crate::session::SessionUpdateOutcome> {
         self.as_ref()

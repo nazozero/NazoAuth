@@ -25,7 +25,7 @@ use fred::interfaces::ClientLike;
 use nazo_auth::SigningPurpose;
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, RefreshToken, SingleUseRedemption,
-    TokenPortError, TokenRepositoryPort, TokenRevocation,
+    TokenPortError, TokenRepositoryPort,
 };
 use nazo_digital_credentials::{VcIssuerTrustPolicy, encrypt_ecdh_es};
 use nazo_key_management::{
@@ -392,14 +392,21 @@ impl TokenRepositoryPort for SubjectStateOutage {
         self.inner.refresh_token(tenant_id, raw_token)
     }
 
-    fn inspect_lost_response_successor<'a>(
+    fn refresh_token_snapshot<'a>(
         &'a self,
-        token: &'a RefreshToken,
+        tenant_id: Uuid,
+        raw_token: &'a str,
         client_id: Uuid,
         retry_started_at: chrono::DateTime<chrono::Utc>,
-    ) -> nazo_auth::TokenFuture<'a, Option<RefreshToken>> {
-        self.inner
-            .inspect_lost_response_successor(token, client_id, retry_started_at)
+        prepare_oidc_subject: bool,
+    ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
+        self.inner.refresh_token_snapshot(
+            tenant_id,
+            raw_token,
+            client_id,
+            retry_started_at,
+            prepare_oidc_subject,
+        )
     }
 
     fn active_subject_claims<'a>(
@@ -462,10 +469,6 @@ impl TokenRepositoryPort for SubjectStateOutage {
     ) -> nazo_auth::TokenFuture<'a, bool> {
         self.inner
             .refresh_family_active(tenant_id, family_id, user_id)
-    }
-
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> nazo_auth::TokenFuture<'a, usize> {
-        self.inner.revoke_token(input)
     }
 
     fn revoke_token_with_audit<'a>(

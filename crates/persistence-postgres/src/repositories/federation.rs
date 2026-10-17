@@ -47,26 +47,6 @@ impl FederationRepository {
             .map_err(map_error)?;
         identity::federation_link(row).map_err(|error| RepositoryError::Consistency(error.0))
     }
-    pub async fn list(
-        &self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> Result<Vec<FederationLink>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
-            .await
-            .map_err(|_| RepositoryError::Unavailable)?;
-        external_identity_links::table
-            .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
-            .filter(external_identity_links::user_id.eq(user_id.as_uuid()))
-            .select(ExternalIdentityLinkRow::as_select())
-            .load(&mut connection)
-            .await
-            .map_err(map_error)?
-            .into_iter()
-            .map(identity::federation_link)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| RepositoryError::Consistency(error.0))
-    }
     pub async fn list_summaries(
         &self,
         tenant_id: TenantId,
@@ -92,7 +72,7 @@ impl FederationRepository {
         tenant_id: TenantId,
         user_id: UserId,
         link_id: uuid::Uuid,
-    ) -> Result<Option<FederationLink>, RepositoryError> {
+    ) -> Result<Option<FederationLinkSummary>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -102,12 +82,12 @@ impl FederationRepository {
                 .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(external_identity_links::user_id.eq(user_id.as_uuid())),
         )
-        .returning(ExternalIdentityLinkRow::as_returning())
+        .returning(ExternalIdentityLinkSummaryRow::as_returning())
         .get_result(&mut connection)
         .await
         .optional()
         .map_err(map_error)?
-        .map(identity::federation_link)
+        .map(identity::federation_link_summary)
         .transpose()
         .map_err(|error| RepositoryError::Consistency(error.0))
     }
@@ -223,14 +203,6 @@ impl FederationRepository {
 }
 
 impl nazo_identity::ports::FederationLinkRepositoryPort for FederationRepository {
-    fn list(
-        &self,
-        tenant_id: TenantId,
-        user_id: UserId,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Vec<FederationLink>> {
-        Box::pin(async move { FederationRepository::list(self, tenant_id, user_id).await })
-    }
-
     fn list_summaries(
         &self,
         tenant_id: TenantId,
@@ -246,7 +218,7 @@ impl nazo_identity::ports::FederationLinkRepositoryPort for FederationRepository
         tenant_id: TenantId,
         user_id: UserId,
         link_id: uuid::Uuid,
-    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<FederationLink>> {
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<FederationLinkSummary>> {
         Box::pin(
             async move { FederationRepository::delete(self, tenant_id, user_id, link_id).await },
         )

@@ -35,7 +35,7 @@ use nazo_runtime_modules::ModuleId;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::crypto::{blake3_hex, constant_time_eq, random_urlsafe_token};
+use crate::crypto::{blake3_hex, random_urlsafe_token};
 use crate::domain::openid4vc::{Openid4vcCredentialCrypto, Openid4vcProofValidator};
 use crate::services::{ServerAuthorizationService, ServerTokenService};
 use nazo_identity::ports::SecretHashPort;
@@ -93,33 +93,37 @@ fn finish_response(
     response: CredentialResponse,
     encryption: Option<&CredentialResponseEncryption>,
 ) -> Result<CredentialResponseBody, CredentialHttpError> {
-    if let Some(encryption) = encryption {
-        if encryption.jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES")
+    if encryption.is_some_and(|encryption| {
+        encryption.jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES")
             || encryption.enc != "A256GCM"
             || encryption.zip.as_deref().is_some_and(|zip| zip != "DEF")
-        {
-            return Err(vci_error(
-                400,
-                "invalid_encryption_parameters",
-                "Credential response encryption parameters are unsupported.",
-            ));
-        }
-        let bytes = serde_json::to_vec(&response)
-            .map_err(|_| vci_error(500, "server_error", "Credential response encoding failed."))?;
-        let encrypted = if encryption.zip.as_deref() == Some("DEF") {
-            encrypt_ecdh_es_deflate(&bytes, &encryption.jwk, Some("application/json"))
-        } else {
-            encrypt_ecdh_es(&bytes, &encryption.jwk, Some("application/json"))
-        };
-        return encrypted.map(CredentialResponseBody::Jwt).map_err(|_| {
-            vci_error(
-                400,
-                "invalid_encryption_parameters",
-                "Credential response encryption key is invalid.",
-            )
-        });
+    }) {
+        return Err(vci_error(
+            400,
+            "invalid_encryption_parameters",
+            "Credential response encryption parameters are unsupported.",
+        ));
     }
-    Ok(CredentialResponseBody::Json(response))
+    let bytes = serde_json::to_vec(&response)
+        .map_err(|_| vci_error(500, "server_error", "Credential response encoding failed."))?;
+    if let Some(encryption) = encryption {
+        let encrypted = if encryption.zip.as_deref() == Some("DEF") {
+            encrypt_ecdh_es_deflate(bytes, &encryption.jwk, Some("application/json"))
+        } else {
+            encrypt_ecdh_es(bytes, &encryption.jwk, Some("application/json"))
+        };
+        encrypted
+            .map(|jwt| CredentialResponseBody::Jwt(jwt.into()))
+            .map_err(|_| {
+                vci_error(
+                    400,
+                    "invalid_encryption_parameters",
+                    "Credential response encryption key is invalid.",
+                )
+            })
+    } else {
+        Ok(CredentialResponseBody::Json(bytes.into()))
+    }
 }
 
 fn validate_response_encryption_transport(
@@ -139,8 +143,9 @@ fn validate_response_encryption_transport(
 async fn next_dpop_nonce<S: DpopStateStorePort + ?Sized>(
     store: &S,
     access: &CredentialAccess,
+    policy: DpopNoncePolicy,
 ) -> Result<Option<String>, CredentialHttpError> {
-    if access.dpop_jkt.is_none() {
+    if access.dpop_jkt.is_none() || policy == DpopNoncePolicy::Optional {
         return Ok(None);
     }
     issue_authorization_server_dpop_nonce(store)
@@ -331,8 +336,7 @@ impl ServerCredentialIssuerOperations {
             Some(value) => {
                 // Directly identified subjects (including standalone
                 // pre-authorized issuance without a Generic issuance row)
-                // keep the explicit active-subject read; only the narrow
-                // principal projection is needed here.
+                // keep the explicit tenant-scoped active-subject check.
                 if self
                     .token_service
                     .active_subject_id(tenant_id, value)
@@ -371,8 +375,7 @@ impl ServerCredentialIssuerOperations {
         };
         let (dpop_jkt, mtls_x5t_s256) = claims
             .cnf
-            .as_ref()
-            .map_or((None, None), |cnf| (cnf.jkt.clone(), cnf.x5t_s256.clone()));
+            .map_or((None, None), |cnf| (cnf.jkt, cnf.x5t_s256));
         match (
             dpop_jkt.as_deref(),
             mtls_x5t_s256.as_deref(),
@@ -388,7 +391,7 @@ impl ServerCredentialIssuerOperations {
                         "A mTLS-bound access token requires the matching client certificate.",
                     ));
                 };
-                if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+                if expected != actual {
                     return Err(vci_error(
                         401,
                         "invalid_token",
@@ -477,7 +480,7 @@ impl ServerCredentialIssuerOperations {
                     "Credential proof provenance is unavailable.",
                 )
             })?;
-        let proof_origin = match retained_access {
+        let proof_origin = match retained_access.as_ref() {
             Some(retained)
                 if retained.token_id == token_id
                     && retained.tenant_id == tenant_id
@@ -523,16 +526,20 @@ impl ServerCredentialIssuerOperations {
                 vci_error(401, "invalid_token", "Access token expiry is invalid.")
             })?,
         };
-        self.store
-            .upsert_access(&token_hash, &access)
-            .await
-            .map_err(|_| {
-                vci_error(
-                    503,
-                    "server_error",
-                    "Credential access state is unavailable.",
-                )
-            })?;
+        // The live retained projection already proves an identical grant exists.
+        // Only a missing or changed projection needs the persistence transition.
+        if retained_access.as_ref() != Some(&access) {
+            self.store
+                .upsert_access(&token_hash, &access)
+                .await
+                .map_err(|_| {
+                    vci_error(
+                        503,
+                        "server_error",
+                        "Credential access state is unavailable.",
+                    )
+                })?;
+        }
         Ok(access)
     }
 }

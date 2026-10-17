@@ -144,14 +144,11 @@ impl DeviceStateStorePort for Ports {
             if self.fail(Failure::RecordedUnknown) {
                 return Err(nazo_auth::DeviceStatePortError::Unavailable);
             }
-            let written = StoredDeviceAuthorization::new(
-                state.clone(),
-                DeviceStateVersion::new(serde_json::to_string(state).unwrap()),
-            );
+            let written = DeviceStateVersion::new(serde_json::to_string(state).unwrap());
             if let Some(competing) = self.after_recorded.lock().unwrap().take() {
                 *self.state.lock().unwrap() = Some(competing);
             }
-            Ok(DeviceStateReplacement::Applied(Box::new(written)))
+            Ok(DeviceStateReplacement::Applied(written))
         })
     }
     fn claim_decision<'a>(
@@ -323,7 +320,8 @@ fn pending(ports: &Ports) {
 }
 fn session() -> CurrentSession {
     CurrentSession {
-        user: crate::test_support::authorization::account(),
+        pending_mfa: false,
+        user: crate::test_support::authorization::account().principal,
         auth_time: Utc::now().timestamp(),
         auth_time_micros: None,
         amr: vec!["pwd".into()],
@@ -680,7 +678,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
             assert!(matches!(
                 service
                     .approve(
-                        prepared,
+                        &prepared,
                         device_approval(),
                         &ports.client,
                         ports.as_ref(),
@@ -707,7 +705,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
         assert!(matches!(
             service
                 .approve(
-                    prepared,
+                    &prepared,
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
@@ -724,7 +722,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
 #[test]
 fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
     futures_executor::block_on(async {
-        for retarget in [false, true] {
+        for (retarget, approve) in [(false, true), (true, true), (false, false), (true, false)] {
             let (_, ports) = handles(Ok(Some(device_client())));
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
@@ -744,15 +742,19 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
                     payload.scopes.push("changed-after-audit".into());
                 }
             }
-            let result = service
-                .approve(
-                    prepared,
-                    device_approval(),
-                    &ports.client,
-                    ports.as_ref(),
-                    Utc::now,
-                )
-                .await;
+            let result = if approve {
+                service
+                    .approve(
+                        &prepared,
+                        device_approval(),
+                        &ports.client,
+                        ports.as_ref(),
+                        Utc::now,
+                    )
+                    .await
+            } else {
+                service.deny(&prepared, Utc::now).await
+            };
             if retarget {
                 assert!(matches!(
                     result,
@@ -764,9 +766,18 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
             } else {
                 result.unwrap();
                 let calls = ports.calls.lock().unwrap();
-                assert_eq!(calls.iter().filter(|call| **call == "claim").count(), 2);
-                assert_eq!(calls.iter().filter(|call| **call == "load").count(), 3);
-                assert_eq!(calls.iter().filter(|call| **call == "grant").count(), 1);
+                assert_eq!(
+                    calls.iter().filter(|call| **call == "claim").count(),
+                    if approve { 2 } else { 0 }
+                );
+                assert_eq!(
+                    calls.iter().filter(|call| **call == "load").count(),
+                    if approve { 3 } else { 2 }
+                );
+                assert_eq!(
+                    calls.iter().filter(|call| **call == "grant").count(),
+                    usize::from(approve)
+                );
             }
         }
     });
@@ -792,7 +803,7 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
         assert!(matches!(
             service
                 .approve(
-                    prepared,
+                    &prepared,
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
@@ -846,7 +857,7 @@ fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance(
         assert!(matches!(
             service
                 .approve(
-                    prepared,
+                    &prepared,
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
@@ -880,7 +891,7 @@ fn device_recorded_snapshot_rechecks_expiry_before_final_cas() {
         let mut clock_calls = 0;
         let result = service
             .approve(
-                prepared,
+                &prepared,
                 device_approval(),
                 &ports.client,
                 ports.as_ref(),

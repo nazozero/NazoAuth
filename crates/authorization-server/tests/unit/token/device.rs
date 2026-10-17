@@ -180,7 +180,7 @@ fn device_client_authentication_accepts_registered_public_none_and_rejects_secre
 
 #[test]
 fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() {
-    let form = DeviceAuthorizationForm {
+    let form = || DeviceAuthorizationForm {
         client_id: Some("device-client".to_owned()),
         scope: Some("openid".to_owned()),
         resources: Vec::new(),
@@ -192,14 +192,14 @@ fn device_authorization_request_rejects_disabled_or_unregistered_client_grant() 
     let client = device_client();
 
     assert!(matches!(
-        device_authorization_request_payload(&config, &client, &form, false,),
+        device_authorization_request_payload(&config, &client, form(), false,),
         Err(DeviceAuthorizationRequestError::Disabled)
     ));
 
     let mut client = client;
     client.grant_types = vec!["authorization_code".to_owned()];
     assert!(matches!(
-        device_authorization_request_payload(&config, &client, &form, true,),
+        device_authorization_request_payload(&config, &client, form(), true,),
         Err(DeviceAuthorizationRequestError::UnauthorizedClient)
     ));
 }
@@ -217,7 +217,7 @@ fn device_authorization_request_binds_scope_audience_ttl_and_poll_interval() {
         client_assertion: None,
     };
 
-    let payload = device_authorization_request_payload(&config, &client, &form, true)
+    let payload = device_authorization_request_payload(&config, &client, form, true)
         .expect("device authorization request should be accepted");
 
     assert_eq!(payload.client_id, "device-client");
@@ -250,7 +250,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         slow_down_count: 0,
     };
     assert!(matches!(
-        evaluate_device_poll(&pending, now),
+        evaluate_device_poll(pending, now),
         DevicePollTransition::AuthorizationPending(_)
     ));
 
@@ -260,7 +260,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         slow_down_count: 0,
     };
     assert!(matches!(
-        evaluate_device_poll(&too_soon, now),
+        evaluate_device_poll(too_soon, now),
         DevicePollTransition::SlowDown(_)
     ));
 
@@ -269,7 +269,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         denied_at: now,
     };
     assert!(matches!(
-        evaluate_device_poll(&denied, now),
+        evaluate_device_poll(denied, now),
         DevicePollTransition::AccessDenied
     ));
 
@@ -282,7 +282,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         slow_down_count: 0,
     };
     assert!(matches!(
-        evaluate_device_poll(&expired, now),
+        evaluate_device_poll(expired, now),
         DevicePollTransition::Expired
     ));
 }

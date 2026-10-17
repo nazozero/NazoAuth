@@ -7,8 +7,7 @@
 //!    authoritative anchors (server config, persisted instance identity, and
 //!    the operator state anchor);
 //! 2. config_revision fencing: the signed opaque revision must equal the
-//!    local revision marker, constant-time compared through the frozen
-//!    [`nazo_operator_protocol::config_revision_matches`] helper.
+//!    local revision marker.
 //!
 //! The old TaskEnvelope-era secret-binding HMAC checks and canonical config
 //! manifest validation are gone with that envelope: `config_revision` is the
@@ -45,7 +44,7 @@ pub(super) fn validate_config_revision_at(
     if local_revision.is_empty() {
         bail!("operator configuration revision authority is empty");
     }
-    if !nazo_operator_protocol::config_revision_matches(operation, local_revision.as_bytes()) {
+    if operation.config_revision != local_revision {
         bail!("operator configuration revision binding mismatch");
     }
     Ok(())
@@ -102,10 +101,7 @@ pub(super) fn validate_local_operation_identity_at(
     let identity_path = explicit_identity_path
         .map(|path| path.to_path_buf())
         .unwrap_or_else(|| {
-            let data_dir = configured_data_dir
-                .clone()
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| "runtime".to_owned());
+            let data_dir = configured_data_dir.unwrap_or_else(|| "runtime".to_owned());
             let data_dir = PathBuf::from(data_dir);
             let data_dir = if data_dir.is_absolute() {
                 data_dir
@@ -216,16 +212,16 @@ pub(super) fn yaml_mapping_scalar(
     entries: &yaml_serde::Mapping,
     name: &str,
 ) -> anyhow::Result<Option<String>> {
-    let Some((_, value)) = entries.iter().find(|(key, _)| key.as_str() == Some(name)) else {
+    let Some(value) = entries.get(name) else {
         return Ok(None);
     };
     let value = match value {
-        YamlValue::String(value) => value.clone(),
+        YamlValue::String(value) => value.trim().to_owned(),
         YamlValue::Bool(value) => value.to_string(),
         YamlValue::Number(value) => value.to_string(),
         _ => bail!("server configuration key {name} must be a scalar"),
     };
-    Ok(Some(value.trim().to_owned()).filter(|value| !value.is_empty()))
+    Ok(Some(value).filter(|value| !value.is_empty()))
 }
 
 pub(crate) fn release_identity() -> nazo_operator_protocol::ReleaseIdentity {

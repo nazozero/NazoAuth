@@ -139,13 +139,18 @@ pub(super) fn resolve_configuration_id(
 
 pub(super) fn extract_proof_nonce(proofs: Option<&nazo_openid4vci::Proofs>) -> Option<String> {
     let encoded = proofs?.0.values().next()?.first()?.as_str()?;
-    let claims = nazo_digital_credentials::decode_compact_jwt(encoded)
-        .ok()?
-        .claims;
-    claims
-        .get("nonce")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
+    #[derive(serde::Deserialize)]
+    struct Nonce {
+        nonce: String,
+    }
+    // This is only the expected value; issue_pending verifies every proof
+    // before claiming the single-use nonce.
+    Some(
+        nazo_crypto::jwt::dangerous::insecure_decode::<Nonce>(encoded)
+            .ok()?
+            .claims
+            .nonce,
+    )
 }
 
 /// Build the retry key from the canonical request model. The proof JWT is
@@ -168,9 +173,10 @@ pub(super) fn issuance_request_digest<T: serde::Serialize>(
         "method": method,
     });
     input["request"] = request;
-    let encoded = serde_json::to_vec(&input)
+    let mut digest = blake3::Hasher::new();
+    serde_json::to_writer(&mut digest, &input)
         .map_err(|_| vci_error(500, "server_error", "Credential request digest failed."))?;
-    Ok(blake3::hash(&encoded).to_hex().to_string())
+    Ok(digest.finalize().to_hex().to_string())
 }
 
 pub(super) fn stable_issuance_id(token_id: Uuid, request_digest: &str) -> Uuid {
@@ -192,20 +198,13 @@ pub(super) fn stored_response(
     status: CredentialResponseStatus,
     dpop_nonce: Option<String>,
     expires_at: chrono::DateTime<chrono::Utc>,
-) -> Result<StoredCredentialResponse, CredentialHttpError> {
+) -> StoredCredentialResponse {
     let (encoding, body) = match body {
-        CredentialResponseBody::Json(value) => (
-            CredentialResponseEncoding::Json,
-            serde_json::to_vec(value).map_err(|_| {
-                vci_error(500, "server_error", "Credential response encoding failed.")
-            })?,
-        ),
-        CredentialResponseBody::Jwt(value) => {
-            (CredentialResponseEncoding::Jwt, value.as_bytes().to_vec())
-        }
+        CredentialResponseBody::Json(value) => (CredentialResponseEncoding::Json, value.clone()),
+        CredentialResponseBody::Jwt(value) => (CredentialResponseEncoding::Jwt, value.clone()),
     };
     let status = status.http_status();
-    Ok(StoredCredentialResponse {
+    StoredCredentialResponse {
         selection: None,
         issuance_id,
         token_id,
@@ -215,11 +214,12 @@ pub(super) fn stored_response(
         status,
         dpop_nonce,
         expires_at,
-    })
+    }
 }
 
 pub(super) fn response_from_record(
     response: StoredCredentialResponse,
+    nonce_policy: nazo_auth::DpopNoncePolicy,
 ) -> Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError> {
     let status = match response.status {
         200 => CredentialResponseStatus::Issued,
@@ -232,30 +232,19 @@ pub(super) fn response_from_record(
             ));
         }
     };
+    // The issuance owner encoded these bytes before committing them; the store
+    // authenticates the retained body. Replay forwards that exact representation.
     let body = match response.encoding {
-        CredentialResponseEncoding::Json => serde_json::from_slice(&response.body)
-            .map(CredentialResponseBody::Json)
-            .map_err(|_| {
-                vci_error(
-                    503,
-                    "server_error",
-                    "Stored credential response is invalid.",
-                )
-            })?,
-        CredentialResponseEncoding::Jwt => String::from_utf8(response.body)
-            .map(CredentialResponseBody::Jwt)
-            .map_err(|_| {
-                vci_error(
-                    503,
-                    "server_error",
-                    "Stored credential response is invalid.",
-                )
-            })?,
+        CredentialResponseEncoding::Json => CredentialResponseBody::Json(response.body),
+        CredentialResponseEncoding::Jwt => CredentialResponseBody::Jwt(response.body),
     };
     Ok(CredentialEndpointResponse {
         body,
         status,
-        dpop_nonce: response.dpop_nonce,
+        dpop_nonce: match nonce_policy {
+            nazo_auth::DpopNoncePolicy::Required => response.dpop_nonce,
+            nazo_auth::DpopNoncePolicy::Optional => None,
+        },
     })
 }
 

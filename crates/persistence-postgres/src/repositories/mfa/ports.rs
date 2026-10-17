@@ -3,25 +3,30 @@ use nazo_identity::{
     TenantId, UserId,
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaRepositoryPort, RepositoryFuture,
-        TotpEnrollment, TotpVerificationOutcome,
+        TotpEnrollmentCheck, TotpVerificationOutcome,
     },
 };
 
 impl MfaRepositoryPort for MfaRepository {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
-        Box::pin(async move { self.totp_enrollment(tenant_id, user_id).await })
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
+        Box::pin(async move {
+            self.check_totp_enrollment(tenant_id, user_id, code, timestamp)
+                .await
+        })
     }
 
-    fn begin_totp_enrollment(
-        &self,
+    fn begin_totp_enrollment<'a>(
+        &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        secret: String,
-    ) -> RepositoryFuture<'_, ()> {
+        secret: &'a str,
+    ) -> RepositoryFuture<'a, bool> {
         Box::pin(async move { self.begin_totp_enrollment(tenant_id, user_id, secret).await })
     }
 
@@ -41,7 +46,7 @@ impl MfaRepositoryPort for MfaRepository {
                 timestamp,
                 hashes
                     .into_iter()
-                    .map(|hash| hash.as_str().to_owned())
+                    .map(EncodedSecretHash::into_persistence_value)
                     .collect(),
             )
             .await
@@ -64,7 +69,10 @@ impl MfaRepositoryPort for MfaRepository {
                 user_id,
                 code,
                 timestamp,
-                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                hashes
+                    .into_iter()
+                    .map(EncodedSecretHash::into_persistence_value)
+                    .collect(),
                 source_ip_hash,
             )
             .await
@@ -137,7 +145,7 @@ impl MfaRepositoryPort for MfaRepository {
                 credential_id,
                 hashes
                     .into_iter()
-                    .map(|hash| hash.as_str().to_owned())
+                    .map(EncodedSecretHash::into_persistence_value)
                     .collect(),
             )
             .await
@@ -157,7 +165,10 @@ impl MfaRepositoryPort for MfaRepository {
                 tenant_id,
                 user_id,
                 credential_id,
-                hashes.into_iter().map(|h| h.as_str().to_owned()).collect(),
+                hashes
+                    .into_iter()
+                    .map(EncodedSecretHash::into_persistence_value)
+                    .collect(),
                 source_ip_hash,
             )
             .await

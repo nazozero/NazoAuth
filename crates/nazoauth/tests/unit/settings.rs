@@ -8,6 +8,71 @@ const ATTESTATION_CREDENTIAL_CONFIGURATIONS: &str = r#"{"pid":{"format":"dc+sd-j
 const MDOC_CREDENTIAL_CONFIGURATIONS: &str = r#"{"mdl":{"format":"mso_mdoc","scope":"mdl","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"jwt":{"proof_signing_alg_values_supported":["ES256"]}},"doctype":"org.iso.18013.5.1.mDL"}}"#;
 
 #[test]
+fn persistence_totp_key_ring_validates_configuration_once_at_construction() {
+    assert!(
+        mfa_totp_key_ring(&ConfigSource::default())
+            .unwrap()
+            .is_none()
+    );
+    let current = URL_SAFE_NO_PAD.encode([1; 32]);
+    let previous = URL_SAFE_NO_PAD.encode([2; 32]);
+    let pairs = [
+        ("MFA_TOTP_ENCRYPTION_KEY", current.as_str()),
+        ("MFA_TOTP_ENCRYPTION_KEY_ID", "current"),
+        ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY", previous.as_str()),
+        ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID", "previous"),
+    ];
+    let ring = mfa_totp_key_ring(&ConfigSource::from_owned_pairs_for_test(
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned())),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(ring.current().key(), &[1; 32]);
+    assert_eq!(ring.previous().unwrap().key(), &[2; 32]);
+    for omitted in 0..pairs.len() {
+        let config = ConfigSource::from_owned_pairs_for_test(
+            pairs
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != omitted)
+                .map(|(_, (key, value))| ((*key).to_owned(), (*value).to_owned())),
+        );
+        assert!(mfa_totp_key_ring(&config).is_err());
+    }
+    for (key, value) in [
+        ("MFA_TOTP_ENCRYPTION_KEY", "invalid-base64".to_owned()),
+        ("MFA_TOTP_ENCRYPTION_KEY", URL_SAFE_NO_PAD.encode([1; 31])),
+        ("MFA_TOTP_ENCRYPTION_KEY_ID", "x".repeat(129)),
+        ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID", "current".to_owned()),
+    ] {
+        let config =
+            ConfigSource::from_owned_pairs_for_test(pairs.iter().map(|(name, original)| {
+                (
+                    (*name).to_owned(),
+                    if *name == key {
+                        value.clone()
+                    } else {
+                        (*original).to_owned()
+                    },
+                )
+            }));
+        assert!(mfa_totp_key_ring(&config).is_err());
+    }
+    assert!(
+        mfa_totp_key_ring(&ConfigSource::from_owned_pairs_for_test([
+            ("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY".to_owned(), previous),
+            (
+                "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID".to_owned(),
+                "previous".to_owned()
+            ),
+        ]))
+        .is_err()
+    );
+}
+
+#[test]
 fn mdoc_issuing_country_helper_is_required_and_validated_for_local_generation() {
     let missing = ConfigSource::from_pairs_for_test([(
         "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",
@@ -145,6 +210,16 @@ fn directory_tenant_uses_the_authoritative_host_and_tenant_storage_roots() {
         "https://AUTH.example.test:8443/issuer"
     );
     assert_eq!(
+        settings.endpoint.frontend_base_url,
+        "https://AUTH.example.test:8443/issuer/ui/"
+    );
+    assert_eq!(
+        settings.endpoint.cors_allowed_origins,
+        ["https://auth.example.test:8443"]
+    );
+    assert_eq!(settings.identity.passkey.origin, settings.endpoint.issuer);
+    assert_eq!(settings.identity.passkey.rp_id, "auth.example.test");
+    assert_eq!(
         settings.storage.avatar_storage_dir,
         data_dir.join("tenants/00000000-0000-0000-0000-000000000011/avatars")
     );
@@ -173,6 +248,25 @@ fn directory_direct_tls_advertises_the_deployment_mtls_port_for_each_tenant_host
                 format!("https://{host}{expected_port}/issuer")
             );
         }
+    }
+}
+
+#[test]
+fn explicit_endpoint_overrides_still_require_url_admission() {
+    for (key, value) in [
+        (
+            "FRONTEND_BASE_URL",
+            "https://user:password@example.test/ui/",
+        ),
+        ("CORS_ALLOWED_ORIGINS", "https://example.test/path"),
+        ("PASSKEY_ORIGIN", "https://example.test?query"),
+        ("MTLS_ENDPOINT_BASE_URL", "http://remote.example.test"),
+    ] {
+        let config = ConfigSource::from_pairs_for_test([(key, value)]);
+        assert!(
+            Settings::from_config(&config).is_err(),
+            "{key} accepted {value}"
+        );
     }
 }
 
@@ -1557,6 +1651,32 @@ fn oidc_federation_rejects_insecure_runtime_urls() {
             "unexpected error for {key}: {error}"
         );
     }
+}
+
+#[test]
+fn federation_provider_strings_preserve_unicode_trimming_and_empty_options() {
+    let config = oidc_provider_registry_config_with("display_name", "\u{3000} 登录 \u{2003}");
+    let settings = Settings::from_config(&config).unwrap();
+    let provider = settings
+        .identity
+        .federation
+        .providers
+        .enabled_provider("oidc-upstream")
+        .unwrap();
+    assert_eq!(provider.display_name, "登录");
+
+    let config = oidc_provider_registry_config_with("icon", "\u{3000}\u{2003}");
+    let settings = Settings::from_config(&config).unwrap();
+    assert!(
+        settings
+            .identity
+            .federation
+            .providers
+            .enabled_provider("oidc-upstream")
+            .unwrap()
+            .icon
+            .is_none()
+    );
 }
 
 #[test]

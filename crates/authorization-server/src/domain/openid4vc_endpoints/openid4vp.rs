@@ -126,7 +126,7 @@ impl ServerPresentationOperations {
             admission,
         )
     }
-    fn wallet_origin(endpoint: &str) -> Result<String, PresentationHttpError> {
+    fn wallet_endpoint(endpoint: &str) -> Result<url::Url, PresentationHttpError> {
         let url = url::Url::parse(endpoint).map_err(|_| {
             vp_error(
                 400,
@@ -141,7 +141,7 @@ impl ServerPresentationOperations {
                 "Wallet authorization endpoint is invalid.",
             ));
         }
-        Ok(url.origin().ascii_serialization())
+        Ok(url)
     }
 
     fn static_wallet_origin_allowed(&self, origin: &str) -> bool {
@@ -209,7 +209,9 @@ impl ServerPresentationOperations {
                 ));
             }
         };
-        let wallet_origin = Self::wallet_origin(&transaction.wallet_authorization_endpoint)?;
+        let wallet_origin = Self::wallet_endpoint(&transaction.wallet_authorization_endpoint)?
+            .origin()
+            .ascii_serialization();
         let policy = self
             .active_trust_policy(binding.1, &wallet_origin, binding.2)
             .await?
@@ -262,17 +264,9 @@ impl PresentationOperations for ServerPresentationOperations {
                     "create_request_jti must be a canonical lowercase UUID.",
                 )
             })?;
-            let wallet_origin = Self::wallet_origin(&input.wallet_authorization_endpoint)?;
-            let wallet_authorization_endpoint =
-                url::Url::parse(&input.wallet_authorization_endpoint)
-                    .map_err(|_| {
-                        vp_error(
-                            400,
-                            "invalid_request",
-                            "Wallet authorization endpoint is invalid.",
-                        )
-                    })?
-                    .to_string();
+            let endpoint = Self::wallet_endpoint(&input.wallet_authorization_endpoint)?;
+            let wallet_origin = endpoint.origin().ascii_serialization();
+            let wallet_authorization_endpoint: String = endpoint.into();
             let static_wallet_allowed = self.static_wallet_origin_allowed(&wallet_origin);
             let binding = match (
                 input.openid4vc_trust_policy_resource_id.as_deref(),
@@ -370,7 +364,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 ),
             };
             let normalized_request = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
-                wallet_authorization_endpoint: wallet_authorization_endpoint.clone(),
+                wallet_authorization_endpoint,
                 dcql_query: serde_json::to_value(&input.dcql_query).map_err(|_| {
                     vp_error(400, "invalid_request", "DCQL query is not JSON encodable.")
                 })?,
@@ -378,11 +372,9 @@ impl PresentationOperations for ServerPresentationOperations {
                 client_id_prefix: prefix.as_str().to_owned(),
                 request_method: method.as_str().to_owned(),
                 response_mode: mode.as_str().to_owned(),
-                transaction_data: input.transaction_data.clone(),
-                openid4vc_trust_policy_resource_id: input
-                    .openid4vc_trust_policy_resource_id
-                    .clone(),
-                openid4vc_trust_policy_digest: input.openid4vc_trust_policy_digest.clone(),
+                transaction_data: input.transaction_data,
+                openid4vc_trust_policy_resource_id: input.openid4vc_trust_policy_resource_id,
+                openid4vc_trust_policy_digest: input.openid4vc_trust_policy_digest,
             };
             let (canonical_request, request_sha256) =
                 nazo_operator_protocol::canonical_openid4vp_normalized_create_request(
@@ -436,7 +428,11 @@ impl PresentationOperations for ServerPresentationOperations {
                     ));
                 }
             }
-            let trust_policy = if let Some((resource_id, digest)) = binding {
+            let trust_policy = if let Some((resource_id, digest)) = normalized_request
+                .openid4vc_trust_policy_resource_id
+                .as_deref()
+                .zip(normalized_request.openid4vc_trust_policy_digest.as_deref())
+            {
                 Some(
                     self.active_trust_policy(resource_id, &wallet_origin, digest)
                         .await?
@@ -473,7 +469,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 jwk["alg"] = json!("ECDH-ES");
                 json!({"keys":[jwk]})
             });
-            let transaction_data = input
+            let transaction_data = normalized_request
                 .transaction_data
                 .map(|values| {
                     values
@@ -495,10 +491,10 @@ impl PresentationOperations for ServerPresentationOperations {
                 })
                 .transpose()?;
             let request = AuthorizationRequest {
-                client_id: client_id.clone(),
+                client_id,
                 response_type: "vp_token".to_owned(),
                 response_mode: mode,
-                response_uri: response_uri.clone(),
+                response_uri,
                 nonce: random_urlsafe_token(),
                 state: random_urlsafe_token(),
                 dcql_query: input.dcql_query,
@@ -537,10 +533,10 @@ impl PresentationOperations for ServerPresentationOperations {
                 client_id_prefix: prefix,
                 request_method: method,
 
-                wallet_authorization_endpoint,
-                request: request.clone(),
+                wallet_authorization_endpoint: normalized_request.wallet_authorization_endpoint,
+                request,
                 request_object,
-                request_uri: request_uri.clone(),
+                request_uri,
                 openid4vc_trust_policy_binding_id: trust_policy.as_ref().map(|policy| policy.id),
                 openid4vc_trust_policy_resource_id: trust_policy
                     .as_ref()
@@ -548,8 +544,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 openid4vc_trust_policy_digest: trust_policy
                     .as_ref()
                     .map(|policy| policy.resource_digest.clone()),
-                response_encryption_private_key: response_key
-                    .map(|key| key.secret_bytes().to_vec()),
+                response_encryption_private_key: response_key.map(|key| key.secret_bytes()),
                 created_at: now,
                 expires_at: now + Duration::seconds(self.transaction_ttl_seconds as i64),
             };
@@ -622,7 +617,7 @@ impl PresentationOperations for ServerPresentationOperations {
                             "wallet_nonce is required for POST request_uri retrieval.",
                         )
                     })?;
-                transaction = self
+                let bound = self
                     .store
                     .bind_wallet_nonce(transaction_id, nonce, Utc::now())
                     .await
@@ -632,15 +627,15 @@ impl PresentationOperations for ServerPresentationOperations {
                             "server_error",
                             "Presentation transaction state is unavailable.",
                         )
-                    })?
-                    .ok_or_else(|| {
-                        vp_error(
-                            404,
-                            "invalid_request_uri",
-                            "Presentation request URI is invalid.",
-                        )
                     })?;
-                validate_retained_request_profile(&transaction.request)?;
+                if !bound {
+                    return Err(vp_error(
+                        404,
+                        "invalid_request_uri",
+                        "Presentation request URI is invalid.",
+                    ));
+                }
+                transaction.request.wallet_nonce = Some(nonce.to_owned());
                 let lease = self.crypto.prepare_signing().map_err(|_| {
                     vp_error(503, "server_error", "Presentation request signing failed.")
                 })?;
@@ -728,10 +723,9 @@ impl PresentationOperations for ServerPresentationOperations {
                 PresentationResponseInput::DirectPostJwt(encoded)
                     if transaction.request.response_mode == ResponseMode::DirectPostJwt =>
                 {
-                    let key: [u8; 32] = transaction
+                    let key = transaction
                         .response_encryption_private_key
-                        .as_deref()
-                        .and_then(|value| value.try_into().ok())
+                        .as_ref()
                         .ok_or_else(|| {
                             vp_error(
                                 503,
@@ -739,7 +733,7 @@ impl PresentationOperations for ServerPresentationOperations {
                                 "Presentation response key is unavailable.",
                             )
                         })?;
-                    let plaintext = EphemeralEncryptionKey::from_secret_bytes(&key)
+                    let plaintext = EphemeralEncryptionKey::from_secret_bytes(key)
                         .and_then(|key| key.decrypt(&encoded))
                         .map_err(|_| {
                             vp_error(
@@ -811,7 +805,6 @@ impl PresentationOperations for ServerPresentationOperations {
                         "Presentation result state is unavailable.",
                     )
                 })?
-                .and_then(|stored| stored.completed)
                 .ok_or_else(|| vp_error(404, "not_found", "Presentation result is not available."))
         })
     }

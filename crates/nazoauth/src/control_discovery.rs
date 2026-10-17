@@ -1,15 +1,11 @@
-use std::{
-    fs::{self, OpenOptions},
-    io::Write as _,
-    path::Path,
-    sync::Arc,
-};
+use std::{fs, io::Write as _, path::Path, sync::Arc};
 
 use actix_web::{HttpResponse, web};
 use anyhow::{Context as _, bail};
+use atomicwrites::{AllowOverwrite, AtomicFile, DisallowOverwrite};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use nazo_crypto::ed25519::SigningKey;
+use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use nazo_operator_protocol::{
     CONTROL_DISCOVERY_PRODUCT, CONTROL_DISCOVERY_SCHEMA, DeploymentStatement, DiscoveryRequest,
     DiscoveryResponse, DiscoveryStatement, PROTOCOL_VERSION, decode_instance_public_key,
@@ -34,7 +30,6 @@ pub(crate) struct ControlDiscoveryEndpoint {
 
 struct InstanceIdentity {
     signing_key: SigningKey,
-    key_id: String,
     public_key: String,
     deployment: DeploymentStatement,
 }
@@ -58,21 +53,24 @@ impl ControlDiscoveryEndpoint {
             &shared_identity_dir.join(DEPLOYMENT_ID_FILE),
             configured_deployment_id,
         )?;
-        let identity_dir = identity_dir
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| shared_identity_dir.clone());
-        fs::create_dir_all(&identity_dir).with_context(|| {
-            format!(
-                "failed to create runtime instance identity directory {}",
-                identity_dir.display()
-            )
-        })?;
+        let identity_dir = match identity_dir {
+            Some(path) => {
+                fs::create_dir_all(path).with_context(|| {
+                    format!(
+                        "failed to create runtime instance identity directory {}",
+                        path.display()
+                    )
+                })?;
+                path
+            }
+            None => &shared_identity_dir,
+        };
         let runtime_instance_id = stable_identifier(
             &identity_dir.join(RUNTIME_INSTANCE_ID_FILE),
             configured_runtime_instance_id,
         )?;
         let (_, encoded_private_key) =
-            read_or_create_instance_identity_key(&identity_dir, IDENTITY_KEY_FILE)?;
+            read_or_create_instance_identity_key(identity_dir, IDENTITY_KEY_FILE)?;
         let private_key = URL_SAFE_NO_PAD
             .decode(encoded_private_key)
             .context("instance identity key is not valid base64url")?;
@@ -80,9 +78,10 @@ impl ControlDiscoveryEndpoint {
             .try_into()
             .map_err(|_| anyhow::anyhow!("instance identity key must contain 32 bytes"))?;
         let signing_key = SigningKey::from_bytes(&private_key);
-        let public_key = encode_instance_public_key(&signing_key.verifying_key());
-        publish_public_key(&identity_dir.join(IDENTITY_PUBLIC_FILE), &public_key)?;
-        let key_id = instance_key_id(&signing_key.verifying_key());
+        let verifying_key = signing_key.verifying_key();
+        let public_key =
+            publish_public_key(&identity_dir.join(IDENTITY_PUBLIC_FILE), &verifying_key)?;
+        let key_id = instance_key_id(&verifying_key);
         let embedded = release_identity();
         let deployment = DeploymentStatement {
             schema: CONTROL_DISCOVERY_SCHEMA,
@@ -93,19 +92,17 @@ impl ControlDiscoveryEndpoint {
             release: embedded.release,
             control_protocol_versions: vec![CONTROL_DISCOVERY_SCHEMA],
             operator_protocol_versions: vec![PROTOCOL_VERSION],
-            instance_key_id: key_id.clone(),
+            instance_key_id: key_id,
             issued_at: Utc::now().timestamp(),
         };
         publish_deployment_statement(
             &identity_dir.join(DEPLOYMENT_STATEMENT_FILE),
             &deployment,
-            &key_id,
             &signing_key,
         )?;
         Ok(Self {
             identity: Arc::new(InstanceIdentity {
                 signing_key,
-                key_id,
                 public_key,
                 deployment,
             }),
@@ -141,7 +138,7 @@ impl ControlDiscoveryEndpoint {
         Ok(DiscoveryResponse {
             statement: sign_discovery_statement(
                 &statement,
-                &self.identity.key_id,
+                &deployment.instance_key_id,
                 &self.identity.signing_key,
             )?,
             instance_public_key: self.identity.public_key.clone(),
@@ -197,39 +194,42 @@ pub(crate) fn read_identifier(path: &Path) -> anyhow::Result<String> {
     Ok(value)
 }
 
-fn publish_public_key(path: &Path, public_key: &str) -> anyhow::Result<()> {
-    let parsed = decode_instance_public_key(public_key)?;
+fn publish_public_key(path: &Path, public_key: &VerifyingKey) -> anyhow::Result<String> {
+    let encoded = encode_instance_public_key(public_key);
     if path.exists() {
         let existing = fs::read_to_string(path)
             .with_context(|| format!("failed to read instance public key {}", path.display()))?;
         let existing = decode_instance_public_key(existing.trim())?;
-        if existing != parsed {
+        if &existing != public_key {
             bail!(
                 "instance public key at {} does not match identity.key; restore the identity as one unit",
                 path.display()
             );
         }
-        return Ok(());
+    } else {
+        publish_new_file(path, encoded.as_bytes())?;
     }
-    publish_new_file(path, public_key.as_bytes())
+    Ok(encoded)
 }
 
 fn publish_deployment_statement(
     path: &Path,
     statement: &DeploymentStatement,
-    key_id: &str,
     signing_key: &SigningKey,
 ) -> anyhow::Result<()> {
     if path.exists() {
         let existing = fs::read_to_string(path)
             .with_context(|| format!("failed to read deployment statement {}", path.display()))?;
-        let existing =
-            verify_deployment_statement(existing.trim(), key_id, &signing_key.verifying_key())?;
+        let existing = verify_deployment_statement(
+            existing.trim(),
+            &statement.instance_key_id,
+            &signing_key.verifying_key(),
+        )?;
         if deployment_identity_matches(&existing, statement) {
             return Ok(());
         }
     }
-    let compact = sign_deployment_statement(statement, key_id, signing_key)?;
+    let compact = sign_deployment_statement(statement, &statement.instance_key_id, signing_key)?;
     publish_replaceable_file(path, compact.as_bytes())
 }
 
@@ -246,27 +246,10 @@ fn deployment_identity_matches(left: &DeploymentStatement, right: &DeploymentSta
 }
 
 fn publish_new_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("identity path has no parent"))?;
-    let temporary = parent.join(format!(
-        ".{}.{}.tmp",
-        path.file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("identity"),
-        URL_SAFE_NO_PAD.encode(rand::random::<[u8; 12]>())
-    ));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
-        .with_context(|| format!("failed to create {}", temporary.display()))?;
-    file.write_all(contents)
-        .with_context(|| format!("failed to write {}", temporary.display()))?;
-    file.sync_all()
-        .with_context(|| format!("failed to persist {}", temporary.display()))?;
-    drop(file);
-    let result = match fs::hard_link(&temporary, path) {
+    match AtomicFile::new(path, DisallowOverwrite)
+        .write(|file| file.write_all(contents))
+        .map_err(std::io::Error::from)
+    {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (|| {
             let metadata = fs::symlink_metadata(path).with_context(|| {
@@ -299,43 +282,12 @@ fn publish_new_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
             }
         })(),
         Err(error) => Err(error).with_context(|| format!("failed to publish {}", path.display())),
-    };
-    let _ = fs::remove_file(&temporary);
-    result
+    }
 }
 
 fn publish_replaceable_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("deployment statement path has no parent"))?;
-    let temporary = parent.join(format!(
-        ".deployment-statement.{}.tmp",
-        URL_SAFE_NO_PAD.encode(rand::random::<[u8; 12]>())
-    ));
-    publish_new_file(&temporary, contents)?;
-    if path.exists() {
-        // Windows cannot replace an existing file with `rename`. Move the
-        // current statement to a unique temporary name first so the new
-        // statement can be activated with the same atomic rename sequence.
-        // The old statement is only a rollback temporary; it is never a
-        // second persisted deployment identity.
-        let rollback = parent.join(format!(
-            ".deployment-statement.{}.rollback.tmp",
-            URL_SAFE_NO_PAD.encode(rand::random::<[u8; 12]>()),
-        ));
-        fs::rename(path, &rollback)
-            .with_context(|| format!("failed to stage deployment statement {}", path.display()))?;
-        if let Err(error) = fs::rename(&temporary, path) {
-            let _ = fs::rename(&rollback, path);
-            let _ = fs::remove_file(&temporary);
-            return Err(error).with_context(|| {
-                format!("failed to activate deployment statement {}", path.display())
-            });
-        }
-        let _ = fs::remove_file(&rollback);
-        return Ok(());
-    }
-    fs::rename(&temporary, path)
+    AtomicFile::new(path, AllowOverwrite)
+        .write(|file| file.write_all(contents))
         .with_context(|| format!("failed to activate deployment statement {}", path.display()))
 }
 

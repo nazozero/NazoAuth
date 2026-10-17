@@ -23,33 +23,7 @@ pub(crate) enum CompareDelete {
 pub(crate) async fn set_ex_nx(
     connection: &ValkeyConnection,
     key: String,
-    value: &'static str,
-    ttl_seconds: u64,
-) -> Result<bool, Error> {
-    let reply = connection
-        .client
-        .set::<Option<String>, _, _>(
-            connection.state_key(key),
-            value,
-            Some(Expiration::EX(ttl_seconds.min(i64::MAX as u64) as i64)),
-            Some(SetOptions::NX),
-            false,
-        )
-        .await
-        .map_err(Error::from_fred)?;
-    match reply.as_deref() {
-        Some("OK") => Ok(true),
-        None => Ok(false),
-        Some(other) => Err(Error::unexpected(format!(
-            "unexpected SET NX reply {other:?}"
-        ))),
-    }
-}
-
-pub(crate) async fn set_ex_nx_string(
-    connection: &ValkeyConnection,
-    key: String,
-    value: String,
+    value: impl Into<fred::types::Value> + Send,
     ttl_seconds: u64,
 ) -> Result<bool, Error> {
     let reply = connection
@@ -75,7 +49,7 @@ pub(crate) async fn set_ex_nx_string(
 pub(crate) async fn set_ex(
     connection: &ValkeyConnection,
     key: String,
-    value: &'static str,
+    value: impl Into<fred::types::Value> + Send,
     ttl_seconds: u64,
 ) -> Result<(), Error> {
     connection
@@ -98,25 +72,6 @@ pub(crate) async fn take(
     connection
         .client
         .getdel(connection.state_key(key))
-        .await
-        .map_err(Error::from_fred)
-}
-
-pub(crate) async fn set_ex_string(
-    connection: &ValkeyConnection,
-    key: String,
-    value: String,
-    ttl_seconds: u64,
-) -> Result<(), Error> {
-    connection
-        .client
-        .set::<(), _, _>(
-            connection.state_key(key),
-            value,
-            Some(Expiration::EX(ttl_seconds.min(i64::MAX as u64) as i64)),
-            None,
-            false,
-        )
         .await
         .map_err(Error::from_fred)
 }
@@ -173,12 +128,16 @@ pub(crate) async fn compare_delete(
     }
 }
 
-pub(crate) async fn eval_string(
+pub(crate) async fn eval_string<V>(
     connection: &ValkeyConnection,
     script: &'static str,
     keys: Vec<String>,
-    args: Vec<String>,
-) -> Result<String, Error> {
+    args: V,
+) -> Result<String, Error>
+where
+    V: TryInto<fred::types::MultipleValues> + Send,
+    V::Error: Into<fred::error::Error> + Send,
+{
     use fred::prelude::LuaInterface;
 
     connection

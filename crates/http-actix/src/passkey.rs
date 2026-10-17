@@ -13,14 +13,14 @@ use actix_web::{
     http::{StatusCode, header},
     web::{self, Data, Json, Path, ServiceConfig},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use nazo_identity::{
     LoginSuccess, PasskeyError, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
 };
 use passkey_auth::{AuthenticationResponse, RegistrationResponse};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
@@ -311,7 +311,7 @@ fn profile_context(
             &endpoint.config.csrf_cookie_name,
         )
     {
-        return Err(no_store_response(csrf_error()));
+        return Err(crate::presenter::no_store(csrf_error()));
     }
     let Some(session_id) = cookie_value(request, &endpoint.config.session_cookie_name) else {
         return Err(login_required_response(endpoint));
@@ -560,38 +560,44 @@ fn passkey_session_response(config: &PasskeyLoginConfig, success: LoginSuccess) 
     )
 }
 
-fn passkey_public_json(row: &PasskeyCredentialSummary) -> Value {
-    json!({
-        "id": row.id,
-        "label": row.label,
-        "credential_id": row.credential_id,
-        "sign_count": row.sign_count,
-        "last_used_at": row.last_used_at,
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    })
+#[derive(Serialize)]
+struct PublicPasskey<'a> {
+    id: Uuid,
+    label: &'a str,
+    credential_id: &'a str,
+    sign_count: i64,
+    last_used_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl<'a> From<&'a PasskeyCredentialSummary> for PublicPasskey<'a> {
+    fn from(row: &'a PasskeyCredentialSummary) -> Self {
+        Self {
+            id: row.id,
+            label: &row.label,
+            credential_id: &row.credential_id,
+            sign_count: row.sign_count,
+            last_used_at: row.last_used_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
 }
 
 fn passkey_list_response(rows: &[PasskeyCredentialSummary]) -> HttpResponse {
-    json_response_no_store(json!({
-        "passkeys": rows.iter().map(passkey_public_json).collect::<Vec<_>>()
-    }))
+    #[derive(Serialize)]
+    struct PasskeyList<'a> {
+        passkeys: Vec<PublicPasskey<'a>>,
+    }
+    json_response_no_store(PasskeyList {
+        passkeys: rows.iter().map(PublicPasskey::from).collect(),
+    })
 }
 
 fn passkey_created_response(row: PasskeyCredential) -> HttpResponse {
     let summary = PasskeyCredentialSummary::from(row);
-    json_response_status_no_store(StatusCode::CREATED, passkey_public_json(&summary))
-}
-
-fn no_store_response(mut response: HttpResponse) -> HttpResponse {
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        header::HeaderValue::from_static("no-store"),
-    );
-    response
-        .headers_mut()
-        .insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
-    response
+    json_response_status_no_store(StatusCode::CREATED, PublicPasskey::from(&summary))
 }
 
 #[cfg(test)]

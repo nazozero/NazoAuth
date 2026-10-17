@@ -338,18 +338,23 @@ impl AdminUserRepositoryPort for HiddenAck {
     fn page(&self, tenant: TenantId, limit: i64, offset: i64) -> RepositoryFuture<'_, UserPage> {
         Box::pin(async move { self.inner.page(tenant, limit, offset).await })
     }
-    fn update_authorized(
+    fn set_tenant_admin_authorized(
         &self,
-        tenant: TenantId,
-        actor: UserId,
-        target: UserId,
-        update: AdminUserUpdate,
+        control_tenant_id: TenantId,
+        actor_id: UserId,
+        target_tenant_id: TenantId,
+        target_id: UserId,
+        admin_level: i32,
+        source_ip_hash: String,
     ) -> RepositoryFuture<'_, AdminUserUpdateOutcome> {
-        Box::pin(async move {
-            self.inner
-                .admin_update_authorized(tenant, actor, target, update)
-                .await
-        })
+        Box::pin(self.inner.set_tenant_admin_authorized(
+            control_tenant_id,
+            actor_id,
+            target_tenant_id,
+            target_id,
+            admin_level,
+            source_ip_hash,
+        ))
     }
     fn update_authorized_with_required_audit(
         &self,
@@ -428,39 +433,43 @@ impl RegistrationAccountRepositoryPort for Unsupported {
         panic!("Required creation must not fall back to bare mutation")
     }
 }
-impl AdminUserRepositoryPort for Unsupported {
-    fn page(&self, _tenant: TenantId, _limit: i64, _offset: i64) -> RepositoryFuture<'_, UserPage> {
-        Box::pin(async { Err(RepositoryError::Unavailable) })
-    }
-    fn update_authorized(
-        &self,
-        _tenant: TenantId,
-        _actor: UserId,
-        _target: UserId,
-        _update: AdminUserUpdate,
-    ) -> RepositoryFuture<'_, AdminUserUpdateOutcome> {
-        panic!("Required patch must not fall back to bare mutation")
-    }
-}
 #[tokio::test]
-async fn admin_user_required_ports_have_no_bare_mutation_fallback() {
+async fn admin_user_required_creation_has_no_bare_mutation_fallback() {
     let repo = Unsupported;
-    let tenant = TenantContext::default_system();
     let actor = UserId::new(Uuid::now_v7()).unwrap();
     assert!(matches!(
         repo.create_user_with_required_audit(new_user(), actor, "fixture-source".to_owned())
             .await,
         Err(RepositoryError::Unavailable)
     ));
-    assert!(matches!(
-        repo.update_authorized_with_required_audit(
-            tenant,
+}
+
+#[tokio::test]
+async fn admin_user_self_noop_preserves_account_and_commits_audit() {
+    let Some((pool, repo, actor)) = setup().await else {
+        return;
+    };
+    let account = repo
+        .public_account_by_id(TenantContext::default_system().tenant_id, actor)
+        .await
+        .unwrap()
+        .unwrap();
+    let before = snapshot(&pool, &account.account.email, actor).await;
+    let outcome = repo
+        .update_authorized_with_required_audit(
+            account.tenant(),
             actor,
-            UserId::new(Uuid::now_v7()).unwrap(),
+            actor,
             noop(),
-            "fixture-source".to_owned()
+            "fixture-source".to_owned(),
         )
-        .await,
-        Err(RepositoryError::Unavailable)
-    ));
+        .await
+        .unwrap();
+    assert_eq!(
+        outcome,
+        AdminUserUpdateOutcome::Updated(Box::new(account.clone()))
+    );
+    let after = snapshot(&pool, &account.account.email, actor).await;
+    assert_eq!(after["fingerprint"], before["fingerprint"]);
+    assert_eq!(after["canonical"].as_array().unwrap().len(), 1);
 }

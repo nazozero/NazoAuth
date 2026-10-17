@@ -1,11 +1,11 @@
-use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile};
 
 use super::metadata_config;
 use crate::config::ConfigSource;
 use crate::settings::Settings;
 use nazo_http_actix::IpCidr;
 use nazo_oauth_server::contracts::metadata::MetadataEndpointConfig;
-use nazo_oauth_server::policy::{AuthorizationServerProfile, CibaSecurityProfile, SubjectType};
+use nazo_oauth_server::policy::{AuthorizationServerProfile, CibaSecurityProfile};
 
 fn settings() -> Settings {
     Settings::from_config(&ConfigSource::default()).expect("default settings")
@@ -20,7 +20,6 @@ fn metadata_config_maps_only_the_focused_settings_boundary() {
         vec![IpCidr::parse("192.0.2.0/24").expect("trusted proxy CIDR")];
     settings.endpoint.mtls_certificate_source =
         crate::http::mtls::MtlsCertificateSourceMode::Rfc9440;
-    settings.protocol.subject_type = SubjectType::Pairwise;
     settings.protocol.pairwise_subject_secret = Some("a".repeat(32));
     settings.protocol.protected_resource_identifier = "https://resource.example".to_owned();
     settings.protocol.require_pushed_authorization_requests = true;
@@ -33,7 +32,6 @@ fn metadata_config_maps_only_the_focused_settings_boundary() {
             mtls_enabled: true,
             authorization_server_profile: MetadataAuthorizationServerProfile::Composable,
             ciba_profile: CibaMetadataProfile::FapiCiba,
-            subject_type: MetadataSubjectType::Pairwise,
             pairwise_subject_enabled: true,
             protected_resource_identifier: "https://resource.example".to_owned(),
             additional_scopes_supported: vec![],

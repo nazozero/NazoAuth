@@ -58,12 +58,7 @@ async fn database_operator_diagnostics_do_not_create_a_missing_keyset() {
         repository: repository.clone(),
     };
     assert!(
-        operator_list_database_for_tenant(&config, &binding, &persistence)
-            .await
-            .is_err()
-    );
-    assert!(
-        operator_validate_database_for_tenant(&config, &binding, &persistence)
+        operator_inspect_database_for_tenant(&config, &binding, &persistence)
             .await
             .is_err()
     );
@@ -112,14 +107,10 @@ async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
     assert_eq!(second_revision, first_revision);
     assert!(certificate_chain.is_none());
 
-    let listed_revision = operator_list_database_for_tenant(&config, &binding, &persistence)
+    let listed_revision = operator_inspect_database_for_tenant(&config, &binding, &persistence)
         .await
         .expect("database key listing");
     assert_eq!(listed_revision, first_revision);
-    let validated_revision = operator_validate_database_for_tenant(&config, &binding, &persistence)
-        .await
-        .expect("database key validation");
-    assert_eq!(validated_revision, first_revision);
 
     let external_registration =
         crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256)

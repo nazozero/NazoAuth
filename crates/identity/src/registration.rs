@@ -79,7 +79,6 @@ pub enum RegisterLocalAccountError {
     Conflict,
     PasswordHash(RepositoryError),
     Create(RepositoryError),
-    Consistency,
 }
 
 #[derive(Clone)]
@@ -252,7 +251,7 @@ where
             .ok_or(RegisterLocalAccountError::InvalidVerificationCode)?;
         let verified = self
             .secret_hashes
-            .verify_secret(input.verification_code, record.password_hash.clone())
+            .verify_secret(input.verification_code, record.password_hash)
             .await
             .map_err(RegisterLocalAccountError::VerificationUnavailable)?;
         if !verified {
@@ -272,7 +271,7 @@ where
         }
         match self
             .verification
-            .consume_code(self.tenant.tenant_id, &input.email, &record)
+            .consume_code(self.tenant.tenant_id, &input.email, &record.opaque_version)
             .await
             .map_err(RegisterLocalAccountError::VerificationUnavailable)?
         {
@@ -286,8 +285,7 @@ where
             .hash_secret(input.password)
             .await
             .map_err(RegisterLocalAccountError::PasswordHash)?;
-        let account = self
-            .accounts
+        self.accounts
             .create_user(NewUser {
                 tenant: self.tenant,
                 username: format!("user_{}", Uuid::now_v7()),
@@ -299,11 +297,7 @@ where
             .map_err(|error| match error {
                 RepositoryError::Conflict => RegisterLocalAccountError::Conflict,
                 error => RegisterLocalAccountError::Create(error),
-            })?;
-        if account.tenant() != self.tenant {
-            return Err(RegisterLocalAccountError::Consistency);
-        }
-        Ok(account)
+            })
     }
 
     async fn release_send_reservations(&self, email: &str, peer_subject: &str, owner: &str) {

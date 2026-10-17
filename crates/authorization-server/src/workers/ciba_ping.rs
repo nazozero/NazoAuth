@@ -44,14 +44,11 @@ impl CibaPingDeliveryWorker {
             )
             .await
             .context("failed to claim CIBA ping deliveries")?;
-        let outcomes = stream::iter(batch.deliveries)
+        stream::iter(batch.deliveries)
             .map(|delivery| async move { self.process_delivery(delivery).await })
             .buffer_unordered(DELIVERY_CONCURRENCY)
-            .collect::<Vec<_>>()
-            .await;
-        if let Some(error) = outcomes.into_iter().find_map(Result::err) {
-            return Err(error);
-        }
+            .fold(Ok(()), |result, next| async { result.and(next) })
+            .await?;
         Ok(batch.scanned)
     }
 

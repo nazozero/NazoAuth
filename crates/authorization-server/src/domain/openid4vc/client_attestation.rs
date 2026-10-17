@@ -2,8 +2,7 @@ use crate::crypto::decoding_key;
 
 use std::sync::Arc;
 
-use nazo_crypto::jwt::{Algorithm, Validation, decode};
-use nazo_digital_credentials::decode_compact_jwt;
+use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
 use nazo_operator_protocol::Openid4vcTrustPolicy;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};
 use serde_json::Value;
@@ -71,13 +70,15 @@ impl Openid4vcClientAttestationValidator {
     }
 
     pub fn unverified_client_id(attestation: &str) -> Option<String> {
-        decode_compact_jwt(attestation)
+        #[derive(serde::Deserialize)]
+        struct Subject {
+            sub: String,
+        }
+        let subject = nazo_crypto::jwt::dangerous::insecure_decode::<Subject>(attestation)
             .ok()?
             .claims
-            .get("sub")?
-            .as_str()
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
+            .sub;
+        (!subject.is_empty()).then_some(subject)
     }
 
     pub fn validate(
@@ -91,17 +92,13 @@ impl Openid4vcClientAttestationValidator {
             .static_trust
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("client attestation is not statically configured"))?;
-        let parsed_attestation = decode_compact_jwt(attestation)?;
-        if parsed_attestation.header.typ.as_deref() != Some("oauth-client-attestation+jwt")
-            || parsed_attestation.header.alg != "ES256"
+        let header = decode_header(attestation)?;
+        if header.typ.as_deref() != Some("oauth-client-attestation+jwt")
+            || header.alg != Algorithm::ES256
         {
             anyhow::bail!("invalid client attestation protected header");
         }
-        let trust_key = select_jwk(
-            trust_jwks,
-            parsed_attestation.header.kid.as_deref(),
-            "ES256",
-        )?;
+        let trust_key = select_jwk(trust_jwks, header.kid.as_deref(), "ES256")?;
         let mut attestation_validation = Validation::new(Algorithm::ES256);
         attestation_validation.set_issuer(&[attester_issuer.as_ref()]);
         // OpenID4VCI 1.0 fixes Attestation-Based Client Authentication at
@@ -133,25 +130,22 @@ impl Openid4vcClientAttestationValidator {
             anyhow::bail!("client attestation iat is invalid");
         }
 
-        let parsed_proof = decode_compact_jwt(proof)?;
-        if parsed_proof.header.typ.as_deref() != Some("oauth-client-attestation-pop+jwt")
-            || parsed_proof.header.alg != "ES256"
-        {
-            anyhow::bail!("invalid client attestation proof protected header");
-        }
         let mut proof_validation = Validation::new(Algorithm::ES256);
         proof_validation.set_audience(&[audience]);
         // draft-07 requires iat but does not define exp for the PoP JWT.
         proof_validation.set_required_spec_claims(&["iss", "aud", "iat", "jti"]);
         proof_validation.validate_nbf = true;
         proof_validation.leeway = CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS as u64;
-        let proof_claims = decode::<Value>(
+        let verified_proof = decode::<Value>(
             proof,
             &decoding_key(instance_key, Algorithm::ES256)
                 .map_err(|_| anyhow::anyhow!("invalid instance key"))?,
             &proof_validation,
-        )?
-        .claims;
+        )?;
+        if verified_proof.header.typ.as_deref() != Some("oauth-client-attestation-pop+jwt") {
+            anyhow::bail!("invalid client attestation proof protected header");
+        }
+        let proof_claims = verified_proof.claims;
         if proof_claims.get("iss").and_then(Value::as_str) != Some(client_id) {
             anyhow::bail!("client attestation proof issuer does not match the subject");
         }
@@ -181,35 +175,43 @@ impl Openid4vcClientAttestationValidator {
 
     pub async fn validate_for_client(
         &self,
+        client_id: &str,
         attestation: &str,
         proof: &str,
         audience: &str,
         now: i64,
     ) -> anyhow::Result<ValidatedClientAttestation> {
-        let client_id = Self::unverified_client_id(attestation)
-            .ok_or_else(|| anyhow::anyhow!("client attestation subject is missing"))?;
+        let mut client_validator = None;
         if let Some((repository, tenant_id)) = &self.trust_policies {
-            match repository.for_client(*tenant_id, &client_id).await? {
+            match repository.for_client(*tenant_id, client_id).await? {
                 ClientTrustPolicy::Unbound => {}
                 ClientTrustPolicy::BoundInactive => {
                     anyhow::bail!("client OpenID4VC trust policy binding is inactive");
                 }
                 ClientTrustPolicy::Active(policy) => {
                     let material: Openid4vcTrustPolicy = policy.material;
-                    return Self::new(
+                    client_validator = Some(Self::new(
                         material.client_attestation_issuer,
                         material.client_attestation_jwks,
-                    )?
-                    .validate(attestation, proof, audience, now);
+                    )?);
                 }
             }
         }
-        self.validate(attestation, proof, audience, now)
+        let validated = client_validator.as_ref().unwrap_or(self).validate(
+            attestation,
+            proof,
+            audience,
+            now,
+        )?;
+        if validated.client_id != client_id {
+            anyhow::bail!("client attestation subject does not match the selected client");
+        }
+        Ok(validated)
     }
 }
 
 fn select_jwk<'a>(jwks: &'a Value, kid: Option<&str>, alg: &str) -> anyhow::Result<&'a Value> {
-    let matches = jwks
+    let mut matches = jwks
         .get("keys")
         .and_then(Value::as_array)
         .into_iter()
@@ -219,10 +221,9 @@ fn select_jwk<'a>(jwks: &'a Value, kid: Option<&str>, alg: &str) -> anyhow::Resu
                 .and_then(Value::as_str)
                 .is_none_or(|value| value == alg)
                 && kid.is_none_or(|kid| key.get("kid").and_then(Value::as_str) == Some(kid))
-        })
-        .collect::<Vec<_>>();
-    match matches.as_slice() {
-        [key] => Ok(*key),
+        });
+    match (matches.next(), matches.next()) {
+        (Some(key), None) => Ok(key),
         _ => anyhow::bail!("client attestation signing key is ambiguous or unavailable"),
     }
 }

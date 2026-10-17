@@ -16,7 +16,7 @@ fn durations() -> CatalogDurations {
 
 #[test]
 fn fixed_catalog_assigns_every_reviewed_disable_policy() {
-    let catalog = ModuleCatalog::fixed(durations()).unwrap();
+    let catalog = ModuleCatalog::fixed(durations());
 
     let expected = [
         (
@@ -90,6 +90,6 @@ fn fixed_catalog_assigns_every_reviewed_disable_policy() {
 
     assert_eq!(catalog.specs().len(), ModuleId::ALL.len());
     for (module_id, policy) in expected {
-        assert_eq!(catalog.spec(module_id).unwrap().disable_policy, policy);
+        assert_eq!(catalog.spec(module_id).disable_policy, policy);
     }
 }

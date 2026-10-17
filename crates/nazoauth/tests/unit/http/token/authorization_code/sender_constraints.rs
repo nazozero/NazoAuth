@@ -29,10 +29,7 @@ fn confidential_required_dpop_client_does_not_pin_refresh_token_to_access_token_
     let mut payload = code_payload(true);
     payload.dpop_jkt = None;
 
-    assert!(
-        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-            .is_none()
-    );
+    assert!(refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt")).is_none());
 }
 
 #[test]
@@ -44,8 +41,7 @@ fn public_dpop_client_binds_refresh_token_to_dpop_key() {
     payload.dpop_jkt = None;
 
     assert_eq!(
-        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-            .as_deref(),
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt")).as_deref(),
         Some("verified-dpop-jkt")
     );
 }
@@ -59,8 +55,7 @@ fn confidential_optional_dpop_code_pins_refresh_token_to_verified_dpop_key() {
     payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
 
     assert_eq!(
-        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-            .as_deref(),
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt")).as_deref(),
         Some("verified-dpop-jkt")
     );
 }
@@ -73,10 +68,7 @@ fn bearer_confidential_client_does_not_bind_refresh_token_to_access_token_dpop()
     let mut payload = code_payload(true);
     payload.dpop_jkt = None;
 
-    assert!(
-        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
-            .is_none()
-    );
+    assert!(refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt")).is_none());
 }
 
 #[actix_web::test]

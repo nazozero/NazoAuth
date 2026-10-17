@@ -38,7 +38,7 @@ pub use audit_ledger::{
 pub use authorization::AuthorizationRepository;
 pub use authorization_flow::AuthorizationFlowRepository;
 pub use clients::{
-    OAuthClientRepository, active_public_client_id_on_connection, deactivate_client_on_connection,
+    OAuthClientRepository, active_public_client_ids_on_connection, deactivate_client_on_connection,
     insert_client_on_connection,
 };
 pub use controller_registry::{
@@ -76,15 +76,18 @@ pub use scim::ScimRepository;
 pub use scim_events::ScimEventRepository;
 pub use security_state::SecurityStateMaintenanceRepository;
 pub use signing_keys::SigningKeysetRepository;
-pub use tenancy::{ActiveTenantBoundaryRepository, TenantDirectoryRepository};
+pub use tenancy::TenantDirectoryRepository;
 pub use tenant_resources::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite,
-    StoredOpenid4vcTrustPolicy, TenantResourceBinding, TenantResourceBindingDeactivate,
-    TenantResourceRepository, TenantResourceState, TenantResourceStateCas,
+    StoredOpenid4vcTrustPolicy, TenantResourceBinding, TenantResourceRepository,
+    TenantResourceState,
 };
 pub use token_issuance::TokenIssuanceRepository;
 pub use tokens::{RecoveryInvalidation, TokenRepository};
 pub use users::{
     UserInsert, UserRepository, disable_user_on_connection, insert_user_on_connection,
 };
+#[cfg(test)]
+#[path = "../../tests/support/query_counter.rs"]
+pub(crate) mod query_counter;

@@ -1,7 +1,7 @@
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 
-use crate::{cookie_value, oauth_error};
+use crate::oauth_error;
 
 #[must_use]
 pub fn csrf_error() -> HttpResponse {
@@ -19,7 +19,13 @@ pub fn has_valid_csrf_token_for_cookies(
     session_cookie_name: &str,
     csrf_cookie_name: &str,
 ) -> bool {
-    if cookie_value(req, session_cookie_name).is_none() {
+    let Ok(cookies) = req.cookies() else {
+        return true;
+    };
+    if !cookies
+        .iter()
+        .any(|cookie| cookie.name() == session_cookie_name)
+    {
         return true;
     }
     let header_token = req
@@ -36,10 +42,16 @@ pub fn has_valid_csrf_token_for_cookies(
     let Some(header_token) = header_token else {
         return false;
     };
-    let Some(cookie_token) = cookie_value(req, csrf_cookie_name) else {
+    let Some(cookie_token) = cookies
+        .iter()
+        .find(|cookie| cookie.name() == csrf_cookie_name)
+    else {
         return false;
     };
-    constant_time_eq(header_token.as_bytes(), cookie_token.trim().as_bytes())
+    constant_time_eq(
+        header_token.as_bytes(),
+        cookie_token.value().trim().as_bytes(),
+    )
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {

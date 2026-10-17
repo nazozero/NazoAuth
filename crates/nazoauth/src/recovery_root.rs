@@ -28,8 +28,9 @@ pub use nazo_persistence::control_plane::{
 
 use nazo_operator_protocol::{RecoveryProposal, RecoveryRootRotation};
 use nazo_persistence::control_plane::{
-    NewRecoveryChallenge, NewRecoveryRoot, RecoveredSlotCommit, RecoveryRootError,
-    RecoveryRootPort, RecoveryRotationError, RecoverySubmission, StoredRecoveryRoot,
+    IssuedIdentityApproval, NewRecoveryChallenge, NewRecoveryRoot, RecoveredSlotCommit,
+    RecoveryRootError, RecoveryRootPort, RecoveryRotationError, RecoverySubmission,
+    StoredRecoveryRoot,
 };
 
 /// A pending replacement of the deployment's Recovery Public Key (D12).
@@ -97,21 +98,6 @@ impl From<RecoveryRotationError> for RecoveryRootServiceError {
     }
 }
 
-/// One issued approval as surfaced to the approving administrator.
-#[derive(Clone, Eq, PartialEq)]
-pub struct IssuedRotationApprovalView {
-    /// Single-use bearer token; shown exactly once, never logged or stored.
-    pub token: String,
-    pub action_sha256: String,
-    pub expires_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for IssuedRotationApprovalView {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("IssuedRotationApprovalView([REDACTED])")
-    }
-}
-
 /// Service facade over the recovery repository.  Cheap to clone.
 #[derive(Clone)]
 pub struct RecoveryRootService {
@@ -157,126 +143,57 @@ impl RecoveryRootService {
 
     // -- D12: proactive rotation behind fresh 2FA -----------------------------
 
-    /// Validate the change payload and issue its single-use approval bound to
-    /// the exact canonical digest.  Fresh-MFA obligation sits at the HTTP
-    /// boundary, mirroring the controller slot flow.
-    pub async fn issue_rotation_approval(
-        &self,
-        actor_admin_user_id: Uuid,
-        request: &RecoveryRootChangeRequest,
-        now: DateTime<Utc>,
-    ) -> Result<IssuedRotationApprovalView, RecoveryRootServiceError> {
-        self.issue_rotation_approval_owned(actor_admin_user_id, request, now, None)
-            .await
-    }
-
+    /// Validate and bind a single-use rotation approval. The HTTP boundary
+    /// owns fresh MFA; persistence records the required audit atomically.
     pub async fn issue_rotation_approval_with_required_audit(
         &self,
         audit: nazo_persistence::control_plane::AdminIdentityAudit,
-        request: &RecoveryRootChangeRequest,
+        request: RecoveryRootChangeRequest,
         now: DateTime<Utc>,
-    ) -> Result<IssuedRotationApprovalView, RecoveryRootServiceError> {
-        self.issue_rotation_approval_owned(audit.actor_user_id, request, now, Some(audit))
-            .await
-    }
-
-    async fn issue_rotation_approval_owned(
-        &self,
-        actor_admin_user_id: Uuid,
-        request: &RecoveryRootChangeRequest,
-        now: DateTime<Utc>,
-        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
-    ) -> Result<IssuedRotationApprovalView, RecoveryRootServiceError> {
+    ) -> Result<IssuedIdentityApproval, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let rotation = validate_rotation_request(request)?;
-        let issued = if let Some(audit) = audit {
-            self.repository
-                .issue_rotation_approval_with_required_audit(
-                    nazo_persistence::control_plane::RecoveryApprovalCommand {
-                        deployment_id: rotation.deployment_id.clone(),
-                        action_sha256: rotation.action_sha256(),
-                        now,
-                    },
-                    audit,
-                )
-                .await
-        } else {
-            self.repository
-                .issue_rotation_approval(
-                    &rotation.deployment_id,
-                    &rotation.action_sha256(),
-                    actor_admin_user_id,
+        let action_sha256 = rotation.action_sha256();
+        Ok(self
+            .repository
+            .issue_rotation_approval_with_required_audit(
+                nazo_persistence::control_plane::RecoveryApprovalCommand {
+                    deployment_id: rotation.deployment_id,
+                    action_sha256,
                     now,
-                )
-                .await
-        }?;
-        Ok(IssuedRotationApprovalView {
-            token: issued.token,
-            action_sha256: issued.action_sha256,
-            expires_at: issued.expires_at,
-        })
+                },
+                audit,
+            )
+            .await?)
     }
 
-    /// Consume the approval and replace the root atomically.
-    pub async fn commit_rotation(
-        &self,
-        approval_token: &str,
-        request: &RecoveryRootChangeRequest,
-        now: DateTime<Utc>,
-    ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
-        self.commit_rotation_owned(approval_token, request, now, None)
-            .await
-    }
-
+    /// Consume the approval and replace the root in the audit transaction.
     pub async fn commit_rotation_with_required_audit(
         &self,
-        approval_token: &str,
-        request: &RecoveryRootChangeRequest,
+        approval_token: String,
+        request: RecoveryRootChangeRequest,
         now: DateTime<Utc>,
         audit: nazo_persistence::control_plane::AdminIdentityAudit,
     ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
-        self.commit_rotation_owned(approval_token, request, now, Some(audit))
-            .await
-    }
-
-    async fn commit_rotation_owned(
-        &self,
-        approval_token: &str,
-        request: &RecoveryRootChangeRequest,
-        now: DateTime<Utc>,
-        audit: Option<nazo_persistence::control_plane::AdminIdentityAudit>,
-    ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let rotation = validate_rotation_request(request)?;
-        let root = NewRecoveryRoot {
-            deployment_id: rotation.deployment_id.clone(),
-            kid: rotation.kid.clone(),
-            public_key: rotation.public_key,
-        };
-        Ok(if let Some(audit) = audit {
-            self.repository
-                .commit_rotation_with_required_audit(
-                    nazo_persistence::control_plane::RecoveryRotationCommand {
-                        approval_token: approval_token.to_owned(),
-                        deployment_id: rotation.deployment_id.clone(),
-                        action_sha256: rotation.action_sha256(),
-                        root,
-                        now,
-                    },
-                    audit,
-                )
-                .await
-        } else {
-            self.repository
-                .commit_rotation(
+        let action_sha256 = rotation.action_sha256();
+        Ok(self
+            .repository
+            .commit_rotation_with_required_audit(
+                nazo_persistence::control_plane::RecoveryRotationCommand {
                     approval_token,
-                    &rotation.deployment_id,
-                    &rotation.action_sha256(),
-                    root,
+                    action_sha256,
+                    root: NewRecoveryRoot {
+                        deployment_id: rotation.deployment_id,
+                        kid: rotation.kid,
+                        public_key: rotation.public_key,
+                    },
                     now,
-                )
-                .await
-        }?)
+                },
+                audit,
+            )
+            .await?)
     }
 
     // -- D11: break-glass challenge/response ----------------------------------
@@ -285,7 +202,7 @@ impl RecoveryRootService {
     /// key material.
     pub async fn issue_challenge(
         &self,
-        request: &RecoveryChallengeRequest,
+        request: RecoveryChallengeRequest,
         now: DateTime<Utc>,
     ) -> Result<nazo_persistence::control_plane::IssuedRecoveryChallenge, RecoveryRootServiceError>
     {
@@ -302,7 +219,7 @@ impl RecoveryRootService {
     /// recovery atomically.
     pub async fn recover(
         &self,
-        request: &RecoveryAnswerRequest,
+        request: RecoveryAnswerRequest,
         now: DateTime<Utc>,
     ) -> Result<RecoveredSlotCommit, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
@@ -315,33 +232,31 @@ impl RecoveryRootService {
 }
 
 fn decode_key(text: &str) -> Result<[u8; 32], RecoveryRootServiceError> {
-    URL_SAFE_NO_PAD
-        .decode(text)
-        .ok()
-        .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
-        .ok_or(RecoveryRootServiceError::Invalid(
-            "public_key 必须是 32 字节 Ed25519 公钥的未填充 base64url 编码.",
-        ))
+    decode_fixed(
+        text,
+        "public_key 必须是 32 字节 Ed25519 公钥的未填充 base64url 编码.",
+    )
 }
 
 fn decode_fixed<const LENGTH: usize>(
     text: &str,
     description: &'static str,
 ) -> Result<[u8; LENGTH], RecoveryRootServiceError> {
-    URL_SAFE_NO_PAD
-        .decode(text)
-        .ok()
-        .and_then(|bytes| <[u8; LENGTH]>::try_from(bytes).ok())
-        .ok_or(RecoveryRootServiceError::Invalid(description))
+    let mut bytes = [0; LENGTH];
+    if matches!(URL_SAFE_NO_PAD.decode_slice(text, &mut bytes), Ok(length) if length == LENGTH) {
+        Ok(bytes)
+    } else {
+        Err(RecoveryRootServiceError::Invalid(description))
+    }
 }
 
 fn validate_rotation_request(
-    request: &RecoveryRootChangeRequest,
+    request: RecoveryRootChangeRequest,
 ) -> Result<RecoveryRootRotation, RecoveryRootServiceError> {
     let public_key = decode_key(&request.recovery_public_key)?;
     let rotation = RecoveryRootRotation {
-        deployment_id: request.deployment_id.clone(),
-        kid: request.kid.clone(),
+        deployment_id: request.deployment_id,
+        kid: request.kid,
         public_key,
     };
     rotation
@@ -351,16 +266,16 @@ fn validate_rotation_request(
 }
 
 fn validate_challenge_request(
-    request: &RecoveryChallengeRequest,
+    request: RecoveryChallengeRequest,
 ) -> Result<NewRecoveryChallenge, RecoveryRootServiceError> {
     let controller_public_key = decode_key(&request.controller_public_key)?;
     let recovery_public_key = decode_key(&request.recovery_public_key)?;
     let proposal = RecoveryProposal {
-        deployment_id: request.deployment_id.clone(),
-        controller_label: request.label.clone(),
-        controller_kid: request.kid.clone(),
+        deployment_id: request.deployment_id,
+        controller_label: request.label,
+        controller_kid: request.kid,
         controller_public_key,
-        recovery_kid: request.recovery_kid.clone(),
+        recovery_kid: request.recovery_kid,
         recovery_public_key,
     };
     proposal.validate().map_err(|_| {
@@ -387,12 +302,12 @@ fn validate_challenge_request(
 }
 
 fn validate_answer_request(
-    request: &RecoveryAnswerRequest,
+    request: RecoveryAnswerRequest,
 ) -> Result<RecoverySubmission, RecoveryRootServiceError> {
     let challenge_id = Uuid::parse_str(&request.challenge_id)
         .map_err(|_| RecoveryRootServiceError::Invalid("challenge_id 必须是规范 UUID."))?;
     Ok(RecoverySubmission {
-        deployment_id: request.deployment_id.clone(),
+        deployment_id: request.deployment_id,
         challenge_id,
         nonce: decode_fixed::<32>(
             &request.nonce,

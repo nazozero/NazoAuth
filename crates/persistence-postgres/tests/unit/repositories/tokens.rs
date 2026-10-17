@@ -1,5 +1,6 @@
 use super::*;
 use nazo_auth::NewRefreshToken;
+use nazo_resource_server::AccessTokenRevocationLookup;
 
 fn valid_context(auth_time: i64) -> nazo_auth::RefreshTokenAuthenticationContext {
     nazo_auth::RefreshTokenAuthenticationContext {
@@ -211,12 +212,16 @@ fn ownership_current_moves_original_grant_and_spent_keeps_both_audience_views() 
 }
 
 #[tokio::test]
-async fn ownership_public_uuid_boundary_keeps_consistency_error_before_connection() {
-    let pool = crate::create_pool("not-a-database-url", 1).unwrap();
+async fn ownership_public_uuid_boundary_rejects_before_connection() {
+    let pool = crate::create_pool(
+        "postgres://unit_test@127.0.0.1:1/unit_test?connect_timeout=1",
+        1,
+    )
+    .unwrap();
     let repo = TokenRepository::new(pool.clone());
     for tenant_id in ["", "not-a-uuid", "00000000-0000-0000-0000-00000000000g"] {
         let result = repo
-            .access_token_state_revoked(RevocationLookupKey {
+            .is_revoked(RevocationLookupKey {
                 tenant_id,
                 jti: "jti",
                 client_id: "client",
@@ -227,9 +232,10 @@ async fn ownership_public_uuid_boundary_keeps_consistency_error_before_connectio
                 user_epoch: None,
             })
             .await;
-        assert!(
-            matches!(result, Err(RepositoryError::Consistency(message)) if message == "invalid token tenant")
-        );
+        assert!(matches!(
+            result,
+            Err(ProtectedResourceDependencyError::InvalidTenantBoundary)
+        ));
     }
     assert_eq!(pool.status().size, 0);
     for (client_epoch, user_epoch, user_id) in [
@@ -241,7 +247,7 @@ async fn ownership_public_uuid_boundary_keeps_consistency_error_before_connectio
         let tenant = Uuid::from_u128(1);
         let text = tenant.to_string();
         assert!(
-            repo.access_token_state_revoked(RevocationLookupKey {
+            repo.is_revoked(RevocationLookupKey {
                 tenant_id: &text,
                 jti: "jti",
                 client_id: "client",

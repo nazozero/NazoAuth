@@ -10,7 +10,6 @@ use nazo_crypto::ed25519::SigningKey;
 use sha2::{Digest as _, Sha256};
 
 use super::*;
-use crate::control_operation::canonicalize_json_value;
 use crate::wire::{TenantResourceIdentity, TenantResourceKind, TenantResourceSelector};
 
 fn controller_key() -> SigningKey {
@@ -105,11 +104,13 @@ fn golden_canonical_bytes_and_request_hash_are_stable() {
         "{\"config_revision\":\"config-revision-1\",\"deployment_id\":\"deployment-1\",\"kid\":\"43q81579CNuUUYqQOVL_6fivfotGhLY1kWMc746Iccg\",\"operation\":{\"name\":\"migrate-apply\"},\"operation_id\":\"019c8ca2-30a6-7000-8000-000000000005\",\"schema\":3}",
     );
     assert_eq!(
-        control_operation_request_hash(&operation).unwrap(),
+        control_operation_request_hash(&bytes),
         "8261e7f3ece52ee7b063689c98ead4265f2f4e5e5b40c09b2fe3909af31eceff",
     );
     // Ed25519 is deterministic, so the full compact JWS is reproducible too.
-    let compact = crate::sign_control_operation(&operation, &controller_key()).unwrap();
+    let (compact, request_hash) =
+        crate::sign_control_operation(&operation, &controller_key()).unwrap();
+    assert_eq!(request_hash, control_operation_request_hash(&bytes));
     assert_eq!(
         compact,
         "eyJhbGciOiJFZERTQSIsImtpZCI6IjQzcTgxNTc5Q051VVVZcVFPVkxfNmZpdmZvdEdoTFkxa1dNYzc0NkljY2ciLCJ0eXAiOiJuYXpvYXV0aC1jb250cm9sLW9wZXJhdGlvbitqd3QifQ.eyJjb25maWdfcmV2aXNpb24iOiJjb25maWctcmV2aXNpb24tMSIsImRlcGxveW1lbnRfaWQiOiJkZXBsb3ltZW50LTEiLCJraWQiOiI0M3E4MTU3OUNOdVVVWXFRT1ZMXzZmaXZmb3RHaExZMWtXTWM3NDZJY2NnIiwib3BlcmF0aW9uIjp7Im5hbWUiOiJtaWdyYXRlLWFwcGx5In0sIm9wZXJhdGlvbl9pZCI6IjAxOWM4Y2EyLTMwYTYtNzAwMC04MDAwLTAwMDAwMDAwMDAwNSIsInNjaGVtYSI6M30.__QjcrIzfNFJTfMmihviVhgwtlKJLsTPad71ZWHrpJmh_u99c4Qh0J9BphS1CedkdPLKRUFjDD6BCAcRFHYCBA"
@@ -142,9 +143,9 @@ fn two_encodings_of_one_logical_request_produce_identical_bytes() {
         "schema".to_owned(),
         serde_json::json!(CONTROL_OPERATION_SCHEMA),
     );
-    let reordered = canonicalize_json_value(serde_json::Value::Object(root));
+    let reordered = serde_json::from_value(serde_json::Value::Object(root)).unwrap();
     assert_eq!(
-        serde_json::to_vec(&reordered).unwrap(),
+        canonical_control_operation_bytes(&reordered).unwrap(),
         direct,
         "member insertion order must not change canonical bytes"
     );
@@ -161,23 +162,32 @@ fn two_encodings_of_one_logical_request_produce_identical_bytes() {
         }}"#,
         operation.kid,
     );
-    let parsed: serde_json::Value = serde_json::from_str(&pretty).unwrap();
+    let parsed: ControlOperation = serde_json::from_str(&pretty).unwrap();
     assert_eq!(
-        serde_json::to_vec(&canonicalize_json_value(parsed)).unwrap(),
+        canonical_control_operation_bytes(&parsed).unwrap(),
         direct,
         "whitespace and unicode-escape spellings must not change canonical bytes"
     );
 
     // The hash follows the bytes, never the encoding.
-    let hash = control_operation_request_hash(&operation).unwrap();
+    let hash = control_operation_request_hash(
+        &crate::canonical_control_operation_bytes(&operation).unwrap(),
+    );
     let reparsed: ControlOperation = serde_json::from_slice(&direct).unwrap();
     assert_eq!(reparsed, operation);
-    assert_eq!(control_operation_request_hash(&reparsed).unwrap(), hash);
+    assert_eq!(
+        control_operation_request_hash(
+            &crate::canonical_control_operation_bytes(&reparsed).unwrap()
+        ),
+        hash
+    );
 }
 
 #[test]
 fn distinct_requests_never_share_a_request_hash() {
-    let baseline = control_operation_request_hash(&operation()).unwrap();
+    let baseline = control_operation_request_hash(
+        &crate::canonical_control_operation_bytes(&operation()).unwrap(),
+    );
     let mutations: [fn(&mut ControlOperation); 5] = [
         |value| {
             value.operation_id = "019c8ca2-30a6-7000-8000-000000000006".to_owned();
@@ -199,7 +209,9 @@ fn distinct_requests_never_share_a_request_hash() {
     for mutate in mutations {
         let mut mutated = operation();
         mutate(&mut mutated);
-        let hash = control_operation_request_hash(&mutated).unwrap();
+        let hash = control_operation_request_hash(
+            &crate::canonical_control_operation_bytes(&mutated).unwrap(),
+        );
         assert_ne!(hash, baseline);
         assert_eq!(hash.len(), 64);
     }
@@ -237,7 +249,7 @@ fn kid_is_base64url_sha256_of_raw_public_key_bytes() {
 fn sign_verify_roundtrip_binds_header_kid_and_media_type() {
     let key = controller_key();
     let operation = operation();
-    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap().0;
     // There is no admission clock anywhere in verification: the same compact
     // verifies identically whenever it is presented, and the journal owns
     // replay defense after acceptance.
@@ -256,7 +268,7 @@ fn wrong_kid_and_wrong_signer_are_rejected() {
     let key = controller_key();
     let other = SigningKey::from_bytes(&[31; 32]);
     let operation = operation();
-    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap().0;
     let other_kid = controller_key_id(&other.verifying_key());
 
     // Trusted lookup expects a different controller kid than the header.
@@ -302,7 +314,7 @@ fn wrong_kid_and_wrong_signer_are_rejected() {
 fn tampered_compact_bytes_are_rejected() {
     let key = controller_key();
     let operation = operation();
-    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap().0;
     let mut tampered = compact.clone();
     let last = tampered.pop().unwrap();
     tampered.push(if last == 'A' { 'B' } else { 'A' });
@@ -316,7 +328,7 @@ fn tampered_compact_bytes_are_rejected() {
 fn non_canonical_payload_encoding_is_rejected_even_when_correctly_signed() {
     let key = controller_key();
     let operation = operation();
-    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap().0;
     let protected = compact.split('.').next().unwrap().to_owned();
     let pretty = serde_json::to_vec_pretty(&payload_of(&compact)).unwrap();
 
@@ -337,7 +349,7 @@ fn non_canonical_payload_encoding_is_rejected_even_when_correctly_signed() {
 fn unknown_fields_are_denied_everywhere() {
     let key = controller_key();
     let operation = operation();
-    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap().0;
 
     let reject_parsed = |mutate: fn(&mut serde_json::Value)| {
         let mut parsed = payload_of(&compact);
@@ -518,10 +530,7 @@ fn tenant_resource_payloads_are_bounded_typed_and_unique() {
     let error = serde_json::from_value::<ControlOperationPayload>(raw)
         .unwrap_err()
         .to_string();
-    assert!(
-        error.contains("unknown resource field 'endpoint'"),
-        "{error}"
-    );
+    assert!(error.contains("unknown field `endpoint`"), "{error}");
 
     let raw = serde_json::json!({
         "name": "tenant-resource-enumerate",
@@ -531,7 +540,10 @@ fn tenant_resource_payloads_are_bounded_typed_and_unique() {
     let error = serde_json::from_value::<ControlOperationPayload>(raw)
         .unwrap_err()
         .to_string();
-    assert!(error.contains("unknown selector kind"), "{error}");
+    assert!(
+        error.contains("unknown variant `wallet-provider`"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -642,7 +654,6 @@ proptest! {
         operation.kid = controller_key_id(&controller_key().verifying_key());
         operation.config_revision = input.clone();
         let _ = validate_control_operation(&operation);
-        let _ = config_revision_matches(&operation, input.as_bytes());
         let mut result = result_entry();
         result.request_hash = input;
         let _ = validate_control_result(&result);
@@ -743,22 +754,18 @@ fn typed_result_data_is_closed_and_outcome_coupled() {
         serde_json::from_value::<ControlResultData>(value).map_err(|error| error.to_string())
     };
     let raw = serde_json::json!({"kind": "tenant-resource-old", "revision": 1, "resources": []});
-    assert!(parse_data(raw).unwrap_err().contains("unknown result kind"));
+    assert!(parse_data(raw).unwrap_err().contains("unknown variant"));
     let raw = serde_json::json!({
         "kind": "tenant-resource-enumerate", "revision": 1, "resources": [],
         "resource_manifest_sha256": "f".repeat(64),
         "selectors": [],
     });
-    assert!(
-        parse_data(raw)
-            .unwrap_err()
-            .contains("unknown result field")
-    );
+    assert!(parse_data(raw).unwrap_err().contains("unknown field"));
     let raw = serde_json::json!({"kind": "tenant-resource-enumerate", "resources": []});
     assert!(
         parse_data(raw)
             .unwrap_err()
-            .contains("requires unsigned field 'revision'")
+            .contains("missing field `revision`")
     );
     let raw = serde_json::json!({
         "kind": "tenant-resource-enumerate",
@@ -839,30 +846,28 @@ fn revoke_result_manifest_describes_remaining_active_set_not_revoked_delta() {
 }
 
 #[test]
-fn config_revision_fencing_compares_constant_time() {
-    let operation = operation();
-    assert!(config_revision_matches(&operation, b"config-revision-1"));
-    assert!(!config_revision_matches(&operation, b"config-revision-2"));
-    assert!(!constant_time_eq(
-        operation.config_revision.as_bytes(),
-        b"short"
-    ));
-    assert!(constant_time_eq(b"digest", b"digest"));
-    assert!(!constant_time_eq(b"digest", b"digesT"));
-}
-
-#[test]
 fn oversize_canonical_payloads_are_refused() {
     let mut operation = operation();
-    operation.operation = ControlOperationPayload::KeysGenerateLocal {
-        alg: "ed25519".to_owned(),
-        purposes: vec!["x".repeat(MAX_CONTROL_OPERATION_BYTES)],
+    operation.operation = ControlOperationPayload::TenantResourceApply {
+        tenant_id: TENANT_ID.to_owned(),
+        resources: (0..MAX_TENANT_RESOURCE_IDENTITIES)
+            .map(|index| {
+                resource(
+                    TenantResourceKind::Openid4vcTrustPolicy,
+                    &format!("{index:03}-{}", "x".repeat(124)),
+                )
+            })
+            .collect(),
     };
+    validate_control_operation(&operation).unwrap();
     assert!(matches!(
         canonical_control_operation_bytes(&operation),
         Err(ProtocolError::TooLarge)
     ));
-    assert!(control_operation_request_hash(&operation).is_err());
+    assert!(matches!(
+        sign_control_operation(&operation, &controller_key()),
+        Err(ProtocolError::TooLarge)
+    ));
 }
 
 #[test]
@@ -921,11 +926,13 @@ fn tenant_key_generation_is_tenant_bound_and_returns_public_material_only() {
 fn prepared_control_operation_verifies_original_segments_and_reuses_canonical_hash() {
     let key = controller_key();
     let operation = operation();
-    let compact = crate::sign_control_operation(&operation, &key).unwrap();
+    let compact = crate::sign_control_operation(&operation, &key).unwrap().0;
     let prepared = crate::PresentedControlOperation::parse(&compact).unwrap();
     assert_eq!(
         prepared.request_hash(),
-        crate::control_operation_request_hash(&operation).unwrap()
+        crate::control_operation_request_hash(
+            &crate::canonical_control_operation_bytes(&operation).unwrap()
+        )
     );
     assert_eq!(prepared.operation(), &operation);
     assert_eq!(
@@ -951,7 +958,9 @@ fn prepared_control_operation_verifies_original_segments_and_reuses_canonical_ha
     let prepared = crate::PresentedControlOperation::parse(&noncanonical).unwrap();
     assert_eq!(
         prepared.request_hash(),
-        crate::control_operation_request_hash(&operation).unwrap()
+        crate::control_operation_request_hash(
+            &crate::canonical_control_operation_bytes(&operation).unwrap()
+        )
     );
     assert!(matches!(
         prepared.verify(&operation.kid, &key.verifying_key()),

@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
@@ -500,7 +501,7 @@ async fn external_signing_requires_signature_member() {
         .expect_err("external signer response without a signature must fail closed");
 
     assert!(
-        format!("{error}").contains("missing signature"),
+        format!("{error}").contains("missing field `signature`"),
         "unexpected error: {error}"
     );
 }
@@ -514,6 +515,19 @@ async fn external_signing_rejects_non_base64url_signature() {
     assert!(
         format!("{error}").contains("invalid signature"),
         "unexpected error: {error}"
+    );
+}
+
+#[tokio::test]
+async fn external_signing_accepts_escaped_signature_and_ignores_extension_fields() {
+    let signature = sign_with_command(signer_stdout_command(
+        r#"{"signature":"\u0063MvD\u0033w","extension":{"unused":[1,2,3]}}"#,
+    ))
+    .await
+    .expect("JSON string escapes and extension fields remain accepted");
+    assert_eq!(
+        signature.as_bytes(),
+        URL_SAFE_NO_PAD.decode("cMvD3w").unwrap()
     );
 }
 
@@ -789,7 +803,7 @@ async fn external_signer_malformed_response_terminates_owned_descendant() {
 async fn external_signer_invalid_signature_terminates_owned_descendant() {
     use nazo_auth::{SignError, SignRequest, Signer, SigningPurpose};
     use nazo_key_management::{
-        KeyManager, KeySettings, SealedKeyMaterial, SigningKeyWrappingKeyRing,
+        KeyManager, KeySettings, SigningKeyWrappingKeyRing,
         test_support::MemorySigningKeyRepository,
     };
     use std::sync::Mutex;
@@ -857,14 +871,10 @@ async fn external_signer_invalid_signature_terminates_owned_descendant() {
         .public_jwk
         .clone();
     let mut record = repository.snapshot().expect("initial keyset is persisted");
-    let sealed = SealedKeyMaterial::from_persisted_bytes(
-        record.wrapping_key_id.clone(),
-        &record.encrypted_private_material,
-    )
-    .expect("initial material has a valid envelope");
+
     let mut payload: Value = serde_json::from_slice(
-        &wrapping_keys
-            .open_generation(tenant_id, record.revision, &record.public_metadata, &sealed)
+        wrapping_keys
+            .open_generation(tenant_id, &mut record.clone())
             .expect("initial generation authenticates"),
     )
     .expect("initial payload is JSON");
@@ -897,8 +907,7 @@ async fn external_signer_invalid_signature_terminates_owned_descendant() {
             &record.public_metadata,
             &serde_json::to_vec(&payload).expect("external key payload serializes"),
         )
-        .expect("external generation seals")
-        .into_persisted_bytes();
+        .expect("external generation seals");
     repository.replace(Some(record));
     manager
         .refresh()

@@ -276,7 +276,7 @@ async fn run_avatar_flow(config: TestConfig) {
         .expect("instance B account lookup")
         .expect("test account should exist for instance B");
     let completed_b = service_b
-        .complete_upload(&account_b, &start.upload_id)
+        .complete_upload(account_b.clone(), &start.upload_id)
         .await
         .expect("instance B should finalize instance A's upload");
     let final_url = completed_b
@@ -305,7 +305,7 @@ async fn run_avatar_flow(config: TestConfig) {
         .expect("instance A retry account lookup")
         .expect("test account should still exist");
     let retried_a = service_a
-        .complete_upload(&account_a_after, &start.upload_id)
+        .complete_upload(account_a_after.clone(), &start.upload_id)
         .await
         .expect("instance A retry should return the completed result");
     assert_eq!(

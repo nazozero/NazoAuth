@@ -6,10 +6,11 @@ use crate::contracts::scim::{
 };
 use hmac::{Hmac, KeyInit, Mac};
 use nazo_identity::{
-    TenantContext, TenantId,
+    TenantContext,
     scim::{
         SCIM_CURSOR_AAD, SCIM_CURSOR_KEY_LABEL, SCIM_CURSOR_NONCE_LEN, SCIM_CURSOR_TAG_LEN,
-        ScimCursorSubject, ScimRequiredScope, ScimService, scim_credential_allows,
+        ScimCursorSubject, ScimRequiredScope, ScimService, ScimTokenCredential,
+        scim_credential_allows,
     },
 };
 use nazo_scim_events::{
@@ -65,25 +66,13 @@ impl ServerScimRequestAuthorizer {
         )
     }
 
-    async fn credential(
-        &self,
-        token: &str,
-    ) -> Result<AuthorizedCredential, ScimAuthorizationError> {
+    async fn credential(&self, token: &str) -> Result<ScimTokenCredential, ScimAuthorizationError> {
         match self.service.active_credential(&blake3_hex(token)).await {
             Ok(Some(credential)) => {
-                let tenant_id = TenantId::new(credential.tenant_id)
-                    .map_err(|_| ScimAuthorizationError::TenantMismatch)?;
-                if tenant_id != self.tenant.tenant_id {
+                if credential.tenant_id != self.tenant.tenant_id.as_uuid() {
                     return Err(ScimAuthorizationError::TenantMismatch);
                 }
-                Ok(AuthorizedCredential {
-                    token_id: Some(credential.id),
-                    tenant: self.tenant,
-                    scopes: credential.scopes,
-                    event_audience: credential.event_audience,
-                    source: "database",
-                    cursor_actor: format!("database:{}", credential.id),
-                })
+                Ok(credential)
             }
             Ok(None) => Err(ScimAuthorizationError::InvalidBearer),
             Err(error) => {
@@ -98,18 +87,18 @@ impl ServerScimRequestAuthorizer {
         ip_hash: String,
         user_agent_hash: Option<String>,
         required_scope: ScimRequiredScope,
-        credential: &AuthorizedCredential,
+        credential: &ScimTokenCredential,
     ) {
         self.audit.record(
             "scim_token_used",
-            audit_fields(&[
-                ("token_id", serde_json::json!(credential.token_id)),
+            audit_fields([
+                ("token_id", serde_json::json!(credential.id)),
                 (
                     "tenant_id",
-                    serde_json::json!(credential.tenant.tenant_id.as_uuid()),
+                    serde_json::json!(self.tenant.tenant_id.as_uuid()),
                 ),
                 ("scope", serde_json::json!(required_scope.as_str())),
-                ("source", serde_json::json!(credential.source)),
+                ("source", serde_json::json!("database")),
                 ("ip_hash", serde_json::json!(ip_hash)),
                 ("user_agent_hash", serde_json::json!(user_agent_hash)),
             ]),
@@ -142,7 +131,7 @@ impl ServerScimRequestAuthorizer {
         self.audit
             .record_required(
                 "scim_token_denied",
-                audit_fields(&[
+                audit_fields([
                     ("token_id", serde_json::json!(token_id)),
                     ("scope", serde_json::json!(required_scope.as_str())),
                     ("reason", serde_json::json!(reason)),
@@ -165,12 +154,11 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
         let enabled = self.enabled();
         let token = facts.bearer_token;
-        let ip_hash = blake3_hex(&facts.source_ip);
-        let user_agent_hash = facts.user_agent.map(blake3_hex);
         Box::pin(async move {
             if !enabled {
                 return Err(ScimAuthorizationError::Disabled);
             }
+            let ip_hash = blake3_hex(&facts.source_ip);
             let Some(token) = token else {
                 self.audit_denied(&ip_hash, required_scope, "missing_bearer", None)
                     .await?;
@@ -195,39 +183,31 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                     &ip_hash,
                     required_scope,
                     "insufficient_scope",
-                    credential.token_id,
+                    Some(credential.id),
                 )
                 .await?;
                 return Err(ScimAuthorizationError::InsufficientScope);
             }
-            if credential.tenant != self.tenant {
-                self.audit_denied(
-                    &ip_hash,
-                    required_scope,
-                    "tenant_mismatch",
-                    credential.token_id,
-                )
-                .await?;
-                return Err(ScimAuthorizationError::TenantMismatch);
-            }
             if !self.enabled() {
                 return Err(ScimAuthorizationError::Disabled);
             }
-            self.record_use(ip_hash, user_agent_hash, required_scope, &credential);
+            self.record_use(
+                ip_hash,
+                facts.user_agent.map(blake3_hex),
+                required_scope,
+                &credential,
+            );
             Ok(ScimAuthorizedRequest {
-                tenant: credential.tenant,
+                tenant: self.tenant,
                 cursor_subject: ScimCursorSubject {
-                    tenant_id: credential.tenant.tenant_id.as_uuid(),
-                    actor: credential.cursor_actor,
+                    tenant_id: self.tenant.tenant_id.as_uuid(),
+                    actor: format!("database:{}", credential.id),
                 },
-                event_receiver: match (credential.token_id, credential.event_audience) {
-                    (Some(token_id), Some(audience)) => Some(EventReceiver {
-                        token_id,
-                        tenant_id: credential.tenant.tenant_id.as_uuid(),
-                        audience,
-                    }),
-                    _ => None,
-                },
+                event_receiver: credential.event_audience.map(|audience| EventReceiver {
+                    token_id: credential.id,
+                    tenant_id: self.tenant.tenant_id.as_uuid(),
+                    audience,
+                }),
             })
         })
     }
@@ -249,15 +229,6 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
     }
 }
 
-struct AuthorizedCredential {
-    token_id: Option<uuid::Uuid>,
-    tenant: TenantContext,
-    scopes: Vec<String>,
-    event_audience: Option<String>,
-    source: &'static str,
-    cursor_actor: String,
-}
-
 #[derive(Clone)]
 pub struct ServerScimEventSigner {
     keyset: nazo_key_management::KeyManager,
@@ -276,11 +247,13 @@ impl EventSignerPort for ServerScimEventSigner {
         claims: &'a SecurityEventClaims,
     ) -> EventFuture<'a, Result<String, EventSigningError>> {
         Box::pin(async move {
-            let snapshot = self.keyset.snapshot();
-            let mut header = nazo_crypto::jwt::Header::new(snapshot.active_alg);
-            header.typ = Some(nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE.to_owned());
             self.keyset
-                .encode_jwt(nazo_auth::SigningPurpose::SecurityEvent, &header, claims)
+                .encode_response_jwt(
+                    nazo_auth::SigningPurpose::SecurityEvent,
+                    None,
+                    nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE,
+                    claims,
+                )
                 .await
                 .map_err(|_| EventSigningError::Unavailable)
         })
@@ -305,21 +278,15 @@ impl ServerScimCursorProtector {
 impl ScimCursorProtector for ServerScimCursorProtector {
     fn protect(&self, plaintext: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {
         let nonce = rand::random::<[u8; SCIM_CURSOR_NONCE_LEN]>();
-        let ciphertext_and_tag =
-            nazo_crypto::aead::encrypt(&self.key, &nonce, SCIM_CURSOR_AAD, plaintext)
-                .map_err(|_| ScimDependencyError::Unavailable)?;
-        let mut protected = Vec::with_capacity(nonce.len() + ciphertext_and_tag.len());
-        protected.extend_from_slice(&nonce);
-        protected.extend_from_slice(&ciphertext_and_tag);
-        Ok(protected)
+        nazo_crypto::aead::encrypt_prefixed(&self.key, &nonce, SCIM_CURSOR_AAD, plaintext, &nonce)
+            .map_err(|_| ScimDependencyError::Unavailable)
     }
 
-    fn unprotect(&self, protected: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {
+    fn unprotect<'a>(&self, protected: &'a mut [u8]) -> Result<&'a [u8], ScimDependencyError> {
         if protected.len() <= SCIM_CURSOR_NONCE_LEN + SCIM_CURSOR_TAG_LEN {
             return Err(ScimDependencyError::Unavailable);
         }
-        let (nonce, ciphertext_and_tag) = protected.split_at(SCIM_CURSOR_NONCE_LEN);
-        nazo_crypto::aead::decrypt(&self.key, nonce, SCIM_CURSOR_AAD, ciphertext_and_tag)
+        nazo_crypto::aead::decrypt_nonce_prefixed(&self.key, SCIM_CURSOR_AAD, protected)
             .map_err(|_| ScimDependencyError::Unavailable)
     }
 }

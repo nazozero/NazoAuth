@@ -1,14 +1,14 @@
 use super::super::configuration::StartupConfiguration;
 use super::*;
 use crate::http::mtls::MtlsCertificateSourceMode;
-use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile};
 use nazo_oauth_server::domain::dynamic_registration::{
     DynamicRegistrationApplication, ServerDynamicRegistrationRequestGuard,
     ServerDynamicRegistrationTokens,
 };
 use nazo_oauth_server::domain::metadata::ApplicationMetadataSnapshotSource;
 use nazo_oauth_server::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
-use nazo_oauth_server::policy::{CibaSecurityProfile, SubjectType};
+use nazo_oauth_server::policy::CibaSecurityProfile;
 use nazo_oauth_server::services::{
     ServerAuthorizationService, ServerCibaService, ServerDeviceGrantService,
 };
@@ -17,7 +17,6 @@ mod openid4vc;
 
 /// Request-facing protocol and OAuth service handles.  Each handle is built
 /// once outside the Actix worker factory and cloned into worker applications.
-#[derive(Clone)]
 pub(super) struct CoreServices {
     pub(super) security_audit: Arc<dyn nazo_oauth_server::ports::audit::SecurityAudit>,
     pub(super) metadata_handles: web::Data<nazo_http_actix::MetadataHandles>,
@@ -72,12 +71,6 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
         "loaded DPoP nonce policies"
     );
     let resource_server_http_data = {
-        let authorizer = Arc::new(ServerFapiResourceAuthorizer::from_port(
-            resource_server_config.clone(),
-            keyset.clone(),
-            persistence.access_token_revocations(),
-            transient_state.protected_resource_dpop_state(),
-        ));
         let mtls = Arc::new(ServerMtlsThumbprintExtractor::new(
             settings.endpoint.trusted_proxy_cidrs.clone(),
         ));
@@ -92,7 +85,12 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
             resource_server_config.issuer.clone(),
             resource_server_config.mtls_endpoint_base_url.clone(),
             resource_server_config.fapi_http_signature_max_age_seconds,
-            authorizer,
+            Arc::new(ServerFapiResourceAuthorizer::from_port(
+                resource_server_config,
+                keyset.clone(),
+                persistence.access_token_revocations(),
+                transient_state.protected_resource_dpop_state(),
+            )),
             mtls,
             signatures,
         ))
@@ -159,7 +157,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
             Arc::new(ServerScimBootstrapPasswordProvider),
             scim_client_ip,
         )
-        .with_security_events(Arc::new(nazo_scim_events::EventPublisher::from_port(
+        .with_security_events(Arc::new(nazo_scim_events::EventPublisher::new(
             persistence.scim_event_store(),
             ServerScimEventSigner::new(keyset.clone()),
             startup.settings.endpoint.issuer.clone(),
@@ -312,10 +310,6 @@ fn metadata_config(settings: &Settings) -> MetadataConfig {
         ciba_security_profile: match protocol.ciba_security_profile {
             CibaSecurityProfile::FapiCibaId1 => CibaMetadataProfile::FapiCiba,
             CibaSecurityProfile::Fapi2Ciba => CibaMetadataProfile::Fapi2Ciba,
-        },
-        subject_type: match protocol.subject_type {
-            SubjectType::Public => MetadataSubjectType::Public,
-            SubjectType::Pairwise => MetadataSubjectType::Pairwise,
         },
         pairwise_subject_enabled: protocol.pairwise_subject_secret.is_some(),
         protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),

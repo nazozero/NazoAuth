@@ -370,15 +370,19 @@ async fn explicit_revoke(
 ) {
     let raw_token = format!("retention-refresh-{}", Uuid::now_v7());
     repository
-        .revoke_token(TokenRevocation {
-            tenant_id,
-            client_id,
-            raw_token: &raw_token,
-            access_token: Some(AccessTokenRevocation {
-                jti: jti.to_owned(),
-                expires_at,
-            }),
-        })
+        .revoke_token_with_audit(
+            TokenRevocation {
+                tenant_id,
+                client_id,
+                raw_token: &raw_token,
+                access_token: Some(AccessTokenRevocation {
+                    jti: jti.to_owned(),
+                    expires_at,
+                }),
+            },
+            "revocation-test-client",
+            "test-source-hash",
+        )
         .await
         .expect("explicit access-token revocation should commit");
 }

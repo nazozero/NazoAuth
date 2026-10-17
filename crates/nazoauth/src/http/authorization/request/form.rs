@@ -59,7 +59,6 @@ fn parse_authorization_form_encoded(
     duplicate_parameters: &[&str],
 ) -> Result<HashMap<String, String>, HttpResponse> {
     let mut q = HashMap::new();
-    let mut seen = std::collections::HashSet::new();
     let mut resource_values = Vec::new();
     for (key, value) in url::form_urlencoded::parse(raw.as_bytes()) {
         let key = key.into_owned();
@@ -68,7 +67,7 @@ fn parse_authorization_form_encoded(
             resource_values.push(value);
             continue;
         }
-        if duplicate_parameters.contains(&key.as_str()) && !seen.insert(key.clone()) {
+        if duplicate_parameters.contains(&key.as_str()) && q.contains_key(&key) {
             return Err(oauth_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",

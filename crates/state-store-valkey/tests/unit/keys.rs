@@ -81,3 +81,23 @@ fn oidc_federation_state_key_is_deterministic_and_hides_the_state() {
     assert!(!first.contains("state-value"));
     assert_ne!(first, other);
 }
+
+#[test]
+fn digest_format_preserves_persisted_key_bytes() {
+    let digest = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85";
+    assert_eq!(
+        super::authorization_code("abc"),
+        format!("oauth:auth_code:{digest}")
+    );
+    assert_eq!(
+        super::device_code("abc"),
+        format!("oauth:device:code:{digest}")
+    );
+    assert_eq!(super::ciba("abc"), format!("oauth:ciba:{digest}"));
+    assert_eq!(super::ciba_hash("abc"), digest);
+    assert_eq!(
+        private_key_jwt_replay("abc", "abc"),
+        format!("oauth:client_assertion:jti:{digest}:{digest}")
+    );
+    assert_eq!(super::normalize_user_code("a-B 9_中"), "AB9");
+}

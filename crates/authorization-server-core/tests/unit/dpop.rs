@@ -100,7 +100,7 @@ fn verifies_public_jwk_and_protocol_claims() {
 
     assert_eq!(verified.jti, "proof-jti");
     assert_eq!(verified.jkt.len(), 43);
-    assert_eq!(verified.audit.jti_hash.len(), 64);
+    assert_eq!(verified.key_id, None);
 }
 
 #[test]
@@ -257,23 +257,21 @@ fn binding_and_missing_proof_are_enforced() {
     );
 
     let proof = proof(public_jwk(), json!({}));
-    assert_eq!(
-        verify_dpop_proof_at(request(Some(&proof), Some("wrong-jkt")), NOW),
-        Err(DpopError::BindingMismatch)
-    );
+    let jkt = jwk_thumbprint(&public_jwk()).expect("public key thumbprint");
+    assert!(verify_dpop_proof_at(request(Some(&proof), Some(&jkt)), NOW).is_ok());
+    let same_length_mismatch = format!("{}!", &jkt[..jkt.len() - 1]);
+    for mismatch in ["wrong-jkt", same_length_mismatch.as_str()] {
+        assert_eq!(
+            verify_dpop_proof_at(request(Some(&proof), Some(mismatch)), NOW),
+            Err(DpopError::BindingMismatch)
+        );
+    }
 }
 
 #[test]
 fn nonce_has_256_bits_of_urlsafe_entropy() {
     let nonce = new_dpop_nonce();
     assert_eq!(URL_SAFE_NO_PAD.decode(nonce).expect("base64url").len(), 32);
-}
-
-#[test]
-fn constant_time_comparison_preserves_equality_semantics() {
-    assert!(constant_time_eq(b"same", b"same"));
-    assert!(!constant_time_eq(b"same", b"diff"));
-    assert!(!constant_time_eq(b"short", b"longer"));
 }
 
 #[test]
@@ -350,7 +348,9 @@ fn concurrent_replay_consumption_has_exactly_one_winner() {
 
 async fn concurrent_replay_consumption_has_exactly_one_winner_async() {
     let state = AtomicDpopState::default();
-    let proof = proof(public_jwk(), json!({}));
+    let mut jwk = public_jwk();
+    jwk["kid"] = json!("audit-key");
+    let proof = proof(jwk, json!({}));
     let request = request(Some(&proof), None);
 
     let (left, right) = futures_util::join!(
@@ -359,13 +359,19 @@ async fn concurrent_replay_consumption_has_exactly_one_winner_async() {
     );
     let results = [left, right];
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    let audits: Vec<_> = results
+        .iter()
+        .filter_map(|result| match result {
+            Err(DpopError::ReplayDetected(audit)) => Some(audit),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(audits.len(), 1);
     assert_eq!(
-        results
-            .iter()
-            .filter(|result| matches!(result, Err(DpopError::ReplayDetected(_))))
-            .count(),
-        1
+        audits[0].jti_hash,
+        blake3::hash(b"proof-jti").to_hex().as_str()
     );
+    assert_eq!(audits[0].key_id.as_deref(), Some("audit-key"));
 }
 
 #[test]
@@ -423,6 +429,35 @@ fn required_nonce_is_reusable_while_jti_replay_remains_one_time() {
     );
 }
 
+#[test]
+fn optional_nonce_rejects_unknown_nonce_without_issuing_a_challenge() {
+    futures_executor::block_on(async {
+        let state = AtomicDpopState::default();
+        let invalid = proof(public_jwk(), json!({"nonce": "unknown"}));
+        assert_eq!(
+            validate_authorization_server_dpop_at(
+                &state,
+                request(Some(&invalid), None),
+                DpopNoncePolicy::Optional,
+                NOW,
+            )
+            .await,
+            Err(DpopError::InvalidProof),
+        );
+        assert!(state.nonces.lock().unwrap().is_empty());
+        assert!(state.replay.lock().unwrap().is_empty());
+        let omitted = proof(public_jwk(), json!({}));
+        validate_authorization_server_dpop_at(
+            &state,
+            request(Some(&omitted), None),
+            DpopNoncePolicy::Optional,
+            NOW,
+        )
+        .await
+        .expect("optional mode never announced a nonce requirement");
+    });
+}
+
 async fn required_nonce_is_reusable_while_jti_replay_remains_one_time_async() {
     let state = AtomicDpopState::default();
     let proof_without_nonce = proof(public_jwk(), json!({}));
@@ -437,6 +472,17 @@ async fn required_nonce_is_reusable_while_jti_replay_remains_one_time_async() {
     let DpopError::UseNonce(nonce) = challenge else {
         panic!("missing nonce must return use_dpop_nonce");
     };
+
+    assert!(matches!(
+        validate_authorization_server_dpop_at(
+            &state,
+            request(Some(&proof_without_nonce), None),
+            DpopNoncePolicy::Required,
+            NOW,
+        )
+        .await,
+        Err(DpopError::UseNonce(_))
+    ));
 
     let proof_with_nonce = proof(public_jwk(), json!({"nonce": nonce}));
     validate_authorization_server_dpop_at(
@@ -670,10 +716,7 @@ fn dpop_replay_scope_preserves_exact_method() {
         jkt: "jkt".to_owned(),
         jti: "proof-jti".to_owned(),
         nonce: None,
-        audit: DpopReplayAudit {
-            jti_hash: "hash".to_owned(),
-            key_id: None,
-        },
+        key_id: None,
     };
     let scope_for = |method: &'static str| {
         let req = DpopProofRequest {

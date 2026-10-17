@@ -12,7 +12,7 @@ use nazo_key_management::{KeyManager, signing_algorithm_from_name};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::crypto::{access_token_tenant_id, blake3_hex, constant_time_eq};
+use crate::crypto::{access_token_tenant_id, blake3_hex};
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
 use crate::domain::client_policy::{parse_scope, refresh_client_jwks_for_encryption};
 use crate::domain::oidc_claims::oidc_user_claims;
@@ -198,7 +198,7 @@ impl ServerUserinfoOperations {
             UserinfoError::ResponseProtectionFailed
         })?;
         let representation = self
-            .protect_response(&client, response_claims)
+            .protect_response(&client, Value::Object(response_claims))
             .await
             .map_err(|error| {
                 tracing::warn!(
@@ -230,7 +230,6 @@ impl ServerUserinfoOperations {
                 self.handles
                     .issue_dpop_nonce()
                     .await
-                    .map(Some)
                     .map_err(map_dpop_error)
             }
             (AccessTokenAuthScheme::DPoP, _) => {
@@ -244,7 +243,7 @@ impl ServerUserinfoOperations {
                 let actual = facts
                     .mtls_thumbprint
                     .ok_or(UserinfoError::MissingMtlsCertificate)?;
-                if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
+                if expected != actual {
                     return Err(UserinfoError::MtlsCertificateMismatch);
                 }
                 Ok(None)
@@ -295,13 +294,13 @@ impl ServerUserinfoOperations {
                 .await?;
             match encryption_key {
                 Some(key) => {
-                    encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)?
+                    encrypt_compact_jwe(&key, signed.into_bytes(), JwePayloadKind::NestedJwt)?
                 }
                 None => signed,
             }
         } else {
             let key = encryption_key.expect("checked UserInfo encryption key is present");
-            encrypt_compact_jwe(&key, &serde_json::to_vec(&claims)?, JwePayloadKind::Claims)?
+            encrypt_compact_jwe(&key, serde_json::to_vec(&claims)?, JwePayloadKind::Claims)?
         };
         Ok(UserinfoRepresentation::Jwt(body))
     }
@@ -383,8 +382,13 @@ impl UserinfoHandles {
         .await
     }
 
-    pub async fn issue_dpop_nonce(&self) -> Result<String, DpopError> {
-        nazo_auth::issue_authorization_server_dpop_nonce(self.dpop_state.as_ref()).await
+    pub async fn issue_dpop_nonce(&self) -> Result<Option<String>, DpopError> {
+        if self.config.dpop_nonce_policy == DpopNoncePolicy::Optional {
+            return Ok(None);
+        }
+        nazo_auth::issue_authorization_server_dpop_nonce(self.dpop_state.as_ref())
+            .await
+            .map(Some)
     }
 
     pub async fn sign_response_jwt(
@@ -394,8 +398,8 @@ impl UserinfoHandles {
         typ: &str,
         signing_alg: nazo_crypto::jwt::Algorithm,
     ) -> nazo_crypto::Result<String> {
-        let mut header = nazo_crypto::jwt::Header::new(signing_alg);
-        header.typ = Some(typ.to_owned());
-        self.keys.encode_jwt(purpose, &header, claims).await
+        self.keys
+            .encode_response_jwt(purpose, Some(signing_alg), typ, claims)
+            .await
     }
 }

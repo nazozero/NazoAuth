@@ -194,7 +194,6 @@ pub trait AvatarStoragePort: Send + Sync {
         &'a self,
         user_id: UserId,
         expected_version: Option<&'a str>,
-        revision: &'a str,
     ) -> AvatarStorageFuture<'a, Self::Mutation>;
 
     fn commit<'a>(&'a self, mutation: &'a Self::Mutation) -> AvatarStorageFuture<'a, ()>;

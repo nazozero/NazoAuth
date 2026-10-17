@@ -28,7 +28,6 @@ use crate::token::client_auth::ClientAuthRequestFacts;
 use crate::token::client_auth::TokenManagementClientAuthError;
 use crate::token::client_auth::authenticate_introspection_client_with_dependencies;
 use crate::token::client_auth::authenticate_revocation_client_with_dependencies;
-use crate::token::client_auth::perform_dummy_client_secret_verification;
 
 #[derive(Clone)]
 pub struct ServerTokenManagementRequestGuard {
@@ -50,11 +49,11 @@ impl TokenManagementRequestGuard for ServerTokenManagementRequestGuard {
         &'a self,
         request: &'a TokenManagementRequestFacts,
     ) -> Pin<Box<dyn Future<Output = Result<(), TokenManagementRateLimitError>> + Send + 'a>> {
-        let subject = request.source_ip.clone();
+        let subject = request.source_ip.as_str();
         Box::pin(async move {
             let count = self
                 .token_service
-                .increment_token_management_rate(&subject, self.config.rate_limit_window_seconds)
+                .increment_token_management_rate(subject, self.config.rate_limit_window_seconds)
                 .await
                 .map_err(|error| {
                     tracing::warn!(%error, "token management rate limit increment failed");
@@ -135,10 +134,6 @@ impl ServerTokenManagementOperations {
         {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
             Ok(None) => {
-                perform_dummy_client_secret_verification(
-                    credentials,
-                    &self.config.client_secret_pepper,
-                );
                 return Err(TokenManagementError::InvalidClient {
                     basic_challenge: has_basic,
                 });
@@ -149,10 +144,6 @@ impl ServerTokenManagementOperations {
             }
         };
         if !client.is_active {
-            perform_dummy_client_secret_verification(
-                credentials,
-                &self.config.client_secret_pepper,
-            );
             return Err(TokenManagementError::InvalidClient {
                 basic_challenge: has_basic,
             });
@@ -164,8 +155,10 @@ impl ServerTokenManagementOperations {
             self.audit.as_ref(),
         )
         .with_fapi2_requirement(self.config.profile.requires_fapi2_security());
-        let auth_request =
-            ClientAuthRequestFacts::new(&request.endpoint_path, request.client_certificate.clone());
+        let auth_request = ClientAuthRequestFacts::borrowed(
+            &request.endpoint_path,
+            request.client_certificate.as_ref(),
+        );
         let result = match context {
             ClientAuthenticationContext::ConfidentialOnly => {
                 authenticate_introspection_client_with_dependencies(
@@ -224,7 +217,7 @@ impl ServerTokenManagementOperations {
             TokenManagementError::ResponseProtectionFailed
         })?;
         match key {
-            Some(key) => encrypt_compact_jwe(&key, token.as_bytes(), JwePayloadKind::NestedJwt)
+            Some(key) => encrypt_compact_jwe(&key, token.into_bytes(), JwePayloadKind::NestedJwt)
                 .map_err(|error| {
                     tracing::warn!(%error, "failed to encrypt introspection response");
                     TokenManagementError::ResponseProtectionFailed

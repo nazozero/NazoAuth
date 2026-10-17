@@ -68,38 +68,6 @@ fn oidc_authorization_url_includes_all_required_params() {
     );
 }
 
-#[test]
-fn audience_contains_matches_string() {
-    assert!(audience_contains(&json!("client-1"), "client-1"));
-}
-
-#[test]
-fn audience_contains_rejects_string_mismatch() {
-    assert!(!audience_contains(&json!("other"), "client-1"));
-}
-
-#[test]
-fn audience_contains_matches_array_element() {
-    let aud = json!(["client-1", "client-2"]);
-    assert!(audience_contains(&aud, "client-1"));
-    assert!(audience_contains(&aud, "client-2"));
-}
-
-#[test]
-fn audience_contains_rejects_array_without_match() {
-    assert!(!audience_contains(
-        &json!(["other-1", "other-2"]),
-        "client-1"
-    ));
-}
-
-#[test]
-fn audience_contains_returns_false_for_non_string_non_array() {
-    assert!(!audience_contains(&json!(null), "client-1"));
-    assert!(!audience_contains(&json!(42), "client-1"));
-    assert!(!audience_contains(&json!({"key": "value"}), "client-1"));
-}
-
 async fn one_shot_json_server(
     status: &'static str,
     body: Value,
@@ -333,6 +301,30 @@ fn verify_oidc_id_token_accepts_matching_signed_claims_and_rejects_policy_mismat
         json!({"iat": Utc::now().timestamp() + 120}),
     );
     assert!(verify_oidc_id_token(&provider, &jwks, &future_iat, &nonce).is_err());
+}
+
+#[test]
+fn verify_oidc_id_token_rejects_malformed_or_empty_audiences() {
+    let provider = provider();
+    let key = client_signing_fixture(Algorithm::RS256);
+    let jwks = json!({"keys": [key.public_jwk("oidc-kid")]});
+    let nonce = random_urlsafe_token();
+    for audience in [
+        json!(null),
+        json!(42),
+        json!({"client": "client-1"}),
+        json!([]),
+        json!(["client-1", 42]),
+    ] {
+        let token = signed_id_token(
+            &provider,
+            "oidc-kid",
+            &key,
+            &nonce,
+            json!({"aud": audience}),
+        );
+        assert!(verify_oidc_id_token(&provider, &jwks, &token, &nonce).is_err());
+    }
 }
 
 #[test]

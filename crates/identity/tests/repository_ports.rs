@@ -89,14 +89,20 @@ fn identity_port_errors_and_secret_wrappers_preserve_safe_messages() {
         assert_eq!(error.to_string(), expected);
     }
     assert!(EncodedSecretHash::new(" ").is_err());
-    let encoded = EncodedSecretHash::new("encoded").unwrap();
+    assert!(PasswordHashInput::new(" ").is_err());
+    let text = String::from("encoded");
+    let allocation = text.as_ptr();
+    let encoded = EncodedSecretHash::new(text).unwrap();
     assert_eq!(encoded.as_str(), "encoded");
-    let password = PasswordHashInput::new("password-hash").unwrap();
+    let stored = encoded.into_persistence_value();
+    assert_eq!(stored.as_ptr(), allocation);
+    let text = String::from("password-hash");
+    let allocation = text.as_ptr();
+    let password = PasswordHashInput::new(text).unwrap();
     assert_eq!(format!("{password:?}"), "PasswordHashInput([REDACTED])");
-    assert_eq!(
-        password.into_persistence_value(),
-        "password-hash".to_owned()
-    );
+    let stored = password.into_persistence_value();
+    assert_eq!(stored, "password-hash");
+    assert_eq!(stored.as_ptr(), allocation);
 }
 
 #[test]

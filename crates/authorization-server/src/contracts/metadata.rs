@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile};
 use nazo_runtime_modules::ActiveModuleSnapshot;
 use serde_json::Value;
 
@@ -12,7 +12,6 @@ pub struct MetadataEndpointConfig {
     pub mtls_enabled: bool,
     pub authorization_server_profile: MetadataAuthorizationServerProfile,
     pub ciba_profile: CibaMetadataProfile,
-    pub subject_type: MetadataSubjectType,
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: String,
     /// Additional public OAuth scopes; advertising does not grant access.
@@ -33,6 +32,7 @@ pub struct MetadataSnapshot {
 
 /// Supplies public, request-facing snapshots without exposing key lifecycle or storage details.
 pub trait MetadataSnapshotSource: Send + Sync {
+    fn active_modules(&self) -> Arc<ActiveModuleSnapshot>;
     fn snapshot(&self) -> MetadataSnapshot;
     fn jwks(&self) -> Value;
 }

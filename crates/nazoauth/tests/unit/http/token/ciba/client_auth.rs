@@ -398,7 +398,7 @@ async fn ciba_backchannel_rejects_invalid_request_object_claims_before_user_look
 #[actix_web::test]
 async fn ciba_request_parser_enforces_form_encoding_and_parameter_uniqueness() {
     let body = concat!(
-        "scope=openid%20profile&login_hint=user%40example.test&",
+        "scope=+openid%20profile+&login_hint=%E2%80%83user%40example.test%E2%80%83&",
         "id_token_hint=id-token&login_hint_token=hint-token&binding_message=1234&",
         "acr_values=1&requested_expiry=30&client_id=client-1&client_secret=secret&",
         "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&",
@@ -430,7 +430,7 @@ async fn ciba_request_parser_enforces_form_encoding_and_parameter_uniqueness() {
 
     let (request, mut payload) = actix_web::test::TestRequest::post()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
-        .set_payload("scope=openid&scope=profile")
+        .set_payload("scope=openid&sc%6fpe=profile")
         .to_http_parts();
     let mut payload =
         <actix_web::web::Payload as actix_web::FromRequest>::from_request(&request, &mut payload)

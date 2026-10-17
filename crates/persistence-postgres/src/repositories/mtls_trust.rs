@@ -26,8 +26,8 @@ struct RequestRow {
     id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    user_id: Option<Uuid>,
+    #[diesel(sql_type = sql_types::Uuid)]
+    user_id: Uuid,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
     requester_email: Option<String>,
     #[diesel(sql_type = sql_types::Text)]
@@ -67,32 +67,18 @@ struct PemRow {
 }
 
 #[derive(QueryableByName)]
-struct AdvisoryLockRow {
-    #[diesel(sql_type = sql_types::Bool)]
-    locked: bool,
-}
-
-#[derive(QueryableByName)]
 struct CreateOutcomeRow {
-    #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
-    id: Option<Uuid>,
+    #[diesel(embed)]
+    request: Option<RequestRow>,
     #[diesel(sql_type = sql_types::Bool)]
     eligible: bool,
 }
 
-fn map_request_row(row: RequestRow) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
-    let Some(user_id) = row.user_id else {
-        // Operator-managed anchors deliberately have no user actor.  The
-        // browser/admin projection cannot represent that state, so fail
-        // closed instead of inventing a requester identity.
-        return Err(RepositoryError::Consistency(
-            "operator-managed trust anchor is not an admin user request".to_owned(),
-        ));
-    };
-    Ok(MtlsTrustAnchorRequest {
+fn map_request_row(row: RequestRow) -> MtlsTrustAnchorRequest {
+    MtlsTrustAnchorRequest {
         id: row.id,
         tenant_id: row.tenant_id,
-        user_id,
+        user_id: row.user_id,
         requester_email: row.requester_email,
         client_id: row.client_id,
         certificate_pem: row.certificate_pem,
@@ -105,7 +91,7 @@ fn map_request_row(row: RequestRow) -> Result<MtlsTrustAnchorRequest, Repository
         created_at: row.created_at,
         resolved_at: row.resolved_at,
         revoked_at: row.revoked_at,
-    })
+    }
 }
 
 // The complete result stream and transaction commit have succeeded before
@@ -113,20 +99,9 @@ fn map_request_row(row: RequestRow) -> Result<MtlsTrustAnchorRequest, Repository
 fn committed_request_view(
     mut rows: Vec<RequestRow>,
 ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
-    if rows.len() > 1 {
-        return Err(RepositoryError::Consistency(
-            "trust mutation returned multiple views".to_owned(),
-        ));
-    }
     rows.pop()
         .ok_or(RepositoryError::Conflict)
-        .and_then(map_request_row)
-}
-
-#[derive(QueryableByName)]
-struct TrustAcceptanceTime {
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    observed_at: DateTime<Utc>,
+        .map(map_request_row)
 }
 
 enum TrustMutationError {
@@ -195,7 +170,7 @@ impl MtlsTrustAnchorRepository {
         let outcome = connection
             .transaction::<CreateOutcomeRow, diesel::result::Error, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, request.tenant_id).await?;
-                sql_query(
+                sql_query(format!(
                     "WITH eligible AS MATERIALIZED (
                  SELECT c.id
                  FROM oauth_clients c
@@ -237,7 +212,7 @@ impl MtlsTrustAnchorRepository {
                    WHERE pending.tenant_id = $2 AND pending.user_id = $3
                      AND pending.status = 0
                ) < $11
-             RETURNING id, tenant_id, user_id
+             RETURNING *
              ), recorded AS (
                  INSERT INTO oauth_client_mtls_trust_anchor_events (
                      tenant_id, request_id, actor_user_id, action
@@ -245,9 +220,12 @@ impl MtlsTrustAnchorRepository {
                  SELECT tenant_id, id, user_id, 0 FROM inserted
                  RETURNING request_id
              )
-             SELECT (SELECT request_id FROM recorded) AS id,
-                    EXISTS(SELECT 1 FROM eligible) AS eligible",
-                )
+             SELECT {REQUEST_PROJECTION}, outcome.eligible
+             FROM (SELECT EXISTS(SELECT 1 FROM eligible) AS eligible) outcome
+             LEFT JOIN inserted r ON r.id = (SELECT request_id FROM recorded)
+             LEFT JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
+             LEFT JOIN oauth_clients c ON c.id = r.client_id AND c.tenant_id = r.tenant_id"
+                ))
                 .bind::<sql_types::Uuid, _>(id)
                 .bind::<sql_types::Uuid, _>(request.tenant_id.as_uuid())
                 .bind::<sql_types::Uuid, _>(request.user_id.as_uuid())
@@ -264,16 +242,11 @@ impl MtlsTrustAnchorRepository {
             })
             .await
             .map_err(map_error)?;
-        if outcome.id.is_none() && outcome.eligible {
-            return Err(RepositoryError::Conflict);
+        match outcome.request {
+            Some(row) => Ok(map_request_row(row)),
+            None if outcome.eligible => Err(RepositoryError::Conflict),
+            None => Err(RepositoryError::NotFound),
         }
-        if outcome.id.is_none() {
-            return Err(RepositoryError::NotFound);
-        }
-        drop(connection);
-        self.by_id(request.tenant_id, id).await?.ok_or_else(|| {
-            RepositoryError::Consistency("created trust request is missing".to_owned())
-        })
     }
 
     pub async fn list_for_user(
@@ -282,7 +255,7 @@ impl MtlsTrustAnchorRepository {
         user_id: UserId,
     ) -> Result<Vec<MtlsTrustAnchorRequest>, RepositoryError> {
         let mut connection = self.connection().await?;
-        sql_query(format!(
+        Ok(sql_query(format!(
             "SELECT {REQUEST_PROJECTION}
              FROM oauth_client_mtls_trust_anchor_requests r
              JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
@@ -297,7 +270,7 @@ impl MtlsTrustAnchorRepository {
         .map_err(map_error)?
         .into_iter()
         .map(map_request_row)
-        .collect()
+        .collect())
     }
 
     pub async fn page(
@@ -338,7 +311,7 @@ impl MtlsTrustAnchorRepository {
         .map_err(map_error)?
         .into_iter()
         .map(map_request_row)
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect();
         Ok(MtlsTrustAnchorRequestPage {
             total: count,
             items,
@@ -363,9 +336,8 @@ impl MtlsTrustAnchorRepository {
         .get_result::<RequestRow>(&mut connection)
         .await
         .optional()
-        .map_err(map_error)?
-        .map(map_request_row)
-        .transpose()
+        .map(|row| row.map(map_request_row))
+        .map_err(map_error)
     }
 
     pub async fn approve(
@@ -405,7 +377,7 @@ impl MtlsTrustAnchorRepository {
                 acquire_tenant_trust_lock(connection, tenant_id).await?;
                 // Sample admission time after the current actor, request and
                 // requested client locks, so a lock wait cannot extend validity.
-                let mut locked = sql_query(
+                let locked = sql_query(
                     "SELECT r.id FROM oauth_client_mtls_trust_anchor_requests r
                      JOIN users a ON a.tenant_id = r.tenant_id AND a.id = $3
                      JOIN oauth_clients c ON c.tenant_id = r.tenant_id AND c.id = r.client_id
@@ -421,29 +393,27 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::SmallInt, _>(status.code())
                 .load::<IdRow>(connection)
                 .await?;
-                if locked.len() != 1 || locked.pop().map(|row| row.id) != Some(id) {
+                if locked.is_empty() {
                     return Err(TrustMutationError::Projection(RepositoryError::Conflict));
                 }
-                let observed_at = sql_query("SELECT clock_timestamp() AS observed_at")
-                    .get_result::<TrustAcceptanceTime>(connection)
-                    .await?
-                    .observed_at;
                 let updated = sql_query(format!(
-                    "WITH updated AS (
+                    "WITH observed AS MATERIALIZED (
+             SELECT clock_timestamp() AS observed_at
+             ), updated AS (
              UPDATE oauth_client_mtls_trust_anchor_requests
              SET status = $4, admin_note = $5, resolved_by_user_id = $3,
-                 resolved_at = $8, updated_at = $8
-             WHERE tenant_id = $1 AND id = $2 AND status = 0 AND user_id <> $3
-               AND source = 'admin-session'
+                 resolved_at = observed.observed_at, updated_at = observed.observed_at
+             FROM observed
+             WHERE id = $2
                AND ($4 <> 1 OR (
-                   not_before <= $8 AND not_after > $8
+                   not_before <= observed.observed_at AND not_after > observed.observed_at
                    AND (
                        EXISTS (
                            SELECT 1
                            FROM oauth_client_mtls_trust_anchor_requests existing
                            WHERE existing.tenant_id = $1 AND existing.status = 1
-                             AND existing.not_before <= $8
-                             AND existing.not_after > $8
+                             AND existing.not_before <= observed.observed_at
+                             AND existing.not_after > observed.observed_at
                              AND existing.certificate_sha256 =
                                  oauth_client_mtls_trust_anchor_requests.certificate_sha256
                        )
@@ -454,8 +424,8 @@ impl MtlsTrustAnchorRepository {
                              ON active_client.id = active.client_id
                             AND active_client.tenant_id = active.tenant_id
                            WHERE active.tenant_id = $1 AND active.status = 1
-                             AND active.not_before <= $8
-                             AND active.not_after > $8
+                             AND active.not_before <= observed.observed_at
+                             AND active.not_after > observed.observed_at
                              AND active_client.is_active = TRUE
                        ) < $6
                    )
@@ -463,8 +433,8 @@ impl MtlsTrustAnchorRepository {
                        SELECT COUNT(*)
                        FROM oauth_client_mtls_trust_anchor_requests active
                        WHERE active.tenant_id = $1 AND active.status = 1
-                         AND active.not_before <= $8
-                         AND active.not_after > $8
+                         AND active.not_before <= observed.observed_at
+                         AND active.not_after > observed.observed_at
                          AND active.client_id =
                              oauth_client_mtls_trust_anchor_requests.client_id
                    ) < $7
@@ -490,7 +460,6 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::Nullable<sql_types::Text>, _>(note)
                 .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT)
                 .bind::<sql_types::BigInt, _>(MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT)
-                .bind::<sql_types::Timestamptz, _>(observed_at)
                 .load::<RequestRow>(connection)
                 .await?;
                 let view =
@@ -709,9 +678,8 @@ impl nazo_identity::ports::MtlsTrustAnchorStore for MtlsTrustAnchorRepository {
 
 /// Input for an already-approved operator-managed mTLS trust anchor.  The
 /// operator task is the authority for this mutation; no administrator or
-/// browser requester is synthesized.  `requester_user_id` remains optional so
-/// the migration can preserve a user subject when a deployment has one while
-/// still supporting automation-only anchors.
+/// browser requester is synthesized. Certificate metadata comes from the
+/// preparation boundary; database constraints enforce persisted field shapes.
 pub struct OperatorManagedTrustAnchor<'a> {
     pub tenant_id: TenantId,
     pub client_id: Uuid,
@@ -738,14 +706,6 @@ pub async fn insert_operator_managed_trust_anchor_on_connection(
         not_before,
         not_after,
     } = request;
-    validate_trust_anchor_metadata(
-        certificate_pem,
-        certificate_sha256,
-        subject_dn,
-        not_before,
-        not_after,
-    )?;
-
     acquire_tenant_trust_lock(connection, tenant_id)
         .await
         .map_err(map_error)?;
@@ -866,37 +826,6 @@ pub async fn revoke_operator_managed_trust_anchor_on_connection(
     Ok(revoked.is_some())
 }
 
-fn validate_trust_anchor_metadata(
-    certificate_pem: &str,
-    certificate_sha256: &str,
-    subject_dn: &str,
-    not_before: DateTime<Utc>,
-    not_after: DateTime<Utc>,
-) -> Result<(), RepositoryError> {
-    if certificate_pem.len() > 16 * 1024
-        || !certificate_pem.starts_with("-----BEGIN CERTIFICATE-----")
-        || !certificate_pem.contains("-----END CERTIFICATE-----")
-        || subject_dn.trim().is_empty()
-        || subject_dn.len() > 2048
-        || subject_dn.chars().any(char::is_control)
-        || not_after <= not_before
-    {
-        return Err(RepositoryError::Consistency(
-            "operator-managed trust anchor metadata is invalid".to_owned(),
-        ));
-    }
-    if certificate_sha256.len() != 64
-        || !certificate_sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(RepositoryError::Consistency(
-            "operator-managed trust anchor digest is not a lowercase SHA-256 value".to_owned(),
-        ));
-    }
-    Ok(())
-}
-
 #[derive(QueryableByName)]
 struct IdRow {
     #[diesel(sql_type = sql_types::Uuid)]
@@ -917,13 +846,9 @@ pub(crate) async fn acquire_tenant_trust_lock(
     connection: &mut AsyncPgConnection,
     tenant_id: TenantId,
 ) -> Result<(), diesel::result::Error> {
-    let lock = sql_query(
-        "SELECT TRUE AS locked
-         FROM pg_advisory_xact_lock(hashtextextended($1::text, 8705))",
-    )
-    .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
-    .get_result::<AdvisoryLockRow>(connection)
-    .await?;
-    debug_assert!(lock.locked);
+    sql_query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 8705))")
+        .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+        .execute(connection)
+        .await?;
     Ok(())
 }

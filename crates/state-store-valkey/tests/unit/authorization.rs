@@ -1,5 +1,5 @@
 use super::{
-    AuthorizationCodeBegin, parse_authorization_code_begin_reply,
+    AuthorizationCodeBeginResult, parse_authorization_code_begin_reply,
     parse_decision_material_discard_reply,
 };
 use crate::ErrorKind;
@@ -50,19 +50,19 @@ fn decision_cleanup_errors_and_unknown_replies_never_become_success() {
 fn authorization_code_begin_reply_maps_terminal_states_exactly() {
     assert!(matches!(
         parse_authorization_code_begin_reply("busy"),
-        Ok(AuthorizationCodeBegin::Busy)
+        Ok(AuthorizationCodeBeginResult::Busy)
     ));
     assert!(matches!(
         parse_authorization_code_begin_reply("failed"),
-        Ok(AuthorizationCodeBegin::Failed)
+        Ok(AuthorizationCodeBeginResult::Failed)
     ));
     assert!(matches!(
         parse_authorization_code_begin_reply("missing"),
-        Ok(AuthorizationCodeBegin::Missing)
+        Ok(AuthorizationCodeBeginResult::Missing)
     ));
     assert!(matches!(
         parse_authorization_code_begin_reply("malformed"),
-        Ok(AuthorizationCodeBegin::Malformed)
+        Ok(AuthorizationCodeBeginResult::Malformed)
     ));
     assert!(parse_authorization_code_begin_reply("unknown").is_err());
 }

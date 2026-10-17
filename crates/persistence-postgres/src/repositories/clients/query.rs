@@ -1,10 +1,7 @@
 use chrono::{DateTime, Utc};
-use diesel::{
-    ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper,
-    TextExpressionMethods,
-};
+use diesel::{ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use nazo_auth::OAuthClient;
+use nazo_auth::{ClientPresentation, OAuthClient};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
@@ -14,36 +11,74 @@ use crate::schema::{oauth_clients, user_client_grants};
 use super::base::OAuthClientRepository;
 use super::{OAuthClientRecord, map_error};
 
-// Both metadata expressions have fixed SQL. SqlLiteral would make the entire
+// The salt projection has fixed SQL. SqlLiteral would make the entire
 // client lookup uncacheable, including its wide registration projection. Cache
 // the prepared statement only; activity, salt and epoch remain per-read facts.
 #[derive(Debug, Clone, Copy, diesel::query_builder::QueryId, diesel::expression::ValidGrouping)]
-struct AuthenticationMetadata;
+struct ClientSecretSalt;
 
-impl diesel::Expression for AuthenticationMetadata {
-    type SqlType = (
-        diesel::sql_types::Nullable<diesel::sql_types::Text>,
-        diesel::sql_types::BigInt,
-    );
+impl diesel::Expression for ClientSecretSalt {
+    type SqlType = diesel::sql_types::Nullable<diesel::sql_types::Text>;
 }
 
-impl diesel::AppearsOnTable<oauth_clients::table> for AuthenticationMetadata {}
-impl diesel::SelectableExpression<oauth_clients::table> for AuthenticationMetadata {}
+impl diesel::AppearsOnTable<oauth_clients::table> for ClientSecretSalt {}
+impl diesel::SelectableExpression<oauth_clients::table> for ClientSecretSalt {}
 
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuthenticationMetadata {
+impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for ClientSecretSalt {
     fn walk_ast<'b>(
         &'b self,
         mut out: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
     ) -> diesel::QueryResult<()> {
         out.push_sql(
             "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
-             THEN split_part(client_secret_hash, ':', 2) END, access_token_epoch",
+             THEN split_part(client_secret_hash, ':', 2) END",
         );
         Ok(())
     }
 }
 
 impl OAuthClientRepository {
+    pub async fn active_client_presentation(
+        &self,
+        tenant_id: Uuid,
+        client_id: &str,
+    ) -> Result<Option<ClientPresentation>, RepositoryError> {
+        let client_id = client_id.to_owned();
+        self.pool
+            .read(move |connection| {
+                Box::pin(async move {
+                    oauth_clients::table
+                        .filter(oauth_clients::tenant_id.eq(tenant_id))
+                        .filter(oauth_clients::client_id.eq(client_id))
+                        .filter(oauth_clients::is_active.eq(true))
+                        .select((
+                            oauth_clients::client_name,
+                            oauth_clients::logo_uri,
+                            oauth_clients::policy_uri,
+                            oauth_clients::tos_uri,
+                        ))
+                        .first::<(String, Option<String>, Option<String>, Option<String>)>(
+                            connection,
+                        )
+                        .await
+                        .optional()
+                })
+            })
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?
+            .map_err(map_error)
+            .map(|row| {
+                row.map(
+                    |(client_name, logo_uri, policy_uri, tos_uri)| ClientPresentation {
+                        client_name,
+                        logo_uri,
+                        policy_uri,
+                        tos_uri,
+                    },
+                )
+            })
+    }
+
     pub async fn by_client_id(
         &self,
         tenant_id: Uuid,
@@ -126,38 +161,30 @@ impl OAuthClientRepository {
         tenant_id: Uuid,
         client_id: &str,
         access_token_hash: &str,
-    ) -> Result<Option<OAuthClient>, RepositoryError> {
+    ) -> Result<Option<nazo_auth::RegistrationClientSnapshot>, RepositoryError> {
         let mut connection = self.connection().await?;
         oauth_clients::table
             .filter(oauth_clients::tenant_id.eq(tenant_id))
             .filter(oauth_clients::client_id.eq(client_id))
             .filter(oauth_clients::is_active.eq(true))
             .filter(oauth_clients::registration_access_token_blake3.eq(access_token_hash))
-            .select(OAuthClientRecord::as_select())
-            .first::<OAuthClientRecord>(&mut connection)
+            .select((
+                OAuthClientRecord::as_select(),
+                oauth_clients::client_secret_hash.is_not_null(),
+                ClientSecretSalt,
+            ))
+            .first::<(OAuthClientRecord, bool, Option<String>)>(&mut connection)
             .await
             .optional()
             .map_err(map_error)?
-            .map(OAuthClientRecord::into_domain)
+            .map(|(record, has_client_secret, secret_salt)| {
+                Ok(nazo_auth::RegistrationClientSnapshot {
+                    client: record.into_domain()?,
+                    has_client_secret,
+                    secret_salt,
+                })
+            })
             .transpose()
-    }
-
-    pub async fn has_client_secret(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-    ) -> Result<bool, RepositoryError> {
-        let mut connection = self.connection().await?;
-        diesel::select(diesel::dsl::exists(
-            oauth_clients::table
-                .filter(oauth_clients::id.eq(id))
-                .filter(oauth_clients::tenant_id.eq(tenant_id))
-                .filter(oauth_clients::is_active.eq(true))
-                .filter(oauth_clients::client_secret_hash.is_not_null()),
-        ))
-        .get_result(&mut connection)
-        .await
-        .map_err(map_error)
     }
 
     pub async fn active_for_tenant_user(
@@ -239,7 +266,10 @@ impl OAuthClientRepository {
                     oauth_clients::table
                         .filter(oauth_clients::tenant_id.eq(tenant_id))
                         .filter(oauth_clients::client_id.eq(client_id))
-                        .select((OAuthClientRecord::as_select(), AuthenticationMetadata))
+                        .select((
+                            OAuthClientRecord::as_select(),
+                            (ClientSecretSalt, oauth_clients::access_token_epoch),
+                        ))
                         .first::<(OAuthClientRecord, (Option<String>, i64))>(connection)
                         .await
                         .optional()
@@ -254,27 +284,6 @@ impl OAuthClientRepository {
                     .map(|client| (client, secret_salt, epoch))
             })
             .transpose()
-    }
-
-    /// Returns only the non-secret salt needed to derive a candidate digest.
-    pub async fn client_secret_salt(
-        &self,
-        tenant_id: Uuid,
-        id: Uuid,
-    ) -> Result<Option<String>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        oauth_clients::table
-            .find(id)
-            .filter(oauth_clients::tenant_id.eq(tenant_id))
-            .filter(oauth_clients::is_active.eq(true))
-            .filter(oauth_clients::client_secret_hash.like("client-secret-v1:%:%"))
-            .select(diesel::dsl::sql::<diesel::sql_types::Text>(
-                "split_part(client_secret_hash, ':', 2)",
-            ))
-            .first::<String>(&mut connection)
-            .await
-            .optional()
-            .map_err(map_error)
     }
 
     /// Compares an already-derived candidate digest without loading the stored digest.
@@ -305,21 +314,19 @@ impl OAuthClientRepository {
     }
 }
 
-/// Resolve the public identifier for one active tenant-owned client while the
-/// caller retains transaction ownership.
-pub async fn active_public_client_id_on_connection(
+/// Resolve existing active tenant-owned clients in one transaction-owned read.
+pub async fn active_public_client_ids_on_connection(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
-    id: Uuid,
-) -> Result<Option<String>, RepositoryError> {
+    ids: &[Uuid],
+) -> Result<Vec<(Uuid, String)>, RepositoryError> {
     oauth_clients::table
-        .find(id)
+        .filter(oauth_clients::id.eq_any(ids))
         .filter(oauth_clients::tenant_id.eq(tenant_id))
         .filter(oauth_clients::is_active.eq(true))
-        .select(oauth_clients::client_id)
-        .first::<String>(connection)
+        .select((oauth_clients::id, oauth_clients::client_id))
+        .load(connection)
         .await
-        .optional()
         .map_err(map_error)
 }
 

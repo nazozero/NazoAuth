@@ -43,3 +43,11 @@ fn issuer_uses_browser_origin_serialization() {
     assert!(issue_oidc_session_state("client-1", "native://callback", "opbs-1").is_none());
     assert!(issue_oidc_session_state("client-1", "not-a-uri", "opbs-1").is_none());
 }
+
+#[test]
+fn session_state_preserves_digest_wire_bytes() {
+    assert_eq!(
+        oidc_session_state("client-1", "https://client.example", "opbs-1", "fixed-salt"),
+        "LzL7prExqIFqHOoZJNe0ujTJc5IbR2ZFSPBEQOi_yno.fixed-salt"
+    );
+}

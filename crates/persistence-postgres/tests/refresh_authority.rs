@@ -391,12 +391,16 @@ async fn source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirem
         } else {
             assert_eq!(
                 repository
-                    .revoke_token(TokenRevocation {
-                        tenant_id: tenant(),
-                        client_id: fixture.client_id,
-                        raw_token: &raw,
-                        access_token: None,
-                    })
+                    .revoke_token_with_audit(
+                        TokenRevocation {
+                            tenant_id: tenant(),
+                            client_id: fixture.client_id,
+                            raw_token: &raw,
+                            access_token: None,
+                        },
+                        "revocation-test-client",
+                        "test-source-hash"
+                    )
                     .await
                     .unwrap(),
                 1
@@ -559,12 +563,16 @@ async fn two_legal_preserves_overlap_while_revocation_waits_for_both() {
     let client_id = fixture.client_id;
     let mut revoking = tokio::spawn(async move {
         repository
-            .revoke_token(TokenRevocation {
-                tenant_id: tenant(),
-                client_id,
-                raw_token: &raw,
-                access_token: None,
-            })
+            .revoke_token_with_audit(
+                TokenRevocation {
+                    tenant_id: tenant(),
+                    client_id,
+                    raw_token: &raw,
+                    access_token: None,
+                },
+                "revocation-test-client",
+                "test-source-hash",
+            )
             .await
     });
     wait_for_lock(&mut coordinator, &revoke_app, &mut revoking).await;
@@ -726,12 +734,16 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
             } else {
                 assert_eq!(
                     repository
-                        .revoke_token(TokenRevocation {
-                            tenant_id: tenant(),
-                            client_id,
-                            raw_token: &raw,
-                            access_token: None,
-                        })
+                        .revoke_token_with_audit(
+                            TokenRevocation {
+                                tenant_id: tenant(),
+                                client_id,
+                                raw_token: &raw,
+                                access_token: None,
+                            },
+                            "revocation-test-client",
+                            "test-source-hash"
+                        )
                         .await
                         .unwrap(),
                     1
@@ -864,58 +876,33 @@ async fn family_contract_lookup_preserves_per_family_lock_scope() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn contract_reference_reuses_equal_payload_and_rejects_same_key_different_payload() {
+async fn new_families_deduplicate_equal_contracts_and_keep_distinct_numeric_content() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
-    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    let before = state(&mut connection, source.token_family_id).await;
-    let same = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(source.contract_key.to_vec())
-        .bind::<sql_types::Jsonb, _>(before.contract.clone())
-        .execute(&mut connection)
-        .await;
-    assert!(
-        same.is_ok(),
-        "an equal existing payload is a reusable reference"
-    );
-    let mut different = before.contract.clone();
-    different["authentication_context"]["acr"] = json!("urn:example:different");
-    let mismatch = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(source.contract_key.to_vec())
-        .bind::<sql_types::Jsonb, _>(different)
-        .execute(&mut connection)
-        .await;
-    assert!(
-        mismatch.is_err(),
-        "the content key must never accept a different contract"
-    );
-    assert_eq!(state(&mut connection, source.token_family_id).await, before);
-    // JSONB's ordinary equality considers 1 and 1.0 equal. The reference
-    // contract must retain the stricter distinction used by serde_json.
-    let numeric_key = blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec();
-    let mut integer_contract = before.contract.clone();
-    integer_contract["authorization_details"] = json!([{"type": "numeric", "value": 1}]);
-    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-        .bind::<sql_types::Uuid, _>(tenant())
-        .bind::<sql_types::Binary, _>(&numeric_key)
-        .bind::<sql_types::Jsonb, _>(&integer_contract)
-        .execute(&mut connection)
-        .await
-        .unwrap();
-    let mut float_contract = integer_contract;
-    float_contract["authorization_details"] = json!([{"type": "numeric", "value": 1.0}]);
-    assert!(
-        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
-            .bind::<sql_types::Uuid, _>(tenant())
-            .bind::<sql_types::Binary, _>(&numeric_key)
-            .bind::<sql_types::Jsonb, _>(&float_contract)
-            .execute(&mut connection)
-            .await
-            .is_err()
-    );
+    let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
+    let mut keys = Vec::new();
+    for value in [json!(1), json!(1.0), json!(1)] {
+        let mut contract = contract(&fixture);
+        contract.authorization_details = json!([{ "type": "numeric", "value": value }]);
+        let token = new_token(&fixture, Utc::now());
+        let raw = token.raw_token.clone();
+        let expected = contract.clone();
+        assert_eq!(
+            repository
+                .commit_token_issuance(issuance(
+                    &fixture,
+                    RefreshTokenCommit::IssueNew { token, contract },
+                ))
+                .await
+                .unwrap(),
+            CommitTokenIssuanceResult::Committed
+        );
+        let source = lookup(&url, &raw).await;
+        assert_eq!(source.contract, expected);
+        keys.push(source.contract_key);
+    }
+    assert_eq!(keys[0], keys[2], "equal contracts share their stored row");
+    assert_ne!(keys[0], keys[1], "1 and 1.0 retain distinct contract keys");
 }
 
 async fn apply_migration(connection: &mut AsyncPgConnection, path: &std::path::Path) {
@@ -1126,9 +1113,18 @@ async fn public_unbound_replay_after_65_rotations_revokes_only_its_family() {
     assert!(original.expires_at > Utc::now());
     assert!(original.revoked_at.is_some());
     assert!(
-        tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, Utc::now())
+        repository
+            .refresh_token_snapshot(
+                tenant(),
+                &original_raw,
+                fixture.client_id,
+                Utc::now(),
+                false
+            )
             .await
+            .unwrap()
+            .expect("original presentation exists")
+            .successor
             .unwrap()
             .is_none(),
         "unbound replay must not receive the bound lost-response exception"
@@ -1173,15 +1169,17 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
         }
         let (first_raw, mut current) = issue_with_binding(&url, &fixture, binding).await;
         let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
-        let mut predecessor = current.clone();
+        let mut current_raw = first_raw.clone();
+        let mut predecessor_raw = String::new();
         for _ in 0..66 {
-            predecessor = current.clone();
+            predecessor_raw = current_raw;
             let (input, raw) = rotation(&fixture, &current, &[A]);
             assert_eq!(
                 repository.commit_token_issuance(input).await.unwrap(),
                 CommitTokenIssuanceResult::Committed
             );
             current = lookup(&url, &raw).await;
+            current_raw = raw;
         }
         let family = state(&mut connection, current.token_family_id).await;
         assert_eq!(family.spent, nazo_auth::MAX_SPENT_PROOFS_PER_REFRESH_FAMILY);
@@ -1194,9 +1192,18 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
                 .unwrap()
                 .is_none()
         );
-        let recovered = tokens
-            .inspect_lost_response_successor(&predecessor, fixture.client_id, Utc::now())
+        let recovered = repository
+            .refresh_token_snapshot(
+                tenant(),
+                &predecessor_raw,
+                fixture.client_id,
+                Utc::now(),
+                false,
+            )
             .await
+            .unwrap()
+            .expect("predecessor presentation exists")
+            .successor
             .unwrap();
         assert_eq!(
             recovered.map(|token| token.id),
@@ -1596,7 +1603,13 @@ async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
             CommitTokenIssuanceResult::Committed
         );
         let snapshot = repository
-            .refresh_token_snapshot(tenant(), &original_raw, fixture.client_id, Utc::now())
+            .refresh_token_snapshot(
+                tenant(),
+                &original_raw,
+                fixture.client_id,
+                Utc::now(),
+                false,
+            )
             .await
             .unwrap()
             .expect("spent presentation exists");
@@ -1625,12 +1638,16 @@ async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
         match change {
             "revoke" => {
                 repository
-                    .revoke_token(nazo_auth::TokenRevocation {
-                        tenant_id: tenant(),
-                        client_id: fixture.client_id,
-                        raw_token: &child_raw,
-                        access_token: None,
-                    })
+                    .revoke_token_with_audit(
+                        nazo_auth::TokenRevocation {
+                            tenant_id: tenant(),
+                            client_id: fixture.client_id,
+                            raw_token: &child_raw,
+                            access_token: None,
+                        },
+                        "revocation-test-client",
+                        "test-source-hash",
+                    )
                     .await
                     .unwrap();
             }
@@ -1733,6 +1750,7 @@ async fn bound_delayed_rotation_uses_transition_clock_without_false_reuse() {
                     &original_raw,
                     fixture.client_id,
                     retry_started_at,
+                    false,
                 )
                 .await
                 .unwrap()
@@ -1843,6 +1861,7 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
                     &original_raw,
                     fixture.client_id,
                     retry_started_at,
+                    false,
                 )
                 .await
                 .unwrap()

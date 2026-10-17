@@ -130,6 +130,7 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         &response_signing_algorithms,
         &crypto,
     )
+    .map(|_| ())
     .map_err(|error| anyhow!(error.to_string()))
 }
 
@@ -147,67 +148,56 @@ impl AdminClientCryptoPort for MetadataTestCrypto {
         unreachable!("metadata validation must not issue client secrets")
     }
 
-    fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
+    fn inspect_jwks(
+        &self,
+        jwks: &Value,
+        certificate_auth: bool,
+    ) -> Result<crate::ClientJwksCapabilities, String> {
         let keys = jwks
             .get("keys")
             .and_then(Value::as_array)
             .ok_or_else(|| "jwks.keys 必须是数组".to_owned())?;
-        if keys.is_empty() {
+        if !certificate_auth && keys.is_empty() {
             return Err("jwks.keys 不能为空".to_owned());
         }
         const PRIVATE_MEMBERS: &[&str] = &["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
-        if keys.iter().any(|key| {
-            key.as_object().is_some_and(|object| {
-                PRIVATE_MEMBERS
-                    .iter()
-                    .any(|member| object.contains_key(*member))
+        if !certificate_auth
+            && keys.iter().any(|key| {
+                key.as_object().is_some_and(|object| {
+                    PRIVATE_MEMBERS
+                        .iter()
+                        .any(|member| object.contains_key(*member))
+                })
             })
-        }) {
+        {
             return Err("jwks 不能包含私钥材料".to_owned());
         }
-        Ok(())
+        let mut result = crate::ClientJwksCapabilities::default();
+        for key in keys {
+            if key.get("use").and_then(Value::as_str) != Some("enc")
+                && let Some(alg) = SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+                    .iter()
+                    .copied()
+                    .find(|alg| key.get("alg").and_then(Value::as_str) == Some(*alg))
+            {
+                result.signing_algorithms.insert(alg);
+            }
+            for &alg in crate::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS {
+                if client_jwe_encryption_key_matches_alg(key, alg) {
+                    *result.encryption_key_counts.entry(alg).or_default() += 1;
+                }
+            }
+            result.has_current_mtls_certificate |= key
+                .get("x5c")
+                .and_then(Value::as_array)
+                .is_some_and(|chain| !chain.is_empty());
+        }
+        Ok(result)
     }
 
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         (!value.trim().is_empty() && value.contains('='))
             .then_some(())
             .ok_or_else(|| "invalid RFC 4514 DN".to_owned())
-    }
-
-    fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
-        jwks.get("keys")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|key| client_jwe_encryption_key_matches_alg(key, algorithm))
-            .count()
-    }
-
-    fn contains_signing_key(&self, jwks: &Value) -> bool {
-        jwks.get("keys")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .any(|key| {
-                key.get("use").and_then(Value::as_str) != Some("enc")
-                    && key
-                        .get("alg")
-                        .and_then(Value::as_str)
-                        .is_some_and(|algorithm| {
-                            SUPPORTED_CLIENT_JWT_SIGNING_ALGS.contains(&algorithm)
-                        })
-            })
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool {
-        jwks.get("keys")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .any(|key| {
-                key.get("x5c")
-                    .and_then(Value::as_array)
-                    .is_some_and(|chain| !chain.is_empty())
-            })
     }
 }

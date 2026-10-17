@@ -67,26 +67,28 @@ impl AdminClientCryptoPort for FakeSecurity {
         (secret, hash)
     }
 
-    fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
-        Ok(())
+    fn inspect_jwks(
+        &self,
+        _jwks: &Value,
+        _certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        Ok(nazo_auth::ClientJwksCapabilities {
+            signing_algorithms: nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+                .iter()
+                .copied()
+                .collect(),
+            encryption_key_counts: nazo_auth::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+                .iter()
+                .map(|alg| (*alg, 1))
+                .collect(),
+            has_current_mtls_certificate: true,
+        })
     }
 
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         (!value.trim().is_empty() && value.contains('='))
             .then_some(())
             .ok_or_else(|| "invalid RFC 4514 DN".to_owned())
-    }
-
-    fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {
-        1
-    }
-
-    fn contains_signing_key(&self, _jwks: &Value) -> bool {
-        true
-    }
-
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &Value) -> bool {
-        true
     }
 }
 
@@ -152,35 +154,24 @@ impl DynamicRegistrationClientStore for Store {
         tenant: Uuid,
         client_id: &'a str,
         token_hash: &'a str,
-    ) -> DynamicRegistrationFuture<'a, Option<OAuthClient>> {
+    ) -> DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>> {
         Box::pin(async move {
             let state = self.0.lock().unwrap();
-            Ok(state.client.clone().filter(|client| {
-                client.is_active
-                    && client.tenant_id == tenant
-                    && client.client_id == client_id
-                    && state.token_hash == token_hash
-            }))
+            Ok(state
+                .client
+                .clone()
+                .filter(|client| {
+                    client.is_active
+                        && client.tenant_id == tenant
+                        && client.client_id == client_id
+                        && state.token_hash == token_hash
+                })
+                .map(|client| nazo_auth::RegistrationClientSnapshot {
+                    client,
+                    has_client_secret: state.secret_hash.is_some(),
+                    secret_salt: state.secret_hash.as_ref().map(|_| "salt".to_owned()),
+                }))
         })
-    }
-    fn has_client_secret(&self, tenant: Uuid, id: Uuid) -> DynamicRegistrationFuture<'_, bool> {
-        Box::pin(async move {
-            let state = self.0.lock().unwrap();
-            assert!(
-                state
-                    .client
-                    .as_ref()
-                    .is_some_and(|client| client.tenant_id == tenant && client.id == id)
-            );
-            Ok(state.secret_hash.is_some())
-        })
-    }
-    fn client_secret_salt(
-        &self,
-        _tenant: Uuid,
-        _id: Uuid,
-    ) -> DynamicRegistrationFuture<'_, Option<String>> {
-        Box::pin(async { Ok(Some("salt".to_owned())) })
     }
     fn client_secret_digest_matches<'a>(
         &'a self,
@@ -582,4 +573,48 @@ fn dynamic_registration_guard_preserves_fixed_window_threshold() {
             retry_after_seconds: 37
         })
     );
+}
+
+#[test]
+fn configuration_update_keeps_administrator_policy_through_validation() {
+    block_on(async {
+        let store = Arc::new(Store::default());
+        let app = application(store.clone(), Arc::new(Guard::default()));
+        let created = create(&app).await;
+        assert!(
+            created
+                .client
+                .security_policy
+                .allow_confidential_oidc_without_pkce
+        );
+        {
+            let mut state = store.0.lock().unwrap();
+            let policy = &mut state.client.as_mut().unwrap().registration.security_policy;
+            policy.allow_confidential_oidc_without_pkce = false;
+            policy.introspection_audiences = vec!["https://resource.example".to_owned()];
+        }
+        let DynamicRegistrationResult::Updated(updated) = app
+            .update(
+                &created.client.client_id,
+                update_payload(&created.client, created.issued_secret.as_deref().unwrap()),
+                Some(&created.registration_access_token),
+                "203.0.113.77",
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("updated result")
+        };
+        assert!(
+            !updated
+                .client
+                .security_policy
+                .allow_confidential_oidc_without_pkce
+        );
+        assert_eq!(
+            updated.client.security_policy.introspection_audiences,
+            ["https://resource.example"]
+        );
+        assert_eq!(updated.response_types, ["code"]);
+    });
 }

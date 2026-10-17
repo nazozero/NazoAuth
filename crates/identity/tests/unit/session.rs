@@ -68,7 +68,7 @@ impl SessionStorePort for FakeStore {
     fn rotate<'a>(
         &'a self,
         old_session_id: &'a SessionId,
-        _expected: &'a SessionSnapshot,
+        _expected: &'a SessionVersion,
         new_session_id: &'a SessionId,
         replacement: &'a SessionRecord,
         ttl_seconds: u64,
@@ -87,7 +87,7 @@ impl SessionStorePort for FakeStore {
     fn compare_and_set<'a>(
         &'a self,
         _session_id: &'a SessionId,
-        expected: &'a SessionSnapshot,
+        expected: &'a SessionVersion,
         replacement: &'a SessionRecord,
     ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
         Box::pin(async move {
@@ -99,7 +99,7 @@ impl SessionStorePort for FakeStore {
                 return Ok(outcome);
             }
             let mut snapshot = self.snapshot.lock().unwrap();
-            if snapshot.as_ref() != Some(expected) {
+            if snapshot.as_ref().map(SessionSnapshot::version) != Some(expected) {
                 return Ok(SessionUpdateOutcome::Conflict);
             }
             *snapshot = Some(SessionSnapshot::new(
@@ -114,6 +114,18 @@ impl SessionStorePort for FakeStore {
 struct MissingAccounts;
 
 impl SessionAccountPort for MissingAccounts {
+    fn principal_by_id(
+        &self,
+        tenant_id: crate::TenantId,
+        user_id: crate::UserId,
+    ) -> crate::ports::RepositoryFuture<'_, Option<crate::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         _tenant_id: TenantId,
@@ -363,6 +375,18 @@ struct CountingSessionAccounts {
     unavailable: bool,
 }
 impl SessionAccountPort for CountingSessionAccounts {
+    fn principal_by_id(
+        &self,
+        tenant_id: crate::TenantId,
+        user_id: crate::UserId,
+    ) -> crate::ports::RepositoryFuture<'_, Option<crate::Principal>> {
+        Box::pin(async move {
+            self.public_account_by_id(tenant_id, user_id)
+                .await
+                .map(|account| account.map(|account| account.principal))
+        })
+    }
+
     fn public_account_by_id(
         &self,
         tenant_id: TenantId,
@@ -484,4 +508,95 @@ fn authentication_precision_is_owned_by_the_record_and_legacy_updates_clear_it()
     assert_eq!(session.auth_time_micros(), Some(1_000_123_456));
     session.set_auth_time(1_001);
     assert_eq!(session.auth_time_micros(), None);
+}
+
+struct PrincipalOnlyAccounts {
+    principal: Principal,
+    calls: std::sync::atomic::AtomicUsize,
+}
+impl SessionAccountPort for PrincipalOnlyAccounts {
+    fn principal_by_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Option<Principal>> {
+        assert_eq!(tenant_id, self.principal.tenant.tenant_id);
+        assert_eq!(user_id, self.principal.user_id);
+        self.calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Box::pin(async { Ok(Some(self.principal.clone())) })
+    }
+    fn public_account_by_id(
+        &self,
+        _: TenantId,
+        _: UserId,
+    ) -> RepositoryFuture<'_, Option<PublicAccount>> {
+        panic!("an authorization guard must not load the account profile")
+    }
+}
+
+#[tokio::test]
+async fn principal_guard_uses_one_narrow_lookup_and_preserves_session_gates() {
+    for (pending, active) in [(false, true), (false, false), (true, true)] {
+        let record = record(pending);
+        let tenant = TenantContext::default_system();
+        let accounts = Arc::new(PrincipalOnlyAccounts {
+            principal: Principal {
+                user_id: record.user_id(),
+                tenant,
+                role: UserRole::Admin { level: 2 },
+                active,
+            },
+            calls: 0.into(),
+        });
+        let store = Arc::new(FakeStore::with_record(record));
+        let service = SessionService::new(store.clone(), accounts.clone(), tenant.tenant_id);
+        let result = service
+            .current_principal(&SessionId::new("session-1"), 1000)
+            .await
+            .unwrap();
+        match result {
+            SessionResolution::Present(session) => {
+                assert!(!pending && active);
+                assert_eq!(session.user(), &accounts.principal);
+                assert_eq!(session.auth_time(), 900);
+                assert_eq!(session.amr(), ["password"]);
+                assert_eq!(session.oidc_sid(), "oidc-sid");
+            }
+            SessionResolution::Missing => assert!(pending),
+            SessionResolution::Invalidated => assert!(!active),
+        }
+        assert_eq!(
+            accounts.calls.load(std::sync::atomic::Ordering::Relaxed),
+            usize::from(!pending)
+        );
+        assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(store.deleted.lock().unwrap().len(), usize::from(!active));
+    }
+}
+
+#[test]
+fn authentication_metadata_requires_time_methods_and_session_id() {
+    let cases: &[(i64, &[&str], Option<&str>, bool)] = &[
+        (1_000, &["password"], Some("sid"), true),
+        (0, &["password"], Some("sid"), false),
+        (1_030, &["password"], Some("sid"), true),
+        (1_031, &["password"], Some("sid"), false),
+        (1_000, &[], Some("sid"), false),
+        (1_000, &[" "], Some("sid"), false),
+        (1_000, &["password"], None, false),
+        (1_000, &["password"], Some(""), false),
+        (1_000, &["password"], Some(" "), false),
+        (1_000, &["password"], Some("\t\n"), false),
+    ];
+    for &(auth_time, methods, sid, expected) in cases {
+        let amr = methods
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            valid_authentication_metadata(auth_time, &amr, sid, 1_000),
+            expected
+        );
+    }
 }

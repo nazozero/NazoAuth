@@ -49,7 +49,6 @@ pub enum DesiredStateUpdateOutcome {
 pub enum RuntimeModuleManagementError<E> {
     Repository(E),
     Registry(RegistryError<E>),
-    MissingCatalogSpec(ModuleId),
     MissingDesiredState(ModuleId),
 }
 
@@ -95,12 +94,11 @@ where
         ModuleId::ALL
             .into_iter()
             .map(|module_id| {
+                let state = states.get(&module_id);
                 self.module_view(
                     module_id,
-                    states.get(&module_id).map(|state| &state.desired),
-                    states
-                        .get(&module_id)
-                        .and_then(|state| state.instance.as_ref()),
+                    state.map(|state| &state.desired),
+                    state.and_then(|state| state.instance.as_ref()),
                     &snapshot,
                 )
             })
@@ -167,10 +165,7 @@ where
         instance: Option<&InstanceStateRecord>,
         snapshot: &crate::ActiveModuleSnapshot,
     ) -> Result<RuntimeModuleView, RuntimeModuleManagementError<R::Error>> {
-        let spec = self
-            .catalog
-            .spec(module_id)
-            .ok_or(RuntimeModuleManagementError::MissingCatalogSpec(module_id))?;
+        let spec = self.catalog.spec(module_id);
         let desired =
             desired.ok_or(RuntimeModuleManagementError::MissingDesiredState(module_id))?;
         let desired_state = desired.mode;
@@ -211,10 +206,7 @@ where
             dependencies: spec.dependencies.iter().copied().collect(),
             dependents,
             allowed_actions: self.allowed_actions(module_id, desired_state, snapshot),
-            disable_policy: self
-                .catalog
-                .effective_disable_policy(module_id)
-                .ok_or(RuntimeModuleManagementError::MissingCatalogSpec(module_id))?,
+            disable_policy: self.catalog.effective_disable_policy(module_id),
             drain_deadline: instance.and_then(|record| record.drain_deadline),
             failure_code: if !self.catalog.is_available(module_id) {
                 Some("service_not_constructed".to_owned())
@@ -234,18 +226,19 @@ where
         let mut actions = Vec::with_capacity(2);
         if self.catalog.is_available(module_id)
             && mode != DesiredMode::Enabled
-            && self.catalog.spec(module_id).is_some_and(|spec| {
-                spec.dependencies
-                    .iter()
-                    .all(|dependency| snapshot.admits(*dependency))
-            })
+            && self
+                .catalog
+                .spec(module_id)
+                .dependencies
+                .iter()
+                .all(|dependency| snapshot.admits(*dependency))
         {
             actions.push(DesiredMode::Enabled);
         }
         if mode != DesiredMode::Disabled
             && !matches!(
                 self.catalog.effective_disable_policy(module_id),
-                Some(DisablePolicy::NotRuntimeDisableable) | None
+                DisablePolicy::NotRuntimeDisableable
             )
             && !self.catalog.specs().values().any(|candidate| {
                 candidate.dependencies.contains(&module_id)

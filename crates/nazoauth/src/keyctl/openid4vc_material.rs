@@ -38,13 +38,14 @@ struct MdocCertificateProfile {
 }
 
 struct Openid4vcCertificateBundle {
-    contents: Vec<u8>,
+    chain_pem: String,
+    ca_pem: String,
     mdoc_material: Option<MdocCertificateMaterial>,
 }
 
 struct MdocCertificateMaterial {
     leaf_der: Vec<u8>,
-    ca_der: Vec<u8>,
+    issuer_id: String,
     issuer_material_pem: String,
 }
 
@@ -202,6 +203,11 @@ fn mdoc_certificate_profile_matches(
             )
         })
     };
+    let crl_uri = format!(
+        "{}/{}.crl",
+        profile.crl_distribution_uri,
+        sha256_hex(ca.as_ref())
+    );
     let has_crldp = leaf.extensions().iter().any(|extension| {
         let x509_parser::extensions::ParsedExtension::CRLDistributionPoints(points) =
             &extension.parsed_extension()
@@ -218,7 +224,7 @@ fn mdoc_certificate_profile_matches(
                 matches!(
                     name,
                     x509_parser::extensions::GeneralName::URI(uri)
-                        if *uri == format!("{}/{}.crl", profile.crl_distribution_uri, sha256_hex(ca.as_ref()))
+                        if *uri == crl_uri
                 )
             })
         })
@@ -318,6 +324,7 @@ fn build_openid4vc_certificate_bundle(
             ));
     }
     let ca_der = nazo_crypto::certificate::self_signed(ca_params, &ca_key_pem)?;
+    let issuer_id = mdoc_profile.map(|_| sha256_hex(&ca_der));
 
     let mut leaf_params = CertificateParams::new(vec![hostname.to_owned()])?;
     leaf_params.distinguished_name = DistinguishedName::new();
@@ -346,7 +353,7 @@ fn build_openid4vc_certificate_bundle(
                 uris: vec![format!(
                     "{}/{}.crl",
                     profile.crl_distribution_uri,
-                    sha256_hex(&ca_der)
+                    issuer_id.as_ref().expect("mdoc issuer fingerprint")
                 )],
             });
     }
@@ -365,15 +372,18 @@ fn build_openid4vc_certificate_bundle(
     let leaf_pem = pem_certificate(&leaf_der);
     let ca_pem = pem_certificate(&ca_der);
 
+    let chain_pem = format!("{leaf_pem}{ca_pem}");
+    let mdoc_material = issuer_id.map(|issuer_id| MdocCertificateMaterial {
+        leaf_der,
+        issuer_id,
+        // One immutable IACA record owns its key and sole DS. Retaining it
+        // keeps the certificate's CRL address valid across key rotation.
+        issuer_material_pem: format!("{ca_key_pem}{leaf_pem}{ca_pem}"),
+    });
     Ok(Openid4vcCertificateBundle {
-        contents: format!("{leaf_pem}{ca_pem}").into_bytes(),
-        mdoc_material: mdoc_profile.map(|_| MdocCertificateMaterial {
-            leaf_der,
-            ca_der,
-            // One immutable IACA record owns its key and sole DS. Retaining it
-            // keeps the certificate's CRL address valid across key rotation.
-            issuer_material_pem: format!("{ca_key_pem}{leaf_pem}{ca_pem}"),
-        }),
+        chain_pem,
+        ca_pem,
+        mdoc_material,
     })
 }
 
@@ -416,10 +426,7 @@ fn issuer_alternative_name(uri: &str) -> CustomExtension {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    hex::encode(Sha256::digest(bytes))
 }
 
 pub(super) fn database_certificate_profile(
@@ -475,15 +482,14 @@ pub(super) async fn generate_local_with_database_manager(
             Some(material.public.certificate_chain_pem),
         ));
     }
-    if manager
-        .snapshot()
+    let snapshot = manager.snapshot();
+    if snapshot
         .signing_verification_key(
             SigningPurpose::Credential,
             nazo_crypto::jwt::Algorithm::ES256,
         )
         .is_some()
-        || manager
-            .snapshot()
+        || snapshot
             .signing_verification_key(
                 SigningPurpose::PresentationRequest,
                 nazo_crypto::jwt::Algorithm::ES256,
@@ -538,7 +544,6 @@ fn build_managed_material(
         profile.mdoc_profile.as_ref(),
         time::OffsetDateTime::now_utc(),
     )?;
-    let chain = String::from_utf8(bundle.contents)?;
     let (mut anchors, mut iacas, mut revocation_snapshot) = match previous {
         Some(previous) => (
             previous.public.trust_anchors_pem,
@@ -548,12 +553,8 @@ fn build_managed_material(
         None => (String::new(), BTreeMap::new(), None),
     };
     // Historical roots and IACA keys are needed by credentials already issued.
-    let certificates =
-        CertificateDer::pem_slice_iter(chain.as_bytes()).collect::<Result<Vec<_>, _>>()?;
-    let ca_pem = pem_certificate(certificates[1].as_ref());
-    if !anchors.contains(&ca_pem) {
-        anchors.push_str(&ca_pem);
-    }
+    // This root was just generated with a new private key.
+    anchors.push_str(&bundle.ca_pem);
     let now = chrono::Utc::now();
     let snapshot = revocation_snapshot.get_or_insert_with(|| {
         nazo_digital_credentials::CertificateRevocationSnapshot {
@@ -566,7 +567,7 @@ fn build_managed_material(
     snapshot.this_update = now;
     snapshot.next_update = now + chrono::Duration::hours(24);
     if let Some(material) = bundle.mdoc_material {
-        iacas.insert(sha256_hex(&material.ca_der), material.issuer_material_pem);
+        iacas.insert(material.issuer_id, material.issuer_material_pem);
         snapshot
             .entries
             .push(nazo_digital_credentials::CertificateRevocationEntry {
@@ -584,7 +585,7 @@ fn build_managed_material(
     Ok(Openid4vcMaterial {
         public: Openid4vcPublicMaterial {
             signing_kid: format!("es256-{}", uuid::Uuid::now_v7()),
-            certificate_chain_pem: chain,
+            certificate_chain_pem: bundle.chain_pem,
             trust_anchors_pem: anchors,
             revocation_snapshot,
         },
@@ -720,7 +721,7 @@ async fn import_mdoc_directory(
             {
                 bail!("imported revocation state is missing an IACA's DS status");
             }
-            owned_certificates.insert((issuer.clone(), identity));
+            owned_certificates.insert(identity);
             anchors.push_str(&pem_certificate(certificates[1].as_ref()));
             iacas.insert(id, pem);
         }
@@ -728,7 +729,8 @@ async fn import_mdoc_directory(
             bail!("mdoc import requires IACA private material");
         }
         if snapshot.entries.iter().any(|entry| {
-            !owned_certificates.contains(&(entry.issuer.clone(), entry.certificate.clone()))
+            entry.issuer != mdoc_profile.issuer_contact_uri
+                || !owned_certificates.contains(&entry.certificate)
         }) {
             bail!("mdoc import accepts revocation facts only for its owned IACA records");
         }
@@ -748,11 +750,10 @@ async fn import_mdoc_directory(
         bail!("imported signing chain must contain DS and CA");
     }
     let active_ca = pem_certificate(certificates[1].as_ref());
-    if profile.mdoc_profile.is_some() && !iacas.contains_key(&sha256_hex(certificates[1].as_ref()))
-    {
-        bail!("import is missing the active IACA private material");
-    }
-    if let Some(iaca) = iacas.get(&sha256_hex(certificates[1].as_ref())) {
+    if profile.mdoc_profile.is_some() {
+        let iaca = iacas
+            .get(&sha256_hex(certificates[1].as_ref()))
+            .context("import is missing the active IACA private material")?;
         let owned_chain =
             CertificateDer::pem_slice_iter(iaca.as_bytes()).collect::<Result<Vec<_>, _>>()?;
         if owned_chain[0] != certificates[0] {
@@ -772,10 +773,10 @@ async fn import_mdoc_directory(
         iaca_private_materials: iacas,
     };
     validate_managed_profile(&material, profile)?;
-    manager
+    let committed = manager
         .database_commit_openid4vc(state.revision, material, None)
         .await?;
-    manager.database_revision().await
+    Ok(committed.revision.to_string())
 }
 
 async fn rotate_managed_material(
@@ -788,10 +789,10 @@ async fn rotate_managed_material(
         .context("rotation requires initialized OpenID4VC material")?;
     let key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
     let material = build_managed_material(&key_pem, profile, Some(previous))?;
-    manager
+    let committed = manager
         .database_commit_openid4vc(state.revision, material, Some(key_pem))
         .await?;
-    manager.database_revision().await
+    Ok(committed.revision.to_string())
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -862,10 +863,10 @@ pub(crate) async fn operator_manage_mdoc(
             entry.revoked_at = Some(chrono::Utc::now());
             snapshot.this_update = chrono::Utc::now();
             snapshot.next_update = snapshot.this_update + chrono::Duration::hours(24);
-            manager
+            let committed = manager
                 .database_commit_openid4vc(state.revision, material, None)
                 .await?;
-            manager.database_revision().await
+            Ok(committed.revision.to_string())
         }
     }
 }

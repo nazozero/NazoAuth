@@ -4,22 +4,22 @@ use anyhow::{Context, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use nazo_auth::SigningPurpose;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{
     ExternalKeyRegistration, ExternalKeySigner, KeyRecord, KeyRecordStatus, LocalKeyRegistration,
-    Openid4vcMaterial, Openid4vcState, PersistedSigningKeyset, SealedKeyMaterial,
-    SigningKeyRepository, SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult,
-    SigningKeysetCreateResult,
+    Openid4vcMaterial, Openid4vcState, PersistedSigningKeyset, SigningKeyRepository,
+    SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
     model::{
         ActiveSigningKey, ExternalSigningKey, KeyHandle, KeySettings, KeyState, LoadedKeyset,
         LocalSigningMaterial, ManagedKey, StoredVerificationKey,
     },
     serialization::{
-        KEYSET_SCHEMA_VERSION, der_to_pem, external_public_jwk, generate_key_material,
-        key_entry_algorithm, key_entry_created_at, key_entry_purposes, key_entry_retire_at,
-        public_jwk_from_private_der, signing_algorithm_name,
+        KEYSET_SCHEMA_VERSION, der_to_pem, generate_key_material, key_entry_algorithm,
+        key_entry_created_at, key_entry_purposes, key_entry_retire_at, public_jwk_from_private_der,
+        signing_algorithm_name, validate_external_public_jwk,
     },
 };
 
@@ -32,15 +32,16 @@ pub(crate) async fn load_or_create(
     repository: Arc<dyn SigningKeyRepository>,
     wrapping_keys: SigningKeyWrappingKeyRing,
 ) -> anyhow::Result<(LoadedKeyset, DatabaseKeysetBinding)> {
-    match repository.load().await? {
-        Some(_) => {}
+    let record = match repository.load().await? {
+        Some(record) => record,
         None => {
             let candidate = persist_payload(tenant_id, 1, initial_payload()?, &wrapping_keys)?;
             match repository.create_if_absent(candidate).await? {
-                SigningKeysetCreateResult::Created(_) | SigningKeysetCreateResult::Existing(_) => {}
+                SigningKeysetCreateResult::Created(record)
+                | SigningKeysetCreateResult::Existing(record) => record,
             }
         }
-    }
+    };
     let binding = DatabaseKeysetBinding {
         tenant_id,
         repository,
@@ -50,7 +51,10 @@ pub(crate) async fn load_or_create(
     // Startup is a lifecycle boundary.  Do not wait for the periodic refresh
     // before creating a required prepublished key or promoting one that has
     // completed its prepublication window.
-    let loaded = refresh(settings, &binding).await?;
+    let (loaded, _) = update(&binding, record, true, |payload| {
+        maintain_payload(payload, settings)
+    })
+    .await?;
     Ok((loaded, binding))
 }
 #[derive(Clone)]
@@ -65,7 +69,7 @@ pub(crate) async fn refresh(
     settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
 ) -> anyhow::Result<LoadedKeyset> {
-    update(binding, settings, true, |payload| {
+    update(binding, require_record(binding).await?, true, |payload| {
         maintain_payload(payload, settings)
     })
     .await
@@ -75,32 +79,26 @@ pub(crate) async fn refresh(
 pub(crate) async fn inspect(
     binding: &DatabaseKeysetBinding,
 ) -> anyhow::Result<(LoadedKeyset, Vec<KeyRecord>, i64)> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     Ok((loaded, records(&payload)?, record.revision))
 }
 
-pub(crate) async fn list(
-    _settings: &KeySettings,
-    binding: &DatabaseKeysetBinding,
-) -> anyhow::Result<Vec<KeyRecord>> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+pub(crate) async fn list(binding: &DatabaseKeysetBinding) -> anyhow::Result<Vec<KeyRecord>> {
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     let _ = load_payload(binding.external_signer.as_ref(), &payload)?;
     records(&payload)
 }
 
-pub(crate) async fn validate(
-    _settings: &KeySettings,
-    binding: &DatabaseKeysetBinding,
-) -> anyhow::Result<()> {
-    let record = require_record(binding).await?;
+pub(crate) async fn validate(binding: &DatabaseKeysetBinding) -> anyhow::Result<()> {
+    let mut record = require_record(binding).await?;
     let _ = load_record(
         binding.external_signer.as_ref(),
         binding.tenant_id,
         &binding.wrapping_keys,
-        &record,
+        &mut record,
     )?;
     Ok(())
 }
@@ -110,13 +108,12 @@ pub(crate) async fn revision(binding: &DatabaseKeysetBinding) -> anyhow::Result<
 }
 
 pub(crate) async fn register_local(
-    settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
     registration: LocalKeyRegistration,
 ) -> anyhow::Result<(String, LoadedKeyset, i64)> {
     validate_local_registration(&registration)?;
     let mut registered_kid = None;
-    let (loaded, revision) = update(binding, settings, false, |payload| {
+    let (loaded, revision) = update(binding, require_record(binding).await?, false, |payload| {
         let keys = payload
             .get_mut("keys")
             .and_then(Value::as_array_mut)
@@ -172,12 +169,11 @@ pub(crate) async fn register_local(
 }
 
 pub(crate) async fn register_external(
-    settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
     registration: ExternalKeyRegistration,
 ) -> anyhow::Result<LoadedKeyset> {
     validate_external_registration(&registration)?;
-    update(binding, settings, false, |payload| {
+    update(binding, require_record(binding).await?, false, |payload| {
         let keys = payload.get_mut("keys").and_then(Value::as_array_mut).ok_or_else(|| anyhow!("keyset missing keys"))?;
         let algorithm = signing_algorithm_name(registration.algorithm).ok_or_else(|| anyhow!("unsupported signing alg"))?;
         if let Some(existing) = keys.iter().find(|key| key.get("kid").and_then(Value::as_str) == Some(registration.kid.as_str())) {
@@ -193,18 +189,13 @@ pub(crate) async fn register_external(
 
 pub(crate) async fn openid4vc_state(
     binding: &DatabaseKeysetBinding,
-    _settings: &KeySettings,
 ) -> anyhow::Result<Openid4vcState> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
-    load_payload(binding.external_signer.as_ref(), &payload)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
+    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     Ok(Openid4vcState {
         revision: record.revision,
-        material: payload
-            .get("openid4vc")
-            .cloned()
-            .map(serde_json::from_value)
-            .transpose()?,
+        material: loaded.openid4vc_material,
     })
 }
 
@@ -212,8 +203,8 @@ pub(crate) async fn mdoc_crl_material(
     binding: &DatabaseKeysetBinding,
     issuer_id: &str,
 ) -> anyhow::Result<Option<crate::model::MdocCrlMaterial>> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
         anyhow::bail!("database keyset has unsupported schema version");
     }
@@ -231,12 +222,11 @@ pub(crate) async fn mdoc_crl_material(
         .as_str()
         .context("managed IACA private material is not PEM text")?
         .to_owned();
-    let snapshot: nazo_digital_credentials::CertificateRevocationSnapshot = serde_json::from_value(
+    let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::deserialize(
         material
             .pointer("/public/revocation_snapshot")
             .filter(|value| !value.is_null())
-            .context("mdoc authority has no revocation state")?
-            .clone(),
+            .context("mdoc authority has no revocation state")?,
     )?;
     snapshot
         .validate_structure()
@@ -254,11 +244,11 @@ pub(crate) async fn commit_openid4vc(
     material: Openid4vcMaterial,
     new_private_key_pem: Option<String>,
 ) -> anyhow::Result<(LoadedKeyset, Openid4vcState)> {
-    let record = require_record(binding).await?;
+    let mut record = require_record(binding).await?;
     if record.revision != expected_revision {
         anyhow::bail!("OpenID4VC keyset revision conflict");
     }
-    let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     if let Some(private_pem) = new_private_key_pem {
         let kid = &material.public.signing_kid;
         if kid.trim().is_empty() {
@@ -307,9 +297,9 @@ pub(crate) async fn commit_openid4vc(
             "purposes":["credential", "presentation_request"],
         }));
     }
-    payload["openid4vc"] = serde_json::to_value(material)?;
+    payload["openid4vc"] = serde_json::to_value(&material)?;
     // Validate the entire candidate before the sole externally visible write.
-    load_payload(binding.external_signer.as_ref(), &payload)?;
+    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     let revision = record
         .revision
         .checked_add(1)
@@ -320,21 +310,13 @@ pub(crate) async fn commit_openid4vc(
         .compare_and_swap(expected_revision, candidate)
         .await?
     {
-        SigningKeysetCompareAndSwapResult::Applied(record) => {
-            // The applied receipt owns this exact generation even if another
-            // writer has already committed a newer one before acknowledgement.
-            let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
-            let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
-            let state = Openid4vcState {
-                revision: record.revision,
-                material: payload
-                    .get("openid4vc")
-                    .cloned()
-                    .map(serde_json::from_value)
-                    .transpose()?,
-            };
-            Ok((loaded, state))
-        }
+        SigningKeysetCompareAndSwapResult::Applied(_) => Ok((
+            loaded,
+            Openid4vcState {
+                revision,
+                material: Some(material),
+            },
+        )),
         SigningKeysetCompareAndSwapResult::Conflict(_) => {
             anyhow::bail!("OpenID4VC keyset revision conflict")
         }
@@ -409,16 +391,15 @@ async fn require_record(binding: &DatabaseKeysetBinding) -> anyhow::Result<Persi
 
 async fn update<F>(
     binding: &DatabaseKeysetBinding,
-    _settings: &KeySettings,
+    mut record: PersistedSigningKeyset,
     reseal_if_current_key_changed: bool,
     mut mutation: F,
 ) -> anyhow::Result<(LoadedKeyset, i64)>
 where
     F: FnMut(&mut Value) -> anyhow::Result<bool>,
 {
-    let mut record = require_record(binding).await?;
     for _ in 0..MAX_CAS_ATTEMPTS {
-        let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+        let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
         if !mutation(&mut payload)?
             && (!reseal_if_current_key_changed
                 || record.wrapping_key_id == binding.wrapping_keys.current_id())
@@ -430,6 +411,7 @@ where
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("signing keyset revision overflow"))?;
+        let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
         let candidate =
             persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys)?;
         match binding
@@ -437,15 +419,7 @@ where
             .compare_and_swap(record.revision, candidate)
             .await?
         {
-            SigningKeysetCompareAndSwapResult::Applied(record) => {
-                return load_record(
-                    binding.external_signer.as_ref(),
-                    binding.tenant_id,
-                    &binding.wrapping_keys,
-                    &record,
-                )
-                .map(|loaded| (loaded, record.revision));
-            }
+            SigningKeysetCompareAndSwapResult::Applied(_) => return Ok((loaded, revision)),
             SigningKeysetCompareAndSwapResult::Conflict(winner) => record = winner,
         }
     }
@@ -679,53 +653,65 @@ pub(crate) fn persist_payload(
     Ok(PersistedSigningKeyset {
         revision,
         public_metadata,
-        encrypted_private_material: sealed.into_persisted_bytes(),
+        encrypted_private_material: sealed,
         wrapping_key_id: keys.current_id().to_owned(),
     })
 }
 
 fn public_projection(payload: &Value) -> anyhow::Result<Value> {
-    let mut metadata = payload.clone();
-    metadata
-        .as_object_mut()
-        .ok_or_else(|| anyhow!("keyset payload must be object"))?
-        .remove("request_object_private_pem");
-    if let Some(material) = metadata.get_mut("openid4vc") {
-        material
-            .as_object_mut()
-            .ok_or_else(|| anyhow!("OpenID4VC material must be object"))?
-            .remove("iaca_private_materials");
+    let payload = payload
+        .as_object()
+        .ok_or_else(|| anyhow!("keyset payload must be object"))?;
+    let keys = payload
+        .get("keys")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("keyset payload missing keys"))?;
+    let mut metadata = serde_json::Map::new();
+    for (name, value) in payload {
+        let public = match name.as_str() {
+            "request_object_private_pem" => continue,
+            "openid4vc" => Value::Object(
+                value
+                    .as_object()
+                    .ok_or_else(|| anyhow!("OpenID4VC material must be object"))?
+                    .iter()
+                    .filter(|(name, _)| name.as_str() != "iaca_private_materials")
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect(),
+            ),
+            "keys" => Value::Array(
+                keys.iter()
+                    .map(|entry| {
+                        let entry = entry
+                            .as_object()
+                            .ok_or_else(|| anyhow!("keyset entry must be object"))?;
+                        Ok(Value::Object(
+                            entry
+                                .iter()
+                                .filter(|(name, _)| name.as_str() != "private_pkcs8_der")
+                                .map(|(name, value)| (name.clone(), value.clone()))
+                                .collect(),
+                        ))
+                    })
+                    .collect::<anyhow::Result<_>>()?,
+            ),
+            _ => value.clone(),
+        };
+        metadata.insert(name.clone(), public);
     }
-    for entry in metadata["keys"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow!("keyset payload missing keys"))?
-    {
-        entry
-            .as_object_mut()
-            .ok_or_else(|| anyhow!("keyset entry must be object"))?
-            .remove("private_pkcs8_der");
-    }
-    Ok(metadata)
+    Ok(Value::Object(metadata))
 }
 
 fn decrypt_payload(
     tenant_id: Uuid,
     wrapping_keys: &SigningKeyWrappingKeyRing,
-    record: &PersistedSigningKeyset,
+    record: &mut PersistedSigningKeyset,
 ) -> anyhow::Result<Value> {
     if record.revision < 1 {
         anyhow::bail!("database signing keyset revision must be positive");
     }
-    let sealed = SealedKeyMaterial::from_persisted_bytes(
-        record.wrapping_key_id.clone(),
-        &record.encrypted_private_material,
-    )?;
-    let payload: Value = serde_json::from_slice(&wrapping_keys.open_generation(
-        tenant_id,
-        record.revision,
-        &record.public_metadata,
-        &sealed,
-    )?)?;
+
+    let payload: Value = serde_json::from_slice(wrapping_keys.open_generation(tenant_id, record)?)?;
     if public_projection(&payload)? != record.public_metadata {
         anyhow::bail!("signing keyset public metadata does not match encrypted generation");
     }
@@ -736,7 +722,7 @@ fn load_record(
     external_signer: Option<&Arc<dyn ExternalKeySigner>>,
     tenant_id: Uuid,
     keys: &SigningKeyWrappingKeyRing,
-    record: &PersistedSigningKeyset,
+    record: &mut PersistedSigningKeyset,
 ) -> anyhow::Result<LoadedKeyset> {
     load_payload(external_signer, &decrypt_payload(tenant_id, keys, record)?)
 }
@@ -777,9 +763,8 @@ fn load_payload(
             .get("kid")
             .and_then(Value::as_str)
             .filter(|kid| !kid.trim().is_empty())
-            .ok_or_else(|| anyhow!("keyset key missing kid"))?
-            .to_owned();
-        if !kids.insert(kid.clone()) {
+            .ok_or_else(|| anyhow!("keyset key missing kid"))?;
+        if !kids.insert(kid) {
             anyhow::bail!("keyset contains duplicate kid {kid}");
         }
         // Diagnostics validate lifecycle metadata without advancing maintenance.
@@ -803,7 +788,7 @@ fn load_payload(
                     URL_SAFE_NO_PAD.decode(entry["private_pkcs8_der"].as_str().ok_or_else(
                         || anyhow!("local database key {kid} missing private material"),
                     )?)?;
-                let public = public_jwk_from_private_der(&kid, algorithm, &private)?;
+                let public = public_jwk_from_private_der(kid, algorithm, &private)?;
                 if entry.get("public_jwk") != Some(&public) {
                     anyhow::bail!(
                         "local database key {kid} public metadata does not match private material"
@@ -821,7 +806,14 @@ fn load_payload(
                 )
             }
             "external-command" => {
-                let public = external_public_jwk(entry)?;
+                let public = entry
+                    .get("public_jwk")
+                    .ok_or_else(|| anyhow!("public_jwk must be an object"))?;
+                validate_external_public_jwk(
+                    kid,
+                    signing_algorithm_name(algorithm).unwrap(),
+                    public,
+                )?;
                 let key_ref = entry
                     .get("key_ref")
                     .and_then(Value::as_str)
@@ -840,7 +832,7 @@ fn load_payload(
                 } else {
                     None
                 };
-                (public, KeyHandle::External { key_ref }, signing)
+                (public.clone(), KeyHandle::External { key_ref }, signing)
             }
             _ => anyhow::bail!("keyset key {kid} has unsupported backend {backend}"),
         };
@@ -855,12 +847,10 @@ fn load_payload(
             public_jwk,
             retire_at: retired_at,
             managed: ManagedKey {
-                kid,
+                kid: kid.to_owned(),
                 algorithm: signing_algorithm_name(algorithm).unwrap().to_owned(),
                 purposes,
-                state: if entry.get("purposes").is_some()
-                    || entry.get("kid").and_then(Value::as_str) == Some(active_kid.as_str())
-                {
+                state: if entry.get("purposes").is_some() || kid == active_kid {
                     KeyState::Active
                 } else if retired_at.is_some_and(|time| time <= Utc::now()) {
                     KeyState::Retired
@@ -873,7 +863,7 @@ fn load_payload(
             },
         });
     }
-    let mut loaded = LoadedKeyset {
+    let loaded = LoadedKeyset {
         active_kid,
         active_alg: active_alg.ok_or_else(|| anyhow!("active key is unavailable"))?,
         active_signing_key: active.ok_or_else(|| anyhow!("active signer unavailable"))?,
@@ -882,22 +872,10 @@ fn load_payload(
         request_object_encryption_jwk,
         openid4vc_material: payload
             .get("openid4vc")
-            .cloned()
-            .map(serde_json::from_value)
+            .map(Openid4vcMaterial::deserialize)
             .transpose()?,
     };
     validate_openid4vc_material(&loaded)?;
-    if let Some(snapshot) = loaded
-        .openid4vc_material
-        .as_mut()
-        .and_then(|material| material.public.revocation_snapshot.as_mut())
-    {
-        // Only the observation window is local. Revocation facts remain unchanged.
-        let now = Utc::now();
-        snapshot.this_update = now;
-        snapshot.next_update = now
-            + chrono::Duration::seconds(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS);
-    }
     Ok(loaded)
 }
 
@@ -981,8 +959,8 @@ fn validate_external_registration(registration: &ExternalKeyRegistration) -> any
     }
     let algorithm = signing_algorithm_name(registration.algorithm)
         .ok_or_else(|| anyhow!("unsupported signing alg"))?;
-    let entry = json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Utc::now()),"retire_at":null});
-    external_public_jwk(&entry).context("external key public JWK is invalid")?;
+    validate_external_public_jwk(&registration.kid, algorithm, &registration.public_jwk)
+        .context("external key public JWK is invalid")?;
     crate::model::prepared_verification(&registration.public_jwk, registration.algorithm)
         .ok_or_else(|| anyhow!("external key public JWK cannot produce verification material"))?;
     Ok(())

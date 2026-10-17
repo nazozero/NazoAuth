@@ -22,28 +22,28 @@ impl TracingPasskeyAudit {
         match event {
             nazo_identity::PasskeyAuditEvent::LoginFailureEmail { email, reason } => (
                 "passkey_login_failure",
-                audit_fields(&[
-                    ("email_hash", json!(blake3_hex(&email))),
+                audit_fields([
+                    ("email_hash", blake3_hex(&email).into()),
                     ("reason", json!(reason.as_str())),
                 ]),
             ),
             nazo_identity::PasskeyAuditEvent::LoginFailureUser { user_id, reason } => (
                 "passkey_login_failure",
-                audit_fields(&[
+                audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
                     ("reason", json!(reason.as_str())),
                 ]),
             ),
             nazo_identity::PasskeyAuditEvent::LoginSuccess { user_id, source_ip } => (
                 "passkey_login_success",
-                audit_fields(&[
+                audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
-                    ("source_ip_hash", json!(blake3_hex(&source_ip))),
+                    ("source_ip_hash", blake3_hex(&source_ip).into()),
                 ]),
             ),
             nazo_identity::PasskeyAuditEvent::RegistrationRejected { user_id, reason } => (
                 "passkey_registration_rejected",
-                audit_fields(&[
+                audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
                     ("reason", json!(reason.as_str())),
                 ]),
@@ -53,7 +53,7 @@ impl TracingPasskeyAudit {
                 credential_id,
             } => (
                 "passkey_registered",
-                audit_fields(&[
+                audit_fields([
                     ("user_id", json!(user_id.as_uuid())),
                     ("credential_id", json!(credential_id)),
                 ]),

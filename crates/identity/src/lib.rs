@@ -45,8 +45,8 @@ pub use mfa_service::{
     PreparedTotpConfirmation, TotpConfirmationOutcome, TotpEnrollmentStart,
 };
 pub use model::{
-    AccountIdentity, AuthenticationIdentity, IdentityModelError, LoginIdentity, PasswordHash,
-    PostalAddress, Principal, PublicAccount, SubjectClaims, UserProfile, UserRole,
+    AccountIdentity, AuthenticationIdentity, IdentityModelError, PasswordHash, PostalAddress,
+    Principal, PublicAccount, SubjectClaims, UserProfile, UserRole,
 };
 pub use mtls_trust::{
     MtlsTrustAnchorRequest, MtlsTrustAnchorRequestPage, MtlsTrustAnchorStatus,
@@ -80,5 +80,5 @@ pub use tenancy::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OrganizationId, RealmId,
     TenantBoundaryDefinition, TenantContext, TenantDirectoryBinding, TenantDirectorySnapshot,
     TenantHostError, TenantId, TenantProvisioningRequest, TenantRuntimeStatus, UserId,
-    canonical_tenant_host,
+    canonical_tenant_host, tenant_host_from_issuer,
 };

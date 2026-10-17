@@ -140,27 +140,27 @@ use crate::{Error, ValkeyConnection, command, keys};
 
 /// Initial authorization only. Later-stage fields are installed by their
 /// owning atomic transition, never serialized as unused placeholders.
-#[derive(Clone, Debug, Serialize)]
-struct AvatarUploadWireState {
+#[derive(Serialize)]
+struct AvatarUploadWireState<'a> {
     status: &'static str,
-    upload_id: String,
+    upload_id: &'a str,
     tenant_id: Uuid,
     user_id: Uuid,
-    expected_avatar_url: Option<String>,
-    staging_object_id: String,
+    expected_avatar_url: Option<&'a str>,
+    staging_object_id: &'a str,
     expires_at: i64,
     claim_generation: u64,
 }
 
-impl From<&AvatarUploadAuthorization> for AvatarUploadWireState {
-    fn from(value: &AvatarUploadAuthorization) -> Self {
+impl<'a> From<&'a AvatarUploadAuthorization> for AvatarUploadWireState<'a> {
+    fn from(value: &'a AvatarUploadAuthorization) -> Self {
         Self {
             status: "pending",
-            upload_id: value.upload_id.clone(),
+            upload_id: &value.upload_id,
             tenant_id: value.tenant_id.as_uuid(),
             user_id: value.user_id.as_uuid(),
-            expected_avatar_url: value.expected_avatar_url.clone(),
-            staging_object_id: value.staging_object_id.clone(),
+            expected_avatar_url: value.expected_avatar_url.as_deref(),
+            staging_object_id: &value.staging_object_id,
             expires_at: value.expires_at.timestamp(),
             claim_generation: 0,
         }
@@ -168,12 +168,21 @@ impl From<&AvatarUploadAuthorization> for AvatarUploadWireState {
 }
 
 #[derive(Debug, Deserialize)]
-struct AvatarUploadClaimWire {
-    outcome: String,
-    authorization: Option<AvatarUploadAuthorizationWire>,
-    ownership_token: Option<String>,
-    staged_version: Option<String>,
-    final_object_id: Option<String>,
+#[serde(tag = "outcome", rename_all = "snake_case")]
+enum AvatarUploadClaimWire {
+    Pending {
+        authorization: AvatarUploadAuthorizationWire,
+        ownership_token: String,
+    },
+    Publishing {
+        authorization: AvatarUploadAuthorizationWire,
+        ownership_token: String,
+        staged_version: String,
+        final_object_id: String,
+    },
+    Completed {
+        final_object_id: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -246,42 +255,29 @@ impl AvatarUploadStateStore {
                 let result: AvatarUploadClaimWire = serde_json::from_str(raw).map_err(|error| {
                     Error::corrupt_data(format!("malformed avatar upload claim: {error}"))
                 })?;
-                match result.outcome.as_str() {
-                    "pending" => Ok(AvatarUploadClaim::Pending {
-                        authorization: result
-                            .authorization
-                            .ok_or_else(|| {
-                                Error::corrupt_data("missing avatar upload authorization")
-                            })?
-                            .try_into()?,
-                        ownership_token: result.ownership_token.ok_or_else(|| {
-                            Error::corrupt_data("missing avatar upload ownership token")
-                        })?,
-                    }),
-                    "publishing" => Ok(AvatarUploadClaim::Publishing {
-                        authorization: result
-                            .authorization
-                            .ok_or_else(|| {
-                                Error::corrupt_data("missing avatar upload authorization")
-                            })?
-                            .try_into()?,
-                        ownership_token: result.ownership_token.ok_or_else(|| {
-                            Error::corrupt_data("missing avatar upload ownership token")
-                        })?,
-                        staged_version: result.staged_version.ok_or_else(|| {
-                            Error::corrupt_data("missing staged avatar object version")
-                        })?,
-                        final_object_id: result.final_object_id.ok_or_else(|| {
-                            Error::corrupt_data("missing avatar final object identifier")
-                        })?,
-                    }),
-                    "completed" => Ok(AvatarUploadClaim::Completed {
-                        final_object_id: result.final_object_id.ok_or_else(|| {
-                            Error::corrupt_data("missing completed avatar object identifier")
-                        })?,
-                    }),
-                    _ => Err(Error::unexpected("unexpected avatar upload claim outcome")),
-                }
+                Ok(match result {
+                    AvatarUploadClaimWire::Pending {
+                        authorization,
+                        ownership_token,
+                    } => AvatarUploadClaim::Pending {
+                        authorization: authorization.try_into()?,
+                        ownership_token,
+                    },
+                    AvatarUploadClaimWire::Publishing {
+                        authorization,
+                        ownership_token,
+                        staged_version,
+                        final_object_id,
+                    } => AvatarUploadClaim::Publishing {
+                        authorization: authorization.try_into()?,
+                        ownership_token,
+                        staged_version,
+                        final_object_id,
+                    },
+                    AvatarUploadClaimWire::Completed { final_object_id } => {
+                        AvatarUploadClaim::Completed { final_object_id }
+                    }
+                })
             }
         }
     }
@@ -355,7 +351,7 @@ impl AvatarUploadStatePort for AvatarUploadStateStore {
                     RepositoryError::Unexpected(format!("serialize avatar upload state: {error}"))
                 },
             )?;
-            command::set_ex_nx_string(
+            command::set_ex_nx(
                 &self.connection,
                 Self::key(&authorization.upload_id),
                 raw,

@@ -9,7 +9,8 @@ use actix_web::{HttpMessage, HttpRequest, dev::Extensions, web::Data};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use nazo_http_actix::{IpCidr, mtls::MtlsThumbprintExtractor, request_from_trusted_proxy_cidrs};
 use nazo_oauth_server::{
-    contracts::token_client_auth::ClientCertificateFacts, security::mtls::certificate_der_identity,
+    contracts::token_client_auth::ClientCertificateFacts,
+    security::mtls::certificate_chain_identity,
 };
 use std::{any::Any, sync::Arc};
 const RFC9440_CLIENT_CERT_HEADER: &str = "client-cert";
@@ -38,18 +39,14 @@ pub(crate) fn capture_direct_tls_client_certificate(
     {
         extensions.insert(DirectTlsServerName(server_name));
     }
-    let Some(chain) = stream.get_ref().1.peer_certificates() else {
+    let Some(chain) = stream.get_ref().1.peer_certificates_shared() else {
         return;
     };
-    let Some((certificate, intermediates)) = chain.split_first() else {
-        return;
-    };
-    if let Some(mut identity) = certificate_der_identity(certificate.as_ref()) {
-        identity.certificate_chain_der = chain
-            .iter()
-            .map(|der| der.as_ref().to_vec())
-            .collect::<Vec<_>>()
-            .into();
+    if let Some(mut identity) = certificate_chain_identity(chain) {
+        let (certificate, intermediates) = identity
+            .certificate_chain_der
+            .split_first()
+            .expect("certificate identity has a leaf");
         identity.deployment_trusted_chain = deployment_verifier.is_some_and(|verifier| {
             verifier
                 .verify_client_cert(
@@ -108,13 +105,6 @@ pub(crate) fn request_mtls_thumbprint(
 }
 
 pub(crate) fn request_mtls_client_certificate(
-    req: &HttpRequest,
-    trusted_proxy_cidrs: &[IpCidr],
-) -> Option<ClientCertificateFacts> {
-    request_mtls_client_certificate_from_configured_source(req, trusted_proxy_cidrs)
-}
-
-fn request_mtls_client_certificate_from_configured_source(
     req: &HttpRequest,
     trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<ClientCertificateFacts> {
@@ -178,18 +168,17 @@ pub(crate) fn request_mtls_client_certificate_from_rfc9440(
         return None;
     }
     let der = decode_forwarded_certificate(value)?;
-    let mut certificate = certificate_der_identity(&der)?;
+    let mut certificates = vec![der.into()];
     let mut chains = headers.get_all("client-cert-chain");
     if let Some(chain) = chains.next() {
         if chains.next().is_some() {
             return None;
         }
         for value in chain.to_str().ok()?.split(',') {
-            std::sync::Arc::make_mut(&mut certificate.certificate_chain_der)
-                .push(decode_forwarded_certificate(value.trim())?);
+            certificates.push(decode_forwarded_certificate(value.trim())?.into());
         }
     }
-    Some(certificate)
+    certificate_chain_identity(certificates.into())
 }
 
 fn decode_forwarded_certificate(value: &str) -> Option<Vec<u8>> {
@@ -225,16 +214,10 @@ fn certificate_chain_verified(
     certificate: &ClientCertificateFacts,
     verifier: &dyn rustls::server::danger::ClientCertVerifier,
 ) -> bool {
-    use rustls::pki_types::{CertificateDer, UnixTime};
-    let chain = certificate
-        .certificate_chain_der
-        .iter()
-        .map(|der| CertificateDer::from(der.as_slice()))
-        .collect::<Vec<_>>();
-    let Some((leaf, intermediates)) = chain.split_first() else {
+    let Some((leaf, intermediates)) = certificate.certificate_chain_der.split_first() else {
         return false;
     };
     verifier
-        .verify_client_cert(leaf, intermediates, UnixTime::now())
+        .verify_client_cert(leaf, intermediates, rustls::pki_types::UnixTime::now())
         .is_ok()
 }

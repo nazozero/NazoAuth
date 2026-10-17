@@ -51,11 +51,8 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVerificatio
                 return None;
             }
             let x = key.get("x").and_then(Value::as_str)?;
-            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            if bytes.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()
+            let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         SupportedJwkAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -68,7 +65,9 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVerificatio
             if modulus.len() < 256 || exponent.is_empty() {
                 return None;
             }
-            JwtVerificationKey::from_rsa_components(n, e).ok()
+            Some(JwtVerificationKey::from_rsa_raw_components(
+                &modulus, &exponent,
+            ))
         }
         SupportedJwkAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -78,12 +77,11 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVerificatio
             }
             let x = key.get("x").and_then(Value::as_str)?;
             let y = key.get("y").and_then(Value::as_str)?;
-            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?;
-            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?;
-            if x_bytes.len() != 32 || y_bytes.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
+            let x_bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            let y_bytes = URL_SAFE_NO_PAD.decode(y).ok()?.try_into().ok()?;
+            Some(JwtVerificationKey::from_p256_coordinates(
+                &x_bytes, &y_bytes,
+            ))
         }
     }
 }

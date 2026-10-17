@@ -7,10 +7,7 @@ use chrono::{Duration, TimeZone, Utc};
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{
-    AuthorizationCodeState, ConsentPayload, OAuthClient, PushedAuthorizationRequest,
-    RequestObjectClaims, RequestObjectJtiPolicy, RequestObjectPolicy,
-};
+use crate::{AuthorizationCodeState, ConsentPayload, OAuthClient, PushedAuthorizationRequest};
 
 use super::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
@@ -47,6 +44,13 @@ struct FakeRepository(Arc<RepositoryState>);
 impl AuthorizationRepositoryPort for FakeRepository {
     fn mtls_trust_anchor_bundle(&self, _client_id: Uuid) -> AuthorizationFuture<'_, String> {
         Box::pin(async { Ok(String::new()) })
+    }
+
+    fn active_client_presentation<'a>(
+        &'a self,
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<crate::ClientPresentation>> {
+        panic!("unexpected AuthorizationRepositoryPort::active_client_presentation call")
     }
 
     fn client_by_id<'a>(
@@ -210,15 +214,6 @@ impl AuthorizationStateStorePort for FakeStore {
                 payload,
             }))
         })
-    }
-
-    fn take_consent<'a>(
-        &'a self,
-        _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
-        self.0.consent_takes.fetch_add(1, Ordering::Relaxed);
-        let consent = self.0.consent.lock().unwrap().take();
-        Box::pin(async move { Ok(consent) })
     }
 
     fn compare_and_delete_consent<'a>(
@@ -454,48 +449,21 @@ fn ciba_request_object_replay_is_delegated_to_the_state_store() {
 }
 
 #[test]
-fn owned_request_object_admission_keeps_outer_parameters_on_replay_dependency_failure() {
+fn request_object_replay_propagates_dependency_failure() {
     let store = FakeStore::default();
     *store.0.jar_error.lock().unwrap() = Some(AuthorizationPortError::Unavailable);
     let service = service(FakeRepository::default(), store);
-    let now = 1_700_000_000;
-    let claims = RequestObjectClaims {
+    let replay = crate::RequestObjectReplay {
         client_id: "client".to_owned(),
-        iss: Some("client".to_owned()),
-        sub: Some("client".to_owned()),
-        aud: Some(json!("https://issuer.example")),
-        exp: Some(now + 120),
-        nbf: Some(now),
-        iat: Some(now),
-        jti: Some("replay-jti".to_owned()),
-        parameters: std::collections::HashMap::from([(
-            "redirect_uri".to_owned(),
-            json!("https://client.example/cb"),
-        )]),
+        jti: "replay-jti".to_owned(),
+        expires_at: 1_700_000_120,
     };
-    let policy = RequestObjectPolicy {
-        issuer: "https://issuer.example",
-        client_id: "client",
-        jti_policy: RequestObjectJtiPolicy::RequiredForSignedJar,
-        require_integrity_protected_parameters: true,
-        now,
-    };
-    let mut outer = std::collections::HashMap::from([
-        ("client_id".to_owned(), "client".to_owned()),
-        ("request".to_owned(), "signed.jwt".to_owned()),
-        ("state".to_owned(), "outer-state".to_owned()),
-    ]);
-    let original = outer.clone();
-
     assert_eq!(
-        futures_executor::block_on(
-            service.admit_request_object_owned(&mut outer, &claims, policy,)
-        ),
+        futures_executor::block_on(service.consume_request_object_replay(&replay)),
         Err(crate::AuthorizationRequestError::Dependency(
             AuthorizationPortError::Unavailable,
         ))
     );
-    assert_eq!(outer, original);
 }
 
 #[test]
@@ -546,6 +514,11 @@ fn pushed_request_digest_is_independent_of_hash_map_iteration_order() {
     assert_eq!(
         super::pushed_authorization_request_digest(&first).unwrap(),
         super::pushed_authorization_request_digest(&second).unwrap()
+    );
+    let canonical = br#"{"client_id":"client-1","params":{"redirect_uri":"https://client.example/cb","scope":"openid"},"dpop_jkt":null,"mtls_x5t_s256":null,"issued_at":"2023-11-14T22:13:20Z","expires_at":"2023-11-14T22:23:20Z"}"#;
+    assert_eq!(
+        super::pushed_authorization_request_digest(&first).unwrap(),
+        blake3::hash(canonical).to_hex().to_string()
     );
 }
 

@@ -860,19 +860,8 @@ async fn verify_audit_lifetime(
         SecurityAuditBatchClaim::Empty
     ));
 
-    // Authoritative append API also rejects exported rows, not just its reader.
+    // The finalizer rejects exported rows even if called without the pending reader.
     let health = audit.anchor_health().await.unwrap();
-    assert!(
-        sql_query("SELECT public.nazo_append_security_audit_chain($1,$2,$3,$4)")
-            .bind::<sql_types::BigInt, _>(health.head_sequence)
-            .bind::<sql_types::Binary, _>(&health.head_hash)
-            .bind::<sql_types::Array<sql_types::Uuid>, _>(vec![retained.event_id])
-            .bind::<sql_types::Array<sql_types::Binary>, _>(vec![vec![7_u8; 32]])
-            .execute(connection)
-            .await
-            .is_err()
-    );
-    // The fused fresh-claim API shares that exported-event guard.
     assert!(
         sql_query(
             "SELECT public.nazo_finalize_security_audit_claim(\
@@ -1495,8 +1484,14 @@ async fn decision_prepared_shape_preserves_distinct_facts_and_replay_fences() {
     let actor = fixture(&mut observer).await;
     let pool = create_pool(url, 1).unwrap();
     let repository = AuthorizationFlowRepository::new(pool.clone(), actor.tenant_id);
-    let first = decision(&actor, Kind::Approve);
-    let second = decision(&actor, Kind::Deny);
+    let mut first = decision(&actor, Kind::Approve);
+    first.resource_indicators = vec![
+        "https://resource.example/一".to_owned(),
+        "https://other.example/api".to_owned(),
+    ];
+    first.authorization_details = json!([{"type":"payment", "reference":"quote\"和换行\n"}]);
+    let mut second = decision(&actor, Kind::Deny);
+    second.pushed_request_uri = None;
     for input in [&first, &second] {
         assert_eq!(
             repository.commit_decision(input.clone()).await.unwrap(),
@@ -1507,6 +1502,43 @@ async fn decision_prepared_shape_preserves_distinct_facts_and_replay_fences() {
             repository.commit_decision(input.clone()).await.unwrap(),
             Outcome::Conflict
         );
+    }
+    #[derive(QueryableByName)]
+    struct Payload {
+        #[diesel(sql_type = sql_types::Jsonb)]
+        payload: serde_json::Value,
+    }
+    let digest = |value: &str| blake3::hash(value.as_bytes()).to_hex().to_string();
+    for input in [&first, &second] {
+        let payload = sql_query("SELECT payload FROM security_audit_events WHERE event_id = $1")
+            .bind::<sql_types::Uuid, _>(input.event_id)
+            .get_result::<Payload>(&mut observer)
+            .await
+            .unwrap()
+            .payload;
+        assert_eq!(payload["request_id_hash"], digest(&input.request_id));
+        if input.event_id == first.event_id {
+            assert_eq!(
+                payload["resource_digest"],
+                digest(&input.resource_indicators.join("\u{1f}"))
+            );
+            assert_eq!(
+                payload["authorization_details_digest"],
+                digest(&input.authorization_details.to_string())
+            );
+            assert_eq!(
+                payload["pushed_request_uri_hash"],
+                digest(input.pushed_request_uri.as_deref().unwrap())
+            );
+        } else {
+            for key in [
+                "resource_digest",
+                "authorization_details_digest",
+                "pushed_request_uri_hash",
+            ] {
+                assert!(payload.get(key).is_none(), "{key}");
+            }
+        }
     }
     assert_eq!(grant_count(&mut observer, &actor).await, 1);
     let mut connection = nazo_postgres::get_conn(&pool).await.unwrap();

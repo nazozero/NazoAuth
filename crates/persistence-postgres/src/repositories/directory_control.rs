@@ -55,10 +55,6 @@ impl TenantDirectoryControlRepository {
         let operation_id =
             Uuid::parse_str(jti).map_err(|_| TenantDirectoryControlError::Rejected)?;
         let operation_name = directory_operation_name(&action);
-        if action_requires_tenant(&action) {
-            // Boundaries are validated by the authoritative mutation itself.
-            tenant_id_of(&action).map_err(|_| TenantDirectoryControlError::Rejected)?;
-        }
 
         let mut connection = get_conn(&self.pool)
             .await
@@ -72,7 +68,7 @@ impl TenantDirectoryControlRepository {
                     connection,
                     operation_id,
                     request_sha256,
-                    &operation_name,
+                    operation_name,
                 )
                 .await?
                 {
@@ -90,11 +86,11 @@ impl TenantDirectoryControlRepository {
                         let revision = provision_tenant_binding_on_connection(
                             connection,
                             *expected_revision,
-                            (**provisioning).clone(),
+                            provisioning,
                         )
                         .await?;
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.clone(),
+                            action: operation_name.to_owned(),
                             tenant_id: provisioning.binding.tenant.tenant_id.as_uuid().to_string(),
                             previous_revision: *expected_revision,
                             revision,
@@ -110,12 +106,12 @@ impl TenantDirectoryControlRepository {
                             connection,
                             *expected_revision,
                             *tenant_id,
-                            issuer.clone(),
-                            external_host.clone(),
+                            issuer,
+                            external_host,
                         )
                         .await?;
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.clone(),
+                            action: operation_name.to_owned(),
                             tenant_id: tenant_id.as_uuid().to_string(),
                             previous_revision: *expected_revision,
                             revision,
@@ -133,7 +129,7 @@ impl TenantDirectoryControlRepository {
                         )
                         .await?;
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.clone(),
+                            action: operation_name.to_owned(),
                             tenant_id: tenant_id.as_uuid().to_string(),
                             previous_revision: *expected_revision,
                             revision,
@@ -150,7 +146,7 @@ impl TenantDirectoryControlRepository {
                         )
                         .await?;
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.clone(),
+                            action: operation_name.to_owned(),
                             tenant_id: tenant_id.as_uuid().to_string(),
                             previous_revision: *expected_revision,
                             revision,
@@ -167,7 +163,7 @@ impl TenantDirectoryControlRepository {
                         )
                         .await?;
                         DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.clone(),
+                            action: operation_name.to_owned(),
                             tenant_id: tenant_id.as_uuid().to_string(),
                             previous_revision: *expected_revision,
                             revision,
@@ -203,8 +199,8 @@ impl TenantDirectoryControlRepository {
                     connection,
                     operation_id,
                     request_sha256,
-                    tenant_id_of(&action).ok(),
-                    &operation_name,
+                    tenant_id_of(&action),
+                    operation_name,
                     &outcome,
                 )
                 .await?;
@@ -271,31 +267,27 @@ fn map_repository_error(error: RepositoryError) -> TenantDirectoryControlError {
     }
 }
 
-fn directory_operation_name(action: &DirectoryControlAction) -> String {
+fn directory_operation_name(action: &DirectoryControlAction) -> &'static str {
     match action {
-        DirectoryControlAction::Create { .. } => "create".to_owned(),
-        DirectoryControlAction::Update { .. } => "update".to_owned(),
-        DirectoryControlAction::Disable { .. } => "disable".to_owned(),
-        DirectoryControlAction::Reload { .. } => "reload".to_owned(),
-        DirectoryControlAction::Finalize { .. } => "finalize".to_owned(),
-        DirectoryControlAction::Describe => "describe".to_owned(),
+        DirectoryControlAction::Create { .. } => "create",
+        DirectoryControlAction::Update { .. } => "update",
+        DirectoryControlAction::Disable { .. } => "disable",
+        DirectoryControlAction::Reload { .. } => "reload",
+        DirectoryControlAction::Finalize { .. } => "finalize",
+        DirectoryControlAction::Describe => "describe",
     }
 }
 
-fn action_requires_tenant(action: &DirectoryControlAction) -> bool {
-    !matches!(action, DirectoryControlAction::Describe)
-}
-
-fn tenant_id_of(action: &DirectoryControlAction) -> Result<Uuid, ()> {
+fn tenant_id_of(action: &DirectoryControlAction) -> Option<Uuid> {
     match action {
         DirectoryControlAction::Create { provisioning, .. } => {
-            Ok(provisioning.binding.tenant.tenant_id.as_uuid())
+            Some(provisioning.binding.tenant.tenant_id.as_uuid())
         }
         DirectoryControlAction::Update { tenant_id, .. }
         | DirectoryControlAction::Disable { tenant_id, .. }
         | DirectoryControlAction::Reload { tenant_id, .. }
-        | DirectoryControlAction::Finalize { tenant_id, .. } => Ok(tenant_id.as_uuid()),
-        DirectoryControlAction::Describe => Err(()),
+        | DirectoryControlAction::Finalize { tenant_id, .. } => Some(tenant_id.as_uuid()),
+        DirectoryControlAction::Describe => None,
     }
 }
 
@@ -423,7 +415,7 @@ fn directory_audit_event(
         "previous_revision": previous_revision,
         "revision": outcome.revision(),
     });
-    if let Ok(tenant_id) = tenant_id_of(action) {
+    if let Some(tenant_id) = tenant_id_of(action) {
         payload["tenant_id"] = json!(tenant_id.to_string());
     }
     if let DirectoryControlAction::Create { provisioning, .. } = action {

@@ -110,10 +110,9 @@ pub fn device_authorization_request_payload(
     } else {
         input.requested_resources
     };
-    if resource_indicators.is_empty()
-        || !resource_indicators
-            .iter()
-            .all(|resource| input.allowed_resources.contains(resource))
+    if !resource_indicators
+        .iter()
+        .all(|resource| input.allowed_resources.contains(resource))
     {
         return Err(DeviceAuthorizationRequestError::InvalidTarget);
     }
@@ -237,7 +236,7 @@ impl<V> PreparedDeviceDecision<V> {
 /// A successful replacement carries the exact adapter-owned persisted version.
 #[derive(Debug)]
 pub enum DeviceStateReplacement<V> {
-    Applied(Box<StoredDeviceAuthorization<V>>),
+    Applied(V),
     Conflict,
     DeadlineElapsed,
 }
@@ -518,7 +517,7 @@ where
 
     pub async fn create_unique<FD, FU>(
         &self,
-        payload: &DeviceAuthorizationPayload,
+        payload: DeviceAuthorizationPayload,
         ttl_seconds: u64,
         mut generate_device_code: FD,
         mut generate_user_code: FU,
@@ -531,7 +530,7 @@ where
             return Err(DeviceCreateFailure::DeadlineElapsed);
         }
         let pending = DeviceAuthorizationState::Pending {
-            payload: payload.clone(),
+            payload,
             last_poll_at: None,
             slow_down_count: 0,
         };
@@ -577,7 +576,7 @@ where
             {
                 return Err(DevicePollFailure::ClientMismatch);
             }
-            match evaluate_device_poll(&stored.state, current_time()) {
+            match evaluate_device_poll(stored.state, current_time()) {
                 DevicePollTransition::AuthorizationPending(next) => {
                     match self
                         .store
@@ -640,7 +639,11 @@ where
         Ok(self
             .prepare_decision(user_code, current_time)
             .await?
-            .map(|prepared| prepared.payload().clone()))
+            .map(|prepared| match prepared.stored.state {
+                DeviceAuthorizationState::Pending { payload, .. }
+                | DeviceAuthorizationState::Approving { payload, .. } => payload,
+                _ => unreachable!("prepared device decisions contain a pending payload"),
+            }))
     }
 
     pub async fn prepare_decision<F>(
@@ -684,36 +687,38 @@ where
 
     pub async fn deny<F>(
         &self,
-        prepared: PreparedDeviceDecision<S::Version>,
+        prepared: &PreparedDeviceDecision<S::Version>,
         mut current_time: F,
     ) -> Result<(), DeviceDecisionFailure>
     where
         F: FnMut() -> DateTime<Utc>,
     {
-        let expected_payload = prepared.payload().clone();
         let PreparedDeviceDecision {
             user_code,
             device_hash,
-            stored,
+            stored: initial,
         } = prepared;
-        let mut next_snapshot = Some(stored);
-        for _ in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
-            let stored = match next_snapshot.take() {
-                Some(stored) => stored,
-                None => self
+        let expected_payload = device_authorization_payload(&initial.state);
+        let mut refreshed;
+        for attempt in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
+            let stored = if attempt == 0 {
+                initial
+            } else {
+                refreshed = self
                     .store
-                    .load_by_device_hash(&device_hash)
+                    .load_by_device_hash(device_hash)
                     .await
                     .map_err(DeviceDecisionFailure::Storage)?
-                    .ok_or(DeviceDecisionFailure::Missing)?,
+                    .ok_or(DeviceDecisionFailure::Missing)?;
+                if device_authorization_payload(&refreshed.state)
+                    .is_some_and(|payload| Some(payload) != expected_payload)
+                {
+                    return Err(DeviceDecisionFailure::Storage(
+                        DeviceStatePortError::CorruptData,
+                    ));
+                }
+                &refreshed
             };
-            if device_authorization_payload(&stored.state)
-                .is_some_and(|payload| payload != &expected_payload)
-            {
-                return Err(DeviceDecisionFailure::Storage(
-                    DeviceStatePortError::CorruptData,
-                ));
-            }
             let now = current_time();
             let DeviceAuthorizationState::Pending { payload, .. } = &stored.state else {
                 return Err(DeviceDecisionFailure::AlreadyHandled);
@@ -721,7 +726,7 @@ where
             if now >= payload.expires_at {
                 let _ = self
                     .store
-                    .delete_user_code_if_matches(&user_code, &device_hash)
+                    .delete_user_code_if_matches(user_code, device_hash)
                     .await
                     .map_err(DeviceDecisionFailure::Storage)?;
                 return Err(DeviceDecisionFailure::Expired);
@@ -732,7 +737,7 @@ where
             };
             match self
                 .store
-                .complete_decision(&device_hash, &user_code, &stored.version, &next)
+                .complete_decision(device_hash, user_code, &stored.version, &next)
                 .await
                 .map_err(DeviceDecisionFailure::Storage)?
             {
@@ -748,7 +753,7 @@ where
 
     pub async fn approve<R, F>(
         &self,
-        prepared: PreparedDeviceDecision<S::Version>,
+        prepared: &PreparedDeviceDecision<S::Version>,
         approval: DeviceAuthorizationApproval,
         client: &OAuthClient,
         repository: &R,
@@ -759,37 +764,46 @@ where
         F: FnMut() -> DateTime<Utc>,
     {
         let claim_id = Uuid::now_v7();
-        let expected_payload = prepared.payload().clone();
         let PreparedDeviceDecision {
             user_code,
             device_hash,
-            stored,
+            stored: initial,
         } = prepared;
-        let mut next_snapshot = Some(stored);
-        for _ in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
-            let stored = match next_snapshot.take() {
-                Some(stored) => stored,
-                None => self
-                    .store
-                    .load_by_device_hash(&device_hash)
-                    .await
-                    .map_err(DeviceDecisionFailure::Storage)?
-                    .ok_or(DeviceDecisionFailure::Missing)?,
+        let expected_payload = device_authorization_payload(&initial.state);
+        let mut refreshed;
+        let mut next_snapshot = None;
+        for attempt in 0..DEVICE_TRANSITION_MAX_ATTEMPTS {
+            let stored = if attempt == 0 {
+                initial
+            } else {
+                refreshed = match next_snapshot.take() {
+                    Some(stored) => stored,
+                    None => {
+                        let stored = self
+                            .store
+                            .load_by_device_hash(device_hash)
+                            .await
+                            .map_err(DeviceDecisionFailure::Storage)?
+                            .ok_or(DeviceDecisionFailure::Missing)?;
+                        if device_authorization_payload(&stored.state)
+                            .is_some_and(|payload| Some(payload) != expected_payload)
+                        {
+                            return Err(DeviceDecisionFailure::Storage(
+                                DeviceStatePortError::CorruptData,
+                            ));
+                        }
+                        stored
+                    }
+                };
+                &refreshed
             };
-            if device_authorization_payload(&stored.state)
-                .is_some_and(|payload| payload != &expected_payload)
-            {
-                return Err(DeviceDecisionFailure::Storage(
-                    DeviceStatePortError::CorruptData,
-                ));
-            }
             let now = current_time();
             match &stored.state {
                 DeviceAuthorizationState::Pending { payload, .. } => {
                     if now >= payload.expires_at {
                         let _ = self
                             .store
-                            .delete_user_code_if_matches(&user_code, &device_hash)
+                            .delete_user_code_if_matches(user_code, device_hash)
                             .await
                             .map_err(DeviceDecisionFailure::Storage)?;
                         return Err(DeviceDecisionFailure::Expired);
@@ -808,7 +822,7 @@ where
                     };
                     match self
                         .store
-                        .claim_decision(&device_hash, &user_code, &stored.version, &claimed)
+                        .claim_decision(device_hash, user_code, &stored.version, &claimed)
                         .await
                         .map_err(DeviceDecisionFailure::Storage)?
                     {
@@ -837,7 +851,7 @@ where
                     if now >= payload.expires_at {
                         let _ = self
                             .store
-                            .delete_user_code_if_matches(&user_code, &device_hash)
+                            .delete_user_code_if_matches(user_code, device_hash)
                             .await
                             .map_err(DeviceDecisionFailure::Storage)?;
                         return Err(DeviceDecisionFailure::Expired);
@@ -861,12 +875,7 @@ where
                             };
                             match self
                                 .store
-                                .claim_decision(
-                                    &device_hash,
-                                    &user_code,
-                                    &stored.version,
-                                    &reclaimed,
-                                )
+                                .claim_decision(device_hash, user_code, &stored.version, &reclaimed)
                                 .await
                                 .map_err(DeviceDecisionFailure::Storage)?
                             {
@@ -898,15 +907,16 @@ where
                         };
                         match self
                             .store
-                            .replace_by_device_hash(&device_hash, &stored.version, &recorded)
+                            .replace_by_device_hash(device_hash, &stored.version, &recorded)
                             .await
                             .map_err(DeviceDecisionFailure::Storage)?
                         {
-                            DeviceStateReplacement::Applied(written) => {
+                            DeviceStateReplacement::Applied(version) => {
                                 // No database side effect follows this snapshot: only the
                                 // version-fenced final CAS. Claim/reclaim still reload above
                                 // before writing the durable grant.
-                                next_snapshot = Some(*written);
+                                next_snapshot =
+                                    Some(StoredDeviceAuthorization::new(recorded, version));
                                 continue;
                             }
                             DeviceStateReplacement::Conflict => continue,
@@ -922,7 +932,7 @@ where
                     };
                     match self
                         .store
-                        .complete_decision(&device_hash, &user_code, &stored.version, &approved)
+                        .complete_decision(device_hash, user_code, &stored.version, &approved)
                         .await
                         .map_err(DeviceDecisionFailure::Storage)?
                     {
@@ -953,10 +963,10 @@ fn device_approval_claim_is_stale(started_at: DateTime<Utc>, now: DateTime<Utc>)
 
 #[must_use]
 pub fn evaluate_device_poll(
-    state: &DeviceAuthorizationState,
+    state: DeviceAuthorizationState,
     now: DateTime<Utc>,
 ) -> DevicePollTransition {
-    if device_authorization_payload(state).is_some_and(|payload| now >= payload.expires_at) {
+    if device_authorization_payload(&state).is_some_and(|payload| now >= payload.expires_at) {
         return DevicePollTransition::Expired;
     }
     match state {
@@ -966,19 +976,19 @@ pub fn evaluate_device_poll(
             slow_down_count,
         } => {
             let required_wait = payload.interval_seconds.saturating_add(
-                u64::from(*slow_down_count).saturating_mul(DEVICE_SLOW_DOWN_INCREMENT_SECONDS),
+                u64::from(slow_down_count).saturating_mul(DEVICE_SLOW_DOWN_INCREMENT_SECONDS),
             );
             let too_early = last_poll_at.is_some_and(|last| {
                 let elapsed = now.signed_duration_since(last).num_seconds();
                 elapsed < 0 || u64::try_from(elapsed).is_ok_and(|elapsed| elapsed < required_wait)
             });
             let next = DeviceAuthorizationState::Pending {
-                payload: payload.clone(),
+                payload,
                 last_poll_at: Some(now),
                 slow_down_count: if too_early {
                     slow_down_count.saturating_add(1)
                 } else {
-                    *slow_down_count
+                    slow_down_count
                 },
             };
             if too_early {
@@ -989,10 +999,7 @@ pub fn evaluate_device_poll(
         }
         DeviceAuthorizationState::Approved {
             payload, approval, ..
-        } => DevicePollTransition::Approved {
-            payload: payload.clone(),
-            approval: approval.clone(),
-        },
+        } => DevicePollTransition::Approved { payload, approval },
         DeviceAuthorizationState::Approving { .. } => {
             DevicePollTransition::AuthorizationPendingUnchanged
         }

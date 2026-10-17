@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use nazo_identity::{UserId, session::SessionRecord};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -41,64 +43,57 @@ return 'ok'
 "#;
 
 #[derive(Deserialize, Serialize)]
-struct SessionWireRecord {
+struct SessionWireRecord<'a> {
     user_id: Uuid,
     auth_time: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_time_micros: Option<i64>,
-    amr: Vec<String>,
+    amr: Cow<'a, [String]>,
     pending_mfa: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    oidc_sid: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    logged_in_client_ids: Vec<String>,
+    oidc_sid: Option<Cow<'a, str>>,
+    #[serde(default, skip_serializing_if = "<[String]>::is_empty")]
+    logged_in_client_ids: Cow<'a, [String]>,
 }
 
-impl From<&SessionRecord> for SessionWireRecord {
-    fn from(value: &SessionRecord) -> Self {
+impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
+    fn from(value: &'a SessionRecord) -> Self {
         Self {
             user_id: value.user_id().as_uuid(),
             auth_time: value.auth_time(),
             auth_time_micros: value.auth_time_micros(),
-            amr: value.amr().to_vec(),
+            amr: Cow::Borrowed(value.amr()),
             pending_mfa: value.pending_mfa(),
-            oidc_sid: value.oidc_sid().map(str::to_owned),
-            logged_in_client_ids: value.logged_in_client_ids().to_vec(),
+            oidc_sid: value.oidc_sid().map(Cow::Borrowed),
+            logged_in_client_ids: Cow::Borrowed(value.logged_in_client_ids()),
         }
     }
 }
 
-impl TryFrom<SessionWireRecord> for SessionRecord {
+impl TryFrom<SessionWireRecord<'_>> for SessionRecord {
     type Error = Error;
 
-    fn try_from(value: SessionWireRecord) -> Result<Self, Self::Error> {
+    fn try_from(value: SessionWireRecord<'_>) -> Result<Self, Self::Error> {
         let user_id = UserId::new(value.user_id).map_err(|error| {
             Error::corrupt_data(format!("invalid stored session user: {error}"))
         })?;
         let mut record = Self::new(
             user_id,
             value.auth_time,
-            value.amr,
+            value.amr.into_owned(),
             value.pending_mfa,
-            value.oidc_sid,
+            value.oidc_sid.map(Cow::into_owned),
         );
         if !record.restore_auth_time_micros(value.auth_time_micros) {
             return Err(Error::corrupt_data(
                 "inconsistent stored authentication precision",
             ));
         }
-        for client_id in value.logged_in_client_ids {
-            record.add_logged_in_client(&client_id);
+        for client_id in value.logged_in_client_ids.into_owned() {
+            record.add_logged_in_client(client_id);
         }
         Ok(record)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SessionRotationResult {
-    Applied,
-    Conflict,
-    Collision,
 }
 
 #[derive(Clone, Debug)]
@@ -110,10 +105,6 @@ pub struct StoredSession {
 impl StoredSession {
     pub fn value(&self) -> &SessionRecord {
         &self.value
-    }
-
-    pub fn into_value(self) -> SessionRecord {
-        self.value
     }
 }
 
@@ -138,7 +129,7 @@ impl SessionStore {
         let raw = serde_json::to_string(&SessionWireRecord::from(record)).map_err(|error| {
             Error::protocol(format!("failed to serialize session record: {error}"))
         })?;
-        command::set_ex_string(
+        command::set_ex(
             &self.connection,
             keys::session(session_id),
             raw,
@@ -165,35 +156,6 @@ impl SessionStore {
     pub async fn delete(&self, session_id: &str) -> Result<i64, Error> {
         command::delete(&self.connection, keys::session(session_id)).await
     }
-
-    pub async fn rotate(
-        &self,
-        old_session_id: &str,
-        expected: &StoredSession,
-        new_session_id: &str,
-        replacement: &SessionRecord,
-        ttl_seconds: u64,
-    ) -> Result<SessionRotationResult, Error> {
-        let replacement =
-            serde_json::to_string(&SessionWireRecord::from(replacement)).map_err(|error| {
-                Error::protocol(format!("failed to serialize replacement session: {error}"))
-            })?;
-        let reply = command::eval_string(
-            &self.connection,
-            ROTATE_SESSION_SCRIPT,
-            vec![keys::session(old_session_id), keys::session(new_session_id)],
-            vec![expected.raw.clone(), replacement, ttl_seconds.to_string()],
-        )
-        .await?;
-        match reply.as_str() {
-            "ok" => Ok(SessionRotationResult::Applied),
-            "conflict" => Ok(SessionRotationResult::Conflict),
-            "collision" => Ok(SessionRotationResult::Collision),
-            other => Err(Error::unexpected(format!(
-                "unexpected session rotation reply {other:?}"
-            ))),
-        }
-    }
 }
 
 impl nazo_identity::ports::LoginSessionPort for SessionStore {
@@ -209,7 +171,7 @@ impl nazo_identity::ports::LoginSessionPort for SessionStore {
                     "failed to serialize session record: {error}"
                 ))
             })?;
-            command::set_ex_nx_string(
+            command::set_ex_nx(
                 &self.connection,
                 keys::session(session_id),
                 raw,
@@ -300,7 +262,7 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
     fn rotate<'a>(
         &'a self,
         old_session_id: &'a nazo_identity::SessionId,
-        expected: &'a nazo_identity::SessionSnapshot,
+        expected: &'a nazo_identity::SessionVersion,
         new_session_id: &'a nazo_identity::SessionId,
         replacement: &'a SessionRecord,
         ttl_seconds: u64,
@@ -312,12 +274,6 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                         "failed to serialize replacement session: {error}"
                     ))
                 })?;
-            let expected =
-                std::str::from_utf8(expected.version().storage_bytes()).map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Unexpected(format!(
-                        "session storage revision is not valid UTF-8: {error}"
-                    ))
-                })?;
             let reply = command::eval_string(
                 &self.connection,
                 ROTATE_SESSION_SCRIPT,
@@ -325,7 +281,11 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                     keys::session(old_session_id.as_str()),
                     keys::session(new_session_id.as_str()),
                 ],
-                vec![expected.to_owned(), replacement, ttl_seconds.to_string()],
+                vec![
+                    expected.storage_bytes().to_vec(),
+                    replacement.into_bytes(),
+                    ttl_seconds.to_string().into_bytes(),
+                ],
             )
             .await
             .map_err(crate::identity_repository_error)?;
@@ -343,7 +303,7 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
     fn compare_and_set<'a>(
         &'a self,
         session_id: &'a nazo_identity::SessionId,
-        expected: &'a nazo_identity::SessionSnapshot,
+        expected: &'a nazo_identity::SessionVersion,
         replacement: &'a SessionRecord,
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
         Box::pin(async move {
@@ -353,17 +313,11 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                         "failed to serialize replacement session: {error}"
                     ))
                 })?;
-            let expected =
-                std::str::from_utf8(expected.version().storage_bytes()).map_err(|error| {
-                    nazo_identity::ports::RepositoryError::Unexpected(format!(
-                        "session storage revision is not valid UTF-8: {error}"
-                    ))
-                })?;
             let reply = command::eval_string(
                 &self.connection,
                 COMPARE_AND_SET_SESSION_SCRIPT,
                 vec![keys::session(session_id.as_str())],
-                vec![expected.to_owned(), replacement],
+                vec![expected.storage_bytes().to_vec(), replacement.into_bytes()],
             )
             .await
             .map_err(crate::identity_repository_error)?;
@@ -378,3 +332,7 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
         })
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/session.rs"]
+mod tests;

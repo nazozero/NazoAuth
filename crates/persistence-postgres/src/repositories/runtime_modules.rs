@@ -113,10 +113,9 @@ impl ModuleStateRepository for RuntimeModuleRepository {
 
     async fn compare_and_set_instance(
         &self,
-        required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> Result<CasOutcome<InstanceStateRecord>, Self::Error> {
-        instance::compare_and_set_instance(self, required_desired_revision, mutation).await
+        instance::compare_and_set_instance(self, mutation).await
     }
 
     async fn record_instance_observation(
@@ -204,13 +203,10 @@ impl nazo_persistence::RuntimeModuleStore for RuntimeModuleRepository {
 
     fn compare_and_set_instance(
         &self,
-        required_desired_revision: ModuleRevision,
         mutation: InstanceStateMutation,
     ) -> futures_util::future::BoxFuture<'_, Result<CasOutcome<InstanceStateRecord>, RepositoryError>>
     {
-        Box::pin(async move {
-            instance::compare_and_set_instance(self, required_desired_revision, mutation).await
-        })
+        Box::pin(async move { instance::compare_and_set_instance(self, mutation).await })
     }
 
     fn record_instance_observation(

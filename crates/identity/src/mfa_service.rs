@@ -7,11 +7,11 @@ use crate::{
     PublicAccount,
     mfa::{
         MFA_BACKUP_CODE_COUNT, MfaVerificationMethod, generate_backup_code,
-        generate_totp_secret_base32, normalize_backup_code, otpauth_uri, verified_totp_step,
+        generate_totp_secret_base32, normalize_backup_code, otpauth_uri,
     },
     ports::{
         EncodedSecretHash, MfaHashError, MfaRepositoryPort, MfaSecretHashPort, RepositoryError,
-        TotpVerificationOutcome,
+        TotpEnrollmentCheck, TotpVerificationOutcome,
     },
 };
 
@@ -130,24 +130,15 @@ impl MfaService {
         account: &PublicAccount,
         issuer: &str,
     ) -> Result<TotpEnrollmentStart, MfaServiceError> {
-        let existing = self
+        let secret = generate_totp_secret_base32();
+        let started = self
             .repository
-            .totp_enrollment(account.tenant().tenant_id, account.user_id())
+            .begin_totp_enrollment(account.tenant().tenant_id, account.user_id(), &secret)
             .await
             .map_err(MfaServiceError::repository)?;
-        if existing.as_ref().is_some_and(|value| value.confirmed) {
+        if !started {
             return Err(MfaServiceError::policy(MfaServiceErrorKind::AlreadyEnabled));
         }
-
-        let secret = generate_totp_secret_base32();
-        self.repository
-            .begin_totp_enrollment(
-                account.tenant().tenant_id,
-                account.user_id(),
-                secret.clone(),
-            )
-            .await
-            .map_err(MfaServiceError::repository)?;
         Ok(TotpEnrollmentStart {
             otpauth_uri: otpauth_uri(issuer, &account.account.email, &secret),
             secret_base32: secret,
@@ -157,31 +148,31 @@ impl MfaService {
     pub async fn prepare_totp_confirmation(
         &self,
         account: &PublicAccount,
-        code: &str,
+        code: String,
         now: i64,
     ) -> Result<PreparedTotpConfirmation, MfaServiceError> {
-        let enrollment = self
+        match self
             .repository
-            .totp_enrollment(account.tenant().tenant_id, account.user_id())
+            .check_totp_enrollment(account.tenant().tenant_id, account.user_id(), &code, now)
             .await
             .map_err(MfaServiceError::repository)?
-            .ok_or_else(|| MfaServiceError::policy(MfaServiceErrorKind::EnrollmentMissing))?;
-        if enrollment.confirmed {
-            return Err(MfaServiceError::policy(MfaServiceErrorKind::AlreadyEnabled));
-        }
-        if verified_totp_step(
-            &enrollment.secret_base32,
-            code,
-            now,
-            enrollment.last_used_step,
-        )
-        .is_none()
         {
-            self.repository
-                .record_invalid_totp_attempt(account.tenant().tenant_id, account.user_id())
-                .await
-                .map_err(MfaServiceError::repository)?;
-            return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+            TotpEnrollmentCheck::Missing => {
+                return Err(MfaServiceError::policy(
+                    MfaServiceErrorKind::EnrollmentMissing,
+                ));
+            }
+            TotpEnrollmentCheck::AlreadyConfirmed => {
+                return Err(MfaServiceError::policy(MfaServiceErrorKind::AlreadyEnabled));
+            }
+            TotpEnrollmentCheck::InvalidCode => {
+                self.repository
+                    .record_invalid_totp_attempt(account.tenant().tenant_id, account.user_id())
+                    .await
+                    .map_err(MfaServiceError::repository)?;
+                return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+            }
+            TotpEnrollmentCheck::ValidCode => {}
         }
 
         let (backup_codes, normalized) = generate_backup_codes();
@@ -191,7 +182,7 @@ impl MfaService {
             .await
             .map_err(mfa_hash_error)?;
         Ok(PreparedTotpConfirmation {
-            code: code.to_owned(),
+            code,
             backup_codes,
             hashes,
         })
@@ -403,16 +394,16 @@ impl MfaService {
                 "persisted backup-code count exceeds the supported maximum".to_owned(),
             )));
         }
-        let hashes = candidates
-            .iter()
-            .map(|candidate| candidate.hash.clone())
-            .collect();
+        let (candidate_ids, hashes): (Vec<_>, Vec<_>) = candidates
+            .into_iter()
+            .map(|candidate| (candidate.id, candidate.hash))
+            .unzip();
         let matching = self
             .hasher
             .find_matching_secret(normalized, hashes)
             .await
             .map_err(mfa_hash_error)?;
-        let Some(candidate) = matching.and_then(|index| candidates.get(index)) else {
+        let Some(&candidate_id) = matching.and_then(|index| candidate_ids.get(index)) else {
             self.repository
                 .record_invalid_backup_code_attempt(account.tenant().tenant_id, account.user_id())
                 .await
@@ -424,7 +415,7 @@ impl MfaService {
             .consume_backup_code_candidate(
                 account.tenant().tenant_id,
                 account.user_id(),
-                candidate.id,
+                candidate_id,
             )
             .await
             .map_err(MfaServiceError::repository)?;

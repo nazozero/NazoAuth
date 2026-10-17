@@ -1,6 +1,7 @@
 use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -11,7 +12,7 @@ pub type AdminGrantFuture<'a, T> =
 pub type AdminGrantRevokeFuture<'a> =
     Pin<Box<dyn Future<Output = Result<AdminGrantRevocation, AdminGrantRevokeError>> + Send + 'a>>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct AdminGrantView {
     pub user_id: Uuid,
     pub email: String,

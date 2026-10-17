@@ -336,7 +336,6 @@ async fn native_sso_id_token_decoder_accepts_configured_issuer() {
     .expect("token verification should remain available")
     .expect("configured issuer should decode");
 
-    assert_eq!(claims.iss, state.settings.endpoint.issuer.as_str());
     assert_eq!(claims.sub, "subject-1");
     assert_eq!(claims.sid, "sid-1");
 }

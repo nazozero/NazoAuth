@@ -4,15 +4,13 @@ use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config, Expiration};
 use nazo_auth::{
-    CibaAuthenticationContext, CibaDecision, CibaPingNotification, CibaPingNotificationStatus,
-    CibaPollCommit, CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
-    DeviceAuthorizationPayload, DeviceAuthorizationState, DeviceDecisionFailure,
-    DeviceGrantService, DevicePollCommit, DevicePollFailure,
+    CibaAtomicResult, CibaAuthenticationContext, CibaDecision, CibaPingFinishOutcome,
+    CibaPingFinishResult, CibaPingNotification, CibaPingNotificationStatus, CibaPollCommit,
+    CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
+    DeviceAuthorizationPayload, DeviceAuthorizationState, DeviceCreateResult,
+    DeviceDecisionFailure, DeviceGrantService, DevicePollCommit, DevicePollFailure,
 };
-use nazo_valkey::{
-    AtomicResult, CibaPingFinishOutcome, CibaPingFinishResult, CibaStore, DeviceCreateResult,
-    DeviceStore, ValkeyConnection,
-};
+use nazo_valkey::{CibaStore, DeviceStore, ValkeyConnection};
 use serde_json::json;
 
 static CIBA_PING_DELIVERY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -85,7 +83,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
     assert!(store.load(&auth_req_id).await.unwrap().is_none());
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     assert_eq!(
         inspector.expire_time::<i64, _>(&key).await.unwrap(),
@@ -113,7 +111,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
     assert_eq!(
         [first.unwrap(), second.unwrap()]
             .iter()
-            .filter(|r| **r == AtomicResult::Applied)
+            .filter(|r| **r == CibaAtomicResult::Applied)
             .count(),
         1
     );
@@ -160,7 +158,7 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
     };
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let stored = store.load(&auth_req_id).await.unwrap().unwrap();
     let mut replacement = state.clone();
@@ -176,14 +174,14 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
             )
             .await
             .unwrap(),
-        AtomicResult::DeadlineElapsed
+        CibaAtomicResult::DeadlineElapsed
     );
     assert_eq!(
         store
             .delete_with_authorization_deadline(&auth_req_id, stored.version(), Some(now))
             .await
             .unwrap(),
-        AtomicResult::DeadlineElapsed
+        CibaAtomicResult::DeadlineElapsed
     );
     assert_eq!(
         store.load(&auth_req_id).await.unwrap().unwrap().state(),
@@ -198,7 +196,7 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
             .create_with_authorization_deadline(&expired_id, &expired_state, Some(now))
             .await
             .unwrap(),
-        AtomicResult::DeadlineElapsed
+        CibaAtomicResult::DeadlineElapsed
     );
     assert!(
         store.load(&expired_id).await.unwrap().is_none(),
@@ -206,7 +204,7 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
     );
     assert_eq!(
         store.create(&expired_id, &expired_state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let expired = store.load(&expired_id).await.unwrap().unwrap();
     assert_eq!(
@@ -219,7 +217,7 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
             )
             .await
             .unwrap(),
-        AtomicResult::DeadlineElapsed
+        CibaAtomicResult::DeadlineElapsed
     );
     assert_eq!(
         store.load(&expired_id).await.unwrap().unwrap().state(),
@@ -230,7 +228,7 @@ async fn ciba_cas_rejects_an_expired_authorization_without_mutating_state() {
             .delete_with_authorization_deadline(&expired_id, expired.version(), None)
             .await
             .unwrap(),
-        AtomicResult::Applied,
+        CibaAtomicResult::Applied,
         "ordinary expired cleanup must remain available"
     );
     assert!(store.load(&expired_id).await.unwrap().is_none());
@@ -263,7 +261,7 @@ async fn concurrent_approved_ciba_polls_preserve_retryable_state_until_durable_c
     let store = CibaStore::new(&connection);
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let key = nazo_valkey::test_support::state_storage_key(format!(
         "oauth:ciba:{}",
@@ -419,7 +417,7 @@ async fn ciba_ping_claim_reports_full_stale_and_mixed_scans_before_live_tail() {
             };
             assert_eq!(
                 store.create(&auth_req_id, &state).await.unwrap(),
-                AtomicResult::Applied
+                CibaAtomicResult::Applied
             );
             CibaService::new(store.clone())
                 .decide(
@@ -504,7 +502,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
     let store = CibaStore::new(&connection);
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     CibaService::new(store.clone())
         .decide(
@@ -814,8 +812,8 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
         .unwrap()
         .unwrap();
     let (first, second) = tokio::join!(
-        service.deny(first_prepared, || now),
-        service.deny(second_prepared, || now)
+        service.deny(&first_prepared, || now),
+        service.deny(&second_prepared, || now)
     );
 
     assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
@@ -972,9 +970,8 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
     .unwrap() else {
         panic!("recorded CAS must succeed")
     };
-    assert_eq!(written.state(), &recorded);
     assert_eq!(
-        written.version().comparison_token(),
+        written.comparison_token(),
         inspector.get::<String, _>(&device_key).await.unwrap()
     );
     assert_eq!(
@@ -1002,7 +999,7 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
             &store,
             &device_hash,
             &user_code,
-            written.version(),
+            &written,
             &approved
         )
         .await
@@ -1050,7 +1047,7 @@ async fn protocol_ciba_deadline_create_rejects_every_explicit_elapsed_value() {
                 .create_with_authorization_deadline(&id, &state, Some(deadline))
                 .await
                 .unwrap(),
-            AtomicResult::DeadlineElapsed
+            CibaAtomicResult::DeadlineElapsed
         );
         assert!(
             store.load(&id).await.unwrap().is_none(),
@@ -1064,13 +1061,13 @@ async fn protocol_ciba_deadline_create_rejects_every_explicit_elapsed_value() {
                 .create_with_authorization_deadline(&id, &state, deadline)
                 .await
                 .unwrap(),
-            AtomicResult::Applied
+            CibaAtomicResult::Applied
         );
         let stored = store.load(&id).await.unwrap().unwrap();
         assert_eq!(stored.state(), &state);
         assert_eq!(
             store.delete(&id, stored.version()).await.unwrap(),
-            AtomicResult::Applied
+            CibaAtomicResult::Applied
         );
     }
 }
@@ -1086,7 +1083,7 @@ async fn protocol_ciba_deadline_replace_rejects_elapsed_authority_without_mutati
     let id = format!("ciba-replace-deadline-{}", uuid::Uuid::now_v7());
     assert_eq!(
         store.create(&id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let stored = store.load(&id).await.unwrap().unwrap();
     let mut replacement = state.clone();
@@ -1102,7 +1099,7 @@ async fn protocol_ciba_deadline_replace_rejects_elapsed_authority_without_mutati
                 )
                 .await
                 .unwrap(),
-            AtomicResult::DeadlineElapsed
+            CibaAtomicResult::DeadlineElapsed
         );
         let after = store.load(&id).await.unwrap().unwrap();
         assert_eq!(after.state(), &state);
@@ -1124,7 +1121,7 @@ async fn protocol_ciba_deadline_replace_rejects_elapsed_authority_without_mutati
             .replace_with_authorization_deadline(&id, &wrong, &replacement, Some(now + 300))
             .await
             .unwrap(),
-        AtomicResult::Conflict
+        CibaAtomicResult::Conflict
     );
     assert_eq!(store.load(&id).await.unwrap().unwrap().state(), &state);
     assert_eq!(
@@ -1137,13 +1134,13 @@ async fn protocol_ciba_deadline_replace_rejects_elapsed_authority_without_mutati
             )
             .await
             .unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let after = store.load(&id).await.unwrap().unwrap();
     assert_eq!(after.state(), &replacement);
     assert_eq!(
         store.delete(&id, after.version()).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
 }
 
@@ -1158,7 +1155,7 @@ async fn protocol_ciba_deadline_delete_rejects_elapsed_authority_without_mutatio
     let id = format!("ciba-delete-deadline-{}", uuid::Uuid::now_v7());
     assert_eq!(
         store.create(&id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     let stored = store.load(&id).await.unwrap().unwrap();
     for deadline in [0, -1, now - 1, now] {
@@ -1167,7 +1164,7 @@ async fn protocol_ciba_deadline_delete_rejects_elapsed_authority_without_mutatio
                 .delete_with_authorization_deadline(&id, stored.version(), Some(deadline))
                 .await
                 .unwrap(),
-            AtomicResult::DeadlineElapsed
+            CibaAtomicResult::DeadlineElapsed
         );
         let after = store.load(&id).await.unwrap().unwrap();
         assert_eq!(after.state(), &state);
@@ -1189,7 +1186,7 @@ async fn protocol_ciba_deadline_delete_rejects_elapsed_authority_without_mutatio
             .delete_with_authorization_deadline(&id, &wrong, Some(now + 300))
             .await
             .unwrap(),
-        AtomicResult::Conflict
+        CibaAtomicResult::Conflict
     );
     assert_eq!(store.load(&id).await.unwrap().unwrap().state(), &state);
     assert_eq!(
@@ -1197,7 +1194,7 @@ async fn protocol_ciba_deadline_delete_rejects_elapsed_authority_without_mutatio
             .delete_with_authorization_deadline(&id, stored.version(), Some(now + 300))
             .await
             .unwrap(),
-        AtomicResult::Applied
+        CibaAtomicResult::Applied
     );
     assert!(store.load(&id).await.unwrap().is_none());
 }

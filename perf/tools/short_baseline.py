@@ -162,7 +162,6 @@ def worker(point_path):
     import point_runner as points
     import single_instance_scaling as sis
     point = json.loads(Path(point_path).read_text())
-    points.KEYSET_VOLUME = f"{sis.PROJECT}-keys"
     rec = points.run_ab_point(point)
     out = sis.RESULTS / point["phase"] / point["name"]
     state = token_state_snapshot(sis) if rec.get("ok") else {"collected": False}
@@ -240,12 +239,9 @@ def prepare(args, out):
         runner["Id"], "/probe.py", "probe"], timeout=60))
     cpus = allocate(set(controller["runnable"]) & set(runtime["runnable"]), args.cpu_budget)
     project = "short-" + datetime.now(timezone.utc).strftime("%m%d%H%M%S") + "-" + os.urandom(3).hex()
-    helpers = {}
-    for service in ("keyset", "audit-receiver"):
-        helpers[service] = image_info(f"nazoauth-perf-{service}")["Id"]
-        command(["docker", "tag", helpers[service], f"{project}-{service}"])
+    helpers = {"audit-receiver": image_info("nazoauth-perf-audit-receiver")["Id"]}
+    command(["docker", "tag", helpers["audit-receiver"], f"{project}-audit-receiver"])
     command(["docker", "tag", runner["Id"], f"{project}-perf"])
-    command(["docker", "volume", "create", f"{project}-keys"])
     manifest = {"source_sha": source, "harness_sha": head, "app_image": app["Id"],
                 "runner_image": runner["Id"], "binary_sha256": binary, "helpers": helpers,
                 "project": project, "cpus": cpus, "runtime_probe": runtime,

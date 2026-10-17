@@ -42,7 +42,8 @@ impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
         tenant_id: uuid::Uuid,
         client_id: &'a str,
         token_hash: &'a str,
-    ) -> nazo_http_actix::DynamicRegistrationFuture<'a, Option<nazo_auth::OAuthClient>> {
+    ) -> nazo_http_actix::DynamicRegistrationFuture<'a, Option<nazo_auth::RegistrationClientSnapshot>>
+    {
         self.calls.lock().unwrap().push("lookup");
         let state = self.state.lock().unwrap();
         let found = state.0.clone().filter(|client| {
@@ -51,28 +52,18 @@ impl nazo_http_actix::DynamicRegistrationClientStore for CasRegistrationStore {
                 && client.is_active
                 && state.1.as_deref() == Some(token_hash)
         });
-        Box::pin(async move { Ok(found) })
-    }
-
-    fn has_client_secret(
-        &self,
-        _tenant_id: uuid::Uuid,
-        _client_id: uuid::Uuid,
-    ) -> nazo_http_actix::DynamicRegistrationFuture<'_, bool> {
-        self.calls.lock().unwrap().push("has_secret");
-        // Model a concurrent rotation after the handler authenticated its snapshot.
+        drop(state);
+        // Rotate after observing the authenticated snapshot, before mutation CAS.
         if let Some(hash) = self.hash_after_authentication.lock().unwrap().take() {
             self.state.lock().unwrap().1 = Some(hash);
         }
-        Box::pin(async { Ok(false) })
-    }
-
-    fn client_secret_salt(
-        &self,
-        _tenant_id: uuid::Uuid,
-        _client_id: uuid::Uuid,
-    ) -> nazo_http_actix::DynamicRegistrationFuture<'_, Option<String>> {
-        Box::pin(async { Ok(None) })
+        Box::pin(async move {
+            Ok(found.map(|client| nazo_auth::RegistrationClientSnapshot {
+                client,
+                has_client_secret: false,
+                secret_salt: None,
+            }))
+        })
     }
 
     fn client_secret_digest_matches<'a>(
@@ -165,22 +156,27 @@ impl nazo_auth::AdminClientCryptoPort for RegistrationSecurity {
     fn issue_client_secret(&self, _pepper: &str) -> (String, String) {
         ("issued-secret".to_owned(), "stored-secret-hash".to_owned())
     }
-    fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
-        Ok(())
+    fn inspect_jwks(
+        &self,
+        _jwks: &Value,
+        _certificate_auth: bool,
+    ) -> Result<nazo_auth::ClientJwksCapabilities, String> {
+        Ok(nazo_auth::ClientJwksCapabilities {
+            signing_algorithms: nazo_auth::SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+                .iter()
+                .copied()
+                .collect(),
+            encryption_key_counts: nazo_auth::SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS
+                .iter()
+                .map(|alg| (*alg, 1))
+                .collect(),
+            has_current_mtls_certificate: true,
+        })
     }
     fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
         (!value.trim().is_empty())
             .then_some(())
             .ok_or_else(|| "invalid DN".to_owned())
-    }
-    fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {
-        1
-    }
-    fn contains_signing_key(&self, _jwks: &Value) -> bool {
-        true
-    }
-    fn valid_self_signed_mtls_jwks(&self, _jwks: &Value) -> bool {
-        true
     }
 }
 
@@ -391,14 +387,7 @@ async fn framework_boundary_transport_dcr_put_cas_revokes_old_registration_token
     let calls = store.calls.lock().unwrap();
     assert_eq!(
         calls.as_slice(),
-        &[
-            "insert",
-            "lookup",
-            "has_secret",
-            "replace_cas",
-            "lookup",
-            "lookup"
-        ]
+        &["insert", "lookup", "replace_cas", "lookup", "lookup"]
     );
     assert_eq!(
         store.state.lock().unwrap().1.as_deref(),
@@ -446,6 +435,6 @@ async fn framework_boundary_transport_dcr_put_stale_cas_preserves_registration()
     assert_eq!(state.1.as_deref(), Some(concurrent_hash));
     assert_eq!(
         store.calls.lock().unwrap().as_slice(),
-        &["insert", "lookup", "has_secret", "replace_cas"]
+        &["insert", "lookup", "replace_cas"]
     );
 }

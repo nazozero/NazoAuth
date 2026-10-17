@@ -250,20 +250,18 @@ async fn signed_attestation_slow_node_cannot_reinsert_after_real_owner_expiry() 
             .await
             .unwrap()
     );
+    let key = nazo_valkey::test_support::client_attestation_replay_storage_key(&client_id, &jti);
     tokio::time::timeout(StdDuration::from_secs(5), async {
-        while owner_time(&state).await < fast.replay_window.expires_at() {
+        while crate::test_support::valkey::valkey_get(&state.valkey, &key)
+            .await
+            .unwrap()
+            .is_some()
+        {
             tokio::time::sleep(StdDuration::from_millis(20)).await;
         }
     })
     .await
-    .expect("the real replay owner reaches the marker expiry");
-    let key = nazo_valkey::test_support::client_attestation_replay_storage_key(&client_id, &jti);
-    assert!(
-        crate::test_support::valkey::valkey_get(&state.valkey, &key)
-            .await
-            .unwrap()
-            .is_none()
-    );
+    .expect("the real replay owner expires the marker");
     // The same signed proof still passes a node one second behind the owner.
     let slow = validator
         .validate(

@@ -14,9 +14,10 @@ pub(crate) fn token_issuance_config(settings: &Settings) -> TokenIssuanceConfig 
             .openid4vc
             .credential_configurations
             .values()
-            .filter_map(|configuration| configuration.scope.clone())
+            .filter_map(|configuration| configuration.scope.as_deref())
             .collect::<BTreeSet<_>>()
             .into_iter()
+            .map(str::to_owned)
             .collect::<Vec<_>>()
             .into_boxed_slice(),
         pairwise_subject_secret: settings

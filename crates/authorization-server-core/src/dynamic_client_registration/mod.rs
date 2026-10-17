@@ -14,7 +14,7 @@ pub use parse::{parse_client_configuration_update, response_types_from_client};
 pub use policy::{DynamicRegistrationPolicy, prepare_dynamic_client_registration};
 pub use ports::{
     ClientSecretDigesterPort, DynamicRegistrationClientStore, DynamicRegistrationDependencyError,
-    DynamicRegistrationFuture, DynamicRegistrationSecretPort,
+    DynamicRegistrationFuture, DynamicRegistrationSecretPort, RegistrationClientSnapshot,
 };
 pub use request::{DynamicClientRegistrationRequest, PreparedDynamicClientRegistration};
 

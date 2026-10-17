@@ -57,24 +57,23 @@ fn totp_envelope_authenticates_secret_and_identity_binding() {
     let tenant_id = TenantId::new(Uuid::now_v7()).expect("tenant id is valid");
     let user_id = UserId::new(Uuid::now_v7()).expect("user id is valid");
     let key_ring = single_key_ring();
-    let (protected, key_id) =
+    let (mut protected, key_id) =
         protect_totp_secret(&key_ring, tenant_id, user_id, "JBSWY3DPEHPK3PXP")
             .expect("encryption succeeds");
 
+    let mut decoded = protected.clone();
+    let pointer = decoded[1 + TOTP_NONCE_LEN..].as_ptr();
+    let secret = decode_totp_secret(&key_ring, tenant_id, user_id, &mut decoded, &key_id)
+        .expect("decryption succeeds");
+    assert_eq!(secret, "JBSWY3DPEHPK3PXP");
     assert_eq!(
-        decode_totp_secret(
-            Some(&key_ring),
-            tenant_id,
-            user_id,
-            protected.clone(),
-            key_id.clone(),
-        )
-        .expect("decryption succeeds"),
-        "JBSWY3DPEHPK3PXP"
+        secret.as_ptr(),
+        pointer,
+        "borrow the authenticated plaintext region"
     );
     let other_user = UserId::new(Uuid::now_v7()).expect("user id is valid");
     assert!(matches!(
-        decode_totp_secret(Some(&key_ring), tenant_id, other_user, protected, key_id,),
+        decode_totp_secret(&key_ring, tenant_id, other_user, &mut protected, &key_id,),
         Err(RepositoryError::Consistency(_))
     ));
 }
@@ -108,76 +107,55 @@ fn totp_secret_validation_rejects_malformed_rows_and_uses_previous_keys() {
     );
     assert_eq!(
         decode_totp_secret(
-            Some(&key_ring),
+            &key_ring,
             tenant_id,
             user_id,
-            previous_protected.clone(),
-            previous.id().to_owned(),
+            &mut previous_protected.clone(),
+            previous.id(),
         )
         .expect("previous key remains decryptable"),
         "JBSWY3DPEHPK3PXP"
     );
     assert!(matches!(
         decode_totp_secret(
-            None,
+            &key_ring,
             tenant_id,
             user_id,
-            previous_protected.clone(),
-            previous.id().to_owned(),
+            &mut [TOTP_ENVELOPE_VERSION; TOTP_MIN_PROTECTED_LEN - 1],
+            previous.id(),
         ),
         Err(RepositoryError::Consistency(_))
     ));
     assert!(matches!(
         decode_totp_secret(
-            Some(&key_ring),
+            &key_ring,
             tenant_id,
             user_id,
-            vec![TOTP_ENVELOPE_VERSION; TOTP_MIN_PROTECTED_LEN - 1],
-            previous.id().to_owned(),
+            &mut [TOTP_ENVELOPE_VERSION + 1; TOTP_MIN_PROTECTED_LEN],
+            previous.id(),
         ),
         Err(RepositoryError::Consistency(_))
     ));
     assert!(matches!(
         decode_totp_secret(
-            Some(&key_ring),
+            &key_ring,
             tenant_id,
             user_id,
-            vec![TOTP_ENVELOPE_VERSION + 1; TOTP_MIN_PROTECTED_LEN],
-            previous.id().to_owned(),
-        ),
-        Err(RepositoryError::Consistency(_))
-    ));
-    assert!(matches!(
-        decode_totp_secret(
-            Some(&key_ring),
-            tenant_id,
-            user_id,
-            previous_protected.clone(),
-            "retired".to_owned(),
+            &mut previous_protected.clone(),
+            "retired",
         ),
         Err(RepositoryError::Consistency(_))
     ));
 
-    let invalid_utf8 =
+    let mut invalid_utf8 =
         protected_with_key(&current, tenant_id, user_id, current.id(), &[0xff, 0xfe]);
     assert!(matches!(
         decode_totp_secret(
-            Some(&key_ring),
+            &key_ring,
             tenant_id,
             user_id,
-            invalid_utf8,
-            current.id().to_owned(),
-        ),
-        Err(RepositoryError::Consistency(_))
-    ));
-    let invalid_length = protected_with_key(&current, tenant_id, user_id, current.id(), b"short");
-    assert!(matches!(
-        decode_totp_secret(
-            Some(&key_ring),
-            tenant_id,
-            user_id,
-            invalid_length,
-            current.id().to_owned(),
+            &mut invalid_utf8,
+            current.id(),
         ),
         Err(RepositoryError::Consistency(_))
     ));
@@ -225,7 +203,9 @@ async fn mfa_repository_key_requirement_precedes_database_access() {
     let tenant_id = TenantId::new(Uuid::now_v7()).expect("tenant id is valid");
     let user_id = UserId::new(Uuid::now_v7()).expect("user id is valid");
 
-    let error = repository.totp_enrollment(tenant_id, user_id).await;
+    let error = repository
+        .check_totp_enrollment(tenant_id, user_id, "123456", 0)
+        .await;
     assert!(
         matches!(error, Err(RepositoryError::Consistency(message)) if message.contains("not configured"))
     );
@@ -234,7 +214,7 @@ async fn mfa_repository_key_requirement_precedes_database_access() {
             .begin_totp_enrollment(
                 tenant_id,
                 user_id,
-                "JBSWY3DPEHPK3PXP".to_owned(),)
+                "JBSWY3DPEHPK3PXP",)
             .await,
         Err(RepositoryError::Consistency(message)) if message.contains("not configured")
     ));

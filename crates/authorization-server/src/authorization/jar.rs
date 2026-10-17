@@ -101,9 +101,9 @@ pub(crate) async fn apply_request_object_with_context(
         expected_signing_algorithm: client.request_object_signing_alg.as_deref(),
     })
     .map_err(request_object_verification_error)?;
-    let normalized = nazo_auth::normalize_request_object_owned(
+    let normalized = nazo_auth::normalize_request_object(
         outer,
-        &verified.claims,
+        verified.claims,
         RequestObjectPolicy {
             issuer: &context.config.issuer,
             client_id: &client.client_id,
@@ -143,7 +143,6 @@ pub(crate) fn request_object_verification_error(
     let description = match error {
         RequestObjectVerificationError::InvalidCompact => "request object 无效.",
         RequestObjectVerificationError::InvalidHeader => "request object header 无效.",
-        RequestObjectVerificationError::InvalidClaims => "request object claims 无效.",
         RequestObjectVerificationError::InvalidAlgorithm => "request object 签名算法无效.",
         RequestObjectVerificationError::MissingKeyId => "request object 缺少 kid.",
         RequestObjectVerificationError::InvalidKey => "request object 签名密钥无效.",

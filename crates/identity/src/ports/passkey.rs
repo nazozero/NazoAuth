@@ -73,15 +73,13 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         &self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'_, Vec<PasskeyCredentialSummary>> {
-        Box::pin(async move {
-            self.list(tenant_id, user_id).await.map(|rows| {
-                rows.into_iter()
-                    .map(PasskeyCredentialSummary::from)
-                    .collect()
-            })
-        })
-    }
+    ) -> RepositoryFuture<'_, Vec<PasskeyCredentialSummary>>;
+
+    fn credential_ids(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> RepositoryFuture<'_, Vec<passkey_auth::CredentialId>>;
 
     fn by_credential_id<'a>(
         &'a self,

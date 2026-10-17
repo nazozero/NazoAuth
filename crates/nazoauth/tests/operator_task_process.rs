@@ -29,6 +29,10 @@ use nazo_operator_protocol::{
     controller_key_id, decode_control_result, sign_control_operation,
 };
 
+#[path = "../../persistence-postgres/tests/support/identity_audit.rs"]
+mod identity_audit;
+use identity_audit::SlotFixture as _;
+
 const DEPLOYMENT: &str = "deployment-process";
 const CONFIG_REVISION: &str = "config-revision-process";
 const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_operator_process_runtime";
@@ -47,33 +51,6 @@ struct ExistsRow {
 async fn isolated_registry(
     case: &str,
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 21] = [
-        "20260805000100",
-        "20260905000100",
-        "20260909000100",
-        "20260919000100",
-        "20260919000200",
-        "20260920000100",
-        "20260923000100",
-        "20260924000100",
-        "20260925000100",
-        "20260927000100",
-        "20260927000200",
-        // These migrations target shared public audit state, not this schema.
-        "20260929000400",
-        "20261001000100",
-        "20261001000200",
-        "20261001000400",
-        // Public refresh-family cutover and trigger run once per database.
-        "20261001000500",
-        "20261002000300",
-        // Fixed public Required approval, observation, ACK and fresh-claim owners run once.
-        "20261003000400",
-        "20261003000500",
-        "20261006000100",
-        "20261006000200",
-    ];
-
     let base = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .ok()?;
@@ -118,7 +95,7 @@ async fn isolated_registry(
             .batch_execute(CREATE_MIGRATIONS_TABLE)
             .await
             .expect("isolated migration ledger should create");
-        for version in PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS {
+        for version in include_str!("../../../tests/fixtures/public_migrations.txt").lines() {
             sql_query(
                 "INSERT INTO __diesel_schema_migrations (version)
                  VALUES ($1)
@@ -133,6 +110,7 @@ async fn isolated_registry(
     nazo_postgres::run_pending_migrations(&url)
         .await
         .expect("isolated application migrations should apply");
+    identity_audit::seed_actor(&url).await;
     let repository = nazo_postgres::ControllerRegistryRepository::new(
         nazo_postgres::create_pool(&url, 4).expect("test pool"),
     );
@@ -335,7 +313,7 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
     write_runtime_fixtures(&root);
     let operation_id = "019c8ca2-30a6-7000-8000-00000000b001";
     let op = operation(operation_id, &kid, ControlOperationPayload::MigrateApply);
-    let compact = sign_control_operation(&op, &controller).unwrap();
+    let compact = sign_control_operation(&op, &controller).unwrap().0;
 
     let first = run_operator_task(
         &root,
@@ -361,7 +339,7 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
     // Same id, different canonical request: permanent conflict.
     let mut conflicting = op.clone();
     conflicting.config_revision = "different-revision".to_owned();
-    let conflicting_compact = sign_control_operation(&conflicting, &controller).unwrap();
+    let conflicting_compact = sign_control_operation(&conflicting, &controller).unwrap().0;
     let conflict = run_operator_task(
         &root,
         &conflicting_compact,
@@ -398,7 +376,7 @@ async fn killed_before_side_effect_resumes_without_duplicating_the_mutation() {
     write_runtime_fixtures(&root);
     let operation_id = "019c8ca2-30a6-7000-8000-00000000b002";
     let op = operation(operation_id, &kid, ControlOperationPayload::MigrateApply);
-    let compact = sign_control_operation(&op, &controller).unwrap();
+    let compact = sign_control_operation(&op, &controller).unwrap().0;
 
     let marker = root.join("before-side-effect.marker");
     let killed = spawn_operator_task(
@@ -517,7 +495,7 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
     write_runtime_fixtures(&root);
     let env = || vec![("DATABASE_URL", database_url.clone())];
     let signed = |operation: &ControlOperation, key: &SigningKey| {
-        sign_control_operation(operation, key).unwrap()
+        sign_control_operation(operation, key).unwrap().0
     };
     let run = |compact: String, env: Vec<(&str, String)>| run_operator_task(&root, &compact, env);
 
@@ -688,7 +666,8 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
             ),
             &controller,
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         vec![("DATABASE_URL", database_url.clone())],
     );
     assert_success(&initialize);
@@ -709,7 +688,8 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
         ),
         &controller,
     )
-    .unwrap();
+    .unwrap()
+    .0;
 
     let first = run_operator_task(
         &root,
@@ -752,7 +732,8 @@ async fn keys_family_runs_through_the_real_engine_and_journals_the_outcome() {
             ),
             &controller,
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         vec![("DATABASE_URL", database_url)],
     );
     assert_success(&validate);

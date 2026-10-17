@@ -65,7 +65,7 @@ pub async fn consume_private_key_jwt_with_authorization_service(
             audit
                 .record_required(
                     "client_assertion_replay_detected",
-                    crate::ports::audit::audit_fields(&[
+                    crate::ports::audit::audit_fields([
                         ("client_id", serde_json::json!(client.client_id)),
                         (
                             "jti_hash",

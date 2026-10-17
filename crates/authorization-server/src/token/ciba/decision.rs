@@ -51,7 +51,7 @@ impl CibaApplication {
         if state_payload.status == CibaStatus::Pending
             && state_payload.expires_at > Utc::now().timestamp()
         {
-            ciba_authorization_request_view(&self.authorization, &state_payload).await
+            ciba_authorization_request_view(&self.authorization, state_payload).await
         } else {
             Ok(None)
         }
@@ -123,6 +123,7 @@ async fn prepare_ciba_decision_intent(
     ciba_service: &ServerCibaService,
     security_audit: &dyn SecurityAudit,
     command: &CibaDecisionCommand,
+    auth_req_id_hash: &str,
 ) -> Result<PreparedCibaDecision<CibaStateVersion>, OAuthEndpointError> {
     let prepared = match ciba_service.prepare_decision(&command.auth_req_id).await {
         Ok(Some(prepared)) => prepared,
@@ -148,10 +149,10 @@ async fn prepare_ciba_decision_intent(
         CibaDecision::Approve(_) => "approve",
         CibaDecision::Deny => "deny",
     };
-    let mut fields = audit_fields(&[
+    let mut fields = audit_fields([
         ("client_id", json!(state.client_id)),
         ("user_id", json!(state.user_id)),
-        ("auth_req_id_hash", json!(blake3_hex(&command.auth_req_id))),
+        ("auth_req_id_hash", json!(auth_req_id_hash)),
         ("decision", json!(decision_name)),
         ("decision_source", json!(command.source.as_str())),
         ("scope", json!(state.scopes.join(" "))),
@@ -182,26 +183,35 @@ async fn set_ciba_request_decision(
     security_audit: &dyn SecurityAudit,
     command: CibaDecisionCommand,
 ) -> Result<(), OAuthEndpointError> {
-    let prepared = prepare_ciba_decision_intent(ciba_service, security_audit, &command).await?;
+    let auth_req_id_hash = blake3_hex(&command.auth_req_id);
+    let prepared =
+        prepare_ciba_decision_intent(ciba_service, security_audit, &command, &auth_req_id_hash)
+            .await?;
     let CibaDecisionCommand {
-        auth_req_id,
         decision,
         expected_user_id,
         source,
         source_ip_hash,
+        ..
     } = command;
     let result = ciba_service
         .decide_prepared(prepared, decision, expected_user_id, || {
             Utc::now().timestamp()
         })
         .await;
-    complete_ciba_decision(security_audit, result, &auth_req_id, source, source_ip_hash)
+    complete_ciba_decision(
+        security_audit,
+        result,
+        &auth_req_id_hash,
+        source,
+        source_ip_hash,
+    )
 }
 
 fn complete_ciba_decision(
     security_audit: &dyn SecurityAudit,
     result: Result<CibaCommittedDecision, CibaDecisionFailure>,
-    auth_req_id: &str,
+    auth_req_id_hash: &str,
     source: CibaDecisionSource,
     source_ip_hash: Option<String>,
 ) -> Result<(), OAuthEndpointError> {
@@ -215,10 +225,10 @@ fn complete_ciba_decision(
                 CibaDecision::Approve(_) => "approve",
                 CibaDecision::Deny => "deny",
             };
-            let mut fields = audit_fields(&[
+            let mut fields = audit_fields([
                 ("client_id", json!(committed.state.client_id)),
                 ("user_id", json!(committed.state.user_id)),
-                ("auth_req_id_hash", json!(blake3_hex(auth_req_id))),
+                ("auth_req_id_hash", json!(auth_req_id_hash)),
                 ("decision", json!(decision_name)),
                 ("decision_source", json!(source.as_str())),
             ]);
@@ -263,10 +273,13 @@ fn complete_ciba_decision(
 
 async fn ciba_authorization_request_view(
     authorization_service: &ServerAuthorizationService,
-    payload: &CibaRequestState,
+    payload: CibaRequestState,
 ) -> Result<Option<CibaAuthorizationRequestView>, OAuthEndpointError> {
-    let client = match authorization_service.client_by_id(&payload.client_id).await {
-        Ok(Some(client)) if client.is_active => client,
+    let client = match authorization_service
+        .active_client_presentation(&payload.client_id)
+        .await
+    {
+        Ok(Some(client)) => client,
         Ok(_) => return Ok(None),
         Err(error) => {
             tracing::warn!(%error, "failed to load CIBA client for verification page");
@@ -278,11 +291,11 @@ async fn ciba_authorization_request_view(
         }
     };
     Ok(Some(CibaAuthorizationRequestView {
-        client_id: payload.client_id.clone(),
-        client_name: client.client_name.clone(),
-        scopes: payload.scopes.clone(),
-        audiences: payload.audiences.clone(),
-        binding_message: payload.binding_message.clone(),
+        client_id: payload.client_id,
+        client_name: client.client_name,
+        scopes: payload.scopes,
+        audiences: payload.audiences,
+        binding_message: payload.binding_message,
         interval_seconds: payload.interval_seconds,
         issued_at: DateTime::<Utc>::from_timestamp(payload.issued_at, 0).unwrap_or_else(Utc::now),
         expires_at: DateTime::<Utc>::from_timestamp(payload.expires_at, 0).unwrap_or_else(Utc::now),

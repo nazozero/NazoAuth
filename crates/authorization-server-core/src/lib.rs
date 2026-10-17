@@ -45,10 +45,10 @@ mod uri_policy;
 
 pub use admin_clients::{
     AdminClientCryptoPort, AdminClientError, AdminClientFuture, AdminClientPolicy,
-    AdminClientPortError, AdminClientRepositoryPort, AdminClientService, CreateClientRequest,
-    CreatedClient, PatchClientRequest, PendingClientSecret, PreparedClientRegistration,
-    PreparedClientWrite, SectorIdentifierFuture, SectorIdentifierResolverPort,
-    SuppliedClientSecret, insert_prepared_client, prepare_client_patch,
+    AdminClientPortError, AdminClientRepositoryPort, AdminClientService, ClientJwksCapabilities,
+    CreateClientRequest, CreatedClient, PatchClientRequest, PendingClientSecret,
+    PreparedClientRegistration, PreparedClientWrite, SectorIdentifierFuture,
+    SectorIdentifierResolverPort, SuppliedClientSecret, prepare_client_patch,
     prepare_client_registration,
 };
 pub use admin_grants::{
@@ -78,9 +78,9 @@ pub use authorization_request::{
     REQUEST_OBJECT_MAX_TTL_SECONDS, RawParAdmissionPolicy, RequestObjectClaims,
     RequestObjectJtiPolicy, RequestObjectPolicy, RequestObjectReplay,
     RequestObjectVerificationError, RequestObjectVerificationInput, VerifiedRequestObject,
-    normalize_request_object, normalize_request_object_owned,
-    unverified_signed_request_object_client_id, unverified_signed_request_object_kid,
-    validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
+    normalize_request_object, unverified_signed_request_object_client_id,
+    unverified_signed_request_object_kid, validate_expanded_par_admission,
+    validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
@@ -101,6 +101,7 @@ pub use ciba::{
     evaluate_ciba_decision, evaluate_ciba_poll,
 };
 pub use ciba_ping::{
+    CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult,
     CibaPingResponseAction, MAX_CIBA_LOGOUT_URI_BYTES, classify_ciba_ping_status,
     next_ciba_ping_retry_at, validate_ciba_notification_endpoint,
 };
@@ -132,8 +133,8 @@ pub use client_jwe_policy::{
     RSA_PUBLIC_KEY_MAX_BITS, RSA_PUBLIC_KEY_MIN_BITS, rsa_public_key_components_are_safe,
 };
 pub use client_registration::{
-    ApprovedClient, ClientAssuranceLevel, ClientPresentationMetadata, ClientSecurityPolicy,
-    OAuthClient, ValidatedClientRegistration,
+    ApprovedClient, ClientAssuranceLevel, ClientPresentation, ClientPresentationMetadata,
+    ClientSecurityPolicy, OAuthClient, ValidatedClientRegistration,
 };
 pub use device::{
     ApprovedDeviceAuthorization, DeviceAtomicResult, DeviceAuthorizationApproval,
@@ -155,20 +156,20 @@ pub use dynamic_client_registration::{
     ClientSecretDigesterPort, DynamicClientRegistrationRequest, DynamicRegistrationClientStore,
     DynamicRegistrationDependencyError, DynamicRegistrationError, DynamicRegistrationFuture,
     DynamicRegistrationPolicy, DynamicRegistrationSecretPort, PreparedDynamicClientRegistration,
-    parse_client_configuration_update, prepare_dynamic_client_registration,
-    response_types_from_client,
+    RegistrationClientSnapshot, parse_client_configuration_update,
+    prepare_dynamic_client_registration, response_types_from_client,
 };
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use extension_grants::{
     ACCESS_TOKEN_TYPE, JWT_BEARER_ASSERTION_CLOCK_SKEW_SECONDS, JWT_BEARER_ASSERTION_MAX_JTI_BYTES,
     JWT_BEARER_ASSERTION_MAX_TTL_SECONDS, JwtBearerAssertionClaims, JwtBearerGrantAdmission,
-    JwtBearerGrantError, JwtBearerGrantPolicy, TokenExchangeAdmission, TokenExchangeError,
-    TokenExchangePolicy, TokenExchangeRequestInput, TokenExchangeSenderBinding,
-    TokenExchangeSubjectIdentity, ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject,
-    admit_jwt_bearer_grant, admit_token_exchange, token_exchange_actor_claim,
-    token_exchange_issuance_binding, token_exchange_scopes, validate_jwt_bearer_assertion_claims,
-    validate_jwt_bearer_grant_prerequisites, validate_token_exchange_access_token,
-    validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
+    JwtBearerGrantError, JwtBearerGrantPolicy, TokenExchangeError, TokenExchangePolicy,
+    TokenExchangeRequestInput, TokenExchangeSenderBinding, TokenExchangeSubjectIdentity,
+    ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject, admit_jwt_bearer_grant,
+    token_exchange_actor_claim, token_exchange_issuance_binding, token_exchange_scopes,
+    validate_jwt_bearer_assertion_claims, validate_jwt_bearer_grant_prerequisites,
+    validate_token_exchange_access_token, validate_token_exchange_grant_prerequisites,
+    validate_token_exchange_subject, validate_token_exchange_target,
 };
 pub use grant::{GrantType, UnsupportedGrantType};
 pub use logout_service::{
@@ -180,8 +181,8 @@ pub use logout_service::{
 pub use metadata::{
     AuthorizationServerMetadataInput, CapabilityAdmission, CibaMetadataProfile,
     MetadataAuthorizationServerProfile, MetadataCapabilities, MetadataSigningAlgorithms,
-    MetadataSubjectType, ProtectedResourceMetadataInput, authorization_server_metadata,
-    module_admissible, protected_resource_metadata,
+    ProtectedResourceMetadataInput, authorization_server_metadata, module_admissible,
+    protected_resource_metadata,
 };
 pub use oauth_parameters::{
     has_duplicate_oauth_parameter, is_subset, parse_scope, string_array_values,
@@ -211,17 +212,15 @@ pub use session_management::{
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE,
-    MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, PendingBackchannelLogoutDelivery,
-    RefreshContract, RefreshToken, RefreshTokenAuthenticationContext, RefreshTokenAuthority,
-    RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
+    MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, RefreshContract, RefreshToken,
+    RefreshTokenAuthenticationContext, RefreshTokenAuthority, RefreshTokenCommit,
+    RefreshTokenPersistResult, refresh_spent_proof_limit,
 };
 pub use token_endpoint::{
-    AdmittedTokenClient, AppliedSenderConstraint, AuthorizationCodeTokenRequest,
-    ClientCredentialsTokenRequest, PresentedSenderConstraint, RefreshTokenRequest,
+    AdmittedTokenClient, AppliedSenderConstraint, PresentedSenderConstraint,
     TokenClientAuthPresentation, TokenClientAuthenticationContext, TokenClientPolicy,
-    TokenEndpointDispatch, TokenEndpointError, TokenEndpointRequestInput, admit_token_client,
-    apply_sender_constraint, sender_constraint_policy, token_client_authentication_context,
-    token_endpoint_dispatch,
+    TokenEndpointError, admit_token_client, apply_sender_constraint, sender_constraint_policy,
+    token_client_authentication_context,
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,

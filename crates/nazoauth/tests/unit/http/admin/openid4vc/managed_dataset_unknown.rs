@@ -10,6 +10,15 @@ struct HiddenDatasetCommitAck {
 }
 
 impl Openid4vciDatasetStore for HiddenDatasetCommitAck {
+    fn datasets_available<'a>(
+        &'a self,
+        tenant: Uuid,
+        subject: Uuid,
+        configurations: &'a [String],
+    ) -> futures_util::future::BoxFuture<'a, Result<bool, CredentialStoreError>> {
+        self.inner
+            .datasets_available(tenant, subject, configurations)
+    }
     fn dataset<'a>(
         &'a self,
         tenant: Uuid,

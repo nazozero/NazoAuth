@@ -12,7 +12,7 @@ use nazo_openid4vp::{
     AuthorizationRequest, AuthorizationResponse, ClientIdPrefix, ClientMetadata, PresentationError,
     PresentationResult, PresentationService, PresentationServiceError, PresentationStoreError,
     PresentationStoreFuture, PresentationStorePort, PresentationTransaction, RequestMethod,
-    ResponseMode, StoredPresentation,
+    ResponseMode,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -58,9 +58,8 @@ impl PresentationStorePort for RecordingStore {
         _transaction_id: Uuid,
         _wallet_nonce: &'a str,
         _now: chrono::DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
-    {
-        Box::pin(async { Ok(None) })
+    ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
+        Box::pin(async { Ok(false) })
     }
 
     fn complete<'a>(
@@ -83,7 +82,7 @@ impl PresentationStorePort for RecordingStore {
         &'a self,
         _transaction_id: Uuid,
         _now: chrono::DateTime<Utc>,
-    ) -> PresentationStoreFuture<'a, Result<Option<StoredPresentation>, PresentationStoreError>>
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>
     {
         Box::pin(async { Ok(None) })
     }
@@ -98,10 +97,33 @@ struct RecordingVerifier {
 impl CredentialVerifierPort for RecordingVerifier {
     fn verify<'a>(
         &'a self,
-        presentation: &'a PresentedCredential,
+        presentation: &'a PresentedCredential<'_>,
     ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
-        let transcript = presentation.mdoc_session_transcript.clone();
-        let trust_anchors = presentation.additional_trust_anchors.clone();
+        assert!(matches!(
+            presentation.encoded,
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            presentation.expected_nonce,
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            presentation.expected_audience,
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            presentation.additional_trust_anchors,
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert!(matches!(
+            presentation.mdoc_session_transcript,
+            Some(std::borrow::Cow::Borrowed(_))
+        ));
+        let transcript = presentation
+            .mdoc_session_transcript
+            .as_deref()
+            .map(<[u8]>::to_vec);
+        let trust_anchors = presentation.additional_trust_anchors.to_vec();
         let output = self.transcript.clone();
         let trust_output = self.trust_anchors.clone();
         Box::pin(async move {
@@ -128,7 +150,7 @@ struct MissingHolderVerifier;
 impl CredentialVerifierPort for MissingHolderVerifier {
     fn verify<'a>(
         &'a self,
-        _presentation: &'a PresentedCredential,
+        _presentation: &'a PresentedCredential<'_>,
     ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
         Box::pin(async {
             Ok(VerifiedCredential {
@@ -528,11 +550,11 @@ struct OutcomeVerifier {
 impl CredentialVerifierPort for OutcomeVerifier {
     fn verify<'a>(
         &'a self,
-        presentation: &'a PresentedCredential,
+        presentation: &'a PresentedCredential<'_>,
     ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            match presentation.encoded.as_str() {
+            match presentation.encoded.as_ref() {
                 "bad-signature" => return Err(CredentialTrustError::InvalidSignature),
                 "bad-holder" => return Err(CredentialTrustError::InvalidHolderBinding),
                 "bad-nonce" => return Err(CredentialTrustError::InvalidNonce),
@@ -808,7 +830,7 @@ async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response()
 #[test]
 fn presentation_transaction_debug_does_not_expose_decryption_material() {
     let mut transaction = cardinality_transaction();
-    transaction.response_encryption_private_key = Some(b"private-decryption-secret".to_vec());
+    transaction.response_encryption_private_key = Some(*b"private-decryption-secret-32byte");
     transaction.request_object = Some("signed-request-secret".to_owned());
     assert_eq!(
         format!("{transaction:?}"),
@@ -822,7 +844,7 @@ async fn dcql_claim_modes_preserve_required_optional_and_wildcard_matching() {
     impl CredentialVerifierPort for ClaimsVerifier {
         fn verify<'a>(
             &'a self,
-            _: &'a PresentedCredential,
+            _: &'a PresentedCredential<'_>,
         ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
             Box::pin(async {
                 Ok(VerifiedCredential {

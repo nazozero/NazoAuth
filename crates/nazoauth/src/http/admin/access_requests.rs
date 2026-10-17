@@ -67,9 +67,9 @@ pub(crate) async fn admin_access_requests(
     let search = q.get("q").map(String::as_str);
     let result = repository
         .page(
-            admin.principal.tenant.tenant_id,
+            admin.tenant.tenant_id,
             i64::from(page_size),
-            i64::from(offset),
+            offset,
             search,
             status,
         )
@@ -172,10 +172,7 @@ pub(crate) async fn admin_approve_access_request(
         Ok(admin) => admin,
         Err(response) => return response,
     };
-    let pending_request = match repository
-        .by_id(admin.principal.tenant.tenant_id, request_id)
-        .await
-    {
+    let pending_request = match repository.by_id(admin.tenant.tenant_id, request_id).await {
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Pending => row,
         Ok(Some(row)) if row.status == nazo_identity::AccessRequestStatus::Approved => {
             if let Err(response) = require_transactional_audit_or_unavailable().await {
@@ -283,9 +280,9 @@ pub(crate) async fn admin_approve_access_request(
 
     let approval = repository
         .approve_with_required_audit(
-            admin.principal.tenant,
+            admin.tenant,
             request_id,
-            admin.user_id(),
+            admin.user_id,
             &prepared,
             blake3_hex(&client_ip_with_config(&req, &client_ip_config)),
         )
@@ -428,12 +425,7 @@ pub(crate) async fn admin_reject_access_request(
         return response;
     }
     let updated = match repository
-        .reject_with_required_audit(
-            admin.principal.tenant,
-            request_id,
-            admin.user_id(),
-            payload.admin_note,
-        )
+        .reject_with_required_audit(admin.tenant, request_id, admin.user_id, payload.admin_note)
         .await
     {
         Ok(view) => Some(view),

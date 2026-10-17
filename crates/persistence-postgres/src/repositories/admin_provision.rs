@@ -4,7 +4,8 @@ use diesel::{
     sql_query, sql_types::BigInt,
 };
 use diesel_async::{AsyncConnection as _, RunQueryDsl as _};
-use nazo_identity::{TenantContext, email::normalize_email_address};
+use nazo_identity::email::normalize_email_address;
+pub use nazo_persistence::{AdminProvisionReceipt, AdminProvisionRequest};
 use sha2::Digest as _;
 use uuid::Uuid;
 
@@ -17,23 +18,6 @@ const MAX_OPERATION_ID_BYTES: usize = 128;
 const MAX_DEPLOYMENT_ID_BYTES: usize = 128;
 const ADMIN_PROVISION_EVENT_TYPE: &str = "admin_user_created";
 const ADMIN_PROVISION_REASON: &str = "admin_created";
-
-#[derive(Clone, Debug)]
-pub struct AdminProvisionRequest {
-    pub tenant: TenantContext,
-    pub operation_id: String,
-    pub deployment_id: String,
-    pub email: String,
-    pub password_hash: nazo_identity::ports::PasswordHashInput,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdminProvisionReceipt {
-    pub operation_id: String,
-    pub deployment_id: String,
-    pub user_id: Uuid,
-    pub email: String,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdminProvisionError {
@@ -120,19 +104,6 @@ impl AdminProvisionRepository {
                     return Ok(receipt.into_receipt(existing_email));
                 }
 
-                if users::table
-                    .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                    .filter(users::email.eq(&email))
-                    .select(users::id)
-                    .for_update()
-                    .first::<Uuid>(connection)
-                    .await
-                    .optional()?
-                    .is_some()
-                {
-                    return Err(AdminProvisionError::EmailConflict);
-                }
-
                 let user_id = Uuid::now_v7();
                 let now = Utc::now();
                 let username = format!("admin_{}", user_id.simple());
@@ -196,24 +167,9 @@ impl nazo_persistence::AdminProvisionStore for AdminProvisionRepository {
         Result<nazo_persistence::AdminProvisionReceipt, nazo_persistence::AdminProvisionError>,
     > {
         Box::pin(async move {
-            let receipt = AdminProvisionRepository::provision(
-                self,
-                AdminProvisionRequest {
-                    tenant: request.tenant,
-                    operation_id: request.operation_id,
-                    deployment_id: request.deployment_id,
-                    email: request.email,
-                    password_hash: request.password_hash,
-                },
-            )
-            .await
-            .map_err(map_admin_provision_error)?;
-            Ok(nazo_persistence::AdminProvisionReceipt {
-                operation_id: receipt.operation_id,
-                deployment_id: receipt.deployment_id,
-                user_id: receipt.user_id,
-                email: receipt.email,
-            })
+            AdminProvisionRepository::provision(self, request)
+                .await
+                .map_err(map_admin_provision_error)
         })
     }
 }

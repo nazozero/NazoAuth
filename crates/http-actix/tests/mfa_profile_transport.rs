@@ -24,6 +24,7 @@ struct Operations {
     verify_error: Option<MfaProfileError>,
     step_up_error: Option<MfaProfileError>,
     disable_changed: bool,
+    verifications: Arc<std::sync::Mutex<Vec<MfaChallengeCommand>>>,
 }
 
 impl MfaProfileOperations for Operations {
@@ -47,15 +48,16 @@ impl MfaProfileOperations for Operations {
 
     fn verify_challenge(
         &self,
-        _command: MfaChallengeCommand,
+        command: MfaChallengeCommand,
     ) -> MfaProfileFuture<'_, MfaChallengeSuccess> {
+        self.verifications.lock().unwrap().push(command);
         let error = self.verify_error.clone();
         Box::pin(async move {
             match error {
                 Some(error) => Err(error),
                 None => Ok(MfaChallengeSuccess {
                     rotation: rotation(),
-                    method: "otp".to_owned(),
+                    method: "otp",
                     remembered_device_token: None,
                 }),
             }
@@ -69,7 +71,7 @@ impl MfaProfileOperations for Operations {
                 Some(error) => Err(error),
                 None => Ok(MfaStepUpSuccess {
                     rotation: rotation(),
-                    method: "otp".to_owned(),
+                    method: "otp",
                 }),
             }
         })
@@ -91,6 +93,47 @@ impl MfaProfileOperations for Operations {
         let changed = self.disable_changed;
         Box::pin(async move { Ok(changed) })
     }
+}
+
+#[actix_web::test]
+async fn user_agent_binding_is_only_collected_for_remembered_devices() {
+    let operations = Operations::default();
+    let observed = operations.verifications.clone();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(endpoint_with(operations)))
+            .service(web::scope("/auth/mfa").configure(configure_mfa_challenge_route)),
+    )
+    .await;
+    for (remember, agent) in [
+        (false, Some(" test-agent ")),
+        (true, Some(" test-agent ")),
+        (true, Some("   ")),
+        (true, None),
+    ] {
+        let mut request = authenticated_request(Method::POST, "/auth/mfa/verify")
+            .set_json(serde_json::json!({"code":"123456", "remember_device": remember}));
+        if let Some(agent) = agent {
+            request = request.insert_header((header::USER_AGENT, agent));
+        }
+        assert_eq!(
+            test::call_service(&app, request.to_request())
+                .await
+                .status(),
+            StatusCode::OK
+        );
+    }
+    let observed = observed.lock().unwrap();
+    assert_eq!(observed.len(), 4);
+    assert!(!observed[0].remember_device);
+    assert!(observed[0].user_agent_hash.is_none());
+    assert!(observed[1].remember_device);
+    assert_eq!(
+        observed[1].user_agent_hash.as_deref(),
+        Some(blake3::hash(b"test-agent").to_hex().as_str())
+    );
+    assert!(observed[2].user_agent_hash.is_none());
+    assert!(observed[3].user_agent_hash.is_none());
 }
 
 #[actix_web::test]

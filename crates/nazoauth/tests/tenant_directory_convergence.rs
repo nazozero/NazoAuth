@@ -45,8 +45,9 @@ fn test_databases() -> Option<(String, String)> {
 
 /// Replaces the path component of a PostgreSQL URL with one database name.
 fn with_database_name(database_url: &str, name: &str) -> String {
-    let separator = database_url.rfind('/').expect("database URL has a path");
-    format!("{}/{}", &database_url[..separator], name)
+    let mut url = url::Url::parse(database_url).expect("database URL should parse");
+    url.set_path(name);
+    url.to_string()
 }
 
 fn temporary_directory(tag: &str) -> PathBuf {

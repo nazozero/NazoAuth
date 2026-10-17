@@ -1,4 +1,5 @@
 use super::{DatabaseUserFixture, TestInfrastructure, valkey::valkey_set_ex};
+use crate::test_support::SessionPayload;
 use crate::{
     config::ConfigSource,
     http::sessions::{AdminSessionHandles, SessionHttpConfig},
@@ -20,7 +21,6 @@ use nazo_http_actix::ClientIpConfig;
 use nazo_identity::{
     DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, ports::AdminUserRepositoryPort,
 };
-use nazo_oauth_server::sessions::SessionPayload;
 use nazo_postgres::{UserRepository, create_pool, get_conn};
 use std::{sync::Arc, time::Duration as StdDuration};
 use uuid::Uuid;

@@ -9,15 +9,15 @@ fn refresh_token_scope_request_defaults_to_original_authorization() {
     ];
 
     assert_eq!(
-        refresh_token_scopes(original.clone(), None).unwrap(),
+        refresh_token_scopes(original.clone(), Vec::new()).unwrap(),
         original
     );
     assert_eq!(
-        refresh_token_scopes(original.clone(), Some("")).unwrap(),
+        refresh_token_scopes(original.clone(), parse_scope("")).unwrap(),
         original
     );
     assert_eq!(
-        refresh_token_scopes(original.clone(), Some("   ")).unwrap(),
+        refresh_token_scopes(original.clone(), parse_scope("   ")).unwrap(),
         original
     );
 }
@@ -31,11 +31,11 @@ fn refresh_token_scope_request_may_narrow_original_authorization() {
     ];
 
     assert_eq!(
-        refresh_token_scopes(original.clone(), Some("openid offline_access")).unwrap(),
+        refresh_token_scopes(original.clone(), parse_scope("openid offline_access")).unwrap(),
         vec!["openid".to_owned(), "offline_access".to_owned()]
     );
     assert_eq!(
-        refresh_token_scopes(original.clone(), Some("openid")).unwrap(),
+        refresh_token_scopes(original.clone(), parse_scope("openid")).unwrap(),
         vec!["openid".to_owned()],
         "RFC 6749 allows the access-token scope to be narrower than the refresh-token authorization"
     );
@@ -46,13 +46,13 @@ fn openid4vci_refresh_token_scope_may_narrow_to_credential_authorization() {
     let original = vec!["eu.europa.ec.eudi.pid.1".to_owned()];
 
     assert_eq!(
-        refresh_token_scopes(original.clone(), Some("eu.europa.ec.eudi.pid.1")).unwrap(),
+        refresh_token_scopes(original.clone(), parse_scope("eu.europa.ec.eudi.pid.1")).unwrap(),
         original
     );
     assert!(
         refresh_token_scopes(
             original.clone(),
-            Some("eu.europa.ec.eudi.pid.1 administrator")
+            parse_scope("eu.europa.ec.eudi.pid.1 administrator")
         )
         .is_err(),
         "OpenID4VCI refresh must not expand the original scope grant"
@@ -94,7 +94,7 @@ fn refresh_token_scope_request_rejects_privilege_expansion() {
 
     for requested in ["email", "openid email", "offline_access admin"] {
         assert!(
-            refresh_token_scopes(original.clone(), Some(requested)).is_err(),
+            refresh_token_scopes(original.clone(), parse_scope(requested)).is_err(),
             "refresh_token grant must reject scope expansion: {requested}"
         );
     }
@@ -109,9 +109,13 @@ fn refresh_subject_preparation_hint_respects_effective_scope_shape() {
         Some("openid"),
         Some("profile openid"),
     ] {
-        assert!(refresh_requests_oidc_subject(scope));
+        assert!(refresh_requests_oidc_subject(
+            &scope.map(parse_scope).unwrap_or_default()
+        ));
     }
     for scope in [Some("profile"), Some("offline_access"), Some("OPENID")] {
-        assert!(!refresh_requests_oidc_subject(scope));
+        assert!(!refresh_requests_oidc_subject(
+            &scope.map(parse_scope).unwrap_or_default()
+        ));
     }
 }

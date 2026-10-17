@@ -139,19 +139,24 @@ pub fn prepare_request(
     let parameters = signature_input
         .strip_prefix(&format!("{SIGNATURE_NAME}="))
         .expect("serializer emitted the requested dictionary key");
-    let mut signature_base = components
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n");
-    signature_base.push_str("\n\"@signature-params\": ");
-    signature_base.push_str(parameters);
-
     Ok(PreparedSignature {
-        signature_base: signature_base.into_bytes(),
+        signature_base: signature_base(&components, parameters),
         signature_input,
         signature_name: SIGNATURE_NAME,
     })
+}
+
+pub(crate) fn signature_base(
+    components: impl IntoIterator<Item = impl std::fmt::Display>,
+    parameters: &str,
+) -> Vec<u8> {
+    let mut base = String::new();
+    for component in components {
+        writeln!(base, "{component}").expect("writing to a String cannot fail");
+    }
+    base.push_str("\"@signature-params\": ");
+    base.push_str(parameters);
+    base.into_bytes()
 }
 
 fn validate_method(method: &str) -> Result<(), RequestError> {
@@ -290,3 +295,4 @@ fn signature_input(
 fn key(value: &str) -> &KeyRef {
     KeyRef::from_str(value).expect("static dictionary and parameter keys are valid")
 }
+use std::fmt::Write as _;

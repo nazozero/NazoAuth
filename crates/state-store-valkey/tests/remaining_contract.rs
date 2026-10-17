@@ -217,7 +217,7 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         .unwrap();
 
     assert_eq!(
-        EmailVerificationStorePort::consume_code(&store, tenant_id, &email, &stale)
+        EmailVerificationStorePort::consume_code(&store, tenant_id, &email, &stale.opaque_version)
             .await
             .unwrap(),
         EmailVerificationConsume::MissingOrChanged
@@ -237,9 +237,14 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         .unwrap()
         .unwrap();
     assert_eq!(
-        EmailVerificationStorePort::consume_code(&store, tenant_id, &email, &current)
-            .await
-            .unwrap(),
+        EmailVerificationStorePort::consume_code(
+            &store,
+            tenant_id,
+            &email,
+            &current.opaque_version
+        )
+        .await
+        .unwrap(),
         EmailVerificationConsume::Consumed
     );
     assert!(
@@ -353,9 +358,14 @@ async fn email_verification_state_isolated_by_tenant() {
         .unwrap();
     assert_ne!(first, second);
     assert_eq!(
-        EmailVerificationStorePort::consume_code(&store, first_tenant, &email, &first)
-            .await
-            .unwrap(),
+        EmailVerificationStorePort::consume_code(
+            &store,
+            first_tenant,
+            &email,
+            &first.opaque_version
+        )
+        .await
+        .unwrap(),
         EmailVerificationConsume::Consumed
     );
     assert!(
@@ -545,6 +555,24 @@ async fn concurrent_rate_counters_are_atomic_and_preserve_first_window_ttl() {
         "oauth:rate:token:{}",
         blake3::hash(subject.as_bytes()).to_hex()
     ));
+    assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
+    inspector.expire::<(), _>(&key, 10, None).await.unwrap();
+    assert_eq!(
+        store
+            .increment(RateDimension::Token, &subject, 30)
+            .await
+            .unwrap(),
+        21
+    );
+    assert!((1..=10).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
+    inspector.expire::<(), _>(&key, -1, None).await.unwrap();
+    assert_eq!(
+        store
+            .increment(RateDimension::Token, &subject, 30)
+            .await
+            .unwrap(),
+        1
+    );
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
 }
 

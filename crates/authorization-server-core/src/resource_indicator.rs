@@ -8,20 +8,20 @@ pub enum ResourceIndicatorError {
     Duplicate,
 }
 
-pub fn parse_resource_indicators(values: &[String]) -> Result<Vec<String>, ResourceIndicatorError> {
+pub fn parse_resource_indicators(
+    values: Vec<String>,
+) -> Result<Vec<String>, ResourceIndicatorError> {
     let mut seen = HashSet::new();
-    let mut resources = Vec::with_capacity(values.len());
-    for value in values {
+    for value in &values {
         let parsed = url::Url::parse(value).map_err(|_| ResourceIndicatorError::Invalid)?;
         if parsed.fragment().is_some() {
             return Err(ResourceIndicatorError::Invalid);
         }
-        if !seen.insert(value.clone()) {
+        if !seen.insert(value) {
             return Err(ResourceIndicatorError::Duplicate);
         }
-        resources.push(value.clone());
     }
-    Ok(resources)
+    Ok(values)
 }
 
 /// Parses a resource value after the transport boundary has normalized repeated
@@ -35,9 +35,9 @@ pub fn parse_resource_indicator_parameter(
     if let Some(encoded) = value.strip_prefix(INTERNAL_RESOURCE_SET_PREFIX) {
         let values = serde_json::from_str::<Vec<String>>(encoded)
             .map_err(|_| ResourceIndicatorError::Invalid)?;
-        return parse_resource_indicators(&values);
+        return parse_resource_indicators(values);
     }
-    parse_resource_indicators(&[value.to_owned()])
+    parse_resource_indicators(vec![value.to_owned()])
 }
 
 /// Encodes transport-validated repeated values into a private in-process form.

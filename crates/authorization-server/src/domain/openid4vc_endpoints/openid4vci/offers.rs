@@ -96,11 +96,7 @@ impl ServerCredentialIssuerOperations {
             let token_subject = authorization.subject_id.to_string();
             if self
                 .token_service
-                .active_subject_claims(
-                    authorization.tenant_id,
-                    authorization.subject_id,
-                    &token_subject,
-                )
+                .active_subject_id(authorization.tenant_id, authorization.subject_id)
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -117,11 +113,13 @@ impl ServerCredentialIssuerOperations {
                     "Credential subject is inactive.",
                 ));
             }
-            let authorization_details = authorization
-                .configuration_ids
-                .iter()
-                .map(|id| openid4vci_authorization_detail(&self.issuer, id))
-                .collect::<Vec<_>>();
+            let authorization_details = Value::Array(
+                authorization
+                    .configuration_ids
+                    .iter()
+                    .map(|id| openid4vci_authorization_detail(&self.issuer, id))
+                    .collect(),
+            );
             let authorization_id = Uuid::now_v7();
             let issued = self
                 .token_service
@@ -137,7 +135,7 @@ impl ServerCredentialIssuerOperations {
                     client_id,
                     audiences: std::slice::from_ref(&self.issuer),
                     scopes: &[],
-                    authorization_details: &Value::Array(authorization_details.clone()),
+                    authorization_details: &authorization_details,
                     userinfo_claim_requests: &[],
                     ttl_seconds: (authorization.expires_at - Utc::now()).num_seconds().max(1),
                     sender_constraint,
@@ -172,12 +170,13 @@ impl ServerCredentialIssuerOperations {
                         "Credential access token expiry is invalid.",
                     )
                 })?;
+            let token_type = if dpop_jkt.is_some() { "DPoP" } else { "Bearer" };
             self.store
                 .persist_pre_authorized_access(
                     &blake3_hex(&issued.token),
                     &CredentialAccess {
                         authorization_id: Some(authorization_id),
-                        mtls_x5t_s256: request.mtls_x5t_s256.clone(),
+                        mtls_x5t_s256: request.mtls_x5t_s256,
                         proof_origin: if request.client_id.is_some() {
                             nazo_openid4vci::CredentialProofOrigin::RegisteredClient
                         } else {
@@ -186,10 +185,10 @@ impl ServerCredentialIssuerOperations {
                         token_id,
                         tenant_id: authorization.tenant_id,
                         subject_id: authorization.subject_id,
-                        client_id: client_id.to_owned(),
-                        configuration_ids: authorization.configuration_ids.clone(),
-                        credential_identifiers: authorization.credential_identifiers.clone(),
-                        dpop_jkt: dpop_jkt.clone(),
+                        client_id: authorization.client_id,
+                        configuration_ids: authorization.configuration_ids,
+                        credential_identifiers: authorization.credential_identifiers,
+                        dpop_jkt,
                         expires_at,
                     },
                     request.client_id.as_deref(),
@@ -205,9 +204,12 @@ impl ServerCredentialIssuerOperations {
                         "Credential access state is unavailable.",
                     ),
                 })?;
+            let Value::Array(authorization_details) = authorization_details else {
+                unreachable!("authorization details are constructed as an array above")
+            };
             Ok(PreAuthorizedTokenResponse {
                 access_token: issued.token,
-                token_type: if dpop_jkt.is_some() { "DPoP" } else { "Bearer" }.to_owned(),
+                token_type: token_type.to_owned(),
                 expires_in: (issued.expires_at - Utc::now().timestamp()).max(1) as u64,
                 authorization_details,
             })
@@ -262,39 +264,6 @@ impl ServerCredentialIssuerOperations {
                     "Credential offer grant types are invalid.",
                 ));
             }
-            let tenant = TenantId::new(self.tenant_id)
-                .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
-            let subject = UserId::new(request.subject_id)
-                .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
-            if !self
-                .users
-                .is_active(tenant, subject)
-                .await
-                .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
-            {
-                return Err(vci_error(
-                    400,
-                    "invalid_request",
-                    "Credential subject is not active.",
-                ));
-            }
-            for configuration_id in &request.credential_configuration_ids {
-                let available = self
-                    .datasets
-                    .dataset(self.tenant_id, request.subject_id, configuration_id)
-                    .await
-                    .map_err(|_| {
-                        vci_error(503, "server_error", "Credential dataset lookup failed.")
-                    })?
-                    .is_some();
-                if !available {
-                    return Err(vci_error(
-                        400,
-                        "invalid_request",
-                        "Requested credential data is unavailable for the subject.",
-                    ));
-                }
-            }
             if !(30..=600).contains(&request.expires_in) {
                 return Err(vci_error(
                     400,
@@ -312,37 +281,67 @@ impl ServerCredentialIssuerOperations {
                 ));
             }
 
+            let tenant = TenantId::new(self.tenant_id)
+                .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
+            let subject = UserId::new(request.subject_id)
+                .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
+            if !self
+                .users
+                .is_active(tenant, subject)
+                .await
+                .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
+            {
+                return Err(vci_error(
+                    400,
+                    "invalid_request",
+                    "Credential subject is not active.",
+                ));
+            }
+            if !self
+                .datasets
+                .datasets_available(
+                    self.tenant_id,
+                    request.subject_id,
+                    &request.credential_configuration_ids,
+                )
+                .await
+                .map_err(|_| vci_error(503, "server_error", "Credential dataset lookup failed."))?
+            {
+                return Err(vci_error(
+                    400,
+                    "invalid_request",
+                    "Requested credential data is unavailable for the subject.",
+                ));
+            }
             let issuer_state = grant_types
                 .contains("authorization_code")
                 .then(random_urlsafe_token);
             let pre_authorized_code = grant_types
                 .contains(nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT)
                 .then(random_urlsafe_token);
+            let issuer_state_hash = issuer_state.as_deref().map(blake3_hex);
+            let pre_authorized_code_hash = pre_authorized_code.as_deref().map(blake3_hex);
             let grants = CredentialOfferGrants::new(
-                issuer_state
-                    .as_ref()
-                    .map(|issuer_state| AuthorizationCodeGrant {
-                        issuer_state: Some(issuer_state.clone()),
-                        authorization_server: Some(self.issuer.clone()),
+                issuer_state.map(|issuer_state| AuthorizationCodeGrant {
+                    issuer_state: Some(issuer_state),
+                    authorization_server: Some(self.issuer.clone()),
+                }),
+                pre_authorized_code.map(|pre_authorized_code| PreAuthorizedCodeGrant {
+                    pre_authorized_code,
+                    tx_code: request.tx_code.as_ref().map(|code| TxCodeDescription {
+                        input_mode: Some(
+                            if code.chars().all(|value| value.is_ascii_digit()) {
+                                "numeric"
+                            } else {
+                                "text"
+                            }
+                            .to_owned(),
+                        ),
+                        length: Some(code.len() as u16),
+                        description: None,
                     }),
-                pre_authorized_code
-                    .as_ref()
-                    .map(|pre_authorized_code| PreAuthorizedCodeGrant {
-                        pre_authorized_code: pre_authorized_code.clone(),
-                        tx_code: request.tx_code.as_ref().map(|code| TxCodeDescription {
-                            input_mode: Some(
-                                if code.chars().all(|value| value.is_ascii_digit()) {
-                                    "numeric"
-                                } else {
-                                    "text"
-                                }
-                                .to_owned(),
-                            ),
-                            length: Some(code.len() as u16),
-                            description: None,
-                        }),
-                        authorization_server: Some(self.issuer.clone()),
-                    }),
+                    authorization_server: Some(self.issuer.clone()),
+                }),
             );
             let id = Uuid::now_v7();
             let offer = nazo_openid4vci::StoredCredentialOffer {
@@ -350,7 +349,7 @@ impl ServerCredentialIssuerOperations {
                 tenant_id: self.tenant_id,
                 subject_id: Some(request.subject_id),
                 credential_configuration_ids: request.credential_configuration_ids,
-                grants: grants.clone(),
+                grants,
                 expires_at: Utc::now() + Duration::seconds(request.expires_in as i64),
             };
             let tx_code_hash = match request.tx_code {
@@ -369,8 +368,6 @@ impl ServerCredentialIssuerOperations {
                 ),
                 None => None,
             };
-            let issuer_state_hash = issuer_state.as_deref().map(blake3_hex);
-            let pre_authorized_code_hash = pre_authorized_code.as_deref().map(blake3_hex);
             self.store
                 .insert_offer(
                     &offer,
@@ -389,7 +386,7 @@ impl ServerCredentialIssuerOperations {
                 credential_offer: CredentialOffer {
                     credential_issuer: self.issuer.clone(),
                     credential_configuration_ids: offer.credential_configuration_ids,
-                    grants: Some(grants),
+                    grants: Some(offer.grants),
                 },
             })
         })

@@ -2,7 +2,7 @@
 use super::client_auth::{
     ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
     authenticate_client_with_dependencies,
-    consume_token_management_client_assertion_with_authorization_service,
+    consume_token_client_assertion_with_authorization_service,
 };
 use super::{DEVICE_CODE_GRANT_TYPE, device_config::DeviceConfig};
 use crate::contracts::{
@@ -92,7 +92,7 @@ impl DeviceDecisionHandles {
         &self,
         prepared: PreparedDeviceAuthorization,
         credentials: ClientCredentials,
-        auth_request: ClientAuthRequestFacts,
+        auth_request: ClientAuthRequestFacts<'_>,
         source_ip: &str,
     ) -> Result<DeviceAuthorizationResponse, OAuthEndpointError> {
         let (form, has_basic) = prepared.into_parts();
@@ -118,10 +118,6 @@ impl DeviceDecisionHandles {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                crate::token::client_auth::perform_dummy_client_secret_verification(
-                    &credentials,
-                    &config.client_secret_pepper,
-                );
                 return Err(OAuthEndpointError::json(
                     StatusCode::UNAUTHORIZED,
                     "invalid_client",
@@ -155,13 +151,19 @@ impl DeviceDecisionHandles {
                 "该客户端未授权使用跨设备流程.",
             ));
         }
-        let payload = match device_authorization_request_payload(config, &client, &form, true) {
+        let payload = match device_authorization_request_payload(config, &client, form, true) {
             Ok(payload) => payload,
             Err(error) => return Err(device_authorization_request_error(error)),
         };
+        let audit = audit_fields([
+            ("client_id", json!(client.client_id)),
+            ("scope", json!(payload.scopes.join(" "))),
+            ("audience", json!(payload.resource_indicators)),
+            ("source_ip_hash", json!(blake3_hex(source_ip))),
+        ]);
         let (device_code, user_code) = match device_service
             .create_unique(
-                &payload,
+                payload,
                 config.ttl_seconds,
                 random_urlsafe_token,
                 random_device_user_code,
@@ -178,15 +180,7 @@ impl DeviceDecisionHandles {
                 ));
             }
         };
-        self.audit.record(
-            "device_authorization_started",
-            audit_fields(&[
-                ("client_id", json!(client.client_id)),
-                ("scope", json!(payload.scopes.join(" "))),
-                ("audience", json!(payload.resource_indicators)),
-                ("source_ip_hash", json!(blake3_hex(source_ip))),
-            ]),
-        );
+        self.audit.record("device_authorization_started", audit);
         let verification_uri = device_verification_uri(config);
         Ok(DeviceAuthorizationResponse {
             device_code,
@@ -262,7 +256,7 @@ impl DeviceDecisionHandles {
                 ));
             }
         };
-        let payload = prepared.payload().clone();
+        let payload = prepared.payload();
         let decision_name = match decision {
             "approve" => "approve",
             "deny" => "deny",
@@ -282,19 +276,22 @@ impl DeviceDecisionHandles {
                 "设备授权审计存储不可用.",
             ));
         }
+        let user_code_hash = blake3_hex(&normalized_user_code);
+        let source_ip_hash = blake3_hex(source_ip);
+        let scope = payload.scopes.join(" ");
         if let Err(error) = self
             .audit
             .record_required(
                 "device_decision_intent",
-                audit_fields(&[
-                    ("client_id", json!(payload.client_id.clone())),
+                audit_fields([
+                    ("client_id", json!(payload.client_id)),
                     ("user_id", json!(session.user.id())),
                     ("decision", json!(decision_name)),
                     ("decision_source", json!("user")),
-                    ("user_code_hash", json!(blake3_hex(&normalized_user_code))),
-                    ("scope", json!(payload.scopes.join(" "))),
-                    ("audience", json!(payload.resource_indicators.clone())),
-                    ("source_ip_hash", json!(blake3_hex(source_ip))),
+                    ("user_code_hash", json!(user_code_hash)),
+                    ("scope", json!(scope)),
+                    ("audience", json!(payload.resource_indicators)),
+                    ("source_ip_hash", json!(source_ip_hash)),
                 ]),
             )
             .await
@@ -307,7 +304,7 @@ impl DeviceDecisionHandles {
             ));
         }
         let result = match decision {
-            "deny" => device_service.deny(prepared, Utc::now).await,
+            "deny" => device_service.deny(&prepared, Utc::now).await,
             "approve" => {
                 let client = match authorization_service.client_by_id(&payload.client_id).await {
                     Ok(Some(client)) if client.is_active => client,
@@ -341,13 +338,13 @@ impl DeviceDecisionHandles {
                 };
                 device_service
                     .approve(
-                        prepared,
+                        &prepared,
                         DeviceAuthorizationApproval {
                             user_id: session.user.id(),
                             subject,
                             auth_time: session.auth_time,
-                            amr: session.amr.clone(),
-                            oidc_sid: Some(session.oidc_sid.clone()),
+                            amr: session.amr,
+                            oidc_sid: Some(session.oidc_sid),
                         },
                         &client,
                         grant_repository,
@@ -369,13 +366,13 @@ impl DeviceDecisionHandles {
                 };
                 self.audit.record(
                     event,
-                    audit_fields(&[
+                    audit_fields([
                         ("client_id", json!(payload.client_id)),
                         ("user_id", json!(session.user.id())),
-                        ("user_code_hash", json!(blake3_hex(&normalized_user_code))),
-                        ("scope", json!(payload.scopes.join(" "))),
+                        ("user_code_hash", json!(user_code_hash)),
+                        ("scope", json!(scope)),
                         ("audience", json!(payload.resource_indicators)),
-                        ("source_ip_hash", json!(blake3_hex(source_ip))),
+                        ("source_ip_hash", json!(source_ip_hash)),
                     ]),
                 );
                 Ok(())
@@ -416,7 +413,7 @@ impl DeviceDecisionHandles {
 pub fn device_authorization_request_payload(
     config: &DeviceConfig,
     client: &ClientRow,
-    form: &DeviceAuthorizationForm,
+    form: DeviceAuthorizationForm,
     enabled: bool,
 ) -> Result<DeviceAuthorizationPayload, DeviceAuthorizationRequestError> {
     let requested_scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
@@ -428,7 +425,7 @@ pub fn device_authorization_request_payload(
         client_name: &client.client_name,
         requested_scopes,
         allowed_scopes: &client.scopes,
-        requested_resources: form.resources.clone(),
+        requested_resources: form.resources,
         allowed_resources: &client.allowed_audiences,
         default_resource: &config.default_audience,
         interval_seconds: config.poll_interval_seconds,
@@ -441,7 +438,7 @@ pub fn device_authorization_request_payload(
 async fn authenticate_device_authorization_client(
     authorization_service: &ServerAuthorizationService,
     config: &DeviceConfig,
-    auth_request: &ClientAuthRequestFacts,
+    auth_request: &ClientAuthRequestFacts<'_>,
     client: &mut ClientRow,
     credentials: &ClientCredentials,
     remote_client_documents: &dyn RemoteJwksResolverPort,
@@ -468,7 +465,7 @@ async fn authenticate_device_authorization_client(
     )
     .await
     .map_err(token_management_auth_error)?;
-    consume_token_management_client_assertion_with_authorization_service(
+    consume_token_client_assertion_with_authorization_service(
         authorization_service,
         client,
         assertion.as_ref(),
@@ -513,15 +510,15 @@ fn device_authorization_subject(
     let redirect_uri = client
         .redirect_uris
         .first()
-        .cloned()
-        .unwrap_or_else(|| config.issuer.to_string());
+        .map(String::as_str)
+        .unwrap_or(&config.issuer);
     nazo_auth::oidc_subject_for_client(
         &config.issuer,
         config.pairwise_subject_secret.as_deref(),
         user_id,
         client.subject_type.as_str(),
         client.sector_identifier_host.as_deref(),
-        &redirect_uri,
+        redirect_uri,
     )
     .map_err(Into::into)
 }

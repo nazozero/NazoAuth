@@ -7,7 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use diesel::OptionalExtension;
 use diesel::QueryableByName;
 use diesel::sql_query;
-use diesel::sql_types::{Bool, Nullable, Timestamptz, Uuid as DieselUuid, Varchar};
+use diesel::sql_types::{Nullable, Timestamptz, Uuid as DieselUuid, Varchar};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
@@ -16,53 +16,10 @@ use nazo_persistence::control_plane as contract;
 use crate::get_conn;
 
 use super::ControllerRegistryRepository;
-use super::slots::validate_deployment_id;
 
-/// Fresh-2FA approval lifetime in seconds: a fixed 10-minute ceiling (04 §3).
-pub const IDENTITY_APPROVAL_TTL_SECONDS: i64 = contract::IDENTITY_APPROVAL_TTL_SECONDS;
-
-/// Closed catalog of controller identity actions requiring fresh 2FA approval
-/// (bind/add/rotate/revoke plus the recovery-root rotation of 04A D12, which
-/// reuses this exact approval machinery with its own action value).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ControllerIdentityAction {
-    Bind,
-    Add,
-    Rotate,
-    Revoke,
-    RecoveryRootRotate,
-}
-
-impl ControllerIdentityAction {
-    const BIND: &'static str = "bind";
-    const ADD: &'static str = "add";
-    const ROTATE: &'static str = "rotate";
-    const REVOKE: &'static str = "revoke";
-    const RECOVERY_ROOT_ROTATE: &'static str = "recovery-root-rotate";
-
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Bind => Self::BIND,
-            Self::Add => Self::ADD,
-            Self::Rotate => Self::ROTATE,
-            Self::Revoke => Self::REVOKE,
-            Self::RecoveryRootRotate => Self::RECOVERY_ROOT_ROTATE,
-        }
-    }
-
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            Self::BIND => Some(Self::Bind),
-            Self::ADD => Some(Self::Add),
-            Self::ROTATE => Some(Self::Rotate),
-            Self::REVOKE => Some(Self::Revoke),
-            Self::RECOVERY_ROOT_ROTATE => Some(Self::RecoveryRootRotate),
-            _ => None,
-        }
-    }
-}
+pub use contract::{
+    ControllerIdentityAction, IDENTITY_APPROVAL_TTL_SECONDS, IssuedIdentityApproval,
+};
 
 #[derive(Debug)]
 pub enum IdentityApprovalError {
@@ -108,22 +65,8 @@ where
 
 #[derive(QueryableByName)]
 struct IssuedApprovalRow {
-    #[diesel(sql_type = DieselUuid)]
-    approval_id: Uuid,
-    #[diesel(sql_type = Varchar)]
-    deployment_id: String,
-    #[diesel(sql_type = Varchar)]
-    action: String,
-    #[diesel(sql_type = Varchar)]
-    action_sha256: String,
-    #[diesel(sql_type = DieselUuid)]
-    admin_user_id: Uuid,
-    #[diesel(sql_type = Varchar)]
-    token_hash: String,
     #[diesel(sql_type = Timestamptz)]
     expires_at: DateTime<Utc>,
-    #[diesel(sql_type = Bool)]
-    expires_at_matches: bool,
 }
 
 #[derive(QueryableByName)]
@@ -194,71 +137,15 @@ pub(crate) async fn consume_approval_on_connection(
     Ok(())
 }
 
-/// One issued approval as returned to the administrator.  The plaintext token
-/// exists exactly once — in this return value — and is never logged or stored.
-#[derive(Clone, Eq, PartialEq)]
-pub struct IssuedIdentityApproval {
-    pub approval_id: Uuid,
-    pub action: ControllerIdentityAction,
-    /// Digest the approval is bound to; recomputed and re-checked at commit.
-    pub action_sha256: String,
-    pub token: String,
-    pub expires_at: DateTime<Utc>,
-}
-
-impl std::fmt::Debug for IssuedIdentityApproval {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("IssuedIdentityApproval([REDACTED])")
-    }
-}
-
 impl ControllerRegistryRepository {
-    /// Issue one single-use approval bound to `(deployment_id, action,
-    /// action_sha256)` and to the approving administrator.  Freshness of the
-    /// administrator's MFA is enforced at the HTTP boundary before this call;
-    /// here the record itself gets its fixed 10-minute life.
-    pub async fn issue_identity_approval(
-        &self,
-        deployment_id: &str,
-        action: ControllerIdentityAction,
-        action_sha256: &str,
-        admin_user_id: Uuid,
-        now: DateTime<Utc>,
-    ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
-        self.issue_identity_approval_owned(
-            deployment_id,
-            action,
-            action_sha256,
-            admin_user_id,
-            now,
-            None,
-        )
-        .await
-    }
-
     pub(crate) async fn issue_identity_approval_owned(
         &self,
         deployment_id: &str,
         action: ControllerIdentityAction,
         action_sha256: &str,
-        admin_user_id: Uuid,
         now: DateTime<Utc>,
-        audit: Option<contract::AdminIdentityAudit>,
+        audit: contract::AdminIdentityAudit,
     ) -> Result<IssuedIdentityApproval, IdentityApprovalError> {
-        if validate_deployment_id(deployment_id).is_err() {
-            return Err(approval_transport(anyhow::anyhow!(
-                "approval deployment_id is invalid"
-            )));
-        }
-        if action_sha256.len() != 64
-            || !action_sha256
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(approval_transport(anyhow::anyhow!(
-                "approval action digest is not lowercase sha256 hex"
-            )));
-        }
         let token = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
         let token_hash = approval_token_digest(&token);
         let approval_id = Uuid::now_v7();
@@ -266,69 +153,72 @@ impl ControllerRegistryRepository {
         let mut guard = crate::pool::DiscardOnDrop(Some(
             get_conn(&self.pool).await.map_err(approval_transport)?,
         ));
-        let result = guard.connection().transaction::<_, IdentityApprovalError, _>(async move |connection| {
-            if let Some(audit) = &audit {
-                if audit.actor_user_id != admin_user_id { return Err(approval_transport(anyhow::anyhow!("approval actor mismatch"))); }
-                super::slots::lock_deployment_slots(connection,deployment_id).await.map_err(approval_transport)?;
-                super::required::authorize_actor(connection,audit).await.map_err(approval_transport)?;
-            }
-        let mut rows = sql_query(
-            "INSERT INTO controller_identity_approvals
+        let result = guard
+            .connection()
+            .transaction::<_, IdentityApprovalError, _>(async move |connection| {
+                super::slots::lock_deployment_slots(connection, deployment_id)
+                    .await
+                    .map_err(approval_transport)?;
+                super::required::authorize_actor(connection, &audit)
+                    .await
+                    .map_err(approval_transport)?;
+
+                let mut rows = sql_query(
+                    "INSERT INTO controller_identity_approvals
                 (approval_id, deployment_id, action, action_sha256,
                  admin_user_id, token_hash, expires_at, consumed_at, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8)
-             RETURNING approval_id,deployment_id,action,action_sha256,admin_user_id,expires_at,token_hash,
-                       expires_at = $7 AS expires_at_matches",
-        )
-        .bind::<DieselUuid, _>(approval_id)
-        .bind::<Varchar, _>(deployment_id)
-        .bind::<Varchar, _>(action.as_str())
-        .bind::<Varchar, _>(action_sha256)
-        .bind::<DieselUuid, _>(admin_user_id)
-        .bind::<Varchar, _>(&token_hash)
-        .bind::<Timestamptz, _>(expires_at)
-        .bind::<Timestamptz, _>(now)
-        .load::<IssuedApprovalRow>(connection)
-        .await
-        .map_err(approval_transport)?;
-        if rows.len() != 1 { return Err(approval_transport(anyhow::anyhow!("approval insert returned an invalid authority row count"))); }
-        let row = rows.pop().expect("one fully received approval row");
-        // Compare expiry against the bound PostgreSQL value: Diesel encodes
-        // Timestamptz in microseconds, whereas the caller clock may carry nanoseconds.
-        // This exact SQL equality still rejects a trigger-rewritten expiry.
-        if row.deployment_id != deployment_id || row.action != action.as_str()
-            || row.action_sha256 != action_sha256 || row.admin_user_id != admin_user_id
-            || row.token_hash != token_hash || !row.expires_at_matches {
-            return Err(approval_transport(anyhow::anyhow!("approval insert changed its authority binding")));
-        }
-        let issued = IssuedIdentityApproval { approval_id:row.approval_id,action,action_sha256:row.action_sha256,token,expires_at:row.expires_at };
-        if let Some(audit) = &audit {
-            let event = if action == ControllerIdentityAction::RecoveryRootRotate { "controller_recovery_root_rotation_approved" } else { "controller_identity_approval_issued" };
-            super::required::append_outcome(connection,event,audit,serde_json::json!({
-                "approval_id":issued.approval_id,"deployment_id":row.deployment_id,
-                "action":issued.action.as_str(),"action_sha256":issued.action_sha256,"expires_at":issued.expires_at.to_rfc3339()
-            })).await.map_err(approval_transport)?;
-        }
-        Ok(issued)
-        }).await;
+             RETURNING expires_at",
+                )
+                .bind::<DieselUuid, _>(approval_id)
+                .bind::<Varchar, _>(deployment_id)
+                .bind::<Varchar, _>(action.as_str())
+                .bind::<Varchar, _>(action_sha256)
+                .bind::<DieselUuid, _>(audit.actor_user_id)
+                .bind::<Varchar, _>(&token_hash)
+                .bind::<Timestamptz, _>(expires_at)
+                .bind::<Timestamptz, _>(now)
+                .load::<IssuedApprovalRow>(connection)
+                .await
+                .map_err(approval_transport)?;
+                // Drain the INSERT result before publishing the approval; PostgreSQL
+                // stores timestamps at microsecond precision.
+                let row = rows.pop().expect("one fully received approval row");
+                let issued = IssuedIdentityApproval {
+                    approval_id,
+                    action,
+                    action_sha256: action_sha256.to_owned(),
+                    token,
+                    expires_at: row.expires_at,
+                };
+
+                let event = if action == ControllerIdentityAction::RecoveryRootRotate {
+                    "controller_recovery_root_rotation_approved"
+                } else {
+                    "controller_identity_approval_issued"
+                };
+                super::required::append_outcome(
+                    connection,
+                    event,
+                    &audit,
+                    serde_json::json!({
+                        "approval_id": issued.approval_id,
+                        "deployment_id": deployment_id,
+                        "action": issued.action.as_str(),
+                        "action_sha256": issued.action_sha256,
+                        "expires_at": issued.expires_at.to_rfc3339(),
+                    }),
+                )
+                .await
+                .map_err(approval_transport)?;
+
+                Ok(issued)
+            })
+            .await;
         if result.is_ok() {
             guard.return_to_pool();
         }
         result
-    }
-}
-
-pub(super) fn contract_action(
-    action: contract::ControllerIdentityAction,
-) -> ControllerIdentityAction {
-    match action {
-        contract::ControllerIdentityAction::Bind => ControllerIdentityAction::Bind,
-        contract::ControllerIdentityAction::Add => ControllerIdentityAction::Add,
-        contract::ControllerIdentityAction::Rotate => ControllerIdentityAction::Rotate,
-        contract::ControllerIdentityAction::Revoke => ControllerIdentityAction::Revoke,
-        contract::ControllerIdentityAction::RecoveryRootRotate => {
-            ControllerIdentityAction::RecoveryRootRotate
-        }
     }
 }
 
@@ -343,26 +233,6 @@ pub(crate) fn contract_approval_error(
         IdentityApprovalError::Transport(error) => {
             contract::IdentityApprovalError::Transport(error)
         }
-    }
-}
-
-pub(crate) fn contract_approval(
-    approval: IssuedIdentityApproval,
-) -> contract::IssuedIdentityApproval {
-    contract::IssuedIdentityApproval {
-        approval_id: approval.approval_id,
-        action: match approval.action {
-            ControllerIdentityAction::Bind => contract::ControllerIdentityAction::Bind,
-            ControllerIdentityAction::Add => contract::ControllerIdentityAction::Add,
-            ControllerIdentityAction::Rotate => contract::ControllerIdentityAction::Rotate,
-            ControllerIdentityAction::Revoke => contract::ControllerIdentityAction::Revoke,
-            ControllerIdentityAction::RecoveryRootRotate => {
-                contract::ControllerIdentityAction::RecoveryRootRotate
-            }
-        },
-        action_sha256: approval.action_sha256,
-        token: approval.token,
-        expires_at: approval.expires_at,
     }
 }
 

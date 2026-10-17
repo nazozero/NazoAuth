@@ -18,8 +18,7 @@ use nazo_identity::{
     ports::{AdminUserRepositoryPort, NewUser, RegistrationAccountRepositoryPort, SecretHashPort},
 };
 use nazo_oauth_server::crypto::blake3_hex;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 use uuid::Uuid;
 // 只处理用户列表与用户状态更新，不包含客户端或授权关系逻辑。
@@ -36,7 +35,7 @@ pub(crate) async fn admin_users(
     };
     let (page, page_size, offset) = pagination(&q);
     let (total, user_rows) = match users
-        .page(admin.tenant().tenant_id, page_size as i64, offset as i64)
+        .page(admin.tenant.tenant_id, page_size as i64, offset)
         .await
     {
         Ok(page) => (page.total, page.users),
@@ -58,8 +57,26 @@ fn admin_users_list_response(
     total: i64,
     user_rows: Vec<PublicAccount>,
 ) -> HttpResponse {
-    let items: Vec<Value> = user_rows.into_iter().map(admin_user_json).collect();
-    json_response(json!({"total": total, "page": page, "page_size": page_size, "items": items}))
+    #[derive(Serialize)]
+    struct UsersListResponse<'a> {
+        total: i64,
+        page: i32,
+        page_size: i32,
+        #[serde(serialize_with = "serialize_users")]
+        items: &'a [PublicAccount],
+    }
+    fn serialize_users<S: Serializer>(
+        users: &[PublicAccount],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(users.iter().map(admin_user_json))
+    }
+    json_response(UsersListResponse {
+        total,
+        page,
+        page_size,
+        items: &user_rows,
+    })
 }
 
 #[derive(Deserialize)]
@@ -103,7 +120,7 @@ pub(crate) async fn system_set_tenant_admin(
     let admin = match require_admin_with_recent_mfa_or_forbidden_with_handles(&admin_sessions, &req)
         .await
     {
-        Ok(admin) if admin.admin_level() >= 2 => admin,
+        Ok(admin) if admin.admin_level().unwrap_or(0) >= 2 => admin,
         Ok(_) => {
             return oauth_error(
                 StatusCode::FORBIDDEN,
@@ -144,23 +161,13 @@ pub(crate) async fn system_set_tenant_admin(
             );
         }
     };
-    let actor = match nazo_identity::UserId::new(admin.id()) {
-        Ok(value) => value,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "管理员身份无效.",
-            );
-        }
-    };
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     match users
         .set_tenant_admin_authorized(
             control_tenant.0,
-            actor,
+            admin.user_id,
             target_tenant,
             target_user,
             payload.admin_level,
@@ -169,7 +176,7 @@ pub(crate) async fn system_set_tenant_admin(
         .await
     {
         Ok(nazo_identity::AdminUserUpdateOutcome::Updated(user)) => {
-            json_response(admin_user_json(*user))
+            json_response(admin_user_json(&user))
         }
         Ok(nazo_identity::AdminUserUpdateOutcome::TargetNotFound) => {
             HttpResponse::NotFound().finish()
@@ -246,20 +253,20 @@ pub(crate) async fn admin_create_user(
     match accounts
         .create_user_with_required_audit(
             NewUser {
-                tenant: admin.tenant(),
+                tenant: admin.tenant,
                 username: format!("user_{}", Uuid::now_v7()),
                 email,
                 password_hash,
                 email_verified: true,
             },
-            admin.user_id(),
+            admin.user_id,
             source_ip_hash,
         )
         .await
     {
         Ok(account) => HttpResponse::Created()
             .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-            .json(admin_user_json(account)),
+            .json(admin_user_json(&account)),
         Err(nazo_identity::ports::RepositoryError::Conflict) => {
             oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.")
         }
@@ -311,25 +318,14 @@ pub(crate) async fn admin_patch_user(
             );
         }
     };
-    let actor_id = match nazo_identity::UserId::new(admin.id()) {
-        Ok(actor_id) => actor_id,
-        Err(error) => {
-            tracing::error!(%error, "authenticated administrator has an invalid user id");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "管理员身份无效.",
-            );
-        }
-    };
     if let Err(response) = require_transactional_audit_or_unavailable().await {
         return response;
     }
     let source_ip_hash = blake3_hex(&client_ip_with_config(&req, &client_ip_config));
     let updated = match users
         .update_authorized_with_required_audit(
-            admin.tenant(),
-            actor_id,
+            admin.tenant,
+            admin.user_id,
             user_id,
             nazo_identity::ports::AdminUserUpdate {
                 role: payload.role,
@@ -359,7 +355,7 @@ pub(crate) async fn admin_patch_user(
     };
     match updated {
         nazo_identity::AdminUserUpdateOutcome::Updated(user) => {
-            json_response(admin_user_json(*user))
+            json_response(admin_user_json(&user))
         }
         nazo_identity::AdminUserUpdateOutcome::TargetNotFound => {
             oauth_error(StatusCode::NOT_FOUND, "invalid_request", "未找到该用户.")

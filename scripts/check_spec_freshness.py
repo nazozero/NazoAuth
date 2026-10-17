@@ -147,8 +147,10 @@ def validate_manifest(manifest: dict, root: Path = ROOT) -> None:
 
     referenced_rfcs: set[int] = set()
     used_allowed_profile_pins: set[tuple[str, str, str]] = set()
+    document_texts: dict[Path, str] = {}
     for relative, path in sorted(managed.items()):
         text = path.read_text(encoding="utf-8")
+        document_texts[path] = text
         referenced_rfcs.update(int(number) for number in RFC_REFERENCE.findall(text))
         for document, revision in DRAFT_PIN.findall(text):
             expected = current_drafts.get(document)
@@ -193,7 +195,9 @@ def validate_manifest(manifest: dict, root: Path = ROOT) -> None:
             isinstance(marker, str) and marker for marker in markers
         ):
             raise ValueError(f"expected markers for {relative} must be non-empty strings")
-        text = path.read_text(encoding="utf-8")
+        text = document_texts.get(path)
+        if text is None:
+            text = path.read_text(encoding="utf-8")
         for marker in markers:
             if marker not in text:
                 raise ValueError(
@@ -306,7 +310,7 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
 
 def _write_report(
     path: Path | None,
-    manifest_path: Path,
+    manifest_bytes: bytes,
     mode: str,
     sources: list[dict],
     checks: list[dict],
@@ -319,7 +323,7 @@ def _write_report(
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "mode": mode,
         "status": "failed" if failed else "passed",
-        "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+        "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "source_count": len(sources),
         "checked_source_count": len(checks),
         "failed_source_count": failed,
@@ -341,11 +345,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    manifest_bytes = args.manifest.read_bytes()
+    manifest = json.loads(manifest_bytes)
     validate_manifest(manifest, ROOT)
     print(f"offline validation passed: {len(manifest['sources'])} official sources")
     if args.offline:
-        _write_report(args.report_json, args.manifest, "offline", manifest["sources"], [])
+        _write_report(args.report_json, manifest_bytes, "offline", manifest["sources"], [])
         return 0
 
     failures: list[str] = []
@@ -365,7 +370,7 @@ def main(argv: list[str] | None = None) -> int:
             result.update(status="failed", message=str(error))
             print(f"ERROR: {error}", file=sys.stderr)
         checks.append(result)
-    _write_report(args.report_json, args.manifest, "online", manifest["sources"], checks)
+    _write_report(args.report_json, manifest_bytes, "online", manifest["sources"], checks)
     if failures:
         print(f"online validation failed: {len(failures)} source(s)", file=sys.stderr)
         return 1

@@ -148,23 +148,16 @@ pub struct DeferredCredential {
     pub expires_at: DateTime<Utc>,
 }
 
-/// A deferred transaction that is leased to one issuance attempt.
+/// A single owner-classified deferred claim attempt. Pending and Busy retain
+/// the same live transaction and never confer signing authority.
 ///
 /// The lease is deliberately separate from `consumed_at`: signing and response
 /// persistence can fail after a transaction has become ready, in which case a
 /// later request must be able to retry the same transaction without allowing
 /// two concurrent issuers to sign it.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DeferredCredentialClaim {
-    pub credential: DeferredCredential,
-    pub claim_id: String,
-}
-
-/// A single owner-classified deferred claim attempt. Pending and Busy retain
-/// the same live transaction and never confer signing authority.
-#[derive(Clone, Debug, PartialEq)]
 pub enum DeferredClaimOutcome {
-    Claimed(Box<DeferredCredentialClaim>),
+    Claimed(Box<DeferredCredential>),
     Pending { retry_at: DateTime<Utc> },
     Busy { retry_at: DateTime<Utc> },
     Invalid,
@@ -194,7 +187,8 @@ pub enum CredentialResponseEncoding {
 }
 
 /// The exact wire response committed with an issuance state transition. The
-/// repository encrypts `body` at rest; the digest and issuance id prevent a
+/// issuance owner supplies the final encoded `body`; replay does not decode it.
+/// The repository authenticates `body` at rest; the digest and issuance id prevent a
 /// different request from retrieving a previously committed response.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredCredentialResponse {
@@ -202,7 +196,7 @@ pub struct StoredCredentialResponse {
     pub issuance_id: Uuid,
     pub token_id: Uuid,
     pub request_digest: String,
-    pub body: Vec<u8>,
+    pub body: bytes::Bytes,
     pub encoding: CredentialResponseEncoding,
     pub status: u16,
     pub dpop_nonce: Option<String>,
@@ -260,29 +254,10 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
-    fn finalize_nonce<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
-    /// Atomically persist the notification handle and finalize the nonce.
-    /// Implementations must own this transition in one transaction; composing
-    /// the two lower-level methods is not safe because a process failure could
-    /// leave a notification without a consumed nonce (or vice versa).
-    fn finalize_nonce_with_notification<'a>(
-        &'a self,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
@@ -294,6 +269,7 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>;
 
+    /// Atomically persist the response and notification handle and finalize the nonce.
     fn finalize_nonce_with_notification_and_response<'a>(
         &'a self,
         nonce_hash: &'a str,
@@ -316,22 +292,7 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>>;
 
-    fn store_deferred<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
-
-    /// Persist a deferred transaction and finalize its proof nonce as one
-    /// state transition. Implementations must own this transition in one
-    /// transaction rather than composing the lower-level operations.
-    fn store_deferred_and_finalize_nonce<'a>(
-        &'a self,
-        credential: &'a DeferredCredential,
-        nonce_hash: &'a str,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
-
+    /// Atomically persist the deferred transaction and response and finalize its proof nonce.
     fn store_deferred_and_finalize_nonce_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
@@ -356,14 +317,6 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<DeferredClaimOutcome, CredentialStoreError>>;
 
-    fn finalize_deferred<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
     fn release_deferred<'a>(
         &'a self,
         transaction_hash: &'a str,
@@ -372,18 +325,7 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
-    /// Atomically persist the notification handle and finalize a deferred
-    /// transaction. The store owns this transition so a retry can never
-    /// observe a notification without the corresponding consumed transaction.
-    fn finalize_deferred_with_notification<'a>(
-        &'a self,
-        transaction_hash: &'a str,
-        token_id: Uuid,
-        claim_id: &'a str,
-        handle: &'a NotificationHandle,
-        now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
+    /// Atomically persist the response and notification handle and finalize the deferred transaction.
     fn finalize_deferred_with_notification_and_response<'a>(
         &'a self,
         transaction_hash: &'a str,
@@ -401,11 +343,6 @@ pub trait CredentialStorePort: Send + Sync {
         &'a self,
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
-
-    fn issue_notification_handle<'a>(
-        &'a self,
-        handle: &'a NotificationHandle,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

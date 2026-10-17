@@ -3,9 +3,9 @@ use std::sync::Arc;
 use crate::contracts::metadata::{
     MetadataEndpointConfig, MetadataSnapshot, MetadataSnapshotSource,
 };
-use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile};
 use nazo_key_management::{KeyManager, signing_algorithm_name};
-use nazo_runtime_modules::SnapshotStore;
+use nazo_runtime_modules::{ActiveModuleSnapshot, SnapshotStore};
 
 #[derive(Clone)]
 pub struct MetadataConfig {
@@ -14,7 +14,6 @@ pub struct MetadataConfig {
     pub mtls_enabled: bool,
     pub authorization_server_profile: MetadataAuthorizationServerProfile,
     pub ciba_security_profile: CibaMetadataProfile,
-    pub subject_type: MetadataSubjectType,
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: String,
     /// Additional public OAuth scopes; advertising does not grant access.
@@ -25,18 +24,17 @@ pub struct MetadataConfig {
 }
 
 impl MetadataConfig {
-    pub fn endpoint_config(&self) -> MetadataEndpointConfig {
+    pub fn endpoint_config(self) -> MetadataEndpointConfig {
         MetadataEndpointConfig {
-            issuer: self.issuer.clone(),
-            mtls_endpoint_base_url: self.mtls_endpoint_base_url.clone(),
+            issuer: self.issuer,
+            mtls_endpoint_base_url: self.mtls_endpoint_base_url,
             mtls_enabled: self.mtls_enabled,
             authorization_server_profile: self.authorization_server_profile,
             ciba_profile: self.ciba_security_profile,
-            subject_type: self.subject_type,
             pairwise_subject_enabled: self.pairwise_subject_enabled,
-            protected_resource_identifier: self.protected_resource_identifier.clone(),
-            additional_scopes_supported: self.additional_scopes_supported.clone(),
-            credential_scopes: self.credential_scopes.clone(),
+            protected_resource_identifier: self.protected_resource_identifier,
+            additional_scopes_supported: self.additional_scopes_supported,
+            credential_scopes: self.credential_scopes,
             require_pushed_authorization_requests: self.require_pushed_authorization_requests,
         }
     }
@@ -55,10 +53,14 @@ impl ApplicationMetadataSnapshotSource {
 }
 
 impl MetadataSnapshotSource for ApplicationMetadataSnapshotSource {
+    fn active_modules(&self) -> Arc<ActiveModuleSnapshot> {
+        self.snapshots.load_full()
+    }
+
     fn snapshot(&self) -> MetadataSnapshot {
         let keys = self.keyset.snapshot();
         MetadataSnapshot {
-            active_modules: self.snapshots.load_full(),
+            active_modules: self.active_modules(),
             active_signing_algorithms: signing_algorithm_name(keys.active_alg)
                 .into_iter()
                 .collect(),

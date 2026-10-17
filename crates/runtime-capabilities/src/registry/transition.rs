@@ -19,11 +19,11 @@ where
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let mut initialized = false;
+        let mut can_restore = false;
         let result = self
-            .enable_transition(module_id, revision, current, &mut initialized)
+            .enable_transition(module_id, revision, current, &mut can_restore)
             .await;
-        self.finish_admission(module_id, initialized, result).await
+        self.finish_admission(module_id, can_restore, result).await
     }
 
     pub(super) async fn disable(
@@ -32,24 +32,23 @@ where
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let mut initialized = current.as_ref().is_some_and(|state| {
+        let can_restore = current.as_ref().is_some_and(|state| {
             matches!(state.state, ModuleState::Enabled | ModuleState::Draining)
         });
-        let result = self
-            .disable_transition(module_id, revision, current, &mut initialized)
-            .await;
-        self.finish_admission(module_id, initialized, result).await
+        let result = self.disable_transition(module_id, revision, current).await;
+        self.finish_admission(module_id, can_restore, result).await
     }
 
     async fn finish_admission(
         &self,
         module_id: ModuleId,
-        initialized: bool,
+        can_restore: bool,
         result: Result<ReconcileOutcome, RegistryError<R::Error>>,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let completed_enable = matches!(&result, Ok(ReconcileOutcome::Enabled));
+        let can_restore = can_restore && !matches!(&result, Ok(ReconcileOutcome::Disabled));
         let compensation = self
-            .align_admission_with_current_intent(module_id, initialized, completed_enable)
+            .align_admission_with_current_intent(module_id, can_restore, completed_enable)
             .await;
         match (result, compensation) {
             (Ok(outcome), Ok(())) => Ok(outcome),
@@ -73,7 +72,7 @@ where
         module_id: ModuleId,
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
-        initialized: &mut bool,
+        can_restore: &mut bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
         let starting = self
             .persist_state(
@@ -96,24 +95,9 @@ where
             .await?
             .is_some()
         {
-            return self.fail_dependency_loss(&starting, false).await;
+            return self.fail_dependency_loss(&starting).await;
         }
-        if let Err(failure) = self.lifecycle.initialize(module_id).await {
-            return Ok(if self.persist_failure(&starting, failure).await? {
-                ReconcileOutcome::Failed
-            } else {
-                ReconcileOutcome::StaleDiscarded
-            });
-        }
-        *initialized = true;
-        if self
-            .first_unavailable_dependency(module_id)
-            .await?
-            .is_some()
-        {
-            *initialized = false;
-            return self.fail_dependency_loss(&starting, true).await;
-        }
+        *can_restore = true;
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(module_id, revision, Some(&starting))
                 .await?;
@@ -126,8 +110,8 @@ where
             .is_some()
         {
             self.publish(module_id, false, false)?;
-            *initialized = false;
-            return self.fail_dependency_loss(&starting, true).await;
+            *can_restore = false;
+            return self.fail_dependency_loss(&starting).await;
         }
         if !self.revision_is_current(module_id, revision).await? {
             self.publish(module_id, false, false)?;
@@ -166,12 +150,8 @@ where
         module_id: ModuleId,
         revision: ModuleRevision,
         current: Option<InstanceStateRecord>,
-        initialized: &mut bool,
     ) -> Result<ReconcileOutcome, RegistryError<R::Error>> {
-        let disable_policy = self
-            .catalog
-            .effective_disable_policy(module_id)
-            .ok_or(RegistryError::MissingCatalogSpec(module_id))?;
+        let disable_policy = self.catalog.effective_disable_policy(module_id);
         if current
             .as_ref()
             .is_none_or(|instance| instance.state == ModuleState::Disabled)
@@ -206,7 +186,6 @@ where
                 CasOutcome::Stale { .. } => Ok(ReconcileOutcome::StaleDiscarded),
             };
         }
-        let prior_generation = self.snapshot().revision;
         let drain_deadline = match disable_policy {
             DisablePolicy::DrainStoredTransactions { max_duration } => current
                 .as_ref()
@@ -278,9 +257,7 @@ where
             ) {
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
-            self.leases
-                .wait_until_zero(module_id, prior_generation)
-                .await;
+            self.leases.wait_until_zero(module_id).await;
             if matches!(
                 disable_policy,
                 DisablePolicy::DrainStoredTransactions { .. }
@@ -310,7 +287,6 @@ where
                         });
                     }
                     Err(failure) => {
-                        *initialized = false;
                         let failed = self.persist_failure(&draining, failure).await?;
                         return Ok(if failed {
                             ReconcileOutcome::Failed
@@ -348,24 +324,6 @@ where
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
         }
-        *initialized = false;
-        if let Err(failure) = self.lifecycle.stop(module_id).await {
-            let failed = self.persist_failure(&draining, failure).await?;
-            return Ok(if failed {
-                ReconcileOutcome::Failed
-            } else {
-                ReconcileOutcome::StaleDiscarded
-            });
-        }
-        if !self.revision_is_current(module_id, revision).await? {
-            self.discard_stale(module_id, revision, Some(&draining))
-                .await?;
-            // `stop` already ran, so admission cannot be restored safely.
-            // Remove the obsolete draining marker; the newer revision will
-            // initialize and republish the module if it resolves to enabled.
-            self.publish(module_id, false, false)?;
-            return Ok(ReconcileOutcome::StaleDiscarded);
-        }
         let completed = self
             .persist_state(
                 module_id,
@@ -396,12 +354,12 @@ where
     }
 
     /// Reconcile admission after every terminal path, including failed or
-    /// unknown writes. A stopped/uncertain lifecycle cannot be reopened merely
-    /// because the newest durable intent is enabled.
+    /// unknown writes. Admission follows the committed instance state and the
+    /// newest durable intent; module services stay constructed throughout.
     async fn align_admission_with_current_intent(
         &self,
         module_id: ModuleId,
-        initialized: bool,
+        can_restore: bool,
         completed_enable: bool,
     ) -> Result<(), RegistryError<R::Error>> {
         loop {
@@ -419,7 +377,7 @@ where
             let enabled = self
                 .catalog
                 .effective_enabled(module_id, desired.mode.is_enabled());
-            let runtime_ready = if initialized && !completed_enable {
+            let runtime_ready = if can_restore && !completed_enable {
                 match self
                     .repository
                     .read_instance(&self.instance_id, module_id)
@@ -434,7 +392,7 @@ where
                     }
                 }
             } else {
-                initialized
+                can_restore
             };
             let dependencies_ready = if runtime_ready && enabled {
                 match self.first_unavailable_dependency(module_id).await {

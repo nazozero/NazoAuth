@@ -3,7 +3,7 @@
 
 Runs inside the perf-runner image on the benchmark host. It uses the
 *unmodified* `docker-compose.perf.yml` topology (postgres, postgres-init,
-valkey, keyset, migrate, nazoauth) exactly like perf/tools/soak_run.sh,
+valkey, migrate, nazoauth) exactly like perf/tools/soak_run.sh,
 plus an in-container `pinset` helper to place the app on a nested logical
 CPU set while postgres/valkey/k6/audit/samplers share the complementary
 infra set. Docker-level cpuset controls are ineffective on this host's
@@ -80,7 +80,6 @@ EXTRA_CONTAINERS = RESULTS / f"{PROJECT}-extra-containers.jsonl"
 APP = f"{PROJECT}-nazoauth-1"
 POSTGRES = f"{PROJECT}-postgres-1"
 VALKEY = f"{PROJECT}-valkey-1"
-KEYSET = f"{PROJECT}-keyset-1"
 MIGRATE = f"{PROJECT}-migrate-1"
 
 DEPID_EPOCH = "019c8ca2-30a6-7000-8000-00000000e103"
@@ -786,7 +785,7 @@ def stack_up(point: dict) -> dict:
     for svc in ("nazoauth", "migrate", "audit-worker"):
         dc("tag", point["image"], f"{PROJECT}-{svc}")
     compose("up", "-d", "--no-build",
-            "postgres", "valkey", "postgres-init", "keyset", "migrate",
+            "postgres", "valkey", "postgres-init", "migrate",
             "nazoauth")
     evidence["healthy"] = {
         "postgres": wait_healthy(POSTGRES),
@@ -803,7 +802,6 @@ def stack_up(point: dict) -> dict:
         "app": pin_container(APP, app_cpus),
         "postgres": pin_container(POSTGRES, infra_cpus),
         "valkey": pin_container(VALKEY, infra_cpus),
-        "keyset": pin_container(KEYSET, infra_cpus),
     }
     evidence["pin"]["app_verified"] = verify_pin(APP, app_cpus, "nazoauth")
     evidence["pin"]["pg_verified"] = verify_pin(POSTGRES, infra_cpus, "postgres")
@@ -845,10 +843,8 @@ def audit_pair_up(run_id: str, depid: str) -> dict:
         "public.nazo_security_audit_chain_head_for_update(),"
         "public.nazo_security_audit_batch_members(),"
         "public.nazo_claim_security_audit_pending(BIGINT),"
-        "public.nazo_open_security_audit_batch(BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),"
         "public.nazo_finalize_security_audit_claim(BIGINT,BYTEA,UUID[],BYTEA[],BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),"
         "public.nazo_reclaim_security_audit_batch(BYTEA,INTEGER),"
-        "public.nazo_append_security_audit_chain(BIGINT,BYTEA,UUID[],BYTEA[]),"
         "public.nazo_fail_security_audit_batch(BIGINT,TIMESTAMPTZ,TEXT,BOOLEAN),"
         "public.nazo_observe_security_audit_anchor(TEXT),"
         "public.nazo_security_audit_shared_anchor_health() "
@@ -989,13 +985,11 @@ WORKSPACE_FILES = (
     "perf/k6/measurement_clock.js",
     "perf/k6/subject_state.js",
     "perf/runner/Containerfile",
-    "perf/keyset/Containerfile",
     "perf/audit-anchor-receiver/Containerfile",
     "perf/audit-anchor-receiver/Cargo.toml",
     "perf/audit-anchor-receiver/src/main.rs",
     "perf/audit-anchor-receiver/src/store.rs",
     "perf/audit-anchor-receiver/src/wire.rs",
-    "scripts/ensure_runtime_keyset.py",
     "perf/tools/single_instance_scaling.py",
     "perf/tools/point_runner.py",
     "perf/tools/pool_size_ab.py",
@@ -2716,7 +2710,6 @@ def cmd_env_check() -> None:
         for n, img in {
             "perf": PERF_IMAGE,
             "receiver": os.environ.get("SIS_RCV_IMAGE", "sis-rcv:latest"),
-            "keyset": f"{PROJECT}-keyset",
         }.items()}
     jdump(out, ev)
     print(json.dumps(ev["plan"]))

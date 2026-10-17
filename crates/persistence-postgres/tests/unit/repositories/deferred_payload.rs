@@ -46,23 +46,23 @@ fn retained_ciphertext_is_decoded_only_at_adapter_boundary() {
     let ciphertext = protect_payload(&key, id, &plaintext).unwrap();
     assert_ne!(ciphertext, plaintext);
     let actual = row(&access, id, ciphertext.clone())
-        .into_domain(access.clone(), &key)
+        .into_domain(access.clone(), None, &key)
         .unwrap();
     assert_eq!(serde_json::to_value(actual.payload).unwrap(), legacy);
     assert!(
         row(&access, id, ciphertext.clone())
-            .into_domain(access.clone(), &rand::random::<[u8; 32]>())
+            .into_domain(access.clone(), None, &rand::random::<[u8; 32]>())
             .is_err()
     );
     assert!(
         row(&access, Uuid::now_v7(), ciphertext)
-            .into_domain(access.clone(), &key)
+            .into_domain(access.clone(), None, &key)
             .is_err()
     );
     let malformed = protect_payload(&key, id, b"{\"dataset\": {}}").unwrap();
     assert!(
         row(&access, id, malformed)
-            .into_domain(access, &key)
+            .into_domain(access, None, &key)
             .is_err()
     );
 }

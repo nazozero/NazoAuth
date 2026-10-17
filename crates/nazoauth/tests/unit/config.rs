@@ -86,7 +86,7 @@ fn yaml_sequence_becomes_comma_separated_value() {
     ]);
 
     assert_eq!(
-        yaml_value_to_string("CORS_ALLOWED_ORIGINS", &value).unwrap(),
+        yaml_value_to_string("CORS_ALLOWED_ORIGINS", value).unwrap(),
         "http://127.0.0.1:3000,http://localhost:3000"
     );
 }
@@ -95,7 +95,7 @@ fn yaml_sequence_becomes_comma_separated_value() {
 fn yaml_mapping_value_is_rejected_instead_of_stringified() {
     let value = YamlValue::Mapping(Default::default());
 
-    let err = yaml_value_to_string("ISSUER", &value).unwrap_err();
+    let err = yaml_value_to_string("ISSUER", value).unwrap_err();
 
     assert!(err.to_string().contains("ISSUER must be a scalar"));
 }
@@ -531,14 +531,8 @@ fn server_config_excludes_worker_only_yaml_and_environment_values() {
     )
     .unwrap();
 
-    assert_eq!(
-        source.get("PUBLIC_BASE_URL").as_deref(),
-        Some("https://auth.example")
-    );
-    assert_eq!(
-        source.get("ISSUER").as_deref(),
-        Some("https://issuer.example")
-    );
+    assert_eq!(source.get("PUBLIC_BASE_URL"), Some("https://auth.example"));
+    assert_eq!(source.get("ISSUER"), Some("https://issuer.example"));
     for key in [
         "AUDIT_ANCHOR_URL",
         "AUDIT_ANCHOR_TOKEN",
@@ -608,10 +602,7 @@ fn explicit_yaml_scalar_overrides_environment_secret_file_fallback() {
     )
     .unwrap();
 
-    assert_eq!(
-        source.get("CLIENT_SECRET_PEPPER").as_deref(),
-        Some("yaml-secret")
-    );
+    assert_eq!(source.get("CLIENT_SECRET_PEPPER"), Some("yaml-secret"));
     let _ = std::fs::remove_dir_all(&path);
 }
 
@@ -631,10 +622,7 @@ fn environment_secret_file_supplies_an_absent_scalar() {
     )
     .unwrap();
 
-    assert_eq!(
-        source.get("CLIENT_SECRET_PEPPER").as_deref(),
-        Some("file-secret")
-    );
+    assert_eq!(source.get("CLIENT_SECRET_PEPPER"), Some("file-secret"));
     let _ = std::fs::remove_dir_all(&path);
 }
 
@@ -650,7 +638,7 @@ fn mounted_signing_wrapping_root_is_loaded_and_partial_configuration_fails_close
     .unwrap();
     let source = ConfigSource::load_from_dir(&path).unwrap();
     assert_eq!(
-        source.get("SIGNING_KEY_ENCRYPTION_KEY").as_deref(),
+        source.get("SIGNING_KEY_ENCRYPTION_KEY"),
         Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
     );
     crate::settings::signing_key_wrapping_key_ring(&source).unwrap();
@@ -684,10 +672,7 @@ fn yaml_secret_file_path_is_resolved_and_trimmed() {
 
     let source = ConfigSource::load_from_dir(&path).unwrap();
 
-    assert_eq!(
-        source.get("CLIENT_SECRET_PEPPER").as_deref(),
-        Some("file-secret")
-    );
+    assert_eq!(source.get("CLIENT_SECRET_PEPPER"), Some("file-secret"));
     let _ = std::fs::remove_dir_all(&path);
 }
 
@@ -816,21 +801,15 @@ fn migration_config_accepts_deployment_identity_without_materializing_state() {
 
     let source = ConfigSource::load_for_migrations_from_dir_with_env(&path, []).unwrap();
 
-    assert_eq!(
-        source.get("DEPLOYMENT_ID").as_deref(),
-        Some("deployment-ci")
-    );
-    assert_eq!(
-        source.get("RUNTIME_INSTANCE_ID").as_deref(),
-        Some("runtime-ci")
-    );
+    assert_eq!(source.get("DEPLOYMENT_ID"), Some("deployment-ci"));
+    assert_eq!(source.get("RUNTIME_INSTANCE_ID"), Some("runtime-ci"));
     let expected_identity_dir = std::fs::canonicalize(&path)
         .unwrap()
         .join("runtime-instance")
         .display()
         .to_string();
     assert_eq!(
-        source.get("INSTANCE_IDENTITY_DIR").as_deref(),
+        source.get("INSTANCE_IDENTITY_DIR"),
         Some(expected_identity_dir.as_str())
     );
     assert!(!path.join("runtime-instance").exists());
@@ -849,7 +828,7 @@ fn metadata_only_config_does_not_read_secret_files_or_expose_secret_values() {
     let source = ConfigSource::load_from_dir_with_env_mode(&path, [], false, false).unwrap();
 
     assert_eq!(
-        source.get("CLIENT_SECRET_PEPPER_FILE").as_deref(),
+        source.get("CLIENT_SECRET_PEPPER_FILE"),
         Some("deliberately-absent")
     );
     assert!(source.get("DATABASE_URL").is_none());

@@ -22,9 +22,7 @@ pub(crate) fn normalize_email_address(raw: &str) -> anyhow::Result<String> {
 
 fn parse_email_address(raw: &str) -> anyhow::Result<Address> {
     let normalized = raw.trim().to_ascii_lowercase();
-    normalized
-        .parse::<Address>()
-        .context("email address is invalid")
+    Address::try_from(normalized).context("email address is invalid")
 }
 
 pub(crate) fn email_delivery_configured(settings: &Settings) -> bool {
