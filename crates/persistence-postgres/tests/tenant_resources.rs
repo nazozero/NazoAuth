@@ -123,7 +123,7 @@ async fn upsert_binding_in_transaction(
                 resource_id,
             )
             .await?;
-            Ok(TenantResourceRepository::upsert_binding_on_connection(
+            TenantResourceRepository::upsert_binding_on_connection(
                 connection,
                 NewTenantResourceBinding {
                     tenant_id,
@@ -134,7 +134,18 @@ async fn upsert_binding_in_transaction(
                     locator,
                 },
             )
-            .await?)
+            .await?;
+            // Inspect committed fields for lifecycle assertions; production callers
+            // need no returned binding and perform no inspection query.
+            Ok(
+                TenantResourceRepository::active_bindings_on_connection(connection, tenant_id)
+                    .await?
+                    .into_iter()
+                    .find(|row| {
+                        row.resource_kind == resource_kind && row.resource_id == resource_id
+                    })
+                    .expect("the fixture binding is active"),
+            )
         })
         .await
 }
@@ -453,8 +464,8 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
     .expect("first binding should insert");
     assert_eq!(
         counter.since(before).data_queries,
-        2,
-        "one lock and one insert"
+        3,
+        "one lock, one insert, and the test-only state inspection"
     );
     let replayed = upsert_binding_in_transaction(
         &mut connection,
@@ -842,16 +853,7 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 },
             )
             .await?;
-            match drift {
-                Openid4vcTrustPolicyWrite::Conflict(current) => {
-                    assert_eq!(current.resource_digest, first_digest);
-                }
-                other => {
-                    return Err(TestTransactionError::Assertion(format!(
-                        "digest drift returned {other:?}"
-                    )));
-                }
-            }
+            assert_eq!(drift, Openid4vcTrustPolicyWrite::Conflict);
 
             let stale = TenantResourceRepository::revoke_openid4vc_trust_policy_on_connection(
                 connection,
@@ -860,7 +862,7 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 &second_digest,
             )
             .await?;
-            assert!(matches!(stale, Openid4vcTrustPolicyRevoke::Conflict(_)));
+            assert!(matches!(stale, Openid4vcTrustPolicyRevoke::Conflict));
             let revoked = TenantResourceRepository::revoke_openid4vc_trust_policy_on_connection(
                 connection,
                 tenant_id,
@@ -908,12 +910,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                     "revoked trust policy did not create a new generation".to_owned(),
                 ));
             };
-            assert_ne!(reapplied.id, revoked.id, "revoked binding IDs stay frozen");
+            assert_ne!(reapplied, revoked, "revoked binding IDs stay frozen");
             let old_active = sql_query(
                 "SELECT COUNT(*)::BIGINT AS count FROM openid4vc_trust_policies
                  WHERE id = $1 AND active",
             )
-            .bind::<sql_types::Uuid, _>(revoked.id)
+            .bind::<sql_types::Uuid, _>(revoked)
             .get_result::<CountRow>(connection)
             .await?;
             assert_eq!(

@@ -49,16 +49,16 @@ pub struct StoredOpenid4vcTrustPolicy {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Openid4vcTrustPolicyWrite {
-    Applied(StoredOpenid4vcTrustPolicy),
-    Replayed(StoredOpenid4vcTrustPolicy),
-    Conflict(StoredOpenid4vcTrustPolicy),
+    Applied(Uuid),
+    Replayed(Uuid),
+    Conflict,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Openid4vcTrustPolicyRevoke {
-    Revoked(StoredOpenid4vcTrustPolicy),
+    Revoked(Uuid),
     AlreadyAbsent,
-    Conflict(StoredOpenid4vcTrustPolicy),
+    Conflict,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -347,7 +347,7 @@ impl TenantResourceRepository {
     pub async fn upsert_binding_on_connection(
         connection: &mut AsyncPgConnection,
         binding: NewTenantResourceBinding<'_>,
-    ) -> Result<TenantResourceBinding, RepositoryError> {
+    ) -> Result<(), RepositoryError> {
         let id = Uuid::now_v7();
         let inserted = sql_query(
             "INSERT INTO tenant_resource_bindings
@@ -355,10 +355,7 @@ impl TenantResourceRepository {
                  active, locator)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (tenant_id, resource_kind, resource_id)
-             DO NOTHING
-             RETURNING id, tenant_id, resource_kind, resource_id, resource_digest,
-                       active, locator,
-                       created_at, updated_at",
+             DO NOTHING",
         )
         .bind::<sql_types::Uuid, _>(id)
         .bind::<sql_types::Uuid, _>(binding.tenant_id)
@@ -367,17 +364,25 @@ impl TenantResourceRepository {
         .bind::<sql_types::Varchar, _>(binding.resource_digest)
         .bind::<sql_types::Bool, _>(binding.active)
         .bind::<sql_types::Text, _>(binding.locator)
-        .get_result::<BindingRow>(connection)
+        .execute(connection)
         .await
-        .optional()
         .map_err(map_error)?;
-        if let Some(row) = inserted {
-            return Ok(row.into());
+        if inserted == 1 {
+            return Ok(());
         }
-        let existing = sql_query(
-            "SELECT id, tenant_id, resource_kind, resource_id, resource_digest,
-                    active, locator,
-                    created_at, updated_at
+        #[derive(QueryableByName)]
+        struct BindingState {
+            #[diesel(sql_type = sql_types::Uuid)]
+            id: Uuid,
+            #[diesel(sql_type = sql_types::Varchar)]
+            resource_digest: String,
+            #[diesel(sql_type = sql_types::Bool)]
+            active: bool,
+            #[diesel(sql_type = sql_types::Text)]
+            locator: String,
+        }
+        let existing_binding = sql_query(
+            "SELECT id, resource_digest, active, locator
              FROM tenant_resource_bindings
              WHERE tenant_id = $1 AND resource_kind = $2
                AND resource_id = $3
@@ -386,32 +391,29 @@ impl TenantResourceRepository {
         .bind::<sql_types::Uuid, _>(binding.tenant_id)
         .bind::<sql_types::Varchar, _>(binding.resource_kind)
         .bind::<sql_types::Varchar, _>(binding.resource_id)
-        .get_result::<BindingRow>(connection)
+        .get_result::<BindingState>(connection)
         .await
         .map_err(map_error)?;
-        let existing_binding: TenantResourceBinding = existing.into();
         if existing_binding.resource_digest == binding.resource_digest
             && existing_binding.active == binding.active
             && existing_binding.locator == binding.locator
         {
-            return Ok(existing_binding);
+            return Ok(());
         }
         if !existing_binding.active {
             return sql_query(
                 "UPDATE tenant_resource_bindings
                  SET resource_digest = $2, active = $3, locator = $4,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $1 AND NOT active
-                 RETURNING id, tenant_id, resource_kind, resource_id, resource_digest,
-                           active, locator, created_at, updated_at",
+                 WHERE id = $1 AND NOT active",
             )
             .bind::<sql_types::Uuid, _>(existing_binding.id)
             .bind::<sql_types::Varchar, _>(binding.resource_digest)
             .bind::<sql_types::Bool, _>(binding.active)
             .bind::<sql_types::Text, _>(binding.locator)
-            .get_result::<BindingRow>(connection)
+            .execute(connection)
             .await
-            .map(BindingRow::into)
+            .map(|_| ())
             .map_err(map_error);
         }
         Err(RepositoryError::Conflict)
@@ -564,12 +566,6 @@ impl TenantResourceRepository {
         connection: &mut AsyncPgConnection,
         policy: NewStoredOpenid4vcTrustPolicy<'_>,
     ) -> Result<Openid4vcTrustPolicyWrite, RepositoryError> {
-        let wallet_origins_json = serde_json::to_value(policy.wallet_origins).map_err(|_| {
-            RepositoryError::Consistency(
-                "OpenID4VC trust policy wallet origins are not JSON".to_owned(),
-            )
-        })?;
-
         if let Some(current) = select_openid4vc_trust_policy_on_connection(
             connection,
             policy.tenant_id,
@@ -578,32 +574,35 @@ impl TenantResourceRepository {
         .await?
         {
             return if current.resource_digest == policy.resource_digest {
-                Ok(Openid4vcTrustPolicyWrite::Replayed(current))
+                Ok(Openid4vcTrustPolicyWrite::Replayed(current.id))
             } else {
-                Ok(Openid4vcTrustPolicyWrite::Conflict(current))
+                Ok(Openid4vcTrustPolicyWrite::Conflict)
             };
         }
 
-        let inserted = sql_query(
+        let wallet_origins_json = serde_json::to_value(policy.wallet_origins).map_err(|_| {
+            RepositoryError::Consistency(
+                "OpenID4VC trust policy wallet origins are not JSON".to_owned(),
+            )
+        })?;
+
+        let id = Uuid::now_v7();
+        sql_query(
             "INSERT INTO openid4vc_trust_policies
                 (id, tenant_id, resource_id, resource_digest, public_material,
                  wallet_origins, source, active)
-             VALUES ($1, $2, $3, $4, $5, $6, 'operator-managed', TRUE)
-             RETURNING id, tenant_id, resource_id, resource_digest, public_material,
-                       wallet_origins,
-                       active, created_at, updated_at, revoked_at",
+             VALUES ($1, $2, $3, $4, $5, $6, 'operator-managed', TRUE)",
         )
-        .bind::<sql_types::Uuid, _>(Uuid::now_v7())
+        .bind::<sql_types::Uuid, _>(id)
         .bind::<sql_types::Uuid, _>(policy.tenant_id)
         .bind::<sql_types::Varchar, _>(policy.resource_id)
         .bind::<sql_types::Varchar, _>(policy.resource_digest)
         .bind::<sql_types::Jsonb, _>(policy.public_material)
         .bind::<sql_types::Jsonb, _>(&wallet_origins_json)
-        .get_result::<Openid4vcTrustPolicyRow>(connection)
+        .execute(connection)
         .await
-        .map_err(map_error)?
-        .try_into()?;
-        Ok(Openid4vcTrustPolicyWrite::Applied(inserted))
+        .map_err(map_error)?;
+        Ok(Openid4vcTrustPolicyWrite::Applied(id))
     }
 
     /// The transaction owner holds the policy identity lock. The client row lock
@@ -694,7 +693,7 @@ impl TenantResourceRepository {
             return Ok(Openid4vcTrustPolicyRevoke::AlreadyAbsent);
         };
         if current.resource_digest != expected_digest {
-            return Ok(Openid4vcTrustPolicyRevoke::Conflict(current));
+            return Ok(Openid4vcTrustPolicyRevoke::Conflict);
         }
         sql_query(
             "UPDATE openid4vc_trust_policy_clients
@@ -706,46 +705,46 @@ impl TenantResourceRepository {
         .execute(connection)
         .await
         .map_err(map_error)?;
-        let revoked = sql_query(
+        sql_query(
             "UPDATE openid4vc_trust_policies
              SET active = FALSE, revoked_at = CURRENT_TIMESTAMP,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1 AND active AND resource_digest = $2
-             RETURNING id, tenant_id, resource_id, resource_digest, public_material,
-                       wallet_origins,
-                       active, created_at, updated_at, revoked_at",
+             WHERE id = $1 AND active AND resource_digest = $2",
         )
         .bind::<sql_types::Uuid, _>(current.id)
         .bind::<sql_types::Varchar, _>(expected_digest)
-        .get_result::<Openid4vcTrustPolicyRow>(connection)
+        .execute(connection)
         .await
-        .map_err(map_error)?
-        .try_into()?;
-        Ok(Openid4vcTrustPolicyRevoke::Revoked(revoked))
+        .map_err(map_error)?;
+        Ok(Openid4vcTrustPolicyRevoke::Revoked(current.id))
     }
+}
+
+#[derive(QueryableByName)]
+struct Openid4vcTrustPolicyIdentity {
+    #[diesel(sql_type = sql_types::Uuid)]
+    id: Uuid,
+    #[diesel(sql_type = sql_types::Varchar)]
+    resource_digest: String,
 }
 
 async fn select_openid4vc_trust_policy_on_connection(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     resource_id: &str,
-) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
+) -> Result<Option<Openid4vcTrustPolicyIdentity>, RepositoryError> {
     sql_query(
-        "SELECT id, tenant_id, resource_id, resource_digest, public_material,
-                wallet_origins,
-                active, created_at, updated_at, revoked_at
+        "SELECT id, resource_digest
          FROM openid4vc_trust_policies
          WHERE tenant_id = $1 AND resource_id = $2 AND active
          FOR UPDATE",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Varchar, _>(resource_id)
-    .get_result::<Openid4vcTrustPolicyRow>(connection)
+    .get_result::<Openid4vcTrustPolicyIdentity>(connection)
     .await
     .optional()
-    .map_err(map_error)?
-    .map(StoredOpenid4vcTrustPolicy::try_from)
-    .transpose()
+    .map_err(map_error)
 }
 
 async fn select_openid4vc_trust_policy_client_binding_on_connection(

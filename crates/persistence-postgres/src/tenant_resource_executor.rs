@@ -908,8 +908,8 @@ async fn apply_resources(
         .map_err(ExecutorTransactionError::Repository)?;
         let policy_id = match applied {
             Openid4vcTrustPolicyWrite::Applied(policy)
-            | Openid4vcTrustPolicyWrite::Replayed(policy) => policy.id,
-            Openid4vcTrustPolicyWrite::Conflict(_) => {
+            | Openid4vcTrustPolicyWrite::Replayed(policy) => policy,
+            Openid4vcTrustPolicyWrite::Conflict => {
                 return Err(transaction_conflict("trust_policy_apply"));
             }
         };
@@ -1370,13 +1370,13 @@ async fn revoke_locator(
             .await
             .map_err(ExecutorTransactionError::Repository)?;
             match result {
-                Openid4vcTrustPolicyRevoke::Revoked(policy) if policy.id == policy_id => {}
+                Openid4vcTrustPolicyRevoke::Revoked(policy) if policy == policy_id => {}
                 Openid4vcTrustPolicyRevoke::Revoked(_) => {
                     return Err(ExecutorTransactionError::Executor(
                         TenantResourceExecutorError::Rejected,
                     ));
                 }
-                Openid4vcTrustPolicyRevoke::Conflict(_) => {
+                Openid4vcTrustPolicyRevoke::Conflict => {
                     return Err(transaction_conflict("trust_policy_revoke_digest"));
                 }
                 Openid4vcTrustPolicyRevoke::AlreadyAbsent => {

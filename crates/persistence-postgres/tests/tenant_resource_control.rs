@@ -276,7 +276,7 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
         (
             TenantResourceKind::Openid4vcTrustPolicy,
             "openid4vc-trust-policy",
-            format!("openid4vc-trust-policy/{}", policy.id),
+            format!("openid4vc-trust-policy/{policy}"),
         ),
         (
             TenantResourceKind::MtlsTrustAnchor,
