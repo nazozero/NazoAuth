@@ -434,25 +434,25 @@ impl UserRepository {
                 async move |connection| {
                     // A stable lock order prevents two concurrent hierarchy updates from
                     // deadlocking when their actor and target are reversed.
-                    let accounts = users::table
+                    let principals = users::table
                         .filter(users::id.eq_any([actor_id.as_uuid(), target_id.as_uuid()]))
                         .order(users::id.asc())
-                        .select(PublicAccountRow::as_select())
+                        .select(PrincipalRow::as_select())
                         .for_update()
-                        .load::<PublicAccountRow>(connection)
+                        .load::<PrincipalRow>(connection)
                         .await?;
-                    let mut accounts = accounts
+                    let principals = principals
                         .into_iter()
-                        .map(PublicAccount::try_from)
+                        .map(identity::principal_row)
                         .collect::<Result<Vec<_>, _>>()
                         .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
-                    let actor = accounts
+                    let actor = principals
                         .iter()
-                        .find(|account| account.id() == actor_id.as_uuid());
-                    let target_index = accounts
+                        .find(|account| account.user_id == actor_id);
+                    let target = principals
                         .iter()
-                        .position(|account| account.id() == target_id.as_uuid());
-                    let Some(actor) = actor.filter(|actor| actor.tenant() == tenant) else {
+                        .find(|account| account.user_id == target_id);
+                    let Some(actor) = actor.filter(|actor| actor.tenant == tenant) else {
                         insert_identity_security_event(
                             connection,
                             &admin_event(
@@ -469,7 +469,7 @@ impl UserRepository {
                             AdminPolicyError::ActorNotAuthorized,
                         ));
                     };
-                    let Some(target_index) = target_index else {
+                    let Some(target) = target else {
                         insert_identity_security_event(
                             connection,
                             &admin_event(
@@ -484,16 +484,15 @@ impl UserRepository {
                         .map_err(AdminAuthorizedUpdateError::Repository)?;
                         return Ok(AdminUserUpdateOutcome::TargetNotFound);
                     };
-                    let target = &accounts[target_index];
-                    let decision = if target.tenant() != tenant {
+                    let decision = if target.tenant != tenant {
                         Err(AdminPolicyError::CrossTenant)
                     } else {
-                        authorize_admin_update(&actor.principal, &target.principal, &update)
+                        authorize_admin_update(actor, target, &update)
                     };
                     let resolved = match decision {
                         Ok(resolved) => resolved,
                         Err(reason) => {
-                            let same_tenant = target.tenant().tenant_id == tenant_id;
+                            let same_tenant = target.tenant.tenant_id == tenant_id;
                             insert_identity_security_event(
                                 connection,
                                 &admin_event(
@@ -513,6 +512,14 @@ impl UserRepository {
                         && update.admin_level.is_none()
                         && update.active.is_none()
                     {
+                        // Only a no-op needs the existing public view; updates return their new view.
+                        let target = users::table
+                            .find(target_id.as_uuid())
+                            .select(PublicAccountRow::as_select())
+                            .first::<PublicAccountRow>(connection)
+                            .await?;
+                        let target = PublicAccount::try_from(target)
+                            .map_err(|error| AdminAuthorizedUpdateError::Consistency(error.0))?;
                         insert_identity_security_event(
                             connection,
                             &admin_event(
@@ -528,14 +535,12 @@ impl UserRepository {
                         append_admin_user_audit(
                             connection,
                             "admin_user_updated",
-                            target,
+                            &target,
                             actor_id,
                             &source_ip_hash,
                         )
                         .await?;
-                        return Ok(AdminUserUpdateOutcome::Updated(Box::new(
-                            accounts.swap_remove(target_index),
-                        )));
+                        return Ok(AdminUserUpdateOutcome::Updated(Box::new(target)));
                     }
                     let updated = diesel::update(users::table.find(target_id.as_uuid()))
                         .set((
