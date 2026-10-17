@@ -72,7 +72,7 @@ FROM runtime AS development-runtime
 
 COPY --from=product-builder /app/.env.yaml.example /app/.env.yaml
 
-FROM docker.io/library/postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722 AS compose-postgres
+FROM docker.io/library/postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336 AS compose-postgres
 
 COPY --chmod=0555 deploy/compose/initialize-postgres.sh /docker-entrypoint-initdb.d/initialize-nazoauth-runtime.sh
 
