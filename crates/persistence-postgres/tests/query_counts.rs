@@ -2099,6 +2099,86 @@ async fn registration_and_federation_email_existence_are_tenant_scoped_and_singl
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 
+#[tokio::test]
+async fn federated_login_joins_account_read_and_preserves_updates_and_tenant_scope() {
+    use nazo_identity::ports::{FederationLogin, NewFederationLink};
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&database_url, tenant).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = nazo_postgres::FederationRepository::new(pool);
+    let user_id = UserId::new(seed.user_id).unwrap();
+    let link = repository
+        .insert(NewFederationLink {
+            tenant_id: tenant.tenant_id,
+            user_id,
+            provider_type: "oidc".into(),
+            provider_id: "query-count-provider".into(),
+            subject: seed.user_id.to_string(),
+            email: "old@example.test".into(),
+            claims: json!({"revision": 0}),
+        })
+        .await
+        .unwrap();
+    let mut login = FederationLogin {
+        tenant,
+        provider_type: "oidc".into(),
+        provider_id: "query-count-provider".into(),
+        subject: seed.user_id.to_string(),
+        email: None,
+        claims: json!({"revision": 1}),
+    };
+    let mut connection = connect(&database_url).await;
+    for (active, email) in [(true, None), (false, Some("new@example.test"))] {
+        sql_query("UPDATE users SET is_active=$1 WHERE id=$2")
+            .bind::<sql_types::Bool, _>(active)
+            .bind::<sql_types::Uuid, _>(seed.user_id)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        login.email = email.map(str::to_owned);
+        let (result, delta) = measure(&counter, repository.resolve_existing(&login)).await;
+        let account = result.unwrap().unwrap();
+        assert_eq!(account.principal.user_id, user_id);
+        assert_eq!(account.principal.active, active);
+        assert_eq!(delta.data_queries, 2, "one joined read and one link update");
+        assert_eq!(delta.begins, 1);
+        assert_eq!(delta.commits, 1);
+        assert_clean(delta);
+        #[derive(diesel::QueryableByName)]
+        struct LinkState {
+            #[diesel(sql_type = sql_types::Text)]
+            email: String,
+            #[diesel(sql_type = sql_types::Jsonb)]
+            claims: serde_json::Value,
+            #[diesel(sql_type = sql_types::Bool)]
+            logged_in: bool,
+        }
+        let stored: LinkState = sql_query("SELECT email, claims, last_login_at IS NOT NULL AS logged_in FROM external_identity_links WHERE id=$1")
+            .bind::<sql_types::Uuid, _>(link.id)
+            .get_result(&mut connection).await.unwrap();
+        assert_eq!(stored.email, email.unwrap_or("old@example.test"));
+        assert_eq!(stored.claims, login.claims);
+        assert!(stored.logged_in);
+    }
+    login.tenant.tenant_id = TenantId::new(Uuid::now_v7()).unwrap();
+    let (result, delta) = measure(&counter, repository.resolve_existing(&login)).await;
+    assert!(result.unwrap().is_none());
+    assert_eq!(delta.data_queries, 1);
+    assert_clean(delta);
+    login.tenant = tenant;
+    login.subject = Uuid::now_v7().to_string();
+    let (result, delta) = measure(&counter, repository.resolve_existing(&login)).await;
+    assert!(result.unwrap().is_none());
+    assert_eq!(delta.data_queries, 1);
+    assert_clean(delta);
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
 // Ordinary OIDC refresh combines presentation and successful subject preparation.
 async fn replace_oidc_refresh_contract(
     connection: &mut AsyncPgConnection,

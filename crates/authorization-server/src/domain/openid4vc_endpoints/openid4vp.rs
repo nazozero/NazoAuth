@@ -1,6 +1,6 @@
 use super::helpers::*;
 
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use base64::Engine as _;
 use chrono::{Duration, Utc};
@@ -94,15 +94,7 @@ impl ServerPresentationOperations {
                     .append_pair("request_uri_method", "post");
             }
         } else {
-            let encoded = serde_json::to_value(&transaction.request).map_err(|_| {
-                vp_error(500, "server_error", "Presentation request encoding failed.")
-            })?;
-            for (name, value) in encoded.as_object().into_iter().flatten() {
-                let value = value
-                    .as_str()
-                    .map_or_else(|| Cow::Owned(value.to_string()), Cow::Borrowed);
-                url.query_pairs_mut().append_pair(name, &value);
-            }
+            append_request_query(&mut url, &transaction.request)?;
         }
         Ok(CreatePresentationResponse {
             idempotency: nazo_operator_protocol::Openid4vpCreateIdempotencyBinding {
@@ -810,6 +802,45 @@ impl PresentationOperations for ServerPresentationOperations {
     }
 }
 
+fn append_request_query(
+    url: &mut url::Url,
+    request: &AuthorizationRequest,
+) -> Result<(), PresentationHttpError> {
+    url.query_pairs_mut().extend_pairs([
+        ("client_id", request.client_id.as_str()),
+        ("response_type", request.response_type.as_str()),
+        ("response_mode", request.response_mode.as_str()),
+        ("response_uri", request.response_uri.as_str()),
+        ("nonce", request.nonce.as_str()),
+        ("state", request.state.as_str()),
+    ]);
+    append_json_query(url, "dcql_query", &request.dcql_query)?;
+    if let Some(value) = &request.client_metadata {
+        append_json_query(url, "client_metadata", value)?;
+    }
+    if let Some(value) = &request.verifier_info {
+        append_json_query(url, "verifier_info", value)?;
+    }
+    if let Some(value) = &request.transaction_data {
+        append_json_query(url, "transaction_data", value)?;
+    }
+    if let Some(value) = &request.wallet_nonce {
+        url.query_pairs_mut().append_pair("wallet_nonce", value);
+    }
+    Ok(())
+}
+
+fn append_json_query(
+    url: &mut url::Url,
+    name: &str,
+    value: &impl serde::Serialize,
+) -> Result<(), PresentationHttpError> {
+    let encoded = serde_json::to_string(value)
+        .map_err(|_| vp_error(500, "server_error", "Presentation request encoding failed."))?;
+    url.query_pairs_mut().append_pair(name, &encoded);
+    Ok(())
+}
+
 fn validate_retained_request_profile(
     request: &AuthorizationRequest,
 ) -> Result<(), PresentationHttpError> {
@@ -821,3 +852,7 @@ fn validate_retained_request_profile(
         )
     })
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/domain/openid4vc_endpoints/openid4vp.rs"]
+mod tests;
