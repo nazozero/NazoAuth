@@ -28,11 +28,15 @@ fn encrypted_generation_is_bound_to_its_tenant_and_revision() {
     let ring = SigningKeyWrappingKeyRing::new("current", [7_u8; 32], None).unwrap();
     let tenant = Uuid::now_v7();
     let mut record = sealed_record(&ring, tenant);
-    assert_eq!(
-        ring.open_generation(tenant, &record).unwrap(),
-        b"private-generation"
+    let mut input = record.clone();
+    let plaintext_address = input.encrypted_private_material[12..].as_ptr();
+    let plaintext = ring.open_generation(tenant, &mut input).unwrap();
+    assert_eq!(plaintext, b"private-generation");
+    assert_eq!(plaintext.as_ptr(), plaintext_address);
+    assert!(
+        ring.open_generation(Uuid::now_v7(), &mut record.clone())
+            .is_err()
     );
-    assert!(ring.open_generation(Uuid::now_v7(), &record).is_err());
     let rotated = SigningKeyWrappingKeyRing::new(
         "next",
         [8_u8; 32],
@@ -40,14 +44,16 @@ fn encrypted_generation_is_bound_to_its_tenant_and_revision() {
     )
     .unwrap();
     assert_eq!(
-        rotated.open_generation(tenant, &record).unwrap(),
+        rotated
+            .open_generation(tenant, &mut record.clone())
+            .unwrap(),
         b"private-generation"
     );
     record.revision += 1;
-    assert!(ring.open_generation(tenant, &record).is_err());
+    assert!(ring.open_generation(tenant, &mut record.clone()).is_err());
     record.revision -= 1;
     record.encrypted_private_material[12] ^= 1;
-    assert!(ring.open_generation(tenant, &record).is_err());
+    assert!(ring.open_generation(tenant, &mut record.clone()).is_err());
 }
 
 #[test]
@@ -56,7 +62,7 @@ fn encrypted_generation_rejects_swapped_public_metadata() {
     let tenant = Uuid::now_v7();
     let mut record = sealed_record(&ring, tenant);
     record.public_metadata = serde_json::json!({"active_kid":"two","keys":[{"kid":"two"}]});
-    assert!(ring.open_generation(tenant, &record).is_err());
+    assert!(ring.open_generation(tenant, &mut record.clone()).is_err());
 }
 
 #[test]
@@ -78,11 +84,11 @@ fn wrapping_key_ring_rejects_invalid_ids_and_malformed_material() {
     let tenant = Uuid::now_v7();
     let mut record = sealed_record(&ring, tenant);
     record.wrapping_key_id = "removed".to_owned();
-    assert!(ring.open_generation(tenant, &record).is_err());
+    assert!(ring.open_generation(tenant, &mut record.clone()).is_err());
     record.wrapping_key_id = "current".to_owned();
     for length in [0, 11, 12, 27] {
         record.encrypted_private_material = vec![0; length];
-        assert!(ring.open_generation(tenant, &record).is_err());
+        assert!(ring.open_generation(tenant, &mut record.clone()).is_err());
     }
 }
 
@@ -313,7 +319,7 @@ fn decrypted_payload(
 ) -> serde_json::Value {
     let record = repository.snapshot().unwrap();
 
-    serde_json::from_slice(&ring.open_generation(tenant, &record).unwrap()).unwrap()
+    serde_json::from_slice(ring.open_generation(tenant, &mut record.clone()).unwrap()).unwrap()
 }
 
 fn replace_payload(

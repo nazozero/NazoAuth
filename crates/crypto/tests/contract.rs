@@ -797,7 +797,7 @@ mod aead {
                     let mut versioned_prefix = [1_u8; 13];
                     versioned_prefix[1..].copy_from_slice(&nonce);
                     for prefix in [nonce.as_slice(), versioned_prefix.as_slice()] {
-                        let prefixed = crypto_aead::encrypt_prefixed(
+                        let mut prefixed = crypto_aead::encrypt_prefixed(
                             key.as_slice().try_into().unwrap(),
                             &nonce,
                             aad,
@@ -807,6 +807,15 @@ mod aead {
                         .unwrap();
                         assert_eq!(&prefixed[..prefix.len()], prefix);
                         assert_eq!(&prefixed[prefix.len()..], &expected);
+                        let plaintext_address = prefixed[prefix.len()..].as_ptr();
+                        let decrypted = crypto_aead::decrypt_nonce_prefixed(
+                            key.as_slice().try_into().unwrap(),
+                            aad,
+                            &mut prefixed[prefix.len() - 12..],
+                        )
+                        .unwrap();
+                        assert_eq!(decrypted, plaintext);
+                        assert_eq!(decrypted.as_ptr(), plaintext_address);
                     }
                 }
                 let back = crypto_aead::decrypt(&key, &nonce, aad, &out).unwrap();
@@ -860,6 +869,21 @@ mod aead {
             Err(CryptoError::AuthenticationFailed)
         ));
 
+        for index in [0, 12, 12 + out.len() - 1] {
+            let mut protected =
+                crypto_aead::encrypt_prefixed(&key, &nonce, aad, b"secret", &nonce).unwrap();
+            protected[index] ^= 1;
+            assert!(matches!(
+                crypto_aead::decrypt_nonce_prefixed(&key, aad, &mut protected),
+                Err(CryptoError::AuthenticationFailed)
+            ));
+        }
+        for length in [0, 11, 12, 27] {
+            assert!(matches!(
+                crypto_aead::decrypt_nonce_prefixed(&key, aad, &mut vec![0; length]),
+                Err(CryptoError::InvalidInput)
+            ));
+        }
         // Input length categories.
         assert!(matches!(
             crypto_aead::encrypt(&key, &[0_u8; 11], aad, b"x"),

@@ -127,10 +127,10 @@ pub(super) struct OfferRow {
 
 impl OfferRow {
     pub(super) fn into_domain(
-        self,
+        mut self,
         data_key: &[u8; 32],
     ) -> Result<StoredCredentialOffer, CredentialStoreError> {
-        let grants = unprotect_payload(data_key, self.id, &self.grants_ciphertext)
+        let grants = unprotect_payload(data_key, self.id, &mut self.grants_ciphertext)
             .map_err(|_| CredentialStoreError::InvalidTransition)?;
         Ok(StoredCredentialOffer {
             id: self.id,
@@ -138,7 +138,7 @@ impl OfferRow {
             subject_id: self.subject_id,
             credential_configuration_ids: serde_json::from_value(self.credential_configuration_ids)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?,
-            grants: serde_json::from_slice(&grants)
+            grants: serde_json::from_slice(grants)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?,
             expires_at: self.expires_at,
         })

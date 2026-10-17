@@ -370,15 +370,15 @@ fn decrypt_payload_rejects_invalid_revision_ciphertext_and_projection() {
 
     let mut invalid_revision = record.clone();
     invalid_revision.revision = 0;
-    assert!(decrypt_payload(tenant, &ring, &invalid_revision).is_err());
+    assert!(decrypt_payload(tenant, &ring, &mut invalid_revision.clone()).is_err());
 
     let mut invalid_ciphertext = record.clone();
     invalid_ciphertext.encrypted_private_material.clear();
-    assert!(decrypt_payload(tenant, &ring, &invalid_ciphertext).is_err());
+    assert!(decrypt_payload(tenant, &ring, &mut invalid_ciphertext.clone()).is_err());
 
     let mut mismatched_projection = record;
     mismatched_projection.public_metadata["active_kid"] = json!("different");
-    assert!(decrypt_payload(tenant, &ring, &mismatched_projection).is_err());
+    assert!(decrypt_payload(tenant, &ring, &mut mismatched_projection.clone()).is_err());
 }
 
 #[test]
@@ -802,7 +802,7 @@ async fn openid4vc_wrong_leaf_is_rejected_before_cas() {
             .material
             .is_none()
     );
-    assert!(decrypt_payload(tenant_id, &wrapping_keys, &record).is_ok());
+    assert!(decrypt_payload(tenant_id, &wrapping_keys, &mut record.clone()).is_ok());
 }
 
 #[tokio::test]
@@ -872,8 +872,9 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
             .get("iaca_private_materials")
             .is_none()
     );
-    let encrypted_payload = decrypt_payload(tenant_id, &wrapping_keys, &record).unwrap();
-    assert!(decrypt_payload(Uuid::now_v7(), &wrapping_keys, &record).is_err());
+    let encrypted_payload =
+        decrypt_payload(tenant_id, &wrapping_keys, &mut record.clone()).unwrap();
+    assert!(decrypt_payload(Uuid::now_v7(), &wrapping_keys, &mut record.clone()).is_err());
     assert_eq!(
         encrypted_payload["openid4vc"]["iaca_private_materials"]
             .as_object()

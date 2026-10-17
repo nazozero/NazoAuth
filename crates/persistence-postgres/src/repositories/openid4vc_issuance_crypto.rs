@@ -12,15 +12,12 @@ pub(super) fn protect_payload(
         .map_err(|_| CredentialStoreError::Unavailable)
 }
 
-pub(super) fn unprotect_payload(
+pub(super) fn unprotect_payload<'a>(
     key: &[u8; 32],
     transaction_id: Uuid,
-    protected: &[u8],
-) -> Result<Vec<u8>, diesel::result::Error> {
-    let (nonce, ciphertext) = protected
-        .split_at_checked(12)
-        .ok_or_else(corrupt_stored_credential)?;
-    nazo_crypto::aead::decrypt(key, nonce, transaction_id.as_bytes(), ciphertext)
+    protected: &'a mut [u8],
+) -> Result<&'a [u8], diesel::result::Error> {
+    nazo_crypto::aead::decrypt_nonce_prefixed(key, transaction_id.as_bytes(), protected)
         .map_err(|_| corrupt_stored_credential())
 }
 

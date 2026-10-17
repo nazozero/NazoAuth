@@ -873,8 +873,8 @@ async fn external_signer_invalid_signature_terminates_owned_descendant() {
     let mut record = repository.snapshot().expect("initial keyset is persisted");
 
     let mut payload: Value = serde_json::from_slice(
-        &wrapping_keys
-            .open_generation(tenant_id, &record)
+        wrapping_keys
+            .open_generation(tenant_id, &mut record.clone())
             .expect("initial generation authenticates"),
     )
     .expect("initial payload is JSON");

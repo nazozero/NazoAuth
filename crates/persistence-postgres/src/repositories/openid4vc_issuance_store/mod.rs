@@ -365,7 +365,7 @@ impl TryFrom<AccessRow> for CredentialAccess {
 
 impl DeferredRow {
     pub(super) fn into_domain(
-        self,
+        mut self,
         access: CredentialAccess,
         selection: Option<nazo_openid4vci::CredentialSelection>,
         data_key: &[u8; 32],
@@ -380,10 +380,10 @@ impl DeferredRow {
                 decode_error(serde_json::Error::io(std::io::Error::other(error)))
             })?,
             holder_bindings: serde_json::from_value(self.holder_bindings).map_err(decode_error)?,
-            payload: serde_json::from_slice(&unprotect_payload(
+            payload: serde_json::from_slice(unprotect_payload(
                 data_key,
                 self.id,
-                &self.payload_ciphertext,
+                &mut self.payload_ciphertext,
             )?)
             .map_err(decode_error)?,
             ready_at: self.ready_at,

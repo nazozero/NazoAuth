@@ -282,12 +282,11 @@ impl ScimCursorProtector for ServerScimCursorProtector {
             .map_err(|_| ScimDependencyError::Unavailable)
     }
 
-    fn unprotect(&self, protected: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {
+    fn unprotect<'a>(&self, protected: &'a mut [u8]) -> Result<&'a [u8], ScimDependencyError> {
         if protected.len() <= SCIM_CURSOR_NONCE_LEN + SCIM_CURSOR_TAG_LEN {
             return Err(ScimDependencyError::Unavailable);
         }
-        let (nonce, ciphertext_and_tag) = protected.split_at(SCIM_CURSOR_NONCE_LEN);
-        nazo_crypto::aead::decrypt(&self.key, nonce, SCIM_CURSOR_AAD, ciphertext_and_tag)
+        nazo_crypto::aead::decrypt_nonce_prefixed(&self.key, SCIM_CURSOR_AAD, protected)
             .map_err(|_| ScimDependencyError::Unavailable)
     }
 }

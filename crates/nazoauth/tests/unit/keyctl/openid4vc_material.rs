@@ -1123,8 +1123,11 @@ async fn replace_only_sealed_private_payload(
     let expected = record.revision;
     let ring = SigningKeyWrappingKeyRing::new("keyctl-test-root", [0x42; 32], None).unwrap();
 
-    let mut payload: serde_json::Value =
-        serde_json::from_slice(&ring.open_generation(tenant_id, &record).unwrap()).unwrap();
+    let mut payload: serde_json::Value = serde_json::from_slice(
+        ring.open_generation(tenant_id, &mut record.clone())
+            .unwrap(),
+    )
+    .unwrap();
     mutate(&mut payload);
     record.revision += 1;
     record.encrypted_private_material = ring

@@ -79,26 +79,26 @@ pub(crate) async fn refresh(
 pub(crate) async fn inspect(
     binding: &DatabaseKeysetBinding,
 ) -> anyhow::Result<(LoadedKeyset, Vec<KeyRecord>, i64)> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     Ok((loaded, records(&payload)?, record.revision))
 }
 
 pub(crate) async fn list(binding: &DatabaseKeysetBinding) -> anyhow::Result<Vec<KeyRecord>> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     let _ = load_payload(binding.external_signer.as_ref(), &payload)?;
     records(&payload)
 }
 
 pub(crate) async fn validate(binding: &DatabaseKeysetBinding) -> anyhow::Result<()> {
-    let record = require_record(binding).await?;
+    let mut record = require_record(binding).await?;
     let _ = load_record(
         binding.external_signer.as_ref(),
         binding.tenant_id,
         &binding.wrapping_keys,
-        &record,
+        &mut record,
     )?;
     Ok(())
 }
@@ -190,8 +190,8 @@ pub(crate) async fn register_external(
 pub(crate) async fn openid4vc_state(
     binding: &DatabaseKeysetBinding,
 ) -> anyhow::Result<Openid4vcState> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     Ok(Openid4vcState {
         revision: record.revision,
@@ -203,8 +203,8 @@ pub(crate) async fn mdoc_crl_material(
     binding: &DatabaseKeysetBinding,
     issuer_id: &str,
 ) -> anyhow::Result<Option<crate::model::MdocCrlMaterial>> {
-    let record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut record = require_record(binding).await?;
+    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
         anyhow::bail!("database keyset has unsupported schema version");
     }
@@ -244,11 +244,11 @@ pub(crate) async fn commit_openid4vc(
     material: Openid4vcMaterial,
     new_private_key_pem: Option<String>,
 ) -> anyhow::Result<(LoadedKeyset, Openid4vcState)> {
-    let record = require_record(binding).await?;
+    let mut record = require_record(binding).await?;
     if record.revision != expected_revision {
         anyhow::bail!("OpenID4VC keyset revision conflict");
     }
-    let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
     if let Some(private_pem) = new_private_key_pem {
         let kid = &material.public.signing_kid;
         if kid.trim().is_empty() {
@@ -399,7 +399,7 @@ where
     F: FnMut(&mut Value) -> anyhow::Result<bool>,
 {
     for _ in 0..MAX_CAS_ATTEMPTS {
-        let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
+        let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
         if !mutation(&mut payload)?
             && (!reseal_if_current_key_changed
                 || record.wrapping_key_id == binding.wrapping_keys.current_id())
@@ -705,14 +705,13 @@ fn public_projection(payload: &Value) -> anyhow::Result<Value> {
 fn decrypt_payload(
     tenant_id: Uuid,
     wrapping_keys: &SigningKeyWrappingKeyRing,
-    record: &PersistedSigningKeyset,
+    record: &mut PersistedSigningKeyset,
 ) -> anyhow::Result<Value> {
     if record.revision < 1 {
         anyhow::bail!("database signing keyset revision must be positive");
     }
 
-    let payload: Value =
-        serde_json::from_slice(&wrapping_keys.open_generation(tenant_id, record)?)?;
+    let payload: Value = serde_json::from_slice(wrapping_keys.open_generation(tenant_id, record)?)?;
     if public_projection(&payload)? != record.public_metadata {
         anyhow::bail!("signing keyset public metadata does not match encrypted generation");
     }
@@ -723,7 +722,7 @@ fn load_record(
     external_signer: Option<&Arc<dyn ExternalKeySigner>>,
     tenant_id: Uuid,
     keys: &SigningKeyWrappingKeyRing,
-    record: &PersistedSigningKeyset,
+    record: &mut PersistedSigningKeyset,
 ) -> anyhow::Result<LoadedKeyset> {
     load_payload(external_signer, &decrypt_payload(tenant_id, keys, record)?)
 }

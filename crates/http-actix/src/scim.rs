@@ -581,12 +581,12 @@ fn decode_cursor(
     filter: Option<&str>,
     count: i64,
 ) -> Result<nazo_identity::scim::ScimCursorPosition, ScimCursorError> {
-    let protected = decode_scim_cursor_envelope(encoded)?;
+    let mut protected = decode_scim_cursor_envelope(encoded)?;
     let plaintext = endpoint
         .cursors
-        .unprotect(&protected)
+        .unprotect(&mut protected)
         .map_err(|_| ScimCursorError::Invalid)?;
-    decode_scim_cursor_plaintext(&plaintext, subject, filter, count, Utc::now())
+    decode_scim_cursor_plaintext(plaintext, subject, filter, count, Utc::now())
 }
 
 fn cursor_error(error: ScimCursorError) -> HttpResponse {

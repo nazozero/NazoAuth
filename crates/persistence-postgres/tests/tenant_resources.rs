@@ -343,7 +343,7 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
             tenant_uuid,
             user_id,
             configuration_id,
-            &probe.claims_ciphertext,
+            probe.claims_ciphertext,
         )
         .expect("operator dataset should decrypt"),
         claims

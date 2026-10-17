@@ -453,7 +453,7 @@ pub(super) fn decode_totp_secret(
     keyring: Option<&MfaTotpKeyRing>,
     tenant_id: TenantId,
     user_id: UserId,
-    protected: Vec<u8>,
+    mut protected: Vec<u8>,
     key_id: String,
 ) -> Result<String, RepositoryError> {
     let keyring = keyring.ok_or_else(|| {
@@ -475,15 +475,16 @@ pub(super) fn decode_totp_secret(
             "TOTP secret envelope is malformed".to_owned(),
         ));
     }
-    let nonce = &protected[1..1 + TOTP_NONCE_LEN];
-    let plaintext = nazo_crypto::aead::decrypt(
+    let len = nazo_crypto::aead::decrypt_nonce_prefixed(
         key.key(),
-        nonce,
         &totp_aad(tenant_id, user_id, &key_id),
-        &protected[1 + TOTP_NONCE_LEN..],
+        &mut protected[1..],
     )
-    .map_err(|_| RepositoryError::Consistency("TOTP secret authentication failed".to_owned()))?;
-    let secret = String::from_utf8(plaintext)
+    .map_err(|_| RepositoryError::Consistency("TOTP secret authentication failed".to_owned()))?
+    .len();
+    protected.truncate(1 + TOTP_NONCE_LEN + len);
+    protected.drain(..1 + TOTP_NONCE_LEN);
+    let secret = String::from_utf8(protected)
         .map_err(|_| RepositoryError::Consistency("TOTP secret is not valid UTF-8".to_owned()))?;
     if secret.trim().len() < 16 || secret.len() > 128 {
         return Err(RepositoryError::Consistency(

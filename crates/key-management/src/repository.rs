@@ -136,23 +136,20 @@ impl SigningKeyWrappingKeyRing {
         )?)
     }
 
-    pub fn open_generation(
+    /// Authenticates the generation in place. The private buffer is consumed as
+    /// ciphertext; the returned plaintext borrows it and must not be persisted.
+    pub fn open_generation<'a>(
         &self,
         tenant_id: Uuid,
-        record: &PersistedSigningKeyset,
-    ) -> anyhow::Result<Vec<u8>> {
+        record: &'a mut PersistedSigningKeyset,
+    ) -> anyhow::Result<&'a [u8]> {
         let key = self
             .key_for(&record.wrapping_key_id)
             .ok_or_else(|| anyhow::anyhow!("signing-key wrapping key is unavailable"))?;
-        let (nonce, ciphertext) = record
-            .encrypted_private_material
-            .split_at_checked(12)
-            .ok_or_else(|| anyhow::anyhow!("signing-key encrypted material is malformed"))?;
-        Ok(nazo_crypto::aead::decrypt(
+        Ok(nazo_crypto::aead::decrypt_nonce_prefixed(
             key,
-            nonce,
             &generation_associated_data(tenant_id, record.revision, &record.public_metadata)?,
-            ciphertext,
+            &mut record.encrypted_private_material,
         )?)
     }
 

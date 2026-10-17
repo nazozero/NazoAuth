@@ -197,7 +197,7 @@ impl Openid4vciDatasetRepository {
                 tenant_id,
                 subject_id,
                 credential_configuration_id,
-                &row.claims_ciphertext,
+                row.claims_ciphertext,
             )
         })
         .transpose()
@@ -243,7 +243,7 @@ impl Openid4vciDatasetRepository {
                     tenant_id,
                     subject_id,
                     credential_configuration_id,
-                    &row.claims_ciphertext,
+                    row.claims_ciphertext,
                 )?,
                 valid_from: row.valid_from,
                 valid_until: row.valid_until,
@@ -361,7 +361,7 @@ impl Openid4vciDatasetRepository {
                             tenant_id,
                             subject_id,
                             credential_configuration_id,
-                            &ciphertext,
+                            ciphertext,
                         )
                         .map_err(|_| diesel::result::Error::RollbackTransaction)?,
                         valid_from: row.valid_from,
@@ -675,22 +675,19 @@ pub fn protect_dataset_claims(
 /// Decrypts a dataset read through a caller-owned connection.  Keeping this
 /// primitive next to the normal dataset repository prevents onboarding replay
 /// from creating a second encryption format.
+/// Consumes the database buffer and parses its plaintext in place.
 pub fn unprotect_dataset_claims(
     key: &[u8; 32],
     tenant_id: Uuid,
     subject_id: Uuid,
     credential_configuration_id: &str,
-    protected: &[u8],
+    mut protected: Vec<u8>,
 ) -> Result<serde_json::Value, CredentialStoreError> {
-    let (nonce, ciphertext) = protected
-        .split_at_checked(12)
-        .ok_or(CredentialStoreError::InvalidTransition)?;
-    let plaintext = nazo_crypto::aead::decrypt(
+    let plaintext = nazo_crypto::aead::decrypt_nonce_prefixed(
         key,
-        nonce,
         &dataset_aad(tenant_id, subject_id, credential_configuration_id),
-        ciphertext,
+        &mut protected,
     )
     .map_err(|_| CredentialStoreError::InvalidTransition)?;
-    serde_json::from_slice(&plaintext).map_err(|_| CredentialStoreError::InvalidTransition)
+    serde_json::from_slice(plaintext).map_err(|_| CredentialStoreError::InvalidTransition)
 }

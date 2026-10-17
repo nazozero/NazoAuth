@@ -402,21 +402,25 @@ impl PresentationRow {
         })
     }
     fn transaction_with_key(
-        self,
+        mut self,
         data_key: &[u8; 32],
         tenant_id: Uuid,
     ) -> Result<PresentationTransaction, PresentationStoreError> {
         let private_key = self
             .ephemeral_private_key_ciphertext
-            .as_deref()
-            .map(|value| {
-                unprotect_payload(
+            .take()
+            .map(|mut value| {
+                let len = unprotect_payload(
                     data_key,
                     b"nazo-openid4vp-ephemeral-v2",
                     tenant_id,
                     self.id,
-                    value,
-                )
+                    &mut value,
+                )?
+                .len();
+                value.truncate(12 + len);
+                value.drain(..12);
+                Ok(value)
             })
             .transpose()?;
         let mut transaction = self.transaction()?;
@@ -427,14 +431,14 @@ impl PresentationRow {
 
 impl PresentationResultRow {
     fn decode(
-        self,
+        mut self,
         data_key: &[u8; 32],
         tenant_id: Uuid,
         transaction_id: Uuid,
     ) -> Result<Option<PresentationResult>, PresentationStoreError> {
         let decrypted = self
             .result_ciphertext
-            .as_deref()
+            .as_deref_mut()
             .map(|value| {
                 unprotect_payload(
                     data_key,
@@ -446,7 +450,6 @@ impl PresentationResultRow {
             })
             .transpose()?;
         let completed = decrypted
-            .as_deref()
             .map(serde_json::from_slice)
             .transpose()
             .map_err(|_| PresentationStoreError::InvalidTransition)?;
@@ -537,17 +540,14 @@ fn protect_payload(
     .map_err(|_| PresentationStoreError::Unavailable)
 }
 
-fn unprotect_payload(
+fn unprotect_payload<'a>(
     key: &[u8; 32],
     domain: &[u8],
     tenant_id: Uuid,
     transaction_id: Uuid,
-    protected: &[u8],
-) -> Result<Vec<u8>, PresentationStoreError> {
-    let (nonce, ciphertext) = protected
-        .split_at_checked(12)
-        .ok_or(PresentationStoreError::InvalidTransition)?;
+    protected: &'a mut [u8],
+) -> Result<&'a [u8], PresentationStoreError> {
     let aad = payload_aad(domain, tenant_id, transaction_id);
-    nazo_crypto::aead::decrypt(key, nonce, &aad, ciphertext)
+    nazo_crypto::aead::decrypt_nonce_prefixed(key, &aad, protected)
         .map_err(|_| PresentationStoreError::InvalidTransition)
 }

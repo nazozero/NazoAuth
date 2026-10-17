@@ -75,12 +75,16 @@ impl Openid4vciRepository {
                         if !matches!(status, 200 | 202) {
                             return Err(invalid());
                         }
+                        let mut body = row.body_ciphertext;
+                        let plaintext_len = unprotect_payload(&self.data_key, row.issuance_id, &mut body)?.len();
+                        body.truncate(12 + plaintext_len);
+                        body.drain(..12);
                         Ok(Some(StoredCredentialResponse {
                             selection,
                             issuance_id: row.issuance_id,
                             token_id: row.token_id,
                             request_digest: row.request_digest,
-                            body: unprotect_payload(&self.data_key, row.issuance_id, &row.body_ciphertext)?,
+                            body,
                             encoding,
                             status,
                             dpop_nonce: row.dpop_nonce,

@@ -69,6 +69,23 @@ pub fn decrypt(
     Ok(plaintext)
 }
 
+/// Authenticates `nonce || ciphertext || tag` in the caller's buffer and borrows
+/// the plaintext region without moving it. Discard the buffer on error.
+pub fn decrypt_nonce_prefixed<'a>(
+    key: &[u8; 32],
+    aad: &[u8],
+    protected: &'a mut [u8],
+) -> crate::Result<&'a [u8]> {
+    let (nonce, ciphertext_and_tag) = protected
+        .split_first_chunk_mut::<12>()
+        .ok_or(CryptoError::InvalidInput)?;
+    let (plaintext, tag) = ciphertext_and_tag
+        .split_last_chunk_mut::<16>()
+        .ok_or(CryptoError::InvalidInput)?;
+    decrypt_in_place(key, nonce, aad, plaintext, tag)?;
+    Ok(plaintext)
+}
+
 /// Authenticates and decrypts a caller-owned ciphertext buffer with a detached tag.
 /// The caller must discard the buffer on error.
 pub fn decrypt_in_place(
