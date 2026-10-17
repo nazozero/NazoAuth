@@ -6,7 +6,8 @@ use crate::{
     schema::{external_identity_links, users},
 };
 use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
+    SelectableHelper,
     result::{DatabaseErrorKind, Error},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
@@ -101,27 +102,26 @@ impl FederationRepository {
         connection
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let link = external_identity_links::table
+                    .inner_join(
+                        users::table.on(users::id
+                            .eq(external_identity_links::user_id)
+                            .and(users::tenant_id.eq(external_identity_links::tenant_id))),
+                    )
                     .filter(external_identity_links::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
                     .filter(external_identity_links::provider_type.eq(&login.provider_type))
                     .filter(external_identity_links::provider_id.eq(&login.provider_id))
                     .filter(external_identity_links::subject.eq(&login.subject))
                     .select((
                         external_identity_links::id,
-                        external_identity_links::user_id,
                         external_identity_links::email,
+                        PublicAccountRow::as_select(),
                     ))
-                    .first::<(uuid::Uuid, uuid::Uuid, String)>(connection)
+                    .first::<(uuid::Uuid, String, PublicAccountRow)>(connection)
                     .await
                     .optional()?;
-                let Some((link_id, user_id, previous_email)) = link else {
+                let Some((link_id, previous_email, user)) = link else {
                     return Ok(None);
                 };
-                let user = users::table
-                    .find(user_id)
-                    .filter(users::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
-                    .select(PublicAccountRow::as_select())
-                    .first::<PublicAccountRow>(connection)
-                    .await?;
                 let email = login.email.as_deref().unwrap_or(&previous_email);
                 diesel::update(external_identity_links::table.find(link_id))
                     .set((
