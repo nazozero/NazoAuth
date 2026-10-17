@@ -29,6 +29,10 @@ use nazo_operator_protocol::{
     controller_key_id, decode_control_result, sign_control_operation,
 };
 
+#[path = "../../persistence-postgres/tests/support/identity_audit.rs"]
+mod identity_audit;
+use identity_audit::SlotFixture as _;
+
 const DEPLOYMENT: &str = "deployment-process";
 const CONFIG_REVISION: &str = "config-revision-process";
 const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_operator_process_runtime";
@@ -106,6 +110,7 @@ async fn isolated_registry(
     nazo_postgres::run_pending_migrations(&url)
         .await
         .expect("isolated application migrations should apply");
+    identity_audit::seed_actor(&url).await;
     let repository = nazo_postgres::ControllerRegistryRepository::new(
         nazo_postgres::create_pool(&url, 4).expect("test pool"),
     );

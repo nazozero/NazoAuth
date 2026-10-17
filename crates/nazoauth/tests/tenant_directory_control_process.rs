@@ -22,6 +22,10 @@ use nazo_operator_protocol::{
 };
 use uuid::Uuid;
 
+#[path = "../../persistence-postgres/tests/support/identity_audit.rs"]
+mod identity_audit;
+use identity_audit::SlotFixture as _;
+
 const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_t1_convergence_runtime";
 const DEPLOYMENT: &str = "deployment-directory-process";
 const CONFIG_REVISION: &str = "config-revision-directory-process";
@@ -84,6 +88,7 @@ async fn isolated_directory(
     nazo_postgres::run_pending_migrations(&url)
         .await
         .expect("isolated application migrations should apply");
+    identity_audit::seed_actor(&url).await;
 
     let controller = SigningKey::from_bytes(&[13; 32]);
     let kid = controller_key_id(&controller.verifying_key());

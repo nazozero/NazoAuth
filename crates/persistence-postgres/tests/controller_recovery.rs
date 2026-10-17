@@ -19,11 +19,10 @@ use nazo_operator_protocol::{
     format_recovery_secret, parse_recovery_secret, recovery_kid, validate_controller_id,
 };
 use nazo_postgres::{
-    CONTROLLER_KEY_TTL_SECONDS, ControllerRegistryError, ControllerRegistryRepository,
-    ControllerSlotStatus, IssuedIdentityApproval, MAX_RECOVERY_CHALLENGE_ATTEMPTS,
-    NewControllerSlot, NewRecoveryChallenge, NewRecoveryRoot, RECOVERY_CHALLENGE_TTL_SECONDS,
-    RecoveredSlotCommit, RecoveryRootError, RecoveryRootRepository, RecoverySubmission,
-    create_pool,
+    CONTROLLER_KEY_TTL_SECONDS, ControllerRegistryRepository, ControllerSlotStatus,
+    IssuedIdentityApproval, MAX_RECOVERY_CHALLENGE_ATTEMPTS, NewControllerSlot,
+    NewRecoveryChallenge, NewRecoveryRoot, RECOVERY_CHALLENGE_TTL_SECONDS, RecoveredSlotCommit,
+    RecoveryRootError, RecoveryRootRepository, RecoverySubmission, create_pool,
 };
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
@@ -32,6 +31,8 @@ mod support;
 
 #[path = "support/identity_audit.rs"]
 mod identity_audit;
+use identity_audit::SlotFixture as _;
+use nazo_persistence::control_plane::ControllerRegistryError;
 use nazo_persistence::control_plane::{self as contract, RecoveryRootPort as _};
 
 use support::{

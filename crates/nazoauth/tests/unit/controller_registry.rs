@@ -85,6 +85,34 @@ fn slot_requests_reject_kids_that_do_not_bind_to_their_key_material() {
 }
 
 #[test]
+fn slot_request_labels_and_deployment_are_validated_at_admission() {
+    for label in ["", "bad\u{0007}label", &"x".repeat(129)] {
+        assert!(
+            validate_slot_request("deployment-ok", label, &kid_text(1), &public_key_text(1))
+                .is_err()
+        );
+    }
+    assert!(
+        validate_slot_request(
+            "deployment-ok",
+            &"x".repeat(128),
+            &kid_text(1),
+            &public_key_text(1)
+        )
+        .is_ok()
+    );
+    assert!(
+        validate_slot_request(
+            "bad deployment id!",
+            "primary",
+            &kid_text(1),
+            &public_key_text(1)
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn action_digests_are_deterministic_and_discriminate_every_field() {
     let request = slot_request("deployment-a", "ops", 1);
     let bind = IdentityChange::Bind(request.clone());

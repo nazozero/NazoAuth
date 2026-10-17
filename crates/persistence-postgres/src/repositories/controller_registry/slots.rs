@@ -1,15 +1,13 @@
 //! Controller slot registry lifecycle (D01/D02): admission, rotation,
 //! revocation, and the per-deployment advisory lock that serializes them.
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 use diesel::QueryableByName;
 use diesel::result::Error as QueryError;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Binary, Nullable, SmallInt, Timestamptz, Varchar};
 use diesel::{ExpressionMethods as _, OptionalExtension, QueryDsl as _};
-use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
-use sha2::{Digest as _, Sha256};
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use nazo_persistence::control_plane as contract;
@@ -187,14 +185,6 @@ pub(crate) fn validate_deployment_id(value: &str) -> Result<(), ControllerRegist
     })
 }
 
-pub(super) fn validate_controller_id(value: &str) -> Result<(), ControllerRegistryError> {
-    nazo_operator_protocol::validate_controller_id(value).map_err(|_| {
-        ControllerRegistryError::InvalidIdentity(
-            "controller_id must be a canonical lowercase UUIDv7",
-        )
-    })
-}
-
 pub(crate) fn validate_kid(value: &str) -> Result<(), ControllerRegistryError> {
     if value.len() != 43
         || !value
@@ -206,40 +196,6 @@ pub(crate) fn validate_kid(value: &str) -> Result<(), ControllerRegistryError> {
         ));
     }
     Ok(())
-}
-
-pub(crate) fn validate_label(value: &str) -> Result<(), ControllerRegistryError> {
-    if value.is_empty() || value.len() > 128 || value.chars().any(char::is_control) {
-        return Err(ControllerRegistryError::InvalidIdentity(
-            "controller label must be 1..=128 bounded text",
-        ));
-    }
-    Ok(())
-}
-
-/// Registry self-consistency: `kid` must be exactly `base64url(SHA-256(key))`.
-pub(crate) fn validate_kid_binding(
-    kid: &str,
-    public_key: &[u8; 32],
-) -> Result<(), ControllerRegistryError> {
-    if kid != URL_SAFE_NO_PAD.encode(Sha256::digest(public_key)) {
-        return Err(ControllerRegistryError::InvalidIdentity(
-            "kid does not match the controller public key material",
-        ));
-    }
-    Ok(())
-}
-
-pub(super) fn validate_slot_input(
-    deployment_id: &str,
-    label: &str,
-    kid: &str,
-    public_key: &[u8; 32],
-) -> Result<(), ControllerRegistryError> {
-    validate_deployment_id(deployment_id)?;
-    validate_label(label)?;
-    validate_kid(kid)?;
-    validate_kid_binding(kid, public_key)
 }
 
 pub(super) async fn lock_deployment_slots(
@@ -412,78 +368,6 @@ pub(super) async fn revoke_slot_on_connection(
 }
 
 impl ControllerRegistryRepository {
-    /// Enroll one new controller slot (bind or add).  Assigns the authoritative
-    /// `controller_id`, computes the fixed 30-day expiry server-side, picks the
-    /// lowest free slot index, and refuses a fourth concurrent active slot with
-    /// [`ControllerRegistryError::SlotLimit`] carrying the non-secret active
-    /// summaries.  No partial row survives any rejection.
-    pub async fn create_slot(
-        &self,
-        slot: NewControllerSlot,
-        now: DateTime<Utc>,
-    ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-        validate_slot_input(
-            &slot.deployment_id,
-            &slot.label,
-            &slot.kid,
-            &slot.public_key,
-        )?;
-        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
-        connection
-            .transaction::<_, ControllerRegistryError, _>(async move |connection| {
-                lock_deployment_slots(connection, &slot.deployment_id).await?;
-                insert_slot_on_connection(connection, &slot, now).await
-            })
-            .await
-    }
-
-    /// Atomically replace the key material of one existing active slot without
-    /// changing the deployment's active-slot count.  Rotation of a revoked slot
-    /// is refused, the old key stops admitting at commit time, and the
-    /// replacement gets a fresh fixed 30-day window computed server-side.
-    pub async fn rotate_slot(
-        &self,
-        rotation: RotateControllerKey,
-        now: DateTime<Utc>,
-    ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-        validate_controller_id(&rotation.controller_id)?;
-        validate_slot_input(
-            &rotation.deployment_id,
-            &rotation.label,
-            &rotation.kid,
-            &rotation.public_key,
-        )?;
-        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
-        connection
-            .transaction::<_, ControllerRegistryError, _>(async move |connection| {
-                lock_deployment_slots(connection, &rotation.deployment_id).await?;
-                rotate_slot_on_connection(connection, &rotation, now).await
-            })
-            .await
-    }
-
-    /// Revoke one slot by exact controller id.  Terminal: a second call fails
-    /// with [`ControllerRegistryError::AlreadyRevoked`] so no caller can
-    /// mistake an already-dead key for a fresh revocation.
-    pub async fn revoke_slot(
-        &self,
-        deployment_id: &str,
-        controller_id: &str,
-        now: DateTime<Utc>,
-    ) -> Result<StoredControllerSlot, ControllerRegistryError> {
-        validate_deployment_id(deployment_id)?;
-        validate_controller_id(controller_id)?;
-        let deployment_id = deployment_id.to_owned();
-        let controller_id = controller_id.to_owned();
-        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
-        connection
-            .transaction::<_, ControllerRegistryError, _>(async move |connection| {
-                lock_deployment_slots(connection, &deployment_id).await?;
-                revoke_slot_on_connection(connection, &deployment_id, &controller_id, now).await
-            })
-            .await
-    }
-
     /// Every slot of one deployment ordered by assignment, including revoked
     /// rows: history is part of the authority answer ("does this key exist and
     /// what happened to it").

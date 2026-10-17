@@ -7,9 +7,9 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, SimpleAsyncConnection as _};
 use nazo_postgres::{
-    CONTROLLER_KEY_TTL_SECONDS, ControllerIdentityAction, ControllerRegistryError,
-    ControllerRegistryRepository, ControllerSlotStatus, IDENTITY_APPROVAL_TTL_SECONDS,
-    NewControllerSlot, RotateControllerKey, create_pool,
+    CONTROLLER_KEY_TTL_SECONDS, ControllerIdentityAction, ControllerRegistryRepository,
+    ControllerSlotStatus, IDENTITY_APPROVAL_TTL_SECONDS, NewControllerSlot, RotateControllerKey,
+    create_pool,
 };
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
@@ -18,6 +18,8 @@ mod support;
 
 #[path = "support/identity_audit.rs"]
 mod identity_audit;
+use identity_audit::SlotFixture as _;
+use nazo_persistence::control_plane::ControllerRegistryError;
 use nazo_persistence::control_plane::{self as contract, ControllerRegistryPort as _};
 
 use support::{
@@ -375,25 +377,6 @@ async fn crud_negatives_are_typed_and_leave_no_partial_state() {
             Some(ControllerRegistryError::UnknownController)
         ));
     }
-
-    // Malformed shapes are rejected before any SQL runs.
-    let bad_deployment = slot_input("bad deployment id!", "primary", 1);
-    let error = repository
-        .create_slot(bad_deployment, at(0))
-        .await
-        .expect_err("malformed deployment_id must fail");
-    assert!(matches!(error, ControllerRegistryError::InvalidIdentity(_)));
-
-    let good = slot_input(deployment, "primary", 1);
-    let mismatched_kid = NewControllerSlot {
-        kid: kid_of(&[42u8; 32]),
-        ..good
-    };
-    let error = repository
-        .create_slot(mismatched_kid, at(0))
-        .await
-        .expect_err("kid/key binding mismatch must fail");
-    assert!(matches!(error, ControllerRegistryError::InvalidIdentity(_)));
 
     let empty = repository
         .list_slots(deployment)
@@ -998,39 +981,6 @@ async fn slot_mutations_acquire_one_lock_and_return_stored_rows() {
         assert_eq!(evidence.failed_queries, 0);
     };
     let deployment = "deployment-slot-returning";
-    let before = counter.snapshot();
-    let created = repository
-        .create_slot(slot_input(deployment, "first", 100), at(0))
-        .await
-        .unwrap();
-    assert_mutation(before, 3);
-    assert_eq!(
-        repository.list_slots(deployment).await.unwrap(),
-        vec![created.clone()]
-    );
-    let before = counter.snapshot();
-    let rotated = repository
-        .rotate_slot(
-            rotation_input(deployment, &created.controller_id, 101),
-            at(1),
-        )
-        .await
-        .unwrap();
-    assert_mutation(before, 2);
-    assert_eq!(
-        repository.list_slots(deployment).await.unwrap(),
-        vec![rotated.clone()]
-    );
-    let before = counter.snapshot();
-    let revoked = repository
-        .revoke_slot(deployment, &rotated.controller_id, at(2))
-        .await
-        .unwrap();
-    assert_mutation(before, 2);
-    assert_eq!(
-        repository.list_slots(deployment).await.unwrap(),
-        vec![revoked]
-    );
     let digest = "a".repeat(64);
     let mut current: Option<String> = None;
     for action in [
