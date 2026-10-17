@@ -15,11 +15,7 @@ use std::{
 };
 
 use chrono::{Duration as ChronoDuration, Utc};
-use diesel::migration::CREATE_MIGRATIONS_TABLE;
-use diesel::{
-    sql_query,
-    sql_types::{Bool, Text},
-};
+use diesel::{sql_query, sql_types::Bool};
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
@@ -33,6 +29,9 @@ use nazo_operator_protocol::{
 mod identity_audit;
 use identity_audit::SlotFixture as _;
 
+#[path = "../../persistence-postgres/tests/support/database.rs"]
+mod database;
+
 const DEPLOYMENT: &str = "deployment-process";
 const CONFIG_REVISION: &str = "config-revision-process";
 const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_operator_process_runtime";
@@ -45,11 +44,9 @@ struct ExistsRow {
     exists: bool,
 }
 
-/// Mirror of the persistence-layer isolated-schema fixture: public-only
-/// migrations are pre-marked applied because their state and triggers
-/// are shared across schemas and must never be recreated per test.
+/// Each operator process uses a complete isolated database.
 async fn isolated_registry(
-    case: &str,
+    _case: &str,
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
     let base = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
@@ -72,44 +69,7 @@ async fn isolated_registry(
         ))
         .await
         .expect("runtime role fixture should exist");
-    let schema = format!(
-        "operator_process_{}_{}",
-        case,
-        uuid::Uuid::now_v7().simple()
-    );
-    let mut coordinator = AsyncPgConnection::establish(&base)
-        .await
-        .expect("test database should connect");
-    coordinator
-        .batch_execute(&format!("CREATE SCHEMA \"{schema}\";"))
-        .await
-        .expect("isolated schema should create");
-    drop(coordinator);
-    let separator = if base.contains('?') { '&' } else { '?' };
-    let url = format!("{base}{separator}options=-csearch_path%3D{schema}%2Cpublic");
-    {
-        let mut connection = AsyncPgConnection::establish(&url)
-            .await
-            .expect("isolated migration database should connect");
-        connection
-            .batch_execute(CREATE_MIGRATIONS_TABLE)
-            .await
-            .expect("isolated migration ledger should create");
-        for version in include_str!("../../../tests/fixtures/public_migrations.txt").lines() {
-            sql_query(
-                "INSERT INTO __diesel_schema_migrations (version)
-                 VALUES ($1)
-                 ON CONFLICT (version) DO NOTHING",
-            )
-            .bind::<Text, _>(version)
-            .execute(&mut connection)
-            .await
-            .expect("public-only migration should be excluded from this fixture");
-        }
-    }
-    nazo_postgres::run_pending_migrations(&url)
-        .await
-        .expect("isolated application migrations should apply");
+    let url = database::migrate(&base).await;
     identity_audit::seed_actor(&url).await;
     let repository = nazo_postgres::ControllerRegistryRepository::new(
         nazo_postgres::create_pool(&url, 4).expect("test pool"),

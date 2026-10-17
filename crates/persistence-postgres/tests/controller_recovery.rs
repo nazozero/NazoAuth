@@ -1,5 +1,5 @@
 //! Database-backed invariant pins for the Recovery Root plane (04A D10/D11/D12).
-//! Every test runs in an isolated schema; without `NAZO_TEST_DATABASE_URL`
+//! Every test runs in an isolated database; without `NAZO_TEST_DATABASE_URL`
 //! (or `DATABASE_URL`) they skip so the suite stays hermetic.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -35,9 +35,7 @@ use identity_audit::SlotFixture as _;
 use nazo_persistence::control_plane::ControllerRegistryError;
 use nazo_persistence::control_plane::{self as contract, RecoveryRootPort as _};
 
-use support::{
-    query_counter::QueryCounter, run_isolated_application_migrations, schema_database_url,
-};
+use support::query_counter::QueryCounter;
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -54,20 +52,11 @@ async fn isolated(case: &str) -> Option<(String, RecoveryRootRepository)> {
 }
 
 async fn isolated_with_pool_size(
-    case: &str,
+    _case: &str,
     max_connections: usize,
 ) -> Option<(String, RecoveryRootRepository)> {
     let database_url = database_url()?;
-    let schema = format!("controller_recovery_{}_{}", case, Uuid::now_v7().simple());
-    let mut coordinator = AsyncPgConnection::establish(&database_url)
-        .await
-        .expect("test database should connect");
-    coordinator
-        .batch_execute(&format!("CREATE SCHEMA \"{schema}\";"))
-        .await
-        .expect("isolated schema should create");
-    let isolated_url = schema_database_url(&database_url, &schema);
-    run_isolated_application_migrations(&isolated_url).await;
+    let isolated_url = support::database::migrate(&database_url).await;
     identity_audit::seed_actor(&isolated_url).await;
     Some((
         isolated_url.clone(),

@@ -27,11 +27,11 @@ profile requirement.
 
 ## Persistence
 
-MFA state is stored in migration `20260607000500_totp_mfa_step_up`:
+The schema baseline stores MFA state in:
 
 - `user_totp_credentials`: one TOTP credential per user and tenant, including confirmation state and replay step.
 - `user_mfa_backup_codes`: Argon2id hashes for one-time recovery codes.
-- `user_mfa_remembered_devices`: hashed remembered-device tokens with expiry and last-use metadata.
+- `user_mfa_remembered_devices`: hashed remembered-device tokens with expiry and user-agent binding.
 
 ## Boundaries
 

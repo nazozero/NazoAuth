@@ -117,11 +117,13 @@ python scripts/verify_static_contracts.py --check
 python scripts/check_persistence_dependency_graph.py
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
+git fetch --no-tags --depth=1 origin 385d23a330158ae78ff3fd55df2eac3a74cb2aec
+cargo test --locked -p nazo-postgres --test migration_baseline
 cargo test --all-features --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
 cargo test --workspace --all-features --locked --no-fail-fast
 ```
 
-The migration test prepares the isolated schema before the full suite, as in
+The migration test prepares the test database before the full suite, as in
 CI. The full suite collects failures across test targets in one run; any failed
 target still fails the gate. For a focused change, run the owning package/test
 target first; broaden
@@ -152,12 +154,17 @@ Targeted suites with their own entry points:
   Valkey. These focused cases supplement existing nonce, PKCE and provider
   mismatch regressions.
 
-- `crates/persistence-postgres/tests/schema_cleanup.rs` exercises the
-  inert-state migration's up/down data preservation, refusal of populated
-  legacy state and schema drift, external dependency blocking, and retained
-  tenant-composite foreign-key behavior. It uses transaction-local schemas
-  in the isolated test database. Existing controller, recovery, MFA and client
-  repository suites cover runtime behavior against the complete migration chain.
+- `crates/persistence-postgres/tests/migration_baseline.rs` reads the 127 released
+  migrations from the pinned v0.3.2 Git commit, without embedding historical SQL
+  in the current artifact. It compares empty-install schema, ACLs and initial
+  facts, then verifies populated adoption, unchanged object identities/data,
+  concurrent retry, real runtime LOGIN permissions, tenant constraints, and
+  pre-cutoff rejection. Failed installation must roll back DDL and remain
+  retryable. Use PostgreSQL 18+ and its matching `pg_dump`; `PG_DUMP` can select
+  the executable. CI uses `scripts/pg_dump_test_container.sh` on its isolated
+  Docker runner. The database login needs CREATE DATABASE and CREATE ROLE.
+  Existing controller, recovery, MFA and client suites verify current runtime
+  behavior against complete isolated databases.
 - `crates/nazoauth/tests/unit/http/token/authorization_code/identity.rs` covers
   real issuance with a hidden commit ACK, stable identity after cache restoration,
   fresh signed DPoP holder checks with missing or expired Pending payload, mTLS
@@ -167,7 +174,7 @@ Targeted suites with their own entry points:
   this fixture's evidence boundary.
 - `crates/persistence-postgres/tests/token_issuance_atomicity.rs` covers the
   durable SingleUse fence, concurrent code identities with independent holder
-  evidence, actual receipt migration/old-insert rejection/rollback guard, controlled
+  evidence, controlled
   `GrantExpired` rollback (including connection return to the pool), rotation
   conflicts, and the final schema shape. It needs an isolated PostgreSQL from
   `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`.
@@ -187,22 +194,17 @@ Targeted suites with their own entry points:
   host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
   does not substitute for physical failover evidence.
 - `crates/persistence-postgres/tests/receipt_key_scope.rs` verifies the compact
-  one-use index against real PostgreSQL: populated upgrade/downgrade preserves
-  receipt facts, distinct clients retain independent keys, same-client reuse is
-  rejected, and the tenant composite foreign key rejects mismatched ownership.
-  The application and migration must advance together: old three-column conflict
-  targets fail closed after the index changes. No receipt TTL or tenant predicate
-  changes. The holder serialization tests additionally cover sparse and historical
+  one-use index against real PostgreSQL. `token_issuance_atomicity` covers its
+  current consumption behavior; `migration_baseline` verifies receipt preservation
+  across the supported upgrade boundary. The holder serialization tests cover sparse and historical
   explicit-null proof encodings through the same checked restoration boundary.
 - `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
   the bounded maintenance pass against the same isolated database, including
   multi-batch expiry of idle remembered devices, an independently locked row,
   expired consumed/unconsumed controller approvals and live-state preservation.
-  `schema_cleanup` additionally checks remembered-device fact preservation,
-  natural-key uniqueness, tenant FK retention and populated rollback preserving
-  credential facts. MFA compaction checks that live verifiers survive upgrade/
-  downgrade, spent codes never revive, and audit failure restores the verifier
-  deleted by a failed consumption transaction.
+  MFA repository tests verify that audit failure restores the verifier deleted
+  by a failed consumption transaction. The baseline upgrade preserves existing
+  credential facts without replaying historical compaction migrations.
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
   spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
 - `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path

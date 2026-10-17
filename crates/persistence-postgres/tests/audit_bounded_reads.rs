@@ -48,55 +48,6 @@ async fn exporter_identity_reads_stay_bounded_when_pending_statistics_are_stale(
     );
     run_pending_migrations(&url).await.unwrap();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    // Replacing either function must preserve its identity, owner, ACL and
-    // security mode; downgrade/upgrade must restore the exact candidate body.
-    let identity = "SELECT json_agg(json_build_array(oid::bigint,proowner::bigint,proacl::text,prosecdef,proconfig,pg_get_functiondef(oid)) ORDER BY oid) AS identity FROM pg_proc WHERE oid IN ('public.nazo_stage_security_audit_chain(bigint,bytea,uuid[],bytea[])'::regprocedure,'public.nazo_ack_security_audit_batch(bigint,bigint,bigint,integer,bytea,bytea,text)'::regprocedure)";
-    #[derive(QueryableByName)]
-    struct Identity {
-        #[diesel(sql_type = Json)]
-        identity: Value,
-    }
-    let before = sql_query(identity)
-        .get_result::<Identity>(&mut connection)
-        .await
-        .unwrap()
-        .identity;
-    connection.batch_execute("BEGIN").await.unwrap();
-    connection
-        .batch_execute(include_str!(
-            "../../../migrations/20261009000500_compact_exported_decision_payload/down.sql"
-        ))
-        .await
-        .unwrap();
-
-    connection
-        .batch_execute(include_str!(
-            "../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/down.sql"
-        ))
-        .await
-        .unwrap();
-    connection
-        .batch_execute(include_str!(
-            "../../../migrations/20261008000100_audit_exporter_bounded_identity_reads/up.sql"
-        ))
-        .await
-        .unwrap();
-    connection
-        .batch_execute(include_str!(
-            "../../../migrations/20261009000500_compact_exported_decision_payload/up.sql"
-        ))
-        .await
-        .unwrap();
-    let after = sql_query(identity)
-        .get_result::<Identity>(&mut connection)
-        .await
-        .unwrap()
-        .identity;
-    connection.batch_execute("ROLLBACK").await.unwrap();
-    assert_eq!(
-        before, after,
-        "migration round trip changed function identity or privileges"
-    );
     // All fixture rows, planner statistics and table options roll back together.
     connection.batch_execute("BEGIN; SET LOCAL plan_cache_mode=force_generic_plan; SET LOCAL nazo.audit_reclaim='on'; ALTER TABLE public.security_audit_events SET (autovacuum_enabled=false); DELETE FROM public.security_audit_chain_entries; DELETE FROM public.security_audit_events; UPDATE public.security_audit_chain_state SET last_sequence=0,last_hash=decode(repeat('00',32),'hex'),anchor_deployment_id='bounded-read-fixture',anchor_sequence=0,anchor_hash=decode(repeat('00',32),'hex'),anchor_occurred_at=clock_timestamp(),anchor_accepted_at=clock_timestamp(),anchor_observed_at=clock_timestamp(),batch_first_sequence=NULL,batch_last_sequence=NULL,batch_event_count=NULL,batch_digest=NULL,batch_generation=0,batch_attempts=0,batch_available_at=NULL,batch_locked_until=NULL,batch_last_error=NULL,batch_blocked_reason=NULL WHERE singleton").await.unwrap();
     sql_query("INSERT INTO public.security_audit_events (event_id,event_type,event_category,payload,occurred_at,authorization_tenant_id,authorization_request_id,authorization_decision,authorization_valid_until,business_retain_until,exported_at) SELECT gen_random_uuid(),'authorization_decision_committed','authorization','{}'::jsonb,CURRENT_TIMESTAMP,'00000000-0000-0000-0000-000000000001'::uuid,'bounded-'||g,'deny',CURRENT_TIMESTAMP+interval '1 hour',CURRENT_TIMESTAMP+interval '2 hours',CURRENT_TIMESTAMP FROM generate_series(1,100000) g")

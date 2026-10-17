@@ -25,15 +25,8 @@ async fn isolated() -> Option<(String, String)> {
         );
         return None;
     };
-    let schema = format!("restore_coverage_{}", Uuid::now_v7().simple());
-    let mut connection = AsyncPgConnection::establish(&base).await.unwrap();
-    connection
-        .batch_execute(&format!("CREATE SCHEMA {schema}"))
-        .await
-        .unwrap();
-    let url = support::schema_database_url(&base, &schema);
-    support::run_isolated_application_migrations(&url).await;
-    Some((url, schema))
+    let url = support::database::migrate(&base).await;
+    Some((url, base))
 }
 
 async fn count(connection: &mut AsyncPgConnection, sql: &str) -> i64 {
@@ -102,7 +95,7 @@ async fn family(connection: &mut AsyncPgConnection, tenant: Uuid, client_subject
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families() {
-    let Some((url, schema)) = isolated().await else {
+    let Some((url, _base)) = isolated().await else {
         return;
     };
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
@@ -240,15 +233,13 @@ async fn restore_covers_all_tenants_and_exact_receipt_never_revokes_new_families
             .revoked_refresh_tokens,
         1
     );
-    connection
-        .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
-        .await
-        .unwrap();
+    drop(connection);
+    support::database::drop(&url).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_global_epoch_has_one_operation_winner() {
-    let Some((url, schema)) = isolated().await else {
+    let Some((url, _base)) = isolated().await else {
         return;
     };
     let repository = TokenRepository::new(create_pool(url.clone(), 2).unwrap());
@@ -275,10 +266,6 @@ async fn one_global_epoch_has_one_operation_winner() {
         (left, right),
         (Ok(_), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(_))
     ));
-    AsyncPgConnection::establish(&url)
-        .await
-        .unwrap()
-        .batch_execute(&format!("DROP SCHEMA {schema} CASCADE"))
-        .await
-        .unwrap();
+    drop(repository);
+    support::database::drop(&url).await;
 }

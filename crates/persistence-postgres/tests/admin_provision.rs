@@ -1,16 +1,11 @@
 use diesel::{QueryableByName, sql_query};
-use diesel_async::{
-    AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
-};
+use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _};
 use nazo_identity::{TenantContext, ports::PasswordHashInput};
 use nazo_postgres::{
     AdminProvisionError, AdminProvisionRepository, AdminProvisionRequest, create_pool,
 };
-use uuid::Uuid;
 
 mod support;
-
-use support::{run_isolated_application_migrations, schema_database_url};
 
 #[derive(QueryableByName)]
 struct UserState {
@@ -50,16 +45,7 @@ fn request(operation_id: &str, email: &str) -> AdminProvisionRequest {
 
 async fn isolated_repository() -> Option<(AdminProvisionRepository, String)> {
     let database_url = database_url()?;
-    let schema = format!("admin_provision_{}", Uuid::now_v7().simple());
-    let mut coordinator = AsyncPgConnection::establish(&database_url)
-        .await
-        .expect("test database should connect");
-    coordinator
-        .batch_execute(&format!("CREATE SCHEMA \"{schema}\";"))
-        .await
-        .expect("isolated schema should create");
-    let isolated_url = schema_database_url(&database_url, &schema);
-    run_isolated_application_migrations(&isolated_url).await;
+    let isolated_url = support::database::migrate(&database_url).await;
     Some((
         AdminProvisionRepository::new(
             create_pool(isolated_url.clone(), 4).expect("pool should create"),

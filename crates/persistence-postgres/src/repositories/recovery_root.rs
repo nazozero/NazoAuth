@@ -22,7 +22,7 @@
 //!   transaction replaces, instantly killing the old secret (old generation).
 //!
 //! Hard invariants enforced here (mirrored by CHECK/unique/FK constraints in
-//! migration `20260825000100_controller_recovery_root`):
+//! the schema baseline):
 //!
 //! * one Recovery Root per deployment; every approved replacement bumps
 //!   `generation`, and verification always uses the current row, so secrets

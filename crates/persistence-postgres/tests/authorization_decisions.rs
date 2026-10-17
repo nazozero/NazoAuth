@@ -17,50 +17,6 @@ use nazo_postgres::{
 use serde_json::json;
 use uuid::Uuid;
 
-const UP: &str =
-    include_str!("../../../migrations/20261001000100_authorization_decision_facts/up.sql");
-const DOWN: &str =
-    include_str!("../../../migrations/20261001000100_authorization_decision_facts/down.sql");
-const STATEMENT_TIMEOUT_UP: &str = include_str!(
-    "../../../migrations/20261001000200_authorization_decision_statement_timeout/up.sql"
-);
-const STATEMENT_TIMEOUT_DOWN: &str = include_str!(
-    "../../../migrations/20261001000200_authorization_decision_statement_timeout/down.sql"
-);
-
-const ACK_CLOCK_UP: &str =
-    include_str!("../../../migrations/20261006000100_audit_ack_observation_clock/up.sql");
-const ACK_CLOCK_DOWN: &str =
-    include_str!("../../../migrations/20261006000100_audit_ack_observation_clock/down.sql");
-
-const COMPACT_UP: &str =
-    include_str!("../../../migrations/20261009000500_compact_exported_decision_payload/up.sql");
-const COMPACT_DOWN: &str =
-    include_str!("../../../migrations/20261009000500_compact_exported_decision_payload/down.sql");
-
-#[test]
-fn decision_migration_has_independent_fences_and_safe_retention() {
-    for required in [
-        "idx_authorization_decision_request",
-        "idx_authorization_decision_par",
-        "authorization_tenant_id IS NOT NULL",
-        "authorization_request_id IS NOT NULL",
-        "authorization_decision IS NOT NULL",
-        "AND business_retain_until >= authorization_valid_until",
-        "WHERE exported_at IS NULL",
-        "'public.idx_security_audit_events_pending_order'::REGCLASS",
-        "AND candidate.exported_at IS NULL",
-        "audit chain event is missing or already exported",
-        "OLD.exported_at IS NULL AND NEW.exported_at IS NOT NULL",
-        "(to_jsonb(OLD) - 'exported_at') = (to_jsonb(NEW) - 'exported_at')",
-        "LIMIT 256 FOR UPDATE SKIP LOCKED",
-        "EXCEPTION WHEN SQLSTATE 'PZA01'",
-    ] {
-        assert!(UP.contains(required), "missing contract: {required}");
-    }
-    assert!(DOWN.contains("refusing unsafe downgrade"));
-}
-
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
@@ -233,7 +189,7 @@ async fn acknowledge_all(audit: &AuditLedgerRepository) {
     .expect("bounded audit drain should finish");
 }
 
-async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection, pool: &DbPool) {
+async fn verify_runtime_privileges(url: &str, connection: &mut AsyncPgConnection, pool: &DbPool) {
     let audit = AuditLedgerRepository::new(pool.clone());
     audit
         .append(SecurityAuditEvent {
@@ -252,14 +208,6 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
     else {
         panic!("upgrade fixture must own an in-flight batch");
     };
-    // No decision facts exist yet. Move back to the real prior schema, with
-    // its in-flight ordinary batch intact, then exercise the full migration
-    // chain. Recreating the fact API also resets function-local configuration.
-    connection
-        .batch_execute(STATEMENT_TIMEOUT_DOWN)
-        .await
-        .unwrap();
-    connection.batch_execute(DOWN).await.unwrap();
     let suffix = Uuid::now_v7().simple().to_string();
     let audit_only = format!("decision_audit_{suffix}");
     let insert_only = format!("decision_insert_{suffix}");
@@ -274,12 +222,6 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
          GRANT INSERT ON public.user_client_grants TO {insert_only},{runtime}; \
          GRANT UPDATE ON public.user_client_grants TO {update_only},{runtime}"
     )).await.unwrap();
-    connection.batch_execute(UP).await.unwrap();
-    connection
-        .batch_execute(STATEMENT_TIMEOUT_UP)
-        .await
-        .unwrap();
-    connection.batch_execute(COMPACT_UP).await.unwrap();
     let configured_timeout = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM pg_proc \
          WHERE oid = 'public.nazo_commit_authorization_decision(uuid,uuid,text,text,text,timestamptz,timestamptz,text,uuid,timestamptz,jsonb,jsonb,jsonb,jsonb)'::regprocedure \
@@ -290,13 +232,13 @@ async fn verify_upgrade_privileges(url: &str, connection: &mut AsyncPgConnection
     .unwrap();
     assert_eq!(
         configured_timeout.count, 1,
-        "the upgraded decision function must retain its two-second lock bound"
+        "the decision function must retain its two-second lock bound"
     );
     for (role, expected) in [
         (&audit_only, 0),
         (&insert_only, 0),
         (&update_only, 0),
-        (&runtime, 1),
+        (&runtime, 0),
     ] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count FROM pg_roles WHERE rolname = $1 \
@@ -970,7 +912,7 @@ async fn authorization_decisions_commit_once_and_survive_export_ack() {
     nazo_postgres::run_pending_migrations(&url).await.unwrap();
     let pool = create_pool(url.clone(), 4).unwrap();
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    verify_upgrade_privileges(&url, &mut connection, &pool).await;
+    verify_runtime_privileges(&url, &mut connection, &pool).await;
     let fixture = fixture(&mut connection).await;
     verify_atomicity(&mut connection, &pool, &fixture).await;
     verify_lock_expiry_and_cancellation(&url, &mut connection, &fixture).await;
@@ -1163,35 +1105,6 @@ struct AuditClockRow {
 }
 
 #[derive(Debug, Eq, PartialEq, QueryableByName)]
-struct AuditAckFunctionIdentity {
-    #[diesel(sql_type = sql_types::BigInt)]
-    oid: i64,
-    #[diesel(sql_type = sql_types::BigInt)]
-    owner_oid: i64,
-    #[diesel(sql_type = sql_types::Text)]
-    acl: String,
-    #[diesel(sql_type = sql_types::Bool)]
-    security_definer: bool,
-    #[diesel(sql_type = sql_types::Text)]
-    settings: String,
-}
-
-async fn audit_ack_function_identity(
-    connection: &mut AsyncPgConnection,
-) -> AuditAckFunctionIdentity {
-    sql_query(
-        "SELECT oid::bigint AS oid, proowner::bigint AS owner_oid, \
-                COALESCE(proacl::text, '') AS acl, prosecdef AS security_definer, \
-                COALESCE(proconfig::text, '') AS settings \
-         FROM pg_proc WHERE oid = \
-           'public.nazo_ack_security_audit_batch(bigint,bigint,bigint,integer,bytea,bytea,text)'::regprocedure",
-    )
-    .get_result(connection)
-    .await
-    .unwrap()
-}
-
-#[derive(Debug, Eq, PartialEq, QueryableByName)]
 struct AuditContents {
     #[diesel(sql_type = sql_types::Jsonb)]
     contents: serde_json::Value,
@@ -1284,21 +1197,14 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
         .record_genesis("decision-test", &initial.head_hash)
         .await
         .unwrap();
-    let identity = audit_ack_function_identity(&mut connection).await;
-
-    connection.batch_execute(COMPACT_DOWN).await.unwrap();
-
-    // The down definition is a negative control, not a second ACK implementation.
-    // It must reproduce the freshness invariant failure before the up definition passes.
-    for (definition, fixed) in [(ACK_CLOCK_DOWN, false), (ACK_CLOCK_UP, true)] {
-        connection.batch_execute(definition).await.unwrap();
-        assert_eq!(audit_ack_function_identity(&mut connection).await, identity);
+    {
         let retained = decision(&fixture, Kind::Approve);
         assert_eq!(
             repository.commit_decision(retained.clone()).await.unwrap(),
             Outcome::Committed
         );
-        let immutable = retained_decision_contents(&mut connection, retained.event_id).await;
+        let mut immutable = retained_decision_contents(&mut connection, retained.event_id).await;
+        immutable.contents["payload"] = json!({});
         let grants = grant_count(&mut connection, &fixture).await;
         let ordinary = SecurityAuditEvent {
             event_id: Uuid::now_v7(),
@@ -1405,30 +1311,9 @@ async fn audit_ack_samples_time_after_blocked_head_validation() {
         let health = audit.anchor_health().await.unwrap();
         assert_eq!(health.last_exported_at, Some(exported));
         assert_eq!(health.observed_at, Some(exported));
-        if fixed {
-            assert!(
-                exported >= observation,
-                "ACK must not overwrite a newer locked observation with its transaction start"
-            );
-        } else {
-            assert_eq!(
-                exported, started,
-                "the down definition uses transaction start"
-            );
-            assert!(
-                exported < observation,
-                "the down definition must reproduce the old freshness failure"
-            );
-            eprintln!("legacy ACK negative control: freshness invariant FAIL (expected)");
-        }
-        eprintln!(
-            "audit ACK clock control={} barrier=pg_blocking_pids started={} observation={} exported={} accepted={} observed={}",
-            if fixed { "up" } else { "down" },
-            started,
-            observation,
-            exported,
-            health.last_exported_at.unwrap(),
-            health.observed_at.unwrap(),
+        assert!(
+            exported >= observation,
+            "ACK must not overwrite a newer locked observation with its transaction start"
         );
         assert_eq!(health.last_exported_sequence, Some(batch.last_sequence));
         assert_eq!(health.last_exported_hash, Some(batch.last_hash.clone()));

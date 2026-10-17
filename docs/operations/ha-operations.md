@@ -279,6 +279,10 @@ migration. This changes no standalone offline-verifier revocation guarantee.
 
 ## Authorization-code identity cutover
 
+These historical cutovers must complete in v0.3.2 before adopting the current
+schema baseline. Baseline adoption preserves the resulting state without
+replaying these transformations.
+
 Migration `20261003000100_authorization_code_identity` requires closed ingress,
 drained and isolated old issuers, and expiration/invalidation of old pending codes
 under a new transient-state epoch. Historical receipts remain lookup-only; the

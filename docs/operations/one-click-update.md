@@ -91,6 +91,20 @@ Registry, or logs.
 
 ## Update and rollback
 
+The migration baseline is the final schema of **v0.3.2**, whose last historical
+migration is `20261017000300`. An empty database installs
+`20261017000400_v0_3_2_baseline` directly. A database that has applied the cutoff
+records the baseline without recreating objects or rewriting business data;
+its existing migration records, owners and grants are preserved. Older or
+partially upgraded databases must first complete an update to **v0.3.2**.
+The baseline rejects them with that instruction before applying DDL.
+
+Historical SQL is available in the [v0.3.2 Git tree](https://github.com/nazozero/NazoAuth/tree/v0.3.2/migrations).
+Do not delete or fabricate migration records to bypass the cutoff. Continue
+using the lifecycle role for migration and configure the runtime role through
+the operator task. The baseline has no destructive down path; restoring a
+verified backup is the supported database rollback.
+
 > [!WARNING]
 > Check the target server's configuration and migration requirements before an
 > update. Controller persistence has a separate compatibility contract: supported
