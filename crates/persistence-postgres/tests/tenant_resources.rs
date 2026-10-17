@@ -156,7 +156,7 @@ async fn deactivate_binding_in_transaction(
     resource_kind: &str,
     resource_id: &str,
     expected_digest: &str,
-) -> Result<TestTransactionError> {
+) -> Result<bool, TestTransactionError> {
     connection
         .transaction::<_, TestTransactionError, _>(async move |connection| {
             TenantResourceRepository::lock_binding_identity_on_connection(
