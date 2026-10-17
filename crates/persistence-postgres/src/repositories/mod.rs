@@ -80,8 +80,8 @@ pub use tenancy::TenantDirectoryRepository;
 pub use tenant_resources::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite,
-    StoredOpenid4vcTrustPolicy, TenantResourceBinding, TenantResourceBindingDeactivate,
-    TenantResourceRepository, TenantResourceState, TenantResourceStateCas,
+    StoredOpenid4vcTrustPolicy, TenantResourceBinding, TenantResourceRepository,
+    TenantResourceState,
 };
 pub use token_issuance::TokenIssuanceRepository;
 pub use tokens::{RecoveryInvalidation, TokenRepository};

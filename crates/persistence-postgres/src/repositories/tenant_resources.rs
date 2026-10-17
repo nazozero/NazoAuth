@@ -30,19 +30,6 @@ pub struct TenantResourceBinding {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Outcome of a revision-guarded state transition.
-#[derive(Clone, Debug, PartialEq)]
-pub enum TenantResourceStateCas {
-    Applied(TenantResourceState),
-    Conflict(Option<TenantResourceState>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum TenantResourceBindingDeactivate {
-    Deactivated(TenantResourceBinding),
-    Conflict(Option<TenantResourceBinding>),
-}
-
 /// Public OpenID4VC trust policy installed through the ordinary tenant
 /// resource control plane. Private key material is rejected before storage
 /// and by the database constraint.
@@ -285,55 +272,50 @@ impl TenantResourceRepository {
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,
         expected_revision: u64,
-        next_revision: u64,
         resource_manifest_sha256: &str,
-    ) -> Result<TenantResourceStateCas, RepositoryError> {
-        let required_next_revision = expected_revision.checked_add(1).ok_or_else(|| {
+    ) -> Result<Option<u64>, RepositoryError> {
+        let next_revision = expected_revision.checked_add(1).ok_or_else(|| {
             RepositoryError::Consistency(
                 "tenant resource revision cannot advance past u64::MAX".to_owned(),
             )
         })?;
-        if next_revision != required_next_revision {
-            return Err(RepositoryError::Consistency(
-                "tenant resource revision must advance exactly one step".to_owned(),
-            ));
-        }
         let expected_revision = encode_revision(expected_revision)?;
         let next_revision = encode_revision(next_revision)?;
-        let row = sql_query(
+        #[derive(QueryableByName)]
+        struct RevisionRow {
+            #[diesel(sql_type = sql_types::BigInt)]
+            revision: i64,
+        }
+        sql_query(
             "WITH updated AS (
                  UPDATE tenant_resource_states
                  SET revision = $3,
                      resource_manifest_sha256 = $4,
                      updated_at = CURRENT_TIMESTAMP
                  WHERE tenant_id = $1 AND revision = $2
-                 RETURNING tenant_id, revision, resource_manifest_sha256, updated_at
+                 RETURNING revision
              ), inserted AS (
                  INSERT INTO tenant_resource_states
                      (tenant_id, revision, resource_manifest_sha256)
                  SELECT $1, $3, $4
                  WHERE $2 = 0 AND NOT EXISTS (SELECT 1 FROM updated)
                  ON CONFLICT (tenant_id) DO NOTHING
-                 RETURNING tenant_id, revision, resource_manifest_sha256, updated_at
+                 RETURNING revision
              )
-             SELECT tenant_id, revision, resource_manifest_sha256, updated_at FROM updated
+             SELECT revision FROM updated
              UNION ALL
-             SELECT tenant_id, revision, resource_manifest_sha256, updated_at FROM inserted",
+             SELECT revision FROM inserted",
         )
         .bind::<sql_types::Uuid, _>(tenant_id)
         .bind::<sql_types::BigInt, _>(expected_revision)
         .bind::<sql_types::BigInt, _>(next_revision)
         .bind::<sql_types::Varchar, _>(resource_manifest_sha256)
-        .get_result::<StateRow>(connection)
+        .get_result::<RevisionRow>(connection)
         .await
         .optional()
-        .map_err(map_error)?;
-        if let Some(row) = row {
-            return Ok(TenantResourceStateCas::Applied(row.try_into()?));
-        }
-        Ok(TenantResourceStateCas::Conflict(
-            Self::state_on_connection(connection, tenant_id).await?,
-        ))
+        .map_err(map_error)?
+        .map(|row| decode_revision(row.revision))
+        .transpose()
     }
 
     /// Serialize one accepted operation's resource transition until the
@@ -454,10 +436,7 @@ impl TenantResourceRepository {
         .map_err(map_error)
     }
 
-    /// Deactivate exactly one active binding, fenced by its current digest.
-    /// A stale digest never changes the row and returns the current active
-    /// binding (when one exists), so the caller can emit a failed receipt
-    /// without conflating a missing resource with a stale version. The transaction
+    /// Deactivate one active binding fenced by its digest. The transaction
     /// owner must already hold this binding's identity lock.
     pub async fn deactivate_binding_on_connection(
         connection: &mut AsyncPgConnection,
@@ -465,45 +444,21 @@ impl TenantResourceRepository {
         resource_kind: &str,
         resource_id: &str,
         expected_digest: &str,
-    ) -> Result<TenantResourceBindingDeactivate, RepositoryError> {
-        let changed = sql_query(
+    ) -> Result<bool, RepositoryError> {
+        sql_query(
             "UPDATE tenant_resource_bindings
              SET active = FALSE, updated_at = CURRENT_TIMESTAMP
              WHERE tenant_id = $1 AND resource_kind = $2
-               AND resource_id = $3 AND resource_digest = $4 AND active
-             RETURNING id, tenant_id, resource_kind, resource_id, resource_digest,
-                       active, locator,
-                       created_at, updated_at",
+               AND resource_id = $3 AND resource_digest = $4 AND active",
         )
         .bind::<sql_types::Uuid, _>(tenant_id)
         .bind::<sql_types::Varchar, _>(resource_kind)
         .bind::<sql_types::Varchar, _>(resource_id)
         .bind::<sql_types::Varchar, _>(expected_digest)
-        .get_result::<BindingRow>(connection)
+        .execute(connection)
         .await
-        .optional()
-        .map_err(map_error)?;
-        if let Some(row) = changed {
-            return Ok(TenantResourceBindingDeactivate::Deactivated(row.into()));
-        }
-        let current = sql_query(
-            "SELECT id, tenant_id, resource_kind, resource_id, resource_digest,
-                    active, locator,
-                    created_at, updated_at
-             FROM tenant_resource_bindings
-             WHERE tenant_id = $1 AND resource_kind = $2
-               AND resource_id = $3 AND active
-             FOR UPDATE",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Varchar, _>(resource_kind)
-        .bind::<sql_types::Varchar, _>(resource_id)
-        .get_result::<BindingRow>(connection)
-        .await
-        .optional()
-        .map_err(map_error)?
-        .map(Into::into);
-        Ok(TenantResourceBindingDeactivate::Conflict(current))
+        .map(|changed| changed == 1)
+        .map_err(map_error)
     }
 
     pub async fn active_openid4vc_trust_policy_for_origin_on_connection(

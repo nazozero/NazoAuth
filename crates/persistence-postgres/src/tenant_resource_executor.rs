@@ -26,13 +26,12 @@ use uuid::Uuid;
 use crate::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite, OperatorManagedTrustAnchor,
-    TenantResourceBinding, TenantResourceBindingDeactivate, TenantResourceRepository,
-    TenantResourceStateCas, UserInsert, active_public_client_ids_on_connection,
-    append_fresh_security_audit_on_connection, deactivate_client_on_connection,
-    delete_operator_managed_dataset_on_connection, disable_user_on_connection,
-    insert_client_on_connection, insert_operator_managed_trust_anchor_on_connection,
-    insert_user_on_connection, protect_dataset_claims,
-    revoke_operator_managed_trust_anchor_on_connection,
+    TenantResourceBinding, TenantResourceRepository, UserInsert,
+    active_public_client_ids_on_connection, append_fresh_security_audit_on_connection,
+    deactivate_client_on_connection, delete_operator_managed_dataset_on_connection,
+    disable_user_on_connection, insert_client_on_connection,
+    insert_operator_managed_trust_anchor_on_connection, insert_user_on_connection,
+    protect_dataset_claims, revoke_operator_managed_trust_anchor_on_connection,
     upsert_operator_managed_dataset_on_connection,
 };
 
@@ -305,26 +304,16 @@ impl PostgresTenantResourceExecutor {
                         .await;
                     }
 
-                    let next_revision = current_revision.checked_add(1).ok_or(
-                        ExecutorTransactionError::Executor(
-                            TenantResourceExecutorError::Unavailable,
-                        ),
-                    )?;
-                    match TenantResourceRepository::compare_and_set_state_on_connection(
-                        connection,
-                        tenant_uuid,
-                        current_revision,
-                        next_revision,
-                        &frame.manifest_sha256,
-                    )
-                    .await
-                    .map_err(ExecutorTransactionError::Repository)?
-                    {
-                        TenantResourceStateCas::Applied(_) => {}
-                        TenantResourceStateCas::Conflict(_) => {
-                            return Err(transaction_conflict("state_cas"));
-                        }
-                    }
+                    let next_revision =
+                        TenantResourceRepository::compare_and_set_state_on_connection(
+                            connection,
+                            tenant_uuid,
+                            current_revision,
+                            &frame.manifest_sha256,
+                        )
+                        .await
+                        .map_err(ExecutorTransactionError::Repository)?
+                        .ok_or_else(|| transaction_conflict("state_cas"))?;
                     let audit_event = tenant_resource_audit_event(
                         deployment_id,
                         &tenant_uuid.to_string(),
@@ -1172,11 +1161,8 @@ async fn revoke_resources(
         )
         .await
         .map_err(map_repository_error)?;
-        match deactivated {
-            TenantResourceBindingDeactivate::Deactivated(_) => {}
-            TenantResourceBindingDeactivate::Conflict(_) => {
-                return Err(transaction_conflict("revoke_binding_fence"));
-            }
+        if !deactivated {
+            return Err(transaction_conflict("revoke_binding_fence"));
         }
         revoke_locator(
             connection,

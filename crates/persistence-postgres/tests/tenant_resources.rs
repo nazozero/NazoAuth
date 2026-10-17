@@ -5,8 +5,8 @@ use nazo_identity::{TenantId, ports::RepositoryError};
 use nazo_postgres::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
     Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite,
-    OperatorManagedTrustAnchor, TenantResourceBinding, TenantResourceBindingDeactivate,
-    TenantResourceRepository, create_pool, delete_operator_managed_dataset_on_connection, get_conn,
+    OperatorManagedTrustAnchor, TenantResourceBinding, TenantResourceRepository, create_pool,
+    delete_operator_managed_dataset_on_connection, get_conn,
     insert_operator_managed_trust_anchor_on_connection, protect_dataset_claims,
     revoke_operator_managed_trust_anchor_on_connection, run_pending_migrations,
     unprotect_dataset_claims, upsert_operator_managed_dataset_on_connection,
@@ -74,6 +74,38 @@ async fn insert_tenant(connection: &mut AsyncPgConnection, tenant_id: Uuid) -> Q
     .map(|_| ())
 }
 
+#[tokio::test]
+async fn revision_cas_conflicts_do_not_reload_discarded_state() {
+    let url = database_url();
+    run_pending_migrations(&url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    let counter = query_counter::QueryCounter::new();
+    connection.set_instrumentation(counter.clone());
+    let result = connection
+        .transaction::<(), TestTransactionError, _>(async move |connection| {
+            let tenant_id = Uuid::now_v7();
+            insert_tenant(connection, tenant_id).await?;
+            let digest = "a".repeat(64);
+            for (expected, outcome) in [(5, None), (0, Some(1)), (0, None), (1, Some(2))] {
+                let before = counter.snapshot();
+                let actual = TenantResourceRepository::compare_and_set_state_on_connection(
+                    connection, tenant_id, expected, &digest,
+                )
+                .await?;
+                assert_eq!(actual, outcome);
+                assert_eq!(counter.since(before).data_queries, 1);
+            }
+            let state = TenantResourceRepository::state_on_connection(connection, tenant_id)
+                .await?
+                .unwrap();
+            assert_eq!(state.revision, 2);
+            assert_eq!(state.resource_manifest_sha256, digest);
+            Err(TestTransactionError::Rollback)
+        })
+        .await;
+    assert!(matches!(result, Err(TestTransactionError::Rollback)));
+}
+
 async fn upsert_binding_in_transaction(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
@@ -113,7 +145,7 @@ async fn deactivate_binding_in_transaction(
     resource_kind: &str,
     resource_id: &str,
     expected_digest: &str,
-) -> Result<TenantResourceBindingDeactivate, TestTransactionError> {
+) -> Result<TestTransactionError> {
     connection
         .transaction::<_, TestTransactionError, _>(async move |connection| {
             TenantResourceRepository::lock_binding_identity_on_connection(
@@ -451,6 +483,24 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
     ));
 
     let before = counter.snapshot();
+    assert!(
+        !deactivate_binding_in_transaction(
+            &mut connection,
+            tenant_id,
+            resource_kind,
+            &resource_id,
+            &second_digest,
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(
+        counter.since(before).data_queries,
+        2,
+        "lock and rejected update only"
+    );
+
+    let before = counter.snapshot();
     let deactivated = deactivate_binding_in_transaction(
         &mut connection,
         tenant_id,
@@ -465,10 +515,7 @@ async fn inactive_tenant_resource_binding_is_replaced_in_place_and_reactivation_
         2,
         "one lock and one update"
     );
-    assert!(matches!(
-        deactivated,
-        TenantResourceBindingDeactivate::Deactivated(_)
-    ));
+    assert!(deactivated);
     let same_digest_reapplied = upsert_binding_in_transaction(
         &mut connection,
         tenant_id,
