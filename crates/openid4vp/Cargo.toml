@@ -15,7 +15,6 @@ thiserror.workspace = true
 blake3.workspace = true
 ciborium.workspace = true
 sha2.workspace = true
-url.workspace = true
 uuid = { workspace = true, features = ["serde", "v7"] }
 
 [lints]

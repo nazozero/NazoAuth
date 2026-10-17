@@ -99,7 +99,6 @@ tokio = { workspace = true, features = ["test-util"] }
 chrono = { workspace = true }
 diesel = { workspace = true, features = ["64-column-tables", "chrono", "postgres_backend", "serde_json", "uuid"] }
 diesel-async = { workspace = true, features = ["deadpool", "postgres"] }
-diesel_migrations = { workspace = true }
 fred = { workspace = true, features = ["i-scripts"] }
 nazo-key-management = { workspace = true, features = ["test-support"] }
 pkcs8 = { workspace = true }

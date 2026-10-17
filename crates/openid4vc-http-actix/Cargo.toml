@@ -18,7 +18,6 @@ uuid = { workspace = true, features = ["serde", "v7"] }
 
 [dev-dependencies]
 nazo-operator-protocol.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true
