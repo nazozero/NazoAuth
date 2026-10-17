@@ -90,4 +90,4 @@ pub use users::{
 };
 #[cfg(test)]
 #[path = "../../tests/support/query_counter.rs"]
-mod query_counter;
+pub(crate) mod query_counter;

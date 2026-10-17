@@ -1,7 +1,6 @@
 use super::*;
 
-#[path = "../support/query_counter.rs"]
-mod query_counter;
+use crate::repositories::query_counter;
 
 #[tokio::test]
 async fn apply_mappings_reuse_inserted_ids_and_batch_existing_active_clients() {
