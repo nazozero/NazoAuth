@@ -27,7 +27,6 @@ const MAX_EMAIL_BYTES: usize = 254;
 const MAX_PASSWORD_BYTES: usize = 512;
 const MAX_CLIENT_SECRET_BYTES: usize = 512;
 const MAX_CONFIGURATION_ID_BYTES: usize = 255;
-const MAX_CERTIFICATE_BYTES: usize = 256 * 1024;
 const MAX_DATASET_CLAIMS_BYTES: usize = 256 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -290,16 +289,6 @@ fn decode_payload(
                     TenantResourceExecutorError::InvalidPayload("invalid mTLS trust anchor payload")
                 })?;
             validate_resource_id(&value.client_resource_id)?;
-            if value.certificate_pem.len() > MAX_CERTIFICATE_BYTES
-                || !value
-                    .certificate_pem
-                    .contains("-----BEGIN CERTIFICATE-----")
-                || !value.certificate_pem.contains("-----END CERTIFICATE-----")
-            {
-                return Err(TenantResourceExecutorError::InvalidPayload(
-                    "invalid mTLS trust anchor certificate",
-                ));
-            }
             Ok(TenantResourcePayload::MtlsTrustAnchor(
                 MtlsTrustAnchorResourcePayload {
                     client_resource_id: value.client_resource_id,

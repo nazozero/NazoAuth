@@ -11,7 +11,7 @@ use nazo_identity::{TenantContext, TenantId};
 use nazo_operator_protocol::{
     ControlResultData, ProtocolError, TenantResourceIdentity, TenantResourceKind,
     TenantResourceMapping, TenantResourceSelector, canonical_tenant_resource_manifest_sha256,
-    validate_control_result_data_for_wire, validate_openid4vc_trust_policy,
+    validate_control_result_data_for_wire,
 };
 use nazo_persistence::tenant_resources::{
     ControlTenantResourceFrame, PreparedMtlsTrustAnchor, PreparedOAuthClient,
@@ -152,8 +152,6 @@ impl PostgresTenantResourceExecutor {
                     }))
                 }
                 TenantResourcePayload::Openid4vcTrustPolicy(value) => {
-                    validate_openid4vc_trust_policy(&value.public_material)
-                        .map_err(|_| TenantResourceExecutorError::Rejected)?;
                     PreparedApplyPayload::TrustPolicy(Box::new(PreparedTrustPolicy {
                         identity: resource.identity.clone(),
                         public_material: value.public_material,
