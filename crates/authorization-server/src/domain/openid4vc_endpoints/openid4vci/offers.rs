@@ -113,11 +113,13 @@ impl ServerCredentialIssuerOperations {
                     "Credential subject is inactive.",
                 ));
             }
-            let authorization_details = authorization
-                .configuration_ids
-                .iter()
-                .map(|id| openid4vci_authorization_detail(&self.issuer, id))
-                .collect::<Vec<_>>();
+            let authorization_details = Value::Array(
+                authorization
+                    .configuration_ids
+                    .iter()
+                    .map(|id| openid4vci_authorization_detail(&self.issuer, id))
+                    .collect(),
+            );
             let authorization_id = Uuid::now_v7();
             let issued = self
                 .token_service
@@ -133,7 +135,7 @@ impl ServerCredentialIssuerOperations {
                     client_id,
                     audiences: std::slice::from_ref(&self.issuer),
                     scopes: &[],
-                    authorization_details: &Value::Array(authorization_details.clone()),
+                    authorization_details: &authorization_details,
                     userinfo_claim_requests: &[],
                     ttl_seconds: (authorization.expires_at - Utc::now()).num_seconds().max(1),
                     sender_constraint,
@@ -202,6 +204,9 @@ impl ServerCredentialIssuerOperations {
                         "Credential access state is unavailable.",
                     ),
                 })?;
+            let Value::Array(authorization_details) = authorization_details else {
+                unreachable!("authorization details are constructed as an array above")
+            };
             Ok(PreAuthorizedTokenResponse {
                 access_token: issued.token,
                 token_type: token_type.to_owned(),
