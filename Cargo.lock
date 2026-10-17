@@ -2937,7 +2937,6 @@ name = "nazo-http-actix"
 version = "0.3.1"
 dependencies = [
  "actix-cors",
- "actix-rt",
  "actix-web",
  "base64 0.23.1",
  "blake3",
@@ -3139,7 +3138,6 @@ dependencies = [
 name = "nazo-openid4vc-http-actix"
 version = "0.3.1"
 dependencies = [
- "actix-rt",
  "actix-web",
  "chrono",
  "nazo-openid4vci",
@@ -3332,7 +3330,6 @@ dependencies = [
  "actix-cors",
  "actix-files",
  "actix-multipart",
- "actix-rt",
  "actix-tls",
  "actix-web",
  "anyhow",

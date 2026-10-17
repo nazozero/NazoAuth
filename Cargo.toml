@@ -39,8 +39,6 @@ repository = "https://github.com/nazozero/NazoAuth"
 hex = "0.4.3"
 actix-cors = "0.7.2"
 actix-files = "0.7.0"
-# Actix 2.15 gates server net/signal APIs; each HTTP adapter opts in explicitly.
-actix-rt = { version = "2.15.0", default-features = false, features = ["net", "signal"] }
 actix-web = "4.15.0"
 actix-tls = "3.6.1"
 anyhow = "1.0.104"

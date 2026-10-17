@@ -7,7 +7,6 @@ repository.workspace = true
 
 [dependencies]
 actix-web.workspace = true
-actix-rt.workspace = true
 chrono.workspace = true
 nazo-openid4vci.workspace = true
 nazo-openid4vp.workspace = true
