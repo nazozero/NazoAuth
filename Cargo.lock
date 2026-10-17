@@ -3154,6 +3154,7 @@ name = "nazo-openid4vci"
 version = "0.3.1"
 dependencies = [
  "blake3",
+ "bytes",
  "chrono",
  "nazo-digital-credentials",
  "serde",

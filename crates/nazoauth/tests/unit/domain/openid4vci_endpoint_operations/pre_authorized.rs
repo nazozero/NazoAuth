@@ -325,19 +325,18 @@ async fn live_immediate_offer_pre_authorized_credential_replay_and_notification(
         .await
         .expect("live immediate credential should be issued");
     let notification_id = match &response.body {
-        CredentialResponseBody::Json(body) => body
+        CredentialResponseBody::Json(body) => serde_json::from_slice::<CredentialResponse>(body)
+            .unwrap()
             .notification_id
-            .clone()
             .expect("immediate response notification id"),
         CredentialResponseBody::Jwt(_) => panic!("live fixture requests JSON response"),
     };
     assert!(matches!(
         &response.body,
-        CredentialResponseBody::Json(CredentialResponse {
-            credentials: Some(_),
-            transaction_id: None,
-            ..
-        })
+        CredentialResponseBody::Json(body) if {
+            let value: CredentialResponse = serde_json::from_slice(body).unwrap();
+            value.credentials.is_some() && value.transaction_id.is_none()
+        }
     ));
 
     let replay = fixture
@@ -738,10 +737,7 @@ async fn live_pre_authorized_mtls_access_preserves_the_signed_sender_and_denies_
         .unwrap();
     assert!(matches!(
         response.body,
-        CredentialResponseBody::Json(CredentialResponse {
-            credentials: Some(_),
-            ..
-        })
+        CredentialResponseBody::Json(body) if serde_json::from_slice::<CredentialResponse>(&body).unwrap().credentials.is_some()
     ));
     fixture.cleanup().await;
 }

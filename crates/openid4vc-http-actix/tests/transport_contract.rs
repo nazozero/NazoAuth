@@ -523,12 +523,16 @@ impl CredentialIssuerOperations for SuccessfulIssuer {
 }
 
 fn immediate_response() -> CredentialResponseBody {
-    CredentialResponseBody::Json(CredentialResponse {
-        credentials: Some(Vec::new()),
-        transaction_id: None,
-        notification_id: None,
-        interval: None,
-    })
+    CredentialResponseBody::Json(
+        serde_json::to_vec(&CredentialResponse {
+            credentials: Some(Vec::new()),
+            transaction_id: None,
+            notification_id: None,
+            interval: None,
+        })
+        .unwrap()
+        .into(),
+    )
 }
 
 impl CredentialIssuerOperations for NotificationIssuer {
@@ -822,22 +826,26 @@ async fn credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses()
     for (response_body, content_type, status) in [
         (immediate_response(), "application/json", Issued),
         (
-            CredentialResponseBody::Jwt("encrypted.credential.response".to_owned()),
+            CredentialResponseBody::Jwt("encrypted.credential.response".into()),
             "application/jwt",
             Issued,
         ),
         (
-            CredentialResponseBody::Json(nazo_openid4vci::CredentialResponse {
-                credentials: None,
-                transaction_id: Some("pending".to_owned()),
-                notification_id: None,
-                interval: Some(5),
-            }),
+            CredentialResponseBody::Json(
+                serde_json::to_vec(&nazo_openid4vci::CredentialResponse {
+                    credentials: None,
+                    transaction_id: Some("pending".to_owned()),
+                    notification_id: None,
+                    interval: Some(5),
+                })
+                .unwrap()
+                .into(),
+            ),
             "application/json",
             Deferred,
         ),
         (
-            CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".to_owned()),
+            CredentialResponseBody::Jwt("opaque.encrypted.deferred.response".into()),
             "application/jwt",
             Deferred,
         ),

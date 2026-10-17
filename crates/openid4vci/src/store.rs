@@ -195,7 +195,7 @@ pub struct StoredCredentialResponse {
     pub issuance_id: Uuid,
     pub token_id: Uuid,
     pub request_digest: String,
-    pub body: Vec<u8>,
+    pub body: bytes::Bytes,
     pub encoding: CredentialResponseEncoding,
     pub status: u16,
     pub dpop_nonce: Option<String>,

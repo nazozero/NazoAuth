@@ -84,7 +84,7 @@ impl Openid4vciRepository {
                             issuance_id: row.issuance_id,
                             token_id: row.token_id,
                             request_digest: row.request_digest,
-                            body,
+                            body: body.into(),
                             encoding,
                             status,
                             dpop_nonce: row.dpop_nonce,

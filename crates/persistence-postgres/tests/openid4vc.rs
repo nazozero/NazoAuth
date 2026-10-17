@@ -1405,7 +1405,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"issuance-request").to_hex().to_string(),
-        body: br#"{"credentials":[]}"#.to_vec(),
+        body: br#"{"credentials":[]}"#.as_slice().into(),
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
@@ -1734,7 +1734,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"atomic-request").to_hex().to_string(),
-        body: b"atomic-response".to_vec(),
+        body: b"atomic-response".as_slice().into(),
         encoding: CredentialResponseEncoding::Jwt,
         status: 202,
         dpop_nonce: Some("dpop-nonce".to_owned()),
@@ -2255,7 +2255,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         issuance_id: Uuid::now_v7(),
         token_id: access.token_id,
         request_digest: blake3::hash(b"boundary-response").to_hex().to_string(),
-        body: br#"{"credentials":[]}"#.to_vec(),
+        body: br#"{"credentials":[]}"#.as_slice().into(),
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: Some("boundary-dpop".to_owned()),
@@ -2789,7 +2789,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         request_digest: blake3::hash(b"boundary-atomic-response")
             .to_hex()
             .to_string(),
-        body: b"atomic-response".to_vec(),
+        body: b"atomic-response".as_slice().into(),
         encoding: CredentialResponseEncoding::Jwt,
         status: 202,
         dpop_nonce: None,
@@ -2875,7 +2875,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         request_digest: blake3::hash(b"boundary-deferred-response-body")
             .to_hex()
             .to_string(),
-        body: b"deferred-response".to_vec(),
+        body: b"deferred-response".as_slice().into(),
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
@@ -3020,7 +3020,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         request_digest: blake3::hash(b"boundary-final-response")
             .to_hex()
             .to_string(),
-        body: b"final-response".to_vec(),
+        body: b"final-response".as_slice().into(),
         encoding: CredentialResponseEncoding::Jwt,
         status: 202,
         dpop_nonce: None,
@@ -5700,7 +5700,9 @@ async fn refreshed_access_continues_only_its_original_credential_intent_after_so
         request_digest: blake3::hash(b"original-credential-request")
             .to_hex()
             .to_string(),
-        body: br#"{"transaction_id":"original-transaction","interval":5}"#.to_vec(),
+        body: br#"{"transaction_id":"original-transaction","interval":5}"#
+            .as_slice()
+            .into(),
         encoding: CredentialResponseEncoding::Json,
         status: 202,
         dpop_nonce: None,
@@ -5838,7 +5840,9 @@ async fn refreshed_access_continues_only_its_original_credential_intent_after_so
         issuance_id: Uuid::now_v7(),
         token_id: current.token_id,
         request_digest: blake3::hash(b"original-deferred-poll").to_hex().to_string(),
-        body: br#"{"credentials":[{"credential":"original-signed-credential"}]}"#.to_vec(),
+        body: br#"{"credentials":[{"credential":"original-signed-credential"}]}"#
+            .as_slice()
+            .into(),
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,

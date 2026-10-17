@@ -500,7 +500,7 @@ fn response_for_pending(
         issuance_id,
         token_id,
         request_digest: format!("test-{issuance_id}"),
-        body: br#"{"credentials":[]}"#.to_vec(),
+        body: br#"{"credentials":[]}"#.as_slice().into(),
         encoding: nazo_openid4vci::CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,

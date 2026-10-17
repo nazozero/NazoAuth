@@ -95,6 +95,7 @@ fn finish_response_supports_json_ecdh_and_deflate_and_rejects_unsupported_parame
                 panic!("encrypted response must use compact JWE")
             }
         };
+        let compact = std::str::from_utf8(&compact).unwrap();
         let parts = compact.split('.').collect::<Vec<_>>();
         assert_eq!(parts.len(), 5);
         assert!(parts[1].is_empty(), "ECDH-ES uses direct key agreement");
@@ -111,7 +112,7 @@ fn finish_response_supports_json_ecdh_and_deflate_and_rejects_unsupported_parame
         assert_eq!(protected.get("zip").and_then(Value::as_str), zip.as_deref());
 
         let plaintext = request_encryption
-            .decrypt_credential_request(&compact, "openid4vci-request-encryption")
+            .decrypt_credential_request(compact, "openid4vci-request-encryption")
             .expect("recipient private key should decrypt the response");
         assert_eq!(
             plaintext,
@@ -201,8 +202,7 @@ fn deferred_response_status_survives_real_encryption_and_stored_replay() {
             status,
             Some("next-nonce".to_owned()),
             Utc::now() + Duration::minutes(5),
-        )
-        .unwrap();
+        );
         assert_eq!(stored.status, 202);
         let replay = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required).unwrap();
         assert_eq!(replay.status, CredentialResponseStatus::Deferred);
@@ -211,7 +211,7 @@ fn deferred_response_status_survives_real_encryption_and_stored_replay() {
             panic!("expected JWE");
         };
         let decrypted = wallet
-            .decrypt(&encoded)
+            .decrypt(std::str::from_utf8(&encoded).unwrap())
             .expect("original wallet decrypts replay");
         assert_eq!(
             serde_json::from_slice::<CredentialResponse>(&decrypted).unwrap(),

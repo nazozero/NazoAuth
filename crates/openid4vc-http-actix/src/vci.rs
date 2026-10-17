@@ -282,7 +282,9 @@ fn credential_success(
     builder.insert_header((header::CACHE_CONTROL, "no-store"));
     insert_dpop_nonce(&mut builder, dpop_nonce);
     match body {
-        CredentialResponseBody::Json(value) => builder.json(value),
+        CredentialResponseBody::Json(value) => builder
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .body(value),
         CredentialResponseBody::Jwt(value) => builder
             .insert_header((header::CONTENT_TYPE, "application/jwt"))
             .body(value),

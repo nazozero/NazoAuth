@@ -14,7 +14,7 @@ pub fn response(
         issuance_id,
         token_id,
         request_digest: blake3::hash(issuance_id.as_bytes()).to_hex().to_string(),
-        body: b"{}".to_vec(),
+        body: b"{}".as_slice().into(),
         encoding: CredentialResponseEncoding::Json,
         status,
         dpop_nonce: None,

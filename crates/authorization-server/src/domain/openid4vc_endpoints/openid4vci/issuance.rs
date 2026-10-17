@@ -118,7 +118,7 @@ impl ServerCredentialIssuerOperations {
                 status,
                 dpop_nonce.clone(),
                 access.continuation_expires_at(intent_expires_at),
-            )?;
+            );
             response_record.selection = selection;
             if let Err(error) = self
                 .service
@@ -305,7 +305,7 @@ impl ServerCredentialIssuerOperations {
                     CredentialResponseStatus::Issued,
                     dpop_nonce.clone(),
                     access.continuation_expires_at(payload.expires_at),
-                )?;
+                );
                 response_record.selection = deferred.selection;
                 let committed = self
                     .store

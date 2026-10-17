@@ -93,33 +93,37 @@ fn finish_response(
     response: CredentialResponse,
     encryption: Option<&CredentialResponseEncryption>,
 ) -> Result<CredentialResponseBody, CredentialHttpError> {
-    if let Some(encryption) = encryption {
-        if encryption.jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES")
+    if encryption.is_some_and(|encryption| {
+        encryption.jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES")
             || encryption.enc != "A256GCM"
             || encryption.zip.as_deref().is_some_and(|zip| zip != "DEF")
-        {
-            return Err(vci_error(
-                400,
-                "invalid_encryption_parameters",
-                "Credential response encryption parameters are unsupported.",
-            ));
-        }
-        let bytes = serde_json::to_vec(&response)
-            .map_err(|_| vci_error(500, "server_error", "Credential response encoding failed."))?;
+    }) {
+        return Err(vci_error(
+            400,
+            "invalid_encryption_parameters",
+            "Credential response encryption parameters are unsupported.",
+        ));
+    }
+    let bytes = serde_json::to_vec(&response)
+        .map_err(|_| vci_error(500, "server_error", "Credential response encoding failed."))?;
+    if let Some(encryption) = encryption {
         let encrypted = if encryption.zip.as_deref() == Some("DEF") {
             encrypt_ecdh_es_deflate(bytes, &encryption.jwk, Some("application/json"))
         } else {
             encrypt_ecdh_es(bytes, &encryption.jwk, Some("application/json"))
         };
-        return encrypted.map(CredentialResponseBody::Jwt).map_err(|_| {
-            vci_error(
-                400,
-                "invalid_encryption_parameters",
-                "Credential response encryption key is invalid.",
-            )
-        });
+        encrypted
+            .map(|jwt| CredentialResponseBody::Jwt(jwt.into()))
+            .map_err(|_| {
+                vci_error(
+                    400,
+                    "invalid_encryption_parameters",
+                    "Credential response encryption key is invalid.",
+                )
+            })
+    } else {
+        Ok(CredentialResponseBody::Json(bytes.into()))
     }
-    Ok(CredentialResponseBody::Json(response))
 }
 
 fn validate_response_encryption_transport(

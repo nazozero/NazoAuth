@@ -198,20 +198,13 @@ pub(super) fn stored_response(
     status: CredentialResponseStatus,
     dpop_nonce: Option<String>,
     expires_at: chrono::DateTime<chrono::Utc>,
-) -> Result<StoredCredentialResponse, CredentialHttpError> {
+) -> StoredCredentialResponse {
     let (encoding, body) = match body {
-        CredentialResponseBody::Json(value) => (
-            CredentialResponseEncoding::Json,
-            serde_json::to_vec(value).map_err(|_| {
-                vci_error(500, "server_error", "Credential response encoding failed.")
-            })?,
-        ),
-        CredentialResponseBody::Jwt(value) => {
-            (CredentialResponseEncoding::Jwt, value.as_bytes().to_vec())
-        }
+        CredentialResponseBody::Json(value) => (CredentialResponseEncoding::Json, value.clone()),
+        CredentialResponseBody::Jwt(value) => (CredentialResponseEncoding::Jwt, value.clone()),
     };
     let status = status.http_status();
-    Ok(StoredCredentialResponse {
+    StoredCredentialResponse {
         selection: None,
         issuance_id,
         token_id,
@@ -221,7 +214,7 @@ pub(super) fn stored_response(
         status,
         dpop_nonce,
         expires_at,
-    })
+    }
 }
 
 pub(super) fn response_from_record(
@@ -240,24 +233,28 @@ pub(super) fn response_from_record(
         }
     };
     let body = match response.encoding {
-        CredentialResponseEncoding::Json => serde_json::from_slice(&response.body)
-            .map(CredentialResponseBody::Json)
-            .map_err(|_| {
+        CredentialResponseEncoding::Json => {
+            serde_json::from_slice::<nazo_openid4vci::CredentialResponse>(&response.body).map_err(
+                |_| {
+                    vci_error(
+                        503,
+                        "server_error",
+                        "Stored credential response is invalid.",
+                    )
+                },
+            )?;
+            CredentialResponseBody::Json(response.body)
+        }
+        CredentialResponseEncoding::Jwt => {
+            std::str::from_utf8(&response.body).map_err(|_| {
                 vci_error(
                     503,
                     "server_error",
                     "Stored credential response is invalid.",
                 )
-            })?,
-        CredentialResponseEncoding::Jwt => String::from_utf8(response.body)
-            .map(CredentialResponseBody::Jwt)
-            .map_err(|_| {
-                vci_error(
-                    503,
-                    "server_error",
-                    "Stored credential response is invalid.",
-                )
-            })?,
+            })?;
+            CredentialResponseBody::Jwt(response.body)
+        }
     };
     Ok(CredentialEndpointResponse {
         body,

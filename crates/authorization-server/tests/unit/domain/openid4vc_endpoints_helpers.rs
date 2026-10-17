@@ -280,14 +280,18 @@ fn proof_nonce_and_request_digest_are_stable_and_fail_closed() {
 #[test]
 fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     let now = Utc::now();
-    let final_body = CredentialResponseBody::Json(CredentialResponse {
-        credentials: Some(vec![nazo_openid4vci::IssuedCredential {
-            credential: json!("signed"),
-        }]),
-        transaction_id: None,
-        notification_id: None,
-        interval: None,
-    });
+    let final_body = CredentialResponseBody::Json(
+        serde_json::to_vec_pretty(&CredentialResponse {
+            credentials: Some(vec![nazo_openid4vci::IssuedCredential {
+                credential: json!("signed"),
+            }]),
+            transaction_id: None,
+            notification_id: None,
+            interval: None,
+        })
+        .unwrap()
+        .into(),
+    );
     let stored = stored_response(
         Uuid::now_v7(),
         Uuid::now_v7(),
@@ -296,9 +300,12 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         nazo_openid4vci::application::CredentialResponseStatus::Issued,
         Some("dpop".to_owned()),
         now,
-    )
-    .expect("JSON response should be stored");
+    );
     assert_eq!(stored.status, 200);
+    let CredentialResponseBody::Json(original_bytes) = &final_body else {
+        unreachable!();
+    };
+    assert_eq!(stored.body.as_ptr(), original_bytes.as_ptr());
     assert_eq!(stored.dpop_nonce.as_deref(), Some("dpop"));
     assert!(
         response_from_record(stored.clone(), nazo_auth::DpopNoncePolicy::Optional)
@@ -309,14 +316,22 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
     let recovered = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required)
         .expect("stored JSON should recover");
     assert_eq!(recovered.dpop_nonce.as_deref(), Some("dpop"));
-    assert!(matches!(recovered.body, CredentialResponseBody::Json(_)));
+    let CredentialResponseBody::Json(recovered_bytes) = recovered.body else {
+        panic!("expected JSON response");
+    };
+    assert_eq!(recovered_bytes, *original_bytes);
+    assert_eq!(recovered_bytes.as_ptr(), original_bytes.as_ptr());
 
-    let deferred = CredentialResponseBody::Json(CredentialResponse {
-        credentials: None,
-        transaction_id: Some("transaction-1".to_owned()),
-        notification_id: None,
-        interval: None,
-    });
+    let deferred = CredentialResponseBody::Json(
+        serde_json::to_vec(&CredentialResponse {
+            credentials: None,
+            transaction_id: Some("transaction-1".to_owned()),
+            notification_id: None,
+            interval: None,
+        })
+        .unwrap()
+        .into(),
+    );
     let stored = stored_response(
         Uuid::now_v7(),
         Uuid::now_v7(),
@@ -325,8 +340,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         nazo_openid4vci::application::CredentialResponseStatus::Deferred,
         None,
         now,
-    )
-    .expect("deferred response should be stored");
+    );
     assert_eq!(stored.status, 202);
     assert_eq!(
         response_from_record(stored, nazo_auth::DpopNoncePolicy::Required)
@@ -335,7 +349,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         nazo_openid4vci::application::CredentialResponseStatus::Deferred
     );
 
-    let jwt = CredentialResponseBody::Jwt("signed.jwt".to_owned());
+    let jwt = CredentialResponseBody::Jwt("signed.jwt".into());
     let stored = stored_response(
         Uuid::now_v7(),
         Uuid::now_v7(),
@@ -344,9 +358,12 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         nazo_openid4vci::application::CredentialResponseStatus::Deferred,
         None,
         now,
-    )
-    .expect("JWT response should be stored");
+    );
     assert_eq!(stored.status, 202);
+    let CredentialResponseBody::Jwt(original_bytes) = &jwt else {
+        unreachable!();
+    };
+    assert_eq!(stored.body.as_ptr(), original_bytes.as_ptr());
     let recovered = response_from_record(stored, nazo_auth::DpopNoncePolicy::Required)
         .expect("stored JWT should recover");
     assert_eq!(
@@ -363,7 +380,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         issuance_id: Uuid::nil(),
         token_id: Uuid::nil(),
         request_digest: "digest".to_owned(),
-        body: b"not-json".to_vec(),
+        body: b"not-json".as_slice().into(),
         encoding: CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
@@ -376,7 +393,7 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         "server_error"
     );
     invalid.encoding = CredentialResponseEncoding::Jwt;
-    invalid.body = vec![0xff];
+    invalid.body = vec![0xff].into();
     assert_eq!(
         response_from_record(invalid, nazo_auth::DpopNoncePolicy::Required)
             .expect_err("invalid UTF-8 must fail")
