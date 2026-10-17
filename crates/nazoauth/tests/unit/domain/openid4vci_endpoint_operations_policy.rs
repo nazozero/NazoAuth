@@ -98,6 +98,19 @@ async fn signed_policy_access_token(
         })
         .collect::<Vec<_>>();
     if retain_provenance && !configuration_ids.is_empty() {
+        let credential_identifiers = authorization_details
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|detail| {
+                detail
+                    .get("credential_identifiers")
+                    .and_then(Value::as_array)
+            })
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|identifier| nazo_openid4vci::CredentialIdentifier(identifier.to_owned()))
+            .collect();
         retain_policy_credential_access(
             fixture,
             &issued.token,
@@ -108,7 +121,7 @@ async fn signed_policy_access_token(
                 subject_id,
                 client_id: fixture.wallet_client_id.clone(),
                 configuration_ids,
-                credential_identifiers: Vec::new(),
+                credential_identifiers,
                 dpop_jkt: dpop_jkt.map(str::to_owned),
                 mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned),
                 expires_at: chrono::DateTime::from_timestamp(issued.expires_at, 0).unwrap(),
@@ -206,8 +219,8 @@ async fn live_access_reuses_matching_projection_and_still_backfills_legacy_bindi
     fixture.issuer.access(&context).await.unwrap();
     assert_eq!(
         queries.swap(0, Ordering::Relaxed),
-        2,
-        "one live projection read and one issuance-response replay lookup"
+        1,
+        "the matching projection requires only one read"
     );
     assert_eq!(upserts.swap(0, Ordering::Relaxed), 0);
 
@@ -221,15 +234,15 @@ async fn live_access_reuses_matching_projection_and_still_backfills_legacy_bindi
     fixture.issuer.access(&context).await.unwrap();
     assert_eq!(
         queries.swap(0, Ordering::Relaxed),
-        3,
+        2,
         "a legacy missing mTLS projection also requires the guarded write"
     );
     assert_eq!(upserts.swap(0, Ordering::Relaxed), 1);
     fixture.issuer.access(&context).await.unwrap();
     assert_eq!(
         queries.swap(0, Ordering::Relaxed),
-        2,
-        "the repaired projection is reused; the response replay lookup remains"
+        1,
+        "the repaired projection requires only one read"
     );
     assert_eq!(upserts.swap(0, Ordering::Relaxed), 0);
 
