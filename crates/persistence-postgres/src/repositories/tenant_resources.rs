@@ -405,7 +405,7 @@ impl TenantResourceRepository {
                 "UPDATE tenant_resource_bindings
                  SET resource_digest = $2, active = $3, locator = $4,
                      updated_at = CURRENT_TIMESTAMP
-                 WHERE id = $1 AND NOT active",
+                 WHERE id = $1",
             )
             .bind::<sql_types::Uuid, _>(existing_binding.id)
             .bind::<sql_types::Varchar, _>(binding.resource_digest)
@@ -709,10 +709,9 @@ impl TenantResourceRepository {
             "UPDATE openid4vc_trust_policies
              SET active = FALSE, revoked_at = CURRENT_TIMESTAMP,
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = $1 AND active AND resource_digest = $2",
+             WHERE id = $1",
         )
         .bind::<sql_types::Uuid, _>(current.id)
-        .bind::<sql_types::Varchar, _>(expected_digest)
         .execute(connection)
         .await
         .map_err(map_error)?;
