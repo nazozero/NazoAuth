@@ -332,10 +332,11 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
         .await
         .unwrap();
     for connection in [&mut old, &mut new] {
+        connection.batch_execute("INSERT INTO tenants(id,slug,display_name,status) VALUES ('00000000-0000-0000-0000-000000000004','other','Other tenant','active')").await.unwrap();
         connection.batch_execute("UPDATE users SET is_active=FALSE; UPDATE users SET is_active=TRUE; UPDATE oauth_clients SET is_active=FALSE; UPDATE oauth_clients SET is_active=TRUE;").await.unwrap();
         assert_eq!(json(connection,"SELECT jsonb_build_array((SELECT access_token_epoch FROM users),(SELECT access_token_epoch FROM oauth_clients)) AS value").await, serde_json::json!([1,1]));
-        assert!(connection.batch_execute("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id) SELECT uuidv7(),'wrong-tenant',id FROM users").await.is_err());
-        assert!(connection.batch_execute("INSERT INTO user_totp_credentials(tenant_id,user_id,secret_ciphertext,secret_key_id) SELECT uuidv7(),id,decode('01'||repeat('ab',44),'hex'),'fixture-root' FROM users").await.is_err());
+        assert!(connection.batch_execute("INSERT INTO oauth_subject_bindings(tenant_id,subject,user_id) SELECT '00000000-0000-0000-0000-000000000004','wrong-tenant',id FROM users").await.is_err());
+        assert!(connection.batch_execute("INSERT INTO user_totp_credentials(tenant_id,user_id,secret_ciphertext,secret_key_id) SELECT '00000000-0000-0000-0000-000000000004',id,decode('01'||repeat('ab',44),'hex'),'fixture-root' FROM users").await.is_err());
     }
     drop(audit);
     drop(writer);
