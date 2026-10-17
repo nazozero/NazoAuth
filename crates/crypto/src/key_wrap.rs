@@ -108,21 +108,17 @@ impl RsaOaep256PrivateKey {
     }
 }
 
-pub fn aes_wrap(kek: &[u8], plaintext: &[u8]) -> crate::Result<Vec<u8>> {
+/// RFC 3394 wrapping of an AES-256 content-encryption key with an AES-128/256 KEK.
+pub fn aes_wrap(kek: &[u8], key: &[u8; 32]) -> crate::Result<[u8; 40]> {
     let cipher = match kek.len() {
         16 => &AES_128,
         32 => &AES_256,
         _ => return Err(CryptoError::InvalidKey),
     };
-    if plaintext.len() < 16 || !plaintext.len().is_multiple_of(8) {
-        return Err(CryptoError::InvalidInput);
-    }
-    let mut output = vec![0_u8; plaintext.len() + 8];
-    let len = AesKek::new(cipher, kek)
+    let mut output = [0_u8; 40];
+    AesKek::new(cipher, kek)
         .map_err(|_| CryptoError::InvalidKey)?
-        .wrap(plaintext, &mut output)
-        .map_err(|_| CryptoError::OperationFailed)?
-        .len();
-    output.truncate(len);
+        .wrap(key, &mut output)
+        .map_err(|_| CryptoError::OperationFailed)?;
     Ok(output)
 }

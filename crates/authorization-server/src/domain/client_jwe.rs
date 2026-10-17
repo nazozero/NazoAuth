@@ -117,7 +117,12 @@ pub fn encrypt_compact_jwe(
             let cek = rand::random::<[u8; 32]>();
             let encrypted_key =
                 nazo_crypto::key_wrap::aes_wrap(&kek[..(kek_bits / 8) as usize], &cek)?;
-            (cek, encrypted_key)
+            return encrypt_compact_jwe_with_cek(
+                &protected_header,
+                &cek,
+                &encrypted_key,
+                plaintext,
+            );
         }
     };
     encrypt_compact_jwe_with_cek(&protected_header, &cek, &encrypted_key, plaintext)
