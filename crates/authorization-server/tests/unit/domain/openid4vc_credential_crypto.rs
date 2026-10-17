@@ -299,7 +299,10 @@ fn valid_mdoc_presentation(
         response_uri: "https://verifier.example/response".to_owned(),
         verifier_nonce: "verifier-nonce".to_owned(),
     };
-    let transcript_bytes = transcript.to_cbor_bytes().expect("session transcript");
+    let transcript_bytes = transcript
+        .to_cbor_bytes()
+        .expect("session transcript")
+        .into_owned();
     let device_key_der = device_signing_key.to_bytes().to_vec();
     let mut response = DeviceResponseBuilder::from_documents(vec![issuer_document])
         .session_transcript(transcript)
@@ -1417,7 +1420,7 @@ fn mdoc_assessment_and_holder_helpers_fail_closed() {
 
     let key = CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, vec![1; 32], vec![2; 32])
         .build();
-    let holder = mdoc_holder_key(Some(key.clone())).expect("holder key");
+    let holder = mdoc_holder_key(Some(key.clone().to_vec().unwrap())).expect("holder key");
     assert_eq!(
         URL_SAFE_NO_PAD
             .decode(holder["cose_key"].as_str().expect("encoded key"))
@@ -1907,7 +1910,8 @@ fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing
             verifier_nonce: "another-transaction".to_owned(),
         }
         .to_cbor_bytes()
-        .unwrap();
+        .unwrap()
+        .into_owned();
         let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),

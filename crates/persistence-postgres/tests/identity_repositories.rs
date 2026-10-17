@@ -10,7 +10,7 @@ use nazo_identity::{
     TenantId, UserId, UserProfile,
     ports::{
         AdminUserUpdate, EncodedSecretHash, FederationLogin, MfaRepositoryPort,
-        NewFederatedIdentity, NewFederationLink, RepositoryError,
+        NewFederatedIdentity, NewFederationLink, RepositoryError, TotpEnrollmentCheck,
     },
     scim::NormalizedScimUser,
 };
@@ -858,13 +858,13 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
             .unwrap(),
         nazo_identity::ports::TotpVerificationOutcome::Invalid
     );
-    let enrollment = repository
-        .totp_enrollment(tenant.tenant_id, user_id)
-        .await
-        .unwrap()
-        .expect("pending enrollment remains available");
-    assert!(!enrollment.confirmed);
-    assert!(enrollment.last_used_step.is_none());
+    assert_eq!(
+        repository
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
+            .await
+            .unwrap(),
+        TotpEnrollmentCheck::InvalidCode
+    );
     let events = identity_security_events(&pool, user_id).await;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type, "mfa_totp_attempt");
@@ -1089,19 +1089,19 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     let other_tenant = TenantId::new(Uuid::now_v7()).unwrap();
     let trait_repository: &dyn MfaRepositoryPort = &repository;
 
-    assert!(
+    assert_eq!(
         trait_repository
-            .totp_enrollment(tenant.tenant_id, user_id)
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
-    assert!(
+    assert_eq!(
         trait_repository
-            .totp_enrollment(other_tenant, user_id)
+            .check_totp_enrollment(other_tenant, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
 
     trait_repository
@@ -1112,15 +1112,16 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .begin_totp_enrollment(tenant.tenant_id, user_id, &secret_base32)
         .await
         .unwrap();
-    let enrollment = trait_repository
-        .totp_enrollment(tenant.tenant_id, user_id)
-        .await
-        .unwrap()
-        .expect("the pending encrypted enrollment should be readable");
-    assert_eq!(enrollment.secret_base32, secret_base32);
-    assert!(!enrollment.confirmed);
-
     let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let code = nazo_identity::mfa::totp_for_step(&secret, step).unwrap();
+    assert_eq!(
+        trait_repository
+            .check_totp_enrollment(tenant.tenant_id, user_id, &code, timestamp)
+            .await
+            .unwrap(),
+        TotpEnrollmentCheck::ValidCode
+    );
+
     let invalid_hashes = (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
         .map(|index| EncodedSecretHash::new(format!("invalid-{index}")).unwrap())
         .collect();
@@ -1162,13 +1163,13 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             .unwrap(),
         "starting enrollment must preserve the confirmed credential"
     );
-    let credential = trait_repository
-        .totp_enrollment(tenant.tenant_id, user_id)
-        .await
-        .unwrap()
-        .expect("confirmed TOTP credential should be readable");
-    assert_eq!(credential.secret_base32, secret_base32);
-    assert_eq!(credential.last_used_step, Some(step));
+    assert_eq!(
+        trait_repository
+            .check_totp_enrollment(tenant.tenant_id, user_id, &code, timestamp)
+            .await
+            .unwrap(),
+        TotpEnrollmentCheck::AlreadyConfirmed
+    );
     assert_eq!(
         trait_repository
             .verify_and_confirm_totp(
@@ -1379,12 +1380,12 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         )
         .await
         .unwrap();
-    assert!(
+    assert_eq!(
         trait_repository
-            .totp_enrollment(tenant.tenant_id, user_id)
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
     assert!(
         trait_repository
@@ -3637,12 +3638,12 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
             .await
             .unwrap()
     );
-    assert!(
+    assert_eq!(
         repository
-            .totp_enrollment(tenant.tenant_id, user_id)
+            .check_totp_enrollment(tenant.tenant_id, user_id, "invalid", 0)
             .await
-            .unwrap()
-            .is_none()
+            .unwrap(),
+        TotpEnrollmentCheck::Missing
     );
     blocker
         .batch_execute(&format!(

@@ -243,7 +243,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             self.reserve_mfa_attempt(&command.context, &account).await?;
             let prepared = match self
                 .mfa
-                .prepare_totp_confirmation(&account, &command.code, command.context.now)
+                .prepare_totp_confirmation(&account, command.code, command.context.now)
                 .await
             {
                 Ok(prepared) => prepared,

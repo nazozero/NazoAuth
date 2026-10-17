@@ -7,7 +7,7 @@ use nazo_oauth_server::contracts::fapi_resource::{
 
 use actix_web::{
     HttpRequest, HttpResponse,
-    body::to_bytes,
+    body::{MessageBody, to_bytes},
     http::{StatusCode, header},
     web::{Bytes, Data},
 };
@@ -495,9 +495,12 @@ async fn sign_response(
     response: HttpResponse,
 ) -> HttpResponse {
     let (mut response, body) = response.into_parts();
-    let response_body = match to_bytes(body).await {
+    let response_body = match body.try_into_bytes() {
         Ok(body) => body,
-        Err(_) => return HttpResponse::ServiceUnavailable().finish(),
+        Err(body) => match to_bytes(body).await {
+            Ok(body) => body,
+            Err(_) => return HttpResponse::ServiceUnavailable().finish(),
+        },
     };
     let digest = (!response_body.is_empty()).then(|| BodyDigest::for_body(&response_body));
     let mut signature_headers = digest

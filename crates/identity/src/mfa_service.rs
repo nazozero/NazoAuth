@@ -7,11 +7,11 @@ use crate::{
     PublicAccount,
     mfa::{
         MFA_BACKUP_CODE_COUNT, MfaVerificationMethod, generate_backup_code,
-        generate_totp_secret_base32, normalize_backup_code, otpauth_uri, verified_totp_step,
+        generate_totp_secret_base32, normalize_backup_code, otpauth_uri,
     },
     ports::{
         EncodedSecretHash, MfaHashError, MfaRepositoryPort, MfaSecretHashPort, RepositoryError,
-        TotpVerificationOutcome,
+        TotpEnrollmentCheck, TotpVerificationOutcome,
     },
 };
 
@@ -148,31 +148,31 @@ impl MfaService {
     pub async fn prepare_totp_confirmation(
         &self,
         account: &PublicAccount,
-        code: &str,
+        code: String,
         now: i64,
     ) -> Result<PreparedTotpConfirmation, MfaServiceError> {
-        let enrollment = self
+        match self
             .repository
-            .totp_enrollment(account.tenant().tenant_id, account.user_id())
+            .check_totp_enrollment(account.tenant().tenant_id, account.user_id(), &code, now)
             .await
             .map_err(MfaServiceError::repository)?
-            .ok_or_else(|| MfaServiceError::policy(MfaServiceErrorKind::EnrollmentMissing))?;
-        if enrollment.confirmed {
-            return Err(MfaServiceError::policy(MfaServiceErrorKind::AlreadyEnabled));
-        }
-        if verified_totp_step(
-            &enrollment.secret_base32,
-            code,
-            now,
-            enrollment.last_used_step,
-        )
-        .is_none()
         {
-            self.repository
-                .record_invalid_totp_attempt(account.tenant().tenant_id, account.user_id())
-                .await
-                .map_err(MfaServiceError::repository)?;
-            return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+            TotpEnrollmentCheck::Missing => {
+                return Err(MfaServiceError::policy(
+                    MfaServiceErrorKind::EnrollmentMissing,
+                ));
+            }
+            TotpEnrollmentCheck::AlreadyConfirmed => {
+                return Err(MfaServiceError::policy(MfaServiceErrorKind::AlreadyEnabled));
+            }
+            TotpEnrollmentCheck::InvalidCode => {
+                self.repository
+                    .record_invalid_totp_attempt(account.tenant().tenant_id, account.user_id())
+                    .await
+                    .map_err(MfaServiceError::repository)?;
+                return Err(MfaServiceError::policy(MfaServiceErrorKind::InvalidCode));
+            }
+            TotpEnrollmentCheck::ValidCode => {}
         }
 
         let (backup_codes, normalized) = generate_backup_codes();
@@ -182,7 +182,7 @@ impl MfaService {
             .await
             .map_err(mfa_hash_error)?;
         Ok(PreparedTotpConfirmation {
-            code: code.to_owned(),
+            code,
             backup_codes,
             hashes,
         })

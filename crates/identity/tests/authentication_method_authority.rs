@@ -65,12 +65,11 @@ fn real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid() {
 
 #[test]
 fn totp_credentials_do_not_expose_seeds_in_debug_output() {
-    use nazo_identity::ports::TotpEnrollment;
+    use nazo_identity::TotpEnrollmentStart;
     let seed = "JBSWY3DPEHPK3PXP";
-    let enrollment = TotpEnrollment {
+    let enrollment = TotpEnrollmentStart {
         secret_base32: seed.to_owned(),
-        confirmed: false,
-        last_used_step: None,
+        otpauth_uri: format!("otpauth://totp/test?secret={seed}"),
     };
     for output in [format!("{enrollment:?}"), format!("{enrollment:#?}")] {
         assert!(!output.contains(seed));

@@ -375,28 +375,20 @@ fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
         CredentialResponseBody::Jwt(value) if value == "signed.jwt"
     ));
 
-    let mut invalid = StoredCredentialResponse {
+    let invalid = StoredCredentialResponse {
         selection: None,
         issuance_id: Uuid::nil(),
         token_id: Uuid::nil(),
         request_digest: "digest".to_owned(),
-        body: b"not-json".as_slice().into(),
+        body: "{}".into(),
         encoding: CredentialResponseEncoding::Json,
-        status: 200,
+        status: 500,
         dpop_nonce: None,
         expires_at: now,
     };
     assert_eq!(
-        response_from_record(invalid.clone(), nazo_auth::DpopNoncePolicy::Required)
-            .expect_err("invalid JSON must fail")
-            .error,
-        "server_error"
-    );
-    invalid.encoding = CredentialResponseEncoding::Jwt;
-    invalid.body = vec![0xff].into();
-    assert_eq!(
         response_from_record(invalid, nazo_auth::DpopNoncePolicy::Required)
-            .expect_err("invalid UTF-8 must fail")
+            .expect_err("unsupported stored status must fail")
             .error,
         "server_error"
     );

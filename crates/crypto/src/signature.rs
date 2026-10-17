@@ -104,17 +104,47 @@ pub fn verify(
     message: &[u8],
     signature: &[u8],
 ) -> crate::Result<()> {
+    use aws_lc_rs::signature as backend;
+    use jsonwebtoken::DecodingKeyKind;
+
     match algorithm {
         Algorithm::EdDSA | Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 => {}
         _ => return Err(CryptoError::UnsupportedAlgorithm),
     }
-    let verifier =
-        (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.verifier_factory)(&algorithm, &key.inner)
-            .map_err(|_| CryptoError::InvalidInput)?;
-    // The provider requires Vec, but raw signatures need no Base64 round trip.
-    verifier
-        .verify(message, &signature.to_vec())
-        .map_err(|_| CryptoError::InvalidSignature)
+    if key.inner.family() != algorithm.family() {
+        return Err(CryptoError::InvalidInput);
+    }
+    // Borrow the retained key and raw signature directly. The JWT provider's
+    // factory clones the key and boxes a verifier whose interface requires Vec.
+    let result = match algorithm {
+        Algorithm::EdDSA | Algorithm::ES256 => {
+            let bytes = key
+                .inner
+                .try_get_as_bytes()
+                .map_err(|_| CryptoError::InvalidInput)?;
+            let verifier: &dyn backend::VerificationAlgorithm = match algorithm {
+                Algorithm::EdDSA => &backend::ED25519,
+                _ => &backend::ECDSA_P256_SHA256_FIXED,
+            };
+            verifier.verify_sig(bytes, message, signature)
+        }
+        Algorithm::RS256 | Algorithm::PS256 => {
+            let parameters = match algorithm {
+                Algorithm::RS256 => &backend::RSA_PKCS1_2048_8192_SHA256,
+                _ => &backend::RSA_PSS_2048_8192_SHA256,
+            };
+            match key.inner.kind() {
+                DecodingKeyKind::SecretOrDer(bytes) => {
+                    backend::UnparsedPublicKey::new(parameters, bytes).verify(message, signature)
+                }
+                DecodingKeyKind::RsaModulusExponent { n, e } => {
+                    backend::RsaPublicKeyComponents { n, e }.verify(parameters, message, signature)
+                }
+            }
+        }
+        _ => unreachable!("unsupported algorithms were rejected above"),
+    };
+    result.map_err(|_| CryptoError::InvalidSignature)
 }
 
 pub fn generate_private_key(algorithm: Algorithm) -> crate::Result<Vec<u8>> {

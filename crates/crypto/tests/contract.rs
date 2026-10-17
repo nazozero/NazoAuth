@@ -355,6 +355,16 @@ mod jose {
 
         let rs_raw = rs_key.sign(message).unwrap();
         let ps_raw = ps_key.sign(message).unwrap();
+        let key = verification_key(Algorithm::RS256, &private_der);
+        assert!(matches!(
+            signature::verify(Algorithm::PS256, &key, message, &rs_raw),
+            Err(CryptoError::InvalidSignature)
+        ));
+        assert!(matches!(
+            signature::verify(Algorithm::RS256, &key, message, &ps_raw),
+            Err(CryptoError::InvalidSignature)
+        ));
+
         assert!(!matches!(
             jsonwebtoken::crypto::verify(
                 &URL_SAFE_NO_PAD.encode(&rs_raw),

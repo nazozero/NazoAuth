@@ -2741,7 +2741,7 @@ dependencies = [
 [[package]]
 name = "mdoc-rs"
 version = "0.2.0"
-source = "git+https://github.com/nazozero/mdoc-rs?rev=40e5ac7e1739150870c41544219345c2b6de4c9b#40e5ac7e1739150870c41544219345c2b6de4c9b"
+source = "git+https://github.com/nazozero/mdoc-rs?rev=c5d460cfd667324e51e590e8ecbbdb21f63bbdbe#c5d460cfd667324e51e590e8ecbbdb21f63bbdbe"
 dependencies = [
  "base64 0.22.1",
  "chrono",

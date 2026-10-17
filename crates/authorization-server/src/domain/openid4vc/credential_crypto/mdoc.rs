@@ -22,6 +22,7 @@ const MDL_NAMESPACE: &str = "org.iso.18013.5.1";
 struct MdocVerificationMaterial {
     mso: Result<Mso, CredentialTrustError>,
     certificates: Result<Vec<Vec<u8>>, CredentialTrustError>,
+    encoded_device_key: Option<Vec<u8>>,
 }
 
 pub(super) async fn sign(
@@ -191,7 +192,7 @@ pub(super) fn verify(
             &bytes,
             &mdoc_rs::VerifyOptions {
                 session_transcript: Some(mdoc_rs::session::SessionTranscript::Raw(
-                    session_transcript.to_vec(),
+                    std::borrow::Cow::Borrowed(session_transcript),
                 )),
                 ..Default::default()
             },
@@ -202,7 +203,7 @@ pub(super) fn verify(
         })?;
     // Keep parse results until their validation stage so an issuer encoding error cannot
     // hide an earlier holder/session mismatch. Each document is decoded only once here.
-    let material: Vec<_> = verified
+    let mut material: Vec<_> = verified
         .mdoc
         .documents
         .iter()
@@ -215,11 +216,12 @@ pub(super) fn verify(
                 certificates: issuer_auth
                     .certificate_chain_der()
                     .map_err(|_| CredentialTrustError::InvalidEncoding),
+                encoded_device_key: None,
             }
         })
         .collect();
     let standard_device_authentication_valid =
-        verify_standard_mdoc_device_signatures(&verified, &material, session_transcript)?;
+        verify_standard_mdoc_device_signatures(&verified, &mut material, session_transcript)?;
     let issuer_chain_valid = verify_mdoc_issuer_certificate_chains(
         &material,
         &trust_anchors,
@@ -259,10 +261,7 @@ pub(super) fn verify(
     let material = material.into_iter().next().unwrap();
     let mso = material.mso.unwrap();
     let certificates = material.certificates.unwrap();
-    let holder_key = mdoc_holder_key(
-        mso.device_key_info
-            .map(|device_key_info| device_key_info.device_key),
-    )?;
+    let holder_key = mdoc_holder_key(material.encoded_device_key)?;
     let mut namespaces = Map::new();
     for (namespace, items) in document.issuer_signed.name_spaces {
         let mut claims = Map::new();
@@ -306,7 +305,7 @@ pub(crate) fn standard_device_authentication_bytes(
 
 fn verify_standard_mdoc_device_signatures(
     verified: &mdoc_rs::verifier::VerifiedMDoc,
-    material: &[MdocVerificationMaterial],
+    material: &mut [MdocVerificationMaterial],
     session_transcript: &[u8],
 ) -> Result<bool, CredentialTrustError> {
     if verified.mdoc.documents.is_empty() {
@@ -323,14 +322,12 @@ fn verify_standard_mdoc_device_signatures(
         ) {
             return Ok(false);
         }
-        let mso = material.mso.as_ref().map_err(|error| *error)?;
-        let device_key = mso
+        let mso = material.mso.as_mut().map_err(|error| *error)?;
+        let device_key_bytes = mso
             .device_key_info
-            .as_ref()
-            .map(|device_key_info| &device_key_info.device_key)
-            .ok_or(CredentialTrustError::InvalidHolderBinding)?;
-        let device_key_bytes = device_key
-            .clone()
+            .take()
+            .ok_or(CredentialTrustError::InvalidHolderBinding)?
+            .device_key
             .to_vec()
             .map_err(|_| CredentialTrustError::InvalidEncoding)?;
         let device_authentication = standard_device_authentication_bytes(
@@ -352,6 +349,8 @@ fn verify_standard_mdoc_device_signatures(
             // safely classified as an individually discardable nonce match.
             return Err(CredentialTrustError::InvalidSessionBinding);
         }
+        // The same COSE encoding becomes the verified holder-key projection.
+        material.encoded_device_key = Some(device_key_bytes);
     }
 
     Ok(true)
@@ -533,13 +532,8 @@ pub(crate) fn mdoc_failed_assessments_accepted<'a>(
     failed > 0
 }
 
-pub(crate) fn mdoc_holder_key(
-    device_key: Option<coset::CoseKey>,
-) -> Result<Value, CredentialTrustError> {
-    let encoded = device_key
-        .ok_or(CredentialTrustError::InvalidHolderBinding)?
-        .to_vec()
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+pub(crate) fn mdoc_holder_key(encoded: Option<Vec<u8>>) -> Result<Value, CredentialTrustError> {
+    let encoded = encoded.ok_or(CredentialTrustError::InvalidHolderBinding)?;
     Ok(Value::Object(Map::from_iter([(
         "cose_key".to_owned(),
         Value::String(URL_SAFE_NO_PAD.encode(encoded)),

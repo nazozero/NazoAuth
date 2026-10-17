@@ -49,7 +49,7 @@ impl Openid4vpRepository {
             .to_string();
         let protected_private_key = transaction
             .response_encryption_private_key
-            .as_deref()
+            .as_ref()
             .map(|key| {
                 protect_payload(
                     &self.data_key,
@@ -410,17 +410,15 @@ impl PresentationRow {
             .ephemeral_private_key_ciphertext
             .take()
             .map(|mut value| {
-                let len = unprotect_payload(
+                unprotect_payload(
                     data_key,
                     b"nazo-openid4vp-ephemeral-v2",
                     tenant_id,
                     self.id,
                     &mut value,
                 )?
-                .len();
-                value.truncate(12 + len);
-                value.drain(..12);
-                Ok(value)
+                .try_into()
+                .map_err(|_| PresentationStoreError::Unavailable)
             })
             .transpose()?;
         let mut transaction = self.transaction()?;

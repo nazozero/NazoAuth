@@ -232,29 +232,11 @@ pub(super) fn response_from_record(
             ));
         }
     };
+    // The issuance owner encoded these bytes before committing them; the store
+    // authenticates the retained body. Replay forwards that exact representation.
     let body = match response.encoding {
-        CredentialResponseEncoding::Json => {
-            serde_json::from_slice::<nazo_openid4vci::CredentialResponse>(&response.body).map_err(
-                |_| {
-                    vci_error(
-                        503,
-                        "server_error",
-                        "Stored credential response is invalid.",
-                    )
-                },
-            )?;
-            CredentialResponseBody::Json(response.body)
-        }
-        CredentialResponseEncoding::Jwt => {
-            std::str::from_utf8(&response.body).map_err(|_| {
-                vci_error(
-                    503,
-                    "server_error",
-                    "Stored credential response is invalid.",
-                )
-            })?;
-            CredentialResponseBody::Jwt(response.body)
-        }
+        CredentialResponseEncoding::Json => CredentialResponseBody::Json(response.body),
+        CredentialResponseEncoding::Jwt => CredentialResponseBody::Jwt(response.body),
     };
     Ok(CredentialEndpointResponse {
         body,

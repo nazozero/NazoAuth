@@ -6,17 +6,19 @@ use uuid::Uuid;
 use super::*;
 use crate::{
     AccountIdentity, Principal, TenantContext, UserId, UserProfile, UserRole,
-    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpEnrollment},
+    ports::{BackupCodeCandidate, MfaHashFuture, RepositoryFuture, TotpEnrollmentCheck},
 };
 
 struct ConfirmRepository(Mutex<TotpVerificationOutcome>);
 
 impl MfaRepositoryPort for ConfirmRepository {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         _tenant_id: crate::TenantId,
         _user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
+        _code: &'a str,
+        _timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
         unreachable!()
     }
 

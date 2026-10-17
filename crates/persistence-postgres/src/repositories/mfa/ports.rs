@@ -3,17 +3,22 @@ use nazo_identity::{
     TenantId, UserId,
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaRepositoryPort, RepositoryFuture,
-        TotpEnrollment, TotpVerificationOutcome,
+        TotpEnrollmentCheck, TotpVerificationOutcome,
     },
 };
 
 impl MfaRepositoryPort for MfaRepository {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
-        Box::pin(async move { self.totp_enrollment(tenant_id, user_id).await })
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
+        Box::pin(async move {
+            self.check_totp_enrollment(tenant_id, user_id, code, timestamp)
+                .await
+        })
     }
 
     fn begin_totp_enrollment<'a>(

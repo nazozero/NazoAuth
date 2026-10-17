@@ -794,7 +794,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
         openid4vc_trust_policy_binding_id: None,
         openid4vc_trust_policy_resource_id: None,
         openid4vc_trust_policy_digest: None,
-        response_encryption_private_key: Some(vec![7_u8; 32]),
+        response_encryption_private_key: Some([7_u8; 32]),
         created_at: now,
         expires_at: now + Duration::minutes(5),
     };
@@ -935,7 +935,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(loaded.response_encryption_private_key, Some(vec![7_u8; 32]));
+    assert_eq!(loaded.response_encryption_private_key, Some([7_u8; 32]));
     assert!(
         verifier
             .bind_wallet_nonce(transaction_id, "wallet-nonce", now)
@@ -6016,7 +6016,7 @@ async fn presentation_completion_rechecks_owner_clock_after_pool_and_record_wait
             openid4vc_trust_policy_binding_id: None,
             openid4vc_trust_policy_resource_id: None,
             openid4vc_trust_policy_digest: None,
-            response_encryption_private_key: Some(vec![7; 32]),
+            response_encryption_private_key: Some([7; 32]),
             created_at: admitted - Duration::minutes(10),
             expires_at: admitted + Duration::minutes(5),
         };

@@ -830,7 +830,7 @@ async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response()
 #[test]
 fn presentation_transaction_debug_does_not_expose_decryption_material() {
     let mut transaction = cardinality_transaction();
-    transaction.response_encryption_private_key = Some(b"private-decryption-secret".to_vec());
+    transaction.response_encryption_private_key = Some(*b"private-decryption-secret-32byte");
     transaction.request_object = Some("signed-request-secret".to_owned());
     assert_eq!(
         format!("{transaction:?}"),

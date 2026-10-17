@@ -544,8 +544,7 @@ impl PresentationOperations for ServerPresentationOperations {
                 openid4vc_trust_policy_digest: trust_policy
                     .as_ref()
                     .map(|policy| policy.resource_digest.clone()),
-                response_encryption_private_key: response_key
-                    .map(|key| key.secret_bytes().to_vec()),
+                response_encryption_private_key: response_key.map(|key| key.secret_bytes()),
                 created_at: now,
                 expires_at: now + Duration::seconds(self.transaction_ttl_seconds as i64),
             };
@@ -724,10 +723,9 @@ impl PresentationOperations for ServerPresentationOperations {
                 PresentationResponseInput::DirectPostJwt(encoded)
                     if transaction.request.response_mode == ResponseMode::DirectPostJwt =>
                 {
-                    let key: [u8; 32] = transaction
+                    let key = transaction
                         .response_encryption_private_key
-                        .as_deref()
-                        .and_then(|value| value.try_into().ok())
+                        .as_ref()
                         .ok_or_else(|| {
                             vp_error(
                                 503,
@@ -735,7 +733,7 @@ impl PresentationOperations for ServerPresentationOperations {
                                 "Presentation response key is unavailable.",
                             )
                         })?;
-                    let plaintext = EphemeralEncryptionKey::from_secret_bytes(&key)
+                    let plaintext = EphemeralEncryptionKey::from_secret_bytes(key)
                         .and_then(|key| key.decrypt(&encoded))
                         .map_err(|_| {
                             vp_error(

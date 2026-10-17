@@ -20,7 +20,7 @@ use nazo_identity::{
     ports::{
         BackupCodeCandidate, EncodedSecretHash, MfaAttemptThrottleDecision, MfaAttemptThrottlePort,
         MfaHashError, MfaHashFuture, MfaRepositoryPort, MfaSecretHashPort, RepositoryError,
-        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpEnrollment,
+        RepositoryFuture, SessionAccountPort, SessionStorePort, TotpEnrollmentCheck,
         TotpVerificationOutcome,
     },
     session::SessionRecord,
@@ -78,12 +78,14 @@ struct UnknownMfaCommitAck {
 }
 
 impl MfaRepositoryPort for UnknownMfaCommitAck {
-    fn totp_enrollment<'a>(
+    fn check_totp_enrollment<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<TotpEnrollment>> {
-        MfaRepositoryPort::totp_enrollment(&self.inner, tenant_id, user_id)
+        code: &'a str,
+        timestamp: i64,
+    ) -> RepositoryFuture<'a, TotpEnrollmentCheck> {
+        MfaRepositoryPort::check_totp_enrollment(&self.inner, tenant_id, user_id, code, timestamp)
     }
 
     fn begin_totp_enrollment<'a>(
@@ -494,7 +496,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         let old_code =
             nazo_identity::mfa::totp_for_step(b"12345678901234567890", step - 2).unwrap();
         let prepared = initial
-            .prepare_totp_confirmation(&account, &old_code, old_now)
+            .prepare_totp_confirmation(&account, old_code, old_now)
             .await
             .unwrap();
         assert!(matches!(

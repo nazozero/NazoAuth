@@ -689,7 +689,7 @@ async fn response_signer_failure_returns_an_empty_unsigned_503() {
 }
 
 #[actix_web::test]
-async fn response_signing_preserves_multiple_physical_header_values() {
+async fn response_signing_preserves_body_storage_and_multiple_physical_header_values() {
     let state = signature_endpoint(AuthorizationOutcome::Success, Ok(()), false);
     let fields = request_signature_fields("GET", b"", None);
     let request = test::TestRequest::get()
@@ -700,16 +700,29 @@ async fn response_signing_preserves_multiple_physical_header_values() {
         .to_http_request();
     let request_body = Bytes::new();
     let original = CapturedRequest::capture("https://auth.example", &request, &request_body);
+    let body = Bytes::from(serde_json::to_vec(&json!({"ok": true})).unwrap());
+    let pointer = body.as_ptr();
     let response = HttpResponse::Ok()
         .append_header((header::SET_COOKIE, "first=1; Secure"))
         .append_header((header::SET_COOKIE, "second=2; Secure"))
-        .json(json!({"ok": true}));
+        .content_type("application/json")
+        .body(body);
 
     let signed = sign_response(&state.endpoint, &original, response).await;
     assert_eq!(signed.status(), StatusCode::OK);
     assert_eq!(signed.headers().get_all(header::SET_COOKIE).count(), 2);
     assert!(signed.headers().contains_key("signature-input"));
     assert!(signed.headers().contains_key("signature"));
+    let digest = signed
+        .headers()
+        .get("content-digest")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let body = signed.into_body().try_into_bytes().unwrap();
+    assert_eq!(body.as_ptr(), pointer);
+    assert!(content_digest_field_matches(&digest, &body));
 }
 
 #[actix_web::test]

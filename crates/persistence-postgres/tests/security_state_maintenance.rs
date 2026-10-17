@@ -1158,7 +1158,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
         openid4vc_trust_policy_binding_id: None,
         openid4vc_trust_policy_resource_id: None,
         openid4vc_trust_policy_digest: None,
-        response_encryption_private_key: Some(vec![7_u8; 32]),
+        response_encryption_private_key: Some([7_u8; 32]),
         created_at: now - Duration::hours(2),
         expires_at,
     };

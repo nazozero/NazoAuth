@@ -187,7 +187,8 @@ pub enum CredentialResponseEncoding {
 }
 
 /// The exact wire response committed with an issuance state transition. The
-/// repository encrypts `body` at rest; the digest and issuance id prevent a
+/// issuance owner supplies the final encoded `body`; replay does not decode it.
+/// The repository authenticates `body` at rest; the digest and issuance id prevent a
 /// different request from retrieving a previously committed response.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredCredentialResponse {
