@@ -1,8 +1,5 @@
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use nazo_operator_protocol::{
-    MAX_TENANT_RESOURCE_IDENTITIES, TenantResourceIdentity, TenantResourceKind,
-    TenantResourceMapping,
-};
+use nazo_operator_protocol::{TenantResourceIdentity, TenantResourceKind};
 use sha2::Sha256;
 
 use super::*;
@@ -107,58 +104,6 @@ fn change_set_identity_is_unique_by_kind_and_resource_id() {
     }))
     .unwrap();
     assert!(decode_change_set_payloads(&duplicate, &authorized).is_err());
-}
-
-#[test]
-fn replay_outcome_json_is_closed() {
-    let outcome = ControlTenantResourceOutcome {
-        revision: 4,
-        resources: Vec::new(),
-        resource_mappings: Vec::new(),
-        resource_manifest_sha256: "a".repeat(64),
-    };
-    let encoded = serde_json::to_value(&outcome).unwrap();
-    assert_eq!(
-        serde_json::from_value::<ControlTenantResourceOutcome>(encoded).unwrap(),
-        outcome
-    );
-    assert!(
-        serde_json::from_value::<ControlTenantResourceOutcome>(serde_json::json!({
-            "revision": 4,
-            "resources": [],
-            "resource_mappings": [],
-            "resource_manifest_sha256": "a".repeat(64),
-            "legacy_receipt": "forbidden"
-        }))
-        .is_err()
-    );
-}
-
-#[test]
-fn executor_rejects_an_outcome_that_the_journal_cannot_publish() {
-    let outcome = ControlTenantResourceOutcome {
-        revision: u64::MAX,
-        resources: (0..MAX_TENANT_RESOURCE_IDENTITIES)
-            .map(|index| TenantResourceIdentity {
-                kind: TenantResourceKind::User,
-                resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
-                digest: "f".repeat(64),
-            })
-            .collect(),
-        resource_mappings: (0..MAX_TENANT_RESOURCE_IDENTITIES)
-            .map(|index| TenantResourceMapping {
-                kind: TenantResourceKind::User,
-                resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
-                public_id: "00000000-0000-0000-0000-000000000001".to_owned(),
-            })
-            .collect(),
-        resource_manifest_sha256: "a".repeat(64),
-    };
-
-    assert_eq!(
-        validate_control_outcome(TenantResourceAction::Apply, &outcome),
-        Err(TenantResourceExecutorError::TooLarge)
-    );
 }
 
 #[test]

@@ -11,12 +11,11 @@ use futures_util::future::BoxFuture;
 use nazo_auth::{CreateClientRequest, OAuthClient};
 use nazo_identity::TenantContext;
 use nazo_operator_protocol::{
-    ControlResultData, Openid4vcTrustPolicy, ProtocolError, TenantResourceIdentity,
-    TenantResourceKind, TenantResourceMapping, TenantResourceSelector,
-    canonical_tenant_resource_manifest_sha256, validate_control_result_data_for_wire,
+    ControlResultData, Openid4vcTrustPolicy, TenantResourceIdentity, TenantResourceKind,
+    TenantResourceSelector, canonical_tenant_resource_manifest_sha256,
     validate_openid4vc_trust_policy,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
@@ -467,39 +466,6 @@ pub trait TenantResourcePreparation: Send + Sync {
     ) -> BoxFuture<'a, Result<PreparedMtlsTrustAnchor, TenantResourcePreparationError>>;
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ControlTenantResourceOutcome {
-    pub revision: u64,
-    pub resources: Vec<TenantResourceIdentity>,
-    pub resource_mappings: Vec<TenantResourceMapping>,
-    pub resource_manifest_sha256: String,
-}
-
-impl ControlTenantResourceOutcome {
-    #[must_use]
-    pub fn control_result_data(&self, operation: TenantResourceAction) -> ControlResultData {
-        match operation {
-            TenantResourceAction::Apply => ControlResultData::TenantResourceApply {
-                revision: self.revision,
-                resources: self.resources.clone(),
-                resource_mappings: self.resource_mappings.clone(),
-                resource_manifest_sha256: self.resource_manifest_sha256.clone(),
-            },
-            TenantResourceAction::Enumerate => ControlResultData::TenantResourceEnumerate {
-                revision: self.revision,
-                resources: self.resources.clone(),
-                resource_manifest_sha256: self.resource_manifest_sha256.clone(),
-            },
-            TenantResourceAction::Revoke => ControlResultData::TenantResourceRevoke {
-                revision: self.revision,
-                resources: self.resources.clone(),
-                resource_manifest_sha256: self.resource_manifest_sha256.clone(),
-            },
-        }
-    }
-}
-
 pub struct ControlTenantResourceFrame<'a> {
     pub deployment_id: &'a str,
     pub jti: &'a str,
@@ -516,25 +482,13 @@ pub trait TenantResourceExecutorPort: Send + Sync {
     fn execute_control_operation<'a>(
         &'a self,
         frame: ControlTenantResourceFrame<'a>,
-    ) -> BoxFuture<'a, Result<ControlTenantResourceOutcome, TenantResourceExecutorError>>;
+    ) -> BoxFuture<'a, Result<ControlResultData, TenantResourceExecutorError>>;
 }
 
 #[must_use]
 pub fn empty_manifest_sha256() -> String {
     canonical_tenant_resource_manifest_sha256(&[])
         .expect("the empty tenant-resource identity set is valid")
-}
-
-pub fn validate_control_outcome(
-    operation: TenantResourceAction,
-    outcome: &ControlTenantResourceOutcome,
-) -> Result<(), TenantResourceExecutorError> {
-    validate_control_result_data_for_wire(&outcome.control_result_data(operation)).map_err(
-        |error| match error {
-            ProtocolError::TooLarge => TenantResourceExecutorError::TooLarge,
-            _ => TenantResourceExecutorError::Rejected,
-        },
-    )
 }
 
 #[must_use]

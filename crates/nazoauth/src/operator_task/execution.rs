@@ -43,8 +43,8 @@ use nazo_persistence::directory_control::{
     TenantDirectoryControlError,
 };
 use nazo_persistence::tenant_resources::{
-    ControlTenantResourceFrame, ControlTenantResourceOutcome, PreparedTenantResource,
-    TenantResourceAction, TenantResourceExecutorError, decode_change_set_payloads,
+    ControlTenantResourceFrame, PreparedTenantResource, TenantResourceAction,
+    TenantResourceExecutorError, decode_change_set_payloads,
 };
 
 /// Per-run provenance handed to engines whose durable records name the
@@ -166,9 +166,7 @@ pub(super) async fn execute_with_persistence(
                 persistence,
             )
             .await?;
-            Ok(Some(
-                outcome.control_result_data(TenantResourceAction::Enumerate),
-            ))
+            Ok(Some(outcome))
         }
         ControlOperationPayload::TenantResourceApply {
             tenant_id,
@@ -183,9 +181,7 @@ pub(super) async fn execute_with_persistence(
                 persistence,
             )
             .await?;
-            Ok(Some(
-                outcome.control_result_data(TenantResourceAction::Apply),
-            ))
+            Ok(Some(outcome))
         }
         ControlOperationPayload::TenantResourceRevoke {
             tenant_id,
@@ -200,9 +196,7 @@ pub(super) async fn execute_with_persistence(
                 persistence,
             )
             .await?;
-            Ok(Some(
-                outcome.control_result_data(TenantResourceAction::Revoke),
-            ))
+            Ok(Some(outcome))
         }
         ControlOperationPayload::RecoveryInvalidate { state_epoch } => {
             run_recovery_invalidation(state_epoch, context, persistence)
@@ -518,7 +512,7 @@ async fn run_tenant_resource_operation(
     selectors: &[TenantResourceSelector],
     context: &ExecutionContext<'_>,
     persistence: &dyn OperatorPersistence,
-) -> Result<ControlTenantResourceOutcome, SideEffectError> {
+) -> Result<ControlResultData, SideEffectError> {
     // The command entry has already admitted this request, or recovered its
     // exact accepted-journal authorization snapshot. Receipt recovery is not
     // an alternate caller-authentication path and returns only public outcome data.

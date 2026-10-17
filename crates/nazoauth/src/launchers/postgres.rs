@@ -57,7 +57,7 @@ impl OperatorPersistence for PostgresOperatorPersistence {
     ) -> futures_util::future::BoxFuture<
         'a,
         Result<
-            Option<nazo_persistence::tenant_resources::ControlTenantResourceOutcome>,
+            Option<nazo_operator_protocol::ControlResultData>,
             nazo_persistence::tenant_resources::TenantResourceExecutorError,
         >,
     > {

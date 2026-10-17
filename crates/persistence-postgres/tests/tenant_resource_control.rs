@@ -4,11 +4,12 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 use nazo_identity::{TenantContext, TenantDirectoryBinding, TenantId};
+use nazo_operator_protocol::ControlResultData;
 use nazo_persistence::{
     directory_control::{DirectoryControlAction, DirectoryControlFrame},
     tenant_resources::{
-        ControlTenantResourceFrame, ControlTenantResourceOutcome, TenantResourceAction,
-        TenantResourceExecutorError, TenantResourceExecutorPort,
+        ControlTenantResourceFrame, TenantResourceAction, TenantResourceExecutorError,
+        TenantResourceExecutorPort,
     },
 };
 use nazo_postgres::{
@@ -43,7 +44,7 @@ impl Fixture {
         &self,
         identity: &Identity,
         action: TenantResourceAction,
-    ) -> Result<Option<ControlTenantResourceOutcome>, TenantResourceExecutorError> {
+    ) -> Result<Option<ControlResultData>, TenantResourceExecutorError> {
         PostgresTenantResourceExecutor::control_outcome(
             &TenantResourceRepository::new(self.pool.clone()),
             self.tenant.tenant_id,
@@ -128,7 +129,10 @@ async fn enumerate_and_revoke_commit_without_apply_preparation() {
         .execute_control_operation(frame(&enumerate, TenantResourceAction::Enumerate))
         .await
         .unwrap();
-    assert_eq!(first.revision, 0);
+    assert!(matches!(
+        first,
+        ControlResultData::TenantResourceEnumerate { revision: 0, .. }
+    ));
     assert_eq!(
         fixture
             .receipt(&enumerate, TenantResourceAction::Enumerate)
@@ -142,7 +146,10 @@ async fn enumerate_and_revoke_commit_without_apply_preparation() {
         .execute_control_operation(frame(&revoke, TenantResourceAction::Revoke))
         .await
         .unwrap();
-    assert_eq!(second.revision, 1);
+    assert!(matches!(
+        second,
+        ControlResultData::TenantResourceRevoke { revision: 1, .. }
+    ));
     assert_eq!(
         fixture
             .receipt(&revoke, TenantResourceAction::Revoke)
@@ -367,9 +374,17 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
         .execute_control_operation(request)
         .await
         .unwrap();
-    assert_eq!(outcome.resources.len(), 4);
+    let ControlResultData::TenantResourceRevoke {
+        resources,
+        resource_manifest_sha256,
+        ..
+    } = outcome
+    else {
+        panic!("expected revoke result");
+    };
+    assert_eq!(resources.len(), 4);
     assert_eq!(
-        outcome.resource_manifest_sha256,
+        resource_manifest_sha256,
         nazo_persistence::tenant_resources::empty_manifest_sha256()
     );
     assert_eq!(audit_count(&fixture, &identity).await, 1);
@@ -428,9 +443,14 @@ async fn filtered_enumeration_keeps_the_complete_manifest_digest() {
         .execute_control_operation(request)
         .await
         .unwrap();
-    assert_eq!(outcome.resources, [resources[1].clone()]);
-    assert_eq!(outcome.resource_manifest_sha256, digest);
-    assert_eq!(outcome.revision, 1);
+    assert_eq!(
+        outcome,
+        ControlResultData::TenantResourceEnumerate {
+            revision: 1,
+            resources: vec![resources[1].clone()],
+            resource_manifest_sha256: digest,
+        }
+    );
     assert_eq!(
         fixture
             .receipt(&identity, TenantResourceAction::Enumerate)

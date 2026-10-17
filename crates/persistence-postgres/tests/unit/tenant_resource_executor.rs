@@ -137,3 +137,55 @@ async fn apply_mappings_reuse_inserted_ids_and_batch_existing_active_clients() {
         ))
     ));
 }
+
+#[test]
+fn replay_outcome_json_is_closed() {
+    let outcome = StoredControlOutcome {
+        revision: 4,
+        resources: Vec::new(),
+        resource_mappings: Vec::new(),
+        resource_manifest_sha256: "a".repeat(64),
+    };
+    let encoded = serde_json::to_value(&outcome).unwrap();
+    assert_eq!(
+        serde_json::from_value::<StoredControlOutcome>(encoded).unwrap(),
+        outcome
+    );
+    assert!(
+        serde_json::from_value::<StoredControlOutcome>(serde_json::json!({
+            "revision": 4,
+            "resources": [],
+            "resource_mappings": [],
+            "resource_manifest_sha256": "a".repeat(64),
+            "legacy_receipt": "forbidden"
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn executor_rejects_an_outcome_that_the_journal_cannot_publish() {
+    let outcome = StoredControlOutcome {
+        revision: u64::MAX,
+        resources: (0..nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES)
+            .map(|index| TenantResourceIdentity {
+                kind: TenantResourceKind::User,
+                resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
+                digest: "f".repeat(64),
+            })
+            .collect(),
+        resource_mappings: (0..nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES)
+            .map(|index| TenantResourceMapping {
+                kind: TenantResourceKind::User,
+                resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
+                public_id: "00000000-0000-0000-0000-000000000001".to_owned(),
+            })
+            .collect(),
+        resource_manifest_sha256: "a".repeat(64),
+    };
+
+    assert_eq!(
+        outcome.into_result(TenantResourceAction::Apply),
+        Err(TenantResourceExecutorError::TooLarge)
+    );
+}

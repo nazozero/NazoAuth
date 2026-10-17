@@ -9,16 +9,17 @@ use futures_util::future::BoxFuture;
 use nazo_identity::ports::RepositoryError;
 use nazo_identity::{TenantContext, TenantId};
 use nazo_operator_protocol::{
-    TenantResourceIdentity, TenantResourceKind, TenantResourceMapping, TenantResourceSelector,
-    canonical_tenant_resource_manifest_sha256, validate_openid4vc_trust_policy,
+    ControlResultData, ProtocolError, TenantResourceIdentity, TenantResourceKind,
+    TenantResourceMapping, TenantResourceSelector, canonical_tenant_resource_manifest_sha256,
+    validate_control_result_data_for_wire, validate_openid4vc_trust_policy,
 };
 use nazo_persistence::tenant_resources::{
-    ControlTenantResourceFrame, ControlTenantResourceOutcome, PreparedMtlsTrustAnchor,
-    PreparedOAuthClient, PreparedTenantResource, TenantResourceAction, TenantResourceExecutorError,
+    ControlTenantResourceFrame, PreparedMtlsTrustAnchor, PreparedOAuthClient,
+    PreparedTenantResource, TenantResourceAction, TenantResourceExecutorError,
     TenantResourceExecutorPort, TenantResourcePayload, TenantResourcePreparation,
     TenantResourcePreparationError, UserProfileFields, empty_manifest_sha256, operation_name,
-    validate_control_outcome,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -174,7 +175,7 @@ impl PostgresTenantResourceExecutor {
     pub(crate) async fn execute_control_operation(
         &self,
         frame: ControlTenantResourceFrame<'_>,
-    ) -> Result<ControlTenantResourceOutcome, TenantResourceExecutorError> {
+    ) -> Result<ControlResultData, TenantResourceExecutorError> {
         let ControlTenantResourceFrame {
             deployment_id,
             jti,
@@ -218,7 +219,7 @@ impl PostgresTenantResourceExecutor {
         let data_key = self.data_key;
 
         connection
-            .transaction::<ControlTenantResourceOutcome, ExecutorTransactionError, _>(
+            .transaction::<ControlResultData, ExecutorTransactionError, _>(
                 async move |connection| {
                     // Serialize replay/conflict decisions and the resource
                     // transaction for one accepted operation identity.
@@ -289,23 +290,21 @@ impl PostgresTenantResourceExecutor {
                         append_fresh_security_audit_on_connection(connection, &audit_event)
                             .await
                             .map_err(ExecutorTransactionError::Diesel)?;
-                        let outcome = ControlTenantResourceOutcome {
+                        let outcome = StoredControlOutcome {
                             revision: current_revision,
                             resources: frame.resources,
                             resource_mappings: frame.resource_mappings,
                             resource_manifest_sha256: frame.manifest_sha256,
                         };
-                        validate_wire_outcome(operation, &outcome)?;
-                        record_control_outcome_on_connection(
+                        return record_control_outcome_on_connection(
                             connection,
                             operation_id,
                             request_sha256,
                             tenant_uuid,
                             operation,
-                            &outcome,
+                            outcome,
                         )
-                        .await?;
-                        return Ok(outcome);
+                        .await;
                     }
 
                     let next_revision = current_revision.checked_add(1).ok_or(
@@ -342,23 +341,21 @@ impl PostgresTenantResourceExecutor {
                     append_fresh_security_audit_on_connection(connection, &audit_event)
                         .await
                         .map_err(ExecutorTransactionError::Diesel)?;
-                    let outcome = ControlTenantResourceOutcome {
+                    let outcome = StoredControlOutcome {
                         revision: next_revision,
                         resources: frame.resources,
                         resource_mappings: frame.resource_mappings,
                         resource_manifest_sha256: frame.manifest_sha256,
                     };
-                    validate_wire_outcome(operation, &outcome)?;
                     record_control_outcome_on_connection(
                         connection,
                         operation_id,
                         request_sha256,
                         tenant_uuid,
                         operation,
-                        &outcome,
+                        outcome,
                     )
-                    .await?;
-                    Ok(outcome)
+                    .await
                 },
             )
             .await
@@ -375,7 +372,7 @@ impl PostgresTenantResourceExecutor {
         operation_id: Uuid,
         request_hash: &str,
         operation: TenantResourceAction,
-    ) -> Result<Option<ControlTenantResourceOutcome>, TenantResourceExecutorError> {
+    ) -> Result<Option<ControlResultData>, TenantResourceExecutorError> {
         if !is_lower_sha256(request_hash) {
             return Err(TenantResourceExecutorError::Rejected);
         }
@@ -385,7 +382,7 @@ impl PostgresTenantResourceExecutor {
             .map_err(map_repository_error)?;
         let tenant_id = tenant_id.as_uuid();
         connection
-            .transaction::<Option<ControlTenantResourceOutcome>, ExecutorTransactionError, _>(
+            .transaction::<Option<ControlResultData>, ExecutorTransactionError, _>(
                 async move |connection| {
                     let operation_id_text = operation_id.to_string();
                     TenantResourceRepository::lock_operation_identity_on_connection(
@@ -469,11 +466,44 @@ fn payload_sort_key(payload: &PreparedApplyPayload) -> (u8, &str) {
     }
 }
 
-fn validate_wire_outcome(
-    operation: TenantResourceAction,
-    outcome: &ControlTenantResourceOutcome,
-) -> Result<(), ExecutorTransactionError> {
-    validate_control_outcome(operation, outcome).map_err(ExecutorTransactionError::Executor)
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredControlOutcome {
+    revision: u64,
+    resources: Vec<TenantResourceIdentity>,
+    resource_mappings: Vec<TenantResourceMapping>,
+    resource_manifest_sha256: String,
+}
+
+impl StoredControlOutcome {
+    fn into_result(
+        self,
+        operation: TenantResourceAction,
+    ) -> Result<ControlResultData, TenantResourceExecutorError> {
+        let data = match operation {
+            TenantResourceAction::Apply => ControlResultData::TenantResourceApply {
+                revision: self.revision,
+                resources: self.resources,
+                resource_mappings: self.resource_mappings,
+                resource_manifest_sha256: self.resource_manifest_sha256,
+            },
+            TenantResourceAction::Enumerate => ControlResultData::TenantResourceEnumerate {
+                revision: self.revision,
+                resources: self.resources,
+                resource_manifest_sha256: self.resource_manifest_sha256,
+            },
+            TenantResourceAction::Revoke => ControlResultData::TenantResourceRevoke {
+                revision: self.revision,
+                resources: self.resources,
+                resource_manifest_sha256: self.resource_manifest_sha256,
+            },
+        };
+        validate_control_result_data_for_wire(&data).map_err(|error| match error {
+            ProtocolError::TooLarge => TenantResourceExecutorError::TooLarge,
+            _ => TenantResourceExecutorError::Rejected,
+        })?;
+        Ok(data)
+    }
 }
 
 #[derive(QueryableByName)]
@@ -494,7 +524,7 @@ async fn control_outcome_on_connection(
     request_hash: &str,
     tenant_id: Uuid,
     operation: TenantResourceAction,
-) -> Result<Option<ControlTenantResourceOutcome>, ExecutorTransactionError> {
+) -> Result<Option<ControlResultData>, ExecutorTransactionError> {
     let row = sql_query(
         "SELECT request_hash, tenant_id, operation, outcome
          FROM tenant_resource_control_operations
@@ -514,11 +544,13 @@ async fn control_outcome_on_connection(
     {
         return Err(transaction_conflict("control_operation_replay"));
     }
-    let outcome = serde_json::from_value(row.outcome).map_err(|_| {
+    let outcome: StoredControlOutcome = serde_json::from_value(row.outcome).map_err(|_| {
         ExecutorTransactionError::Executor(TenantResourceExecutorError::Unavailable)
     })?;
-    validate_wire_outcome(operation, &outcome)?;
-    Ok(Some(outcome))
+    outcome
+        .into_result(operation)
+        .map(Some)
+        .map_err(ExecutorTransactionError::Executor)
 }
 
 async fn record_control_outcome_on_connection(
@@ -527,11 +559,14 @@ async fn record_control_outcome_on_connection(
     request_hash: &str,
     tenant_id: Uuid,
     operation: TenantResourceAction,
-    outcome: &ControlTenantResourceOutcome,
-) -> Result<(), ExecutorTransactionError> {
-    let outcome = serde_json::to_value(outcome).map_err(|_| {
+    outcome: StoredControlOutcome,
+) -> Result<ControlResultData, ExecutorTransactionError> {
+    let stored = serde_json::to_value(&outcome).map_err(|_| {
         ExecutorTransactionError::Executor(TenantResourceExecutorError::Unavailable)
     })?;
+    let data = outcome
+        .into_result(operation)
+        .map_err(ExecutorTransactionError::Executor)?;
     let inserted = sql_query(
         "INSERT INTO tenant_resource_control_operations
              (operation_id, request_hash, tenant_id, operation, outcome)
@@ -541,14 +576,14 @@ async fn record_control_outcome_on_connection(
     .bind::<sql_types::Text, _>(request_hash)
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Text, _>(operation_name(operation))
-    .bind::<sql_types::Jsonb, _>(outcome)
+    .bind::<sql_types::Jsonb, _>(stored)
     .execute(connection)
     .await
     .map_err(ExecutorTransactionError::Diesel)?;
     if inserted != 1 {
         return Err(transaction_conflict("control_operation_record"));
     }
-    Ok(())
+    Ok(data)
 }
 
 /// Typed input of one shared tenant-resource frame.
@@ -1718,7 +1753,7 @@ impl TenantResourceExecutorPort for PostgresTenantResourceExecutor {
     fn execute_control_operation<'a>(
         &'a self,
         frame: ControlTenantResourceFrame<'a>,
-    ) -> BoxFuture<'a, Result<ControlTenantResourceOutcome, TenantResourceExecutorError>> {
+    ) -> BoxFuture<'a, Result<ControlResultData, TenantResourceExecutorError>> {
         Box::pin(PostgresTenantResourceExecutor::execute_control_operation(
             self, frame,
         ))
