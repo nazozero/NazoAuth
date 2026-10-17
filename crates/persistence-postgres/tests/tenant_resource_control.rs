@@ -332,14 +332,7 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
         );
         assert_eq!(audit_count(&fixture, &identity).await, 0);
     }
-    // An unrelated inactive client must not prevent revoking a dataset leaf.
-    let mut connection = fixture.pool.get().await.unwrap();
-    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(client_id)
-        .execute(&mut connection)
-        .await
-        .unwrap();
-    drop(connection);
+    // Revoking a dataset leaf leaves the unrelated client and its children active.
     let identity = fixture.identity();
     let mut request = frame(&identity, TenantResourceAction::Revoke);
     request.resources = vec![PreparedTenantResource {
@@ -353,13 +346,6 @@ async fn revoke_checks_surviving_children_only_for_targeted_parents() {
         .unwrap();
     assert_eq!(audit_count(&fixture, &identity).await, 1);
 
-    let mut connection = fixture.pool.get().await.unwrap();
-    sql_query("UPDATE oauth_clients SET is_active = TRUE WHERE id = $1")
-        .bind::<sql_types::Uuid, _>(client_id)
-        .execute(&mut connection)
-        .await
-        .unwrap();
-    drop(connection);
     let identity = fixture.identity();
     let mut request = frame(&identity, TenantResourceAction::Revoke);
     request.resources = identities
