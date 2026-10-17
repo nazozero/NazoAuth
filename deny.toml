@@ -32,6 +32,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
+    "https://github.com/bymoye/rustls",
     "https://github.com/nazozero/actix-web",
     "https://github.com/nazozero/mdoc-rs",
 ]
