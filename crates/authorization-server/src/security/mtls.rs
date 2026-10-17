@@ -20,9 +20,12 @@ use x509_parser::{
     parse_x509_certificate,
     x509::X509Name,
 };
-pub fn certificate_der_identity(der: Vec<u8>) -> Option<ClientCertificateFacts> {
-    let x509 = parse_current_x509(&der)?;
-    let thumbprint = URL_SAFE_NO_PAD.encode(Sha256::digest(&der));
+pub fn certificate_chain_identity(
+    chain: std::sync::Arc<Vec<nazo_crypto::certificate::CertificateDer<'static>>>,
+) -> Option<ClientCertificateFacts> {
+    let der = chain.first()?.as_ref();
+    let x509 = parse_current_x509(der)?;
+    let thumbprint = URL_SAFE_NO_PAD.encode(Sha256::digest(der));
     let subject_dn = subject_name_to_dn(x509.subject())?;
     let mut san_dns = Vec::new();
     let mut san_uri = Vec::new();
@@ -50,7 +53,7 @@ pub fn certificate_der_identity(der: Vec<u8>) -> Option<ClientCertificateFacts> 
         san_uri: sorted_unique(san_uri),
         san_ip: sorted_unique(san_ip),
         san_email: sorted_unique(san_email),
-        certificate_chain_der: vec![der].into(),
+        certificate_chain_der: chain,
         deployment_trusted_chain: false,
     })
 }

@@ -78,7 +78,7 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
             PrivateKeyDer::from_pem_slice(server_key.serialize_pem().as_bytes()).unwrap(),
         )
         .unwrap();
-    let expected_chain = vec![material.leaf.der().to_vec(), material.ca.der().to_vec()];
+    let expected_chain = vec![material.leaf.der().clone(), material.ca.der().clone()];
     let server = HttpServer::new(|| {
         App::new()
             .app_data(Data::new(mtls::MtlsCertificateSource::new(
@@ -101,6 +101,13 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
         mtls::capture_direct_tls_client_certificate(io, extensions, Some(verifier.as_ref()));
         if let Some(certificate) = extensions.get::<ClientCertificateFacts>() {
             assert_eq!(certificate.certificate_chain_der.as_ref(), &expected_chain);
+            let stream = io.downcast_ref::<actix_tls::accept::rustls_0_23::TlsStream<actix_web::rt::net::TcpStream>>().unwrap();
+            let peer = stream.get_ref().1.peer_certificates_shared().unwrap();
+            assert!(Arc::ptr_eq(&peer, &certificate.certificate_chain_der));
+            for (original, retained) in peer.iter().zip(certificate.certificate_chain_der.iter()) {
+                assert_eq!(original.as_ptr(), retained.as_ptr());
+            }
+
         }
     })
     .bind_rustls_0_23(("127.0.0.1", 0), tls)
@@ -195,7 +202,7 @@ async fn framework_boundary_transport_rfc9440_same_resolver_observes_tenant_ca_r
     assert!(!certificate.deployment_trusted_chain);
     assert_eq!(
         certificate.certificate_chain_der.as_ref(),
-        &vec![material.leaf.der().to_vec()]
+        &vec![material.leaf.der().clone()]
     );
     let facts = ClientAuthRequestFacts::new("/token", Some(certificate.clone()));
     let name = format!("t00-ca-{}", uuid::Uuid::now_v7());

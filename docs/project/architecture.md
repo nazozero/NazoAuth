@@ -624,6 +624,10 @@ share an immutable `Arc<Value>`. Request-local refresh replaces the shared handl
 cache hits and client clones do not copy the JSON keyset. Registration wire inputs
 still own their JSON, and persistence borrows the shared value when serializing. Current account and tenant-trust decisions
 remain fresh authority reads, and Bytes/DER Arc clones remain shared storage.
+Direct TLS and request facts share the authenticated certificate chain through
+the pinned rustls `peer_certificates_shared` API. RFC 9440 decoding moves DER into
+the same certificate representation; tenant CA verification borrows that chain.
+
 
 Operator presentation holds private immutable original compact segments, decoded
 operation and canonical bytes. Request hashing and the later admitted-key signature

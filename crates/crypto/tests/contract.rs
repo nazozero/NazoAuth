@@ -1319,7 +1319,7 @@ mod certificate {
         // Standard client-chain verification against the anchor at a fixed time.
         let anchors = to_pem(&ca_der);
         assert!(
-            certs::verify_client_chain_at(std::slice::from_ref(&leaf_der), &anchors, NOW as u64)
+            certs::verify_client_chain_at(&[leaf_der.as_slice().into()], &anchors, NOW as u64)
                 .is_ok()
         );
 
@@ -1328,7 +1328,7 @@ mod certificate {
         let other_der = certs::self_signed(ca_params(), &other_key_pem).unwrap();
         assert!(
             certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
+                &[leaf_der.as_slice().into()],
                 &to_pem(&other_der),
                 NOW as u64
             )
@@ -1337,7 +1337,7 @@ mod certificate {
         // Actual expiry: one second past the leaf's not_after.
         assert!(matches!(
             certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
+                &[leaf_der.as_slice().into()],
                 &anchors,
                 (NOW + LEAF_SECONDS + 1) as u64
             ),
@@ -1346,7 +1346,7 @@ mod certificate {
         // Not yet valid: one second before the leaf's not_before.
         assert!(matches!(
             certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
+                &[leaf_der.as_slice().into()],
                 &anchors,
                 (NOW - 1) as u64
             ),
@@ -1354,13 +1354,13 @@ mod certificate {
         ));
         let mut tampered = leaf_der.clone();
         *tampered.last_mut().unwrap() ^= 0x01;
-        assert!(certs::verify_client_chain_at(&[tampered], &anchors, NOW as u64).is_err());
+        assert!(certs::verify_client_chain_at(&[tampered.into()], &anchors, NOW as u64).is_err());
         assert!(matches!(
             certs::verify_client_chain_at(&[], &anchors, NOW as u64),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(
-            certs::verify_client_chain_at(&[leaf_der], "not pem", NOW as u64),
+            certs::verify_client_chain_at(&[leaf_der.into()], "not pem", NOW as u64),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(

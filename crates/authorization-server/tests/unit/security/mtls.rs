@@ -458,7 +458,7 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
         .unwrap();
     let mut certificate = certificate_der_identity(leaf.der().to_vec()).unwrap();
     std::sync::Arc::make_mut(&mut certificate.certificate_chain_der)
-        .push(intermediate.der().to_vec());
+        .push(intermediate.der().clone());
     assert!(certificate_chain_trusted(&certificate, &root.pem()));
     assert!(!certificate_chain_trusted(&certificate, &other_root.pem()));
     assert!(
@@ -476,4 +476,8 @@ fn pki_certificate_requires_the_selected_trust_anchor_and_valid_chain() {
 #[test]
 fn mtls_ipaddress_parser_rejects_invalid_san_lengths() {
     assert!(ipaddress_to_string(&[192, 0, 2]).is_none());
+}
+
+fn certificate_der_identity(der: Vec<u8>) -> Option<ClientCertificateFacts> {
+    certificate_chain_identity(vec![der.into()].into())
 }

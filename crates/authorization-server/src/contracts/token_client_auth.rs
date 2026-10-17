@@ -37,7 +37,8 @@ pub struct ClientCertificateFacts {
     /// forwarding adapter may supply the same RFC 9440 certificate chain.
     // Cloning request facts shares immutable DER storage. This does not cache
     // tenant trust or a client/token authorization decision.
-    pub certificate_chain_der: std::sync::Arc<Vec<Vec<u8>>>,
+    pub certificate_chain_der:
+        std::sync::Arc<Vec<nazo_crypto::certificate::CertificateDer<'static>>>,
     /// Chain verification against an explicitly configured deployment CA.
     /// This never follows merely from receiving a certificate header.
     pub deployment_trusted_chain: bool,

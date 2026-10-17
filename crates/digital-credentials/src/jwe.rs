@@ -1,10 +1,13 @@
-use std::io::{Read, Write};
+use std::{
+    borrow::Cow,
+    io::{Read, Write},
+};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use nazo_crypto::ec::{P256PublicJwk, P256SecretKey};
 use rand::Rng;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -188,35 +191,39 @@ fn decrypt_ecdh_es(
     if !parts[1].is_empty() {
         return Err(JweError::Malformed);
     }
-    let header: Value = serde_json::from_slice(
-        &URL_SAFE_NO_PAD
-            .decode(parts[0])
-            .map_err(|_| JweError::Malformed)?,
-    )
-    .map_err(|_| JweError::Malformed)?;
-    if header.get("alg").and_then(Value::as_str) != Some("ECDH-ES") {
+    let header_bytes = URL_SAFE_NO_PAD
+        .decode(parts[0])
+        .map_err(|_| JweError::Malformed)?;
+    let header: DecryptionHeader<'_> =
+        serde_json::from_slice(&header_bytes).map_err(|_| JweError::Malformed)?;
+    if header.alg != "ECDH-ES" {
         return Err(JweError::Unsupported);
     }
-    let (enc, key_bits) = match header.get("enc").and_then(Value::as_str) {
-        Some("A128GCM") => ("A128GCM", 128),
-        Some("A256GCM") => ("A256GCM", 256),
+    let (enc, key_bits) = match header.enc.as_ref() {
+        "A128GCM" => ("A128GCM", 128),
+        "A256GCM" => ("A256GCM", 256),
         _ => return Err(JweError::Unsupported),
     };
     if let Some(expected_kid) = expected_kid
-        && (header.get("kid").and_then(Value::as_str) != Some(expected_kid)
-            || !matches!(
-                header.get("cty").and_then(Value::as_str),
-                Some("json" | "application/json")
-            ))
+        && (header.kid.as_deref() != Some(expected_kid)
+            || !matches!(header.cty.as_deref(), Some("json" | "application/json")))
     {
         return Err(JweError::Unsupported);
     }
-    let ephemeral = parse_ephemeral_public_jwk(header.get("epk").ok_or(JweError::Malformed)?)?;
+    let jwk: EphemeralPublicJwk<'_> =
+        serde_json::from_str(header.epk.get()).map_err(|_| JweError::InvalidKey)?;
+    if jwk.alg.as_deref().is_some_and(|alg| alg != "ECDH-ES")
+        || jwk.kty != "EC"
+        || jwk.crv != "P-256"
+    {
+        return Err(JweError::InvalidKey);
+    }
+    let ephemeral = ec_point(&jwk.x, &jwk.y)?;
     let shared = recipient
         .agree(&ephemeral)
         .map_err(|_| JweError::InvalidKey)?;
-    let apu = decode_party_info(&header, "apu")?;
-    let apv = decode_party_info(&header, "apv")?;
+    let apu = decode_party_info(header.apu.as_deref())?;
+    let apv = decode_party_info(header.apv.as_deref())?;
     let key = concat_kdf(shared.as_slice(), enc, &apu, &apv, key_bits);
     let key = &key[..(key_bits / 8) as usize];
     let nonce: [u8; 12] = decode_array(parts[2]).ok_or(JweError::Malformed)?;
@@ -226,7 +233,7 @@ fn decrypt_ecdh_es(
     let tag: [u8; 16] = decode_array(parts[4]).ok_or(JweError::Malformed)?;
     nazo_crypto::aead::decrypt_in_place(key, &nonce, parts[0].as_bytes(), &mut ciphertext, &tag)
         .map_err(jwe_aead_error)?;
-    match header.get("zip").and_then(Value::as_str) {
+    match header.zip.as_deref() {
         None => Ok(ciphertext),
         Some("DEF") => decompress_deflate(&ciphertext),
         Some(_) => Err(JweError::Unsupported),
@@ -246,6 +253,58 @@ fn decompress_deflate(compressed: &[u8]) -> Result<Vec<u8>, JweError> {
         return Err(JweError::InvalidCompression);
     }
     Ok(output)
+}
+
+#[derive(Deserialize)]
+struct DecryptionHeader<'a> {
+    #[serde(borrow)]
+    alg: Cow<'a, str>,
+    #[serde(borrow)]
+    enc: Cow<'a, str>,
+    #[serde(borrow)]
+    epk: &'a serde_json::value::RawValue,
+    #[serde(default, borrow, deserialize_with = "optional_string")]
+    kid: Option<Cow<'a, str>>,
+    #[serde(default, borrow, deserialize_with = "optional_string")]
+    cty: Option<Cow<'a, str>>,
+    #[serde(default, borrow, deserialize_with = "optional_string")]
+    zip: Option<Cow<'a, str>>,
+    #[serde(default, borrow, deserialize_with = "present_string")]
+    apu: Option<Cow<'a, str>>,
+    #[serde(default, borrow, deserialize_with = "present_string")]
+    apv: Option<Cow<'a, str>>,
+}
+
+#[derive(Deserialize)]
+struct EphemeralPublicJwk<'a> {
+    #[serde(borrow)]
+    kty: Cow<'a, str>,
+    #[serde(borrow)]
+    crv: Cow<'a, str>,
+    #[serde(borrow)]
+    x: Cow<'a, str>,
+    #[serde(borrow)]
+    y: Cow<'a, str>,
+    #[serde(default, borrow, deserialize_with = "present_string")]
+    alg: Option<Cow<'a, str>>,
+}
+
+#[derive(Deserialize)]
+struct StringValue<'a>(#[serde(borrow)] Cow<'a, str>);
+
+fn optional_string<'de, D>(deserializer: D) -> Result<Option<Cow<'de, str>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<StringValue<'_>>::deserialize(deserializer).map(|value| value.map(|value| value.0))
+}
+
+// Missing fields are optional; a present value must be a JSON string, not null.
+fn present_string<'de, D>(deserializer: D) -> Result<Option<Cow<'de, str>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    StringValue::deserialize(deserializer).map(|value| Some(value.0))
 }
 
 #[derive(Serialize)]
@@ -268,37 +327,31 @@ fn parse_recipient_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
     parse_ec_public_jwk(jwk)
 }
 
-fn parse_ephemeral_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
-    match jwk.get("alg") {
-        None => {}
-        Some(Value::String(algorithm)) if algorithm == "ECDH-ES" => {}
-        _ => return Err(JweError::InvalidKey),
-    }
-    parse_ec_public_jwk(jwk)
-}
-
 fn parse_ec_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
     if jwk.get("kty").and_then(Value::as_str) != Some("EC")
         || jwk.get("crv").and_then(Value::as_str) != Some("P-256")
     {
         return Err(JweError::InvalidKey);
     }
-    let x = decode_coordinate(jwk, "x")?;
-    let y = decode_coordinate(jwk, "y")?;
-    let mut point = [0_u8; 65];
-    point[0] = 4;
-    point[1..33].copy_from_slice(&x);
-    point[33..].copy_from_slice(&y);
-    Ok(point)
-}
-
-fn decode_coordinate(jwk: &Value, name: &str) -> Result<[u8; 32], JweError> {
-    decode_array(
-        jwk.get(name)
+    ec_point(
+        jwk.get("x")
+            .and_then(Value::as_str)
+            .ok_or(JweError::InvalidKey)?,
+        jwk.get("y")
             .and_then(Value::as_str)
             .ok_or(JweError::InvalidKey)?,
     )
-    .ok_or(JweError::InvalidKey)
+}
+
+fn ec_point(x: &str, y: &str) -> Result<[u8; 65], JweError> {
+    let mut point = [0_u8; 65];
+    point[0] = 4;
+    if URL_SAFE_NO_PAD.decode_slice(x, &mut point[1..33]).ok() != Some(32)
+        || URL_SAFE_NO_PAD.decode_slice(y, &mut point[33..]).ok() != Some(32)
+    {
+        return Err(JweError::InvalidKey);
+    }
+    Ok(point)
 }
 
 fn decode_array<const N: usize>(input: &str) -> Option<[u8; N]> {
@@ -306,12 +359,11 @@ fn decode_array<const N: usize>(input: &str) -> Option<[u8; N]> {
     (URL_SAFE_NO_PAD.decode_slice(input, &mut bytes).ok()? == N).then_some(bytes)
 }
 
-fn decode_party_info(header: &Value, name: &str) -> Result<Vec<u8>, JweError> {
-    header
-        .get(name)
+fn decode_party_info(value: Option<&str>) -> Result<Vec<u8>, JweError> {
+    value
         .map(|value| {
             URL_SAFE_NO_PAD
-                .decode(value.as_str().ok_or(JweError::Malformed)?)
+                .decode(value)
                 .map_err(|_| JweError::Malformed)
         })
         .transpose()
@@ -349,3 +401,7 @@ fn compact_jwe_parts(input: &str) -> Option<[&str; 5]> {
     ];
     segments.next().is_none().then_some(parts)
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/jwe.rs"]
+mod tests;

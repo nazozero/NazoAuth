@@ -140,3 +140,6 @@ panic = "abort"
 actix-http = { git = "https://github.com/nazozero/actix-web", rev = "8b4f61be8de6b4bf6279c472c144dfea133b34aa" }
 # Reviewed mdoc-rs coset 0.4 and borrowed-transcript changes, pinned to a fork commit.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "c5d460cfd667324e51e590e8ecbbdb21f63bbdbe" }
+
+# Immutable certificate-chain sharing at the TLS-to-HTTP boundary.
+rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

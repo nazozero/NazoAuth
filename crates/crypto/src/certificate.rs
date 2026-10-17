@@ -9,6 +9,7 @@ pub use rcgen::{
     CustomExtension, DistinguishedName, DnType, DnValue, IsCa, KeyIdMethod, KeyUsagePurpose,
     RevokedCertParams, SerialNumber,
 };
+pub use rustls::pki_types::CertificateDer;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -90,7 +91,7 @@ pub fn verify_signature(
 /// Standard client-certificate chain verification against PEM trust anchors
 /// at a caller-supplied Unix time.
 pub fn verify_client_chain_at(
-    chain_der: &[Vec<u8>],
+    chain_der: &[CertificateDer<'_>],
     anchors_pem: &str,
     unix_seconds: u64,
 ) -> crate::Result<()> {
@@ -111,14 +112,7 @@ pub fn verify_client_chain_at(
         rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
             .build()
             .map_err(|_| CryptoError::OperationFailed)?;
-    if chain_der.is_empty() {
-        return Err(CryptoError::InvalidInput);
-    }
-    let chain = chain_der
-        .iter()
-        .map(|der| CertificateDer::from(der.as_slice()))
-        .collect::<Vec<_>>();
-    let (leaf, intermediates) = chain.split_first().expect("chain is non-empty");
+    let (leaf, intermediates) = chain_der.split_first().ok_or(CryptoError::InvalidInput)?;
     verifier
         .verify_client_cert(
             leaf,
