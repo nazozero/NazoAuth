@@ -306,13 +306,12 @@ impl LogoutService {
         }
         // Preserve session order and emit each client once even when the
         // session contains duplicate entries or the repository returns rows
-        // in a different order. The validated hint needs no second lookup.
-        let mut emitted = HashSet::with_capacity(loaded.len());
+        // in a different order. Removing by the tenant-unique client ID provides
+        // deduplication; the validated hint needs no second lookup.
         Ok(session
             .logged_in_client_ids
             .iter()
             .filter_map(|client_id| loaded.remove(client_id))
-            .filter(|client| emitted.insert(client.id))
             .collect())
     }
 
