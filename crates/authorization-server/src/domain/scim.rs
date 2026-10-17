@@ -278,13 +278,8 @@ impl ServerScimCursorProtector {
 impl ScimCursorProtector for ServerScimCursorProtector {
     fn protect(&self, plaintext: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {
         let nonce = rand::random::<[u8; SCIM_CURSOR_NONCE_LEN]>();
-        let ciphertext_and_tag =
-            nazo_crypto::aead::encrypt(&self.key, &nonce, SCIM_CURSOR_AAD, plaintext)
-                .map_err(|_| ScimDependencyError::Unavailable)?;
-        let mut protected = Vec::with_capacity(nonce.len() + ciphertext_and_tag.len());
-        protected.extend_from_slice(&nonce);
-        protected.extend_from_slice(&ciphertext_and_tag);
-        Ok(protected)
+        nazo_crypto::aead::encrypt_prefixed(&self.key, &nonce, SCIM_CURSOR_AAD, plaintext, &nonce)
+            .map_err(|_| ScimDependencyError::Unavailable)
     }
 
     fn unprotect(&self, protected: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {

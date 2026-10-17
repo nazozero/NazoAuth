@@ -662,11 +662,12 @@ pub fn protect_dataset_claims(
         serde_json::to_vec(claims).map_err(|_| CredentialStoreError::InvalidTransition)?;
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    nazo_crypto::aead::encrypt_nonce_prefixed(
+    nazo_crypto::aead::encrypt_prefixed(
         key,
         &nonce,
         &dataset_aad(tenant_id, subject_id, credential_configuration_id),
         &plaintext,
+        &nonce,
     )
     .map_err(|_| CredentialStoreError::Unavailable)
 }

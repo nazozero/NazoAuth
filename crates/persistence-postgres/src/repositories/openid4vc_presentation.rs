@@ -527,11 +527,12 @@ fn protect_payload(
 ) -> Result<Vec<u8>, PresentationStoreError> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    nazo_crypto::aead::encrypt_nonce_prefixed(
+    nazo_crypto::aead::encrypt_prefixed(
         key,
         &nonce,
         &payload_aad(domain, tenant_id, transaction_id),
         plaintext,
+        &nonce,
     )
     .map_err(|_| PresentationStoreError::Unavailable)
 }

@@ -8,7 +8,7 @@ pub(super) fn protect_payload(
 ) -> Result<Vec<u8>, CredentialStoreError> {
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    nazo_crypto::aead::encrypt_nonce_prefixed(key, &nonce, transaction_id.as_bytes(), plaintext)
+    nazo_crypto::aead::encrypt_prefixed(key, &nonce, transaction_id.as_bytes(), plaintext, &nonce)
         .map_err(|_| CredentialStoreError::Unavailable)
 }
 

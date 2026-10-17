@@ -127,16 +127,13 @@ impl SigningKeyWrappingKeyRing {
         plaintext: &[u8],
     ) -> anyhow::Result<Vec<u8>> {
         let nonce: [u8; 12] = rand::random();
-        let ciphertext = nazo_crypto::aead::encrypt(
+        Ok(nazo_crypto::aead::encrypt_prefixed(
             &self.current.key,
             &nonce,
             &generation_associated_data(tenant_id, revision, public_metadata)?,
             plaintext,
-        )?;
-        let mut bytes = Vec::with_capacity(nonce.len() + ciphertext.len());
-        bytes.extend_from_slice(&nonce);
-        bytes.extend_from_slice(&ciphertext);
-        Ok(bytes)
+            &nonce,
+        )?)
     }
 
     pub fn open_generation(

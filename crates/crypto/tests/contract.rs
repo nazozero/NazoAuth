@@ -802,15 +802,20 @@ mod aead {
                 .unwrap();
                 assert_eq!(out, expected, "ct||tag layout must match aes-gcm");
                 if key_len == 32 {
-                    let prefixed = crypto_aead::encrypt_nonce_prefixed(
-                        key.as_slice().try_into().unwrap(),
-                        &nonce,
-                        aad,
-                        plaintext,
-                    )
-                    .unwrap();
-                    assert_eq!(&prefixed[..12], &nonce);
-                    assert_eq!(&prefixed[12..], &expected);
+                    let mut versioned_prefix = [1_u8; 13];
+                    versioned_prefix[1..].copy_from_slice(&nonce);
+                    for prefix in [nonce.as_slice(), versioned_prefix.as_slice()] {
+                        let prefixed = crypto_aead::encrypt_prefixed(
+                            key.as_slice().try_into().unwrap(),
+                            &nonce,
+                            aad,
+                            plaintext,
+                            prefix,
+                        )
+                        .unwrap();
+                        assert_eq!(&prefixed[..prefix.len()], prefix);
+                        assert_eq!(&prefixed[prefix.len()..], &expected);
+                    }
                 }
                 let back = crypto_aead::decrypt(&key, &nonce, aad, &out).unwrap();
                 assert_eq!(back, plaintext);
