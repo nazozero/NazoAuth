@@ -52,20 +52,30 @@ pub fn decrypt(
     ciphertext_and_tag: &[u8],
 ) -> crate::Result<Vec<u8>> {
     let nonce: &[u8; 12] = nonce.try_into().map_err(|_| CryptoError::InvalidInput)?;
-    if ciphertext_and_tag.len() < 16 {
-        return Err(CryptoError::InvalidInput);
-    }
-    let payload = Payload {
-        msg: ciphertext_and_tag,
-        aad,
-    };
+    let (ciphertext, tag) = ciphertext_and_tag
+        .split_last_chunk::<16>()
+        .ok_or(CryptoError::InvalidInput)?;
+    let mut plaintext = ciphertext.to_vec();
+    decrypt_in_place(key, nonce, aad, &mut plaintext, tag)?;
+    Ok(plaintext)
+}
+
+/// Authenticates and decrypts a caller-owned ciphertext buffer with a detached tag.
+/// The caller must discard the buffer on error.
+pub fn decrypt_in_place(
+    key: &[u8],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    ciphertext: &mut [u8],
+    tag: &[u8; 16],
+) -> crate::Result<()> {
     match key.len() {
         16 => Aes128Gcm::new_from_slice(key)
             .map_err(|_| CryptoError::InvalidKey)?
-            .decrypt(nonce.into(), payload),
+            .decrypt_inout_detached(nonce.into(), aad, ciphertext.into(), tag.into()),
         32 => Aes256Gcm::new_from_slice(key)
             .map_err(|_| CryptoError::InvalidKey)?
-            .decrypt(nonce.into(), payload),
+            .decrypt_inout_detached(nonce.into(), aad, ciphertext.into(), tag.into()),
         _ => return Err(CryptoError::InvalidKey),
     }
     .map_err(|_| CryptoError::AuthenticationFailed)

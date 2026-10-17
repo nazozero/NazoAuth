@@ -159,12 +159,13 @@ fn encrypt_ecdh_es_with_zip(
             .map_err(jwe_aead_error)?;
     let tag_at = ciphertext_and_tag.len() - 16;
     let (ciphertext, tag) = ciphertext_and_tag.split_at(tag_at);
-    Ok(format!(
-        "{protected}..{}.{}.{}",
-        URL_SAFE_NO_PAD.encode(nonce),
-        URL_SAFE_NO_PAD.encode(ciphertext),
-        URL_SAFE_NO_PAD.encode(tag)
-    ))
+    let mut compact = protected;
+    compact.push('.');
+    for segment in [nonce.as_slice(), ciphertext, tag] {
+        compact.push('.');
+        URL_SAFE_NO_PAD.encode_string(segment, &mut compact);
+    }
+    Ok(compact)
 }
 
 fn jwe_aead_error(error: nazo_crypto::CryptoError) -> JweError {
@@ -219,12 +220,11 @@ fn decrypt_ecdh_es(
         .decode(parts[3])
         .map_err(|_| JweError::Malformed)?;
     let tag: [u8; 16] = decode_array(parts[4]).ok_or(JweError::Malformed)?;
-    ciphertext.extend_from_slice(&tag);
-    let plaintext = nazo_crypto::aead::decrypt(key, &nonce, parts[0].as_bytes(), &ciphertext)
+    nazo_crypto::aead::decrypt_in_place(key, &nonce, parts[0].as_bytes(), &mut ciphertext, &tag)
         .map_err(jwe_aead_error)?;
     match header.get("zip").and_then(Value::as_str) {
-        None => Ok(plaintext),
-        Some("DEF") => decompress_deflate(&plaintext),
+        None => Ok(ciphertext),
+        Some("DEF") => decompress_deflate(&ciphertext),
         Some(_) => Err(JweError::Unsupported),
     }
 }

@@ -819,6 +819,10 @@ mod aead {
                 }
                 let back = crypto_aead::decrypt(&key, &nonce, aad, &out).unwrap();
                 assert_eq!(back, plaintext);
+                let (ciphertext, tag) = expected.split_last_chunk::<16>().unwrap();
+                let mut in_place = ciphertext.to_vec();
+                crypto_aead::decrypt_in_place(&key, &nonce, aad, &mut in_place, tag).unwrap();
+                assert_eq!(in_place, plaintext);
             }
         }
 

@@ -101,7 +101,7 @@ pub fn encrypt_compact_jwe(
             protected_header.insert("epk".to_owned(), public_p256_jwk(ephemeral.public_key()));
             let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&protected_header)?);
             return encrypt_compact_jwe_with_cek(
-                &protected,
+                protected,
                 &ecdh_derive_key(&ephemeral, &recipient, key.enc, 256)?,
                 &[],
                 plaintext,
@@ -123,11 +123,11 @@ pub fn encrypt_compact_jwe(
         }
     };
     let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&protected_header)?);
-    encrypt_compact_jwe_with_cek(&protected, &cek, &encrypted_key, plaintext)
+    encrypt_compact_jwe_with_cek(protected, &cek, &encrypted_key, plaintext)
 }
 
 fn encrypt_compact_jwe_with_cek(
-    protected: &str,
+    protected: String,
     cek: &[u8],
     encrypted_key: &[u8],
     plaintext: &[u8],
@@ -135,14 +135,12 @@ fn encrypt_compact_jwe_with_cek(
     let iv = rand::random::<[u8; 12]>();
     let ciphertext_and_tag = nazo_crypto::aead::encrypt(cek, &iv, protected.as_bytes(), plaintext)?;
     let (ciphertext, tag) = ciphertext_and_tag.split_at(ciphertext_and_tag.len() - 16);
-    Ok(format!(
-        "{}.{}.{}.{}.{}",
-        protected,
-        URL_SAFE_NO_PAD.encode(encrypted_key),
-        URL_SAFE_NO_PAD.encode(iv),
-        URL_SAFE_NO_PAD.encode(ciphertext),
-        URL_SAFE_NO_PAD.encode(tag)
-    ))
+    let mut compact = protected;
+    for segment in [encrypted_key, iv.as_slice(), ciphertext, tag] {
+        compact.push('.');
+        URL_SAFE_NO_PAD.encode_string(segment, &mut compact);
+    }
+    Ok(compact)
 }
 
 fn rsa_oaep_256_encrypt_jwk(jwk: &Value, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
