@@ -203,7 +203,7 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?;
             let deferred = match outcome {
-                nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => claim.credential,
+                nazo_openid4vci::DeferredClaimOutcome::Claimed(credential) => *credential,
                 nazo_openid4vci::DeferredClaimOutcome::Pending { retry_at }
                 | nazo_openid4vci::DeferredClaimOutcome::Busy { retry_at } => {
                     let interval = u64::try_from((retry_at - Utc::now()).num_seconds())

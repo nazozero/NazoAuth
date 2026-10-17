@@ -1495,8 +1495,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(first_claim.claim_id, "deferred-a");
-    assert_eq!(first_claim.credential.payload, deferred.payload);
+    assert_eq!(first_claim.payload, deferred.payload);
     assert!(
         claim_payload(
             issuer
@@ -1784,7 +1783,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(atomic_claim.credential.payload, atomic_deferred.payload);
+    assert_eq!(atomic_claim.payload, atomic_deferred.payload);
     let completion_response = credential_response::response(
         access.token_id,
         atomic_deferred.selection.clone(),
@@ -1796,7 +1795,7 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
             .finalize_deferred_with_notification_and_response(
                 &atomic_deferred.transaction_hash,
                 access.token_id,
-                &atomic_claim.claim_id,
+                "atomic-deferred-claim",
                 &completion_notification(&completion_response),
                 &completion_response,
                 atomic_deferred_ready_at,
@@ -2570,7 +2569,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(consumed_deferred.credential.payload, deferred.payload);
+    assert_eq!(consumed_deferred.payload, deferred.payload);
     let completion_response = credential_response::response(
         access.token_id,
         deferred.selection.clone(),
@@ -2636,7 +2635,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(lease_claim.claim_id, "lease-owner");
+    assert_eq!(lease_claim.id, lease_deferred.id);
     assert!(
         issuer
             .release_deferred(
@@ -4487,11 +4486,7 @@ async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
             .unwrap(),
     )
     .expect("a ready deferred transaction must be claimable");
-    assert_eq!(claim.claim_id, "df01-claim");
-    assert_eq!(
-        claim.credential, deferred,
-        "the claim must return the full domain row"
-    );
+    assert_eq!(claim, deferred, "the claim must return the full domain row");
 
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(lease.claim_id.as_deref(), Some("df01-claim"));
@@ -4803,8 +4798,7 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
         (Busy { retry_at }, Claimed(winner)) => (winner, retry_at, "df03-b"),
         _ => panic!("concurrent claims must yield exactly one Claimed and one Busy"),
     };
-    assert_eq!(winner.claim_id, expected_claim_id);
-    assert_eq!(winner.credential.id, deferred.id);
+    assert_eq!(winner.id, deferred.id);
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(lease.claim_id.as_deref(), Some(expected_claim_id));
     assert_eq!(lease.claim_expires_at, Some(*loser_retry_at));
@@ -4827,7 +4821,7 @@ async fn concurrent_deferred_claims_lease_to_one_owner() {
             .unwrap(),
     )
     .expect("an expired lease must be reclaimable");
-    assert_eq!(reclaim.claim_id, "df03-reclaim");
+    assert_eq!(reclaim.id, deferred.id);
     let lease = deferred_lease_row(&pool, deferred.id).await;
     assert_eq!(lease.claim_id.as_deref(), Some("df03-reclaim"));
 
@@ -5021,8 +5015,8 @@ async fn deferred_claim_supports_grants_without_dpop_binding() {
             .unwrap(),
     )
     .expect("a NULL dpop_jkt grant must not block the deferred claim");
-    assert!(claim.credential.access.dpop_jkt.is_none());
-    assert_eq!(claim.credential.access, access);
+    assert!(claim.access.dpop_jkt.is_none());
+    assert_eq!(claim.access, access);
 
     delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
 }
@@ -5505,7 +5499,7 @@ async fn notification_identical_concurrent_retries_preserve_first_event_and_occu
 // regressions additionally check Pending/Busy/Invalid and unchanged owner state.
 fn claim_payload(
     outcome: nazo_openid4vci::DeferredClaimOutcome,
-) -> Option<nazo_openid4vci::DeferredCredentialClaim> {
+) -> Option<nazo_openid4vci::DeferredCredential> {
     match outcome {
         nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => Some(*claim),
         _ => None,
@@ -5576,7 +5570,7 @@ async fn deferred_pending_busy_invalid_outcomes_keep_original_lease_and_transact
         .await
         .unwrap();
     assert!(matches!(owned, DeferredClaimOutcome::Claimed(ref claim)
-        if claim.credential == deferred && claim.claim_id == "owner"));
+        if **claim == deferred));
     let before = deferred_lease_row(&pool, deferred.id).await;
     let busy = issuer
         .claim_ready_deferred(
@@ -5814,12 +5808,12 @@ async fn refreshed_access_continues_only_its_original_credential_intent_after_so
     let nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) = claim else {
         panic!("the same authorization and original selector must retain its intent");
     };
-    assert_eq!(claim.credential.access.token_id, original.token_id);
-    assert!(claim.credential.access.expires_at < Utc::now());
-    assert!(claim.credential.payload == deferred.payload);
-    assert!(claim.credential.holder_bindings == deferred.holder_bindings);
-    assert_eq!(claim.credential.selection, Some(selection.clone()));
-    assert_eq!(claim.credential.expires_at, deferred.expires_at);
+    assert_eq!(claim.access.token_id, original.token_id);
+    assert!(claim.access.expires_at < Utc::now());
+    assert!(claim.payload == deferred.payload);
+    assert!(claim.holder_bindings == deferred.holder_bindings);
+    assert_eq!(claim.selection, Some(selection.clone()));
+    assert_eq!(claim.expires_at, deferred.expires_at);
     assert!(
         !issuer
             .release_deferred(
@@ -6295,7 +6289,7 @@ async fn deferred_locked_projection_rechecks_waited_facts_and_discards_cancelled
                     let DeferredClaimOutcome::Claimed(claim) = outcome else {
                         panic!("unchanged authority must continue after the real lock wait");
                     };
-                    assert_eq!(claim.credential, deferred);
+                    assert_eq!(*claim, deferred);
                     assert!(issuer.release_deferred(&deferred.transaction_hash, current.token_id,
                         "waited-owner", Utc::now()).await.unwrap());
                 } else {

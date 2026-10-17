@@ -2,8 +2,7 @@ use chrono::{DateTime, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_openid4vci::{
-    CredentialStoreError, CredentialStoreFuture, DeferredCredential, DeferredCredentialClaim,
-    StoredCredentialResponse,
+    CredentialStoreError, CredentialStoreFuture, DeferredCredential, StoredCredentialResponse,
 };
 use uuid::Uuid;
 
@@ -326,9 +325,7 @@ impl Openid4vciRepository {
                         if changed == 0 {
                             return Ok(nazo_openid4vci::DeferredClaimOutcome::Invalid);
                         }
-                        Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(DeferredCredentialClaim {
-                            credential: deferred, claim_id: claim_id.to_owned(),
-                        })))
+                        Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(deferred)))
                     },
                 )
                 .await;

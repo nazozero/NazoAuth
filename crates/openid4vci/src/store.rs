@@ -148,23 +148,16 @@ pub struct DeferredCredential {
     pub expires_at: DateTime<Utc>,
 }
 
-/// A deferred transaction that is leased to one issuance attempt.
+/// A single owner-classified deferred claim attempt. Pending and Busy retain
+/// the same live transaction and never confer signing authority.
 ///
 /// The lease is deliberately separate from `consumed_at`: signing and response
 /// persistence can fail after a transaction has become ready, in which case a
 /// later request must be able to retry the same transaction without allowing
 /// two concurrent issuers to sign it.
 #[derive(Clone, Debug, PartialEq)]
-pub struct DeferredCredentialClaim {
-    pub credential: DeferredCredential,
-    pub claim_id: String,
-}
-
-/// A single owner-classified deferred claim attempt. Pending and Busy retain
-/// the same live transaction and never confer signing authority.
-#[derive(Clone, Debug, PartialEq)]
 pub enum DeferredClaimOutcome {
-    Claimed(Box<DeferredCredentialClaim>),
+    Claimed(Box<DeferredCredential>),
     Pending { retry_at: DateTime<Utc> },
     Busy { retry_at: DateTime<Utc> },
     Invalid,

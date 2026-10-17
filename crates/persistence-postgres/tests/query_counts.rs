@@ -1592,8 +1592,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
     else {
         panic!("the accepting owner must classify the ready fixture as Claimed");
     };
-    assert_eq!(claim.credential.id, deferred.id);
-    assert_eq!(claim.claim_id, "claim-1");
+    assert_eq!(claim.id, deferred.id);
     // Historical 3-vs-1 failure is preserved in remediation evidence. The
     // accepted V02 contract costs two statements: locked facts + authorized
     // lease. The independent intent SELECT was removed, rather than allowing

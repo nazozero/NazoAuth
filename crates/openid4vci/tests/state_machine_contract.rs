@@ -9,9 +9,9 @@ use chrono::{DateTime, Duration, Utc};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialIdentifier, CredentialResponseEncoding, CredentialStoreError,
-    CredentialStoreFuture, CredentialStorePort, DeferredCredential, DeferredCredentialClaim,
-    IssuanceNotification, NonceRecord, NotificationEvent, NotificationHandle,
-    StoredCredentialOffer, StoredCredentialResponse,
+    CredentialStoreFuture, CredentialStorePort, DeferredCredential, IssuanceNotification,
+    NonceRecord, NotificationEvent, NotificationHandle, StoredCredentialOffer,
+    StoredCredentialResponse,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -480,10 +480,7 @@ impl CredentialStorePort for TransitionStore {
             deferred.claim_id = Some(claim_id.to_owned());
             deferred.claim_expires_at = Some(now + nonce_claim_ttl());
             Ok(nazo_openid4vci::DeferredClaimOutcome::Claimed(Box::new(
-                DeferredCredentialClaim {
-                    credential: deferred.credential.clone(),
-                    claim_id: claim_id.to_owned(),
-                },
+                deferred.credential.clone(),
             )))
         })
     }
@@ -1141,7 +1138,7 @@ fn pre_authorized_persist_forwards_arguments_and_errors() {
 // regressions additionally check Pending/Busy/Invalid and unchanged owner state.
 fn claim_payload(
     outcome: nazo_openid4vci::DeferredClaimOutcome,
-) -> Option<nazo_openid4vci::DeferredCredentialClaim> {
+) -> Option<nazo_openid4vci::DeferredCredential> {
     match outcome {
         nazo_openid4vci::DeferredClaimOutcome::Claimed(claim) => Some(*claim),
         _ => None,
