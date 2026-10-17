@@ -554,7 +554,7 @@ async fn record_control_outcome_on_connection(
     let data = outcome
         .into_result(operation)
         .map_err(ExecutorTransactionError::Executor)?;
-    let inserted = sql_query(
+    sql_query(
         "INSERT INTO tenant_resource_control_operations
              (operation_id, request_hash, tenant_id, operation, outcome)
          VALUES ($1, $2, $3, $4, $5)",
@@ -567,9 +567,6 @@ async fn record_control_outcome_on_connection(
     .execute(connection)
     .await
     .map_err(ExecutorTransactionError::Diesel)?;
-    if inserted != 1 {
-        return Err(transaction_conflict("control_operation_record"));
-    }
     Ok(data)
 }
 
