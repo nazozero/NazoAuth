@@ -77,14 +77,12 @@ impl Openid4vciRepository {
                         }
                         let mut body = row.body_ciphertext;
                         let plaintext_len = unprotect_payload(&self.data_key, row.issuance_id, &mut body)?.len();
-                        body.truncate(12 + plaintext_len);
-                        body.drain(..12);
                         Ok(Some(StoredCredentialResponse {
                             selection,
                             issuance_id: row.issuance_id,
                             token_id: row.token_id,
                             request_digest: row.request_digest,
-                            body: body.into(),
+                            body: bytes::Bytes::from(body).slice(12..12 + plaintext_len),
                             encoding,
                             status,
                             dpop_nonce: row.dpop_nonce,
