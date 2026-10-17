@@ -506,42 +506,6 @@ impl TenantResourceRepository {
         Ok(TenantResourceBindingDeactivate::Conflict(current))
     }
 
-    pub async fn get_openid4vc_trust_policy_on_connection(
-        connection: &mut AsyncPgConnection,
-        tenant_id: Uuid,
-        resource_id: &str,
-    ) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
-        validate_stored_openid4vc_trust_policy_identity(resource_id, None)?;
-        sql_query(
-            "SELECT id, tenant_id, resource_id, resource_digest, public_material,
-                    wallet_origins,
-                    active, created_at, updated_at, revoked_at
-             FROM openid4vc_trust_policies
-             WHERE tenant_id = $1 AND resource_id = $2 AND active",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Varchar, _>(resource_id)
-        .get_result::<Openid4vcTrustPolicyRow>(connection)
-        .await
-        .optional()
-        .map_err(map_error)?
-        .map(StoredOpenid4vcTrustPolicy::try_from)
-        .transpose()
-    }
-
-    pub async fn active_openid4vc_trust_policy_by_resource_digest_on_connection(
-        connection: &mut AsyncPgConnection,
-        tenant_id: Uuid,
-        resource_id: &str,
-        expected_digest: &str,
-    ) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
-        validate_stored_openid4vc_trust_policy_identity(resource_id, Some(expected_digest))?;
-        let policy =
-            Self::get_openid4vc_trust_policy_on_connection(connection, tenant_id, resource_id)
-                .await?;
-        Ok(policy.filter(|policy| policy.resource_digest == expected_digest))
-    }
-
     pub async fn active_openid4vc_trust_policy_for_origin_on_connection(
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,
@@ -549,20 +513,25 @@ impl TenantResourceRepository {
         wallet_origin: &str,
         expected_digest: &str,
     ) -> Result<Option<StoredOpenid4vcTrustPolicy>, RepositoryError> {
+        validate_stored_openid4vc_trust_policy_identity(resource_id, expected_digest)?;
         validate_wallet_origin(wallet_origin)?;
-        let policy = Self::active_openid4vc_trust_policy_by_resource_digest_on_connection(
-            connection,
-            tenant_id,
-            resource_id,
-            expected_digest,
+        sql_query(
+            "SELECT id, tenant_id, resource_id, resource_digest, public_material,
+                    wallet_origins, active, created_at, updated_at, revoked_at
+             FROM openid4vc_trust_policies
+             WHERE tenant_id = $1 AND resource_id = $2 AND resource_digest = $3
+               AND active AND wallet_origins @> jsonb_build_array($4::TEXT)",
         )
-        .await?;
-        Ok(policy.filter(|policy| {
-            policy
-                .wallet_origins
-                .iter()
-                .any(|origin| origin == wallet_origin)
-        }))
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Varchar, _>(resource_id)
+        .bind::<sql_types::Varchar, _>(expected_digest)
+        .bind::<sql_types::Text, _>(wallet_origin)
+        .get_result::<Openid4vcTrustPolicyRow>(connection)
+        .await
+        .optional()
+        .map_err(map_error)?
+        .map(StoredOpenid4vcTrustPolicy::try_from)
+        .transpose()
     }
 
     pub async fn active_openid4vc_trust_policy_for_origin(
@@ -1005,7 +974,7 @@ fn decode_revision(value: i64) -> Result<u64, RepositoryError> {
 
 fn validate_stored_openid4vc_trust_policy_identity(
     resource_id: &str,
-    resource_digest: Option<&str>,
+    resource_digest: &str,
 ) -> Result<(), RepositoryError> {
     if resource_id.is_empty()
         || resource_id.len() > 255
@@ -1016,12 +985,11 @@ fn validate_stored_openid4vc_trust_policy_identity(
             "OpenID4VC trust policy resource ID is invalid".to_owned(),
         ));
     }
-    if resource_digest.is_some_and(|digest| {
-        digest.len() != 64
-            || !digest
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    }) {
+    if resource_digest.len() != 64
+        || !resource_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
         return Err(RepositoryError::Consistency(
             "OpenID4VC trust policy digest is invalid".to_owned(),
         ));

@@ -758,16 +758,31 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
             .await?;
             assert!(matches!(replay, Openid4vcTrustPolicyWrite::Replayed(_)));
 
-            let cross_tenant = TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
+            let cross_tenant = TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
                 connection,
                 other_tenant_id,
                 "wallet-trust",
+                &wallet_origins[0],
+                &first_digest,
             )
             .await?;
             assert!(
                 cross_tenant.is_none(),
                 "tenant trust must not cross boundaries"
             );
+
+            for (origin, digest) in [
+                ("https://unknown-wallet.example/", first_digest.as_str()),
+                (wallet_origins[0].as_str(), second_digest.as_str()),
+            ] {
+                assert!(TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
+                    connection, tenant_id, "wallet-trust", origin, digest,
+                ).await?.is_none());
+            }
+            let visible = TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
+                connection, tenant_id, "wallet-trust", &wallet_origins[0], &first_digest,
+            ).await?.expect("exact active origin and digest should resolve");
+            assert_eq!(visible.public_material, material);
 
             let drift = TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(
                 connection,
@@ -812,10 +827,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
                 ));
             };
             assert!(
-                TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
+                TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
                     connection,
                     tenant_id,
                     "wallet-trust",
+                    &wallet_origins[0],
+                    &first_digest,
                 )
                 .await?
                 .is_none()
@@ -950,10 +967,12 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
         .await;
     assert!(matches!(rolled_back, Err(TestTransactionError::Rollback)));
     assert!(
-        TenantResourceRepository::get_openid4vc_trust_policy_on_connection(
+        TenantResourceRepository::active_openid4vc_trust_policy_for_origin_on_connection(
             &mut connection,
             tenant_id,
             "rolled-back-trust",
+            &wallet_origins[0],
+            &second_digest,
         )
         .await
         .expect("rolled-back policy lookup should succeed")
