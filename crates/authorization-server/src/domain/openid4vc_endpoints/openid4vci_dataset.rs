@@ -186,7 +186,8 @@ pub(crate) fn validate_managed_dataset(
         ));
     };
     let mut nodes = 0;
-    if serde_json::to_vec(&request.claims).map_or(true, |value| value.len() > 64 * 1024)
+    if nazo_operator_protocol::serialized_json_size(&request.claims)
+        .map_or(true, |size| size > 64 * 1024)
         || !bounded_json(&request.claims, 0, &mut nodes)
     {
         return Err(vci_error(

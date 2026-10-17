@@ -56,8 +56,8 @@ pub use verification::{
 };
 pub use wire::*;
 
-// Measure the actual JSON encoding without retaining a throwaway output buffer.
-pub(crate) fn serialized_json_size(value: &impl serde::Serialize) -> Result<usize, ProtocolError> {
+/// Measure the actual JSON encoding without retaining a throwaway output buffer.
+pub fn serialized_json_size(value: &impl serde::Serialize) -> Result<usize, ProtocolError> {
     struct Counter(usize);
     impl std::io::Write for Counter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {

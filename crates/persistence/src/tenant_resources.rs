@@ -308,9 +308,10 @@ fn decode_payload(
                     "OpenID4VC dataset claims must be an object",
                 ));
             }
-            let size = serde_json::to_vec(&value.claims)
-                .map_err(|_| TenantResourceExecutorError::InvalidPayload("invalid dataset claims"))?
-                .len();
+            let size =
+                nazo_operator_protocol::serialized_json_size(&value.claims).map_err(|_| {
+                    TenantResourceExecutorError::InvalidPayload("invalid dataset claims")
+                })?;
             if size > MAX_DATASET_CLAIMS_BYTES {
                 return Err(TenantResourceExecutorError::TooLarge);
             }
