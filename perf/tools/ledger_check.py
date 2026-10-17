@@ -21,6 +21,7 @@ Usage:
 import json
 import re
 import sys
+from pathlib import Path
 
 REQUIRED_SECTIONS = [
     "META", "RELATION_BYTES", "INDEX_DETAIL", "ROW_COUNTS", "REFRESH_MODEL",
@@ -79,7 +80,7 @@ def parse_ledger(path, failures):
     """Return {section: [rowdict,...]} from unaligned psql output."""
     secs = {}
     try:
-        lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError as e:
         failures.append(f"cannot read {path}: {e}")
         return secs
@@ -262,25 +263,26 @@ def check_sampler(path, run_id):
     meta = None
     rows = 0
     try:
-        for ln in open(path, encoding="utf-8", errors="replace"):
-            s = ln.strip()
-            if not s:
-                continue
-            try:
-                rec = json.loads(s)
-            except json.JSONDecodeError:
-                failures.append(f"unparseable line: {s[:100]}")
-                continue
-            if rec.get("kind") == "meta":
-                meta = rec
-                continue
-            rows += 1
-            for k in ("pg_err", "vk_err", "app_err"):
-                if rec.get(k):
-                    failures.append(f"sampler row {k}: {rec[k][:100]}")
-            for k in ("pg", "pg_db", "vk", "pool"):
-                if k not in rec:
-                    failures.append(f"sampler row missing {k}")
+        with open(path, encoding="utf-8", errors="replace") as stream:
+            for ln in stream:
+                s = ln.strip()
+                if not s:
+                    continue
+                try:
+                    rec = json.loads(s)
+                except json.JSONDecodeError:
+                    failures.append(f"unparseable line: {s[:100]}")
+                    continue
+                if rec.get("kind") == "meta":
+                    meta = rec
+                    continue
+                rows += 1
+                for k in ("pg_err", "vk_err", "app_err"):
+                    if rec.get(k):
+                        failures.append(f"sampler row {k}: {rec[k][:100]}")
+                for k in ("pg", "pg_db", "vk", "pool"):
+                    if k not in rec:
+                        failures.append(f"sampler row missing {k}")
     except OSError as e:
         failures.append(f"cannot read {path}: {e}")
     if meta is None:
@@ -304,100 +306,100 @@ def check_sampler(path, run_id):
 def selftest():
     import os
     import tempfile
-    d = tempfile.mkdtemp(prefix="ledger-selftest-")
-    ok = total = 0
+    with tempfile.TemporaryDirectory(prefix="ledger-selftest-") as d:
+        ok = total = 0
 
-    kv = lambda sec, kind, *pairs: "\n".join(
-        f" {sec} | {kind} | {k} | {v}" for k, v in pairs)
+        kv = lambda sec, kind, *pairs: "\n".join(
+            f" {sec} | {kind} | {k} | {v}" for k, v in pairs)
 
-    good_ledger = "\n".join([
-        " META | run_id | RUN1",
-        " META | phase | pre",
-        " META | sampled_at | 2026-09-19",
-        " META | server_version_num | 180000",
-        " META | schema_version | 20260919000200",
-        " RELATION_BYTES | 1 | public.oauth_refresh_families | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 6 | public.oauth_refresh_spent_tokens | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 7 | public.oauth_refresh_contracts | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 2 | public.oauth_token_issuances | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 3 | public.security_audit_events | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 4 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 5 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " INDEX_DETAIL | 9 | public.x | x_idx | 8 | 0 | CREATE INDEX",
-        " ROW_COUNTS | x | 1",
-        kv("REFRESH_MODEL", "families", ("live", 0), ("max_active_per_scope", 0)),
-        " EXPIRED_BACKLOG | x | 0 | -",
-        kv("AUDIT", "ledger", ("pending_export", 0), ("events", 1),
-           ("chain_entries", 1), ("anchor_sequence", 1), ("chain_head", 1)),
-        kv("WAL", "stats", ("wal_records", 1), ("wal_bytes", 10),
-           ("stats_reset", "-")),
-        kv("WAL", "position", ("lsn", "0/1"), ("sampled_at", "-")),
-        kv("WAL", "waldir", ("files", 1), ("bytes", 10)),
-        kv("WAL", "archiver", ("archived_count", 0), ("stats_reset", "-")),
-        kv("WAL", "replication_slots", ("count", 0)),
-        kv("BGWRITER", "bgwriter", ("buffers_clean", 0), ("stats_reset", "-")),
-        kv("CHECKPOINTER", "checkpointer", ("num_timed", 0), ("stats_reset", "-")),
-        kv("IO", "bgworker", ("reads", 0), ("writes", 0)),
-        kv("DB_TOTAL", "db", ("db_bytes", 100), ("xact_commit", 5),
-           ("stats_reset", "-")),
-        kv("ACTIVITY", "backends", ("total", 1)),
-        kv("TOP_STATEMENTS", "1", ("calls", 1), ("rows", 1),
-           ("query_head", "q")),
-        " DONE | complete | 2026-09-19",
-        "",
-    ])
+        good_ledger = "\n".join([
+            " META | run_id | RUN1",
+            " META | phase | pre",
+            " META | sampled_at | 2026-09-19",
+            " META | server_version_num | 180000",
+            " META | schema_version | 20260919000200",
+            " RELATION_BYTES | 1 | public.oauth_refresh_families | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " RELATION_BYTES | 6 | public.oauth_refresh_spent_tokens | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " RELATION_BYTES | 7 | public.oauth_refresh_contracts | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " RELATION_BYTES | 2 | public.oauth_token_issuances | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " RELATION_BYTES | 3 | public.security_audit_events | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " RELATION_BYTES | 4 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " RELATION_BYTES | 5 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+            " INDEX_DETAIL | 9 | public.x | x_idx | 8 | 0 | CREATE INDEX",
+            " ROW_COUNTS | x | 1",
+            kv("REFRESH_MODEL", "families", ("live", 0), ("max_active_per_scope", 0)),
+            " EXPIRED_BACKLOG | x | 0 | -",
+            kv("AUDIT", "ledger", ("pending_export", 0), ("events", 1),
+               ("chain_entries", 1), ("anchor_sequence", 1), ("chain_head", 1)),
+            kv("WAL", "stats", ("wal_records", 1), ("wal_bytes", 10),
+               ("stats_reset", "-")),
+            kv("WAL", "position", ("lsn", "0/1"), ("sampled_at", "-")),
+            kv("WAL", "waldir", ("files", 1), ("bytes", 10)),
+            kv("WAL", "archiver", ("archived_count", 0), ("stats_reset", "-")),
+            kv("WAL", "replication_slots", ("count", 0)),
+            kv("BGWRITER", "bgwriter", ("buffers_clean", 0), ("stats_reset", "-")),
+            kv("CHECKPOINTER", "checkpointer", ("num_timed", 0), ("stats_reset", "-")),
+            kv("IO", "bgworker", ("reads", 0), ("writes", 0)),
+            kv("DB_TOTAL", "db", ("db_bytes", 100), ("xact_commit", 5),
+               ("stats_reset", "-")),
+            kv("ACTIVITY", "backends", ("total", 1)),
+            kv("TOP_STATEMENTS", "1", ("calls", 1), ("rows", 1),
+               ("query_head", "q")),
+            " DONE | complete | 2026-09-19",
+            "",
+        ])
 
-    def run(name, content, expect_rc):
-        nonlocal ok, total
+        def run(name, content, expect_rc):
+            nonlocal ok, total
+            total += 1
+            p = os.path.join(d, name)
+            Path(p).write_text(content, encoding="utf-8")
+            rc = check(p, "RUN1", [])
+            good = rc == expect_rc
+            ok += good
+            print(f"selftest {name}: rc={rc} expect={expect_rc} {'PASS' if good else 'FAIL'}")
+
+        run("good.txt", good_ledger, 0)
+        run("sqlerr.txt", good_ledger + "\npsql:ledger.sql:5: ERROR:  column \"x\" does not exist\n", 2)
+        run("wrongrun.txt", good_ledger.replace("META | run_id | RUN1", "META | run_id | OTHER"), 2)
+        run("nosection.txt", "\n".join(
+            ln for ln in good_ledger.splitlines() if not ln.startswith(" WAL |")), 2)
+        run("nodone.txt", good_ledger.replace(" DONE | complete | 2026-09-19\n", ""), 2)
+        run("badrel.txt", good_ledger.replace("public.oauth_refresh_families", "public.renamed_thing"), 2)
+
         total += 1
-        p = os.path.join(d, name)
-        open(p, "w").write(content)
-        rc = check(p, "RUN1", [])
-        good = rc == expect_rc
+        pre = os.path.join(d, "pre.txt")
+        post = os.path.join(d, "post.txt")
+        Path(pre).write_text(good_ledger, encoding="utf-8")
+        Path(post).write_text(good_ledger.replace(
+            " DB_TOTAL | db | xact_commit | 5",
+            " DB_TOTAL | db | xact_commit | 3"))
+        rc = diff(pre, post)
+        good = rc == 2
         ok += good
-        print(f"selftest {name}: rc={rc} expect={expect_rc} {'PASS' if good else 'FAIL'}")
+        print(f"selftest diff-negative: rc={rc} {'PASS' if good else 'FAIL'}")
 
-    run("good.txt", good_ledger, 0)
-    run("sqlerr.txt", good_ledger + "\npsql:ledger.sql:5: ERROR:  column \"x\" does not exist\n", 2)
-    run("wrongrun.txt", good_ledger.replace("META | run_id | RUN1", "META | run_id | OTHER"), 2)
-    run("nosection.txt", "\n".join(
-        ln for ln in good_ledger.splitlines() if not ln.startswith(" WAL |")), 2)
-    run("nodone.txt", good_ledger.replace(" DONE | complete | 2026-09-19\n", ""), 2)
-    run("badrel.txt", good_ledger.replace("public.oauth_refresh_families", "public.renamed_thing"), 2)
+        total += 1
+        sp = os.path.join(d, "s.jsonl")
+        Path(sp).write_text(
+            '{"kind":"meta","run_id":"RUN1","script_sha256":"abc"}\n'
+            '{"ts":2,"pg":{},"pg_db":{},"vk":{},"pool":{}}\n')
+        rc = check_sampler(sp, "RUN1")
+        good = rc == 0
+        ok += good
+        print(f"selftest sampler-good: rc={rc} {'PASS' if good else 'FAIL'}")
 
-    total += 1
-    pre = os.path.join(d, "pre.txt")
-    post = os.path.join(d, "post.txt")
-    open(pre, "w").write(good_ledger)
-    open(post, "w").write(good_ledger.replace(
-        " DB_TOTAL | db | xact_commit | 5",
-        " DB_TOTAL | db | xact_commit | 3"))
-    rc = diff(pre, post)
-    good = rc == 2
-    ok += good
-    print(f"selftest diff-negative: rc={rc} {'PASS' if good else 'FAIL'}")
+        total += 1
+        Path(sp).write_text(
+            '{"kind":"meta","run_id":"RUN1","script_sha256":"abc"}\n'
+            '{"ts":2,"pg":{},"pg_db":{},"vk":{},"pool":{},"app_err":"HTTP Error 404: Not Found"}\n')
+        rc = check_sampler(sp, "RUN1")
+        good = rc == 2
+        ok += good
+        print(f"selftest sampler-404: rc={rc} {'PASS' if good else 'FAIL'}")
 
-    total += 1
-    sp = os.path.join(d, "s.jsonl")
-    open(sp, "w").write(
-        '{"kind":"meta","run_id":"RUN1","script_sha256":"abc"}\n'
-        '{"ts":2,"pg":{},"pg_db":{},"vk":{},"pool":{}}\n')
-    rc = check_sampler(sp, "RUN1")
-    good = rc == 0
-    ok += good
-    print(f"selftest sampler-good: rc={rc} {'PASS' if good else 'FAIL'}")
-
-    total += 1
-    open(sp, "w").write(
-        '{"kind":"meta","run_id":"RUN1","script_sha256":"abc"}\n'
-        '{"ts":2,"pg":{},"pg_db":{},"vk":{},"pool":{},"app_err":"HTTP Error 404: Not Found"}\n')
-    rc = check_sampler(sp, "RUN1")
-    good = rc == 2
-    ok += good
-    print(f"selftest sampler-404: rc={rc} {'PASS' if good else 'FAIL'}")
-
-    print(f"selftest: {ok}/{total} detected correctly")
-    return 0 if ok == total else 2
+        print(f"selftest: {ok}/{total} detected correctly")
+        return 0 if ok == total else 2
 
 
 def main():
