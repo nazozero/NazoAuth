@@ -24,7 +24,7 @@ fn request_json_accepts_json_and_rejects_invalid_encrypted_request() {
     let mut jwk = encryption.public_jwk();
     jwk["alg"] = json!("ECDH-ES");
     jwk["kid"] = json!("openid4vci-request-encryption");
-    let malformed = encrypt_ecdh_es(b"not-json", &jwk, Some("application/json"))
+    let malformed = encrypt_ecdh_es(b"not-json".to_vec(), &jwk, Some("application/json"))
         .expect("fixture request JWE should encrypt");
     let error = request_json::<Value>(&encryption, CredentialRequestBody::Jwt(malformed))
         .expect_err("encrypted non-JSON request must fail closed");

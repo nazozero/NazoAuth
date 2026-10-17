@@ -78,24 +78,27 @@ impl EphemeralEncryptionKey {
     }
 }
 
+/// Consumes the payload buffer for in-place A256GCM encryption and compact JWE encoding.
 pub fn encrypt_ecdh_es(
-    plaintext: &[u8],
+    plaintext: Vec<u8>,
     recipient_jwk: &Value,
     content_type: Option<&str>,
 ) -> Result<String, JweError> {
     encrypt_ecdh_es_with_zip(plaintext, recipient_jwk, content_type, None, "A256GCM")
 }
 
+/// Consumes the payload buffer for in-place A128GCM encryption and compact JWE encoding.
 pub fn encrypt_ecdh_es_a128(
-    plaintext: &[u8],
+    plaintext: Vec<u8>,
     recipient_jwk: &Value,
     content_type: Option<&str>,
 ) -> Result<String, JweError> {
     encrypt_ecdh_es_with_zip(plaintext, recipient_jwk, content_type, None, "A128GCM")
 }
 
+/// Compresses the payload, then encrypts the compression output in place with A256GCM.
 pub fn encrypt_ecdh_es_deflate(
-    plaintext: &[u8],
+    plaintext: Vec<u8>,
     recipient_jwk: &Value,
     content_type: Option<&str>,
 ) -> Result<String, JweError> {
@@ -109,7 +112,7 @@ pub fn encrypt_ecdh_es_deflate(
 }
 
 fn encrypt_ecdh_es_with_zip(
-    plaintext: &[u8],
+    mut plaintext: Vec<u8>,
     recipient_jwk: &Value,
     content_type: Option<&str>,
     zip: Option<&str>,
@@ -139,29 +142,27 @@ fn encrypt_ecdh_es_with_zip(
     if let Some(zip) = zip {
         header["zip"] = Value::String(zip.to_owned());
     }
-    let protected =
-        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).map_err(|_| JweError::Malformed)?);
-    let compressed;
-    let plaintext = if zip == Some("DEF") {
+    if zip == Some("DEF") {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder
-            .write_all(plaintext)
+            .write_all(&plaintext)
             .map_err(|_| JweError::InvalidCompression)?;
-        compressed = encoder.finish().map_err(|_| JweError::InvalidCompression)?;
-        compressed.as_slice()
-    } else {
-        plaintext
-    };
+        plaintext = encoder.finish().map_err(|_| JweError::InvalidCompression)?;
+    }
+    let header = serde_json::to_vec(&header).map_err(|_| JweError::Malformed)?;
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    let ciphertext_and_tag =
-        nazo_crypto::aead::encrypt(key, &nonce, protected.as_bytes(), plaintext)
-            .map_err(jwe_aead_error)?;
-    let tag_at = ciphertext_and_tag.len() - 16;
-    let (ciphertext, tag) = ciphertext_and_tag.split_at(tag_at);
-    let mut compact = protected;
+    let capacity = [header.len(), 0, nonce.len(), plaintext.len(), 16]
+        .into_iter()
+        .map(|len| base64::encoded_len(len, false).expect("JWE segment is too large to encode"))
+        .sum::<usize>()
+        + 4;
+    let mut compact = String::with_capacity(capacity);
+    URL_SAFE_NO_PAD.encode_string(&header, &mut compact);
+    let tag = nazo_crypto::aead::encrypt_in_place(key, &nonce, compact.as_bytes(), &mut plaintext)
+        .map_err(jwe_aead_error)?;
     compact.push('.');
-    for segment in [nonce.as_slice(), ciphertext, tag] {
+    for segment in [nonce.as_slice(), plaintext.as_slice(), tag.as_slice()] {
         compact.push('.');
         URL_SAFE_NO_PAD.encode_string(segment, &mut compact);
     }

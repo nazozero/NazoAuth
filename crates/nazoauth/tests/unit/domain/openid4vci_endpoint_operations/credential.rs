@@ -8,7 +8,7 @@ async fn credential_decrypts_a_valid_encrypted_request_before_access_validation(
     jwk["alg"] = json!("ECDH-ES");
     jwk["kid"] = json!("openid4vci-request-encryption");
     let encrypted = encrypt_ecdh_es(
-        &serde_json::to_vec(&request).expect("credential request should serialize"),
+        serde_json::to_vec(&request).expect("credential request should serialize"),
         &jwk,
         Some("application/json"),
     )

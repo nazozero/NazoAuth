@@ -8,7 +8,7 @@ use nazo_digital_credentials::{
 fn ecdh_es_a256gcm_round_trip_is_authenticated() {
     let recipient = EphemeralEncryptionKey::generate();
     let compact = encrypt_ecdh_es(
-        br#"{"vp_token":"credential"}"#,
+        br#"{"vp_token":"credential"}"#.to_vec(),
         &recipient.public_jwk(),
         Some("application/json"),
     )
@@ -27,14 +27,17 @@ fn ecdh_es_a256gcm_round_trip_is_authenticated() {
 }
 
 #[test]
-fn empty_plaintext_keeps_the_authentication_tag_for_both_key_lengths() {
+fn owned_payloads_round_trip_across_base64_and_aes_boundaries() {
     let recipient = EphemeralEncryptionKey::generate();
     for encrypt in [encrypt_ecdh_es, encrypt_ecdh_es_a128] {
-        let compact = encrypt(b"", &recipient.public_jwk(), None).unwrap();
-        assert!(recipient.decrypt(&compact).unwrap().is_empty());
-        let parts: Vec<_> = compact.split('.').collect();
-        assert!(parts[3].is_empty());
-        assert_eq!(URL_SAFE_NO_PAD.decode(parts[4]).unwrap().len(), 16);
+        for len in [0, 1, 2, 3, 15, 16, 17, 1024, 65536] {
+            let plaintext = vec![0xA5; len];
+            let compact = encrypt(plaintext.clone(), &recipient.public_jwk(), None).unwrap();
+            assert_eq!(recipient.decrypt(&compact).unwrap(), plaintext);
+            let parts: Vec<_> = compact.split('.').collect();
+            assert_eq!(URL_SAFE_NO_PAD.decode(parts[3]).unwrap().len(), len);
+            assert_eq!(URL_SAFE_NO_PAD.decode(parts[4]).unwrap().len(), 16);
+        }
     }
 }
 
@@ -42,7 +45,7 @@ fn empty_plaintext_keeps_the_authentication_tag_for_both_key_lengths() {
 fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
     let recipient = EphemeralEncryptionKey::generate();
     let compact = encrypt_ecdh_es(
-        br#"{"vp_token":"credential"}"#,
+        br#"{"vp_token":"credential"}"#.to_vec(),
         &recipient.public_jwk(),
         Some("application/json"),
     )
@@ -95,7 +98,7 @@ fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
 fn ecdh_es_ephemeral_jwk_rejects_an_explicit_wrong_algorithm() {
     let recipient = EphemeralEncryptionKey::generate();
     let compact = encrypt_ecdh_es(
-        b"credential",
+        b"credential".to_vec(),
         &recipient.public_jwk(),
         Some("application/json"),
     )
@@ -125,14 +128,22 @@ fn ecdh_es_recipient_jwk_requires_an_exact_algorithm_binding() {
         .expect("public JWK object")
         .remove("alg");
     assert_eq!(
-        encrypt_ecdh_es(b"credential", &missing_algorithm, Some("application/json")),
+        encrypt_ecdh_es(
+            b"credential".to_vec(),
+            &missing_algorithm,
+            Some("application/json")
+        ),
         Err(JweError::InvalidKey)
     );
 
     let mut wrong_algorithm = recipient.public_jwk();
     wrong_algorithm["alg"] = serde_json::json!("ECDH-ES+A256KW");
     assert_eq!(
-        encrypt_ecdh_es(b"credential", &wrong_algorithm, Some("application/json")),
+        encrypt_ecdh_es(
+            b"credential".to_vec(),
+            &wrong_algorithm,
+            Some("application/json")
+        ),
         Err(JweError::InvalidKey)
     );
 }
@@ -141,7 +152,7 @@ fn ecdh_es_recipient_jwk_requires_an_exact_algorithm_binding() {
 fn ecdh_es_a128gcm_round_trip_matches_oid4vp_default() {
     let recipient = EphemeralEncryptionKey::generate();
     let compact = encrypt_ecdh_es_a128(
-        br#"{"vp_token":"credential"}"#,
+        br#"{"vp_token":"credential"}"#.to_vec(),
         &recipient.public_jwk(),
         Some("json"),
     )
@@ -157,9 +168,12 @@ fn ecdh_es_a128gcm_round_trip_matches_oid4vp_default() {
 fn deflate_round_trip_is_authenticated_and_bounded() {
     let recipient = EphemeralEncryptionKey::generate();
     let plaintext = br#"{"credential":"repetitive-repetitive-repetitive"}"#;
-    let compact =
-        encrypt_ecdh_es_deflate(plaintext, &recipient.public_jwk(), Some("application/json"))
-            .expect("encrypt compressed JWE");
+    let compact = encrypt_ecdh_es_deflate(
+        plaintext.to_vec(),
+        &recipient.public_jwk(),
+        Some("application/json"),
+    )
+    .expect("encrypt compressed JWE");
 
     assert_eq!(
         recipient.decrypt(&compact).expect("decrypt compressed JWE"),

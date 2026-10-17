@@ -58,8 +58,9 @@ fn client_jwe_encrypts_with_supported_ecdh_key_management_algorithms() {
             .expect("supported ECDH JWE key metadata")
             .expect("ECDH JWE key should be selected");
 
-        let compact = encrypt_compact_jwe(&key, br#"{"sub":"user"}"#, JwePayloadKind::Claims)
-            .expect("encrypt ECDH compact JWE");
+        let compact =
+            encrypt_compact_jwe(&key, br#"{"sub":"user"}"#.to_vec(), JwePayloadKind::Claims)
+                .expect("encrypt ECDH compact JWE");
 
         assert_eq!(
             decrypt_ecdh_compact_jwe(&compact, &recipient),
@@ -249,9 +250,12 @@ fn ownership_introspection_signs_then_encrypts_without_changing_inner_jwt() {
                 let key = client_jwe_key(Some(&jwks), Some(alg), Some("A256GCM"), "introspection")
                     .unwrap()
                     .unwrap();
-                let encrypted =
-                    encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)
-                        .unwrap();
+                let encrypted = encrypt_compact_jwe(
+                    &key,
+                    signed.clone().into_bytes(),
+                    JwePayloadKind::NestedJwt,
+                )
+                .unwrap();
                 let protected: Value = serde_json::from_slice(
                     &URL_SAFE_NO_PAD
                         .decode(encrypted.split('.').next().unwrap())

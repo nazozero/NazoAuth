@@ -512,9 +512,11 @@ pub async fn issue_token_response(
             "id_token",
         )
         .and_then(|key| match key {
-            Some(key) => {
-                encrypt_compact_jwe(&key, signed_id_token.as_bytes(), JwePayloadKind::NestedJwt)
-            }
+            Some(key) => encrypt_compact_jwe(
+                &key,
+                signed_id_token.into_bytes(),
+                JwePayloadKind::NestedJwt,
+            ),
             None => Ok(signed_id_token),
         }) {
             Ok(token) => token,

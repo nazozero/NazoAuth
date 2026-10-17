@@ -107,9 +107,9 @@ fn finish_response(
         let bytes = serde_json::to_vec(&response)
             .map_err(|_| vci_error(500, "server_error", "Credential response encoding failed."))?;
         let encrypted = if encryption.zip.as_deref() == Some("DEF") {
-            encrypt_ecdh_es_deflate(&bytes, &encryption.jwk, Some("application/json"))
+            encrypt_ecdh_es_deflate(bytes, &encryption.jwk, Some("application/json"))
         } else {
-            encrypt_ecdh_es(&bytes, &encryption.jwk, Some("application/json"))
+            encrypt_ecdh_es(bytes, &encryption.jwk, Some("application/json"))
         };
         return encrypted.map(CredentialResponseBody::Jwt).map_err(|_| {
             vci_error(

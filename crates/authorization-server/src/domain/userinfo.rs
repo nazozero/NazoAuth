@@ -294,13 +294,13 @@ impl ServerUserinfoOperations {
                 .await?;
             match encryption_key {
                 Some(key) => {
-                    encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)?
+                    encrypt_compact_jwe(&key, signed.into_bytes(), JwePayloadKind::NestedJwt)?
                 }
                 None => signed,
             }
         } else {
             let key = encryption_key.expect("checked UserInfo encryption key is present");
-            encrypt_compact_jwe(&key, &serde_json::to_vec(&claims)?, JwePayloadKind::Claims)?
+            encrypt_compact_jwe(&key, serde_json::to_vec(&claims)?, JwePayloadKind::Claims)?
         };
         Ok(UserinfoRepresentation::Jwt(body))
     }

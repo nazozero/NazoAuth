@@ -820,6 +820,13 @@ mod aead {
                 let back = crypto_aead::decrypt(&key, &nonce, aad, &out).unwrap();
                 assert_eq!(back, plaintext);
                 let (ciphertext, tag) = expected.split_last_chunk::<16>().unwrap();
+                let mut owned_plaintext = plaintext.to_vec();
+                let buffer = owned_plaintext.as_ptr();
+                let detached_tag =
+                    crypto_aead::encrypt_in_place(&key, &nonce, aad, &mut owned_plaintext).unwrap();
+                assert_eq!(owned_plaintext.as_ptr(), buffer);
+                assert_eq!(owned_plaintext, ciphertext);
+                assert_eq!(&detached_tag, tag);
                 let mut in_place = ciphertext.to_vec();
                 crypto_aead::decrypt_in_place(&key, &nonce, aad, &mut in_place, tag).unwrap();
                 assert_eq!(in_place, plaintext);
@@ -872,6 +879,10 @@ mod aead {
         ));
         assert!(matches!(
             crypto_aead::encrypt(&[0_u8; 24], &nonce, aad, b"x"),
+            Err(CryptoError::InvalidKey)
+        ));
+        assert!(matches!(
+            crypto_aead::encrypt_in_place(&[0_u8; 24], &nonce, aad, &mut [0_u8]),
             Err(CryptoError::InvalidKey)
         ));
         let empty = crypto_aead::encrypt(&key, &nonce, aad, b"").unwrap();

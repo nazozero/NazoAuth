@@ -217,7 +217,7 @@ impl ServerTokenManagementOperations {
             TokenManagementError::ResponseProtectionFailed
         })?;
         match key {
-            Some(key) => encrypt_compact_jwe(&key, token.as_bytes(), JwePayloadKind::NestedJwt)
+            Some(key) => encrypt_compact_jwe(&key, token.into_bytes(), JwePayloadKind::NestedJwt)
                 .map_err(|error| {
                     tracing::warn!(%error, "failed to encrypt introspection response");
                     TokenManagementError::ResponseProtectionFailed

@@ -1,10 +1,7 @@
 //! AES-128/256-GCM authenticated encryption with fixed 12-byte nonces and
 //! 16-byte tags. Wire layout is `ciphertext || tag`.
 
-use aes_gcm::{
-    Aes128Gcm, Aes256Gcm, KeyInit as _,
-    aead::{Aead as _, AeadInOut as _, Payload},
-};
+use aes_gcm::{Aes128Gcm, Aes256Gcm, KeyInit as _, aead::AeadInOut as _};
 
 use crate::CryptoError;
 
@@ -29,20 +26,32 @@ pub fn encrypt_prefixed(
 
 pub fn encrypt(key: &[u8], nonce: &[u8], aad: &[u8], plaintext: &[u8]) -> crate::Result<Vec<u8>> {
     let nonce: &[u8; 12] = nonce.try_into().map_err(|_| CryptoError::InvalidInput)?;
-    let payload = Payload {
-        msg: plaintext,
-        aad,
-    };
-    match key.len() {
+    let mut ciphertext = Vec::with_capacity(plaintext.len() + 16);
+    ciphertext.extend_from_slice(plaintext);
+    let tag = encrypt_in_place(key, nonce, aad, &mut ciphertext)?;
+    ciphertext.extend_from_slice(&tag);
+    Ok(ciphertext)
+}
+
+/// Encrypts a caller-owned plaintext buffer and returns its detached authentication tag.
+/// The caller supplies a fresh nonce for this key and must discard the buffer on error.
+pub fn encrypt_in_place(
+    key: &[u8],
+    nonce: &[u8; 12],
+    aad: &[u8],
+    plaintext: &mut [u8],
+) -> crate::Result<[u8; 16]> {
+    let tag = match key.len() {
         16 => Aes128Gcm::new_from_slice(key)
             .map_err(|_| CryptoError::InvalidKey)?
-            .encrypt(nonce.into(), payload),
+            .encrypt_inout_detached(nonce.into(), aad, plaintext.into()),
         32 => Aes256Gcm::new_from_slice(key)
             .map_err(|_| CryptoError::InvalidKey)?
-            .encrypt(nonce.into(), payload),
+            .encrypt_inout_detached(nonce.into(), aad, plaintext.into()),
         _ => return Err(CryptoError::InvalidKey),
     }
-    .map_err(|_| CryptoError::OperationFailed)
+    .map_err(|_| CryptoError::OperationFailed)?;
+    Ok(tag.into())
 }
 
 pub fn decrypt(

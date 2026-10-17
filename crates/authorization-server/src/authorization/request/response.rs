@@ -153,7 +153,7 @@ async fn protected_authorization_response_jwt(
     )? {
         Some(key) => Ok(encrypt_compact_jwe(
             &key,
-            signed.as_bytes(),
+            signed.into_bytes(),
             JwePayloadKind::NestedJwt,
         )?),
         None => Ok(signed),

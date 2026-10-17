@@ -63,9 +63,10 @@ pub fn client_jwe_key<'a>(
     Ok(Some(ClientJweKey { kid, alg, enc, jwk }))
 }
 
+/// Consumes the response buffer for in-place encryption and compact JWE encoding.
 pub fn encrypt_compact_jwe(
     key: &ClientJweKey<'_>,
-    plaintext: &[u8],
+    plaintext: Vec<u8>,
     payload_kind: JwePayloadKind,
 ) -> anyhow::Result<String> {
     let Some(alg) = client_jwe_key_management_from_name(key.alg) else {
@@ -99,9 +100,8 @@ pub fn encrypt_compact_jwe(
             let recipient = parse_p256_public_jwk(key.jwk)?;
             let ephemeral = P256SecretKey::generate();
             protected_header.insert("epk".to_owned(), public_p256_jwk(ephemeral.public_key()));
-            let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&protected_header)?);
             return encrypt_compact_jwe_with_cek(
-                protected,
+                &protected_header,
                 &ecdh_derive_key(&ephemeral, &recipient, key.enc, 256)?,
                 &[],
                 plaintext,
@@ -122,21 +122,37 @@ pub fn encrypt_compact_jwe(
             (cek, encrypted_key)
         }
     };
-    let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&protected_header)?);
-    encrypt_compact_jwe_with_cek(protected, &cek, &encrypted_key, plaintext)
+    encrypt_compact_jwe_with_cek(&protected_header, &cek, &encrypted_key, plaintext)
 }
 
 fn encrypt_compact_jwe_with_cek(
-    protected: String,
+    protected_header: &serde_json::Map<String, Value>,
     cek: &[u8],
     encrypted_key: &[u8],
-    plaintext: &[u8],
+    mut plaintext: Vec<u8>,
 ) -> anyhow::Result<String> {
+    let header = serde_json::to_vec(protected_header)?;
     let iv = rand::random::<[u8; 12]>();
-    let ciphertext_and_tag = nazo_crypto::aead::encrypt(cek, &iv, protected.as_bytes(), plaintext)?;
-    let (ciphertext, tag) = ciphertext_and_tag.split_at(ciphertext_and_tag.len() - 16);
-    let mut compact = protected;
-    for segment in [encrypted_key, iv.as_slice(), ciphertext, tag] {
+    let capacity = [
+        header.len(),
+        encrypted_key.len(),
+        iv.len(),
+        plaintext.len(),
+        16,
+    ]
+    .into_iter()
+    .map(|len| base64::encoded_len(len, false).expect("JWE segment is too large to encode"))
+    .sum::<usize>()
+        + 4;
+    let mut compact = String::with_capacity(capacity);
+    URL_SAFE_NO_PAD.encode_string(&header, &mut compact);
+    let tag = nazo_crypto::aead::encrypt_in_place(cek, &iv, compact.as_bytes(), &mut plaintext)?;
+    for segment in [
+        encrypted_key,
+        iv.as_slice(),
+        plaintext.as_slice(),
+        tag.as_slice(),
+    ] {
         compact.push('.');
         URL_SAFE_NO_PAD.encode_string(segment, &mut compact);
     }

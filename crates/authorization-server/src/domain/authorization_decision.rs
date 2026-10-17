@@ -366,7 +366,7 @@ impl ServerAuthorizationDecisionOperations {
                 })? {
                     Some(key) => encrypt_compact_jwe(
                         &key,
-                        signed.as_bytes(),
+                        signed.into_bytes(),
                         JwePayloadKind::NestedJwt,
                     )
                     .map_err(|error| {

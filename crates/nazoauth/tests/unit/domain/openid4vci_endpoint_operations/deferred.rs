@@ -11,7 +11,7 @@ async fn deferred_decrypts_a_valid_encrypted_request_before_access_validation() 
     jwk["alg"] = json!("ECDH-ES");
     jwk["kid"] = json!("openid4vci-request-encryption");
     let encrypted = encrypt_ecdh_es(
-        &serde_json::to_vec(&request).expect("deferred request should serialize"),
+        serde_json::to_vec(&request).expect("deferred request should serialize"),
         &jwk,
         Some("application/json"),
     )
@@ -91,7 +91,7 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
         .as_ref()
         .unwrap()["keys"][0];
     let encrypted_request = nazo_digital_credentials::encrypt_ecdh_es(
-        &serde_json::to_vec(&request).unwrap(),
+        serde_json::to_vec(&request).unwrap(),
         issuer_request_jwk,
         Some("application/json"),
     )
@@ -144,7 +144,7 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
     let mut waiting_request = deferred_request.clone();
     waiting_request.credential_response_encryption = request.credential_response_encryption.clone();
     let waiting_jwe = nazo_digital_credentials::encrypt_ecdh_es(
-        &serde_json::to_vec(&waiting_request).unwrap(),
+        serde_json::to_vec(&waiting_request).unwrap(),
         issuer_request_jwk,
         Some("application/json"),
     )
