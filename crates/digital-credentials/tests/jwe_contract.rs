@@ -95,6 +95,38 @@ fn ecdh_es_output_matches_compact_jwe_serialization_contract() {
 }
 
 #[test]
+fn protected_header_preserves_escaped_metadata_and_recipient_binding() {
+    let recipient = EphemeralEncryptionKey::generate();
+    let kid = "key-\"-\\-\n-密钥".repeat(64);
+    let content_type = "application/\"credential\\json\n凭证";
+    let mut jwk = recipient.public_jwk();
+    jwk["kid"] = serde_json::json!(kid);
+    let compact = encrypt_ecdh_es(b"credential".to_vec(), &jwk, Some(content_type)).unwrap();
+    let header: serde_json::Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(compact.split('.').next().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(header["kid"], kid);
+    assert_eq!(header["cty"], content_type);
+    assert!(header.get("zip").is_none());
+    assert_eq!(recipient.decrypt(&compact).unwrap(), b"credential");
+
+    let request = encrypt_ecdh_es(b"{}".to_vec(), &jwk, Some("application/json")).unwrap();
+    assert_eq!(
+        recipient
+            .decrypt_credential_request(&request, &kid)
+            .unwrap(),
+        b"{}"
+    );
+    assert_eq!(
+        recipient.decrypt_credential_request(&request, "wrong-key"),
+        Err(JweError::Unsupported)
+    );
+}
+
+#[test]
 fn ecdh_es_ephemeral_jwk_rejects_an_explicit_wrong_algorithm() {
     let recipient = EphemeralEncryptionKey::generate();
     let compact = encrypt_ecdh_es(

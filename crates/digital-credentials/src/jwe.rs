@@ -2,9 +2,10 @@ use std::io::{Read, Write};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
-use nazo_crypto::ec::P256SecretKey;
+use nazo_crypto::ec::{P256PublicJwk, P256SecretKey};
 use rand::Rng;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
@@ -36,7 +37,12 @@ impl EphemeralEncryptionKey {
 
     #[must_use]
     pub fn public_jwk(&self) -> Value {
-        public_jwk(self.secret.public_key())
+        let key = self.secret.public_key();
+        let mut jwk = serde_json::to_value(P256PublicJwk::new(&key))
+            .expect("P-256 public JWK is serializable");
+        jwk["use"] = Value::String("enc".to_owned());
+        jwk["alg"] = Value::String("ECDH-ES".to_owned());
+        jwk
     }
 
     #[must_use]
@@ -130,18 +136,15 @@ fn encrypt_ecdh_es_with_zip(
         .map_err(|_| JweError::InvalidKey)?;
     let key = concat_kdf(shared.as_slice(), enc, &[], &[], key_bits);
     let key = &key[..(key_bits / 8) as usize];
-    let mut header = json!({
-        "alg": "ECDH-ES", "enc": enc, "epk": ephemeral_public_jwk(ephemeral.public_key()),
-    });
-    if let Some(kid) = recipient_jwk.get("kid").and_then(Value::as_str) {
-        header["kid"] = Value::String(kid.to_owned());
-    }
-    if let Some(content_type) = content_type {
-        header["cty"] = Value::String(content_type.to_owned());
-    }
-    if let Some(zip) = zip {
-        header["zip"] = Value::String(zip.to_owned());
-    }
+    let public_key = ephemeral.public_key();
+    let header = ProtectedHeader {
+        alg: "ECDH-ES",
+        cty: content_type,
+        enc,
+        epk: P256PublicJwk::new(&public_key),
+        kid: recipient_jwk.get("kid").and_then(Value::as_str),
+        zip,
+    };
     if zip == Some("DEF") {
         let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
         encoder
@@ -245,23 +248,17 @@ fn decompress_deflate(compressed: &[u8]) -> Result<Vec<u8>, JweError> {
     Ok(output)
 }
 
-fn public_jwk(key: [u8; 65]) -> Value {
-    let mut jwk = ec_public_jwk(key);
-    jwk["use"] = Value::String("enc".to_owned());
-    jwk["alg"] = Value::String("ECDH-ES".to_owned());
-    jwk
-}
-
-fn ephemeral_public_jwk(key: [u8; 65]) -> Value {
-    ec_public_jwk(key)
-}
-
-fn ec_public_jwk(key: [u8; 65]) -> Value {
-    json!({
-        "kty": "EC", "crv": "P-256",
-        "x": URL_SAFE_NO_PAD.encode(&key[1..33]),
-        "y": URL_SAFE_NO_PAD.encode(&key[33..65]),
-    })
+#[derive(Serialize)]
+struct ProtectedHeader<'a> {
+    alg: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cty: Option<&'a str>,
+    enc: &'a str,
+    epk: P256PublicJwk<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kid: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zip: Option<&'a str>,
 }
 
 fn parse_recipient_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {

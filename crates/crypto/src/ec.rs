@@ -1,4 +1,4 @@
-//! P-256 secret-key ownership, SEC1 normalization, and raw ECDH agreement.
+//! P-256 key ownership, public JWK serialization, SEC1 normalization, and ECDH agreement.
 
 use p256::{
     PublicKey, SecretKey,
@@ -7,6 +7,35 @@ use p256::{
 };
 
 use crate::CryptoError;
+use base64::{display::Base64Display, engine::general_purpose::URL_SAFE_NO_PAD};
+use serde::{Serialize, Serializer};
+
+/// Borrows an uncompressed P-256 SEC1 point for public JWK serialization.
+#[derive(Serialize)]
+pub struct P256PublicJwk<'a> {
+    crv: &'static str,
+    kty: &'static str,
+    #[serde(serialize_with = "serialize_coordinate")]
+    x: &'a [u8],
+    #[serde(serialize_with = "serialize_coordinate")]
+    y: &'a [u8],
+}
+
+impl<'a> P256PublicJwk<'a> {
+    #[must_use]
+    pub fn new(key: &'a [u8; 65]) -> Self {
+        Self {
+            crv: "P-256",
+            kty: "EC",
+            x: &key[1..33],
+            y: &key[33..],
+        }
+    }
+}
+
+fn serialize_coordinate<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(&Base64Display::new(bytes, &URL_SAFE_NO_PAD))
+}
 
 #[derive(Clone)]
 pub struct P256SecretKey {

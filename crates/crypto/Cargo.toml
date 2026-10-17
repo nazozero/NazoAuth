@@ -22,7 +22,7 @@ jose = [
     "dep:serde",
     "dep:serde_json",
 ]
-ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize"]
+ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize", "dep:base64", "dep:serde"]
 aead = ["dep:aes-gcm"]
 password = ["dep:argon2"]
 ed25519 = ["dep:ed25519-dalek"]

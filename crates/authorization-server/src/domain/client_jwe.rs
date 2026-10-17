@@ -4,8 +4,9 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use nazo_auth::{ClientJweKeyManagement, client_jwe_key_management_from_name};
 use nazo_auth::{SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS};
-use nazo_crypto::ec::P256SecretKey;
-use serde_json::{Value, json};
+use nazo_crypto::ec::{P256PublicJwk, P256SecretKey};
+use serde::Serialize;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 pub struct ClientJweKey<'a> {
@@ -75,21 +76,15 @@ pub fn encrypt_compact_jwe(
     if key.enc != "A256GCM" {
         anyhow::bail!("unsupported client JWE enc");
     }
-    let mut protected_header = serde_json::Map::from_iter([
-        ("alg".to_owned(), json!(key.alg)),
-        ("enc".to_owned(), json!(key.enc)),
-    ]);
-    if let Some(kid) = key.kid {
-        protected_header.insert("kid".to_owned(), json!(kid));
-    }
-    match payload_kind {
-        JwePayloadKind::Claims => {
-            protected_header.insert("typ".to_owned(), json!("JWT"));
-        }
-        JwePayloadKind::NestedJwt => {
-            protected_header.insert("cty".to_owned(), json!("JWT"));
-        }
-    }
+    let mut protected_header = ProtectedHeader {
+        alg: key.alg,
+        cty: matches!(payload_kind, JwePayloadKind::NestedJwt).then_some("JWT"),
+        enc: key.enc,
+        epk: None,
+        kid: key.kid,
+        typ: matches!(payload_kind, JwePayloadKind::Claims).then_some("JWT"),
+    };
+    let public_key;
     let (cek, encrypted_key) = match alg {
         ClientJweKeyManagement::RsaOaep256 => {
             let cek = rand::random::<[u8; 32]>();
@@ -99,7 +94,8 @@ pub fn encrypt_compact_jwe(
         ClientJweKeyManagement::EcdhEsDirect => {
             let recipient = parse_p256_public_jwk(key.jwk)?;
             let ephemeral = P256SecretKey::generate();
-            protected_header.insert("epk".to_owned(), public_p256_jwk(ephemeral.public_key()));
+            public_key = ephemeral.public_key();
+            protected_header.epk = Some(P256PublicJwk::new(&public_key));
             return encrypt_compact_jwe_with_cek(
                 &protected_header,
                 &ecdh_derive_key(&ephemeral, &recipient, key.enc, 256)?,
@@ -110,7 +106,8 @@ pub fn encrypt_compact_jwe(
         ClientJweKeyManagement::EcdhEsA128Kw | ClientJweKeyManagement::EcdhEsA256Kw => {
             let recipient = parse_p256_public_jwk(key.jwk)?;
             let ephemeral = P256SecretKey::generate();
-            protected_header.insert("epk".to_owned(), public_p256_jwk(ephemeral.public_key()));
+            public_key = ephemeral.public_key();
+            protected_header.epk = Some(P256PublicJwk::new(&public_key));
             let kek_bits = match alg {
                 ClientJweKeyManagement::EcdhEsA128Kw => 128,
                 ClientJweKeyManagement::EcdhEsA256Kw => 256,
@@ -118,7 +115,8 @@ pub fn encrypt_compact_jwe(
             };
             let kek = ecdh_derive_key(&ephemeral, &recipient, alg.name(), kek_bits)?;
             let cek = rand::random::<[u8; 32]>();
-            let encrypted_key = nazo_crypto::key_wrap::aes_wrap(&kek, &cek)?;
+            let encrypted_key =
+                nazo_crypto::key_wrap::aes_wrap(&kek[..(kek_bits / 8) as usize], &cek)?;
             (cek, encrypted_key)
         }
     };
@@ -126,7 +124,7 @@ pub fn encrypt_compact_jwe(
 }
 
 fn encrypt_compact_jwe_with_cek(
-    protected_header: &serde_json::Map<String, Value>,
+    protected_header: &ProtectedHeader<'_>,
     cek: &[u8],
     encrypted_key: &[u8],
     mut plaintext: Vec<u8>,
@@ -192,23 +190,29 @@ fn parse_p256_public_jwk(jwk: &Value) -> anyhow::Result<[u8; 65]> {
 }
 
 fn decode_p256_coordinate(jwk: &Value, name: &str) -> anyhow::Result<[u8; 32]> {
-    URL_SAFE_NO_PAD
-        .decode(
-            jwk.get(name)
-                .and_then(Value::as_str)
-                .ok_or_else(|| anyhow::anyhow!("P-256 JWE key missing {name}"))?,
-        )?
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("P-256 JWE key {name} has invalid length"))
+    let value = jwk
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("P-256 JWE key missing {name}"))?;
+    let mut coordinate = [0; 32];
+    if URL_SAFE_NO_PAD.decode_slice(value, &mut coordinate)? != coordinate.len() {
+        anyhow::bail!("P-256 JWE key {name} has invalid length");
+    }
+    Ok(coordinate)
 }
 
-fn public_p256_jwk(key: [u8; 65]) -> Value {
-    json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": URL_SAFE_NO_PAD.encode(&key[1..33]),
-        "y": URL_SAFE_NO_PAD.encode(&key[33..65]),
-    })
+#[derive(Serialize)]
+struct ProtectedHeader<'a> {
+    alg: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cty: Option<&'a str>,
+    enc: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    epk: Option<P256PublicJwk<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kid: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    typ: Option<&'a str>,
 }
 
 fn ecdh_derive_key(
@@ -216,7 +220,7 @@ fn ecdh_derive_key(
     recipient: &[u8; 65],
     algorithm: &str,
     key_bits: u32,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<[u8; 32]> {
     let shared = ephemeral.agree(recipient)?;
     Ok(concat_kdf(&shared[..], algorithm, &[], &[], key_bits))
 }
@@ -227,7 +231,7 @@ fn concat_kdf(
     apu: &[u8],
     apv: &[u8],
     key_bits: u32,
-) -> Vec<u8> {
+) -> [u8; 32] {
     let mut digest = Sha256::new();
     digest.update(1_u32.to_be_bytes());
     digest.update(shared_secret);
@@ -238,7 +242,7 @@ fn concat_kdf(
     digest.update((apv.len() as u32).to_be_bytes());
     digest.update(apv);
     digest.update(key_bits.to_be_bytes());
-    digest.finalize()[..(key_bits / 8) as usize].to_vec()
+    digest.finalize().into()
 }
 
 #[cfg(test)]

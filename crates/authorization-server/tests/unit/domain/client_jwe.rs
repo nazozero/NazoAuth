@@ -5,6 +5,7 @@ use p256::{
     ecdh::diffie_hellman,
     elliptic_curve::{Generate, sec1::ToSec1Point},
 };
+use serde_json::json;
 
 #[test]
 fn client_jwe_key_rejects_ambiguous_matching_keys() {
@@ -50,7 +51,8 @@ fn client_jwe_encrypts_with_supported_ecdh_key_management_algorithms() {
     for alg in ["ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"] {
         let recipient = SecretKey::generate();
         let mut public = public_p256_jwk(recipient.public_key());
-        public["kid"] = json!(format!("{alg}-kid"));
+        let kid = format!("{alg}-\"-\\-\n-密钥").repeat(64);
+        public["kid"] = json!(kid);
         public["use"] = json!("enc");
         public["alg"] = json!(alg);
         let jwks = json!({ "keys": [public] });
@@ -62,10 +64,42 @@ fn client_jwe_encrypts_with_supported_ecdh_key_management_algorithms() {
             encrypt_compact_jwe(&key, br#"{"sub":"user"}"#.to_vec(), JwePayloadKind::Claims)
                 .expect("encrypt ECDH compact JWE");
 
+        let header: Value = serde_json::from_slice(
+            &URL_SAFE_NO_PAD
+                .decode(compact.split('.').next().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(header["kid"], kid);
+        assert_eq!(header["typ"], "JWT");
+        assert!(header.get("cty").is_none());
+
         assert_eq!(
             decrypt_ecdh_compact_jwe(&compact, &recipient),
             br#"{"sub":"user"}"#
         );
+    }
+}
+
+#[test]
+fn ecdh_rejects_truncated_oversized_and_invalid_coordinates() {
+    let recipient = SecretKey::generate();
+    for name in ["x", "y"] {
+        for coordinate in [
+            URL_SAFE_NO_PAD.encode([1; 31]),
+            URL_SAFE_NO_PAD.encode([1; 33]),
+            "!".to_owned(),
+        ] {
+            let mut public = public_p256_jwk(recipient.public_key());
+            public[name] = json!(coordinate);
+            let key = ClientJweKey {
+                kid: None,
+                alg: "ECDH-ES",
+                enc: "A256GCM",
+                jwk: &public,
+            };
+            assert!(encrypt_compact_jwe(&key, b"claims".to_vec(), JwePayloadKind::Claims).is_err());
+        }
     }
 }
 
@@ -133,6 +167,7 @@ fn decrypt_ecdh_compact_jwe(compact: &str, recipient: &SecretKey) -> Vec<u8> {
             &[],
             256,
         )
+        .to_vec()
     } else {
         let kek_bits = match alg {
             "ECDH-ES+A128KW" => 128,
@@ -147,7 +182,7 @@ fn decrypt_ecdh_compact_jwe(compact: &str, recipient: &SecretKey) -> Vec<u8> {
             kek_bits,
         );
         let encrypted_key = URL_SAFE_NO_PAD.decode(parts[1]).expect("encrypted key");
-        aes_key_unwrap(&kek, &encrypted_key)
+        aes_key_unwrap(&kek[..(kek_bits / 8) as usize], &encrypted_key)
     };
     let iv: [u8; 12] = URL_SAFE_NO_PAD
         .decode(parts[2])
