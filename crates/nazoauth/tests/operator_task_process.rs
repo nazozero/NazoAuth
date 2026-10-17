@@ -1,6 +1,6 @@
 //! Process-level evidence for the reworked one-shot operator entry (E04/E05):
 //! real `nazauth operator-task` child processes against an isolated
-//! PostgreSQL schema backing the Controller Registry.
+//! PostgreSQL database backing the Controller Registry.
 //!
 //! Without `NAZO_TEST_DATABASE_URL` (or `DATABASE_URL`) every test skips so
 //! the integration test stays hermetic; in CI their absence is a hard failure.

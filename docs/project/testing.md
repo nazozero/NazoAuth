@@ -320,8 +320,9 @@ the isolated `NAZO_AUDIT_TEST_DATABASE_URL` like other audit integration tests.
 
 ## Model and revocation identity compaction
 
-`schema_cleanup` covers upgrade/down/upgrade preservation of administrator
-provisioning receipts, used recovery keys and tenant/JTI revocation identities.
+`migration_baseline` checks populated v0.3.2 adoption without rewriting business
+rows or object identities. Controller and recovery repository suites verify
+provisioning receipts and used-key authority against the baseline.
 `access_token_retention` and the revocation unit suite retain monotonic deadlines,
 clock-skew coverage, no-op updates, ownership conflict rollback and tenant isolation
 checks; fixture identity assertions use the actual tenant/JTI key.
