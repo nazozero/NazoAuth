@@ -1,1 +1,0 @@
-ALTER TABLE oauth_token_issuances DROP COLUMN principal_epoch_bound;

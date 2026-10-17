@@ -6,8 +6,6 @@ use nazo_postgres::{
 };
 use uuid::Uuid;
 
-const CUTOVER: &str =
-    include_str!("../../../migrations/20261011000100_receiver_owned_audit_ack/up.sql");
 const ACK: &str =
     "public.nazo_ack_security_audit_batch(bigint,bigint,bigint,integer,bytea,bytea,text)";
 const GENESIS: &str = "public.nazo_record_security_audit_genesis(text,bytea)";
@@ -31,14 +29,7 @@ async fn exporter_ack_is_denied_until_independent_receiver_confirms() {
     url.set_path(&database);
     run_pending_migrations(url.as_str()).await.unwrap();
     let mut owner = AsyncPgConnection::establish(url.as_str()).await.unwrap();
-    // Recreate the schema whose receiver-authority cutover is under test.
-    owner
-        .batch_execute(include_str!(
-            "../../../migrations/20261017000300_retire_split_audit_claim/down.sql"
-        ))
-        .await
-        .unwrap();
-    owner.batch_execute(&format!("CREATE ROLE {exporter} LOGIN PASSWORD '{tag}' NOSUPERUSER NOINHERIT; CREATE ROLE {receiver} LOGIN PASSWORD '{tag}' NOSUPERUSER NOINHERIT; GRANT USAGE ON SCHEMA public TO {exporter},{receiver}; GRANT EXECUTE ON FUNCTION {EXPORT},{ACK},{GENESIS} TO {exporter}; GRANT EXECUTE ON FUNCTION {ACK},{GENESIS},{HEALTH} TO {receiver};")).await.unwrap();
+    owner.batch_execute(&format!("CREATE ROLE {exporter} LOGIN PASSWORD '{tag}' NOSUPERUSER NOINHERIT; CREATE ROLE {receiver} LOGIN PASSWORD '{tag}' NOSUPERUSER NOINHERIT; GRANT USAGE ON SCHEMA public TO {exporter},{receiver}; GRANT EXECUTE ON FUNCTION {EXPORT} TO {exporter}; GRANT EXECUTE ON FUNCTION {ACK},{GENESIS},{HEALTH} TO {receiver};")).await.unwrap();
     let writer = AuditLedgerRepository::new(create_pool(url.as_str().to_owned(), 2).unwrap());
     let role_repo = |role: &str| {
         let mut role_url = url.clone();
@@ -47,14 +38,13 @@ async fn exporter_ack_is_denied_until_independent_receiver_confirms() {
         AuditLedgerRepository::new(create_pool(role_url.as_str().to_owned(), 2).unwrap())
     };
     let exported = role_repo(&exporter);
-    // The old documented grant permits deletion without any receiver receipt.
-    for phase in 0..2 {
+    {
         writer
             .append(SecurityAuditEvent {
                 event_id: Uuid::now_v7(),
                 event_type: "security_fixture".into(),
                 event_category: "test".into(),
-                payload: serde_json::json!({"phase":phase}),
+                payload: serde_json::json!({"case":"receiver-authority"}),
                 occurred_at: chrono::Utc::now(),
             })
             .await
@@ -75,47 +65,28 @@ async fn exporter_ack_is_denied_until_independent_receiver_confirms() {
             last_hash: batch.last_hash,
             batch_digest: batch.digest,
         };
-        if phase == 0 {
-            exported.ack_batch(ack).await.unwrap();
-            assert!(!writer.anchor_health().await.unwrap().pending_exists);
-        } else {
-            owner.batch_execute(CUTOVER).await.unwrap();
-            owner
-                .batch_execute(include_str!(
-                    "../../../migrations/20261017000300_retire_split_audit_claim/up.sql"
-                ))
-                .await
-                .unwrap();
-            exported.check_exporter_available().await.unwrap();
-            assert!(exported.ack_batch(ack.clone()).await.is_err());
-            assert!(exported.confirm_batch(ack.clone()).await.is_err());
-            assert!(writer.anchor_health().await.unwrap().pending_exists);
-            assert!(exported.record_genesis("forged", &[0; 32]).await.is_err());
-            // Migration stripped ALL historical grants. Give ACK only to the receiver.
-            owner
-                .batch_execute(&format!(
-                    "GRANT EXECUTE ON FUNCTION {ACK},{GENESIS},{HEALTH} TO {receiver}"
-                ))
-                .await
-                .unwrap();
-            owner
-                .batch_execute(&format!(
-                    "GRANT {receiver} TO {exporter} WITH INHERIT FALSE, SET TRUE"
-                ))
-                .await
-                .unwrap();
-            assert!(exported.check_exporter_available().await.is_err());
-            owner
-                .batch_execute(&format!("REVOKE {receiver} FROM {exporter}"))
-                .await
-                .unwrap();
-            exported.check_exporter_available().await.unwrap();
-            let received = role_repo(&receiver);
-            received.ack_batch(ack.clone()).await.unwrap();
-            exported.confirm_batch(ack).await.unwrap();
-            assert!(!writer.anchor_health().await.unwrap().pending_exists);
-            drop(received);
-        }
+        exported.check_exporter_available().await.unwrap();
+        assert!(exported.ack_batch(ack.clone()).await.is_err());
+        assert!(exported.confirm_batch(ack.clone()).await.is_err());
+        assert!(writer.anchor_health().await.unwrap().pending_exists);
+        assert!(exported.record_genesis("forged", &[0; 32]).await.is_err());
+        owner
+            .batch_execute(&format!(
+                "GRANT {receiver} TO {exporter} WITH INHERIT FALSE, SET TRUE"
+            ))
+            .await
+            .unwrap();
+        assert!(exported.check_exporter_available().await.is_err());
+        owner
+            .batch_execute(&format!("REVOKE {receiver} FROM {exporter}"))
+            .await
+            .unwrap();
+        exported.check_exporter_available().await.unwrap();
+        let received = role_repo(&receiver);
+        received.ack_batch(ack.clone()).await.unwrap();
+        exported.confirm_batch(ack).await.unwrap();
+        assert!(!writer.anchor_health().await.unwrap().pending_exists);
+        drop(received);
     }
     drop(writer);
     drop(exported);

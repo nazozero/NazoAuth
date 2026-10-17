@@ -68,7 +68,7 @@ per-request authorization selector.
 
 ## Database and Token Invariants
 
-The migration `20260607000400_tenant_realm_organization_boundaries` adds:
+The schema baseline defines:
 
 - `tenants`, `realms`, and `organizations` tables.
 - `tenant_id`, `realm_id`, and `organization_id` columns on users and OAuth clients.

@@ -51,57 +51,33 @@ High-rate protocol receipts use the 60-second cycle to limit expired resident ro
 
 TTL moves physical expiry into Valkey; it does not remove the logical live-state cost or make asynchronous replication durable. Local memory is appropriate for request values and reconstructible projections, not a replacement for shared one-use or revocation authority. At rate λ and necessary retention T, approximately λ×T records can be legitimate live state. Expired eligible backlog, retained live records, dead tuples waiting for vacuum and reusable physical high-water space must be measured separately.
 
-## Compact retention migration
+## Compact retained state
 
-`20261010000100_compact_remembered_device_retention` removes only the unused
-remembered-device UUID and creation timestamp, promotes the existing tenant/token
-unique key, and adds an expiry index for the global sweep. The number of indexes
-is not reduced: the unused UUID index is replaced by the useful expiry index.
-Existing heap tuples are not rewritten merely by dropping columns; no immediate
-filesystem shrink is promised. The reverse migration regenerates only unused adapter UUID/timestamp metadata;
-it preserves the original token, owner, user-agent binding and deadline without
-requiring deletion of usable credentials. Regenerated metadata is not represented
-as the original history.
-Apply the schema and matching application together.
+The v0.3.2 baseline stores only current authority and retention fields. Existing
+databases first complete v0.3.2, then adopt the baseline without rewriting rows.
+Historical compaction SQL remains in that release's Git history.
 
-`20261010000200_reclaim_expired_identity_approvals` gives expired approval bodies
-an hourly reclamation path. Both unused and consumed approvals remain through their
-original expiry. A reclaimed token returns the existing unknown-token rejection;
-before reclamation it may return expired or replayed. Neither path authorizes a
-mutation. This is not a new audit-retention policy: independent Required events and
-signed checkpoints retain their original lifecycle.
+Remembered devices use the tenant/token key and an expiry index for the global
+sweep. They retain the token, owner, user-agent binding and deadline; unused
+adapter UUIDs and creation/last-used metadata are absent. Dropped historical
+columns do not imply immediate filesystem shrink on upgraded databases.
+
+Expired identity approvals have an hourly reclamation path. Both unused and
+consumed approvals remain through their original expiry. Reclaimed tokens return
+unknown-token rejection; retained expired tokens return expired or replayed.
+Independent Required events and signed checkpoints keep their own lifecycle.
 
 256 is a per-category transaction batch limit, not an hourly quota. Saturated
-batches continue inside the existing 30-second catch-up budget; unfinished history
-is retried after elapsed work time rather than waiting a fresh hour. Locked rows
-are skipped and remain eligible for later passes. Monitor eligible backlog and oldest expiry age at the intended workload.
+batches continue inside the existing 30-second catch-up budget; locked rows
+remain eligible for later passes. Monitor eligible backlog and oldest expiry age.
 
-`20261010000300_compact_mfa_credentials` removes already-used backup verifiers
-and their unused creation/consumption columns. New consumption is a conditional
-DELETE in the existing transaction with its audit append; an absent candidate
-rejects reuse, and failed audit append rolls the deletion back. Live candidate
-IDs and tenant/user ownership are unchanged. This needs no cleanup queue or TTL.
-TOTP's unread persisted label and generic creation/update timestamps are removed;
-the enrollment response still renders its label directly from issuer/account.
-Protected secret, key identity, credential generation, confirmation and replay
-step remain. Rollback reconstructs only unused metadata and never resurrects
-consumed backup verifiers.
+Backup-code consumption conditionally deletes the verifier in the same
+transaction as its audit append. Absence rejects reuse and failed audit append
+rolls back deletion. TOTP retains its protected secret, key identity, credential
+generation, confirmation and replay step. Enrollment labels come from the
+issuer/account rather than stored display metadata.
 
-`20261010000400_compact_control_receipt_metadata` removes the unread creation
-time from administrator provisioning receipts and unread first-seen time from
-recovery used-key history. Neither timestamp participates in validity, retention,
-ordering, a wire response, a foreign key or replay rejection. The operation and
-used-key identities retain their original lifetime. Downgrade recreates only
-unused timestamp metadata, not its original historical values. No data row is
-removed. Apply the schema with the matching adapter; existing heap tuples may
-retain dropped-column space until normal row replacement.
-
-Revocation rows use their existing `(tenant_id, access_token_jti_blake3)`
-authority key as the primary key. The unread independent UUID and its index are
-removed by `20261010000500_compact_revocation_identity`; no foreign key points
-to that UUID. Lookup, conflict handling and bounded cleanup already use the
-composite identity. Tenant/client binding, first revocation time and monotonic
-retention through the original verifier skew remain unchanged. Upgrade/down/up
-tests preserve these facts for the same JTI in different tenants; downgrade
-regenerates only unused adapter UUIDs. This removes one index write per newly
-revoked token without changing the transaction or acknowledgement boundary.
+Administrator provisioning receipts and recovery used-key history retain their
+operation/key identities without unused timestamps. Revocations use
+`(tenant_id, access_token_jti_blake3)` as the primary key, with tenant/client
+binding, first revocation time and monotonic retention through verifier skew.

@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS openid4vci_pre_authorized_code_consumptions;

@@ -3,7 +3,7 @@
 //!
 //! Storage ownership follows the dominant pattern for deployment-scoped
 //! authoritative state in this workspace: PostgreSQL tables behind a Diesel
-//! migration (`20260824000100_controller_registry`).  Unlike the E03 control
+//! migration baseline.  Unlike the E03 control
 //! operation journal — which deliberately lives outside the database because
 //! `migrate-apply` must work before any database exists — enrollment state is
 //! written through the admin plane, whose approval flow already requires the

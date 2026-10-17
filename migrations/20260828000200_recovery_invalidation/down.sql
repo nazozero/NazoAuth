@@ -1,3 +1,0 @@
-DROP TRIGGER trg_recovery_invalidations_append_only ON recovery_invalidations;
-DROP FUNCTION nazo_recovery_invalidations_append_only();
-DROP TABLE recovery_invalidations;

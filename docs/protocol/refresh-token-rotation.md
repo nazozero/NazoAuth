@@ -173,6 +173,10 @@ maintenance sweep reclaims expired proofs in bounded batches.
 
 ### Upgrade and Rollback Boundary
 
+These historical cutovers must complete in v0.3.2 before adopting the current
+schema baseline. Baseline adoption preserves the resulting state without
+replaying these transformations.
+
 Migration `20261001000500_refresh_replay_retention` revokes existing unbound
 public refresh families once, preserving their rows and writing a Required
 `refresh_family_security_revoked` event with reason

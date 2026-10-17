@@ -47,6 +47,10 @@ expiry do not reclaim a still-live receipt.
 
 ## Coordinated upgrade
 
+These historical cutovers must complete in v0.3.2 before adopting the current
+schema baseline. Baseline adoption preserves the resulting state without
+replaying these transformations.
+
 Migration `20261003000100_authorization_code_identity` preserves historical
 request-digest receipts byte for byte, with contract version zero and no guessed
 holder or code identity. New writes explicitly carry contract version two. The

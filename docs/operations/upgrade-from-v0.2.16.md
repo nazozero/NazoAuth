@@ -1,5 +1,11 @@
 # Upgrade from v0.2.16
 
+Upgrade to **v0.3.2 first**, following the cutovers below. Complete its migration
+and verify the service before updating to a baseline-based release. Older
+databases cannot skip that intermediate release. The historical SQL is in the
+[v0.3.2 Git tree](https://github.com/nazozero/NazoAuth/tree/v0.3.2/migrations);
+subsequent adoption follows [Update and rollback](one-click-update.md#update-and-rollback).
+
 ## Federated MFA session cutover
 
 Deployments upgrading from a runtime that admitted federated logins without local
