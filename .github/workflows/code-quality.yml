@@ -114,7 +114,7 @@ jobs:
     steps:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14.8"
+          python-version: "3.15.0"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -225,18 +225,18 @@ jobs:
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14.8"
+          python-version: "3.15.0"
 
       - name: Install streaming evidence decoder
         run: |
-          python -m pip install --only-binary=:all: orjson==3.12.0
+          python -m pip install --only-binary=:all: orjson==3.13.0
 
       - name: Compile Python scripts
         run: python -m compileall -q scripts perf
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26.10.0"
+          node-version: "26.12.0"
 
       - name: Verify performance measurement and acceptance regressions
         run: |

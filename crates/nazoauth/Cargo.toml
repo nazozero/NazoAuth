@@ -56,10 +56,10 @@ nazo-resource-server = { workspace = true }
 nazo-runtime-modules = { workspace = true }
 nazo-scim-events = { workspace = true }
 nazo-valkey = { workspace = true }
-opentelemetry = "0.33.0"
-opentelemetry-appender-tracing = "0.33.0"
-opentelemetry-otlp = { version = "0.33.0", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
-opentelemetry_sdk = { version = "0.33.0", features = ["logs", "metrics", "rt-tokio", "trace"] }
+opentelemetry = "0.33.1"
+opentelemetry-appender-tracing = "0.33.1"
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
+opentelemetry_sdk = { version = "0.33.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
 passkey-auth = { workspace = true }
 process-wrap = { workspace = true }
 rand = { workspace = true }
@@ -71,7 +71,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha1 = { workspace = true }
 sha2 = { workspace = true }
-sigstore-verify = { version = "0.14.0", default-features = false }
+sigstore-verify = { version = "0.15.0", default-features = false, features = ["aws-lc-rs"] }
 tar = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
