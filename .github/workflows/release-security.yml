@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14.8"
+          python-version: "3.15.0"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,7 +76,7 @@ jobs:
         run: python3 -m unittest tests.unit.test_release_attestation tests.unit.test_release_governance
           tests.unit.test_release_ci tests.unit.test_release_oci
       - name: Install pinned Rust supply-chain tools
-        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: |
             cargo-deny@0.20.2
@@ -316,7 +316,7 @@ jobs:
     steps:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14.8"
+          python-version: "3.15.0"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download native amd64 Release binaries
@@ -383,7 +383,7 @@ jobs:
               --cap-drop ALL \
               --security-opt no-new-privileges \
               -v "$layout:/image:ro" \
-              docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa image \
+              docker.io/aquasec/trivy:0.76.0@sha256:2416d1f74045b57274df1a340eee6b510cacd73c66a6ccb8da092b117eb7d222 image \
                 --format table \
                 --exit-code 1 \
                 --severity CRITICAL,HIGH \
@@ -457,7 +457,7 @@ jobs:
     steps:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.14.8"
+          python-version: "3.15.0"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download platform binaries
@@ -481,7 +481,7 @@ jobs:
             --oci target/release-evidence/oci/descriptor.json \
             --output "target/release-evidence/release-manifest-${{ matrix.target }}.json"
       - name: Attest nazoauth ReleaseManifest
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: target/release-binaries/nazoauth-${{ matrix.target }}${{ matrix.executable_suffix }}
           predicate-type: https://nazo.run/attestations/release-manifest/v1

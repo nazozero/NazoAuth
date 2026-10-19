@@ -38,20 +38,20 @@ repository = "https://github.com/nazozero/NazoAuth"
 [workspace.dependencies]
 hex = "0.4.3"
 actix-cors = "0.7.2"
-actix-files = "0.7.0"
-actix-web = "4.15.0"
+actix-files = "0.7.1"
+actix-web = "4.17.0"
 actix-tls = "3.6.1"
 anyhow = "1.0.104"
 aes-gcm = "0.11.1"
-arc-swap = "1.9.2"
+arc-swap = "1.9.3"
 argon2 = "0.6.0"
 atomicwrites = "0.4.4"
-aws-lc-rs = "1.18.1"
+aws-lc-rs = "1.18.2"
 base64 = "0.23.1"
 blake3 = "1.8.7"
 chrono = "0.4.45"
 der = { version = "0.8.2", features = ["derive"] }
-diesel = "2.3.13"
+diesel = "2.3.14"
 diesel-async = "0.9.2"
 diesel_migrations = "2.3.2"
 ed25519-dalek = "3.0.0"
@@ -66,7 +66,7 @@ http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "11.1.0", default-features = false }
 mdoc-rs = { version = "0.2.0", default-features = false, features = ["issue"] }
-lru = "0.18.5"
+lru = "0.19.0"
 futures-channel = "0.3.34"
 coset = "0.4.2"
 ciborium = "0.2.2"
@@ -97,7 +97,7 @@ pkcs8 = { version = "0.11.0", features = ["alloc"] }
 p256 = "0.14.0"
 passkey-auth = "0.1.3"
 process-wrap = { version = "10.0.1", default-features = false, features = ["creation-flags", "job-object", "kill-on-drop", "process-group", "tokio1"] }
-proptest = "1.11.0"
+proptest = "1.12.0"
 rand = "0.10.3"
 rustix = { version = "1.1.5", features = ["fs", "process"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
@@ -105,23 +105,23 @@ webpki = { package = "rustls-webpki", version = "0.103.15" }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
 semver = "1.0.28"
 serde = "1.0.229"
-serde_json = "1.0.151"
-sha2 = "0.11.0"
+serde_json = "1.0.154"
+sha2 = "0.11.1"
 sha1 = "0.11.0"
 tar = "0.4.46"
 thiserror = "2.0.21"
 time = "0.3.55"
-tokio = "1.53.2"
+tokio = "1.53.3"
 tokio-postgres = "0.7.18"
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs", "native-certs", "webpki-roots"] }
 tracing = "0.1.44"
 url = "2.5.8"
 urlencoding = "2.1.3"
-uuid = "1.27.0"
+uuid = "1.28.0"
 x509-cert = "0.3.0"
 x509-parser = "0.18.1"
 yasna = "0.6.0"
-zeroize = { version = "1.9.0", features = ["derive"] }
+zeroize = { version = "1.9.1", features = ["derive"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -137,7 +137,7 @@ panic = "abort"
 
 # Reviewed Actix h2 0.4 port, pinned to an immutable upstream fork revision.
 [patch.crates-io]
-actix-http = { git = "https://github.com/nazozero/actix-web", rev = "8b4f61be8de6b4bf6279c472c144dfea133b34aa" }
+actix-http = { git = "https://github.com/nazozero/actix-web", rev = "ca32c7cfd1ea71cc43dbbdb9d2d7b4b1a90d40e2" }
 # Reviewed mdoc-rs coset 0.4 and borrowed-transcript changes, pinned to a fork commit.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "c5d460cfd667324e51e590e8ecbbdb21f63bbdbe" }
 

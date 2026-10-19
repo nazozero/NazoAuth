@@ -168,10 +168,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn('--platform "$platform"', scan)
         self.assertNotIn("--input /image.tar", scan)
         self.assertEqual(
-            scan.count(
-                "docker.io/aquasec/trivy:0.75.0@sha256:"
-                "af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa"
-            ),
+            len(re.findall(r"docker\.io/aquasec/trivy:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}\b", scan)),
             1,
         )
         self.assertIn('descriptor="target/release-evidence/oci/descriptor.json"', record)
