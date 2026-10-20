@@ -10,7 +10,7 @@ use diesel::{
     dsl::now,
     result::{DatabaseErrorKind, Error},
 };
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     TenantId, UserId,
     ports::{PasskeyCredential, PasskeyCredentialSummary, RepositoryError},
@@ -102,22 +102,48 @@ impl PasskeyRepository {
         let sign_count = i64::from(credential.counter);
         let credential = identity::encoded_passkey(&credential)
             .map_err(|error| RepositoryError::Consistency(error.0))?;
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let row = diesel::insert_into(user_passkey_credentials::table)
-            .values((
-                user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()),
-                user_passkey_credentials::user_id.eq(user_id.as_uuid()),
-                user_passkey_credentials::credential_id.eq(credential_id),
-                user_passkey_credentials::credential.eq(credential),
-                user_passkey_credentials::label.eq(label),
-                user_passkey_credentials::sign_count.eq(sign_count),
-            ))
-            .returning(PasskeyCredentialRow::as_returning())
-            .get_result(&mut connection)
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let row = guard
+            .connection()
+            .transaction::<_, Error, _>(async move |connection| {
+                let row: PasskeyCredentialRow =
+                    diesel::insert_into(user_passkey_credentials::table)
+                        .values((
+                            user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()),
+                            user_passkey_credentials::user_id.eq(user_id.as_uuid()),
+                            user_passkey_credentials::credential_id.eq(credential_id),
+                            user_passkey_credentials::credential.eq(credential),
+                            user_passkey_credentials::label.eq(label),
+                            user_passkey_credentials::sign_count.eq(sign_count),
+                        ))
+                        .returning(PasskeyCredentialRow::as_returning())
+                        .get_result(connection)
+                        .await?;
+                super::audit_ledger::append_fresh_security_audit_on_connection(
+                    connection,
+                    &nazo_persistence::SecurityAuditEvent {
+                        event_id: uuid::Uuid::now_v7(),
+                        event_type: "passkey_registered".into(),
+                        event_category: "authentication".into(),
+                        payload: serde_json::json!({
+                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                            "event_category": "authentication",
+                            "tenant_id": tenant_id.as_uuid(),
+                            "user_id": user_id.as_uuid(),
+                            "credential_id": row.id,
+                        }),
+                        occurred_at: chrono::Utc::now(),
+                    },
+                )
+                .await?;
+                Ok(row)
+            })
             .await
             .map_err(map_error)?;
+        guard.return_to_pool();
         identity::passkey(row).map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn update_counter(

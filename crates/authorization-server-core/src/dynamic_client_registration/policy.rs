@@ -99,7 +99,7 @@ pub fn prepare_dynamic_client_registration(
         "userinfo_signed_response_alg",
         request.userinfo_signed_response_alg,
         request.userinfo_signing_alg_values_supported,
-        &["EdDSA", "RS256", "ES256", "PS256"],
+        policy.response_signing_algs,
     )?;
     request.userinfo_encrypted_response_alg = negotiate_metadata_choice(
         "userinfo_encrypted_response_alg",
@@ -117,7 +117,7 @@ pub fn prepare_dynamic_client_registration(
         "authorization_signed_response_alg",
         request.authorization_signed_response_alg,
         request.authorization_signing_alg_values_supported,
-        &["EdDSA", "RS256", "ES256", "PS256"],
+        policy.response_signing_algs,
     )?;
     request.authorization_encrypted_response_alg = negotiate_metadata_choice(
         "authorization_encrypted_response_alg",

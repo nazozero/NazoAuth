@@ -27,6 +27,29 @@ async fn dedicated_request_object_key_decrypts_authenticated_nested_jwt() {
 }
 
 #[tokio::test]
+async fn authenticated_request_object_rejects_unimplemented_critical_headers() {
+    let manager = crate::test_support::key_manager(settings()).await.unwrap();
+    let jwk = manager.snapshot().request_object_encryption_jwk.clone();
+    for critical in [json!(["unknown"]), json!([]), serde_json::Value::Null] {
+        let compact = encrypt_with_header(
+            &jwk,
+            b"header.claims.signature",
+            json!({
+                "alg": "RSA-OAEP-256", "enc": "A256GCM", "kid": jwk["kid"],
+                "cty": "JWT", "crit": critical, "unknown": true
+            }),
+        );
+        assert!(
+            manager
+                .decrypt_request_object(&compact)
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported request object JWE header")
+        );
+    }
+}
+
+#[tokio::test]
 async fn request_object_decryption_uses_the_current_generation_recipient_key() {
     let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let old_jwk = manager.snapshot().request_object_encryption_jwk.clone();
@@ -101,15 +124,21 @@ async fn request_object_decryption_rejects_invalid_encrypted_key_before_aead() {
 
 fn encrypt(jwk: &serde_json::Value, plaintext: &[u8]) -> String {
     let kid = jwk["kid"].as_str().expect("kid");
-    let protected = URL_SAFE_NO_PAD.encode(
-        serde_json::to_vec(&json!({
-            "alg": "RSA-OAEP-256",
-            "enc": "A256GCM",
-            "kid": kid,
-            "cty": "JWT"
-        }))
-        .expect("header"),
-    );
+    encrypt_with_header(
+        jwk,
+        plaintext,
+        json!({
+            "alg": "RSA-OAEP-256", "enc": "A256GCM", "kid": kid, "cty": "JWT"
+        }),
+    )
+}
+
+fn encrypt_with_header(
+    jwk: &serde_json::Value,
+    plaintext: &[u8],
+    header: serde_json::Value,
+) -> String {
+    let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).expect("header"));
     let cek = rand::random::<[u8; 32]>();
     let encrypted_key = crate::crypto_test_support::rsa_oaep_sha256_encrypt(
         &URL_SAFE_NO_PAD

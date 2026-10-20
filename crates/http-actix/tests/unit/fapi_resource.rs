@@ -63,8 +63,8 @@ impl MtlsThumbprintExtractor for NoMtls {
 struct DisabledSignatures;
 
 impl FapiHttpMessageSignatures for DisabledSignatures {
-    fn enabled(&self) -> bool {
-        false
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        None
     }
 
     fn verify_and_consume<'a>(
@@ -191,8 +191,8 @@ struct EnabledSignatures {
 }
 
 impl FapiHttpMessageSignatures for EnabledSignatures {
-    fn enabled(&self) -> bool {
-        true
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        test_module_lease(true)
     }
 
     fn verify_and_consume<'a>(
@@ -933,4 +933,23 @@ async fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
             "error_description": "Authorization server requires nonce in DPoP proof."
         })
     );
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::HttpMessageSignatures].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::HttpMessageSignatures,
+        CapabilityAdmission::NewRequest,
+    )
 }

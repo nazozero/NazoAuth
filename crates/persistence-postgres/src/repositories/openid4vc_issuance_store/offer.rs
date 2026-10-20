@@ -125,10 +125,10 @@ impl Openid4vciRepository {
             .bind::<sql_types::Uuid, _>(subject_id)
             .bind::<sql_types::Jsonb, _>(&row.credential_configuration_ids)
             .bind::<sql_types::Timestamptz, _>(row.expires_at)
-            .get_result::<ConsumedOfferRow>(&mut connection)
+            .load::<ConsumedOfferRow>(&mut connection)
             .await
-            .optional()
-            .map_err(|_| CredentialStoreError::Unavailable)?;
+            .map_err(|_| CredentialStoreError::Unavailable)?
+            .pop();
             let Some(consumed) = consumed else {
                 return Ok(None);
             };

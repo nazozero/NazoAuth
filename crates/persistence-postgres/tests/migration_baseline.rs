@@ -73,6 +73,25 @@ async fn released_schema(connection: &mut AsyncPgConnection) {
     }
 }
 
+// Keep the frozen baseline-equivalence proof independent of later migrations.
+// Execute the real embedded migration through Diesel's normal harness.
+async fn apply_baseline_only(url: &str) -> bool {
+    use diesel_migrations::MigrationHarness as _;
+    let connection = AsyncPgConnection::establish(url).await.unwrap();
+    let mut harness = diesel_async::AsyncMigrationHarness::new(connection);
+    const CURRENT: diesel_migrations::EmbeddedMigrations =
+        diesel_migrations::embed_migrations!("../../migrations");
+    let pending = harness
+        .pending_migrations(CURRENT)
+        .unwrap()
+        .into_iter()
+        .filter(|migration| migration.name().version().to_string() == BASELINE)
+        .collect::<Vec<_>>();
+    let changed = !pending.is_empty();
+    harness.run_migrations(&pending).unwrap();
+    changed
+}
+
 fn schema_dump(url: &str) -> String {
     let output = Command::new(std::env::var_os("PG_DUMP").unwrap_or_else(|| "pg_dump".into()))
         .args([
@@ -167,7 +186,8 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
     let mut old = AsyncPgConnection::establish(&released).await.unwrap();
     released_schema(&mut old).await;
     let initial = seed_facts(data(&mut old).await);
-    let fresh = database::migrate(owner_base.as_str()).await;
+    let fresh = database::create(owner_base.as_str()).await;
+    assert!(apply_baseline_only(&fresh).await);
     let mut new = AsyncPgConnection::establish(&fresh).await.unwrap();
     assert_eq!(
         seed_facts(data(&mut new).await),
@@ -261,20 +281,8 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
     )
     .await;
 
-    let (one, two) = tokio::join!(
-        nazo_postgres::run_pending_migrations(&released),
-        nazo_postgres::run_pending_migrations(&released)
-    );
-    assert_ne!(
-        one.unwrap(),
-        two.unwrap(),
-        "concurrent upgrades record the baseline exactly once"
-    );
-    assert!(
-        !nazo_postgres::run_pending_migrations(&released)
-            .await
-            .unwrap()
-    );
+    assert!(apply_baseline_only(&released).await);
+    assert!(!apply_baseline_only(&released).await);
     assert_eq!(
         data(&mut old).await,
         before_data,
@@ -297,6 +305,26 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
     );
     role_permissions(&mut old, &runtime).await;
 
+    // Later migrations run through the production entry, with its concurrency
+    // lock, on both the adopted and fresh-install schemas.
+    let (one, two) = tokio::join!(
+        nazo_postgres::run_pending_migrations(&released),
+        nazo_postgres::run_pending_migrations(&released)
+    );
+    assert_ne!(one.unwrap(), two.unwrap());
+    assert!(
+        !nazo_postgres::run_pending_migrations(&released)
+            .await
+            .unwrap()
+    );
+    nazo_postgres::run_pending_migrations(&fresh).await.unwrap();
+    nazo_postgres::configure_runtime_role(&released, &runtime)
+        .await
+        .unwrap();
+    nazo_postgres::configure_runtime_role(&fresh, &runtime)
+        .await
+        .unwrap();
+
     // Prove access under the actual LOGIN, not the owner or SET ROLE.
     let mut runtime_url = url::Url::parse(&released).unwrap();
     runtime_url.set_username(&runtime).unwrap();
@@ -304,7 +332,7 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
     let mut writer = AsyncPgConnection::establish(runtime_url.as_str())
         .await
         .unwrap();
-    writer.batch_execute("UPDATE users SET display_name='after baseline' WHERE username='baseline-user'; SELECT public.nazo_persist_security_audit_event(uuidv7(),'baseline_after_upgrade','security','{}',CURRENT_TIMESTAMP)").await.unwrap();
+    writer.batch_execute("UPDATE users SET display_name='after baseline' WHERE username='baseline-user' AND deleted_at IS NULL; INSERT INTO device_authorization_decisions SELECT tenant_id, repeat('a',64), CURRENT_TIMESTAMP FROM users; DELETE FROM device_authorization_decisions; SELECT public.nazo_persist_security_audit_event(uuidv7(),'baseline_after_upgrade','security','{}',CURRENT_TIMESTAMP)").await.unwrap();
     for forbidden in [
         "DELETE FROM public.security_audit_events",
         "DELETE FROM __diesel_schema_migrations",

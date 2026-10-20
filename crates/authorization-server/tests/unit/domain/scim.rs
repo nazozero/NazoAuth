@@ -99,7 +99,7 @@ impl ScimRepositoryPort for UnusedUsers {
     ) -> RepositoryFuture<'a, PublicAccount> {
         panic!("authorization must not mutate users")
     }
-    fn deactivate<'a>(
+    fn delete<'a>(
         &'a self,
         _: TenantContext,
         _: UserId,
@@ -192,6 +192,24 @@ fn facts() -> ScimAuthenticationFacts<'static> {
         source_ip: "192.0.2.1".to_owned(),
         user_agent: Some("SCIM test client"),
     }
+}
+
+#[test]
+fn disabled_event_delivery_rejects_before_credential_lookup() {
+    futures_executor::block_on(async {
+        let audit = Arc::new(Audit::default());
+        let (authorizer, credentials) = authorizer(audit.clone());
+        assert_eq!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Events)
+                .await
+                .unwrap_err(),
+            ScimAuthorizationError::Disabled
+        );
+        assert_eq!(credentials.lookups.load(Ordering::Relaxed), 0);
+        assert!(audit.events.lock().unwrap().is_empty());
+        assert!(audit.required.lock().unwrap().is_empty());
+    });
 }
 
 #[test]
@@ -317,7 +335,7 @@ impl ScimCredentialPort for DisableDuringLookup {
 }
 
 #[test]
-fn module_shutdown_during_live_credential_lookup_blocks_authorization() {
+fn module_shutdown_preserves_admitted_lookup_and_rejects_new_requests() {
     futures_executor::block_on(async {
         let tenant = TenantContext::default_system();
         let runtime = Arc::new(SnapshotStore::new(ActiveModuleSnapshot {
@@ -346,6 +364,16 @@ fn module_shutdown_during_live_credential_lookup_blocks_authorization() {
             60,
             60,
         );
+        let admitted = authorizer
+            .authorize(facts(), ScimRequiredScope::Read)
+            .await
+            .unwrap();
+        assert!(
+            admitted
+                .modules
+                .permits(ModuleId::Scim, nazo_auth::CapabilityAdmission::NewRequest)
+        );
+        assert_eq!(audit.events.lock().unwrap().len(), 1);
         assert_eq!(
             authorizer
                 .authorize(facts(), ScimRequiredScope::Read)
@@ -353,7 +381,6 @@ fn module_shutdown_during_live_credential_lookup_blocks_authorization() {
                 .unwrap_err(),
             ScimAuthorizationError::Disabled
         );
-        assert!(audit.events.lock().unwrap().is_empty());
     });
 }
 

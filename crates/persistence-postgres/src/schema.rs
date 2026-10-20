@@ -142,6 +142,7 @@ diesel::table! {
 
 diesel::table! {
     users (id) {
+        deleted_at -> Nullable<Timestamptz>,
         id -> Uuid, tenant_id -> Uuid, realm_id -> Uuid, organization_id -> Uuid,
         username -> Varchar, email -> Varchar, password_hash -> Varchar, is_active -> Bool,
         mfa_enabled -> Bool, created_at -> Timestamptz, updated_at -> Timestamptz,

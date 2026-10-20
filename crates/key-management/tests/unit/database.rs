@@ -47,6 +47,38 @@ async fn database_fixture() -> (
     (manager, repository, tenant_id, wrapping_keys)
 }
 
+#[tokio::test]
+async fn unchanged_database_generation_reuses_prepared_keys_but_checks_source_and_deadlines() {
+    let (manager, repository, _, _) = database_fixture().await;
+    let original = manager.inner.generation.load_full();
+    manager.refresh().await.unwrap();
+    let renewed = manager.inner.generation.load_full();
+    assert!(Arc::ptr_eq(&original.snapshot, &renewed.snapshot));
+    assert!(Arc::ptr_eq(
+        &original.loaded.request_object_decryption_key,
+        &renewed.loaded.request_object_decryption_key,
+    ));
+    let mut prepared = renewed.loaded.database_source.clone().unwrap();
+    prepared.next_lifecycle_check = Some(Utc::now() - chrono::Duration::seconds(1));
+    assert!(
+        refresh(
+            &manager.inner.settings,
+            &manager.inner.database,
+            Some(&prepared)
+        )
+        .await
+        .unwrap()
+        .is_some()
+    );
+
+    // A same-revision change is not the previously authenticated generation.
+    let mut corrupted = repository.load().await.unwrap().unwrap();
+    corrupted.encrypted_private_material[20] ^= 1;
+    repository.replace(Some(corrupted));
+    assert!(manager.refresh().await.is_err());
+    assert!(!manager.health().is_healthy());
+}
+
 #[test]
 fn public_projection_preserves_public_fields_and_the_private_source() {
     let payload = json!({
@@ -1019,7 +1051,7 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
     let error = update(
         &binding,
         require_record(&binding).await.unwrap(),
-        false,
+        None,
         |payload| {
             payload["fixture_mutation"] = json!(true);
             Ok(true)
@@ -1038,7 +1070,7 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
     update(
         &binding,
         require_record(&binding).await.unwrap(),
-        false,
+        None,
         |payload| {
             if payload.get("fixture_mutation") == Some(&json!(true)) {
                 return Ok(false);
@@ -1053,7 +1085,7 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
     update(
         &binding,
         require_record(&binding).await.unwrap(),
-        false,
+        None,
         |payload| {
             if payload.get("fixture_mutation") == Some(&json!(true)) {
                 return Ok(false);
@@ -1065,4 +1097,45 @@ async fn bounded_cas_exhaustion_is_typed_and_retry_converges_at_existing_owner()
     .await
     .unwrap();
     assert_eq!(repository.snapshot().unwrap().revision, committed);
+}
+
+#[tokio::test]
+async fn database_protocol_keys_sign_fapi_access_and_logout_without_changing_oidc_default() {
+    let (manager, repository, tenant_id, wrapping_keys) = database_fixture().await;
+    // A released local auxiliary key had only the original three purposes.
+    let mut record = repository.snapshot().unwrap();
+    let mut payload = decrypt_payload(tenant_id, &wrapping_keys, &mut record).unwrap();
+    for key in payload["keys"].as_array_mut().unwrap() {
+        if key["alg"] == "PS256" {
+            key["purposes"] = json!(
+                PROTOCOL_SIGNING_PURPOSES[..3]
+                    .iter()
+                    .map(|p| p.as_str())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+    repository.replace(Some(
+        persist_payload(tenant_id, record.revision + 1, payload, &wrapping_keys).unwrap(),
+    ));
+    manager.refresh().await.unwrap();
+    assert_eq!(
+        manager.snapshot().active_alg,
+        nazo_crypto::jwt::Algorithm::RS256
+    );
+    for purpose in [SigningPurpose::AccessToken, SigningPurpose::LogoutToken] {
+        let token = manager
+            .encode_response_jwt(
+                purpose,
+                Some(nazo_crypto::jwt::Algorithm::PS256),
+                "JWT",
+                &json!({"sub":"test"}),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            nazo_crypto::jwt::decode_header(&token).unwrap().alg,
+            nazo_crypto::jwt::Algorithm::PS256
+        );
+    }
 }

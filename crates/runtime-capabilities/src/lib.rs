@@ -12,7 +12,7 @@ mod snapshot;
 mod transition;
 
 pub use catalog::{CatalogDurations, ModuleCatalog};
-pub use lease::{RequestLease, RequestLeaseTracker};
+pub use lease::{RequestLease, RequestLeaseTracker, RequestSnapshot};
 pub use management::{
     DesiredStateUpdate, DesiredStateUpdateOutcome, RuntimeModuleManagement,
     RuntimeModuleManagementError, RuntimeModuleView,
@@ -29,5 +29,5 @@ pub use repository::{
     InstanceStateMutation, InstanceStateObservation, InstanceStateRecord, ModuleEventPage,
     ModuleEventRecord, ModuleEventState, ModuleReconcileState, ModuleStateRepository,
 };
-pub use snapshot::{ActiveModuleSnapshot, SnapshotStore};
+pub use snapshot::{ActiveModuleSnapshot, CapabilityAdmission, SnapshotStore};
 pub use transition::{ModuleRevision, StaleTransition, TransitionGuard};

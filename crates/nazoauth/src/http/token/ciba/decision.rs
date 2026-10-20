@@ -35,9 +35,9 @@ pub(crate) async fn ciba_verification_page(
     application: Data<CibaApplication>,
     path: Path<String>,
 ) -> HttpResponse {
-    if !application.check_admission(CapabilityAdmission::ExistingTransaction) {
+    let Some(_lease) = application.acquire_request(CapabilityAdmission::ExistingTransaction) else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     HttpResponse::Found()
         .insert_header((
             header::LOCATION,
@@ -53,9 +53,9 @@ pub(crate) async fn ciba_verification(
     req: HttpRequest,
     path: Path<String>,
 ) -> HttpResponse {
-    if !application.check_admission(CapabilityAdmission::ExistingTransaction) {
+    let Some(_lease) = application.acquire_request(CapabilityAdmission::ExistingTransaction) else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let session = match sessions.current_session_or_login_required(&req).await {
         Ok(s) => s,
         Err(response) => return response,
@@ -78,9 +78,9 @@ pub(crate) async fn ciba_decision(
     path: Path<String>,
     Json(payload): Json<CibaDecisionRequest>,
 ) -> HttpResponse {
-    if !application.check_admission(CapabilityAdmission::ExistingTransaction) {
+    let Some(_lease) = application.acquire_request(CapabilityAdmission::ExistingTransaction) else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let session_http = sessions.http_config();
     if !has_valid_csrf_token_for_cookies(
         &req,

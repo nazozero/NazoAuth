@@ -322,6 +322,7 @@ def main():
         name = point_name(mode, scenario, rate, window, time.time())
         resources = config["resources"][mode]
         point = {"name": name, "phase": mode, "image": config["app_image"],
+                 "collection_contract": CONTRACT,
                  "capacity_recipe_id": identity,
                  "app_cpus": cpus[mode], "postgres_cpus": cpus["postgres"],
                  "valkey_cpus": cpus["valkey"], "infra_cpus": cpus["generator"],

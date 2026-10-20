@@ -129,6 +129,7 @@ fn map_dynamic_registration_mutation_error(
         RepositoryError::NotFound => {
             nazo_auth::DynamicRegistrationDependencyError::StaleCredentials
         }
+        RepositoryError::Conflict => nazo_auth::DynamicRegistrationDependencyError::PolicyChanged,
         _ => nazo_auth::DynamicRegistrationDependencyError::Unavailable,
     }
 }

@@ -186,6 +186,46 @@ fn policy(pairwise_subject_secret: Option<&str>) -> AdminClientPolicy {
 }
 
 #[test]
+fn enabling_fapi_rejects_preexisting_incompatible_signing_metadata() {
+    let resolver = StaticSectorIdentifier(vec![]);
+    for field in [
+        "id_token",
+        "request",
+        "auth",
+        "userinfo",
+        "jarm",
+        "introspection",
+    ] {
+        let mut client = oauth_client();
+        client.client_type = "confidential".into();
+        client.token_endpoint_auth_method = "private_key_jwt".into();
+        client.require_dpop_bound_tokens = true;
+        client.jwks = Some(std::sync::Arc::new(json!({"keys": []})));
+        let selected = match field {
+            "id_token" => &mut client.id_token_signed_response_alg,
+            "request" => &mut client.request_object_signing_alg,
+            "auth" => &mut client.token_endpoint_auth_signing_alg,
+            "userinfo" => &mut client.userinfo_signed_response_alg,
+            "jarm" => &mut client.authorization_signed_response_alg,
+            _ => &mut client.introspection_signed_response_alg,
+        };
+        *selected = Some("RS256".into());
+        let result = futures_executor::block_on(prepare_client_patch(
+            client,
+            PatchClientRequest {
+                security_policy: Some(ClientSecurityPolicy::fapi2()),
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &resolver,
+            &TestCrypto,
+        ));
+        let error = result.expect_err(field);
+        assert!(error.to_string().contains("FAPI2"), "{field}: {error}");
+    }
+}
+
+#[test]
 fn client_patch_preserves_pairwise_host_and_rejects_unsafe_transitions() {
     let crypto = TestCrypto;
     let resolver = StaticSectorIdentifier(vec!["https://client.example/callback".to_owned()]);

@@ -346,10 +346,10 @@ impl UserRepository {
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())
-        .get_result(&mut connection)
+        .load::<PublicAccountRow>(&mut connection)
         .await
-        .optional()
         .map_err(map_error)?
+        .pop()
         .ok_or(RepositoryError::NotFound)?;
         row.try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
@@ -375,10 +375,10 @@ impl UserRepository {
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())
-        .get_result(&mut connection)
+        .load::<PublicAccountRow>(&mut connection)
         .await
-        .optional()
-        .map_err(map_error)?;
+        .map_err(map_error)?
+        .pop();
         row.map(PublicAccount::try_from)
             .transpose()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))

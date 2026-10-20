@@ -109,6 +109,8 @@ pub trait FederationLoginRepositoryPort: Send + Sync {
         email: &'a str,
     ) -> RepositoryFuture<'a, bool>;
 
+    /// Atomically create the account, link and required identity-linked audit.
+    /// Resolving a concurrent, already committed link emits no second event.
     fn create_federated(
         &self,
         identity: NewFederatedIdentity,

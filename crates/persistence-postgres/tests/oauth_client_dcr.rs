@@ -962,6 +962,67 @@ async fn client_credential_state(pool: &DbPool, id: Uuid) -> serde_json::Value {
     .state
 }
 
+#[tokio::test]
+async fn dcr_update_cannot_restore_a_policy_changed_after_authentication() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let mut original = client(TenantContext::default_system());
+    original
+        .security_policy
+        .allow_confidential_oidc_without_pkce = true;
+    let token = registration_token(&original, "policy-original");
+    repository
+        .insert(&original, None, Some(&token))
+        .await
+        .unwrap();
+    let mut candidate = original.clone();
+    candidate.client_name = "DCR replacement".to_owned();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET security_policy = jsonb_set(security_policy, '{allow_confidential_oidc_without_pkce}', 'false') WHERE id = $1")
+        .bind::<SqlUuid, _>(original.id).execute(&mut connection).await.unwrap();
+    let before = client_credential_state(&pool, original.id).await;
+    assert!(matches!(
+        DynamicRegistrationClientStore::replace_registration(
+            &repository,
+            &candidate,
+            None,
+            &token,
+            Some("next-token"),
+            "test-source"
+        )
+        .await,
+        Err(DynamicRegistrationDependencyError::PolicyChanged)
+    ));
+    assert_eq!(client_credential_state(&pool, original.id).await, before);
+    let current = repository
+        .by_id(original.tenant_id, original.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.client_name, original.client_name);
+    assert!(!current.security_policy.allow_confidential_oidc_without_pkce);
+    candidate.security_policy = current.security_policy.clone();
+    let committed = DynamicRegistrationClientStore::replace_registration(
+        &repository,
+        &candidate,
+        None,
+        &token,
+        Some("next-token"),
+        "test-source",
+    )
+    .await
+    .unwrap();
+    assert_eq!(committed.client_name, candidate.client_name);
+    assert_eq!(committed.security_policy, current.security_policy);
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(original.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
 /// DC-01: the client returned by `replace_registration` comes from the
 /// statement's `RETURNING` projection, so it must equal an independent re-read
 /// of the committed row — including fields that became NULL or empty.

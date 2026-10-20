@@ -28,7 +28,25 @@ pub fn recent_interactive_mfa(auth_time: i64, amr: &[String], now: i64) -> bool 
         && amr.iter().any(|method| method == "mfa")
         && amr
             .iter()
-            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
+            .any(|method| matches!(method.as_str(), "otp" | "recovery_code" | "passkey_uv"))
+}
+
+/// Credential management can reuse a fresh login. Accounts requiring MFA need
+/// interactive second-factor evidence, including a verified passkey UV.
+#[must_use]
+pub fn recent_credential_management_authentication(
+    auth_time: i64,
+    amr: &[String],
+    mfa_required: bool,
+    now: i64,
+) -> bool {
+    if mfa_required {
+        return recent_interactive_mfa(auth_time, amr, now);
+    }
+    (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
+        && amr
+            .iter()
+            .any(|method| matches!(method.as_str(), "pwd" | "passkey" | "federated"))
 }
 
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {

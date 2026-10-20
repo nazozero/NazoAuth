@@ -43,6 +43,8 @@ pub struct LogoutSession {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisteredLogoutClient {
+    pub require_fapi2: bool,
+    pub id_token_signed_response_alg: Option<String>,
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub client_id: String,
@@ -138,7 +140,7 @@ pub trait BackchannelLogoutOutboxPort: Send + Sync {
 pub trait LogoutTokenSignerPort: Send + Sync {
     fn sign_logout_token<'a>(
         &'a self,
-        client_id: &'a str,
+        client: &'a RegisteredLogoutClient,
         subject: Option<&'a str>,
         sid: &'a str,
         issued_at: DateTime<Utc>,
@@ -346,12 +348,10 @@ impl LogoutService {
         let Some(session) = session else {
             return Vec::new();
         };
-        let clients = match hinted_client {
-            Some(client) if hinted_client_is_bound => std::slice::from_ref(client),
-            Some(_) => return Vec::new(),
-            None => active_clients,
-        };
-        clients
+        if hinted_client.is_some() && !hinted_client_is_bound {
+            return Vec::new();
+        }
+        active_clients
             .iter()
             .filter_map(|client| {
                 let uri = client.frontchannel_logout_uri.as_deref()?;
@@ -389,7 +389,7 @@ impl LogoutService {
             let logout_token = self
                 .signer
                 .sign_logout_token(
-                    &client.client_id,
+                    client,
                     subject.as_deref(),
                     &session.oidc_sid,
                     now,

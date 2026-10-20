@@ -1635,6 +1635,65 @@ async fn grants_ensure_updates_authorization_idempotently_and_revokes_tokens_ato
     assert_eq!(revoked.removed_grants, 1);
 }
 
+#[tokio::test]
+async fn delayed_device_approver_cannot_recreate_a_revoked_grant() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let actor = admin_grant_required::seed_current_admin(&database_url).await;
+    let repository = GrantRepository::new(create_pool(&database_url, 4).unwrap());
+    let tenant_id = nazo_identity::DEFAULT_TENANT_ID;
+    let hash = blake3::hash(Uuid::now_v7().as_bytes()).to_hex().to_string();
+    let scopes = vec!["openid".to_owned()];
+    let details = json!([]);
+    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(5);
+    let write = || nazo_auth::DeviceGrantWrite {
+        tenant_id,
+        user_id: fixture.user_id,
+        client_id: fixture.client_id,
+        device_code_hash: &hash,
+        expires_at,
+        scopes: &scopes,
+        resource_indicators: &[],
+        authorization_details: &details,
+    };
+    // Replacement worker commits the same durable approval identity.
+    repository.commit_device_approval(write()).await.unwrap();
+    repository
+        .revoke_by_client_id(tenant_id, fixture.user_id, &fixture.client_public_id, actor)
+        .await
+        .unwrap();
+    // The original worker resumes from immediately before its database call.
+    repository.commit_device_approval(write()).await.unwrap();
+    repository.commit_device_approval(write()).await.unwrap();
+    assert!(
+        repository
+            .authorization(tenant_id, fixture.user_id, fixture.client_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let expired_hash = blake3::hash(Uuid::now_v7().as_bytes()).to_hex().to_string();
+    assert!(
+        repository
+            .commit_device_approval(nazo_auth::DeviceGrantWrite {
+                device_code_hash: &expired_hash,
+                expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+                ..write()
+            })
+            .await
+            .is_err()
+    );
+    assert!(
+        repository
+            .authorization(tenant_id, fixture.user_id, fixture.client_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn grant_revoke_skips_already_revoked_family_lock() {
     let Some(database_url) = database_url() else {

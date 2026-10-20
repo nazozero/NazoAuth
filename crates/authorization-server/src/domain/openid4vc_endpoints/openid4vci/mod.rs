@@ -245,12 +245,11 @@ impl ServerCredentialIssuerOperations {
         })
     }
 
-    pub(super) fn enabled(&self, admission: nazo_auth::CapabilityAdmission) -> bool {
-        nazo_auth::module_admissible(
-            &self.snapshots.load_full(),
-            ModuleId::Openid4vciIssuer,
-            admission,
-        )
+    pub(super) fn acquire_request(
+        &self,
+        admission: nazo_auth::CapabilityAdmission,
+    ) -> Option<nazo_runtime_modules::RequestLease> {
+        self.snapshots.lease(ModuleId::Openid4vciIssuer, admission)
     }
 
     fn metadata_document(&self) -> CredentialIssuerMetadata {
@@ -549,13 +548,15 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &self,
     ) -> CredentialIssuerFuture<'_, Result<CredentialIssuerMetadata, CredentialHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vci_error(
                     404,
                     "invalid_request",
                     "Credential issuer is disabled.",
                 ));
-            }
+            };
             let mut metadata = self.metadata_document();
             let now = Utc::now().timestamp();
             let mut signed = serde_json::to_value(&metadata)
@@ -586,13 +587,14 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         _dpop_proof: Option<&str>,
     ) -> CredentialIssuerFuture<'_, Result<String, CredentialHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+            else {
                 return Err(vci_error(
                     404,
                     "invalid_request",
                     "Credential issuer is disabled.",
                 ));
-            }
+            };
             let nonce = random_urlsafe_token();
             self.store
                 .issue_nonce(&NonceRecord {

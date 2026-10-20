@@ -310,3 +310,11 @@ lease; the response becomes Claimed only after full COMMIT acknowledgement.
 Cancellation or unknown transaction completion discards the physical pooled
 connection. The query contract is two statements, including authorization
 projection, with no separate intent lookup or tentative unauthorized lease.
+
+## Certificate paths
+
+VC certificate validation checks the complete supplied path to an explicit
+trust anchor, including validity, basic constraints/path length, CA key usage,
+name constraints and unknown critical extensions. The caller's document/profile
+EKU policy is applied separately; a TLS-server EKU is not substituted for a
+credential-signing purpose. An empty or unrelated chain is rejected.

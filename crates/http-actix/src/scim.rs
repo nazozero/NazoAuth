@@ -66,12 +66,20 @@ impl ScimEndpoint {
         self
     }
 
-    fn security_events_enabled(&self) -> bool {
-        self.events.is_some() && self.authorizer.security_events_enabled()
+    fn security_events_enabled(&self, authorized: &ScimAuthorizedRequest) -> bool {
+        self.events.is_some()
+            && authorized.modules.permits(
+                nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+                nazo_auth::CapabilityAdmission::NewRequest,
+            )
     }
 
-    fn security_event_delivery_enabled(&self) -> bool {
-        self.events.is_some() && self.authorizer.security_event_delivery_enabled()
+    fn security_event_delivery_enabled(&self, authorized: &ScimAuthorizedRequest) -> bool {
+        self.events.is_some()
+            && authorized.modules.permits(
+                nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+                nazo_auth::CapabilityAdmission::ExistingTransaction,
+            )
     }
 }
 
@@ -79,12 +87,16 @@ pub async fn scim_service_provider_config(
     endpoint: Data<ScimEndpoint>,
     request: HttpRequest,
 ) -> HttpResponse {
-    if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
-        return authorization_error(error);
-    }
+    let authorized = match authorize(&endpoint, &request, ScimRequiredScope::Read).await {
+        Ok(authorized) => authorized,
+        Err(error) => return authorization_error(error),
+    };
     static WITH_EVENTS: OnceLock<Bytes> = OnceLock::new();
     static WITHOUT_EVENTS: OnceLock<Bytes> = OnceLock::new();
-    let enabled = endpoint.security_events_enabled();
+    let enabled = endpoint.events.is_some()
+        && authorized
+            .modules
+            .advertises(nazo_runtime_modules::ModuleId::ScimSecurityEvents);
     discovery_response(
         if enabled {
             &WITH_EVENTS
@@ -100,7 +112,7 @@ pub async fn scim_poll_security_events(
     request: HttpRequest,
     Json(payload): Json<PollRequest>,
 ) -> HttpResponse {
-    if !endpoint.security_event_delivery_enabled() {
+    if endpoint.events.is_none() {
         return authorization_error(ScimAuthorizationError::Disabled);
     }
     let facts = authentication_facts(&endpoint, &request);
@@ -112,6 +124,9 @@ pub async fn scim_poll_security_events(
         Ok(authorized) => authorized,
         Err(error) => return authorization_error(error),
     };
+    if !endpoint.security_event_delivery_enabled(&authorized) {
+        return authorization_error(ScimAuthorizationError::Disabled);
+    }
     let Some(receiver) = authorized.event_receiver.as_ref() else {
         return authorization_error(ScimAuthorizationError::EventReceiverNotConfigured);
     };
@@ -152,7 +167,7 @@ pub async fn scim_poll_security_events(
                 Ok(fresh) => fresh,
                 Err(error) => return authorization_error(error),
             };
-            if !endpoint.security_event_delivery_enabled() {
+            if !endpoint.security_event_delivery_enabled(&fresh) {
                 return authorization_error(ScimAuthorizationError::Disabled);
             }
             if fresh.tenant != authorized.tenant
@@ -184,9 +199,10 @@ pub async fn scim_poll_security_events(
 }
 
 pub async fn scim_schemas(endpoint: Data<ScimEndpoint>, request: HttpRequest) -> HttpResponse {
-    if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
-        return authorization_error(error);
-    }
+    let _authorized = match authorize(&endpoint, &request, ScimRequiredScope::Read).await {
+        Ok(authorized) => authorized,
+        Err(error) => return authorization_error(error),
+    };
     static DOCUMENT: OnceLock<Bytes> = OnceLock::new();
     discovery_response(&DOCUMENT, scim_schemas_document)
 }
@@ -195,9 +211,10 @@ pub async fn scim_resource_types(
     endpoint: Data<ScimEndpoint>,
     request: HttpRequest,
 ) -> HttpResponse {
-    if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
-        return authorization_error(error);
-    }
+    let _authorized = match authorize(&endpoint, &request, ScimRequiredScope::Read).await {
+        Ok(authorized) => authorized,
+        Err(error) => return authorization_error(error),
+    };
     static DOCUMENT: OnceLock<Bytes> = OnceLock::new();
     discovery_response(&DOCUMENT, scim_resource_types_document)
 }
@@ -334,7 +351,7 @@ pub async fn scim_create_user(
             credential.tenant,
             input,
             password_hash,
-            mutation_context(&endpoint),
+            mutation_context(&endpoint, &credential),
         )
         .await
     {
@@ -386,7 +403,7 @@ pub async fn scim_replace_user(
             credential.tenant,
             user_id,
             input,
-            mutation_context(&endpoint),
+            mutation_context(&endpoint, &credential),
         )
         .await
     {
@@ -423,7 +440,7 @@ pub async fn scim_patch_user(
             credential.tenant,
             user_id,
             patch,
-            mutation_context(&endpoint),
+            mutation_context(&endpoint, &credential),
         )
         .await
     {
@@ -448,7 +465,11 @@ pub async fn scim_delete_user(
     };
     match endpoint
         .service
-        .deactivate_user_with_mutation(credential.tenant, user_id, mutation_context(&endpoint))
+        .delete_user_with_mutation(
+            credential.tenant,
+            user_id,
+            mutation_context(&endpoint, &credential),
+        )
         .await
     {
         Ok(true) => empty_response(StatusCode::NO_CONTENT),
@@ -457,8 +478,11 @@ pub async fn scim_delete_user(
     }
 }
 
-fn mutation_context(endpoint: &ScimEndpoint) -> MutationContext {
-    if endpoint.security_events_enabled() {
+fn mutation_context(
+    endpoint: &ScimEndpoint,
+    authorized: &ScimAuthorizedRequest,
+) -> MutationContext {
+    if endpoint.security_events_enabled(authorized) {
         MutationContext::enabled()
     } else {
         MutationContext::disabled()

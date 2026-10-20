@@ -18,6 +18,7 @@ use serde_json::json;
 
 #[derive(Clone)]
 pub struct OidcLogoutConfig {
+    pub require_fapi2: bool,
     pub issuer: Box<str>,
     pub pairwise_subject_secret: Option<Box<str>>,
 }
@@ -52,6 +53,7 @@ impl OidcLogoutHandles {
             Arc::new(ServerLogoutTokenSigner {
                 keys: keys.clone(),
                 issuer: config.issuer.clone(),
+                require_fapi2: config.require_fapi2,
             }),
             config.issuer.clone(),
             config.pairwise_subject_secret.clone(),
@@ -68,14 +70,6 @@ impl OidcLogoutHandles {
 
     pub fn issuer(&self) -> &str {
         &self.config.issuer
-    }
-
-    pub fn permits_existing_frontchannel_transaction(&self) -> bool {
-        nazo_auth::module_admissible(
-            &self.snapshots.load_full(),
-            nazo_runtime_modules::ModuleId::FrontchannelLogout,
-            nazo_auth::CapabilityAdmission::ExistingTransaction,
-        )
     }
 
     fn decode_id_token_hint_with_expiry(
@@ -98,6 +92,7 @@ struct DecodedIdTokenHint {
 
 #[derive(Clone)]
 struct ServerLogoutTokenSigner {
+    require_fapi2: bool,
     keys: KeyManager,
     issuer: Box<str>,
 }
@@ -105,7 +100,7 @@ struct ServerLogoutTokenSigner {
 impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
     fn sign_logout_token<'a>(
         &'a self,
-        client_id: &'a str,
+        client: &'a nazo_auth::RegisteredLogoutClient,
         subject: Option<&'a str>,
         sid: &'a str,
         issued_at: DateTime<Utc>,
@@ -115,7 +110,7 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
             let claims = nazo_auth::backchannel_logout_token_claims(
                 &self.issuer,
                 &BackchannelLogoutClaimsInput {
-                    client_id,
+                    client_id: &client.client_id,
                     subject,
                     sid: Some(sid),
                     ttl: ttl_seconds,
@@ -125,7 +120,16 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
             self.keys
                 .encode_response_jwt(
                     nazo_auth::SigningPurpose::LogoutToken,
-                    None,
+                    nazo_auth::jwt_response_signing_algorithm(
+                        client.id_token_signed_response_alg.as_deref(),
+                        self.require_fapi2 || client.require_fapi2,
+                    )
+                    .map_err(|_| LogoutDependencyError::Consistency)?
+                    .map(|name| {
+                        nazo_key_management::signing_algorithm_from_name(name)
+                            .ok_or(LogoutDependencyError::Consistency)
+                    })
+                    .transpose()?,
                     "logout+jwt",
                     &serde_json::Value::Object(claims),
                 )
@@ -138,6 +142,7 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
 impl OidcLogoutOperations for OidcLogoutHandles {
     fn logout(&self, command: OidcLogoutCommand) -> OidcLogoutFuture<'_> {
         Box::pin(async move {
+            let modules = self.snapshots.request();
             let now = Utc::now();
             let current_session = match command.session_id.as_deref() {
                 Some(session_id) => self
@@ -184,7 +189,10 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                     }),
                     csrf_authorized: command.csrf_authorized,
                     user_confirmed: command.user_confirmed,
-                    frontchannel_enabled: self.permits_existing_frontchannel_transaction(),
+                    frontchannel_enabled: modules.permits(
+                        nazo_runtime_modules::ModuleId::FrontchannelLogout,
+                        nazo_auth::CapabilityAdmission::ExistingTransaction,
+                    ),
                     now,
                 })
                 .await;

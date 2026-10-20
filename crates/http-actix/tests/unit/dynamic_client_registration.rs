@@ -263,8 +263,8 @@ struct FakeGuard {
 }
 
 impl DynamicRegistrationRequestGuard for FakeGuard {
-    fn accepts_new_requests(&self) -> bool {
-        self.enabled
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        test_module_lease(self.enabled)
     }
 
     fn enforce_rate_limit<'a>(
@@ -527,7 +527,7 @@ async fn configured_initial_access_token_keeps_oauth_only_client_pkce_policy() {
 }
 
 #[actix_web::test]
-async fn configured_initial_access_token_applies_baseline_confidential_oidc_policy() {
+async fn configured_initial_access_token_keeps_confidential_oidc_pkce_required() {
     let store = FakeStore::new();
     let service = test::init_service(
         App::new()
@@ -558,7 +558,7 @@ async fn configured_initial_access_token_applies_baseline_confidential_oidc_poli
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 }
 
@@ -594,7 +594,7 @@ async fn configured_token_preserves_oidc_policy() {
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 }
 
@@ -632,7 +632,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 
     let updated = test::call_service(
@@ -657,7 +657,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 }
 
@@ -1141,4 +1141,23 @@ fn client() -> OAuthClient {
         require_mtls_bound_tokens: false,
         is_active: true,
     }
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::DynamicClientRegistration].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::DynamicClientRegistration,
+        CapabilityAdmission::NewRequest,
+    )
 }

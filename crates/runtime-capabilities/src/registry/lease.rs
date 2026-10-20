@@ -20,7 +20,8 @@ where
 
     #[must_use]
     pub fn lease(&self, module_id: ModuleId) -> Option<RequestLease> {
-        self.leases.acquire(self.snapshot(), module_id)
+        self.snapshots
+            .lease(module_id, crate::CapabilityAdmission::NewRequest)
     }
 
     /// Publishes a new admission generation and closes leases from the old
@@ -49,9 +50,6 @@ where
                 accepting: accepting_set,
                 draining: draining_set,
             };
-            if !accepting && current.admits(module_id) {
-                self.leases.close_generation(module_id, current.revision);
-            }
             if self
                 .snapshots
                 .compare_and_publish(current.revision, next)

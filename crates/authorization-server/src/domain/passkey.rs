@@ -25,6 +25,7 @@ impl PasskeyOperationsProvider {
     async fn current_account(
         &self,
         context: &PasskeyProfileContext,
+        require_fresh_authentication: bool,
     ) -> Result<PublicAccount, PasskeyEndpointError> {
         match self
             .sessions
@@ -35,7 +36,19 @@ impl PasskeyOperationsProvider {
                 PasskeyEndpointError::SessionUnavailable
             })?
         {
-            SessionResolution::Present(session) => Ok(session.into_user()),
+            SessionResolution::Present(session) => {
+                if require_fresh_authentication
+                    && !nazo_identity::session::recent_credential_management_authentication(
+                        session.auth_time(),
+                        session.amr(),
+                        session.user().account.mfa_enabled,
+                        context.now,
+                    )
+                {
+                    return Err(PasskeyEndpointError::ReauthenticationRequired);
+                }
+                Ok(session.into_user())
+            }
             SessionResolution::Missing | SessionResolution::Invalidated => {
                 Err(PasskeyEndpointError::SessionMissing)
             }
@@ -101,7 +114,7 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
         label: Option<String>,
     ) -> PasskeyFuture<'_, PasskeyRegistrationBegin> {
         Box::pin(async move {
-            let account = self.current_account(&context).await?;
+            let account = self.current_account(&context, true).await?;
             self.passkeys
                 .registration_begin(&account, label)
                 .await
@@ -114,7 +127,7 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
         command: PasskeyRegistrationFinishCommand,
     ) -> PasskeyFuture<'_, PasskeyCredential> {
         Box::pin(async move {
-            let account = self.current_account(&command.context).await?;
+            let account = self.current_account(&command.context, true).await?;
             self.passkeys
                 .registration_finish(&account, &command.ceremony_id, command.response)
                 .await
@@ -127,7 +140,7 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
         context: PasskeyProfileContext,
     ) -> PasskeyFuture<'_, Vec<PasskeyCredentialSummary>> {
         Box::pin(async move {
-            let account = self.current_account(&context).await?;
+            let account = self.current_account(&context, false).await?;
             self.passkeys
                 .list_summaries(&account)
                 .await
@@ -137,7 +150,7 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
 
     fn delete(&self, context: PasskeyProfileContext, passkey_id: Uuid) -> PasskeyFuture<'_, ()> {
         Box::pin(async move {
-            let account = self.current_account(&context).await?;
+            let account = self.current_account(&context, true).await?;
             self.passkeys
                 .delete(&account, passkey_id)
                 .await

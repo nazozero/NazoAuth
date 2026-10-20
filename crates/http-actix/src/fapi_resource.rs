@@ -69,7 +69,8 @@ pub async fn fapi_resource(
     request: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let signatures_enabled = endpoint.signatures.enabled();
+    let signature_lease = endpoint.signatures.acquire_request();
+    let signatures_enabled = signature_lease.is_some();
     let original =
         signatures_enabled.then(|| CapturedRequest::capture(&endpoint.issuer, &request, &body));
     let response = fapi_resource_inner(&endpoint, &request, &body, original.as_ref()).await;

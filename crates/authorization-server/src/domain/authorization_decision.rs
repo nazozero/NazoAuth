@@ -9,8 +9,8 @@ use nazo_auth::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationDecisionCommit,
     AuthorizationDecisionCommitResult, AuthorizationDecisionKind, AuthorizationResponsePlan,
     AuthorizationResponsePolicyError, AuthorizationResponsePolicyInput, CapabilityAdmission,
-    SignedJarmAuthorizationResponse, UserAuthorizationDecision, module_admissible,
-    plain_authorization_response_uri, plan_authorization_response, prepare_authorization_code,
+    SignedJarmAuthorizationResponse, UserAuthorizationDecision, plain_authorization_response_uri,
+    plan_authorization_response, prepare_authorization_code,
     signed_jarm_authorization_response_uri,
 };
 use nazo_identity::{SessionResolution, SessionService};
@@ -252,7 +252,7 @@ impl ServerAuthorizationDecisionOperations {
         error: Option<&str>,
         oidc_sid: Option<&str>,
     ) -> Result<AuthorizationDecisionResponse, AuthorizationDecisionError> {
-        let modules = self.runtime_modules.load_full();
+        let modules = self.runtime_modules.request();
         let plan = plan_authorization_response(AuthorizationResponsePolicyInput {
             issuer: &self.config.issuer,
             redirect_uri: &payload.redirect_uri,
@@ -267,17 +267,10 @@ impl ServerAuthorizationDecisionOperations {
             signed_response_required: payload
                 .signed_authorization_response_required
                 .unwrap_or_else(|| self.config.profile.requires_signed_authorization_response()),
-            jarm_available: module_admissible(
-                &modules,
-                ModuleId::Jarm,
-                CapabilityAdmission::ExistingTransaction,
-            ),
+            jarm_available: modules
+                .permits(ModuleId::Jarm, CapabilityAdmission::ExistingTransaction),
             session_management_available: payload.session_management_allowed.unwrap_or(true)
-                && module_admissible(
-                    &modules,
-                    ModuleId::SessionManagement,
-                    CapabilityAdmission::NewRequest,
-                ),
+                && modules.permits(ModuleId::SessionManagement, CapabilityAdmission::NewRequest),
         })
         .map_err(map_response_policy_error)?;
 
@@ -347,7 +340,13 @@ impl ServerAuthorizationDecisionOperations {
                 let signed = self
                     .service
                     .sign_authorization_response(
-                        jarm.signing_input(client.authorization_signed_response_alg.as_deref()),
+                        jarm.signing_input(
+                            nazo_auth::jwt_response_signing_algorithm(
+                                client.authorization_signed_response_alg.as_deref(),
+                                self.config.requires_fapi2_security(&client.security_policy),
+                            )
+                            .map_err(|_| AuthorizationDecisionError::ResponseSigningUnavailable)?,
+                        ),
                     )
                     .await
                     .map_err(|error| {

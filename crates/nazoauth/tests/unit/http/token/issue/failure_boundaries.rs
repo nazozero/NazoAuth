@@ -368,7 +368,7 @@ async fn assert_expired_commit_response(grant_type: GrantType, expected_error: &
                 grant_type: Some(grant_type),
                 client_epoch: 0,
                 config: &config,
-                modules: &modules,
+                modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
                 authorization: &authorization,
                 security_audit: crate::http::authorization::test_support::test_security_audit(),
                 remote_client_documents: crate::test_support::test_remote_client_documents(),

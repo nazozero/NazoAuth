@@ -401,25 +401,25 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
         (
             MetadataAuthorizationServerProfile::Fapi2Security,
             json!(["query", "jwt"]),
-            json!(["EdDSA", "RS256", "ES256", "PS256"]),
+            json!(["EdDSA", "ES256", "PS256"]),
             false,
         ),
         (
             MetadataAuthorizationServerProfile::Fapi2MessageSigningAuthorizationRequest,
             json!(["query", "jwt"]),
-            json!(["PS256"]),
+            json!(["EdDSA", "ES256", "PS256"]),
             false,
         ),
         (
             MetadataAuthorizationServerProfile::Fapi2MessageSigningJarm,
             json!(["jwt"]),
-            json!(["EdDSA", "RS256", "ES256", "PS256"]),
+            json!(["EdDSA", "ES256", "PS256"]),
             false,
         ),
         (
             MetadataAuthorizationServerProfile::Fapi2MessageSigningIntrospection,
             json!(["query", "jwt"]),
-            json!(["EdDSA", "RS256", "ES256", "PS256"]),
+            json!(["EdDSA", "ES256", "PS256"]),
             true,
         ),
     ];

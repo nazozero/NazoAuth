@@ -1,7 +1,4 @@
-use super::{
-    request::apply_ciba_request_object_client_id_hint,
-    state::{CibaTokenHandles, ciba_module_admissible},
-};
+use super::{request::apply_ciba_request_object_client_id_hint, state::CibaTokenHandles};
 use crate::{
     contracts::{
         ciba::{BackchannelAuthenticationForm, PreparedCibaCreation},
@@ -36,8 +33,12 @@ impl CibaApplication {
             security_audit,
         }
     }
-    pub fn check_admission(&self, admission: nazo_auth::CapabilityAdmission) -> bool {
-        ciba_module_admissible(&self.snapshots, admission)
+    pub fn acquire_request(
+        &self,
+        admission: nazo_auth::CapabilityAdmission,
+    ) -> Option<nazo_runtime_modules::RequestLease> {
+        self.snapshots
+            .lease(nazo_runtime_modules::ModuleId::Ciba, admission)
     }
 }
 pub fn prepare_ciba_creation(

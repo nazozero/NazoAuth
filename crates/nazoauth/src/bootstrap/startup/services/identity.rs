@@ -151,6 +151,10 @@ pub(super) async fn build(
         persistence.logout_outbox(),
         keyset,
         OidcLogoutConfig {
+            require_fapi2: settings
+                .protocol
+                .authorization_server_profile
+                .requires_fapi2_security(),
             issuer: settings.endpoint.issuer.as_str().into(),
             pairwise_subject_secret: settings
                 .protocol

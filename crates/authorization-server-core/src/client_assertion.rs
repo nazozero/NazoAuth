@@ -11,6 +11,7 @@ pub const CLIENT_ASSERTION_TYPE_JWT_BEARER: &str =
     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 pub const CLIENT_ASSERTION_MAX_TTL_SECONDS: i64 = 300;
 pub const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
+pub const FAPI2_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "ES256", "PS256"];
 const CLIENT_ASSERTION_CLOCK_SKEW_SECONDS: i64 = 30;
 const MAX_CLIENT_ASSERTION_JTI_BYTES: usize = 128;
 
@@ -138,12 +139,7 @@ pub fn verify_private_key_jwt(
     let Some((algorithm_name, _)) = supported_client_jwt_algorithm(header.alg) else {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     };
-    if require_fapi2
-        && !matches!(
-            header.alg,
-            Algorithm::PS256 | Algorithm::ES256 | Algorithm::EdDSA
-        )
-    {
+    if require_fapi2 && !FAPI2_JWT_SIGNING_ALGS.contains(&algorithm_name) {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     }
     if input

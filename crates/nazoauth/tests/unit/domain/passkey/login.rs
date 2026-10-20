@@ -289,6 +289,10 @@ impl FakeAuthenticator {
 
 impl LivePasskeyFixture {
     async fn new() -> Option<Self> {
+        Self::with_user_verification(true).await
+    }
+
+    async fn with_user_verification(required: bool) -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let config = ConfigSource::from_pairs_for_test([
@@ -301,7 +305,10 @@ impl LivePasskeyFixture {
             ("PASSKEY_RP_ID", "example.com"),
             ("PASSKEY_RP_NAME", "Nazo OAuth Test"),
             ("PASSKEY_ORIGIN", "https://example.com"),
-            ("PASSKEY_REQUIRE_USER_VERIFICATION", "true"),
+            (
+                "PASSKEY_REQUIRE_USER_VERIFICATION",
+                if required { "true" } else { "false" },
+            ),
             ("PASSKEY_REQUIRE_USER_HANDLE", "true"),
             ("PASSKEY_STRICT_BASE64", "true"),
             ("COOKIE_SECURE", "true"),
@@ -736,72 +743,84 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
 }
 
 #[actix_web::test]
-async fn passkey_login_finish_requires_mfa_for_mfa_enabled_user_without_remembered_device() {
-    let Some(fixture) = LivePasskeyFixture::new().await else {
-        return;
-    };
-    let suffix = Uuid::now_v7().simple().to_string();
-    let user = fixture.create_user(&format!("required-mfa-{suffix}")).await;
-    fixture.set_user_mfa_enabled(user.id, true).await;
-    let identity_user = nazo_postgres::UserRepository::new(fixture.state.diesel_db.clone())
-        .public_account_by_id(
-            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
-            nazo_identity::UserId::new(user.id).unwrap(),
+async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
+    for (required, verified) in [(false, false), (false, true), (true, true)] {
+        let Some(fixture) = LivePasskeyFixture::with_user_verification(required).await else {
+            return;
+        };
+        let suffix = Uuid::now_v7().simple().to_string();
+        let user = fixture.create_user(&format!("required-mfa-{suffix}")).await;
+        fixture.set_user_mfa_enabled(user.id, true).await;
+        let identity_user = nazo_postgres::UserRepository::new(fixture.state.diesel_db.clone())
+            .public_account_by_id(
+                nazo_identity::TenantId::new(DEFAULT_TENANT_ID).unwrap(),
+                nazo_identity::UserId::new(user.id).unwrap(),
+            )
+            .await
+            .expect("user lookup should succeed")
+            .expect("user should exist");
+        let mut authenticator =
+            FakeAuthenticator::new(format!("mfa-login-credential-{suffix}").as_bytes());
+        authenticator.flags = FLAG_UP | if verified { FLAG_UV } else { 0 };
+        let credential = fixture.register_credential(&user, &authenticator);
+        fixture.insert_credential(&user, &credential).await;
+        let (ceremony_id, challenge) =
+            begin_passkey_login(&fixture, &identity_user.account.email).await;
+
+        let finish_response = passkey_login_finish(
+            fixture.state.clone(),
+            actix_web::test::TestRequest::default().to_http_request(),
+            Json(PasskeyLoginFinishRequest {
+                ceremony_id,
+                response: authenticator.authentication_response(
+                    &challenge,
+                    &fixture.state.settings.identity.passkey.origin,
+                    Some(&passkey_user_handle(&user)),
+                ),
+            }),
+        )
+        .await;
+        assert_eq!(finish_response.status(), StatusCode::OK);
+        let session_id = session_cookie_value(
+            &finish_response,
+            &fixture.state.settings.session.session_cookie_name,
+        );
+        let body = actix_web::body::to_bytes(finish_response.into_body())
+            .await
+            .expect("response body should be readable");
+        let body: Value = serde_json::from_slice(&body).expect("response should be json");
+        assert_eq!(body["mfa_required"], !verified);
+
+        let session = fixture.session_payload(&session_id).await;
+        assert_eq!(session.pending_mfa, !verified);
+        if verified {
+            assert_eq!(session.amr, ["passkey", "passkey_uv", "mfa"]);
+            assert!(nazo_identity::session::recent_interactive_mfa(
+                session.auth_time,
+                &session.amr,
+                Utc::now().timestamp()
+            ));
+            continue;
+        }
+        assert_eq!(session.amr, ["passkey"]);
+        assert!((0..=1).contains(&fixture.session_ttl(&session_id).await));
+        tokio::time::sleep(StdDuration::from_millis(1_100)).await;
+        let loaded = nazo_identity::ports::SessionStorePort::load(
+            &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()),
+            &nazo_identity::session::SessionId::new(session_id),
         )
         .await
-        .expect("user lookup should succeed")
-        .expect("user should exist");
-    let mut authenticator =
-        FakeAuthenticator::new(format!("mfa-login-credential-{suffix}").as_bytes());
-    let credential = fixture.register_credential(&user, &authenticator);
-    fixture.insert_credential(&user, &credential).await;
-    let (ceremony_id, challenge) =
-        begin_passkey_login(&fixture, &identity_user.account.email).await;
-
-    let finish_response = passkey_login_finish(
-        fixture.state.clone(),
-        actix_web::test::TestRequest::default().to_http_request(),
-        Json(PasskeyLoginFinishRequest {
-            ceremony_id,
-            response: authenticator.authentication_response(
-                &challenge,
-                &fixture.state.settings.identity.passkey.origin,
-                Some(&passkey_user_handle(&user)),
-            ),
-        }),
-    )
-    .await;
-    assert_eq!(finish_response.status(), StatusCode::OK);
-    let session_id = session_cookie_value(
-        &finish_response,
-        &fixture.state.settings.session.session_cookie_name,
-    );
-    let body = actix_web::body::to_bytes(finish_response.into_body())
-        .await
-        .expect("response body should be readable");
-    let body: Value = serde_json::from_slice(&body).expect("response should be json");
-    assert_eq!(body["mfa_required"], true);
-
-    let session = fixture.session_payload(&session_id).await;
-    assert_eq!(session.amr, vec!["passkey".to_owned()]);
-    assert!(session.pending_mfa);
-    assert!((0..=1).contains(&fixture.session_ttl(&session_id).await));
-    tokio::time::sleep(StdDuration::from_millis(1_100)).await;
-    let loaded = nazo_identity::ports::SessionStorePort::load(
-        &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()),
-        &nazo_identity::session::SessionId::new(session_id),
-    )
-    .await
-    .expect("expired session lookup should succeed");
-    assert!(
-        loaded.is_none(),
-        "pending MFA session must expire at the configured short TTL"
-    );
+        .expect("expired session lookup should succeed");
+        assert!(
+            loaded.is_none(),
+            "pending MFA session must expire at the configured short TTL"
+        );
+    }
 }
 
 #[actix_web::test]
 async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
-    let Some(fixture) = LivePasskeyFixture::new().await else {
+    let Some(fixture) = LivePasskeyFixture::with_user_verification(false).await else {
         return;
     };
     let suffix = Uuid::now_v7().simple().to_string();
@@ -826,6 +845,7 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
         .expect("remembered device token should be generated");
     let mut authenticator =
         FakeAuthenticator::new(format!("remembered-mfa-credential-{suffix}").as_bytes());
+    authenticator.flags = FLAG_UP;
     let credential = fixture.register_credential(&user, &authenticator);
     fixture.insert_credential(&user, &credential).await;
     let (ceremony_id, challenge) =

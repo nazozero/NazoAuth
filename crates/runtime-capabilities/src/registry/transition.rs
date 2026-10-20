@@ -156,6 +156,10 @@ where
             .as_ref()
             .is_none_or(|instance| instance.state == ModuleState::Disabled)
         {
+            self.publish(module_id, false, false)?;
+            if !matches!(disable_policy, DisablePolicy::Immediate) {
+                self.snapshots.wait_until_idle(module_id).await;
+            }
             if !self.revision_is_current(module_id, revision).await? {
                 self.discard_stale(module_id, revision, current.as_ref())
                     .await?;
@@ -233,7 +237,14 @@ where
                 .await?;
             return Ok(ReconcileOutcome::StaleDiscarded);
         }
-        self.publish(module_id, false, true)?;
+        self.publish(
+            module_id,
+            false,
+            matches!(
+                disable_policy,
+                DisablePolicy::DrainStoredTransactions { .. }
+            ),
+        )?;
         if !self.revision_is_current(module_id, revision).await? {
             self.discard_stale(module_id, revision, Some(&draining))
                 .await?;
@@ -257,7 +268,6 @@ where
             ) {
                 return Ok(ReconcileOutcome::StaleDiscarded);
             }
-            self.leases.wait_until_zero(module_id).await;
             if matches!(
                 disable_policy,
                 DisablePolicy::DrainStoredTransactions { .. }
@@ -296,6 +306,10 @@ where
                     }
                 }
             }
+            // Stop both new and stored-transaction admissions before waiting,
+            // so later requests cannot keep extending the drain.
+            self.publish(module_id, false, false)?;
+            self.snapshots.wait_until_idle(module_id).await;
             if !self.revision_is_current(module_id, revision).await? {
                 self.discard_stale(module_id, revision, Some(&draining))
                     .await?;
@@ -408,7 +422,13 @@ where
             self.publish(
                 module_id,
                 runtime_ready && enabled && dependencies_ready,
-                runtime_ready && !enabled && self.catalog.is_available(module_id),
+                runtime_ready
+                    && !enabled
+                    && self.catalog.is_available(module_id)
+                    && matches!(
+                        self.catalog.effective_disable_policy(module_id),
+                        DisablePolicy::DrainStoredTransactions { .. }
+                    ),
             )?;
             match self.revision_is_current(module_id, desired.revision).await {
                 Ok(true) => return Ok(()),

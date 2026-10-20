@@ -111,7 +111,7 @@ pub struct TokenIssuanceContext<'a> {
     /// Client version read by this request's authentication snapshot.
     pub client_epoch: i64,
     pub config: &'a TokenIssuanceConfig,
-    pub modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
+    pub modules: &'a nazo_runtime_modules::RequestSnapshot,
     pub authorization: &'a crate::services::ServerAuthorizationService,
     pub security_audit: &'a dyn crate::ports::audit::SecurityAudit,
     pub remote_client_documents:
@@ -120,19 +120,13 @@ pub struct TokenIssuanceContext<'a> {
 
 impl TokenIssuanceContext<'_> {
     pub fn accepts(&self, module: nazo_runtime_modules::ModuleId) -> bool {
-        nazo_auth::module_admissible(
-            self.modules,
-            module,
-            nazo_auth::CapabilityAdmission::NewRequest,
-        )
+        self.modules
+            .permits(module, nazo_auth::CapabilityAdmission::NewRequest)
     }
 
     pub fn permits(&self, module: nazo_runtime_modules::ModuleId) -> bool {
-        nazo_auth::module_admissible(
-            self.modules,
-            module,
-            nazo_auth::CapabilityAdmission::ExistingTransaction,
-        )
+        self.modules
+            .permits(module, nazo_auth::CapabilityAdmission::ExistingTransaction)
     }
 }
 

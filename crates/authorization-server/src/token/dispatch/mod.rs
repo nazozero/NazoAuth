@@ -168,7 +168,7 @@ impl TokenEndpointHandles {
         if attestation_headers.is_some()
             && (client_auth_context.http_basic
                 || client_auth_context.has_assertion
-                || form.client_secret.is_some())
+                || auth_facts.presentation().form_client_secret)
         {
             return Err(OAuthEndpointError::token(
                 StatusCode::BAD_REQUEST,
@@ -185,14 +185,16 @@ impl TokenEndpointHandles {
                 auth_facts.client_assertion_type() == Some(CLIENT_ASSERTION_TYPE_JWT_BEARER)
             })
             .and_then(unverified_client_assertion_client_id);
-        let form_mtls_client_id =
-            if !has_basic && !client_auth_context.has_assertion && form.client_secret.is_none() {
-                form.client_id
-                    .as_deref()
-                    .filter(|_| facts.certificate.is_some())
-            } else {
-                None
-            };
+        let form_mtls_client_id = if !has_basic
+            && !client_auth_context.has_assertion
+            && !auth_facts.presentation().form_client_secret
+        {
+            auth_facts
+                .form_client_id()
+                .filter(|_| facts.certificate.is_some())
+        } else {
+            None
+        };
         let attestation_client_id = attestation_headers.and_then(|(attestation, _)| {
             crate::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator::unverified_client_id(attestation)
         });
@@ -306,7 +308,7 @@ impl TokenEndpointHandles {
                 }
             };
             if !attestation_client_id_matches_form_hint(
-                form.client_id.as_deref(),
+                auth_facts.form_client_id(),
                 &validated.client_id,
             ) {
                 return Err(OAuthEndpointError::token(
@@ -412,7 +414,7 @@ impl TokenEndpointHandles {
                 false,
             ));
         }
-        let modules = runtime_modules.load_full();
+        let modules = runtime_modules.request();
         let issuance = TokenIssuanceContext {
             grant_type: nazo_auth::GrantType::try_from(form.grant_type.as_str()).ok(),
             client_epoch,

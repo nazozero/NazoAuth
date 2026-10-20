@@ -363,6 +363,11 @@ mod real_userinfo_contract {
                 state.settings.protocol.default_audience.as_str(),
                 state.settings.endpoint.mtls_endpoint_base_url.as_str(),
                 state.settings.protocol.dpop_nonce_policy,
+                state
+                    .settings
+                    .protocol
+                    .authorization_server_profile
+                    .requires_fapi2_security(),
             ),
             Arc::new(
                 crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])

@@ -729,19 +729,10 @@ fn authorization_policy_enforces_runtime_modules_and_extracts_credential_ids() {
         ),
     ] {
         let mut context = application.context();
-        assert!(std::sync::Arc::ptr_eq(
-            &context.modules,
-            &fixture.snapshots.load_full()
-        ));
-        std::sync::Arc::make_mut(&mut context.modules)
-            .accepting
-            .extend(required_modules);
-        assert!(
-            std::sync::Arc::make_mut(&mut context.modules)
-                .accepting
-                .remove(&module),
-            "{module:?} must be enabled by the test fixture"
-        );
+        let mut snapshot = (*fixture.snapshots.load_full()).clone();
+        snapshot.accepting.extend(required_modules);
+        assert!(snapshot.accepting.remove(&module));
+        context.modules = nazo_runtime_modules::SnapshotStore::new(snapshot).request();
         let response = runtime_authorization_capability_error(&context, &parameters)
             .expect("disabled module capability should fail closed");
         let OAuthEndpointError::Json(fields) = response else {
@@ -752,9 +743,9 @@ fn authorization_policy_enforces_runtime_modules_and_extracts_credential_ids() {
     }
 
     let mut context = application.context();
-    std::sync::Arc::make_mut(&mut context.modules)
-        .accepting
-        .extend(required_modules);
+    let mut snapshot = (*fixture.snapshots.load_full()).clone();
+    snapshot.accepting.extend(required_modules);
+    context.modules = nazo_runtime_modules::SnapshotStore::new(snapshot).request();
     assert!(runtime_authorization_capability_error(&context, &HashMap::new()).is_none());
 }
 

@@ -2937,6 +2937,7 @@ dependencies = [
  "rand 0.10.3",
  "rcgen",
  "rustls",
+ "rustls-webpki",
  "serde",
  "serde_json",
  "thiserror",

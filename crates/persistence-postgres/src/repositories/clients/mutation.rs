@@ -569,10 +569,6 @@ impl OAuthClientRepository {
             "backchannel_authentication_request_signing_alg".to_owned(),
             serde_json::json!(client.backchannel_authentication_request_signing_alg),
         );
-        metadata_object.insert(
-            "security_policy".to_owned(),
-            serde_json::json!(&client.security_policy),
-        );
         let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
         let result = guard.connection().transaction::<OAuthClient, MetadataUpdateError, _>(async |connection| {
         let mut records = diesel::sql_query(
@@ -631,7 +627,6 @@ impl OAuthClientRepository {
                 authorization_signed_response_alg = $3->>'authorization_signed_response_alg',
                 authorization_encrypted_response_alg = $3->>'authorization_encrypted_response_alg',
                 authorization_encrypted_response_enc = $3->>'authorization_encrypted_response_enc',
-                security_policy = $3->'security_policy',
                 updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE
               AND registration_access_token_blake3 = $6
@@ -679,11 +674,16 @@ impl OAuthClientRepository {
                 )
                 .load::<OAuthClientRecord>(connection)
                 .await?;
-        let client = records.pop().ok_or(diesel::result::Error::NotFound)?.into_domain().map_err(MetadataUpdateError::Repository)?;
-        if let Some(source_ip_hash) = source_ip_hash {
-            append_dynamic_registration_audit(connection, "dynamic_client_configuration_updated", &client, source_ip_hash).await?;
+        let updated = records.pop().ok_or(diesel::result::Error::NotFound)?.into_domain().map_err(MetadataUpdateError::Repository)?;
+        // The administrator owns this field. A DCR request validated against
+        // an older policy must roll back its metadata and credential rotation.
+        if updated.security_policy != client.security_policy {
+            return Err(MetadataUpdateError::Repository(RepositoryError::Conflict));
         }
-        Ok(client)
+        if let Some(source_ip_hash) = source_ip_hash {
+            append_dynamic_registration_audit(connection, "dynamic_client_configuration_updated", &updated, source_ip_hash).await?;
+        }
+        Ok(updated)
         }).await.map_err(MetadataUpdateError::into_repository);
         if result.is_ok() {
             guard.return_to_pool();
@@ -717,9 +717,11 @@ impl OAuthClientRepository {
             oauth_clients::updated_at.eq(diesel::dsl::now),
         ))
         .returning(OAuthClientRecord::as_returning())
-        .get_result::<OAuthClientRecord>(&mut connection)
+        .load::<OAuthClientRecord>(&mut connection)
         .await
         .map_err(map_error)?
+        .pop()
+        .ok_or(RepositoryError::NotFound)?
         .into_domain()
     }
 

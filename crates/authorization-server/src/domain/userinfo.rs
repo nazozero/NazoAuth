@@ -27,6 +27,7 @@ pub struct UserinfoConfig {
     default_audience: Box<str>,
     mtls_endpoint_base_url: Box<str>,
     dpop_nonce_policy: DpopNoncePolicy,
+    require_fapi2: bool,
 }
 
 impl UserinfoConfig {
@@ -35,12 +36,14 @@ impl UserinfoConfig {
         default_audience: impl Into<Box<str>>,
         mtls_endpoint_base_url: impl Into<Box<str>>,
         dpop_nonce_policy: DpopNoncePolicy,
+        require_fapi2: bool,
     ) -> Self {
         Self {
             issuer: issuer.into(),
             default_audience: default_audience.into(),
             mtls_endpoint_base_url: mtls_endpoint_base_url.into(),
             dpop_nonce_policy,
+            require_fapi2,
         }
     }
 
@@ -260,6 +263,14 @@ impl ServerUserinfoOperations {
         client: &OAuthClient,
         mut claims: Value,
     ) -> anyhow::Result<UserinfoRepresentation> {
+        if client.userinfo_signed_response_alg.is_some() {
+            nazo_auth::jwt_response_signing_algorithm(
+                client.userinfo_signed_response_alg.as_deref(),
+                self.handles.config.require_fapi2
+                    || client.security_policy.requires_fapi2_security(),
+            )
+            .map_err(anyhow::Error::msg)?;
+        }
         let signing_alg = match client.userinfo_signed_response_alg.as_deref() {
             Some(value) => Some(
                 signing_algorithm_from_name(value)

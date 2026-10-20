@@ -111,12 +111,11 @@ impl ServerPresentationOperations {
         })
     }
 
-    fn enabled(&self, admission: nazo_auth::CapabilityAdmission) -> bool {
-        nazo_auth::module_admissible(
-            &self.snapshots.load_full(),
-            ModuleId::Openid4vpVerifier,
-            admission,
-        )
+    fn acquire_request(
+        &self,
+        admission: nazo_auth::CapabilityAdmission,
+    ) -> Option<nazo_runtime_modules::RequestLease> {
+        self.snapshots.lease(ModuleId::Openid4vpVerifier, admission)
     }
     fn wallet_endpoint(endpoint: &str) -> Result<url::Url, PresentationHttpError> {
         let url = url::Url::parse(endpoint).map_err(|_| {
@@ -239,13 +238,14 @@ impl PresentationOperations for ServerPresentationOperations {
         input: CreatePresentationRequest,
     ) -> PresentationFuture<'a, Result<CreatePresentationResponse, PresentationHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+            else {
                 return Err(vp_error(
                     503,
                     "temporarily_unavailable",
                     "Presentation verifier is unavailable.",
                 ));
-            }
+            };
             nazo_operator_protocol::validate_openid4vp_create_request_jti(
                 &input.create_request_jti,
             )
@@ -570,13 +570,15 @@ impl PresentationOperations for ServerPresentationOperations {
         wallet_nonce: Option<&'a str>,
     ) -> PresentationFuture<'a, Result<PresentationResponseBody, PresentationHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vp_error(
                     503,
                     "temporarily_unavailable",
                     "Presentation verifier is unavailable.",
                 ));
-            }
+            };
             let mut transaction = self
                 .store
                 .request(transaction_id, Utc::now())
@@ -680,13 +682,15 @@ impl PresentationOperations for ServerPresentationOperations {
         input: PresentationResponseInput,
     ) -> PresentationFuture<'a, Result<Option<String>, PresentationHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vp_error(
                     503,
                     "temporarily_unavailable",
                     "Presentation verifier is unavailable.",
                 ));
-            }
+            };
             let transaction = self
                 .store
                 .request(transaction_id, Utc::now())
@@ -780,13 +784,15 @@ impl PresentationOperations for ServerPresentationOperations {
     ) -> PresentationFuture<'a, Result<nazo_openid4vp::PresentationResult, PresentationHttpError>>
     {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vp_error(
                     503,
                     "temporarily_unavailable",
                     "Presentation verifier is unavailable.",
                 ));
-            }
+            };
             self.store
                 .result(transaction_id, Utc::now())
                 .await

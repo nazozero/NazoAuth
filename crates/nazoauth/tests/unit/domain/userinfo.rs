@@ -19,6 +19,10 @@ fn userinfo_config(settings: &Settings) -> UserinfoConfig {
         settings.protocol.default_audience.as_str(),
         settings.endpoint.mtls_endpoint_base_url.as_str(),
         settings.protocol.dpop_nonce_policy,
+        settings
+            .protocol
+            .authorization_server_profile
+            .requires_fapi2_security(),
     )
 }
 

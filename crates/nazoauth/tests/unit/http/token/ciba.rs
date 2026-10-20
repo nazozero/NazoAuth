@@ -393,7 +393,7 @@ async fn call_ciba_token_with_prepared_service(
         grant_type: Some(nazo_auth::GrantType::Ciba),
         client_epoch,
         config: &issuance_config,
-        modules: &modules,
+        modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
         authorization: &authorization,
         security_audit,
         remote_client_documents: crate::test_support::test_remote_client_documents(),

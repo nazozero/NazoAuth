@@ -88,6 +88,8 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         credential_id: &'a str,
     ) -> RepositoryFuture<'a, Option<PasskeyCredential>>;
 
+    /// Commit the credential and its required `passkey_registered` audit event
+    /// atomically. An error must leave neither business state nor success audit.
     fn insert(
         &self,
         tenant_id: TenantId,

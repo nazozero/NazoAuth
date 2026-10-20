@@ -100,13 +100,13 @@ struct Signer;
 impl LogoutTokenSignerPort for Signer {
     fn sign_logout_token<'a>(
         &'a self,
-        client_id: &'a str,
+        client: &'a RegisteredLogoutClient,
         _subject: Option<&'a str>,
         sid: &'a str,
         _issued_at: chrono::DateTime<Utc>,
         _ttl_seconds: i64,
     ) -> LogoutFuture<'a, String> {
-        Box::pin(async move { Ok(format!("logout-token:{client_id}:{sid}")) })
+        Box::pin(async move { Ok(format!("logout-token:{}:{sid}", client.client_id)) })
     }
 }
 
@@ -144,7 +144,7 @@ fn no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel() {
 }
 
 #[test]
-fn hinted_frontchannel_preserves_only_hinted_client_compatibility() {
+fn hinted_frontchannel_notifies_every_active_rp_in_the_session() {
     let tenant_id = Uuid::now_v7();
     let clients = Arc::new(Clients::default());
     *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
@@ -154,13 +154,28 @@ fn hinted_frontchannel_preserves_only_hinted_client_compatibility() {
     ]);
     let outbox = Arc::new(Outbox::default());
     let service = service(clients, outbox);
-    let result =
-        futures_executor::block_on(service.execute(input(tenant_id, Some("client-a")))).unwrap();
-
-    assert_eq!(
-        result.frontchannel_logout_urls,
-        vec!["https://client-a.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1"]
-    );
+    for with_hint in [false, true] {
+        let mut request = input(tenant_id, Some("client-a"));
+        if with_hint {
+            let session = request.session.as_ref().unwrap();
+            request.request.id_token_hint_present = true;
+            request.id_token_hint = Some(IdTokenHintClaims {
+                sub: session.user_id.to_string(),
+                aud: json!("client-a"),
+                sid: Some(session.oidc_sid.clone()),
+            });
+            request.csrf_authorized = false;
+            request.user_confirmed = false;
+        }
+        let result = futures_executor::block_on(service.execute(request)).unwrap();
+        assert_eq!(
+            result.frontchannel_logout_urls,
+            vec![
+                "https://client-a.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1",
+                "https://client-b.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1",
+            ]
+        );
+    }
 }
 
 #[test]
@@ -367,6 +382,8 @@ fn input(tenant_id: Uuid, client_id: Option<&str>) -> LogoutInput {
 
 fn client(tenant_id: Uuid, client_id: &str, active: bool) -> RegisteredLogoutClient {
     RegisteredLogoutClient {
+        require_fapi2: false,
+        id_token_signed_response_alg: None,
         id: Uuid::now_v7(),
         tenant_id,
         client_id: client_id.to_owned(),

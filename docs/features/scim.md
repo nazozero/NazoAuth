@@ -69,7 +69,13 @@ Outside the implemented SCIM boundary:
 - `DELETE /scim/v2/Users/{user_id}`
 - `POST /scim/v2/SecurityEvents` (RFC 8936 poll delivery, when enabled)
 
-`DELETE` is a soft delete: it sets `active=false` and keeps the user record for audit and token-revocation continuity.
+`DELETE` records `deleted_at`, sets `active=false`, and revokes the user's
+existing authorization state in one transaction. The internal row remains for
+audit and foreign-key continuity. Deleted resources are absent from GET/list;
+GET, PUT, PATCH and repeated DELETE return 404. They cannot be reactivated.
+Setting `active=false` with PATCH remains a reversible deactivation. When SET
+emission is enabled, deletion emits the delete event once, rather than a
+deactivate event.
 
 ## Identity Mapping
 

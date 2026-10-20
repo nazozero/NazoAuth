@@ -6,7 +6,6 @@ use crate::{
     token::issue::TokenIssuanceContext,
 };
 use nazo_auth::CibaRequestState;
-use nazo_runtime_modules::SnapshotStore;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -63,17 +62,6 @@ pub struct CibaTokenContext<'request, 'issuance> {
     pub issuance: &'request TokenIssuanceContext<'issuance>,
     pub handles: &'request CibaTokenHandles,
     pub request: &'request TokenRequestFacts<'request>,
-}
-
-pub fn ciba_module_admissible(
-    runtime: &SnapshotStore,
-    admission: nazo_auth::CapabilityAdmission,
-) -> bool {
-    nazo_auth::module_admissible(
-        runtime.load_full().as_ref(),
-        nazo_runtime_modules::ModuleId::Ciba,
-        admission,
-    )
 }
 
 #[derive(Clone, Copy, Debug)]

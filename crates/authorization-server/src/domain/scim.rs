@@ -58,14 +58,6 @@ impl ServerScimRequestAuthorizer {
         }
     }
 
-    fn enabled(&self) -> bool {
-        nazo_auth::module_admissible(
-            &self.runtime_modules.load_full(),
-            nazo_runtime_modules::ModuleId::Scim,
-            nazo_auth::CapabilityAdmission::NewRequest,
-        )
-    }
-
     async fn credential(&self, token: &str) -> Result<ScimTokenCredential, ScimAuthorizationError> {
         match self.service.active_credential(&blake3_hex(token)).await {
             Ok(Some(credential)) => {
@@ -152,10 +144,21 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
         facts: ScimAuthenticationFacts<'a>,
         required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
-        let enabled = self.enabled();
+        let modules = Arc::new(self.runtime_modules.request());
         let token = facts.bearer_token;
         Box::pin(async move {
-            if !enabled {
+            if !modules.permits(
+                nazo_runtime_modules::ModuleId::Scim,
+                nazo_auth::CapabilityAdmission::NewRequest,
+            ) {
+                return Err(ScimAuthorizationError::Disabled);
+            }
+            if matches!(required_scope, ScimRequiredScope::Events)
+                && !modules.permits(
+                    nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+                    nazo_auth::CapabilityAdmission::ExistingTransaction,
+                )
+            {
                 return Err(ScimAuthorizationError::Disabled);
             }
             let ip_hash = blake3_hex(&facts.source_ip);
@@ -188,9 +191,6 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 .await?;
                 return Err(ScimAuthorizationError::InsufficientScope);
             }
-            if !self.enabled() {
-                return Err(ScimAuthorizationError::Disabled);
-            }
             self.record_use(
                 ip_hash,
                 facts.user_agent.map(blake3_hex),
@@ -198,6 +198,7 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 &credential,
             );
             Ok(ScimAuthorizedRequest {
+                modules,
                 tenant: self.tenant,
                 cursor_subject: ScimCursorSubject {
                     tenant_id: self.tenant.tenant_id.as_uuid(),
@@ -210,22 +211,6 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 }),
             })
         })
-    }
-
-    fn security_events_enabled(&self) -> bool {
-        nazo_auth::module_admissible(
-            &self.runtime_modules.load_full(),
-            nazo_runtime_modules::ModuleId::ScimSecurityEvents,
-            nazo_auth::CapabilityAdmission::NewRequest,
-        )
-    }
-
-    fn security_event_delivery_enabled(&self) -> bool {
-        nazo_auth::module_admissible(
-            &self.runtime_modules.load_full(),
-            nazo_runtime_modules::ModuleId::ScimSecurityEvents,
-            nazo_auth::CapabilityAdmission::ExistingTransaction,
-        )
     }
 }
 

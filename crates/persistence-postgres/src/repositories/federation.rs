@@ -43,9 +43,11 @@ impl FederationRepository {
                 external_identity_links::claims.eq(link.claims),
             ))
             .returning(ExternalIdentityLinkRow::as_returning())
-            .get_result(&mut connection)
+            .load::<ExternalIdentityLinkRow>(&mut connection)
             .await
-            .map_err(map_error)?;
+            .map_err(map_error)?
+            .pop()
+            .ok_or(RepositoryError::NotFound)?;
         identity::federation_link(row).map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn list_summaries(
@@ -84,10 +86,10 @@ impl FederationRepository {
                 .filter(external_identity_links::user_id.eq(user_id.as_uuid())),
         )
         .returning(ExternalIdentityLinkSummaryRow::as_returning())
-        .get_result(&mut connection)
+        .load::<ExternalIdentityLinkSummaryRow>(&mut connection)
         .await
-        .optional()
         .map_err(map_error)?
+        .pop()
         .map(identity::federation_link_summary)
         .transpose()
         .map_err(|error| RepositoryError::Consistency(error.0))
@@ -151,10 +153,12 @@ impl FederationRepository {
             password_hash,
         } = new_identity;
         let borrowed_login = &login;
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let result = connection
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let result = guard
+            .connection()
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let tenant = borrowed_login.tenant;
                 let user = diesel::insert_into(users::table)
@@ -184,11 +188,33 @@ impl FederationRepository {
                     ))
                     .execute(connection)
                     .await?;
+                super::audit_ledger::append_fresh_security_audit_on_connection(
+                    connection,
+                    &nazo_persistence::SecurityAuditEvent {
+                        event_id: uuid::Uuid::now_v7(),
+                        event_type: "external_identity_linked".into(),
+                        event_category: "identity_lifecycle".into(),
+                        payload: serde_json::json!({
+                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                            "event_category": "identity_lifecycle",
+                            "tenant_id": tenant.tenant_id.as_uuid(),
+                            "user_id": user.id,
+                            "provider_type": &borrowed_login.provider_type,
+                            "provider_id": &borrowed_login.provider_id,
+                        }),
+                        occurred_at: chrono::Utc::now(),
+                    },
+                )
+                .await?;
                 Ok(user)
             })
             .await;
         // Conflict recovery borrows from this pool again after the transaction has ended.
-        drop(connection);
+        if result.is_ok() {
+            guard.return_to_pool();
+        } else {
+            drop(guard);
+        }
         match result {
             Ok(row) => row
                 .try_into()

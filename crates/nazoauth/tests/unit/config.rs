@@ -1215,3 +1215,22 @@ fn database_url_does_not_rewrite_unsupported_legacy_driver_scheme() {
         "postgresql+psycopg://nazo:secret@db.internal:5432/oauth"
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn generated_secret_is_published_with_owner_only_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = temp_config_dir("secret_permissions");
+    let path = directory.join("private").join("secret");
+    let value = read_or_create_generated_secret(&path).unwrap();
+    assert!(!value.is_empty());
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        std::fs::read_dir(path.parent().unwrap()).unwrap().count(),
+        1
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}

@@ -18,6 +18,7 @@ struct Ports {
     refresh: Option<RefreshToken>,
     calls: Arc<Mutex<Calls>>,
     unavailable: bool,
+    inactive_subject: bool,
 }
 
 #[allow(unused_variables)]
@@ -80,7 +81,13 @@ impl TokenRepositoryPort for Ports {
         panic!("unexpected active_subject_claims call")
     }
     fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {
-        panic!("unexpected active_subject_id call")
+        Box::pin(async move {
+            if self.unavailable {
+                Err(TokenPortError::Unavailable)
+            } else {
+                Ok((!self.inactive_subject).then_some(user_id))
+            }
+        })
     }
     fn active_subject_id_by_access_token<'a>(
         &'a self,
@@ -309,6 +316,7 @@ fn fixture(
         refresh: None,
         calls: Arc::new(Mutex::new(Calls::default())),
         unavailable,
+        inactive_subject: false,
     };
     (
         TokenService::new(ports.clone(), ports.clone(), ports.clone()),
@@ -474,7 +482,7 @@ fn ownership_introspection_audience_shapes_keep_membership_and_tenant_boundaries
 }
 
 #[test]
-fn ownership_refresh_introspection_preserves_scope_output() {
+fn refresh_introspection_preserves_scope_and_requires_current_subject_eligibility() {
     let client = client(Uuid::from_u128(101));
     let now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
     for (scopes, expected) in [
@@ -546,6 +554,7 @@ fn ownership_refresh_introspection_preserves_scope_output() {
             refresh: Some(token),
             calls: Arc::new(Mutex::new(Calls::default())),
             unavailable: false,
+            inactive_subject: false,
         };
         let service = TokenService::new(ports.clone(), ports.clone(), ports.clone());
         let document = futures_executor::block_on(service.inspect_token(
@@ -559,6 +568,24 @@ fn ownership_refresh_introspection_preserves_scope_output() {
         assert_eq!(document["active"], true);
         assert_eq!(document["scope"], expected);
         assert_eq!(ports.calls.lock().unwrap().revocation_reads, 0);
+        for (inactive_subject, unavailable) in [(false, false), (true, false), (false, true)] {
+            let mut ports = ports.clone();
+            ports.refresh.as_mut().unwrap().user_id = Some(Uuid::from_u128(3));
+            ports.inactive_subject = inactive_subject;
+            ports.unavailable = unavailable;
+            let service = TokenService::new(ports.clone(), ports.clone(), ports);
+            let result = futures_executor::block_on(service.inspect_token(
+                "https://issuer.example",
+                "refresh",
+                &client,
+                now,
+            ));
+            match (inactive_subject, unavailable) {
+                (_, true) => assert_eq!(result, Err(TokenPortError::Unavailable)),
+                (true, false) => assert_eq!(result, Ok(TokenInspection::Inactive)),
+                _ => assert!(matches!(result, Ok(TokenInspection::ActiveRefresh { .. }))),
+            }
+        }
     }
 }
 
@@ -624,4 +651,16 @@ fn old_policy_documents_deny_cross_client_introspection_without_schema_churn() {
         serde_json::from_value::<nazo_auth::ClientSecurityPolicy>(stored).unwrap(),
         policy
     );
+}
+
+#[test]
+fn fapi_response_algorithm_rejects_legacy_rsa_and_preserves_oidc_defaults() {
+    use nazo_auth::jwt_response_signing_algorithm as select;
+    assert_eq!(select(None, false), Ok(None));
+    assert_eq!(select(Some("RS256"), false), Ok(Some("RS256")));
+    assert_eq!(select(None, true), Ok(Some("PS256")));
+    assert!(select(Some("RS256"), true).is_err());
+    for &algorithm in nazo_auth::FAPI2_JWT_SIGNING_ALGS {
+        assert_eq!(select(Some(algorithm), true), Ok(Some(algorithm)));
+    }
 }

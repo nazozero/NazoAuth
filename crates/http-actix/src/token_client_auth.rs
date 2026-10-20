@@ -32,7 +32,8 @@ pub fn token_client_auth_transport_facts(
     )
 }
 
-fn basic_authorization_credentials(request: &HttpRequest) -> BasicAuthorizationCredentials {
+#[must_use]
+pub fn basic_authorization_credentials(request: &HttpRequest) -> BasicAuthorizationCredentials {
     let Some(raw) = request.headers().get(header::AUTHORIZATION) else {
         return BasicAuthorizationCredentials::Absent;
     };

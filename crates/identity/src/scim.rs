@@ -163,12 +163,12 @@ impl ScimService {
             .await
     }
 
-    pub async fn deactivate_user(
+    pub async fn delete_user(
         &self,
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<bool, RepositoryError> {
-        self.deactivate_user_with_mutation(
+        self.delete_user_with_mutation(
             tenant,
             user_id,
             nazo_scim_events::MutationContext::disabled(),
@@ -176,13 +176,13 @@ impl ScimService {
         .await
     }
 
-    pub async fn deactivate_user_with_mutation(
+    pub async fn delete_user_with_mutation(
         &self,
         tenant: TenantContext,
         user_id: UserId,
         mutation: nazo_scim_events::MutationContext,
     ) -> Result<bool, RepositoryError> {
-        self.repository.deactivate(tenant, user_id, mutation).await
+        self.repository.delete(tenant, user_id, mutation).await
     }
 
     pub async fn active_credential(

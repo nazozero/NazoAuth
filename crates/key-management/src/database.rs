@@ -51,7 +51,7 @@ pub(crate) async fn load_or_create(
     // Startup is a lifecycle boundary.  Do not wait for the periodic refresh
     // before creating a required prepublished key or promoting one that has
     // completed its prepublication window.
-    let (loaded, _) = update(&binding, record, true, |payload| {
+    let (loaded, _) = update(&binding, record, Some(settings), |payload| {
         maintain_payload(payload, settings)
     })
     .await?;
@@ -68,12 +68,83 @@ pub(crate) struct DatabaseKeysetBinding {
 pub(crate) async fn refresh(
     settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
-) -> anyhow::Result<LoadedKeyset> {
-    update(binding, require_record(binding).await?, true, |payload| {
+    prepared: Option<&PreparedDatabaseSource>,
+) -> anyhow::Result<Option<LoadedKeyset>> {
+    let record = require_record(binding).await?;
+    if let Some(prepared) = prepared
+        && prepared.fingerprint == record_fingerprint(&record)?
+        && prepared
+            .next_lifecycle_check
+            .is_none_or(|deadline| Utc::now() < deadline)
+    {
+        return Ok(None);
+    }
+    update(binding, record, Some(settings), |payload| {
         maintain_payload(payload, settings)
     })
     .await
-    .map(|(loaded, _)| loaded)
+    .map(|(loaded, _)| Some(loaded))
+}
+
+#[derive(Clone)]
+pub(crate) struct PreparedDatabaseSource {
+    fingerprint: [u8; 32],
+    next_lifecycle_check: Option<DateTime<Utc>>,
+}
+
+fn record_fingerprint(record: &PersistedSigningKeyset) -> anyhow::Result<[u8; 32]> {
+    use sha2::{Digest as _, Sha256};
+    let mut digest = Sha256::new();
+    digest.update(serde_json::to_vec(&(
+        record.revision,
+        &record.wrapping_key_id,
+        &record.public_metadata,
+    ))?);
+    digest.update(&record.encrypted_private_material);
+    Ok(digest.finalize().into())
+}
+
+fn prepared_source(
+    fingerprint: [u8; 32],
+    payload: &Value,
+    settings: Option<&KeySettings>,
+) -> anyhow::Result<Option<PreparedDatabaseSource>> {
+    let Some(settings) = settings else {
+        return Ok(None);
+    };
+    let now = Utc::now();
+    let keys = payload["keys"]
+        .as_array()
+        .ok_or_else(|| anyhow!("keyset missing keys"))?;
+    let active_kid = payload["active_kid"]
+        .as_str()
+        .ok_or_else(|| anyhow!("keyset missing active kid"))?;
+    let active = keys
+        .iter()
+        .find(|key| key["kid"].as_str() == Some(active_kid))
+        .ok_or_else(|| anyhow!("keyset active key missing"))?;
+    let local = active["backend"].as_str() == Some("local-db");
+    let rotation_due = key_entry_created_at(active)? + settings.rotation_interval;
+    let candidate = prepublished_candidate(keys, active_kid, key_entry_algorithm(active)?, local)?;
+    let rotation_check = match candidate {
+        Some(index) => {
+            Some(rotation_due.max(key_entry_created_at(&keys[index])? + settings.prepublish_window))
+        }
+        None if local => Some(rotation_due - settings.prepublish_window),
+        None => None,
+    };
+    let retirement = keys
+        .iter()
+        .map(key_entry_retire_at)
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .filter(|time| *time > now)
+        .min();
+    Ok(Some(PreparedDatabaseSource {
+        fingerprint,
+        next_lifecycle_check: rotation_check.into_iter().chain(retirement).min(),
+    }))
 }
 
 pub(crate) async fn inspect(
@@ -113,7 +184,7 @@ pub(crate) async fn register_local(
 ) -> anyhow::Result<(String, LoadedKeyset, i64)> {
     validate_local_registration(&registration)?;
     let mut registered_kid = None;
-    let (loaded, revision) = update(binding, require_record(binding).await?, false, |payload| {
+    let (loaded, revision) = update(binding, require_record(binding).await?, None, |payload| {
         let keys = payload
             .get_mut("keys")
             .and_then(Value::as_array_mut)
@@ -173,7 +244,7 @@ pub(crate) async fn register_external(
     registration: ExternalKeyRegistration,
 ) -> anyhow::Result<LoadedKeyset> {
     validate_external_registration(&registration)?;
-    update(binding, require_record(binding).await?, false, |payload| {
+    update(binding, require_record(binding).await?, None, |payload| {
         let keys = payload.get_mut("keys").and_then(Value::as_array_mut).ok_or_else(|| anyhow!("keyset missing keys"))?;
         let algorithm = signing_algorithm_name(registration.algorithm).ok_or_else(|| anyhow!("unsupported signing alg"))?;
         if let Some(existing) = keys.iter().find(|key| key.get("kid").and_then(Value::as_str) == Some(registration.kid.as_str())) {
@@ -392,26 +463,29 @@ async fn require_record(binding: &DatabaseKeysetBinding) -> anyhow::Result<Persi
 async fn update<F>(
     binding: &DatabaseKeysetBinding,
     mut record: PersistedSigningKeyset,
-    reseal_if_current_key_changed: bool,
+    lifecycle_settings: Option<&KeySettings>,
     mut mutation: F,
 ) -> anyhow::Result<(LoadedKeyset, i64)>
 where
     F: FnMut(&mut Value) -> anyhow::Result<bool>,
 {
     for _ in 0..MAX_CAS_ATTEMPTS {
+        let fingerprint = record_fingerprint(&record)?;
         let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
         if !mutation(&mut payload)?
-            && (!reseal_if_current_key_changed
+            && (lifecycle_settings.is_none()
                 || record.wrapping_key_id == binding.wrapping_keys.current_id())
         {
-            return load_payload(binding.external_signer.as_ref(), &payload)
-                .map(|loaded| (loaded, record.revision));
+            let mut loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
+            loaded.database_source = prepared_source(fingerprint, &payload, lifecycle_settings)?;
+            return Ok((loaded, record.revision));
         }
         let revision = record
             .revision
             .checked_add(1)
             .ok_or_else(|| anyhow!("signing keyset revision overflow"))?;
-        let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
+        let mut loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
+        let source = prepared_source(fingerprint, &payload, lifecycle_settings)?;
         let candidate =
             persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys)?;
         match binding
@@ -419,7 +493,13 @@ where
             .compare_and_swap(record.revision, candidate)
             .await?
         {
-            SigningKeysetCompareAndSwapResult::Applied(_) => return Ok((loaded, revision)),
+            SigningKeysetCompareAndSwapResult::Applied(record) => {
+                if let Some(mut source) = source {
+                    source.fingerprint = record_fingerprint(&record)?;
+                    loaded.database_source = Some(source);
+                }
+                return Ok((loaded, revision));
+            }
             SigningKeysetCompareAndSwapResult::Conflict(winner) => record = winner,
         }
     }
@@ -428,6 +508,14 @@ where
     ))
     .into())
 }
+
+const PROTOCOL_SIGNING_PURPOSES: [SigningPurpose; 5] = [
+    SigningPurpose::IdToken,
+    SigningPurpose::Jarm,
+    SigningPurpose::Introspection,
+    SigningPurpose::AccessToken,
+    SigningPurpose::LogoutToken,
+];
 
 fn initial_payload() -> anyhow::Result<Value> {
     initial_payload_with_active(nazo_crypto::jwt::Algorithm::RS256)
@@ -452,11 +540,7 @@ pub(crate) fn initial_payload_with_active(
         keys.push(local_entry(
             algorithm,
             now.clone(),
-            Some([
-                SigningPurpose::IdToken,
-                SigningPurpose::Jarm,
-                SigningPurpose::Introspection,
-            ]),
+            Some(PROTOCOL_SIGNING_PURPOSES),
         )?);
     }
     Ok(
@@ -511,6 +595,21 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
         let candidate =
             prepublished_candidate(keys, &active_kid, active_algorithm, active_is_local)?;
         let mut changed = false;
+        // Upgrade the generated local protocol key's previous purpose set in place.
+        // Explicit external key restrictions remain operator-owned.
+        for entry in keys.iter_mut() {
+            if entry.get("backend").and_then(Value::as_str) == Some("local-db")
+                && key_entry_purposes(entry)?.is_some_and(|purposes| {
+                    purposes.len() == 3
+                        && PROTOCOL_SIGNING_PURPOSES[..3]
+                            .iter()
+                            .all(|purpose| purposes.contains(purpose))
+                })
+            {
+                entry["purposes"] = json!(PROTOCOL_SIGNING_PURPOSES.map(SigningPurpose::as_str));
+                changed = true;
+            }
+        }
         let mut next_active = None;
         if now >= rotation_due {
             if let Some(index) = candidate {
@@ -559,11 +658,7 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
                 keys.push(local_entry(
                     algorithm,
                     timestamp(now),
-                    Some([
-                        SigningPurpose::IdToken,
-                        SigningPurpose::Jarm,
-                        SigningPurpose::Introspection,
-                    ]),
+                    Some(PROTOCOL_SIGNING_PURPOSES),
                 )?);
                 changed = true;
             }
@@ -626,8 +721,9 @@ fn has_live_protocol_key(
         if entry.get("backend").and_then(Value::as_str) == Some("local-db")
             && key_entry_algorithm(entry)? == algorithm
             && key_entry_purposes(entry)?.is_some_and(|purposes| {
-                purposes.contains(&SigningPurpose::IdToken)
-                    && purposes.contains(&SigningPurpose::Jarm)
+                PROTOCOL_SIGNING_PURPOSES
+                    .iter()
+                    .all(|purpose| purposes.contains(purpose))
             })
             && key_entry_retire_at(entry)?.is_none_or(|retire| retire > now)
         {
@@ -864,6 +960,7 @@ fn load_payload(
         });
     }
     let loaded = LoadedKeyset {
+        database_source: None,
         active_kid,
         active_alg: active_alg.ok_or_else(|| anyhow!("active key is unavailable"))?,
         active_signing_key: active.ok_or_else(|| anyhow!("active signer unavailable"))?,

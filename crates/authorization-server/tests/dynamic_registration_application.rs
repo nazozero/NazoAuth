@@ -264,8 +264,8 @@ struct Guard {
     limit: Option<DynamicRegistrationRateLimitError>,
 }
 impl DynamicRegistrationRequestGuard for Guard {
-    fn accepts_new_requests(&self) -> bool {
-        true
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        test_module_lease(true)
     }
     fn enforce_rate_limit<'a>(
         &'a self,
@@ -551,7 +551,7 @@ fn dynamic_registration_secret_port_hashes_and_compares_without_plaintext_reuse(
 #[test]
 fn dynamic_registration_guard_fails_closed_for_unavailable_dependencies() {
     let guard = server_guard(true, Err(RequestRateLimitError));
-    assert!(guard.accepts_new_requests());
+    assert!(guard.acquire_request().is_some());
     assert_eq!(
         block_on(guard.enforce_rate_limit("203.0.113.77")),
         Err(DynamicRegistrationRateLimitError::Unavailable)
@@ -559,7 +559,7 @@ fn dynamic_registration_guard_fails_closed_for_unavailable_dependencies() {
 }
 #[test]
 fn dynamic_registration_guard_rejects_new_requests_when_module_is_disabled() {
-    assert!(!server_guard(false, Ok(1)).accepts_new_requests());
+    assert!(server_guard(false, Ok(1)).acquire_request().is_none());
 }
 #[test]
 fn dynamic_registration_guard_preserves_fixed_window_threshold() {
@@ -582,7 +582,7 @@ fn configuration_update_keeps_administrator_policy_through_validation() {
         let app = application(store.clone(), Arc::new(Guard::default()));
         let created = create(&app).await;
         assert!(
-            created
+            !created
                 .client
                 .security_policy
                 .allow_confidential_oidc_without_pkce
@@ -590,7 +590,7 @@ fn configuration_update_keeps_administrator_policy_through_validation() {
         {
             let mut state = store.0.lock().unwrap();
             let policy = &mut state.client.as_mut().unwrap().registration.security_policy;
-            policy.allow_confidential_oidc_without_pkce = false;
+            policy.allow_confidential_oidc_without_pkce = true;
             policy.introspection_audiences = vec!["https://resource.example".to_owned()];
         }
         let DynamicRegistrationResult::Updated(updated) = app
@@ -606,7 +606,7 @@ fn configuration_update_keeps_administrator_policy_through_validation() {
             panic!("updated result")
         };
         assert!(
-            !updated
+            updated
                 .client
                 .security_policy
                 .allow_confidential_oidc_without_pkce
@@ -617,4 +617,23 @@ fn configuration_update_keeps_administrator_policy_through_validation() {
         );
         assert_eq!(updated.response_types, ["code"]);
     });
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::DynamicClientRegistration].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::DynamicClientRegistration,
+        CapabilityAdmission::NewRequest,
+    )
 }

@@ -1,11 +1,11 @@
 use nazo_oauth_server::contracts::{
     oauth_error::OAuthEndpointError,
-    token_client_auth::{BasicAuthorizationCredentials, TokenClientAuthTransportFacts},
+    token_client_auth::BasicAuthorizationCredentials,
     token_endpoint::{TokenEndpointSuccess, prepare_token_request},
     token_forms::{ParsedTokenForm, PreAuthorizedTokenParameters, TokenForm},
 };
 
-fn parsed(grant: &str, audience: bool) -> ParsedTokenForm {
+fn parsed(grant: &str, audience: bool, conflicting: bool) -> ParsedTokenForm {
     ParsedTokenForm {
         form: TokenForm {
             grant_type: grant.into(),
@@ -17,7 +17,7 @@ fn parsed(grant: &str, audience: bool) -> ParsedTokenForm {
             refresh_token: None,
             device_secret: None,
             scope: None,
-            client_id: None,
+            client_id: conflicting.then(|| "form-client".into()),
             client_secret: None,
             client_assertion_type: None,
             client_assertion: None,
@@ -38,22 +38,15 @@ fn parsed(grant: &str, audience: bool) -> ParsedTokenForm {
     }
 }
 
-fn auth(conflicting: bool) -> TokenClientAuthTransportFacts {
-    TokenClientAuthTransportFacts::from_parts(
-        BasicAuthorizationCredentials::Malformed,
-        conflicting.then(|| "form-client".into()),
-        None,
-        None,
-        None,
-    )
-}
-
 #[test]
 fn audience_error_precedes_authentication_source_conflict() {
     let Err(OAuthEndpointError::Token {
         fields,
         basic_challenge,
-    }) = prepare_token_request(parsed("client_credentials", true), auth(true))
+    }) = prepare_token_request(
+        parsed("client_credentials", true, true),
+        BasicAuthorizationCredentials::Malformed,
+    )
     else {
         panic!("audience must fail before authentication sources")
     };
@@ -72,8 +65,12 @@ fn allowed_audience_still_rejects_conflicting_authentication_sources() {
         fields,
         basic_challenge,
     }) = prepare_token_request(
-        parsed(nazo_oauth_server::token::TOKEN_EXCHANGE_GRANT_TYPE, true),
-        auth(true),
+        parsed(
+            nazo_oauth_server::token::TOKEN_EXCHANGE_GRANT_TYPE,
+            true,
+            true,
+        ),
+        BasicAuthorizationCredentials::Malformed,
     )
     else {
         panic!("conflicting authentication sources must fail")
@@ -89,11 +86,21 @@ fn allowed_audience_still_rejects_conflicting_authentication_sources() {
 
 #[test]
 fn preflight_leaves_credential_validation_to_execution() {
-    assert!(prepare_token_request(parsed("client_credentials", false), auth(false)).is_ok());
     assert!(
         prepare_token_request(
-            parsed(nazo_oauth_server::token::TOKEN_EXCHANGE_GRANT_TYPE, true),
-            auth(false),
+            parsed("client_credentials", false, false),
+            BasicAuthorizationCredentials::Malformed
+        )
+        .is_ok()
+    );
+    assert!(
+        prepare_token_request(
+            parsed(
+                nazo_oauth_server::token::TOKEN_EXCHANGE_GRANT_TYPE,
+                true,
+                false
+            ),
+            BasicAuthorizationCredentials::Malformed,
         )
         .is_ok()
     );

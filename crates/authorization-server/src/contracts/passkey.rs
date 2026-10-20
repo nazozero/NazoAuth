@@ -16,6 +16,7 @@ pub enum PasskeyEndpointError {
     Core(PasskeyError),
     SessionMissing,
     SessionUnavailable,
+    ReauthenticationRequired,
 }
 
 impl From<PasskeyError> for PasskeyEndpointError {

@@ -11,6 +11,25 @@ pub async fn issue_token_response(
     mode: TokenIssuanceMode,
     mut issue: TokenIssue,
 ) -> Result<TokenEndpointSuccess, OAuthEndpointError> {
+    let require_fapi2 = context.config.profile.requires_fapi2_security()
+        || client.security_policy.requires_fapi2_security();
+    let issue_includes_openid = issue.scopes.iter().any(|s| s == "openid");
+    let id_token_algorithm = if issue_includes_openid {
+        nazo_auth::jwt_response_signing_algorithm(
+            client.id_token_signed_response_alg.as_deref(),
+            require_fapi2,
+        )
+        .map_err(|_| {
+            OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                "invalid_client",
+                "Client JWT signing policy is incompatible with FAPI 2.0.",
+                false,
+            )
+        })?
+    } else {
+        None
+    };
     let auth_code_ttl_seconds = context.config.auth_code_ttl_seconds.max(1);
     issue.authorization_details = match normalize_authorization_details(issue.authorization_details)
     {
@@ -31,7 +50,7 @@ pub async fn issue_token_response(
             ));
         }
     };
-    let issue_includes_openid = issue.scopes.iter().any(|s| s == "openid");
+
     if issue_includes_openid && issue.user_id.is_none() {
         mark_failed_authorization_code_if_needed(
             token_service,
@@ -358,6 +377,7 @@ pub async fn issue_token_response(
     })?;
     let issued_access_token = match token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            signing_algorithm: require_fapi2.then_some("PS256"),
             authorization_id: Some(authorization_id),
             client_epoch: Some(principal_state.client_epoch),
             user_epoch: principal_state.user_epoch,
@@ -483,7 +503,8 @@ pub async fn issue_token_response(
                 acr: issue.acr.as_deref(),
                 extra_claims: Some(&user_claims),
                 ttl_seconds: context.config.id_token_ttl_seconds,
-                signing_algorithm: signing_algorithm_name(id_token_signing_alg_for_client(client)),
+                signing_algorithm: id_token_algorithm
+                    .or_else(|| signing_algorithm_name(id_token_signing_alg_for_client(client))),
             })
             .await
         {

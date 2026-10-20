@@ -113,6 +113,11 @@ impl TokenClientAuthTransportFacts {
     }
 
     #[must_use]
+    pub fn form_client_id(&self) -> Option<&str> {
+        self.form_client_id.as_deref()
+    }
+
+    #[must_use]
     pub fn client_assertion(&self) -> Option<&str> {
         self.client_assertion.as_deref()
     }

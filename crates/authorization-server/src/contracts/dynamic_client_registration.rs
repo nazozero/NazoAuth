@@ -20,7 +20,7 @@ pub enum DynamicRegistrationRateLimitError {
 }
 
 pub trait DynamicRegistrationRequestGuard: Send + Sync {
-    fn accepts_new_requests(&self) -> bool;
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease>;
 
     fn enforce_rate_limit<'a>(
         &'a self,

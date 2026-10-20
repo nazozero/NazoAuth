@@ -141,10 +141,22 @@ pub fn authorization_server_metadata(
 ) -> Value {
     let capabilities = MetadataCapabilities::from_snapshot(snapshot);
     let issuer = input.issuer;
-    let response_signing_algs = input.signing_algorithms.response;
+    let response_signing_algs: Vec<_> = input
+        .signing_algorithms
+        .response
+        .iter()
+        .copied()
+        .filter(|algorithm| {
+            !input.profile.requires_fapi2_security()
+                || crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm)
+        })
+        .collect();
     let active_signing_algs = input.signing_algorithms.active;
-    let id_token_signing_algs =
+    let mut id_token_signing_algs =
         id_token_signing_alg_values_supported(input.signing_algorithms.id_token);
+    if input.profile.requires_fapi2_security() {
+        id_token_signing_algs.retain(|algorithm| crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm));
+    }
     let token_auth_methods = token_endpoint_auth_methods_supported(
         input.profile,
         input.ciba_profile,
@@ -162,7 +174,7 @@ pub fn authorization_server_metadata(
         .filter(|method| *method != "none")
         .collect();
     let token_auth_signing_algs =
-        token_endpoint_auth_signing_alg_values_supported(input.ciba_profile);
+        token_endpoint_auth_signing_alg_values_supported(input.profile, input.ciba_profile);
     let request_object_signing_algs =
         request_object_signing_alg_values_supported(input.profile, active_signing_algs);
     let mut response_modes = response_modes_supported(input.profile);
@@ -206,9 +218,9 @@ pub fn authorization_server_metadata(
         "token_endpoint_auth_methods_supported": token_auth_methods,
         "token_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
         "revocation_endpoint_auth_methods_supported": revocation_auth_methods,
-        "revocation_endpoint_auth_signing_alg_values_supported": SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        "revocation_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
         "introspection_endpoint_auth_methods_supported": introspection_auth_methods,
-        "introspection_endpoint_auth_signing_alg_values_supported": SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        "introspection_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
         "scopes_supported": scopes_supported,
         "claims_supported": CLAIMS_SUPPORTED,
         "acr_values_supported": [BASELINE_ACR_VALUE],
@@ -380,10 +392,11 @@ fn token_endpoint_auth_methods_supported(
 }
 
 fn token_endpoint_auth_signing_alg_values_supported(
+    profile: MetadataAuthorizationServerProfile,
     ciba_profile: CibaMetadataProfile,
 ) -> &'static [&'static str] {
-    if ciba_profile.requires_fapi2_hardening() {
-        return &FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS;
+    if profile.requires_fapi2_security() || ciba_profile.requires_fapi2_hardening() {
+        return crate::FAPI2_JWT_SIGNING_ALGS;
     }
     SUPPORTED_CLIENT_JWT_SIGNING_ALGS
 }
@@ -392,6 +405,9 @@ fn request_object_signing_alg_values_supported<'a>(
     profile: MetadataAuthorizationServerProfile,
     active_signing_algs: &'a [&'a str],
 ) -> &'a [&'a str] {
+    if profile.requires_fapi2_security() {
+        return crate::FAPI2_JWT_SIGNING_ALGS;
+    }
     if profile.requires_signed_authorization_request() {
         return active_signing_algs;
     }

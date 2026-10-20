@@ -84,7 +84,7 @@ async fn token_refresh_with_repository(
                 grant_type: Some(nazo_auth::GrantType::RefreshToken),
                 client_epoch: 0,
                 config: &config,
-                modules: &modules,
+                modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
                 authorization: &authorization,
                 security_audit: crate::http::authorization::test_support::test_security_audit(),
                 remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -107,7 +107,6 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::test_support::client_signing_fixture;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
@@ -155,9 +154,6 @@ fn live_refresh_state_from_database_url(
     profile: AuthorizationServerProfile,
     database_url: String,
 ) -> Option<TestInfrastructure> {
-    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
-    let active_kid = "refresh-test-kid".to_owned();
-    let _public_jwk = key_material.public_jwk(&active_kid);
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.protocol.authorization_server_profile = profile;
@@ -168,7 +164,13 @@ fn live_refresh_state_from_database_url(
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_algorithm(
+            if profile.requires_fapi2_security() {
+                jsonwebtoken::Algorithm::PS256
+            } else {
+                jsonwebtoken::Algorithm::EdDSA
+            },
+        ),
     })
 }
 
@@ -1429,6 +1431,12 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
         response_json(token_refresh(&state, &req, &client, &form, None).await).await;
 
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert_eq!(
+        jsonwebtoken::decode_header(body["access_token"].as_str().unwrap())
+            .unwrap()
+            .alg,
+        jsonwebtoken::Algorithm::PS256
+    );
     let returned_refresh = body["refresh_token"]
         .as_str()
         .expect("bound lost-response retry must return a newly issued refresh token");

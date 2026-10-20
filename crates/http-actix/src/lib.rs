@@ -111,7 +111,9 @@ pub use session_management::{
     CheckSessionStatusQuery, SessionManagementConfig, SessionManagementEndpoint,
     check_session_iframe, check_session_status,
 };
-pub use token_client_auth::{TokenClientAuthForm, token_client_auth_transport_facts};
+pub use token_client_auth::{
+    TokenClientAuthForm, basic_authorization_credentials, token_client_auth_transport_facts,
+};
 pub use token_forms::{
     parse_token_form, parse_token_form_with_pre_authorized, parse_token_management_form,
     token_management_form_error, token_management_has_conflicting_client_auth,

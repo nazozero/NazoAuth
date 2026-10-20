@@ -52,7 +52,7 @@ pub trait ScimRepositoryPort: Send + Sync {
         mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, crate::PublicAccount>;
 
-    fn deactivate<'a>(
+    fn delete<'a>(
         &'a self,
         tenant: TenantContext,
         user_id: UserId,

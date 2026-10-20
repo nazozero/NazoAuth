@@ -29,8 +29,8 @@ impl nazo_oauth_server::contracts::fapi_resource::FapiResourceAuthorizer for NoF
 struct NoFapiSignatures;
 
 impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures for NoFapiSignatures {
-    fn enabled(&self) -> bool {
-        false
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        None
     }
     fn verify_and_consume<'a>(
         &'a self,
@@ -93,9 +93,9 @@ struct FailingFapiResponseSigner {
 impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures
     for FailingFapiResponseSigner
 {
-    fn enabled(&self) -> bool {
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
         self.calls.lock().unwrap().push("enabled");
-        true
+        test_module_lease(true)
     }
 
     fn verify_and_consume<'a>(
@@ -181,9 +181,9 @@ struct RecordingFapiSignatures {
 impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures
     for RecordingFapiSignatures
 {
-    fn enabled(&self) -> bool {
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
         self.calls.lock().unwrap().push("enabled");
-        true
+        test_module_lease(true)
     }
     fn verify_and_consume<'a>(
         &'a self,
@@ -260,6 +260,7 @@ async fn framework_boundary_transport_fapi_signed_error_preserves_body_and_conte
 }
 
 mod fapi_signed_contract {
+    use super::test_module_lease;
     use actix_web::{
         HttpRequest,
         body::to_bytes,
@@ -342,9 +343,9 @@ mod fapi_signed_contract {
         }
     }
     impl FapiHttpMessageSignatures for Ports {
-        fn enabled(&self) -> bool {
+        fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
             self.calls.lock().unwrap().push("enabled");
-            true
+            test_module_lease(true)
         }
         fn verify_and_consume<'a>(
             &'a self,
@@ -601,4 +602,23 @@ mod fapi_signed_contract {
             );
         }
     }
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::HttpMessageSignatures].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::HttpMessageSignatures,
+        CapabilityAdmission::NewRequest,
+    )
 }

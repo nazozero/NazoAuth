@@ -443,15 +443,8 @@ async fn run_recovery_invalidation(
         )
         .into());
     }
-    let access_token_ttl = crate::settings::bounded_access_token_ttl_seconds(&config)?;
-    let id_token_ttl = crate::settings::bounded_id_token_ttl_seconds(&config)?;
     let completed_at = Utc::now();
-    let not_before = completed_at
-        + Duration::seconds(
-            access_token_ttl.max(id_token_ttl)
-                + crate::settings::RECOVERY_ACCESS_TOKEN_CLOCK_SKEW_SECONDS
-                + 1,
-        );
+    let not_before = recovery_not_before(completed_at);
     let outcome = persistence
         .recovery_invalidations()
         .invalidate_after_restore(
@@ -468,6 +461,18 @@ async fn run_recovery_invalidation(
         not_before: outcome.not_before.timestamp(),
         revoked_refresh_tokens: outcome.revoked_refresh_tokens,
     })
+}
+
+pub(super) fn recovery_not_before(completed_at: chrono::DateTime<Utc>) -> chrono::DateTime<Utc> {
+    completed_at
+        + Duration::seconds(
+            // The restored configuration may predate a TTL increase. Only the
+            // issuer's enforced maximum bounds tokens issued after the backup.
+            crate::settings::MAX_ACCESS_TOKEN_TTL_SECONDS
+                .max(crate::settings::MAX_ID_TOKEN_TTL_SECONDS)
+                + crate::settings::RECOVERY_ACCESS_TOKEN_CLOCK_SKEW_SECONDS
+                + 1,
+        )
 }
 
 pub(super) fn map_recovery_persistence_error(

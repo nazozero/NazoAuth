@@ -11,9 +11,10 @@ pub(crate) async fn backchannel_authentication(
     req: HttpRequest,
     mut payload: Payload,
 ) -> HttpResponse {
-    if !application.check_admission(nazo_auth::CapabilityAdmission::NewRequest) {
+    let Some(_lease) = application.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+    else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let form = match parse_backchannel_authentication_form(&req, &mut payload).await {
         Ok(form) => form,
         Err(response) => return response,

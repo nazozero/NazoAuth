@@ -28,6 +28,12 @@ struct ProtectedHeader {
     enc: String,
     kid: String,
     cty: Option<String>,
+    #[serde(
+        rename = "crit",
+        default,
+        deserialize_with = "nazo_crypto::jwt::deserialize_present_header"
+    )]
+    critical_extension_present: bool,
 }
 
 impl KeyManager {
@@ -61,7 +67,8 @@ impl KeyManager {
         .context("invalid protected header")?;
         let generation = self.inner.generation.load();
         let expected = &generation.loaded.request_object_encryption_jwk;
-        if header.alg != "RSA-OAEP-256"
+        if header.critical_extension_present
+            || header.alg != "RSA-OAEP-256"
             || header.enc != "A256GCM"
             || header.cty.as_deref() != Some("JWT")
             || expected.get("kid").and_then(serde_json::Value::as_str) != Some(header.kid.as_str())

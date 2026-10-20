@@ -123,6 +123,12 @@ file during startup. Relative file paths resolve from the configuration
 directory. `_FILE` is intentionally limited to secret material: it is not a
 generic indirection for URLs, endpoint addresses, flags, identifiers, or limits.
 
+Generated secrets are written to owner-only temporary files before atomic
+publication. Unix creates them with mode 0600 and synchronizes the containing
+directory after publication. Windows restricts the dedicated secret directory
+to the current account and SYSTEM before file creation, so its inherited file
+ACL is private from creation. Failure to apply those permissions fails startup.
+
 The supported pairs are:
 
 | Primary setting | File setting |

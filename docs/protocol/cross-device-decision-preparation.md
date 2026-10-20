@@ -33,9 +33,13 @@ The approval sequence remains:
 
 Only step 4 avoids the read after a successful write. The claim-to-database
 read is deliberately retained: a later failed CAS cannot undo a stale worker's
-PostgreSQL grant write. The existing `Approving` recovery states and bounded
-claim timeout are unchanged. This does not introduce a cross-store transaction
-or claim that the existing load-to-grant race has been eliminated.
+PostgreSQL grant write. The PostgreSQL owner records a unique decision receipt
+for `(tenant_id, device_code_hash)` in the same transaction as the grant. It
+checks the authorization deadline after acquiring the grant/revocation lock.
+A retry of that decision never writes the grant again, including after a newer
+worker completes and the user revokes it. Expired receipts are removed by the
+existing security-state maintenance worker; expired decisions cannot write.
+The existing `Approving` recovery states and claim timeout remain unchanged.
 
 The Valkey adapter serializes a replacement once. On an acknowledged recorded
 CAS, it returns that exact written JSON as the opaque revision. It preserves
@@ -80,7 +84,8 @@ formats and normal HTTP request/response flows are unchanged. If a Device
 user-code mapping disappears or is replaced while the old state remains live,
 the decision CAS fails closed; exhausting conflict retries may now return
 HTTP 503 instead of the previous missing-mapping HTTP 400. Adapter and test
-implementations must be updated together; no database migration is required.
+implementations must be updated together. Migration
+`20261020000200_device_approval_receipts` adds the durable approval identity.
 
 ## Targeted evidence
 

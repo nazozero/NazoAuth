@@ -114,7 +114,7 @@ pub use claims::{
 pub use client::{ClientProfile, validate_token_request_profile};
 pub use client_assertion::{
     CLIENT_ASSERTION_MAX_TTL_SECONDS, CLIENT_ASSERTION_TYPE_JWT_BEARER,
-    ClientAssertionValidationError, ClientAssertionVerificationInput,
+    ClientAssertionValidationError, ClientAssertionVerificationInput, FAPI2_JWT_SIGNING_ALGS,
     SUPPORTED_CLIENT_JWT_SIGNING_ALGS, ValidatedClientAssertion,
     unverified_client_assertion_client_id, verify_private_key_jwt,
 };
@@ -230,7 +230,8 @@ pub use token_service::{
     PreparedTokenSubject, RefreshTokenSnapshot, SingleUseRedemption, TokenFuture, TokenInspection,
     TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError, TokenPrincipalState,
     TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
-    UserinfoSnapshot, UserinfoSubjectRef, validate_sender_constraint,
+    UserinfoSnapshot, UserinfoSubjectRef, jwt_response_signing_algorithm,
+    validate_sender_constraint,
 };
 pub use transaction::{
     AUTHORIZATION_CODE_REDEMPTION_VERSION, AuthorizationCodeState, CodePayload, ConsentPayload,

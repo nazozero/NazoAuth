@@ -26,7 +26,7 @@ ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize", "dep:base64", "dep:serde"]
 aead = ["dep:aes-gcm"]
 password = ["dep:argon2"]
 ed25519 = ["dep:ed25519-dalek"]
-x509 = ["dep:rcgen", "dep:rustls", "dep:x509-parser", "x509-parser/verify-aws"]
+x509 = ["dep:rcgen", "dep:rustls", "dep:webpki", "dep:x509-parser", "x509-parser/verify-aws"]
 
 [dependencies]
 aes-gcm = { workspace = true, optional = true }
@@ -46,6 +46,7 @@ serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 x509-cert = { workspace = true, optional = true }
 x509-parser = { workspace = true, optional = true }
+webpki = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 
 [lints]

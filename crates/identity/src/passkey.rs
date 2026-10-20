@@ -138,10 +138,6 @@ pub enum PasskeyAuditEvent {
         user_id: UserId,
         reason: PasskeyAuditReason,
     },
-    Registered {
-        user_id: UserId,
-        credential_id: Uuid,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -400,8 +396,15 @@ where
                 }
                 error => PasskeyError::State(error),
             })?;
-        self.create_session(account, source_ip, remembered_mfa, previous_session_id, now)
-            .await
+        self.create_session(
+            account,
+            source_ip,
+            outcome.user_verified,
+            remembered_mfa,
+            previous_session_id,
+            now,
+        )
+        .await
     }
 
     pub async fn registration_begin(
@@ -499,13 +502,6 @@ where
                 RepositoryError::Conflict => PasskeyError::AlreadyRegistered,
                 error => PasskeyError::State(error),
             })?;
-        self.audit
-            .record_required(PasskeyAuditEvent::Registered {
-                user_id: account.user_id(),
-                credential_id: row.id,
-            })
-            .await
-            .map_err(PasskeyError::State)?;
         Ok(row)
     }
 
@@ -536,11 +532,12 @@ where
         &self,
         account: PublicAccount,
         source_ip: String,
+        user_verified: bool,
         remembered_mfa: Option<crate::RememberedMfaProof>,
         previous_session_id: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<LoginSuccess, PasskeyError> {
-        let remembered = if account.account.mfa_enabled {
+        let remembered = if account.account.mfa_enabled && !user_verified {
             if let Some(proof) = remembered_mfa.as_ref() {
                 self.remembered_mfa
                     .is_valid(
@@ -559,11 +556,16 @@ where
             false
         };
         let mut amr = vec!["passkey".to_owned()];
-        if remembered {
+        if user_verified {
+            // This is evidence from the verified authenticator data, never a
+            // claim inferred from the credential type or browser response alone.
+            amr.push("passkey_uv".to_owned());
+            amr.push("mfa".to_owned());
+        } else if remembered {
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
-        let pending_mfa = account.account.mfa_enabled && !remembered;
+        let pending_mfa = account.account.mfa_enabled && !user_verified && !remembered;
         let ttl_seconds = if pending_mfa {
             self.config.pending_mfa_session_ttl_seconds
         } else {

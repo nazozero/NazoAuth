@@ -16,9 +16,9 @@ pub async fn dynamic_client_registration(
     request: HttpRequest,
     body: Payload,
 ) -> HttpResponse {
-    if !endpoint.application.accepts_new_requests() {
+    let Some(_lease) = endpoint.application.acquire_request() else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let mut body = body.into_inner();
     let Json(payload) =
         match Json::<DynamicClientRegistrationRequest>::from_request(&request, &mut body).await {
@@ -39,9 +39,9 @@ pub async fn client_configuration_get(
     request: HttpRequest,
     path: Path<String>,
 ) -> HttpResponse {
-    if !endpoint.application.accepts_new_requests() {
+    let Some(_lease) = endpoint.application.acquire_request() else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let source_ip = client_ip_with_config(&request, &endpoint.client_ip);
     dynamic_registration_result_response(
         endpoint
@@ -57,9 +57,9 @@ pub async fn client_configuration_put(
     path: Path<String>,
     body: Payload,
 ) -> HttpResponse {
-    if !endpoint.application.accepts_new_requests() {
+    let Some(_lease) = endpoint.application.acquire_request() else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let mut body = body.into_inner();
     let Json(payload) = match Json::<Value>::from_request(&request, &mut body).await {
         Ok(payload) => payload,
@@ -79,9 +79,9 @@ pub async fn client_configuration_delete(
     request: HttpRequest,
     path: Path<String>,
 ) -> HttpResponse {
-    if !endpoint.application.accepts_new_requests() {
+    let Some(_lease) = endpoint.application.acquire_request() else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let source_ip = client_ip_with_config(&request, &endpoint.client_ip);
     dynamic_registration_result_response(
         endpoint

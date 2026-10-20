@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use crate::contracts::session_management::{
-    SessionManagementAvailability, SessionManagementError, SessionManagementFuture,
-    SessionManagementOperations, SessionManagementOriginFuture,
+    SessionManagementError, SessionManagementFuture, SessionManagementOperations,
+    SessionManagementOriginFuture,
 };
-use nazo_auth::{AdminClientRepositoryPort, CapabilityAdmission, module_admissible};
+use nazo_auth::{AdminClientRepositoryPort, CapabilityAdmission};
 use nazo_runtime_modules::ModuleId;
 
 use crate::sessions::SessionResolver;
@@ -37,23 +37,11 @@ impl ServerSessionManagementOperations {
 }
 
 impl SessionManagementOperations for ServerSessionManagementOperations {
-    fn availability(&self) -> SessionManagementAvailability {
-        let snapshot = self.snapshots.load_full();
-        if module_admissible(
-            &snapshot,
-            ModuleId::SessionManagement,
-            CapabilityAdmission::NewRequest,
-        ) {
-            SessionManagementAvailability::Enabled
-        } else if module_admissible(
-            &snapshot,
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        self.snapshots.lease(
             ModuleId::SessionManagement,
             CapabilityAdmission::ExistingTransaction,
-        ) {
-            SessionManagementAvailability::Draining
-        } else {
-            SessionManagementAvailability::Disabled
-        }
+        )
     }
 
     fn op_browser_state<'a>(&'a self, session_id: &'a str) -> SessionManagementFuture<'a> {

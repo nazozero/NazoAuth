@@ -53,18 +53,6 @@ impl TracingFederationAudit {
                     ("email_hash", blake3_hex(&email).into()),
                 ]),
             ),
-            nazo_identity::FederationAuditEvent::IdentityLinked {
-                user_id,
-                provider_type,
-                provider_id,
-            } => (
-                "external_identity_linked",
-                audit_fields([
-                    ("user_id", json!(user_id.as_uuid())),
-                    ("provider_type", provider_type.into()),
-                    ("provider_id", provider_id.into()),
-                ]),
-            ),
             nazo_identity::FederationAuditEvent::LoginSuccess {
                 user_id,
                 method,

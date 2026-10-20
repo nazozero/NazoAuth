@@ -199,7 +199,12 @@ impl ServerTokenManagementOperations {
                 issuer: &self.config.issuer,
                 audience: &client.client_id,
                 body: &body,
-                signing_algorithm: client.introspection_signed_response_alg.as_deref(),
+                signing_algorithm: nazo_auth::jwt_response_signing_algorithm(
+                    client.introspection_signed_response_alg.as_deref(),
+                    self.config.profile.requires_fapi2_security()
+                        || client.security_policy.requires_fapi2_security(),
+                )
+                .map_err(|_| TokenManagementError::ResponseProtectionFailed)?,
             })
             .await
             .map_err(|error| {

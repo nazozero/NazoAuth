@@ -13,6 +13,7 @@ pub async fn create(base: &str) -> String {
     url.to_string()
 }
 
+#[allow(dead_code)] // Baseline-only fixtures apply a selected production migration first.
 pub async fn migrate(base: &str) -> String {
     let url = create(base).await;
     nazo_postgres::run_pending_migrations(&url).await.unwrap();

@@ -161,6 +161,14 @@ impl SecurityStateMaintenanceRepository {
         connection: &mut AsyncPgConnection,
         scope: nazo_persistence::CleanupScope,
     ) -> Result<GenericCleanupCounts, RepositoryError> {
+        // These receipts only fence still-live device approvals. Admission
+        // checks the database deadline before trying to insert a receipt.
+        sql_query(
+            "WITH due AS (SELECT tenant_id, device_code_hash FROM device_authorization_decisions \
+             WHERE expires_at <= CURRENT_TIMESTAMP ORDER BY expires_at LIMIT 256 FOR UPDATE SKIP LOCKED) \
+             DELETE FROM device_authorization_decisions AS receipt USING due \
+             WHERE receipt.tenant_id = due.tenant_id AND receipt.device_code_hash = due.device_code_hash",
+        ).execute(&mut *connection).await.map_err(map_error)?;
         sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state($1)")
             .bind::<sql_types::Bool, _>(scope == nazo_persistence::CleanupScope::IncludingHistory)
             .load::<GenericCleanupCounts>(connection)

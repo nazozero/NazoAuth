@@ -67,6 +67,13 @@ composition. A type using framework-neutral `http`, futures, or `Arc` does not
 by itself create a native-host dependency. See each crate's `Cargo.toml` for
 the current dependency edges rather than copying an exhaustive graph here.
 
+Application code calls database and KV ports without identifying the backend.
+The composition root binds the enabled implementation; adapters own backend
+operations and translate their semantics into the shared contracts. Preserve
+the crate and adapter boundaries when adding backends: another database or KV
+implementation plugs into these contracts without backend branches in business
+logic.
+
 The enforced prohibitions are more important than a broad graph:
 
 - `identity` does not depend on `authorization-server-core`.
@@ -471,7 +478,20 @@ CIBA request validity starts after the mandatory audit intent and replay reserva
 
 VCI and VP availability is immutable for each constructed tenant graph. Their desired history is retained, but an absent service has Disabled actual state, no request admission or advertisement, and cannot be enabled without constructing a new graph. Unavailable children do not block their dependencies. VP drain duration is the configured transaction TTL clamped to at least 30 seconds, independent of browser session TTL.
 
-The tenant reconciler owns at most one transition future per module. A retained planning future reads joined desired and instance facts once per tick while other transitions continue, so a long stored-transaction drain does not hold up unrelated modules. Dropping the tenant worker drops all its owned planning and transition futures. Closing admission drains leases from every retained generation of that module, and SCIM remains enabled while its security-event child is draining.
+The tenant reconciler owns at most one transition future per module. A retained planning future reads joined desired and instance facts once per tick while other transitions continue, so a long stored-transaction drain does not hold up unrelated modules. Dropping the tenant worker drops all its owned planning and transition futures.
+
+The registry and request handlers share one process-local lease tracker through
+`SnapshotStore`. Single-capability endpoints retain a `RequestLease`; multi-capability
+application operations retain a `RequestSnapshot` that leases only capabilities
+actually admitted by that request. These guards live across awaits and release on
+completion or cancellation. Loading a metadata snapshot does not acquire request leases.
+Publishing closed admission and fencing delayed old-generation acquisitions are
+serialized with lease acquisition. Finish-executing policies close admission
+before waiting. Stored-transaction policies admit existing transactions until
+their original drain deadline, then close that admission before waiting for
+requests from every retained generation. The deadline bounds admission of stored
+transactions; it does not cancel requests already executing. SCIM remains enabled
+while its security-event child is draining.
 
 ### Resource token presentation
 
@@ -647,3 +667,18 @@ replacement. Final family/member/expiry locks and actual persisted contract
 content remain authoritative; a content-reference key does not authenticate an
 otherwise mutable payload. These ownership reductions require exact-candidate
 format, compiler, lint and regression validation before acceptance.
+
+The database-backed signing-key refresh always reads the authoritative record.
+An unchanged authenticated record reuses its prepared keys until the next
+rotation, prepublication or retirement boundary. CRL observation freshness is
+renewed only after that successful read. Read/integrity failures retain the
+existing signing-health failure behavior; reuse does not extend a held request's
+old key lease. Local protocol keys support PS256 access and logout tokens as
+well as ID tokens, JARM and signed introspection, without changing the generic
+active signing algorithm.
+
+A successful authoritative tenant-directory read applies removed or changed
+identity bindings before building replacement graphs. A failure to build another
+tenant cannot preserve a withdrawn route. Runtime-only replacements retain the
+previous eligible graph until their replacement is ready; directory read
+failure does not invent a revocation. No request-side directory read is added.

@@ -141,7 +141,13 @@ async fn protected_authorization_response_jwt(
             error: input.error.as_deref(),
             state: input.state.as_deref(),
             ttl: input.ttl_seconds,
-            signing_algorithm: client.authorization_signed_response_alg.as_deref(),
+            signing_algorithm: nazo_auth::jwt_response_signing_algorithm(
+                client.authorization_signed_response_alg.as_deref(),
+                context
+                    .config
+                    .requires_fapi2_security(&client.security_policy),
+            )
+            .map_err(anyhow::Error::msg)?,
         })
         .await
         .map_err(|error| anyhow::anyhow!("authorization response signing failed: {error:?}"))?;

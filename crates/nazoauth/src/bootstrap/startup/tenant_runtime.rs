@@ -509,6 +509,26 @@ impl TenantRuntimeRefresher {
             .values()
             .map(|runtime| (runtime.binding.tenant.tenant_id, runtime.clone()))
             .collect::<HashMap<_, _>>();
+        // A confirmed directory removal or routing-identity change takes effect
+        // before any fallible replacement work. A runtime-only revision may keep
+        // its last-good graph, but cannot keep a withdrawn host/tenant binding.
+        let retained = snapshot
+            .tenants
+            .iter()
+            .filter_map(|binding| {
+                let runtime = existing.get(&binding.tenant.tenant_id)?;
+                (runtime.binding.tenant == binding.tenant
+                    && runtime.binding.issuer == binding.issuer
+                    && runtime.binding.external_host == binding.external_host)
+                    .then(|| (binding.external_host.clone(), runtime.clone()))
+            })
+            .collect::<HashMap<_, _>>();
+        if retained.len() != current.by_host.len() {
+            // Do not advance the applied revision until every candidate is
+            // ready: the same authoritative revision must remain retryable.
+            self.publish_candidate(current.revision, retained, Vec::new())
+                .await?;
+        }
         let mut by_host = HashMap::with_capacity(snapshot.tenants.len());
         let mut newly_built = Vec::new();
         for binding in &snapshot.tenants {
@@ -572,12 +592,12 @@ pub(super) fn spawn_directory_refresher(refresher: Arc<TenantRuntimeRefresher>) 
             tokio::select! {
                 _ = cache.tick() => {
                     if let Err(error) = refresher.refresh_cache_once().await {
-                        tracing::warn!(%error, "tenant directory cache refresh failed; retaining last-good index");
+                        tracing::warn!(%error, "tenant directory cache reconciliation incomplete");
                     }
                 }
                 _ = database.tick() => {
                     if let Err(error) = refresher.reconcile_database_once().await {
-                        tracing::warn!(%error, "tenant directory database reconciliation failed; retaining last-good index");
+                        tracing::warn!(%error, "tenant directory database reconciliation incomplete");
                     }
                 }
             }

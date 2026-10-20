@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from current_capacity import SCENARIOS, bounds, point_name
 import current_capacity as cc
 from perf.tests.test_pool_size_ab import _rec
+from blackbox_contract import require_external_point
 
 
 def record(rate, verdict, seconds):
@@ -285,7 +286,8 @@ class IncrementalExecutionTests(unittest.TestCase):
                 patch.object(cc.sis, 'dc', return_value=SimpleNamespace(stdout='image')), \
                 patch.object(cc.sis, 'sh', return_value=SimpleNamespace(stdout='controller')), \
                 patch.dict(cc.os.environ, {'SIS_APP_SHA': 'application'}), \
-                patch.object(cc.points, 'run_ab_point', return_value={}) as run, \
+                patch.object(cc.points, 'run_ab_point',
+                             side_effect=lambda point: (require_external_point(point), {})[1]) as run, \
                 patch.object(cc, 'evaluate_point', side_effect=lambda *a, **kw:
                              ('PASS', {'window_seconds': 180}, {}, None)), \
                 contextlib.redirect_stdout(io.StringIO()):

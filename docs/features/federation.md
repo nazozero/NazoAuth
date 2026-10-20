@@ -202,3 +202,8 @@ as other profile writes before account/link lookup, and emit
 Local session state remains the NazoAuth fact source. External provider logout
 failures do not mark remote logout as complete; local `/auth/logout` and OIDC
 OP logout clear the local session independently of upstream provider state.
+
+Account creation, provider-link insertion and their Required `external_identity_linked`
+audit event share one PostgreSQL transaction. Reusing an existing link does not
+emit a second creation event. A failed audit commit cannot leave a new linked
+account behind.

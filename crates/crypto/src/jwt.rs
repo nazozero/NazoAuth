@@ -8,6 +8,16 @@ pub use jsonwebtoken::{Algorithm, Header, TokenData, Validation};
 
 use crate::CryptoError;
 
+/// Records header-member presence, including `null` and empty values.
+/// JOSE consumers that implement no critical extensions reject any `crit`.
+pub fn deserialize_present_header<'de, D>(d: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let _ = <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d)?;
+    Ok(true)
+}
+
 #[derive(Clone)]
 pub struct VerificationKey {
     pub(crate) inner: jsonwebtoken::DecodingKey,

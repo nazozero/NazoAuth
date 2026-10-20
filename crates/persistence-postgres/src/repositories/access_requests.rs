@@ -162,7 +162,7 @@ impl AccessRequestRepository {
                 client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
             ))
             .returning(user_record_selection!())
-            .get_result::<AccessRequestRecord>(&mut connection)
+            .load::<AccessRequestRecord>(&mut connection)
             .await
             .map_err(|error| match error {
                 // The existing user/tenant foreign keys enforce membership at
@@ -173,6 +173,8 @@ impl AccessRequestRepository {
                 ) => RepositoryError::NotFound,
                 other => map_error(other),
             })?
+            .pop()
+            .ok_or(RepositoryError::NotFound)?
             .try_into()
     }
 

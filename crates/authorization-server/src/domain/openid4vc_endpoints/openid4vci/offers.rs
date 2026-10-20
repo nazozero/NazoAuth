@@ -6,13 +6,15 @@ impl ServerCredentialIssuerOperations {
         offer_id: &'a str,
     ) -> CredentialIssuerFuture<'a, Result<CredentialOffer, CredentialHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vci_error(
                     404,
                     "invalid_request",
                     "Credential issuer is disabled.",
                 ));
-            }
+            };
             let id = Uuid::parse_str(offer_id).map_err(|_| {
                 vci_error(404, "invalid_request", "Credential offer was not found.")
             })?;
@@ -43,13 +45,14 @@ impl ServerCredentialIssuerOperations {
         request: PreAuthorizedTokenRequest,
     ) -> CredentialIssuerFuture<'a, Result<PreAuthorizedTokenResponse, CredentialHttpError>> {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is unavailable.",
                 ));
-            }
+            };
             // The dispatcher already ran the strict transport validation:
             // sender bindings arrive verified and attestation material was
             // consumed exactly once on the authenticated path.
@@ -124,6 +127,7 @@ impl ServerCredentialIssuerOperations {
             let issued = self
                 .token_service
                 .sign_access_token(nazo_auth::AccessTokenSignInput {
+                    signing_algorithm: None,
                     authorization_id: Some(authorization_id),
                     client_epoch: None,
                     user_epoch: None,
@@ -222,13 +226,14 @@ impl ServerCredentialIssuerOperations {
     ) -> CredentialIssuerFuture<'a, Result<CreateCredentialOfferResponse, CredentialHttpError>>
     {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is unavailable.",
                 ));
-            }
+            };
             if request.credential_configuration_ids.is_empty()
                 || request.credential_configuration_ids.len() > 16
                 || !request

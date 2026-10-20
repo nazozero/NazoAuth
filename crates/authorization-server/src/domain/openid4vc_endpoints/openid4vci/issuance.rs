@@ -10,13 +10,14 @@ impl ServerCredentialIssuerOperations {
         Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
     > {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is not accepting new requests.",
                 ));
-            }
+            };
             let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
             validate_response_encryption_transport(
@@ -148,13 +149,15 @@ impl ServerCredentialIssuerOperations {
         Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
     > {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is unavailable.",
                 ));
-            }
+            };
             let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
             validate_response_encryption_transport(
@@ -356,13 +359,15 @@ impl ServerCredentialIssuerOperations {
     ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
     {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is unavailable.",
                 ));
-            }
+            };
             let access = self.access(&context).await?;
             let dpop_nonce =
                 next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)

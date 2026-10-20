@@ -155,6 +155,7 @@ pub(crate) struct StoredVerificationKey {
 
 #[derive(Clone)]
 pub(crate) struct LoadedKeyset {
+    pub(crate) database_source: Option<crate::database::PreparedDatabaseSource>,
     pub(crate) active_kid: String,
     pub(crate) active_alg: nazo_crypto::jwt::Algorithm,
     pub(crate) active_signing_key: ActiveSigningKey,
@@ -921,6 +922,7 @@ impl KeyManager {
         )
         .expect("test request object PKCS8");
         let loaded = LoadedKeyset {
+            database_source: None,
             active_kid: kid.clone(),
             active_alg: algorithm,
             active_signing_key,
@@ -1160,9 +1162,21 @@ impl KeyManager {
     }
 
     pub async fn refresh(&self) -> anyhow::Result<()> {
-        let result = crate::database::refresh(&self.inner.settings, &self.inner.database)
-            .await
-            .and_then(KeyGeneration::database);
+        let current = self.inner.generation.load_full();
+        let result = match crate::database::refresh(
+            &self.inner.settings,
+            &self.inner.database,
+            current.loaded.database_source.as_ref(),
+        )
+        .await
+        {
+            Ok(Some(loaded)) => KeyGeneration::database(loaded),
+            Ok(None) => KeyGeneration::database_with_snapshot(
+                current.loaded.clone(),
+                Some(Arc::clone(&current.snapshot)),
+            ),
+            Err(error) => Err(error),
+        };
         match result {
             Ok(generation) => {
                 self.inner.generation.store(Arc::new(generation));
@@ -1298,7 +1312,14 @@ impl KeyGeneration {
     /// Prepares all per-generation material before publication. A failure
     /// rejects the whole generation; a partially initialized object is never
     /// handed to `ArcSwap`.
-    fn database(mut loaded: LoadedKeyset) -> anyhow::Result<Self> {
+    fn database(loaded: LoadedKeyset) -> anyhow::Result<Self> {
+        Self::database_with_snapshot(loaded, None)
+    }
+
+    fn database_with_snapshot(
+        mut loaded: LoadedKeyset,
+        snapshot: Option<Arc<KeySnapshot>>,
+    ) -> anyhow::Result<Self> {
         if let Some(snapshot) = loaded
             .openid4vc_material
             .as_mut()
@@ -1312,11 +1333,21 @@ impl KeyGeneration {
                     crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS,
                 );
         }
-        Self::from_loaded(loaded)
+        Self::from_loaded_with_snapshot(loaded, snapshot)
     }
 
     fn from_loaded(loaded: LoadedKeyset) -> anyhow::Result<Self> {
-        let snapshot = Arc::new(snapshot_from_loaded(&loaded)?);
+        Self::from_loaded_with_snapshot(loaded, None)
+    }
+
+    fn from_loaded_with_snapshot(
+        loaded: LoadedKeyset,
+        snapshot: Option<Arc<KeySnapshot>>,
+    ) -> anyhow::Result<Self> {
+        let snapshot = match snapshot {
+            Some(snapshot) => snapshot,
+            None => Arc::new(snapshot_from_loaded(&loaded)?),
+        };
         let openid4vc_public = loaded
             .openid4vc_material
             .as_ref()

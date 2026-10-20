@@ -75,6 +75,7 @@ pub struct RequestObjectVerificationInput<'a> {
     pub request_object: &'a str,
     pub client: &'a OAuthClient,
     pub expected_signing_algorithm: Option<&'a str>,
+    pub require_fapi2: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,6 +97,12 @@ pub enum RequestObjectVerificationError {
 struct RequestObjectHeader {
     alg: String,
     kid: Option<String>,
+    #[serde(
+        rename = "crit",
+        default,
+        deserialize_with = "nazo_crypto::jwt::deserialize_present_header"
+    )]
+    critical_extension_present: bool,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +133,11 @@ pub fn verify_request_object(
     let Some(algorithm_name) = supported_client_jwt_algorithm_name(algorithm) else {
         return Err(RequestObjectVerificationError::InvalidAlgorithm);
     };
+    if (input.require_fapi2 || input.client.security_policy.requires_fapi2_security())
+        && !crate::FAPI2_JWT_SIGNING_ALGS.contains(&algorithm_name)
+    {
+        return Err(RequestObjectVerificationError::InvalidAlgorithm);
+    }
     if input
         .expected_signing_algorithm
         .is_some_and(|expected| expected != algorithm_name)
@@ -206,7 +218,12 @@ fn decode_request_object_header(
     let bytes = URL_SAFE_NO_PAD
         .decode(header)
         .map_err(|_| RequestObjectVerificationError::InvalidHeader)?;
-    serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidHeader)
+    let header: RequestObjectHeader = serde_json::from_slice(&bytes)
+        .map_err(|_| RequestObjectVerificationError::InvalidHeader)?;
+    if header.critical_extension_present {
+        return Err(RequestObjectVerificationError::InvalidHeader);
+    }
+    Ok(header)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

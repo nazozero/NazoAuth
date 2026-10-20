@@ -5,6 +5,12 @@ use arc_swap::{ArcSwap, Guard};
 
 use crate::{ModuleId, ModuleRevision, StaleTransition};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CapabilityAdmission {
+    NewRequest,
+    ExistingTransaction,
+}
+
 /// Immutable request-facing generation of runtime module admission state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ActiveModuleSnapshot {
@@ -23,11 +29,19 @@ impl ActiveModuleSnapshot {
     pub fn advertises(&self, module_id: ModuleId) -> bool {
         self.admits(module_id)
     }
+
+    #[must_use]
+    pub fn permits(&self, module_id: ModuleId, admission: CapabilityAdmission) -> bool {
+        self.admits(module_id)
+            || (admission == CapabilityAdmission::ExistingTransaction
+                && self.draining.contains(&module_id))
+    }
 }
 
 /// Atomically publishes immutable request-facing module state.
 pub struct SnapshotStore {
     current: ArcSwap<ActiveModuleSnapshot>,
+    pub(crate) leases: crate::RequestLeaseTracker,
 }
 
 impl SnapshotStore {
@@ -35,6 +49,7 @@ impl SnapshotStore {
     pub fn new(initial: ActiveModuleSnapshot) -> Self {
         Self {
             current: ArcSwap::from_pointee(initial),
+            leases: crate::RequestLeaseTracker::default(),
         }
     }
 
@@ -46,6 +61,27 @@ impl SnapshotStore {
     #[must_use]
     pub fn load_full(&self) -> Arc<ActiveModuleSnapshot> {
         self.current.load_full()
+    }
+
+    /// Hold the returned lease until the admitted operation finishes or is cancelled.
+    #[must_use]
+    pub fn lease(
+        &self,
+        module_id: ModuleId,
+        admission: CapabilityAdmission,
+    ) -> Option<crate::RequestLease> {
+        self.leases
+            .acquire_for(self.load_full(), module_id, admission)
+    }
+
+    /// A coherent request view that retains leases only for capabilities it uses.
+    pub fn request(&self) -> crate::RequestSnapshot {
+        crate::RequestSnapshot::new(self.load_full(), self.leases.clone())
+    }
+
+    /// Close admission before waiting, so new requests cannot extend the wait.
+    pub async fn wait_until_idle(&self, module_id: ModuleId) {
+        self.leases.wait_until_zero(module_id).await;
     }
 
     pub fn compare_and_publish(
@@ -60,6 +96,9 @@ impl SnapshotStore {
             });
         }
 
+        // Serialize publication with lease acquisition. A request either owns
+        // its old-generation lease before admission closes, or is rejected.
+        let mut publication = self.leases.publication_guard();
         let current = self.current.load();
         if current.revision != expected {
             return Err(StaleTransition::RevisionChanged {
@@ -68,14 +107,8 @@ impl SnapshotStore {
             });
         }
 
-        let previous = self.current.compare_and_swap(&current, Arc::new(next));
-        if Arc::ptr_eq(&previous, &current) {
-            Ok(())
-        } else {
-            Err(StaleTransition::RevisionChanged {
-                expected,
-                current: previous.revision,
-            })
-        }
+        publication.close_removed_generations(&current, &next);
+        self.current.store(Arc::new(next));
+        Ok(())
     }
 }
