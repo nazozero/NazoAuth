@@ -18,13 +18,13 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is not accepting new requests.",
                 ));
             };
+            let access = self.access(&context).await?;
             let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
             validate_response_encryption_transport(
                 encrypted_request,
                 request.credential_response_encryption.as_ref(),
             )?;
-            let access = self.access(&context).await?;
             let configuration_id = resolve_configuration_id(&request, &access)?;
             let selection = Some(nazo_openid4vci::CredentialSelection {
                 configuration_id: configuration_id.clone(),
@@ -158,13 +158,13 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is unavailable.",
                 ));
             };
+            let access = self.access(&context).await?;
             let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
             validate_response_encryption_transport(
                 encrypted_request,
                 request.credential_response_encryption.as_ref(),
             )?;
-            let access = self.access(&context).await?;
             let request_digest = issuance_request_digest(
                 "deferred",
                 &request,

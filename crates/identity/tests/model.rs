@@ -32,6 +32,7 @@ fn identity_ids_reject_nil_uuid_during_deserialization() {
 #[test]
 fn principal_and_tenant_context_do_not_require_database_rows() {
     let principal = Principal {
+        authorization_epoch: 0,
         user_id: UserId::new(id(4)).unwrap(),
         tenant: TenantContext::default_system(),
         role: UserRole::Admin { level: 2 },
@@ -48,6 +49,7 @@ fn session_metadata_has_one_amr_source_and_rejects_invalid_time_or_sid() {
     use nazo_identity::session::{SessionRecord, valid_authentication_metadata};
     let mut session = SessionRecord::new(
         UserId::new(id(4)).unwrap(),
+        0,
         1_000,
         vec!["password".to_owned()],
         false,

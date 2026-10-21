@@ -53,6 +53,7 @@ pub async fn validate_token_sender_constraints(
         crate::contracts::request_facts::DpopRequestFacts {
             method: facts.dpop.method.clone(),
             path: facts.dpop.path,
+            authority: facts.dpop.authority,
             proof: facts.dpop.proof.clone(),
             proof_present: facts.dpop.proof_present,
         },

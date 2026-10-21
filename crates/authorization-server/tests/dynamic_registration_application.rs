@@ -100,6 +100,7 @@ impl ClientSecretDigesterPort for FakeSecurity {
 
 fn application_config() -> DynamicRegistrationConfig {
     DynamicRegistrationConfig {
+        require_fapi2: false,
         tenant: TenantContext::default_system(),
         issuer: "https://issuer.example".to_owned(),
         default_audience: "https://api.example".to_owned(),
@@ -636,4 +637,54 @@ fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease
         ModuleId::DynamicClientRegistration,
         CapabilityAdmission::NewRequest,
     )
+}
+
+#[test]
+fn configuration_update_cannot_restore_administrator_reduced_authority() {
+    block_on(async {
+        let store = Arc::new(Store::default());
+        let app = application(store.clone(), Arc::new(Guard::default()));
+        let created = create(&app).await;
+        assert_eq!(
+            created.client.id_token_signed_response_alg.as_deref(),
+            Some("RS256")
+        );
+        {
+            let mut state = store.0.lock().unwrap();
+            let client = state.client.as_mut().unwrap();
+            client.scopes = vec!["openid".into()];
+            client.allowed_audiences = vec!["https://restricted.example".into()];
+        }
+        let mut payload =
+            update_payload(&created.client, created.issued_secret.as_deref().unwrap());
+        let failure = app
+            .update(
+                &created.client.client_id,
+                payload.clone(),
+                Some(&created.registration_access_token),
+                "source",
+            )
+            .await;
+        assert!(
+            matches!(failure,Err(OAuthEndpointError::Json(fields)) if fields.error=="invalid_client_metadata")
+        );
+        payload["scope"] = json!("openid");
+        let DynamicRegistrationResult::Updated(updated) = app
+            .update(
+                &created.client.client_id,
+                payload,
+                Some(&created.registration_access_token),
+                "source",
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("update expected")
+        };
+        assert_eq!(updated.client.scopes, ["openid"]);
+        assert_eq!(
+            updated.client.allowed_audiences,
+            ["https://restricted.example"]
+        );
+    });
 }

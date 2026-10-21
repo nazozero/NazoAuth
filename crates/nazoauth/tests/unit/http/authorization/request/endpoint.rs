@@ -308,6 +308,7 @@ impl LiveAuthorizationFixture {
         auth_time: i64,
     ) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time,
             amr: vec!["pwd".to_owned()],
@@ -316,7 +317,7 @@ impl LiveAuthorizationFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )
@@ -2354,13 +2355,12 @@ async fn signed_response_with_precomputed_policy_accepts_only_an_active_database
     assert!(!location.query_pairs().any(|(key, _)| key == "code"));
     let claims = decode_jarm_claims(&fixture.live.state, &response_jwt, &fixture.client_id);
     let code = claims["code"].as_str().expect("signed authorization code");
-    let raw = valkey_get(&fixture.live.state.valkey, authorization_code_key(code))
+    let stored = nazo_valkey::AuthorizationStore::new(&fixture.live.state.valkey_connection())
+        .load_authorization_code(code)
         .await
-        .expect("issued code lookup")
-        .expect("issued code must be stored");
-    let AuthorizationCodeState::Pending { payload } =
-        serde_json::from_str::<AuthorizationCodeState>(&raw).expect("issued code payload")
-    else {
+        .unwrap()
+        .expect("code exists");
+    let AuthorizationCodeState::Pending { payload } = stored else {
         panic!("newly issued code must be pending")
     };
     assert_eq!(payload.client_id, fixture.client_id);

@@ -439,51 +439,32 @@ pub(super) fn verify_certificate_chain_with_scoped_at<'a>(
     scoped: &'a [Vec<u8>],
     unix_time: i64,
 ) -> Result<Option<&'a [u8]>, CredentialTrustError> {
-    let at = x509_parser::time::ASN1Time::from_timestamp(unix_time)
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let (_, mut current) = x509_parser::parse_x509_certificate(&certificates[0])
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    if current.is_ca() || !current.validity().is_valid_at(at) {
-        return Ok(None);
-    }
-    for intermediate in certificates
-        .iter()
-        .skip(1)
-        .filter(|der| !anchors.contains(der) && !scoped.contains(der))
-    {
-        let (_, issuer) = x509_parser::parse_x509_certificate(intermediate)
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-        if !issuer.is_ca()
-            || !issuer.validity().is_valid_at(at)
-            || current.issuer() != issuer.subject()
-            || nazo_crypto::certificate::verify_signature(&current, issuer.public_key()).is_err()
-        {
-            return Ok(None);
-        }
-        current = issuer;
-    }
-    let anchored = scoped
+    let unix_seconds =
+        u64::try_from(unix_time).map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    for anchor in scoped
         .iter()
         .chain(anchors.iter().filter(|anchor| !scoped.contains(anchor)))
-        .find(|anchor| {
-            x509_parser::parse_x509_certificate(anchor).is_ok_and(|(_, anchor)| {
-                anchor.is_ca()
-                    && anchor.validity().is_valid_at(at)
-                    && current.issuer() == anchor.subject()
-                    && nazo_crypto::certificate::verify_signature(&current, anchor.public_key())
-                        .is_ok()
-            })
-        })
-        .map(Vec::as_slice);
-    if let Some(anchor) = anchored
-        && certificates.iter().enumerate().skip(1).any(|(index, der)| {
-            (anchors.contains(der) || scoped.contains(der))
-                && (index + 1 != certificates.len() || der.as_slice() != anchor)
-        })
     {
-        return Ok(None);
+        let path = if certificates.last() == Some(anchor) {
+            &certificates[..certificates.len() - 1]
+        } else {
+            certificates
+        };
+        let chain: Vec<_> = path
+            .iter()
+            .map(|der| nazo_crypto::certificate::CertificateDer::from(der.as_slice()))
+            .collect();
+        if nazo_crypto::certificate::verify_document_signing_chain_at(
+            &chain,
+            &nazo_crypto::certificate::CertificateDer::from(anchor.as_slice()),
+            unix_seconds,
+        )
+        .is_ok()
+        {
+            return Ok(Some(anchor));
+        }
     }
-    Ok(anchored)
+    Ok(None)
 }
 
 pub(super) fn mdoc_assessments_accepted(

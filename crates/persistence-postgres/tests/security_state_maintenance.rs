@@ -1140,7 +1140,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
                     id: "pid".to_owned(),
                     format: CredentialFormat::SdJwtVc,
                     multiple: false,
-                    meta: Some(serde_json::json!({})),
+                    meta: Some(serde_json::json!({"vct_values":["ExampleCredential"]})),
                     claims: None,
                     claim_sets: None,
                     trusted_authorities: None,

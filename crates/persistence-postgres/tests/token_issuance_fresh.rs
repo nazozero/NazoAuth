@@ -25,6 +25,12 @@ fn database_url() -> Option<String> {
 }
 
 #[derive(QueryableByName)]
+struct DatabaseName {
+    #[diesel(sql_type = sql_types::Text)]
+    name: String,
+}
+
+#[derive(QueryableByName)]
 struct CountRow {
     #[diesel(sql_type = sql_types::BigInt)]
     count: i64,
@@ -857,10 +863,18 @@ async fn fresh_issuance_runs_under_the_restricted_runtime_role() {
     .execute(&mut admin)
     .await
     .expect("restricted role should be creatable");
-    sql_query(format!("GRANT CONNECT ON DATABASE oauth TO \"{role}\""))
-        .execute(&mut admin)
+    let database_name = sql_query("SELECT current_database() AS name")
+        .get_result::<DatabaseName>(&mut admin)
         .await
-        .expect("connect grant should apply");
+        .unwrap()
+        .name
+        .replace('"', "\"\"");
+    sql_query(format!(
+        "GRANT CONNECT ON DATABASE \"{database_name}\" TO \"{role}\""
+    ))
+    .execute(&mut admin)
+    .await
+    .expect("connect grant should apply");
     nazo_postgres::configure_runtime_role(&database_url, &role)
         .await
         .expect("the production grant path should configure the role");
@@ -903,10 +917,12 @@ async fn fresh_issuance_runs_under_the_restricted_runtime_role() {
     // The role holds granted privileges (database CONNECT plus the
     // configure_runtime_role grant set); revoke the shared-object grant and
     // drop owned privileges before the role itself can go away.
-    sql_query(format!("REVOKE ALL ON DATABASE oauth FROM \"{role}\""))
-        .execute(&mut admin)
-        .await
-        .expect("database grant should be revoked");
+    sql_query(format!(
+        "REVOKE ALL ON DATABASE \"{database_name}\" FROM \"{role}\""
+    ))
+    .execute(&mut admin)
+    .await
+    .expect("database grant should be revoked");
     sql_query(format!("DROP OWNED BY \"{role}\""))
         .execute(&mut admin)
         .await
@@ -939,10 +955,18 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
     .execute(&mut admin)
     .await
     .expect("restricted role should be creatable");
-    sql_query(format!("GRANT CONNECT ON DATABASE oauth TO \"{role}\""))
-        .execute(&mut admin)
+    let database_name = sql_query("SELECT current_database() AS name")
+        .get_result::<DatabaseName>(&mut admin)
         .await
-        .expect("connect grant should apply");
+        .unwrap()
+        .name
+        .replace('"', "\"\"");
+    sql_query(format!(
+        "GRANT CONNECT ON DATABASE \"{database_name}\" TO \"{role}\""
+    ))
+    .execute(&mut admin)
+    .await
+    .expect("connect grant should apply");
     nazo_postgres::configure_runtime_role(&database_url, &role)
         .await
         .expect("the production grant path should configure the role");
@@ -1025,10 +1049,12 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
     );
 
     drop(pool);
-    sql_query(format!("REVOKE ALL ON DATABASE oauth FROM \"{role}\""))
-        .execute(&mut admin)
-        .await
-        .expect("database grant should be revoked");
+    sql_query(format!(
+        "REVOKE ALL ON DATABASE \"{database_name}\" FROM \"{role}\""
+    ))
+    .execute(&mut admin)
+    .await
+    .expect("database grant should be revoked");
     sql_query(format!("DROP OWNED BY \"{role}\""))
         .execute(&mut admin)
         .await

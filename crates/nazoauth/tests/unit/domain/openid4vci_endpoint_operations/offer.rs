@@ -172,9 +172,9 @@ async fn enabled_issuer_validates_request_shape_before_database_state() {
                 CredentialRequestBody::Jwt("not-a-jwe".to_owned()),
             )
             .await
-            .expect_err("malformed credential JWE")
+            .expect_err("authentication precedes credential JWE decryption")
             .status,
-        400
+        401
     );
     assert_eq!(
         issuer
@@ -183,9 +183,9 @@ async fn enabled_issuer_validates_request_shape_before_database_state() {
                 CredentialRequestBody::Jwt("not-a-jwe".to_owned()),
             )
             .await
-            .expect_err("malformed deferred JWE")
+            .expect_err("authentication precedes deferred JWE decryption")
             .status,
-        400
+        401
     );
     assert_eq!(
         issuer

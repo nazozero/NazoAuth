@@ -137,6 +137,7 @@ fn login_success() -> LoginSuccess {
         csrf_token: "new-csrf".to_owned(),
         session: SessionRecord::new(
             UserId::new(Uuid::from_u128(1)).unwrap(),
+            0,
             Utc::now().timestamp(),
             vec!["passkey".to_owned()],
             false,
@@ -567,7 +568,7 @@ async fn profile_routes_preserve_get_post_delete_options_preflight_contract() {
             .method(actix_web::http::Method::OPTIONS)
             .uri("/auth/me/passkeys")
             .insert_header((header::ORIGIN, "https://app.example"))
-            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "PUT"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "TRACE"))
             .to_request(),
     )
     .await;

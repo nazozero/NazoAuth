@@ -123,7 +123,7 @@ struct DpopHeader {
     #[serde(
         rename = "crit",
         default,
-        deserialize_with = "nazo_crypto::jwt::deserialize_present_header"
+        deserialize_with = "nazo_crypto::deserialize_present_header"
     )]
     critical_extension_present: bool,
 }

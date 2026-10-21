@@ -162,6 +162,8 @@ pub(crate) struct LoadedKeyset {
     pub(crate) verification_keys: Vec<StoredVerificationKey>,
     pub(crate) request_object_decryption_key: Arc<nazo_crypto::key_wrap::RsaOaep256PrivateKey>,
     pub(crate) request_object_encryption_jwk: Value,
+    pub(crate) request_object_retained_keys:
+        Vec<crate::request_object_encryption::RetainedEncryptionKey>,
     pub(crate) openid4vc_material: Option<Openid4vcMaterial>,
 }
 
@@ -939,6 +941,7 @@ impl KeyManager {
                     handle: KeyHandle::Local(local_material),
                 },
             }],
+            request_object_retained_keys: Vec::new(),
             request_object_decryption_key: Arc::new(
                 nazo_crypto::key_wrap::RsaOaep256PrivateKey::from_pkcs8(&request_object_der)
                     .expect("test request object decryption key"),
@@ -1378,7 +1381,7 @@ impl KeyGeneration {
         })
     }
 
-    fn is_expired(&self) -> bool {
+    pub(crate) fn is_expired(&self) -> bool {
         self.expires_at
             .is_some_and(|deadline| Instant::now() > deadline)
     }

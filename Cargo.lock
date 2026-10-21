@@ -2919,6 +2919,7 @@ dependencies = [
  "subtle",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -3022,6 +3023,8 @@ dependencies = [
  "hex",
  "hmac 0.13.0",
  "image",
+ "jiff",
+ "language-tags",
  "lettre",
  "nazo-crypto",
  "nazo-scim-events",
@@ -3294,6 +3297,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -3350,6 +3354,7 @@ dependencies = [
  "nazo-auth",
  "nazo-identity",
  "nazo-resource-server",
+ "nazo-valkey",
  "serde",
  "serde_json",
  "thiserror",

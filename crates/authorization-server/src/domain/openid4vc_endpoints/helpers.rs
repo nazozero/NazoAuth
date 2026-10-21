@@ -252,6 +252,13 @@ pub(super) fn map_issuance_error(
     error: nazo_openid4vci::CredentialIssuanceError,
 ) -> CredentialHttpError {
     match error {
+        nazo_openid4vci::CredentialIssuanceError::Proof(
+            nazo_openid4vci::ProofError::Unavailable,
+        ) => vci_error(
+            503,
+            "server_error",
+            "Credential proof validation is unavailable.",
+        ),
         nazo_openid4vci::CredentialIssuanceError::Credential(CredentialError::InvalidNonce) => {
             vci_error(400, "invalid_nonce", "Credential proof nonce is invalid.")
         }

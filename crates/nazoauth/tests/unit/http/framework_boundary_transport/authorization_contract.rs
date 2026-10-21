@@ -103,6 +103,7 @@ async fn authorized_response(
     .expect("authorization fixture grant insert");
     drop(connection);
     let payload = crate::test_support::SessionPayload {
+        authorization_epoch: 0,
         user_id,
         auth_time: now,
         amr: vec!["pwd".to_owned()],
@@ -111,7 +112,7 @@ async fn authorized_response(
     };
     crate::test_support::valkey::valkey_set_ex(
         &state.valkey,
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
         serde_json::to_string(&payload).expect("session serializes"),
         state.settings.session.session_ttl_seconds,
     )

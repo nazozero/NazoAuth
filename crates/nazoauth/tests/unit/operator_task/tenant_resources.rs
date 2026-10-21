@@ -214,6 +214,9 @@ impl OperatorPersistence for Persistence {
     fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore> {
         self.directory.clone()
     }
+    fn schema_revision(&self) -> OperatorBackendFuture<'_, String> {
+        unimplemented!()
+    }
     fn run_migrations(&self) -> OperatorBackendFuture<'_, bool> {
         unimplemented!()
     }
@@ -250,6 +253,7 @@ fn outcome(revision: u64, action: TenantResourceAction) -> ControlResultData {
 
 fn context(hash: &str) -> execution::ExecutionContext<'_> {
     execution::ExecutionContext {
+        migration_baseline: None,
         operation_id: OPERATION_ID,
         deployment_id: "deployment-o03",
         controller_id: "controller-o03",

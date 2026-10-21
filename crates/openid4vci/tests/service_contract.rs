@@ -69,6 +69,7 @@ impl CredentialStorePort for RecordingStore {
     }
     fn persist_pre_authorized_access<'a>(
         &'a self,
+        _offer: &'a [u8],
         token_hash: &'a str,
         access: &'a CredentialAccess,
         registered_client_id: Option<&'a str>,
@@ -94,7 +95,7 @@ impl CredentialStorePort for RecordingStore {
     {
         Box::pin(async { Ok(None) })
     }
-    fn consume_pre_authorized_offer<'a>(
+    fn prepare_pre_authorized_offer<'a>(
         &'a self,
         _: Uuid,
         _: &'a str,
@@ -103,7 +104,7 @@ impl CredentialStorePort for RecordingStore {
         _: chrono::DateTime<Utc>,
     ) -> CredentialStoreFuture<
         'a,
-        Result<Option<nazo_openid4vci::CredentialAuthorization>, CredentialStoreError>,
+        Result<Option<nazo_openid4vci::PreparedPreAuthorizedOffer>, CredentialStoreError>,
     > {
         Box::pin(async { Ok(None) })
     }
@@ -1202,6 +1203,18 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
         .await
         .unwrap();
     assert_eq!(deferred_store.deferred.lock().unwrap().len(), 1);
+    {
+        let records = deferred_store.deferred.lock().unwrap();
+        assert_eq!(
+            records[0].payload.issued_at.timestamp().rem_euclid(86_400),
+            0
+        );
+        assert_eq!(
+            records[0].payload.expires_at.timestamp().rem_euclid(86_400),
+            0
+        );
+        assert_eq!(records[0].ready_at, now + Duration::minutes(2));
+    }
     assert_eq!(
         deferred_store.deferred.lock().unwrap()[0]
             .transaction_hash
@@ -1530,15 +1543,22 @@ async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
     // `impl CredentialStorePort for Arc<T>` forwards into the recording impl.
     CredentialStorePort::persist_pre_authorized_access(
         &store,
+        b"prepared-offer",
         "token-hash-a",
         &access,
         Some("registered-wallet"),
     )
     .await
     .unwrap();
-    CredentialStorePort::persist_pre_authorized_access(&store, "token-hash-b", &access, None)
-        .await
-        .unwrap();
+    CredentialStorePort::persist_pre_authorized_access(
+        &store,
+        b"prepared-offer",
+        "token-hash-b",
+        &access,
+        None,
+    )
+    .await
+    .unwrap();
 
     {
         let calls = store.pre_authorized_persists.lock().unwrap();
@@ -1555,6 +1575,7 @@ async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
     assert_eq!(
         CredentialStorePort::persist_pre_authorized_access(
             &store,
+            b"prepared-offer",
             "token-hash-c",
             &access,
             Some("registered-wallet"),

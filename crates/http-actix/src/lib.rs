@@ -48,7 +48,9 @@ pub use cors::{
     cors_well_known, cors_well_known_with_origin_predicate,
 };
 pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
-pub use dpop::{dpop_error_response, dpop_proof_header, dpop_proof_present};
+pub use dpop::{
+    dpop_error_response, dpop_proof_header, dpop_proof_present, dpop_request_authority,
+};
 pub use dynamic_client_registration::{
     ClientIpConfig, ClientIpHeaderMode, ClientIpParseError, DynamicRegistrationClientStore,
     DynamicRegistrationDependencyError, DynamicRegistrationEndpoint, DynamicRegistrationFuture,

@@ -45,7 +45,7 @@ use std::{
 use anyhow::{Context as _, bail};
 use chrono::Utc;
 use fs2::FileExt as _;
-use nazo_operator_protocol::{ControlOperation, MAX_COMPACT_JWS_BYTES};
+use nazo_operator_protocol::{ControlOperation, ControlOperationPayload, MAX_COMPACT_JWS_BYTES};
 
 mod admission;
 mod control_journal;
@@ -106,6 +106,9 @@ pub trait OperatorPersistence: Send + Sync {
     ) -> Arc<dyn nazo_persistence::directory_control::TenantDirectoryControlPort>;
 
     fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore>;
+
+    /// Opaque revision of the selected adapter's committed schema.
+    fn schema_revision(&self) -> OperatorBackendFuture<'_, String>;
 
     fn run_migrations(&self) -> OperatorBackendFuture<'_, bool>;
 
@@ -266,15 +269,24 @@ async fn execute_compact(
 async fn journaled_execution(
     state_directory: &Path,
     operation: &ControlOperation,
-    record: control_journal::OperationJournalRecord,
+    mut record: control_journal::OperationJournalRecord,
     persistence: &dyn OperatorPersistence,
 ) -> anyhow::Result<()> {
+    if matches!(operation.operation, ControlOperationPayload::MigrateApply)
+        && record.needs_migration_baseline()
+    {
+        let revision = persistence.schema_revision().await?;
+        record
+            .persist_migration_baseline(state_directory, revision)
+            .map_err(map_journal_error)?;
+    }
     let outcome = control_journal::run_journaled_operation(
         state_directory,
         record,
         &pause_control_journal,
         async |record| {
             let context = execution::ExecutionContext {
+                migration_baseline: record.migration_baseline.as_deref(),
                 operation_id: &operation.operation_id,
                 deployment_id: &operation.deployment_id,
                 controller_id: &record.controller_id,

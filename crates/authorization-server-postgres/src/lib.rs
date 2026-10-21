@@ -50,7 +50,10 @@ impl ServerPersistenceProvider for PostgresProvider {
     fn security_state_maintenance(
         &self,
     ) -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort> {
-        Arc::new(SecurityStateMaintenanceRepository::new(self.pool.clone()))
+        Arc::new(
+            SecurityStateMaintenanceRepository::new(self.pool.clone())
+                .with_totp_key_ring(self.totp_keys.clone()),
+        )
     }
 
     fn runtime_modules(

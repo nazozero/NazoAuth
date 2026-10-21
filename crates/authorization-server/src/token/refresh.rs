@@ -354,6 +354,48 @@ pub async fn token_refresh_with_service(
         },
         None => refresh_token_policy(client, &token),
     };
+    let native_sso = if crate::token::native_sso::native_sso_requested(&scopes) {
+        use crate::token::native_sso::{
+            load_native_sso_device_secret_state, native_sso_device_secret_hash,
+            new_native_sso_token_binding,
+        };
+        let sid = authentication_context.oidc_sid.as_deref().ok_or_else(|| {
+            OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "Native SSO refresh requires its original session binding.",
+                false,
+            )
+        })?;
+        let existing = match form.device_secret.as_deref() {
+            Some(value) => load_native_sso_device_secret_state(token_service, value).await?,
+            None => None,
+        };
+        if existing.as_ref().is_some_and(|state| {
+            state.tenant_id == client.tenant_id
+                && Some(state.user_id) == token.user_id
+                && state.source_client_id == client.client_id
+                && state.refresh_token_family_id == token.token_family_id
+                && state.subject == token.contract.subject
+                && state.sid == sid
+                && state.expires_at > Utc::now()
+        }) {
+            let device_secret = form
+                .device_secret
+                .as_ref()
+                .expect("loaded secret has input")
+                .clone();
+            Some(crate::domain::oauth::NativeSsoTokenBinding {
+                ds_hash: native_sso_device_secret_hash(&device_secret),
+                device_secret,
+                sid: sid.to_owned(),
+            })
+        } else {
+            new_native_sso_token_binding(Some(sid))
+        }
+    } else {
+        None
+    };
     let refresh_authority = token.authority();
     issue_token_response(
         issuance,
@@ -391,7 +433,7 @@ pub async fn token_refresh_with_service(
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,
-            native_sso: None,
+            native_sso,
         },
     )
     .await

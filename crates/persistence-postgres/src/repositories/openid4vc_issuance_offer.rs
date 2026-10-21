@@ -145,7 +145,7 @@ impl OfferRow {
     }
 }
 
-#[derive(QueryableByName)]
+#[derive(QueryableByName, serde::Serialize, serde::Deserialize)]
 pub(super) struct PreAuthorizedOfferRow {
     #[diesel(sql_type = sql_types::Uuid)]
     pub(super) id: Uuid,

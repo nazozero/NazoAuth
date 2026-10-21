@@ -334,6 +334,10 @@ fn dynamic_registration_config(
 ) -> DynamicRegistrationConfig {
     let keys = keyset.snapshot();
     DynamicRegistrationConfig {
+        require_fapi2: settings
+            .protocol
+            .authorization_server_profile
+            .requires_fapi2_security(),
         tenant: settings.tenant.context,
         issuer: settings.endpoint.issuer.clone(),
         default_audience: settings.protocol.default_audience.clone(),

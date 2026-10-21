@@ -7,7 +7,7 @@ async fn ciba_token_approved_state_issues_access_and_id_tokens_for_an_active_use
     };
     configure_ciba_test_mtls_proxy(&mut state);
     state.keyset =
-        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("approved-issue-kid", &key);
     client.client_id = format!("ciba-approved-client-{}", Uuid::now_v7());
@@ -158,7 +158,7 @@ async fn ciba_precommit_dependency_failure_is_retryable_and_sender_keys_share_on
             before
         );
         state.keyset =
-            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
         let request_a = crate::test_support::dpop_token_request(state.settings.as_ref(), &one);
         let request_b = crate::test_support::dpop_token_request(state.settings.as_ref(), &two);
         let (a, b) = if concurrent {
@@ -243,7 +243,7 @@ async fn protocol_grant_expired_dispatch_ciba_after_approved_poll() {
         .expect("CIBA commit regression requires isolated PostgreSQL and Valkey");
     configure_ciba_test_mtls_proxy(&mut state);
     state.keyset =
-        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-expired-commit-kid", &key);
     client.client_id = format!("ciba-expired-commit-{}", Uuid::now_v7());

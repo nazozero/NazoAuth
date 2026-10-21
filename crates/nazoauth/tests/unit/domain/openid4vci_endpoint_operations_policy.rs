@@ -145,11 +145,7 @@ async fn retain_policy_credential_access(
         Arc::new(crate::bootstrap::LoginPasswordVerifier),
     );
     repository
-        .persist_pre_authorized_access(
-            blake3::hash(token.as_bytes()).to_hex().as_ref(),
-            &access,
-            Some(&access.client_id),
-        )
+        .upsert_access(blake3::hash(token.as_bytes()).to_hex().as_ref(), &access)
         .await
         .expect("the real registered owner retains the exact signed credential provenance");
 }

@@ -330,6 +330,16 @@ pub fn jwt_response_signing_algorithm(
     }
 }
 
+/// ID Tokens always have a signing algorithm: OIDC defaults to RS256,
+/// while an enabled FAPI policy selects PS256 when none was negotiated.
+pub fn id_token_signing_algorithm(
+    configured: Option<&str>,
+    require_fapi2: bool,
+) -> Result<&str, &'static str> {
+    jwt_response_signing_algorithm(configured, require_fapi2)
+        .map(|algorithm| algorithm.unwrap_or("RS256"))
+}
+
 pub struct AccessTokenSignInput<'a> {
     pub signing_algorithm: Option<&'a str>,
     pub authorization_id: Option<Uuid>,

@@ -126,6 +126,8 @@ async fn logout_deletes_the_cookie_session_and_preserves_response_contract() {
     let store = Arc::new(RecordingStore::default());
     let request = TestRequest::default()
         .cookie(Cookie::new("session", "sid-1"))
+        .cookie(Cookie::new("csrf", "csrf-1"))
+        .insert_header(("x-csrf-token", "csrf-1"))
         .to_http_request();
     let response = profile_logout(endpoint(store.clone()), request).await;
 
@@ -134,14 +136,21 @@ async fn logout_deletes_the_cookie_session_and_preserves_response_contract() {
 }
 
 #[actix_web::test]
-async fn logout_fails_closed_at_the_browser_boundary_when_store_is_unavailable() {
+async fn logout_reports_unavailable_and_retains_retry_credentials_when_delete_fails() {
     let store = Arc::new(RecordingStore::default());
     *store.delete_error.lock().unwrap() = Some(RepositoryError::Unavailable);
     let request = TestRequest::default()
         .cookie(Cookie::new("session", "sid-1"))
+        .cookie(Cookie::new("csrf", "csrf-1"))
+        .insert_header(("x-csrf-token", "csrf-1"))
         .to_http_request();
 
-    assert_logout_response(profile_logout(endpoint(store), request).await).await;
+    let response = profile_logout(endpoint(store), request).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers().get_all(header::SET_COOKIE).count(), 0);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body()).await.unwrap()).unwrap();
+    assert_eq!(body["error"], "server_error");
 }
 
 #[actix_web::test]
@@ -158,4 +167,20 @@ async fn login_required_contract_clears_both_cookies() {
             "error_description": "Request failed."
         })
     );
+}
+
+#[actix_web::test]
+async fn logout_requires_csrf_before_deleting_a_cookie_session() {
+    let store = Arc::new(RecordingStore::default());
+    let request = TestRequest::default()
+        .cookie(Cookie::new("session", "sid-1"))
+        .to_http_request();
+    let response = profile_logout(endpoint(store.clone()), request).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(store.deleted.lock().unwrap().is_empty());
+    assert_eq!(response.headers().get_all(header::SET_COOKIE).count(), 0);
+    assert_logout_response(
+        profile_logout(endpoint(store), TestRequest::default().to_http_request()).await,
+    )
+    .await;
 }

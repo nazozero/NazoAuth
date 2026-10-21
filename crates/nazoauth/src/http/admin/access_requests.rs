@@ -15,7 +15,7 @@ use chrono::{Duration, Utc};
 use nazo_auth::{AdminClientError, CreateClientRequest};
 use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
-use nazo_http_actix::{json_response, oauth_error};
+use nazo_http_actix::{json_response_no_store, oauth_error};
 use nazo_identity::ports::{
     DeliveryPublish, DeliveryStage, DeliveryStageResult, DeliveryStorePort,
 };
@@ -145,7 +145,9 @@ fn access_requests_response(
         .into_iter()
         .map(access_request_json)
         .collect::<Vec<_>>();
-    json_response(json!({"total": total, "page": page, "page_size": page_size, "items": rows}))
+    json_response_no_store(
+        json!({"total": total, "page": page, "page_size": page_size, "items": rows}),
+    )
 }
 
 pub(crate) async fn admin_approve_access_request(
@@ -186,7 +188,7 @@ pub(crate) async fn admin_approve_access_request(
             )
             .await
             {
-                Ok(true) => return json_response(access_request_json(row)),
+                Ok(true) => return json_response_no_store(access_request_json(row)),
                 Ok(false) => return access_request_already_approved_response(),
                 Err(error) => {
                     tracing::warn!(%error, "failed to resume staged client delivery");
@@ -211,7 +213,7 @@ pub(crate) async fn admin_approve_access_request(
     let request_user = pending_request.user_id;
     let request_user_id = request_user.as_uuid();
     let site_name = pending_request.site_name;
-    let prepared = match client_service.prepare_registration(payload).await {
+    let mut prepared = match client_service.prepare_registration(payload).await {
         Ok(prepared) => prepared,
         Err(error) => return client_preparation_error_response(error),
     };
@@ -232,6 +234,7 @@ pub(crate) async fn admin_approve_access_request(
     };
     let delivery_payload = json!({
         "delivery_state": "staged",
+        "approval_binding": approval_binding(&prepared),
         "request_id": request_id,
         "user_id": request_user_id,
         "client_id": &prepared.client_id,
@@ -260,7 +263,30 @@ pub(crate) async fn admin_approve_access_request(
         .await
     {
         Ok(DeliveryStageResult::Created(staged)) => staged,
-        Ok(DeliveryStageResult::Existing) => return access_request_already_approved_response(),
+        Ok(DeliveryStageResult::Existing) => {
+            match delivery_store.load(request_user, &token).await {
+                Ok(Some(stored))
+                    if resume_pending_approval(
+                        &mut prepared,
+                        &stored,
+                        &config,
+                        request_id,
+                        request_user_id,
+                    ) =>
+                {
+                    stored
+                }
+                Ok(_) => return access_request_already_approved_response(),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to load pending approval delivery");
+                    return oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "客户端凭据交付恢复失败.",
+                    );
+                }
+            }
+        }
         Ok(DeliveryStageResult::Expired) => {
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -290,7 +316,31 @@ pub(crate) async fn admin_approve_access_request(
     let approved = match approval {
         Ok(approved) => approved,
         Err(error) => {
-            if let Some(response) = access_request_approval_error_response(&error) {
+            if matches!(
+                error,
+                nazo_identity::ports::RepositoryError::AlreadyProcessed
+            ) {
+                // Another worker may have committed this same staged attempt.
+                // Never retire its credentials based on this worker's non-commit.
+                match repository.by_id(admin.tenant.tenant_id, request_id).await {
+                    Ok(Some(row)) => match resume_staged_client_delivery(
+                        repository.get_ref(),
+                        delivery_store.get_ref(),
+                        &config,
+                        &row,
+                    )
+                    .await
+                    {
+                        Ok(true) => return json_response_no_store(access_request_json(row)),
+                        Ok(false) => return access_request_already_approved_response(),
+                        Err(error) => {
+                            tracing::warn!(%error, "failed to recover concurrent approval")
+                        }
+                    },
+                    Ok(None) => return access_request_already_approved_response(),
+                    Err(error) => tracing::warn!(%error, "failed to read concurrent approval"),
+                }
+            } else if let Some(response) = access_request_approval_error_response(&error) {
                 if let Err(cleanup_error) =
                     delivery_store.retire(request_user, &token, &staged).await
                 {
@@ -330,7 +380,62 @@ pub(crate) async fn admin_approve_access_request(
             );
         }
     }
-    json_response(access_request_json(approved.request))
+    json_response_no_store(access_request_json(approved.request))
+}
+
+// Bind every validated registration field, including fields not disclosed in
+// the delivery response. A retry revalidates current policy before reusing the
+// original client identifier and secret; it cannot amend an unresolved attempt.
+fn approval_binding(prepared: &nazo_auth::PreparedClientRegistration) -> String {
+    blake3_hex(
+        &json!({
+            "tenant": prepared.tenant,
+            "registration": prepared.registration,
+            "require_mtls_bound_tokens": prepared.require_mtls_bound_tokens,
+        })
+        .to_string(),
+    )
+}
+
+fn resume_pending_approval(
+    prepared: &mut nazo_auth::PreparedClientRegistration,
+    stored: &nazo_identity::ports::DeliveryRecord,
+    config: &AdminAccessRequestConfig,
+    request_id: Uuid,
+    user_id: Uuid,
+) -> bool {
+    let payload = &stored.value;
+    if stored.expires_at <= Utc::now()
+        || payload["delivery_state"] != "staged"
+        || payload["request_id"] != json!(request_id)
+        || payload["user_id"] != json!(user_id)
+        || payload["expires_at"] != json!(stored.expires_at)
+    {
+        return false;
+    }
+    let Some(client_id) = payload["client_id"].as_str() else {
+        return false;
+    };
+    prepared.registration.client_id = client_id.to_owned();
+    if payload["approval_binding"] != json!(approval_binding(prepared)) {
+        return false;
+    }
+    match (
+        payload["client_secret"].as_str(),
+        stored.secret_binding.as_deref(),
+    ) {
+        (Some(secret), Some(binding))
+            if prepared.client_secret_hash.is_some()
+                && client_secret_matches_digest(secret, &config.client_secret_pepper, binding) =>
+        {
+            prepared.issued_secret = Some(secret.to_owned()).into();
+            prepared.client_secret_hash = Some(binding.to_owned());
+        }
+        (None, None)
+            if payload["client_secret"].is_null() && prepared.client_secret_hash.is_none() => {}
+        _ => return false,
+    }
+    true
 }
 
 async fn resume_staged_client_delivery(
@@ -442,7 +547,7 @@ pub(crate) async fn admin_reject_access_request(
     let Some(updated) = updated else {
         return access_request_already_rejected_response();
     };
-    json_response(access_request_json(updated))
+    json_response_no_store(access_request_json(updated))
 }
 
 fn access_request_json(row: nazo_identity::AccessRequest) -> Value {

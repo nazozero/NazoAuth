@@ -75,6 +75,7 @@ pub(super) async fn anonymous_pre_authorized_dpop(
         crate::contracts::request_facts::DpopRequestFacts {
             method: dpop.method.clone(),
             path: dpop.path,
+            authority: dpop.authority,
             proof: dpop.proof.clone(),
             proof_present: dpop.proof_present,
         },

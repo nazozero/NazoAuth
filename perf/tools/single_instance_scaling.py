@@ -3,7 +3,7 @@
 
 Runs inside the perf-runner image on the benchmark host. It uses the
 *unmodified* `docker-compose.perf.yml` topology (postgres, postgres-init,
-valkey, migrate, nazoauth) exactly like perf/tools/soak_run.sh,
+valkey, migrate, nazoauth) with task-owned resources,
 plus an in-container `pinset` helper to place the app on a nested logical
 CPU set while postgres/valkey/k6/audit/samplers share the complementary
 infra set. Docker-level cpuset controls are ineffective on this host's
@@ -823,7 +823,7 @@ def stack_up(point: dict) -> dict:
 
 
 def audit_pair_up(run_id: str, depid: str) -> dict:
-    """Launch the audit receiver + worker exactly like soak_run.sh."""
+    """Launch the audit receiver and worker owned by this task."""
     tls_host = f"{WORKSPACE}/perf-results/anchor-tls/{run_id}"
     Path(tls_host).mkdir(parents=True, exist_ok=True)
     cert, key, verify_key_holder = _gen_receiver_cert(f"sis-rcv-{run_id}")
@@ -1257,7 +1257,7 @@ def wal_snapshot(tag: str, out_dir: Path) -> dict:
             " ORDER BY backend_type, context) t", check=False) or "[]"),
         "db_xact": json.loads(psql(
             "SELECT row_to_json(d) FROM (SELECT xact_commit,"
-            " xact_rollback FROM pg_stat_database"
+            " xact_rollback, stats_reset FROM pg_stat_database"
             " WHERE datname='oauth') d", check=False) or "{}"),
         "guc": {g: psql(f"SHOW {g}", check=False) for g in (
             "track_wal_io_timing", "commit_delay", "commit_siblings",
@@ -1277,21 +1277,23 @@ def wal_delta(pre: dict, post: dict) -> dict:
     """Pre/post subtraction for wal_snapshot pairs. Counters only; any
     changed stats_reset epoch marks the delta invalid."""
     pw, qw = pre.get("pg_stat_wal") or {}, post.get("pg_stat_wal") or {}
-    io_resets = {r.get("stats_reset")
-                 for r in (post.get("pg_stat_io_wal") or [])}
     out = {"valid": True}
-    if (pw.get("stats_reset") is None or qw.get("stats_reset") is None
-            or pw.get("stats_reset") != qw.get("stats_reset")):
-        out["valid"] = False
-        out["reason"] = "pg_stat_wal stats_reset changed or missing"
-    if len(io_resets) > 1 or (io_resets and None in io_resets):
-        out["valid"] = False
-        out["reason"] = "pg_stat_io stats_reset inconsistent"
+
+    def delta(before, after, key):
+        if (before.get("stats_reset") is None
+                or before.get("stats_reset") != after.get("stats_reset")):
+            out.update(valid=False, reason="counter stats_reset changed or missing")
+            return None
+        value = _counter_delta(before.get(key), after.get(key))
+        if value is not None and value < 0:
+            out.update(valid=False, reason="counter regressed")
+            return None
+        return value
     for k in ("wal_records", "wal_fpi", "wal_bytes", "wal_buffers_full"):
-        out[k] = _counter_delta(pw.get(k), qw.get(k))
+        out[k] = delta(pw, qw, k)
 
     def ikey(r):
-        return (r.get("backend_type"), r.get("context"))
+        return (r.get("backend_type"), r.get("object"), r.get("context"))
 
     pre_io = {ikey(r): r for r in pre.get("pg_stat_io_wal") or []}
     rows = []
@@ -1300,32 +1302,24 @@ def wal_delta(pre: dict, post: dict) -> dict:
         rows.append({
             "backend_type": r.get("backend_type"),
             "context": r.get("context"),
-            "writes": _counter_delta(b.get("writes"), r.get("writes")),
-            "write_bytes": _counter_delta(b.get("write_bytes"),
-                                          r.get("write_bytes")),
-            "write_time_ms": _counter_delta(b.get("write_time"),
-                                            r.get("write_time")),
-            "writeouts": _counter_delta(b.get("writeouts"),
-                                        r.get("writeouts")),
-            "fsyncs": _counter_delta(b.get("fsyncs"), r.get("fsyncs")),
-            "fsync_time_ms": _counter_delta(b.get("fsync_time"),
-                                            r.get("fsync_time")),
+            "writes": delta(b, r, "writes"),
+            "write_bytes": delta(b, r, "write_bytes"),
+            "write_time_ms": delta(b, r, "write_time"),
+            "writeouts": delta(b, r, "writeouts"),
+            "fsyncs": delta(b, r, "fsyncs"),
+            "fsync_time_ms": delta(b, r, "fsync_time"),
         })
     out["io_rows"] = rows
-    out["writes_total"] = sum(r["writes"] or 0 for r in rows)
-    out["write_bytes_total"] = sum(r["write_bytes"] or 0 for r in rows)
-    out["write_time_ms_total"] = sum(r["write_time_ms"] or 0 for r in rows)
-    out["fsyncs_total"] = sum(r["fsyncs"] or 0 for r in rows)
-    out["fsync_time_ms_total"] = sum(r["fsync_time_ms"] or 0
-                                   for r in rows)
-    out["fsyncs_client_backend"] = sum(
-        r["fsyncs"] or 0 for r in rows
-        if r.get("backend_type") == "client backend")
+    def total(values):
+        return sum(values) if values and all(v is not None for v in values) else None
+
+    for key in ("writes", "write_bytes", "write_time_ms", "fsyncs", "fsync_time_ms"):
+        out[f"{key}_total"] = total([r[key] for r in rows])
+    out["fsyncs_client_backend"] = total([
+        r["fsyncs"] for r in rows if r.get("backend_type") == "client backend"])
     pd, qd = pre.get("db_xact") or {}, post.get("db_xact") or {}
-    out["db_xact_commit"] = _counter_delta(pd.get("xact_commit"),
-                                         qd.get("xact_commit"))
-    out["db_xact_rollback"] = _counter_delta(pd.get("xact_rollback"),
-                                           qd.get("xact_rollback"))
+    out["db_xact_commit"] = delta(pd, qd, "xact_commit")
+    out["db_xact_rollback"] = delta(pd, qd, "xact_rollback")
     return out
 
 
@@ -1746,6 +1740,9 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
         else:
             interrupted = True
             dc("stop", name, check=False)
+        # Account for the last observed generator completion, including sidecars.
+        side_end_ts = time.time()
+        end_ts = max(end_ts, side_end_ts)
         code = dc("inspect", name, "--format",
                   "{{.State.ExitCode}}", check=False).stdout.strip()
         slog = dc("logs", name, check=False)
@@ -1757,7 +1754,10 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
             "name": sc["name"], "container": name,
             "exit_code": code or "unknown", "interrupted": interrupted,
             "terminal_summary": summary_ok,
-            "pin": sc["pin"],
+            "pin": sc["pin"], "observed_end_ts": side_end_ts,
+            "started_ts": sc["started_ts"],
+            "duration_s": _duration_seconds(sc["duration"]),
+            "warmup_s": sc.get("warmup_ms", 15000) / 1000,
         })
         _remove_owned_by_name(name)
         load_seconds = max(load_seconds, end_ts - start_ts)
@@ -1801,6 +1801,7 @@ def extract_point_metrics(combined: dict) -> dict:
         "window_valid": bool(m.get("window_valid")),
         "window_seconds": contract.get("window_seconds"),
         "window_start_ms": contract.get("window_start_ms"),
+        "scenario_clock_ok": contract.get("scenario_clock_ok"),
         "window_end_ms": contract.get("window_end_ms"),
         "contract_problems": m.get("contract_problems"),
         "ops_per_s": m.get("ops_per_s"),
@@ -1866,55 +1867,51 @@ def _series_value(ev: dict, field: str):
 def windowed_series_delta(soak_jsonl: Path, field: str,
                           window_start_ms: int | float | None,
                           window_end_ms: int | float | None) -> dict:
-    """Cumulative-counter delta inside the k6 measurement window,
-    recovered from the saved soak sampler's per-tick series. The pgss
-    pre/post snapshots and runner-lifetime counters bracket
-    seed+load+drain and must not be divided by the post-warmup cohort;
-    this series is the only same-window source. Linear interpolation
-    between the ~5s ticks bounds the error to one tick per edge."""
+    """Interpolate only within a continuous counter epoch and sampled window."""
+    missing = {"delta": None, "field": field}
     if not soak_jsonl.exists():
-        return {"delta": None, "field": field,
-                "reason": "sampler stream missing"}
-    if not window_start_ms or not window_end_ms:
-        return {"delta": None, "field": field,
-                "reason": "measurement window missing"}
+        return {**missing, "reason": "sampler stream missing"}
+    if window_start_ms is None or window_end_ms is None or window_end_ms <= window_start_ms:
+        return {**missing, "reason": "measurement window missing or invalid"}
+    epoch_field = {"wal_bytes": "wal_stats_reset"}.get(field)
+    if field.startswith("wal_io."):
+        epoch_field = "wal_io.stats_reset"
+    if epoch_field is None:
+        return {**missing, "reason": "counter epoch is unavailable"}
     t0, t1 = window_start_ms / 1000.0, window_end_ms / 1000.0
-    series = []
+    series, interval = [], None
     for line in soak_jsonl.read_text(errors="replace").splitlines():
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
+            return {**missing, "reason": "malformed sampler row"}
+        if ev.get("kind") == "meta":
+            interval = ev.get("interval_s")
             continue
-        val = _series_value(ev, field)
-        ts = ev.get("ts")
-        if isinstance(val, (int, float)) and isinstance(ts, (int, float)):
-            series.append((ts, val))
-    series.sort()
-    if len(series) < 2:
-        return {"delta": None, "field": field,
-                "reason": "insufficient samples"}
+        val, ts = _series_value(ev, field), ev.get("ts")
+        if isinstance(ts, (int, float)):
+            series.append((ts, val, _series_value(ev, epoch_field)))
+    if not isinstance(interval, (int, float)) or interval <= 0:
+        return {**missing, "reason": "sampler interval missing"}
+    before = [i for i, row in enumerate(series) if row[0] <= t0]
+    after = [i for i, row in enumerate(series) if row[0] >= t1]
+    if not before or not after:
+        return {**missing, "reason": "window edges outside sampled range"}
+    rows = series[before[-1]:after[0]+1]
+    if len(rows) < 2 or any(not isinstance(v, (int, float)) or epoch is None
+                            for _, v, epoch in rows):
+        return {**missing, "reason": "counter samples missing"}
+    for (ta, va, ea), (tb, vb, eb) in zip(rows, rows[1:]):
+        if ea != eb or vb < va or not 0 < tb - ta <= 2 * interval:
+            return {**missing, "reason": "counter epoch, monotonicity or sample continuity broken"}
 
-    def interp(t: float) -> float | None:
-        prev = None
-        for ts, val in series:
-            if ts <= t:
-                prev = (ts, val)
-                continue
-            if prev is None:
-                return val if ts <= t + 6 else None
-            if ts == prev[0]:
-                return val
-            return prev[1] + (val - prev[1]) * (t - prev[0]) / (ts - prev[0])
-        return None
+    def interp(t):
+        for (ta, va, _), (tb, vb, _) in zip(rows, rows[1:]):
+            if ta <= t <= tb:
+                return va + (vb - va) * (t - ta) / (tb - ta)
 
-    w0, w1 = interp(t0), interp(t1)
-    if w0 is None or w1 is None:
-        return {"delta": None, "field": field,
-                "reason": "window edges outside sampled range",
-                "series_span": [series[0][0], series[-1][0]]}
-    return {"delta": w1 - w0, "field": field,
-            "window_s": round(t1 - t0, 1),
-            "sample_span": [series[0][0], series[-1][0]]}
+    return {"delta": interp(t1) - interp(t0), "field": field, "estimate": True,
+            "window_s": round(t1 - t0, 1), "sample_span": [rows[0][0], rows[-1][0]]}
 
 
 def acquire_per_http(acquire_count, http_reqs) -> dict:

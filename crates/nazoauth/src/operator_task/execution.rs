@@ -50,6 +50,7 @@ use nazo_persistence::tenant_resources::{
 /// Per-run provenance handed to engines whose durable records name the
 /// accepted operation (audit events only; never an authorization input).
 pub(super) struct ExecutionContext<'a> {
+    pub(super) migration_baseline: Option<&'a str>,
     /// Accepted operation id (`operation_id`, doubles as jti).
     pub(super) operation_id: &'a str,
     /// Signed deployment binding proven local at admission.
@@ -68,10 +69,19 @@ pub(super) async fn execute_with_persistence(
 ) -> Result<Option<ControlResultData>, SideEffectError> {
     match operation {
         ControlOperationPayload::MigrateApply => {
-            Ok(super::migrate_and_initialize_tenant_directory(persistence)
+            super::migrate_and_initialize_tenant_directory(persistence)
                 .await
-                .map(|_| None)
-                .map_err(map_owned_persistence_error)?)
+                .map_err(map_owned_persistence_error)?;
+            let current = persistence
+                .schema_revision()
+                .await
+                .map_err(map_owned_persistence_error)?;
+            Ok(Some(ControlResultData::MigrationApplied {
+                // TODO remove the missing-baseline compatibility case once all
+                // pre-baseline executing journals have settled. Their prior schema
+                // is unknown, so they must not authorize binary rollback.
+                unchanged: context.migration_baseline == Some(current.as_str()),
+            }))
         }
         ControlOperationPayload::KeysList | ControlOperationPayload::KeysValidate => {
             let config = crate::config::ConfigSource::load()?;

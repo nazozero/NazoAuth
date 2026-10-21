@@ -78,7 +78,7 @@ fn test_state() -> TestInfrastructure {
         settings: Arc::new(
             Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
         ),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256),
     }
 }
 
@@ -198,7 +198,9 @@ impl LiveAdminClientUpdateFixture {
                 diesel_db,
                 valkey,
                 settings: Arc::new(settings),
-                keyset: crate::test_support::test_key_manager(),
+                keyset: crate::test_support::test_key_manager_with_auxiliary(
+                    jsonwebtoken::Algorithm::RS256,
+                ),
             }),
             schema: schema.to_owned(),
         };
@@ -276,6 +278,7 @@ impl LiveAdminClientUpdateFixture {
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
@@ -284,7 +287,7 @@ impl LiveAdminClientUpdateFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )
@@ -532,7 +535,10 @@ async fn patch_can_explicitly_clear_every_optional_response_crypto_setting() {
     .await
     .expect("explicit empty optional metadata should clear every setting");
 
-    assert!(prepared.id_token_signed_response_alg.is_none());
+    assert_eq!(
+        prepared.id_token_signed_response_alg.as_deref(),
+        Some("RS256")
+    );
     assert!(prepared.id_token_encrypted_response_alg.is_none());
     assert!(prepared.id_token_encrypted_response_enc.is_none());
     assert!(prepared.request_object_signing_alg.is_none());

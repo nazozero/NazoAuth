@@ -86,7 +86,7 @@ pub use tenant_resources::{
 pub use token_issuance::TokenIssuanceRepository;
 pub use tokens::{RecoveryInvalidation, TokenRepository};
 pub use users::{
-    UserInsert, UserRepository, disable_user_on_connection, insert_user_on_connection,
+    UserInsert, UserRepository, disable_user_on_connection, write_managed_user_on_connection,
 };
 #[cfg(test)]
 #[path = "../../tests/support/query_counter.rs"]

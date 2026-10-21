@@ -15,7 +15,7 @@ for d in sorted(glob.glob("/workspace/perf-results/ladder/*")):
     k=s.get("k6",{}); m=k.get("measure") or {}
     lat=m.get("latency_ms") or k.get("latency_ms") or {}
     row={"point":name,"scenario":s.get("scenario"),"status":s.get("status"),
-        "ops_per_s":m.get("ops_per_s") or k.get("rps"),
+        "ops_per_s":m.get("ops_per_s"),
         "http_rps":k.get("rps"),"http_reqs":k.get("http_reqs"),
         "errors":m.get("errors"),"error_rate":k.get("error_rate"),
         "p50":lat.get("p50"),"p95":lat.get("p95"),"p99":lat.get("p99"),

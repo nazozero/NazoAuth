@@ -1,3 +1,6 @@
+//! In-memory transition model contract tests; these do not validate PostgreSQL
+//! transactions, locks or commit outcomes. Adapter integration tests own that evidence.
+
 use std::{
     collections::HashMap,
     future::Future,
@@ -52,8 +55,6 @@ struct State {
     // issuance id remains part of the read-side identity check below.
     responses: HashMap<(Uuid, String), StoredCredentialResponse>,
     notifications: HashMap<(String, Uuid), NotificationState>,
-    pre_authorized_persists: Vec<(String, CredentialAccess, Option<String>)>,
-    pre_authorized_result: Option<CredentialStoreError>,
 }
 
 #[derive(Clone, Default)]
@@ -261,22 +262,12 @@ impl CredentialStorePort for TransitionStore {
 
     fn persist_pre_authorized_access<'a>(
         &'a self,
-        token_hash: &'a str,
-        access: &'a CredentialAccess,
-        registered_client_id: Option<&'a str>,
+        _offer: &'a [u8],
+        _token_hash: &'a str,
+        _access: &'a CredentialAccess,
+        _registered_client_id: Option<&'a str>,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap();
-            state.pre_authorized_persists.push((
-                token_hash.to_owned(),
-                access.clone(),
-                registered_client_id.map(str::to_owned),
-            ));
-            match state.pre_authorized_result {
-                Some(error) => Err(error),
-                None => Ok(()),
-            }
-        })
+        Box::pin(async { panic!("pre-authorized persistence is covered by service_contract") })
     }
 
     fn offer<'a>(
@@ -289,7 +280,7 @@ impl CredentialStorePort for TransitionStore {
         Box::pin(async { Ok(None) })
     }
 
-    fn consume_pre_authorized_offer<'a>(
+    fn prepare_pre_authorized_offer<'a>(
         &'a self,
         _: Uuid,
         _: &'a str,
@@ -298,7 +289,7 @@ impl CredentialStorePort for TransitionStore {
         _: DateTime<Utc>,
     ) -> CredentialStoreFuture<
         'a,
-        Result<Option<nazo_openid4vci::CredentialAuthorization>, CredentialStoreError>,
+        Result<Option<nazo_openid4vci::PreparedPreAuthorizedOffer>, CredentialStoreError>,
     > {
         Box::pin(async { Ok(None) })
     }
@@ -1076,62 +1067,6 @@ fn nonce_claim_is_linearizable_under_concurrent_requests() {
         )
     });
     assert_ne!(first, second);
-}
-
-// Contract coverage: persist_pre_authorized_access must record and forward all
-// arguments — including the optional registered client id — and the Arc<T>
-// blanket impl must propagate store errors unchanged.
-#[test]
-fn pre_authorized_persist_forwards_arguments_and_errors() {
-    let now = Utc::now();
-    let store = TransitionStore::default();
-    let access = CredentialAccess {
-        authorization_id: None,
-        mtls_x5t_s256: None,
-        proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
-        token_id: Uuid::now_v7(),
-        tenant_id: Uuid::now_v7(),
-        subject_id: Uuid::now_v7(),
-        client_id: "registered-wallet".to_owned(),
-        configuration_ids: vec!["pid".to_owned()],
-        credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
-        dpop_jkt: None,
-        expires_at: now + Duration::minutes(10),
-    };
-
-    block_on(store.persist_pre_authorized_access("hash-a", &access, Some("registered-wallet")))
-        .unwrap();
-    block_on(store.persist_pre_authorized_access("hash-b", &access, None)).unwrap();
-    {
-        let state = store.state.lock().unwrap();
-        assert_eq!(state.pre_authorized_persists.len(), 2);
-        assert_eq!(state.pre_authorized_persists[0].0, "hash-a");
-        assert_eq!(state.pre_authorized_persists[0].1, access);
-        assert_eq!(
-            state.pre_authorized_persists[0].2.as_deref(),
-            Some("registered-wallet")
-        );
-        assert_eq!(state.pre_authorized_persists[1].0, "hash-b");
-        assert_eq!(state.pre_authorized_persists[1].1, access);
-        assert_eq!(state.pre_authorized_persists[1].2, None);
-    }
-
-    store.state.lock().unwrap().pre_authorized_result = Some(CredentialStoreError::ClientInactive);
-    let shared = Arc::new(store);
-    assert_eq!(
-        block_on(CredentialStorePort::persist_pre_authorized_access(
-            &shared,
-            "hash-c",
-            &access,
-            Some("registered-wallet"),
-        )),
-        Err(CredentialStoreError::ClientInactive),
-        "the Arc<T> forwarding impl must propagate ClientInactive unchanged"
-    );
-    assert_eq!(
-        shared.state.lock().unwrap().pre_authorized_persists.len(),
-        3
-    );
 }
 
 // Existing assertions project only the claim payload. Explicit typed-outcome

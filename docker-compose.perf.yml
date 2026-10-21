@@ -96,7 +96,7 @@ services:
       perf_net:
 
   # Audit-anchor export pair for the endurance soak. Both are launched via
-  # `docker compose run` from perf/tools/soak_run.sh once the deployment id
+  # the task-owned performance harness once the deployment id
   # is known, so they intentionally carry no depends_on / static secret env.
   audit-receiver:
     build:

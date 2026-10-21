@@ -602,34 +602,34 @@ impl PresentationOperations for ServerPresentationOperations {
                 transaction.request_method,
                 RequestMethod::RequestUriSignedPost
             ) {
-                let nonce = wallet_nonce
-                    .filter(|nonce| !nonce.is_empty())
-                    .ok_or_else(|| {
-                        vp_error(
+                if let Some(nonce) = wallet_nonce {
+                    if nonce.is_empty() {
+                        return Err(vp_error(
                             400,
                             "invalid_request",
-                            "wallet_nonce is required for POST request_uri retrieval.",
-                        )
-                    })?;
-                let bound = self
-                    .store
-                    .bind_wallet_nonce(transaction_id, nonce, Utc::now())
-                    .await
-                    .map_err(|_| {
-                        vp_error(
-                            503,
-                            "server_error",
-                            "Presentation transaction state is unavailable.",
-                        )
-                    })?;
-                if !bound {
-                    return Err(vp_error(
-                        404,
-                        "invalid_request_uri",
-                        "Presentation request URI is invalid.",
-                    ));
+                            "wallet_nonce must not be empty.",
+                        ));
+                    }
+                    let bound = self
+                        .store
+                        .bind_wallet_nonce(transaction_id, nonce, Utc::now())
+                        .await
+                        .map_err(|_| {
+                            vp_error(
+                                503,
+                                "server_error",
+                                "Presentation transaction state is unavailable.",
+                            )
+                        })?;
+                    if !bound {
+                        return Err(vp_error(
+                            404,
+                            "invalid_request_uri",
+                            "Presentation request URI is invalid.",
+                        ));
+                    }
+                    transaction.request.wallet_nonce = Some(nonce.to_owned());
                 }
-                transaction.request.wallet_nonce = Some(nonce.to_owned());
                 let lease = self.crypto.prepare_signing().map_err(|_| {
                     vp_error(503, "server_error", "Presentation request signing failed.")
                 })?;

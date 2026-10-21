@@ -322,7 +322,13 @@ impl ServerCredentialIssuerOperations {
             .token_service
             .access_token_revoked(tenant_id, &claims)
             .await
-            .unwrap_or(true)
+            .map_err(|_| {
+                vci_error(
+                    503,
+                    "server_error",
+                    "Access token revocation state is unavailable.",
+                )
+            })?
         {
             return Err(vci_error(401, "invalid_token", "Access token is revoked."));
         }

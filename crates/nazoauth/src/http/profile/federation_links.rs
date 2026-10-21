@@ -2,9 +2,6 @@
 //! 用户只能查看和解绑自己的 provider subject 绑定，不能修改 provider 配置。
 use nazo_http_actix::{csrf_error, empty_response_no_store, json_response_no_store, oauth_error};
 
-use crate::adapters::audit::audit_event_required;
-use nazo_oauth_server::ports::audit::audit_fields;
-
 use crate::http::sessions::SessionProfileHandles;
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
@@ -13,7 +10,6 @@ use actix_web::{HttpRequest, HttpResponse};
 
 use nazo_identity::ports::FederationLinkSummary;
 use serde::Serialize;
-use serde_json::json;
 use uuid::Uuid;
 
 pub(crate) async fn my_federation_links(
@@ -62,8 +58,8 @@ pub(crate) async fn unlink_my_federation_link(
         Ok(session) => session.user,
         Err(response) => return response,
     };
-    let link = match federation.unlink(&user, link_id).await {
-        Ok(Some(link)) => link,
+    match federation.unlink(&user, link_id).await {
+        Ok(Some(_)) => {}
         Ok(None) => {
             return oauth_error(
                 StatusCode::NOT_FOUND,
@@ -80,24 +76,6 @@ pub(crate) async fn unlink_my_federation_link(
             );
         }
     };
-    if audit_event_required(
-        "external_identity_unlinked",
-        audit_fields([
-            ("user_id", json!(user.id())),
-            ("provider_type", link.provider_type.into()),
-            ("provider_id", link.provider_id.into()),
-            ("link_id", json!(link.id)),
-        ]),
-    )
-    .await
-    .is_err()
-    {
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "外部身份解绑审计失败.",
-        );
-    }
     empty_response_no_store(StatusCode::NO_CONTENT)
 }
 

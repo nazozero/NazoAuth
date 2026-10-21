@@ -6,9 +6,8 @@ use std::{
 use chrono::{TimeZone as _, Utc};
 use nazo_auth::{
     BackchannelLogoutOutboxPort, IdTokenHintClaims, IdempotentBackchannelLogoutDelivery,
-    LogoutClientRepositoryPort, LogoutDependencyError, LogoutFuture, LogoutInput, LogoutService,
-    LogoutServiceError, LogoutSession, LogoutTokenSignerPort, RegisteredLogoutClient,
-    RpLogoutRequest,
+    LogoutClientRepositoryPort, LogoutFuture, LogoutInput, LogoutService, LogoutServiceError,
+    LogoutSession, LogoutTokenSignerPort, RegisteredLogoutClient, RpLogoutRequest,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -223,6 +222,35 @@ fn logout_batches_session_clients_and_reuses_the_validated_hint() {
 }
 
 #[test]
+fn unrelated_hint_does_not_suppress_confirmed_current_session_notifications() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    clients.clients.lock().unwrap().extend([
+        client(tenant_id, "client-a", true),
+        client(tenant_id, "client-b", true),
+    ]);
+    let outbox = Arc::new(Outbox::default());
+    let mut request = input(tenant_id, Some("client-a"));
+    request.request.id_token_hint_present = true;
+    request.id_token_hint = Some(IdTokenHintClaims {
+        sub: Uuid::now_v7().to_string(),
+        aud: json!("client-a"),
+        sid: Some("another-session".to_owned()),
+    });
+    let result =
+        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
+    assert_eq!(result.frontchannel_logout_urls.len(), 2);
+    let deliveries = outbox.deliveries.lock().unwrap();
+    assert_eq!(deliveries.len(), 2);
+    assert!(
+        deliveries
+            .iter()
+            .all(|delivery| delivery.logout_token.ends_with(":sid-1"))
+    );
+}
+
+#[test]
 fn expired_hint_is_accepted_only_when_bound_to_the_current_session() {
     let tenant_id = Uuid::now_v7();
     let clients = Arc::new(Clients::default());
@@ -396,14 +424,6 @@ fn client(tenant_id: Uuid, client_id: &str, active: bool) -> RegisteredLogoutCli
         subject_type: "public".to_owned(),
         sector_identifier_host: None,
     }
-}
-
-#[test]
-fn dependency_error_is_closed_and_non_http() {
-    assert_eq!(
-        LogoutDependencyError::Unavailable,
-        LogoutDependencyError::Unavailable
-    );
 }
 
 #[test]

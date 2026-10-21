@@ -186,6 +186,37 @@ pub(super) struct OperationJournalRecord {
     /// Only a completed deployment-wide recovery receipt carries version 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     recovery_coverage_version: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) migration_baseline: Option<String>,
+}
+
+impl OperationJournalRecord {
+    pub(super) fn needs_migration_baseline(&self) -> bool {
+        self.phase == PHASE_ACCEPTED && self.migration_baseline.is_none()
+    }
+
+    pub(super) fn persist_migration_baseline(
+        &mut self,
+        state_directory: &Path,
+        revision: String,
+    ) -> Result<(), JournalFlowError> {
+        if !self.needs_migration_baseline() || revision.is_empty() || revision.len() > 256 {
+            return Err(transport(anyhow::anyhow!(
+                "invalid migration baseline checkpoint"
+            )));
+        }
+        self.migration_baseline = Some(revision);
+        // Publish the baseline with the existing executing checkpoint. A crash
+        // after DDL must never capture a new baseline on re-entry.
+        self.phase = PHASE_EXECUTING.to_owned();
+        replace_record(
+            &record_path(
+                &control_journal_directory(state_directory),
+                &self.operation_id,
+            ),
+            self,
+        )
+    }
 }
 
 const PHASE_ACCEPTED: &str = "accepted";
@@ -468,6 +499,7 @@ pub(super) fn accept(
     let record = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
         recovery_coverage_version: None,
+        migration_baseline: None,
         operation_id: operation.operation_id.clone(),
         request_hash: request_hash.to_owned(),
         controller_id: snapshot.controller_id,

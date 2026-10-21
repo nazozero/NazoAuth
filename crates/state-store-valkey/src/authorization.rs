@@ -1,7 +1,7 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use nazo_auth::{
     AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
-    AuthorizationStateSnapshot, ConsentPayload, DecisionMaterialDiscardError,
+    AuthorizationStateSnapshot, CodePayload, ConsentPayload, DecisionMaterialDiscardError,
     DecisionMaterialDiscardOutcome, PushedAuthorizationRequest,
 };
 
@@ -51,13 +51,13 @@ if not ok or type(state) ~= 'table' or type(state.status) ~= 'string' then
   return 'malformed'
 end
 if state.status == 'pending' then
-  if type(state.payload) ~= 'table' then
+  if type(state.payload) ~= 'string' then
     return 'malformed'
   end
   state.status = 'consuming'
   state.consuming_at = ARGV[1]
   redis.call('SET', KEYS[1], cjson.encode(state), 'KEEPTTL')
-  return 'consuming|' .. cjson.encode(state.payload)
+  return 'consuming|' .. state.payload
 end
 if state.status == 'consuming' then
   return 'busy'
@@ -98,6 +98,54 @@ pub enum AuthorizationPreparationWrite {
 #[derive(Clone, Debug)]
 pub struct AuthorizationStore {
     connection: ValkeyConnection,
+}
+
+// Lua owns the state transition, but must never decode the approved payload.
+// This wire representation belongs to the adapter; domain values remain typed.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(
+    remote = "AuthorizationCodeState",
+    tag = "status",
+    rename_all = "snake_case"
+)]
+enum AuthorizationCodeWire {
+    Pending {
+        #[serde(with = "opaque_payload")]
+        payload: CodePayload,
+    },
+    Consuming {
+        #[serde(with = "opaque_payload")]
+        payload: CodePayload,
+        consuming_at: DateTime<Utc>,
+    },
+    Consumed,
+    Failed {
+        failed_at: DateTime<Utc>,
+        error: String,
+    },
+}
+
+#[derive(serde::Serialize)]
+struct CodeWireRef<'a>(#[serde(with = "AuthorizationCodeWire")] &'a AuthorizationCodeState);
+
+#[derive(serde::Deserialize)]
+struct StoredCode(#[serde(with = "AuthorizationCodeWire")] AuthorizationCodeState);
+
+mod opaque_payload {
+    use super::CodePayload;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &CodePayload, serializer: S) -> Result<S::Ok, S::Error> {
+        let raw = serde_json::to_string(value).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&raw)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<CodePayload, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+        serde_json::from_str(&raw).map_err(serde::de::Error::custom)
+    }
 }
 
 impl AuthorizationStore {
@@ -208,23 +256,30 @@ impl AuthorizationStore {
         state: &AuthorizationCodeState,
         ttl_seconds: u64,
     ) -> Result<(), Error> {
-        self.store_json(keys::authorization_code_hash(code_hash), state, ttl_seconds)
-            .await
+        self.store_json(
+            keys::authorization_code_hash(code_hash),
+            &CodeWireRef(state),
+            ttl_seconds,
+        )
+        .await
     }
 
     pub async fn load_authorization_code(
         &self,
         code: &str,
     ) -> Result<Option<AuthorizationCodeState>, Error> {
-        self.load_json(keys::authorization_code(code)).await
+        self.load_json::<StoredCode>(keys::authorization_code(code))
+            .await
+            .map(|stored| stored.map(|state| state.0))
     }
 
     pub async fn load_authorization_code_hash(
         &self,
         code_hash: &str,
     ) -> Result<Option<AuthorizationCodeState>, Error> {
-        self.load_json(keys::authorization_code_hash(code_hash))
+        self.load_json::<StoredCode>(keys::authorization_code_hash(code_hash))
             .await
+            .map(|stored| stored.map(|state| state.0))
     }
 
     pub async fn delete_authorization_code_hash(&self, code_hash: &str) -> Result<i64, Error> {
@@ -252,7 +307,7 @@ impl AuthorizationStore {
         replacement: &AuthorizationCodeState,
         ttl_seconds: u64,
     ) -> Result<AuthorizationCodeTransitionResult, Error> {
-        let raw = serde_json::to_string(replacement).map_err(|error| {
+        let raw = serde_json::to_string(&CodeWireRef(replacement)).map_err(|error| {
             Error::protocol(format!("failed to serialize authorization code: {error}"))
         })?;
         let reply = command::eval_string(

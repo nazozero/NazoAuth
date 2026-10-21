@@ -16,7 +16,6 @@ use http::StatusCode;
 use nazo_auth::{
     DpopNoncePolicy, issue_authorization_server_dpop_nonce, normalize_authorization_details,
 };
-use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 use serde_json::{Value, json};
 // 统一 access_token、refresh_token 和 id_token 的响应形状。
 
@@ -201,23 +200,6 @@ fn refreshed_id_token_essential_claims_satisfied(
                 _ => extra_claims.get(&request.name).map(Cow::Borrowed),
             };
             actual.is_some_and(|actual| request.matches_value(&actual))
-        })
-}
-
-fn id_token_signing_alg_for_client(client: &ClientRow) -> nazo_crypto::jwt::Algorithm {
-    client
-        .id_token_signed_response_alg
-        .as_deref()
-        .and_then(signing_algorithm_from_name)
-        .unwrap_or_else(|| {
-            if client.require_dpop_bound_tokens
-                || client.require_mtls_bound_tokens
-                || client.require_par_request_object
-            {
-                nazo_crypto::jwt::Algorithm::PS256
-            } else {
-                nazo_crypto::jwt::Algorithm::RS256
-            }
         })
 }
 

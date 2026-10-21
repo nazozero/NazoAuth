@@ -46,6 +46,7 @@ async fn fapi_http_signature_replay_preserves_exact_key_value_and_ttl_contract()
     ));
     let _: i64 = inspector.del(&key).await.unwrap();
 
+    let started = std::time::Instant::now();
     assert!(
         store
             .consume_fapi_http_signature(tenant_id, &fingerprint, 10)
@@ -53,8 +54,12 @@ async fn fapi_http_signature_replay_preserves_exact_key_value_and_ttl_contract()
             .unwrap()
     );
     assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
-    let ttl = inspector.ttl::<i64, _>(&key).await.unwrap();
-    assert!(ttl > 0 && ttl <= 15, "expected max-age + 5s TTL, got {ttl}");
+    let ttl = inspector.pttl::<i64, _>(&key).await.unwrap();
+    let minimum = 15_000 - started.elapsed().as_millis() as i64 - 1;
+    assert!(
+        ttl > 0 && ttl >= minimum && ttl <= 15_000,
+        "expected max-age + 5s TTL, got {ttl}ms"
+    );
     assert!(
         !store
             .consume_fapi_http_signature(tenant_id, &fingerprint, 10)
@@ -187,6 +192,7 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     .map(nazo_valkey::test_support::state_storage_key);
     let _: i64 = inspector.del(keys.to_vec()).await.unwrap();
 
+    let started = std::time::Instant::now();
     assert!(store.consume_dpop(jkt, jti, 30).await.unwrap());
     assert!(
         store
@@ -209,7 +215,13 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
     for key in &keys {
         assert_eq!(inspector.get::<String, _>(key).await.unwrap(), "1");
-        assert!((1..=30).contains(&inspector.ttl::<i64, _>(key).await.unwrap()));
+        let ttl = inspector.pttl::<i64, _>(key).await.unwrap();
+        // Absolute-expiry contracts round the captured wall clock to seconds.
+        let minimum = 30_000 - started.elapsed().as_millis() as i64 - 1000;
+        assert!(
+            ttl > 0 && ttl >= minimum && ttl <= 30_000,
+            "insufficient remaining TTL: {ttl}ms"
+        );
     }
     assert!(!store.consume_dpop(jkt, jti, 30).await.unwrap());
     assert!(
@@ -233,12 +245,12 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
 
     let adapter = AuthorizationStateAdapter::new(&connection);
-    let adapter_jti = "adapter-jti";
+    let adapter_jti = format!("adapter-jti-{}", uuid::Uuid::now_v7());
     assert!(
         adapter
             .consume_ciba_request_object(
                 client_id,
-                adapter_jti,
+                &adapter_jti,
                 chrono::Utc::now().timestamp() + 30
             )
             .await
@@ -248,7 +260,7 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
         !adapter
             .consume_ciba_request_object(
                 client_id,
-                adapter_jti,
+                &adapter_jti,
                 chrono::Utc::now().timestamp() + 30
             )
             .await

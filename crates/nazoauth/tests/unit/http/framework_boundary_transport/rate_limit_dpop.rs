@@ -124,6 +124,7 @@ async fn framework_boundary_transport_rate_limit_store_failure_exact_wire_and_or
 #[actix_web::test]
 async fn framework_boundary_transport_duplicate_dpop_header_has_exact_error_wire() {
     let req = TestRequest::default()
+        .insert_header(("Host", "issuer.example"))
         .insert_header(("dpop", "first-proof"))
         .append_header(("dpop", "second-proof"))
         .to_http_request();
@@ -156,6 +157,7 @@ async fn framework_boundary_transport_duplicate_dpop_header_has_exact_error_wire
 #[test]
 fn framework_boundary_transport_empty_dpop_header_is_present_but_has_no_proof() {
     let req = TestRequest::default()
+        .insert_header(("Host", "issuer.example"))
         .insert_header(("dpop", "   "))
         .to_http_request();
     assert!(nazo_http_actix::dpop_proof_present(req.headers()));
@@ -241,6 +243,7 @@ async fn framework_boundary_transport_dpop_nonce_then_replay_store_order() {
         signed_boundary_dpop_proof("https://issuer.example/token", None, None, "stable-jti");
     let req = TestRequest::post()
         .uri("/token")
+        .insert_header(("Host", "issuer.example"))
         .insert_header(("dpop", proof_without_nonce))
         .to_http_request();
     let first = nazo_oauth_server::security::dpop::validate_dpop_proof(
@@ -268,6 +271,7 @@ async fn framework_boundary_transport_dpop_nonce_then_replay_store_order() {
     );
     let req = TestRequest::post()
         .uri("/token")
+        .insert_header(("Host", "issuer.example"))
         .insert_header(("dpop", proof))
         .to_http_request();
     assert!(
@@ -314,6 +318,7 @@ async fn framework_boundary_transport_dpop_ath_and_htu_fail_before_state_port() 
         signed_boundary_dpop_proof("https://attacker.example/token", None, None, "htu-jti");
     let req = TestRequest::post()
         .uri("/token")
+        .insert_header(("Host", "issuer.example"))
         .insert_header(("dpop", wrong_htu))
         .to_http_request();
     assert!(matches!(
@@ -334,6 +339,7 @@ async fn framework_boundary_transport_dpop_ath_and_htu_fail_before_state_port() 
         signed_boundary_dpop_proof("https://issuer.example/token", None, None, "ath-jti");
     let req = TestRequest::post()
         .uri("/token")
+        .insert_header(("Host", "issuer.example"))
         .insert_header(("dpop", missing_ath))
         .to_http_request();
     assert!(matches!(

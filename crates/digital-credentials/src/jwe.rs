@@ -196,7 +196,7 @@ fn decrypt_ecdh_es(
         .map_err(|_| JweError::Malformed)?;
     let header: DecryptionHeader<'_> =
         serde_json::from_slice(&header_bytes).map_err(|_| JweError::Malformed)?;
-    if header.alg != "ECDH-ES" {
+    if header.alg != "ECDH-ES" || header.crit_present {
         return Err(JweError::Unsupported);
     }
     let (enc, key_bits) = match header.enc.as_ref() {
@@ -257,6 +257,12 @@ fn decompress_deflate(compressed: &[u8]) -> Result<Vec<u8>, JweError> {
 
 #[derive(Deserialize)]
 struct DecryptionHeader<'a> {
+    #[serde(
+        default,
+        rename = "crit",
+        deserialize_with = "nazo_crypto::deserialize_present_header"
+    )]
+    crit_present: bool,
     #[serde(borrow)]
     alg: Cow<'a, str>,
     #[serde(borrow)]

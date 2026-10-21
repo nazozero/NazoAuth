@@ -177,6 +177,10 @@ impl crate::operator_task::OperatorPersistence for MemoryOperatorPersistence {
         unimplemented!("keyctl tests do not use tenant directory lookup")
     }
 
+    fn schema_revision(&self) -> crate::operator_task::OperatorBackendFuture<'_, String> {
+        unimplemented!("keyctl tests do not inspect schema revisions")
+    }
+
     fn run_migrations(&self) -> crate::operator_task::OperatorBackendFuture<'_, bool> {
         unimplemented!("keyctl tests do not run migrations")
     }

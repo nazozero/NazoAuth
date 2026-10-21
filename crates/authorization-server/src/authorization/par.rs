@@ -476,6 +476,23 @@ impl PreparedParClient<'_> {
         } else {
             None
         };
+        nazo_auth::apply_sender_constraint(
+            nazo_auth::sender_constraint_policy(
+                client.require_dpop_bound_tokens,
+                client.require_mtls_bound_tokens,
+            ),
+            nazo_auth::PresentedSenderConstraint {
+                dpop_jkt: dpop_jkt.as_deref(),
+                mtls_x5t_s256: mtls_x5t_s256.as_deref(),
+            },
+        )
+        .map_err(|_| {
+            OAuthEndpointError::json(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "PAR sender constraint does not match client policy.",
+            )
+        })?;
 
         if let Some(replay) = request_object_replay.as_ref() {
             context

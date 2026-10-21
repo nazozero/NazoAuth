@@ -50,7 +50,12 @@ async fn isolated_registry(
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
     let base = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()?;
+        .ok();
+    assert!(
+        base.is_some() || std::env::var_os("CI").is_none(),
+        "CI requires a PostgreSQL URL"
+    );
+    let base = base?;
     nazo_postgres::run_pending_migrations(&base)
         .await
         .expect("public application migrations should apply");

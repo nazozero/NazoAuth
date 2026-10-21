@@ -207,7 +207,7 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
     )
     .await
     .unwrap();
-    let stale = EmailVerificationStorePort::load_code(&store, tenant_id, &email)
+    let stale = EmailVerificationStorePort::reserve_code_attempt(&store, tenant_id, &email, 5)
         .await
         .unwrap()
         .unwrap();
@@ -232,7 +232,7 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         "a stale consumer must not delete a newer verification code"
     );
 
-    let current = EmailVerificationStorePort::load_code(&store, tenant_id, &email)
+    let current = EmailVerificationStorePort::reserve_code_attempt(&store, tenant_id, &email, 5)
         .await
         .unwrap()
         .unwrap();
@@ -254,6 +254,66 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn email_challenge_atomically_bounds_attempts_without_extending_expiry() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let tenant_id = tenant(20);
+    let email = format!("attempts-{}@example.com", uuid::Uuid::now_v7());
+    assert!(
+        store
+            .reserve_email_send(tenant_id, &email, "owner", 30)
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .store_email_code(tenant_id, &email, "owner", "code-hash", 30)
+            .await
+            .unwrap()
+    );
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:email_verify:{}:code:{}",
+        tenant_id.as_uuid(),
+        blake3::hash(email.as_bytes()).to_hex()
+    ));
+    let deadline = inspector.expire_time::<i64, _>(&key).await.unwrap();
+    assert!(deadline > 0);
+    let records =
+        futures_util::future::join_all((0..20).map(|_| {
+            EmailVerificationStorePort::reserve_code_attempt(&store, tenant_id, &email, 5)
+        }))
+        .await;
+    let records: Vec<_> = records
+        .into_iter()
+        .filter_map(|result| result.unwrap())
+        .collect();
+    assert_eq!(records.len(), 5);
+    assert_eq!(
+        inspector.expire_time::<i64, _>(&key).await.unwrap(),
+        deadline
+    );
+    assert!(
+        records
+            .iter()
+            .all(|record| record.opaque_version == records[0].opaque_version)
+    );
+    assert_eq!(
+        EmailVerificationStorePort::consume_code(
+            &store,
+            tenant_id,
+            &email,
+            &records[0].opaque_version
+        )
+        .await
+        .unwrap(),
+        EmailVerificationConsume::Consumed
+    );
+    assert_eq!(inspector.exists::<i64, _>(&key).await.unwrap(), 0);
 }
 
 #[tokio::test]
@@ -317,14 +377,14 @@ async fn email_verification_state_isolated_by_tenant() {
     .await
     .unwrap();
     assert!(
-        EmailVerificationStorePort::load_code(&store, second_tenant, &email)
+        EmailVerificationStorePort::reserve_code_attempt(&store, second_tenant, &email, 5)
             .await
             .unwrap()
             .is_none(),
         "another tenant must not load the first tenant's code"
     );
     let first_before_foreign_delete =
-        EmailVerificationStorePort::load_code(&store, first_tenant, &email)
+        EmailVerificationStorePort::reserve_code_attempt(&store, first_tenant, &email, 5)
             .await
             .unwrap()
             .unwrap();
@@ -332,7 +392,7 @@ async fn email_verification_state_isolated_by_tenant() {
         .await
         .unwrap();
     assert_eq!(
-        EmailVerificationStorePort::load_code(&store, first_tenant, &email)
+        EmailVerificationStorePort::reserve_code_attempt(&store, first_tenant, &email, 5)
             .await
             .unwrap(),
         Some(first_before_foreign_delete),
@@ -348,11 +408,11 @@ async fn email_verification_state_isolated_by_tenant() {
     )
     .await
     .unwrap();
-    let first = EmailVerificationStorePort::load_code(&store, first_tenant, &email)
+    let first = EmailVerificationStorePort::reserve_code_attempt(&store, first_tenant, &email, 5)
         .await
         .unwrap()
         .unwrap();
-    let second = EmailVerificationStorePort::load_code(&store, second_tenant, &email)
+    let second = EmailVerificationStorePort::reserve_code_attempt(&store, second_tenant, &email, 5)
         .await
         .unwrap()
         .unwrap();
@@ -369,13 +429,13 @@ async fn email_verification_state_isolated_by_tenant() {
         EmailVerificationConsume::Consumed
     );
     assert!(
-        EmailVerificationStorePort::load_code(&store, first_tenant, &email)
+        EmailVerificationStorePort::reserve_code_attempt(&store, first_tenant, &email, 5)
             .await
             .unwrap()
             .is_none()
     );
     assert_eq!(
-        EmailVerificationStorePort::load_code(&store, second_tenant, &email)
+        EmailVerificationStorePort::reserve_code_attempt(&store, second_tenant, &email, 5)
             .await
             .unwrap(),
         Some(second),
@@ -426,6 +486,7 @@ async fn login_session_create_is_atomic_and_never_overwrites_a_collision() {
     let session_id = format!("login-collision-{}", uuid::Uuid::now_v7());
     let first = SessionRecord::new(
         nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        0,
         1,
         vec!["password".to_owned()],
         false,
@@ -433,6 +494,7 @@ async fn login_session_create_is_atomic_and_never_overwrites_a_collision() {
     );
     let second = SessionRecord::new(
         nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        0,
         2,
         vec!["password".to_owned()],
         true,
@@ -468,6 +530,7 @@ async fn login_session_replacement_atomically_invalidates_the_previous_session()
     let replacement_id = format!("login-replacement-{}", uuid::Uuid::now_v7());
     let previous = SessionRecord::new(
         nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        0,
         1,
         vec!["password".to_owned()],
         false,
@@ -475,6 +538,7 @@ async fn login_session_replacement_atomically_invalidates_the_previous_session()
     );
     let replacement = SessionRecord::new(
         nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        0,
         2,
         vec!["password".to_owned()],
         true,
@@ -535,7 +599,7 @@ async fn login_session_replacement_atomically_invalidates_the_previous_session()
         &replacement
     );
     let replacement_key =
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{replacement_id}"));
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{replacement_id}"));
     assert!((1..=60).contains(&inspector.ttl::<i64, _>(replacement_key).await.unwrap()));
 }
 
@@ -577,56 +641,44 @@ async fn concurrent_rate_counters_are_atomic_and_preserve_first_window_ttl() {
 }
 
 #[tokio::test]
-async fn mfa_failure_budget_is_session_bound_and_clears_after_success() {
+async fn mfa_failure_budget_is_account_bound_and_clears_after_success() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
     let store = RateLimitStore::new(&connection);
     let tenant = nazo_identity::TenantId::new(uuid::Uuid::from_u128(1)).unwrap();
-    let user = nazo_identity::UserId::new(uuid::Uuid::from_u128(2)).unwrap();
-    let session = format!("pending-{}", uuid::Uuid::now_v7());
-
+    let user = nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap();
     for _ in 0..5 {
         assert_eq!(
-            store
-                .reserve_attempt(tenant, user, &session, 30, 5)
-                .await
-                .unwrap(),
+            store.reserve_attempt(tenant, user, 30, 5).await.unwrap(),
             MfaAttemptThrottleDecision::Allowed
         );
     }
+    // There is no session input: starting another login cannot reset this account budget.
     assert_eq!(
-        store
-            .reserve_attempt(tenant, user, &session, 30, 5)
-            .await
-            .unwrap(),
+        store.reserve_attempt(tenant, user, 30, 5).await.unwrap(),
         MfaAttemptThrottleDecision::Limited {
             retry_after_seconds: 30
         }
     );
-    let subject = format!("{}:{}:{session}", tenant.as_uuid(), user.as_uuid());
+    let subject = format!("{}:{}", tenant.as_uuid(), user.as_uuid());
     let key = nazo_valkey::test_support::state_storage_key(format!(
         "oauth:mfa_failure:{}",
         blake3::hash(subject.as_bytes()).to_hex()
     ));
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
-
-    store.clear_attempts(tenant, user, &session).await.unwrap();
+    let other = nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap();
     assert_eq!(
-        store
-            .reserve_attempt(tenant, user, &session, 30, 5)
-            .await
-            .unwrap(),
+        store.reserve_attempt(tenant, other, 30, 5).await.unwrap(),
         MfaAttemptThrottleDecision::Allowed
     );
-    let other_session = format!("pending-{}", uuid::Uuid::now_v7());
+    store.clear_attempts(tenant, user).await.unwrap();
     assert_eq!(
-        store
-            .reserve_attempt(tenant, user, &other_session, 30, 5)
-            .await
-            .unwrap(),
+        store.reserve_attempt(tenant, user, 30, 5).await.unwrap(),
         MfaAttemptThrottleDecision::Allowed
     );
+    store.clear_attempts(tenant, user).await.unwrap();
+    store.clear_attempts(tenant, other).await.unwrap();
 }
 
 #[tokio::test]
@@ -758,10 +810,11 @@ async fn late_smtp_failure_preserves_newer_code_and_both_cooldowns() {
         newer.send_verification_code(&email, &peer).await.unwrap(),
         nazo_identity::SendVerificationCodeOutcome::Sent { .. }
     ));
-    let before = EmailVerificationStorePort::load_code(&store, tenant.tenant_id, &email)
-        .await
-        .unwrap()
-        .unwrap();
+    let before =
+        EmailVerificationStorePort::reserve_code_attempt(&store, tenant.tenant_id, &email, 5)
+            .await
+            .unwrap()
+            .unwrap();
     let code_key = nazo_valkey::test_support::state_storage_key(format!(
         "oauth:email_verify:{}:code:{}",
         tenant.tenant_id.as_uuid(),
@@ -777,7 +830,7 @@ async fn late_smtp_failure_preserves_newer_code_and_both_cooldowns() {
         Err(nazo_identity::SendVerificationCodeError::Delivery(_))
     ));
     assert_eq!(
-        EmailVerificationStorePort::load_code(&store, tenant.tenant_id, &email)
+        EmailVerificationStorePort::reserve_code_attempt(&store, tenant.tenant_id, &email, 5)
             .await
             .unwrap(),
         Some(before)
@@ -957,10 +1010,15 @@ async fn late_hash_cannot_store_after_owner_expiry_or_overwrite_a_new_sender() {
             assert_eq!(new_delivery.load(Ordering::SeqCst), 1);
         } else {
             assert!(
-                EmailVerificationStorePort::load_code(&store, context.tenant_id, &email)
-                    .await
-                    .unwrap()
-                    .is_none()
+                EmailVerificationStorePort::reserve_code_attempt(
+                    &store,
+                    context.tenant_id,
+                    &email,
+                    5
+                )
+                .await
+                .unwrap()
+                .is_none()
             );
         }
     }

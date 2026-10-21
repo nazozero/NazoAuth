@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 blake3.workspace = true
 chrono.workspace = true
@@ -18,6 +21,7 @@ thiserror.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
+nazo-valkey = { path = ".", features = ["test-support"] }
 futures-util.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid = { workspace = true, features = ["v7", "serde"] }

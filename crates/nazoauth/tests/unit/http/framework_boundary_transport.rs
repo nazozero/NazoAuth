@@ -40,7 +40,9 @@ async fn live_transport_state() -> crate::test_support::TestInfrastructure {
         diesel_db: database,
         valkey,
         settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_auxiliary(
+            jsonwebtoken::Algorithm::RS256,
+        ),
     }
 }
 

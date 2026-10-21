@@ -2,6 +2,13 @@
 CONTRACT = "blackbox-db-v1"
 INTERNAL_GATES = ("queue_dropped_zero", "pending_zero_post_drain", "enqueued_eq_persisted")
 
+def business_ops_per_second(k6):
+    """Only successful operations in a validated measurement window are capacity."""
+    measure = k6.get("measure") or {}
+    return (measure.get("successful_ops_per_s")
+            if measure.get("window_valid") is True and measure.get("cohort_valid") is True
+            else None)
+
 def unavailable_dimension(field):
     return {"field": field, "delta": None, "status": "UNAVAILABLE",
             "reason": "application performance collection removed"}

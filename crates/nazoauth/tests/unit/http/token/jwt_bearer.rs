@@ -477,7 +477,7 @@ async fn jwt_bearer_replay_rejects_a_consumed_jti_after_a_committed_issuance() {
         .await
         .expect("first JWT bearer assertion use should be accepted");
 
-    let grant_key = jwt_bearer_grant_key(&validated.jti, None, None);
+    let grant_key = jwt_bearer_grant_key(&validated.jti);
     crate::http::token::issue::tests::persist_consumed_single_use_grant_for_test(
         &state, &client, &grant_key,
     )

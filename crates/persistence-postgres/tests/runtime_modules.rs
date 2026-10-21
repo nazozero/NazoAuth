@@ -1,3 +1,6 @@
+#[path = "support/database.rs"]
+mod isolated_database;
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -189,6 +192,8 @@ async fn guarded_desired_changes_are_serialized_across_database_connections() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -273,6 +278,8 @@ async fn concurrent_first_instance_writes_return_one_applied_and_one_stale() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .unwrap();
@@ -334,6 +341,8 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -438,6 +447,8 @@ async fn desired_state_cas_is_atomic_stale_safe_and_noop_audited() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -499,6 +510,8 @@ async fn runtime_event_page_returns_typed_newest_first_records() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -545,6 +558,8 @@ async fn instance_completion_cannot_overwrite_a_newer_transition_revision() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -670,6 +685,8 @@ async fn desired_revision_change_commits_before_old_completion_and_forces_stale_
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -788,6 +805,8 @@ async fn instance_event_insert_failure_rolls_back_state_mutation() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -848,6 +867,8 @@ async fn audit_persistence_accepts_every_closed_event_kind() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -953,6 +974,8 @@ async fn stale_observation_is_state_preserving_with_current_or_superseded_revisi
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .unwrap();
@@ -1086,6 +1109,8 @@ async fn revision_validation_is_tenant_scoped_and_tracks_authoritative_changes()
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .unwrap();

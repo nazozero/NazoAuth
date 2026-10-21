@@ -535,10 +535,7 @@ fn validate_jwe_metadata(
                 .copied()
                 .unwrap_or_default()
             {
-                1 => Ok(()),
-                2.. => invalid(format!(
-                    "启用 {capability_name} 必须且只能配置一个匹配的 jwks 加密公钥"
-                )),
+                1.. => Ok(()),
                 _ => invalid(format!(
                     "启用 {capability_name} 必须配置匹配的 jwks 加密公钥"
                 )),

@@ -39,6 +39,11 @@ verification. An old session receives `403 reauthentication_required`; listing
 credentials does not require a fresh proof. Login uses an email-first flow so the
 server can scope allowed credentials to one active tenant-bound user.
 
+Email-first login exposes stable allowed credential identifiers for enrolled
+accounts. Dummy challenges keep the response shape usable for absent accounts,
+but do not guarantee account non-enumerability across repeated requests. This
+profile does not implement discoverable, username-free login.
+
 ## Security Model
 
 WebAuthn ceremonies use the `passkey-auth` verifier. The server verifies challenge freshness, exact origin, RP ID hash, authenticator signature, user verification policy, user-handle binding, and authenticator counter replay protection.
@@ -58,8 +63,9 @@ damaged credential data cannot silently turn into a usable exclusion list.
 
 ## Credential Persistence
 
-Credential insertion and its Required `passkey_registered` audit event commit
-in the same PostgreSQL transaction; either both persist or neither persists.
+Credential insertion and deletion commit with their Required `passkey_registered`
+and `passkey_deleted` audit events in the same adapter-owned transaction. Each
+mutation and its audit fact either both persist or neither persists.
 
 Credential JSONB uses the existing WebAuthn Serde implementation. Identity
 consumes the credential Value from its owned repository row when decoding,

@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import single_instance_scaling as sis  # noqa: E402
+import checkpoint_analyze as checkpoint
 from blackbox_contract import (CONTRACT, audit_queue_unverified, require_external_point,
                                unavailable_dimension, unverified_gates)
 
@@ -212,7 +213,7 @@ def _journal_scan(lines, deployment: str, seq_lo: int, seq_hi: int) -> dict:
                 et = ev.get("event_type") or "<missing>"
                 by_type[et] = by_type.get(et, 0) + 1
                 occ = ev.get("occurred_at")
-                if isinstance(occ, str):
+                if et == "token_issued" and isinstance(occ, str):
                     try:
                         ms = int(datetime.datetime.fromisoformat(
                             occ.replace("Z", "+00:00"))
@@ -237,7 +238,7 @@ def _journal_scan(lines, deployment: str, seq_lo: int, seq_hi: int) -> dict:
             and in_range == list(range(seq_lo + 1, seq_hi + 1)),
         "by_event_type": by_type,
         "token_issued_in_range": by_type.get("token_issued", 0),
-        "per_second_counts": per_second,
+        "token_issued_per_second_counts": per_second,
     }
 
 
@@ -730,7 +731,8 @@ def run_ab_point(point: dict) -> dict:
                 out_dir / "proc-detail.jsonl",
                 rec["journal_stats"],
                 m.get("window_start_ms"), m.get("window_end_ms"),
-                cc_only=(point["scenario"] == "cap_client_credentials"))
+                cc_only=(point["scenario"] == "cap_client_credentials"
+                         and not point.get("sidecars")))
         else:
             rec["metrics"] = {"status": "no_summary"}
 
@@ -753,13 +755,6 @@ def run_ab_point(point: dict) -> dict:
             rec["metrics"]["sidecar_terminal_complete"] = all(
                 s["terminal_summary"] and not s["interrupted"]
                 for s in rec["load"]["sidecars"])
-            # run_load stamps started_ts on point["sidecars"], not on the
-            # result entries — merge it in so non-contract sidecars can
-            # still contribute a conservative container-bound window.
-            starts = {s["name"]: s.get("started_ts")
-                      for s in point.get("sidecars") or []}
-            for s in rec["load"]["sidecars"]:
-                s.setdefault("started_ts", starts.get(s["name"]))
             rec["metrics"]["sidecar_evidence"] = _sidecar_evidence(
                 out_dir, rec["load"]["sidecars"])
             rec["metrics"]["common_window_s"] = _common_window_seconds(
@@ -869,7 +864,7 @@ def _same_interval_cpu_per_success(proc_jsonl: Path, journal: dict,
     if not journal.get("collected"):
         result["reason"] = "journal unavailable — no per-second counts"
         return result
-    per_second = journal.get("per_second_counts") or {}
+    per_second = journal.get("token_issued_per_second_counts") or {}
     if not per_second:
         result["reason"] = "journal has no occurred_at timestamps"
         return result
@@ -907,43 +902,40 @@ def _sidecar_evidence(out_dir: Path, sidecars: list[dict]) -> dict:
                 entry["http_reqs"] = k6.get("http_reqs")
                 entry["window_start_ms"] = contract.get("window_start_ms")
                 entry["window_end_ms"] = contract.get("window_end_ms")
+                entry["scenario_clock_ok"] = contract.get("scenario_clock_ok")
             except (json.JSONDecodeError, OSError):
                 entry["summary_parse"] = "failed"
-        entry["started_ts"] = sc.get("started_ts")
+        for key in ("started_ts", "observed_end_ts", "duration_s", "warmup_s"):
+            entry[key] = sc.get(key)
         out[name] = entry
     return out
 
 
 def _common_window_seconds(main_metrics: dict, sidecar_ev: dict,
                            sidecars: list[dict]) -> dict:
-    """Intersection of the main measurement window with every sidecar's
-    own window; non-cap sidecars without a contract window contribute a
-    conservative bound (container start + warmup .. container end) so no
-    point can claim coverage it did not have."""
-    m_start, m_end = (main_metrics.get("window_start_ms"),
-                      main_metrics.get("window_end_ms"))
-    if not isinstance(m_start, (int, float)) \
-            or not isinstance(m_end, (int, float)):
-        return {"seconds": None, "reason": "main window missing"}
-    lo, hi = m_start, m_end
-    method = "contract"
-    for name, ev in sidecar_ev.items():
+    """Use the same scenario-clock and conservative bounds as checkpoint analysis."""
+    loads = checkpoint.load_windows({"measurement_contract": main_metrics})
+    for sc in sidecars:
+        ev = sidecar_ev.get(sc["name"], {})
+        if ev.get("interrupted") or not ev.get("terminal_summary"):
+            return {"seconds": None, "reason": f"sidecar {sc['name']} incomplete"}
         ws, we = ev.get("window_start_ms"), ev.get("window_end_ms")
-        if isinstance(ws, (int, float)) and isinstance(we, (int, float)):
-            lo, hi = max(lo, ws), min(hi, we)
-            continue
-        # Conservative bound: sidecar was certainly loading between its
-        # container start + warmup and its terminal summary.
-        started = ev.get("started_ts")
-        if isinstance(started, (int, float)):
-            lo = max(lo, started * 1000 + 15000)
-            method = "mixed_contract_and_container_bounds"
-        else:
-            return {"seconds": None,
-                    "reason": f"sidecar {name} window unavailable"}
-    seconds = (hi - lo) / 1000.0
-    return {"seconds": round(seconds, 1), "method": method,
-            "start_ms": lo, "end_ms": hi}
+        resolved = checkpoint.load_windows({
+            "warmup_s": ev.get("warmup_s"),
+            "sidecars": [{
+                "name": sc["name"], "started_ts": ev.get("started_ts"),
+                "ended_ts": ev.get("observed_end_ts"), "duration_s": ev.get("duration_s"),
+                "window": {"kind": "contract", "scenario_clock_ok": ev.get("scenario_clock_ok"),
+                           "measure_start_s": ws / 1000 if isinstance(ws, (int, float)) else None,
+                           "measure_end_s": we / 1000 if isinstance(we, (int, float)) else None},
+            }],
+        })
+        loads.extend(resolved[1:])
+    common = checkpoint.common_window(loads)
+    if not common["recoverable"]:
+        return {"seconds": None, "reason": common["reason"]}
+    return {"seconds": common["seconds"], "method": common["basis"],
+            "start_ms": common["start"] * 1000, "end_ms": common["end"] * 1000}
 
 
 # ---------------------------------------------------------------------

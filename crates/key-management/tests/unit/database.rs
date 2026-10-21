@@ -84,12 +84,14 @@ fn public_projection_preserves_public_fields_and_the_private_source() {
     let payload = json!({
         "schema": "nazo.keyset.v1",
         "request_object_private_pem": "private-request-key",
+        "request_object_retained_keys": [{"kid":"old-recipient", "private_pem":"retained-private-key", "retire_at":null}],
         "keys": [{"kid": "active", "private_pkcs8_der": "private-signing-key", "public_jwk": {"kty": "EC"}}],
         "openid4vc": {"iaca_private_materials": {"root": "private-ca-key"}, "public": {"chain": "certificate"}},
         "extension": {"nested": [1, 2, 3]},
     });
     let expected = json!({
         "schema": "nazo.keyset.v1",
+        "request_object_retained_keys": [{"kid":"old-recipient", "retire_at":null}],
         "keys": [{"kid": "active", "public_jwk": {"kty": "EC"}}],
         "openid4vc": {"public": {"chain": "certificate"}},
         "extension": {"nested": [1, 2, 3]},
@@ -189,6 +191,40 @@ async fn startup_reuses_the_loaded_or_created_record() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn external_registration_rejects_unreachable_algorithm_transition() {
+    let (manager, repository, _, _) = database_fixture().await;
+    let before = repository.snapshot().unwrap();
+    let material =
+        crate::serialization::generate_key_material(nazo_crypto::jwt::Algorithm::ES256).unwrap();
+    let public_jwk = crate::serialization::public_jwk_from_private_der(
+        "different-algorithm",
+        nazo_crypto::jwt::Algorithm::ES256,
+        &material.private_pkcs8_der,
+    )
+    .unwrap();
+    let error = manager
+        .database_register_external(ExternalKeyRegistration {
+            kid: "different-algorithm".to_owned(),
+            algorithm: nazo_crypto::jwt::Algorithm::ES256,
+            key_ref: "kms://unit/different".to_owned(),
+            public_jwk,
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("current active signing algorithm")
+    );
+    let after = repository.snapshot().unwrap();
+    assert_eq!(after.revision, before.revision);
+    assert_eq!(
+        after.encrypted_private_material,
+        before.encrypted_private_material
+    );
 }
 
 #[tokio::test]
@@ -622,12 +658,24 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     assert!(!maintain_payload(&mut candidate, &due).unwrap());
 
     let mut activate_now = valid_payload();
+    let original_kid = activate_now["active_kid"].clone();
     due.prepublish_window = chrono::Duration::zero();
     assert!(maintain_payload(&mut activate_now, &due).unwrap());
+    let candidate_kid = activate_now["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| {
+            key["kid"] != original_kid
+                && key.get("purposes").is_none()
+                && key["retire_at"].is_null()
+        })
+        .expect("prepublished rotation candidate")["kid"]
+        .clone();
     assert!(maintain_payload(&mut activate_now, &due).unwrap());
+    assert_eq!(activate_now["active_kid"], candidate_kid);
     assert_ne!(
-        activate_now["active_kid"],
-        valid_payload()["active_kid"],
+        activate_now["active_kid"], original_kid,
         "a mature prepublished candidate should become active"
     );
 
@@ -1138,4 +1186,49 @@ async fn database_protocol_keys_sign_fapi_access_and_logout_without_changing_oid
             nazo_crypto::jwt::Algorithm::PS256
         );
     }
+}
+
+#[test]
+fn purpose_scoped_grace_and_retirement_do_not_retain_signing_capability() {
+    let mut payload = initial_payload().unwrap();
+    let entry = payload["keys"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|key| key.get("purposes").is_some())
+        .unwrap();
+    let kid = entry["kid"].as_str().unwrap().to_owned();
+    entry["retire_at"] = json!(timestamp(Utc::now() + chrono::Duration::minutes(10)));
+    let loaded = load_payload(None, &payload).unwrap();
+    let key = loaded
+        .verification_keys
+        .iter()
+        .find(|key| key.managed.kid == kid)
+        .unwrap();
+    assert_eq!(key.managed.state, KeyState::Grace);
+    let entry = payload["keys"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|key| key["kid"] == kid)
+        .unwrap();
+    entry["retire_at"] = json!(timestamp(Utc::now() - chrono::Duration::seconds(1)));
+    entry["private_pkcs8_der"] = json!("not-decoded-after-retirement");
+    assert!(
+        load_payload(None, &payload)
+            .unwrap()
+            .verification_keys
+            .iter()
+            .all(|key| key.managed.kid != kid)
+    );
+    assert!(maintain_payload(&mut payload, &settings()).unwrap());
+    let retired = payload["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["kid"] == kid)
+        .unwrap();
+    assert!(retired.get("private_pkcs8_der").is_none());
+    assert!(retired.get("public_jwk").is_some());
+    load_payload(None, &payload).unwrap();
 }

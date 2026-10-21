@@ -173,7 +173,7 @@ SET errors, and polling capacity. Disabling the event module stops creation and
 advertisement immediately; the runtime drain window continues serving already
 stored events for up to the configured retention period.
 
-PATCH supports `replace` for:
+The provisioning subset accepts PATCH `replace` for:
 
 - `userName`
 - `active`
@@ -182,5 +182,13 @@ PATCH supports `replace` for:
 - `name.familyName`
 - `emails`
 
+Attribute names and the `eq` operator are case insensitive. Filter string values
+use JSON string escaping. Requests must include the corresponding User or PatchOp
+schema in `schemas`; unsupported schema extensions are rejected.
+
+`ServiceProviderConfig` advertises `patch.supported=false` and
+`filter.supported=false`: this subset does not implement the complete RFC 7644
+PATCH operations or filter grammar. Explicit integrations may use the documented
+`replace` paths and `userName eq` lookup; generic clients can use PUT and pagination.
 Bulk operations, sorting, password changes, groups, and SCIM enterprise-user
 extensions are not advertised.

@@ -8,8 +8,8 @@ use p256::{
 use serde_json::json;
 
 #[test]
-fn client_jwe_key_rejects_ambiguous_matching_keys() {
-    let jwks = json!({
+fn client_jwe_key_selects_first_published_rotation_key_with_unique_identifier() {
+    let mut jwks = json!({
         "keys": [
             {
                 "kty": "RSA",
@@ -30,20 +30,22 @@ fn client_jwe_key_rejects_ambiguous_matching_keys() {
         ]
     });
 
-    let error = match client_jwe_key(
-        Some(&jwks),
-        Some("RSA-OAEP-256"),
-        Some("A256GCM"),
-        "userinfo",
-    ) {
-        Ok(_) => panic!("runtime encryption key selection must reject ambiguity"),
-        Err(error) => error,
+    let select = |jwks: &serde_json::Value| {
+        client_jwe_key(
+            Some(jwks),
+            Some("RSA-OAEP-256"),
+            Some("A256GCM"),
+            "userinfo",
+        )
+        .map(|key| key.map(|key| key.kid.map(str::to_owned)))
     };
-
-    assert!(
-        error.to_string().contains("ambiguous encryption keys"),
-        "unexpected error: {error}"
-    );
+    assert_eq!(select(&jwks).unwrap().flatten().as_deref(), Some("enc-1"));
+    jwks["keys"].as_array_mut().unwrap().reverse();
+    assert_eq!(select(&jwks).unwrap().flatten().as_deref(), Some("enc-2"));
+    jwks["keys"][1]["kid"] = json!("enc-2");
+    assert!(select(&jwks).is_err());
+    jwks["keys"][0].as_object_mut().unwrap().remove("kid");
+    assert!(select(&jwks).is_err());
 }
 
 #[test]

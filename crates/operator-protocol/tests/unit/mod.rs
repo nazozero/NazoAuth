@@ -349,19 +349,16 @@ fn discovery_identity_and_identifier_boundaries_are_checked() {
     let mut invalid = statement.clone();
     invalid.product = "other".to_owned();
     assert!(validate_discovery_statement(&invalid, 1_030, None).is_err());
-    for field in ["deployment/1", "runtime/1", "instance/1"] {
-        let mut candidate = statement.clone();
-        candidate.deployment_id = field.to_owned();
-        assert!(validate_discovery_statement(&candidate, 1_030, None).is_err());
-    }
-    for field in [
-        "issuer value",
-        "release value",
-        "revision value",
-        "build value",
+    for mutate in [
+        (|s: &mut DiscoveryStatement| s.deployment_id = "deployment/1".into())
+            as fn(&mut DiscoveryStatement),
+        |s| s.runtime_instance_id = "runtime/1".into(),
+        |s| s.instance_key_id = "instance/1".into(),
+        |s| s.issuer = "issuer value".into(),
+        |s| s.release = "release value".into(),
     ] {
         let mut candidate = statement.clone();
-        candidate.issuer = field.to_owned();
+        mutate(&mut candidate);
         assert!(validate_discovery_statement(&candidate, 1_030, None).is_err());
     }
     let mut invalid = statement.clone();

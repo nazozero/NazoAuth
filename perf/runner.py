@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from tools.blackbox_contract import CONTRACT, unavailable_dimension
+from tools.blackbox_contract import CONTRACT, unavailable_dimension, business_ops_per_second
 
 import json
 import os
@@ -830,21 +830,28 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         raise RuntimeError(f"k6 scenario produced zero HTTP requests: {profile}/{scenario}")
     k6 = k6_brief(k6_summary)
     target_rate = int(os.environ.get("PERF_RATE", "0") or 0)
+    k6["target_ops_per_s"] = target_rate * 1000 / parse_time_unit_ms(os.environ.get("PERF_TIME_UNIT", "1s"))
+    operation_rate = business_ops_per_second(k6)
     target_miss = (
         os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
         and target_rate > 0
-        and (k6["rps"] < target_rate * 0.99 or k6["dropped_iterations"] > 0)
+        and operation_rate is not None
+        and (operation_rate < k6["target_ops_per_s"] * 0.99 or k6["measure"]["drop_fraction"] > 0.001)
     )
     status = "passed"
     if completed.returncode != 0:
         status = "threshold_failed"
     elif target_miss:
         status = "target_miss"
+    elif os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate" and target_rate > 0 and operation_rate is None:
+        status = "measurement_unavailable"
     # Stream-analyzer evidence propagates into measurement validity: a
     # clean k6 exit code or silent stderr never masks a broken window.
     if measurement_evidence is not None:
         if "measure" in k6 and not measurement_evidence["window_valid"]:
             k6["measure"]["window_valid"] = False
+            if completed.returncode == 0:
+                status = "measurement_unavailable"
             k6["measure"]["contract_problems"] = (
                 k6["measure"].get("contract_problems") or []) + [
                 "stream_window_invalid"]

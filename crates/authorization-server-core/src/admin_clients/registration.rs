@@ -36,7 +36,7 @@ where
 }
 
 pub(crate) async fn prepare_client_registration_metadata<S, C>(
-    request: CreateClientRequest,
+    mut request: CreateClientRequest,
     policy: &AdminClientPolicy,
     sector_identifiers: &S,
     crypto: &C,
@@ -49,6 +49,14 @@ where
         .security_policy
         .validate()
         .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?;
+    request.id_token_signed_response_alg = Some(
+        crate::id_token_signing_algorithm(
+            request.id_token_signed_response_alg.as_deref(),
+            request.security_policy.requires_fapi2_security(),
+        )
+        .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?
+        .to_owned(),
+    );
     let keys = validate_client_metadata(
         ClientMetadata::from_create(&request),
         &crypto.id_token_signing_algorithms(),

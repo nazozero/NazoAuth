@@ -8,7 +8,7 @@ use crate::{
 use super::RepositoryFuture;
 
 /// Complete user/admin lifecycle for deployment mTLS trust anchors.
-/// Approval, rejection and revocation must enforce tenant ownership, actor
+/// Creation, approval, rejection and revocation must enforce tenant ownership, actor
 /// authorization, limits, the source event and canonical Required outcome in
 /// the same adapter-owned transaction. Successful results require the entire
 /// returned projection and confirmed COMMIT ACK; failure or Unknown never

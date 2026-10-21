@@ -50,15 +50,25 @@ pub fn validate_cors_origin(value: &str) -> anyhow::Result<()> {
 }
 
 pub fn validate_protected_resource_identifier(value: &str) -> anyhow::Result<()> {
-    let url = parse_url("PROTECTED_RESOURCE_IDENTIFIER", value)?;
+    validate_http_endpoint("PROTECTED_RESOURCE_IDENTIFIER", value).map(|_| ())
+}
+
+/// HTTPS endpoint (or loopback HTTP) with an optional query and no credentials or fragment.
+pub fn validate_http_endpoint_url(value: &str) -> anyhow::Result<Url> {
+    validate_http_endpoint("endpoint", value)
+}
+
+fn validate_http_endpoint(label: &str, value: &str) -> anyhow::Result<Url> {
+    let url = parse_url(label, value)?;
     if !url.has_host() {
-        bail!("PROTECTED_RESOURCE_IDENTIFIER 必须包含 host");
+        bail!("{label} 必须包含 host");
     }
-    reject_url_credentials("PROTECTED_RESOURCE_IDENTIFIER", value, &url)?;
+    reject_url_credentials(label, value, &url)?;
     if url.fragment().is_some() {
-        bail!("PROTECTED_RESOURCE_IDENTIFIER 不能包含 fragment");
+        bail!("{label} 不能包含 fragment");
     }
-    validate_https_or_loopback_http("PROTECTED_RESOURCE_IDENTIFIER", &url)
+    validate_https_or_loopback_http(label, &url)?;
+    Ok(url)
 }
 
 pub fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<()> {

@@ -110,7 +110,7 @@ fn test_state() -> TestInfrastructure {
             Settings::from_config(&ConfigSource::default())
                 .expect("default settings should load"),
         ),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256),
     }
 }
 
@@ -377,7 +377,9 @@ impl LiveAdminAccessRequestFixture {
                 diesel_db,
                 valkey,
                 settings: Arc::new(settings),
-                keyset: crate::test_support::test_key_manager(),
+                keyset: crate::test_support::test_key_manager_with_auxiliary(
+                    jsonwebtoken::Algorithm::RS256,
+                ),
             }),
             schema,
         })
@@ -415,7 +417,7 @@ impl LiveAdminAccessRequestFixture {
                     format!(">{password}"),
                     format!(
                         "~{}",
-                        nazo_valkey::test_support::state_storage_key("oauth:session:*")
+                        nazo_valkey::test_support::state_storage_key("oauth:session:v2:*")
                     ),
                     "+@all".to_owned(),
                 ],
@@ -423,10 +425,16 @@ impl LiveAdminAccessRequestFixture {
             .await
             .expect("restricted Valkey ACL user should be configured");
         let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
-        let restricted_url =
-            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut restricted_url = url::Url::parse(&valkey_url).expect("VALKEY_URL should parse");
+        restricted_url
+            .set_username(username)
+            .expect("Valkey URL supports username");
+        restricted_url
+            .set_password(Some(password))
+            .expect("Valkey URL supports password");
         let mut builder = ValkeyBuilder::from_config(
-            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+            ValkeyConfig::from_url(restricted_url.as_str())
+                .expect("restricted VALKEY_URL should parse"),
         );
         builder.with_performance_config(|performance: &mut PerformanceConfig| {
             performance.default_command_timeout = StdDuration::from_millis(1000);
@@ -472,10 +480,16 @@ impl LiveAdminAccessRequestFixture {
             .await
             .expect("no-delete Valkey ACL user should be configured");
         let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
-        let restricted_url =
-            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut restricted_url = url::Url::parse(&valkey_url).expect("VALKEY_URL should parse");
+        restricted_url
+            .set_username(username)
+            .expect("Valkey URL supports username");
+        restricted_url
+            .set_password(Some(password))
+            .expect("Valkey URL supports password");
         let client = ValkeyBuilder::from_config(
-            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+            ValkeyConfig::from_url(restricted_url.as_str())
+                .expect("restricted VALKEY_URL should parse"),
         )
         .build()
         .expect("restricted valkey client should build");
@@ -576,6 +590,7 @@ impl LiveAdminAccessRequestFixture {
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
@@ -584,7 +599,7 @@ impl LiveAdminAccessRequestFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )

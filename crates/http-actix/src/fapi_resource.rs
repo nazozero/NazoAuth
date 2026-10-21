@@ -71,13 +71,30 @@ pub async fn fapi_resource(
 ) -> HttpResponse {
     let signature_lease = endpoint.signatures.acquire_request();
     let signatures_enabled = signature_lease.is_some();
-    let original =
-        signatures_enabled.then(|| CapturedRequest::capture(&endpoint.issuer, &request, &body));
-    let response = fapi_resource_inner(&endpoint, &request, &body, original.as_ref()).await;
-    match original {
-        Some(original) => sign_response(&endpoint, &original, response).await,
-        None => response,
-    }
+    let target_uri = match nazo_oauth_server::security::dpop::dpop_target_uri(
+        &endpoint.issuer,
+        &endpoint.mtls_endpoint_base_url,
+        crate::dpop_request_authority(&request),
+        request.path(),
+    ) {
+        Ok(target) => target,
+        Err(_) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "Request target authority is invalid.",
+            );
+        }
+    };
+    let original = signatures_enabled.then(|| {
+        let mut signed_target = target_uri.clone();
+        if let Some(query) = request.uri().query() {
+            signed_target.push('?');
+            signed_target.push_str(query);
+        }
+        CapturedRequest::capture(signed_target, &request, &body)
+    });
+    fapi_resource_inner(&endpoint, &request, &body, original.as_ref(), &target_uri).await
 }
 
 async fn fapi_resource_inner(
@@ -85,6 +102,7 @@ async fn fapi_resource_inner(
     request: &HttpRequest,
     body: &Bytes,
     original: Option<&CapturedRequest<'_>>,
+    target_uri: &str,
 ) -> HttpResponse {
     // High-assurance resources require the Authorization header. RFC 6750 form
     // body transport remains available only to the baseline UserInfo endpoint.
@@ -103,7 +121,7 @@ async fn fapi_resource_inner(
     };
     let dpop_proof = single_header(request, "dpop");
     if dpop_proof.is_err() {
-        return invalid_dpop_response("DPoP proof is malformed.");
+        return dpop_authentication_error("invalid_dpop_proof", "DPoP proof is malformed.");
     }
     let dpop_proof = dpop_proof.ok().flatten();
     let verified_signature = match original {
@@ -120,13 +138,6 @@ async fn fapi_resource_inner(
         None => None,
     };
     let mtls_thumbprint = endpoint.mtls.resolve(request);
-    let primary_target = endpoint_uri(&endpoint.issuer, request.path());
-    let alternate_target = endpoint_uri(&endpoint.mtls_endpoint_base_url, request.path());
-    let target_uris = if alternate_target == primary_target {
-        vec![primary_target.as_str()]
-    } else {
-        vec![primary_target.as_str(), alternate_target.as_str()]
-    };
     let authorization_request = ProtectedResourceAuthorizationRequest {
         access_token: &access_token,
         scheme: match scheme {
@@ -141,7 +152,7 @@ async fn fapi_resource_inner(
             authorization_request,
             ProtectedResourceAuthorizationContext {
                 method: request.method().as_str(),
-                target_uris: &target_uris,
+                target_uris: &[target_uri],
                 mtls_x5t_s256: mtls_thumbprint.as_deref(),
             },
         )
@@ -210,7 +221,13 @@ async fn fapi_resource_inner(
         header_name("x-fapi-interaction-id"),
         interaction_id(request),
     );
-    response
+    // Private signing work belongs to an accepted resource request. Rejected
+    // authentication/signature attempts return their TLS-protected OAuth errors
+    // without consuming the shared external signer capacity.
+    match original {
+        Some(original) => sign_response(endpoint, original, response).await,
+        None => response,
+    }
 }
 
 fn authorization_error_response(
@@ -259,13 +276,12 @@ fn protocol_error_response(
             "resource 查询失败.",
         ),
         ProtectedResourceAuthorizationError::TokenNotDpopBound => {
-            invalid_dpop_response("Token is not DPoP-bound.")
+            dpop_authentication_error("invalid_token", "Token is not DPoP-bound.")
         }
         ProtectedResourceAuthorizationError::MissingSenderConstraint => match scheme {
-            AccessTokenAuthScheme::DPoP => invalid_dpop_response_with_status(
-                StatusCode::UNAUTHORIZED,
-                "DPoP proof is required.",
-            ),
+            AccessTokenAuthScheme::DPoP => {
+                dpop_authentication_error("invalid_dpop_proof", "DPoP proof is required.")
+            }
             AccessTokenAuthScheme::Bearer => oauth_bearer_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_token",
@@ -273,18 +289,19 @@ fn protocol_error_response(
             ),
         },
         ProtectedResourceAuthorizationError::DpopBindingMismatch => {
-            invalid_dpop_response("DPoP binding mismatch.")
+            dpop_authentication_error("invalid_token", "DPoP binding mismatch.")
         }
-        ProtectedResourceAuthorizationError::ReplayDetected => {
-            invalid_dpop_response("DPoP proof jti has already been used.")
-        }
+        ProtectedResourceAuthorizationError::ReplayDetected => dpop_authentication_error(
+            "invalid_dpop_proof",
+            "DPoP proof jti has already been used.",
+        ),
         ProtectedResourceAuthorizationError::InvalidDpopProof(error) => {
             let description = match error {
                 DpopProofVerifierError::MalformedProof => "DPoP proof is malformed.",
                 DpopProofVerifierError::ReplayDetected => "DPoP proof jti has already been used.",
                 _ => "DPoP proof validation failed.",
             };
-            invalid_dpop_response(description)
+            dpop_authentication_error("invalid_dpop_proof", description)
         }
         ProtectedResourceAuthorizationError::MtlsBindingMismatch => oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
@@ -325,15 +342,15 @@ fn dpop_nonce_unavailable_response() -> HttpResponse {
     response
 }
 
-fn invalid_dpop_response(description: &str) -> HttpResponse {
-    invalid_dpop_response_with_status(StatusCode::BAD_REQUEST, description)
-}
-
-fn invalid_dpop_response_with_status(status: StatusCode, description: &str) -> HttpResponse {
-    let mut response = oauth_error(status, "invalid_dpop_proof", description);
+fn dpop_authentication_error(error: &str, description: &str) -> HttpResponse {
+    let mut response = oauth_error(StatusCode::UNAUTHORIZED, error, description);
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        header::HeaderValue::from_static("DPoP error=\"invalid_dpop_proof\""),
+        header::HeaderValue::from_static(if error == "invalid_token" {
+            "DPoP error=\"invalid_token\""
+        } else {
+            "DPoP error=\"invalid_dpop_proof\""
+        }),
     );
     response
 }
@@ -381,15 +398,7 @@ struct CapturedRequest<'body> {
 }
 
 impl<'body> CapturedRequest<'body> {
-    fn capture(issuer: &str, request: &'body HttpRequest, body: &'body Bytes) -> Self {
-        let target_uri = endpoint_uri(
-            issuer,
-            request
-                .uri()
-                .path_and_query()
-                .map(|value| value.as_str())
-                .unwrap_or_else(|| request.path()),
-        );
+    fn capture(target_uri: String, request: &'body HttpRequest, body: &'body Bytes) -> Self {
         let safe_headers = request
             .headers()
             .keys()
@@ -603,10 +612,6 @@ fn single_header<'a>(request: &'a HttpRequest, name: &str) -> Result<Option<&'a 
         return Err(());
     }
     value.to_str().map(Some).map_err(|_| ())
-}
-
-fn endpoint_uri(base: &str, path_and_query: &str) -> String {
-    format!("{}{}", base.trim_end_matches('/'), path_and_query)
 }
 
 fn interaction_id(request: &HttpRequest) -> header::HeaderValue {

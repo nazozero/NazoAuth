@@ -124,6 +124,7 @@ fn dpop_facts(
     DpopRequestFacts {
         method: http::Method::POST,
         path: "/oauth/token",
+        authority: Some("issuer.example"),
         proof,
         proof_present,
     }

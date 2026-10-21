@@ -87,18 +87,23 @@ impl RequestRateLimitPort for FakeRateLimiter {
 
 impl LiveFixture {
     async fn new() -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
-        let mut settings = Settings::from_config(&ConfigSource::default()).ok()?;
+        let database_url = crate::test_support::backend_url("DATABASE_URL")?;
+        let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
+        let mut settings =
+            Settings::from_config(&ConfigSource::default()).expect("test settings must load");
         settings.identity.email.delivery = EmailDelivery::Smtp(SmtpEmailSettings {
             host: "127.0.0.1".to_owned(),
             port: 1025,
             tls: SmtpTlsMode::None,
             username: None,
             password: None,
-            from: "Nazo OAuth <no-reply@example.test>".parse().ok()?,
+            from: "Nazo OAuth <no-reply@example.test>"
+                .parse()
+                .expect("fixture sender must parse"),
         });
-        let mut builder = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).ok()?);
+        let mut builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("configured VALKEY_URL must parse"),
+        );
         builder.with_performance_config(|config: &mut PerformanceConfig| {
             config.default_command_timeout = Duration::from_secs(2);
         });
@@ -107,11 +112,17 @@ impl LiveFixture {
             config.internal_command_timeout = Duration::from_secs(2);
             config.max_command_attempts = 1;
         });
-        let valkey = builder.build().ok()?;
-        valkey.init().await.ok()?;
+        let valkey = builder
+            .build()
+            .expect("configured Valkey client must build");
+        valkey
+            .init()
+            .await
+            .expect("configured Valkey backend must connect");
         Some(Self {
             state: Data::new(TestInfrastructure {
-                diesel_db: nazo_postgres::create_pool(database_url, 4).ok()?,
+                diesel_db: nazo_postgres::create_pool(database_url, 4)
+                    .expect("configured database pool must build"),
                 valkey,
                 settings: Arc::new(settings),
                 keyset: crate::test_support::test_key_manager(),

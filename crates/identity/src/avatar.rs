@@ -201,6 +201,7 @@ impl AvatarDirectUploadService {
             tenant_id: account.tenant().tenant_id,
             user_id: account.user_id(),
             expected_avatar_url: account.profile.avatar_url.clone(),
+            expected_avatar_revision: account.profile.avatar_revision,
             expires_at,
         };
         let target = self
@@ -228,6 +229,11 @@ impl AvatarDirectUploadService {
         account: PublicAccount,
         upload_id: &str,
     ) -> Result<AccountOverview, DirectAvatarUploadError> {
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(account.tenant().tenant_id, account.id())
+            .await
+            .map_err(DirectAvatarUploadError::Overview)?;
         let lease_until = chrono::Utc::now()
             + chrono::Duration::seconds(
                 i64::try_from(self.claim_lease_seconds)
@@ -327,9 +333,10 @@ impl AvatarDirectUploadService {
                     return if account.profile.avatar_url.as_deref()
                         == Some(&avatar_url(&final_object_id))
                     {
-                        self.overview(account)
-                            .await
-                            .map_err(DirectAvatarUploadError::Overview)
+                        Ok(AccountOverview {
+                            account,
+                            authorized_application_count,
+                        })
                     } else {
                         Err(DirectAvatarUploadError::ConcurrentChange)
                     };
@@ -345,6 +352,7 @@ impl AvatarDirectUploadService {
             return Err(DirectAvatarUploadError::Expired);
         }
         if account.profile.avatar_url.as_deref() == Some(&avatar_url(&candidate_id)) {
+            self.retire_previous_avatar(&authorization).await?;
             let completed = self
                 .state
                 .complete(
@@ -362,10 +370,10 @@ impl AvatarDirectUploadService {
                 .storage
                 .delete_staging(&authorization.staging_object_id)
                 .await;
-            return self
-                .overview(account)
-                .await
-                .map_err(DirectAvatarUploadError::Overview);
+            return Ok(AccountOverview {
+                account,
+                authorized_application_count,
+            });
         }
 
         let content_type = match validated_content_type {
@@ -400,14 +408,25 @@ impl AvatarDirectUploadService {
                 authorization.tenant_id,
                 authorization.user_id,
                 authorization.expected_avatar_url.as_deref(),
+                authorization.expected_avatar_revision,
                 Some(avatar_url(&candidate_id)),
             )
             .await;
         let updated = match updated {
             Ok(Some(updated)) => updated,
-            Ok(None) => return Err(DirectAvatarUploadError::ConcurrentChange),
+            Ok(None) => {
+                // A revision-fenced miss cannot be revived by a stale worker.
+                // The port treats a concurrent commit of this exact candidate
+                // as success, so this deletion cannot remove the winner.
+                self.storage
+                    .delete_final(&candidate_id)
+                    .await
+                    .map_err(DirectAvatarUploadError::Storage)?;
+                return Err(DirectAvatarUploadError::ConcurrentChange);
+            }
             Err(error) => return Err(DirectAvatarUploadError::Repository(error)),
         };
+        self.retire_previous_avatar(&authorization).await?;
         let completed = self
             .state
             .complete(
@@ -425,9 +444,25 @@ impl AvatarDirectUploadService {
             .storage
             .delete_staging(&authorization.staging_object_id)
             .await;
-        self.overview(updated)
-            .await
-            .map_err(DirectAvatarUploadError::Overview)
+        Ok(AccountOverview {
+            account: updated,
+            authorized_application_count,
+        })
+    }
+
+    async fn retire_previous_avatar(
+        &self,
+        authorization: &AvatarUploadAuthorization,
+    ) -> Result<(), DirectAvatarUploadError> {
+        if let Some(previous) = authorization.expected_avatar_url.as_deref() {
+            let object_id = avatar_url_version(previous)
+                .map_err(|()| DirectAvatarUploadError::InvalidCurrentReference)?;
+            self.storage
+                .delete_final(object_id)
+                .await
+                .map_err(DirectAvatarUploadError::Storage)?;
+        }
+        Ok(())
     }
 
     pub async fn read(&self, account: &PublicAccount) -> Result<AvatarObject, ReadAvatarError> {
@@ -448,6 +483,11 @@ impl AvatarDirectUploadService {
         &self,
         account: &PublicAccount,
     ) -> Result<AccountOverview, DeleteAvatarError> {
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(account.tenant().tenant_id, account.id())
+            .await
+            .map_err(DeleteAvatarError::Overview)?;
         let expected_url = account.profile.avatar_url.as_deref();
         let final_object_id = expected_url
             .map(avatar_url_version)
@@ -459,6 +499,7 @@ impl AvatarDirectUploadService {
                 account.tenant().tenant_id,
                 account.user_id(),
                 expected_url,
+                account.profile.avatar_revision,
                 None,
             )
             .await;
@@ -470,18 +511,8 @@ impl AvatarDirectUploadService {
         if let Some(final_object_id) = final_object_id {
             let _ = self.storage.delete_final(final_object_id).await;
         }
-        self.overview(updated)
-            .await
-            .map_err(DeleteAvatarError::Overview)
-    }
-
-    async fn overview(&self, account: PublicAccount) -> Result<AccountOverview, RepositoryError> {
-        let authorized_application_count = self
-            .grants
-            .authorized_client_count(account.tenant().tenant_id, account.id())
-            .await?;
         Ok(AccountOverview {
-            account,
+            account: updated,
             authorized_application_count,
         })
     }
@@ -536,6 +567,11 @@ where
         account: &PublicAccount,
         bytes: Vec<u8>,
     ) -> Result<AccountOverview, UploadAvatarError> {
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(account.tenant().tenant_id, account.id())
+            .await
+            .map_err(UploadAvatarError::Overview)?;
         if bytes.len() > self.max_bytes {
             return Err(UploadAvatarError::TooLarge);
         }
@@ -567,6 +603,7 @@ where
                 account.tenant().tenant_id,
                 account.user_id(),
                 expected_url,
+                account.profile.avatar_revision,
                 Some(avatar_url),
             )
             .await;
@@ -585,9 +622,10 @@ where
             .await
             .map_err(UploadAvatarError::Storage)?;
         drop(mutation);
-        self.overview(updated)
-            .await
-            .map_err(UploadAvatarError::Overview)
+        Ok(AccountOverview {
+            account: updated,
+            authorized_application_count,
+        })
     }
 
     pub async fn read(&self, account: &PublicAccount) -> Result<AvatarObject, ReadAvatarError> {
@@ -608,6 +646,11 @@ where
         &self,
         account: &PublicAccount,
     ) -> Result<AccountOverview, DeleteAvatarError> {
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(account.tenant().tenant_id, account.id())
+            .await
+            .map_err(DeleteAvatarError::Overview)?;
         let expected_url = account.profile.avatar_url.as_deref();
         let expected_version = expected_url
             .map(avatar_url_version)
@@ -624,6 +667,7 @@ where
                 account.tenant().tenant_id,
                 account.user_id(),
                 expected_url,
+                account.profile.avatar_revision,
                 None,
             )
             .await;
@@ -640,18 +684,8 @@ where
             .await
             .map_err(DeleteAvatarError::Storage)?;
         drop(mutation);
-        self.overview(updated)
-            .await
-            .map_err(DeleteAvatarError::Overview)
-    }
-
-    async fn overview(&self, account: PublicAccount) -> Result<AccountOverview, RepositoryError> {
-        let authorized_application_count = self
-            .grants
-            .authorized_client_count(account.tenant().tenant_id, account.id())
-            .await?;
         Ok(AccountOverview {
-            account,
+            account: updated,
             authorized_application_count,
         })
     }

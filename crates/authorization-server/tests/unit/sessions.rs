@@ -99,6 +99,7 @@ impl SessionAccountPort for FakeAccounts {
 fn snapshot(pending_mfa: bool, oidc_sid: Option<&str>) -> SessionSnapshot {
     let mut record = SessionRecord::new(
         UserId::new(Uuid::from_u128(2)).unwrap(),
+        0,
         1_000,
         vec!["password".to_owned(), "otp".to_owned(), "mfa".to_owned()],
         pending_mfa,
@@ -116,6 +117,7 @@ fn account(active: bool) -> PublicAccount {
     let now = Utc::now();
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::from_u128(2)).unwrap(),
             tenant: TenantContext::default_system(),
             role: UserRole::User,

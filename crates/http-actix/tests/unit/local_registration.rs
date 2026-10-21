@@ -168,7 +168,7 @@ async fn untrusted_forwarded_header_cannot_spoof_rate_limit_subject() {
 }
 
 #[actix_web::test]
-async fn trusted_proxy_header_controls_rate_limit_but_not_peer_cooldown() {
+async fn trusted_proxy_header_controls_both_rate_limit_and_peer_cooldown() {
     let trusted = crate::IpCidr::parse("10.0.0.0/8").unwrap();
     let (endpoint, operations, rate_limit) = endpoint(
         Ok(SendVerificationCodeOutcome::Suppressed),
@@ -194,7 +194,7 @@ async fn trusted_proxy_header_controls_rate_limit_but_not_peer_cooldown() {
         rate_limit.subjects.lock().unwrap().as_slice(),
         &["198.51.100.5"]
     );
-    assert_eq!(operations.sent.lock().unwrap()[0].1, "10.1.2.3");
+    assert_eq!(operations.sent.lock().unwrap()[0].1, "198.51.100.5");
 }
 
 #[actix_web::test]

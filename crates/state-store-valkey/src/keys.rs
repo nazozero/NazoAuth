@@ -54,7 +54,7 @@ pub(crate) fn ciba_request_object_replay(client_id: &str, jti: &str) -> String {
 }
 
 pub(crate) fn session(session_id: &str) -> String {
-    format!("oauth:session:{session_id}")
+    format!("oauth:session:v2:{session_id}")
 }
 
 pub(crate) fn client_delivery(user_id: nazo_identity::UserId, token: &str) -> String {

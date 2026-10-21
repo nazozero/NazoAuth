@@ -63,7 +63,10 @@ async fn fixture(url: &str, revoke: bool) -> TrustFixture {
         .unwrap();
     let id = created.id;
     let delta = counter.since(baseline);
-    assert_eq!(delta.data_queries, 2, "lock plus insert; no display reread");
+    assert_eq!(
+        delta.data_queries, 3,
+        "lock, insert, required audit; no display reread"
+    );
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(delta.failed_queries, 0);
@@ -415,4 +418,51 @@ async fn trust_owner_rechecks_current_actor_and_approval_client_after_row_lock_w
             std::panic::resume_unwind(error);
         }
     }
+}
+
+#[tokio::test]
+async fn requested_trust_and_required_audit_share_one_commit() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let f = fixture(&url, false).await;
+    let pool = create_pool(&url, 2).unwrap();
+    let repository = MtlsTrustAnchorRepository::new(pool.clone());
+    let original = repository
+        .by_id(f.tenant.tenant_id, f.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let name = format!("trust_request_audit_fail_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type='mtls_trust_anchor_requested' AND NEW.payload->>'requester_user_id'='{}') EXECUTE FUNCTION {name}();", f.requester.as_uuid())).await.unwrap();
+    drop(connection);
+    let failed = repository
+        .create_for_owned_client(request(f.tenant, f.requester, &original.client_id, 'b'))
+        .await;
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON security_audit_events; DROP FUNCTION {name}();"
+        ))
+        .await
+        .unwrap();
+    drop(connection);
+    assert!(failed.is_err());
+    assert_eq!(
+        repository
+            .list_for_user(f.tenant.tenant_id, f.requester)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    let created = repository
+        .create_for_owned_client(request(f.tenant, f.requester, &original.client_id, 'b'))
+        .await
+        .unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    let count = sql_query("SELECT count(*) AS count FROM security_audit_events WHERE event_type='mtls_trust_anchor_requested' AND payload->>'request_id'=$1")
+        .bind::<Text,_>(created.id.to_string()).get_result::<CountRow>(&mut connection).await.unwrap();
+    assert_eq!(count.count, 1);
 }

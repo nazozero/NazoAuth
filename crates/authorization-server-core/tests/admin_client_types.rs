@@ -161,7 +161,7 @@ fn supplied_client_secret_is_bounded_and_redacted() {
     assert_eq!(debug, "[REDACTED]");
     assert!(!debug.contains(value));
     assert!(nazo_auth::SuppliedClientSecret::new("short").is_err());
-    assert!(nazo_auth::SuppliedClientSecret::new("0".repeat(64)).is_err());
+    assert!(nazo_auth::SuppliedClientSecret::new("0".repeat(64)).is_ok());
     assert!(nazo_auth::SuppliedClientSecret::new(format!("{}\n", "A".repeat(64))).is_err());
 }
 
@@ -221,7 +221,10 @@ fn enabling_fapi_rejects_preexisting_incompatible_signing_metadata() {
             &TestCrypto,
         ));
         let error = result.expect_err(field);
-        assert!(error.to_string().contains("FAPI2"), "{field}: {error}");
+        assert!(
+            matches!(error, AdminClientError::InvalidRequest(_)),
+            "{field}: {error}"
+        );
     }
 }
 

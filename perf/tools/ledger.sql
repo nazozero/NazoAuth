@@ -347,19 +347,20 @@ UNION ALL SELECT 'CHECKPOINTER','pre17-bgwriter','buffers_checkpoint', buffers_c
 
 SELECT current_setting('server_version_num')::int >= 160000 AS pg16 \gset
 \if :pg16
-SELECT 'IO', backend_type, 'reads', reads::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'read_time', read_time::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'writes', writes::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'write_time', write_time::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'writebacks', writebacks::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'writeback_time', writeback_time::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'extends', extends::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'extend_time', extend_time::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'hits', hits::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'evictions', evictions::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'reuses', reuses::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'fsyncs', fsyncs::text FROM pg_stat_io
-UNION ALL SELECT 'IO', backend_type, 'fsync_time', fsync_time::text FROM pg_stat_io;
+SELECT 'IO', json_build_array(backend_type, object, context)::text, 'reads', reads::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'read_time', read_time::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'writes', writes::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'write_time', write_time::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'writebacks', writebacks::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'writeback_time', writeback_time::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'extends', extends::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'extend_time', extend_time::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'hits', hits::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'evictions', evictions::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'reuses', reuses::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'fsyncs', fsyncs::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'fsync_time', fsync_time::text FROM pg_stat_io
+UNION ALL SELECT 'IO', json_build_array(backend_type, object, context)::text, 'stats_reset', stats_reset::text FROM pg_stat_io;
 \else
 SELECT 'IO','unavailable','reason','pg_stat_io requires PostgreSQL 16+';
 \endif
@@ -393,21 +394,21 @@ UNION ALL SELECT 'ACTIVITY','backends','lock_waiting', count(*) FILTER (WHERE wa
 -- benchmark DB, which always enables pg_stat_statements.
 SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_stat_statements') AS has_pss \gset
 \if :has_pss
-SELECT 'TOP_STATEMENTS', queryid::text, 'calls', calls::text FROM (
+SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'calls', calls::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'rows', rows::text FROM (
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'rows', rows::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'total_exec_time', total_exec_time::text FROM (
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'total_exec_time', total_exec_time::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'shared_blks_read', shared_blks_read::text FROM (
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'shared_blks_read', shared_blks_read::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'shared_blks_written', shared_blks_written::text FROM (
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'shared_blks_written', shared_blks_written::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'temp_blks_read', temp_blks_read::text FROM (
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'temp_blks_read', temp_blks_read::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'temp_blks_written', temp_blks_written::text FROM (
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'temp_blks_written', temp_blks_written::text FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s
-UNION ALL SELECT 'TOP_STATEMENTS', queryid::text, 'query_head',
+UNION ALL SELECT 'TOP_STATEMENTS', json_build_array(dbid, userid, toplevel, queryid)::text, 'query_head',
        regexp_replace(left(query,160), '[\n\r\t|]+', ' ', 'g') FROM (
   SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 40) s;
 \else

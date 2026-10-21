@@ -207,7 +207,7 @@ async fn issued_token_keeps_cache_pragma_and_nonce() {
 }
 
 #[actix_web::test]
-async fn preauthorized_token_keeps_its_own_json_and_cache_policy() {
+async fn preauthorized_token_uses_token_cache_policy() {
     use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
     let response =
         nazo_http_actix::token_endpoint_success_response(TokenEndpointSuccess::PreAuthorized(
@@ -227,7 +227,7 @@ async fn preauthorized_token_keeps_its_own_json_and_cache_policy() {
         response.headers().get(header::CACHE_CONTROL).unwrap(),
         "no-store"
     );
-    assert!(response.headers().get(header::PRAGMA).is_none());
+    assert_eq!(response.headers().get(header::PRAGMA).unwrap(), "no-cache");
     assert!(response.headers().get("dpop-nonce").is_none());
     assert_eq!(
         actix_web::body::to_bytes(response.into_body())

@@ -76,23 +76,35 @@ impl FederationRepository {
         user_id: UserId,
         link_id: uuid::Uuid,
     ) -> Result<Option<FederationLinkSummary>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        diesel::delete(
-            external_identity_links::table
-                .find(link_id)
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let row = guard.connection().transaction::<_, Error, _>(async |connection| {
+            let row = diesel::delete(external_identity_links::table.find(link_id)
                 .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
-                .filter(external_identity_links::user_id.eq(user_id.as_uuid())),
-        )
-        .returning(ExternalIdentityLinkSummaryRow::as_returning())
-        .load::<ExternalIdentityLinkSummaryRow>(&mut connection)
-        .await
-        .map_err(map_error)?
-        .pop()
-        .map(identity::federation_link_summary)
-        .transpose()
-        .map_err(|error| RepositoryError::Consistency(error.0))
+                .filter(external_identity_links::user_id.eq(user_id.as_uuid())))
+                .returning(ExternalIdentityLinkSummaryRow::as_returning())
+                .get_result::<ExternalIdentityLinkSummaryRow>(connection).await.optional()?;
+            if let Some(row) = &row {
+                super::audit_ledger::append_fresh_security_audit_on_connection(connection,
+                    &nazo_persistence::SecurityAuditEvent {
+                        event_id: uuid::Uuid::now_v7(), event_type: "external_identity_unlinked".into(),
+                        event_category: "identity_lifecycle".into(), occurred_at: chrono::Utc::now(),
+                        payload: serde_json::json!({
+                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                            "event_category": "identity_lifecycle", "tenant_id": tenant_id.as_uuid(),
+                            "user_id": user_id.as_uuid(), "link_id": row.id,
+                            "provider_type": row.provider_type, "provider_id": row.provider_id,
+                        }),
+                    }).await?;
+            }
+            Ok(row)
+        }).await.map_err(map_error)?;
+        guard.return_to_pool();
+        row.map(identity::federation_link_summary)
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn resolve_existing(
         &self,

@@ -30,9 +30,9 @@ use crate::{
     active_public_client_ids_on_connection, append_fresh_security_audit_on_connection,
     deactivate_client_on_connection, delete_operator_managed_dataset_on_connection,
     disable_user_on_connection, insert_client_on_connection,
-    insert_operator_managed_trust_anchor_on_connection, insert_user_on_connection,
-    protect_dataset_claims, revoke_operator_managed_trust_anchor_on_connection,
-    upsert_operator_managed_dataset_on_connection,
+    insert_operator_managed_trust_anchor_on_connection, protect_dataset_claims,
+    revoke_operator_managed_trust_anchor_on_connection,
+    upsert_operator_managed_dataset_on_connection, write_managed_user_on_connection,
 };
 
 /// PostgreSQL tenant-resource executor and authoritative state source.
@@ -724,9 +724,19 @@ async fn apply_resources(
         if locators.contains_key(&ResourceKey::from_identity(&payload.identity)) {
             continue;
         }
-        let profile = &payload.profile;
-        let id = insert_user_on_connection(
+        let previous_id = TenantResourceRepository::inactive_user_locator_on_connection(
             connection,
+            tenant_id,
+            &payload.identity.resource_id,
+        )
+        .await
+        .map_err(map_repository_error)?
+        .map(|locator| parse_uuid_locator(&locator, TenantResourceKind::User))
+        .transpose()?;
+        let profile = &payload.profile;
+        let id = write_managed_user_on_connection(
+            connection,
+            previous_id,
             UserInsert {
                 tenant,
                 username: &payload.username,
@@ -845,6 +855,12 @@ async fn apply_resources(
                 ))?,
             TenantResourceKind::User,
         )?;
+        let locator = dataset_locator(user_id, &payload.configuration_id);
+        if locators.iter().any(|(key, existing)| {
+            key.kind == TenantResourceKind::Openid4vcDataset && existing == &locator
+        }) {
+            return Err(transaction_conflict("dataset_already_owned"));
+        }
         let Some(data_key) = data_key.as_ref() else {
             return Err(ExecutorTransactionError::Executor(
                 TenantResourceExecutorError::Unavailable,
@@ -876,10 +892,7 @@ async fn apply_resources(
                 TenantResourceExecutorError::Conflict,
             ));
         }
-        locators.insert(
-            ResourceKey::from_identity(&payload.identity),
-            dataset_locator(user_id, &payload.configuration_id),
-        );
+        locators.insert(ResourceKey::from_identity(&payload.identity), locator);
     }
     for payload in payloads.iter().filter_map(|p| match p {
         PreparedApplyPayload::TrustPolicy(value) => Some(value),

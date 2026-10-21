@@ -678,6 +678,7 @@ async fn identity_mutations_and_required_audit_share_the_commit_boundary() {
                 tenant.tenant_id,
                 user.user_id(),
                 None,
+                user.profile.avatar_revision,
                 Some("avatar".into())
             )
             .await

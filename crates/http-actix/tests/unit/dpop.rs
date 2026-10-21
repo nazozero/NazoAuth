@@ -1,6 +1,6 @@
 use actix_web::{body::to_bytes, http::header, test::TestRequest};
 use nazo_auth::DpopReplayAudit;
-use nazo_oauth_server::security::dpop::dpop_target_uris;
+use nazo_oauth_server::security::dpop::dpop_target_uri;
 
 use super::*;
 
@@ -46,14 +46,53 @@ fn header_parser_distinguishes_absent_blank_and_present_proofs() {
 }
 
 #[test]
-fn target_uris_ignore_untrusted_request_authority() {
-    assert_eq!(
-        dpop_target_uris("https://issuer.example/", "https://mtls.example/", "/token"),
-        [
-            "https://issuer.example/token".to_owned(),
-            "https://mtls.example/token".to_owned()
-        ]
-    );
+fn target_uri_selects_only_the_configured_request_origin() {
+    for (authority, expected) in [
+        (
+            Some("ISSUER.example:443"),
+            Ok("https://issuer.example/token".to_owned()),
+        ),
+        (
+            Some("mtls.example:8443"),
+            Ok("https://mtls.example:8443/token".to_owned()),
+        ),
+        (Some("mtls.example"), Err(DpopError::InvalidProof)),
+        (Some("issuer.example:65536"), Err(DpopError::InvalidProof)),
+        (Some("attacker.example"), Err(DpopError::InvalidProof)),
+        (Some("user@issuer.example"), Err(DpopError::InvalidProof)),
+        (None, Err(DpopError::InvalidProof)),
+    ] {
+        assert_eq!(
+            dpop_target_uri(
+                "https://issuer.example/",
+                "https://mtls.example:8443/",
+                authority,
+                "/token"
+            ),
+            expected
+        );
+    }
+}
+
+#[test]
+fn authority_ignores_forwarding_headers_and_rejects_conflicting_targets() {
+    let request = TestRequest::default()
+        .insert_header(("Host", "issuer.example"))
+        .insert_header(("Forwarded", "host=mtls.example;proto=https"))
+        .insert_header(("X-Forwarded-Host", "mtls.example"))
+        .to_http_request();
+    assert_eq!(dpop_request_authority(&request), Some("issuer.example"));
+    let duplicate = TestRequest::default()
+        .insert_header(("Host", "issuer.example"))
+        .append_header(("Host", "mtls.example"))
+        .to_http_request();
+    assert_eq!(dpop_request_authority(&duplicate), None);
+    let conflict = TestRequest::with_uri("https://mtls.example/token")
+        .insert_header(("Host", "issuer.example"))
+        .to_http_request();
+    assert_eq!(dpop_request_authority(&conflict), None);
+    let absolute = TestRequest::with_uri("https://mtls.example/token").to_http_request();
+    assert_eq!(dpop_request_authority(&absolute), Some("mtls.example"));
 }
 
 #[actix_web::test]

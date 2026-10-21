@@ -15,7 +15,7 @@ for f in sorted(glob.glob('/r/*/capacity-*.summary.json')):
     if not m:
         continue
     c = r.get('containers', {}).get('by_service', {})
-    sql = r.get('sql', {}) or {}
+    sql = r.get('postgres', {}) or {}
     rows.append({
         'point': point,
         'ops_per_s': m.get('ops_per_s', 0),
@@ -28,7 +28,7 @@ for f in sorted(glob.glob('/r/*/capacity-*.summary.json')):
         'sql_per_req': sql.get('statements_per_http_request'),
         'pg': sql,
         'app_cpu': c.get('nazoauth', {}).get('cpu_percent_avg'),
-        'app_rss': c.get('nazoauth', {}).get('memory_avg_bytes'),
+        'app_rss': c.get('nazoauth', {}).get('memory_bytes_avg'),
         'pg_cpu': c.get('postgres', {}).get('cpu_percent_avg'),
         'db_conns': sql.get('connections_avg'),
         'pool_wait_ms': (r.get('db_pool', {}) or {}).get('wait_ms_avg'),

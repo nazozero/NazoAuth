@@ -21,6 +21,7 @@ sha2.workspace = true
 subtle = "2.6.1"
 url.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
+zeroize.workspace = true
 
 [dev-dependencies]
 ed25519-dalek.workspace = true

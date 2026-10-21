@@ -1,3 +1,6 @@
+#[path = "support/database.rs"]
+mod isolated_database;
+
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Text, Uuid as SqlUuid},
@@ -303,13 +306,13 @@ fn refresh_token_mut(commit: &mut RefreshTokenCommit) -> &mut NewRefreshToken {
     }
 }
 
-async fn refresh_issuance(fixture: RefreshFixture) -> CommitTokenIssuance {
+async fn refresh_issuance(database_url: &str, fixture: RefreshFixture) -> CommitTokenIssuance {
     let RefreshFixture { token, contract } = fixture;
     let issuance_id = Uuid::now_v7();
     let refresh = if let Some(member_id) = token.rotated_from_id {
         let raw = REFRESH_FIXTURE_RAW.lock().unwrap().get(&member_id).cloned();
         let source = if let Some((tenant_id, raw)) = raw {
-            TokenRepository::new(create_pool(database_url().unwrap(), 1).unwrap())
+            TokenRepository::new(create_pool(database_url, 1).unwrap())
                 .by_raw_refresh_token(tenant_id, &raw)
                 .await
                 .unwrap()
@@ -443,7 +446,7 @@ async fn seed_deactivation(
         Uuid::now_v7().to_string(),
         None,
     );
-    let issuance = refresh_issuance(token).await;
+    let issuance = refresh_issuance(database_url, token).await;
     assert_eq!(
         repository
             .commit_token_issuance(issuance.clone())
@@ -500,6 +503,8 @@ async fn assert_deactivation_batches_and_repeated_owners() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let large = fixture(&database_url).await;
     let second = fixture(&database_url).await;
@@ -655,7 +660,7 @@ async fn single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_aud
         None,
     );
     let family_id = token.family_id;
-    let mut input = refresh_issuance(token).await;
+    let mut input = refresh_issuance(&database_url, token).await;
     input.mode = TokenIssuanceMode::SingleUse {
         grant_key: format!("grant-{}", input.issuance_id),
         grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
@@ -920,13 +925,16 @@ async fn assert_complete_issuance_audit_payloads() {
     let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let make = || async {
-        refresh_issuance(refresh_token_fixture(
-            &fixture,
-            tenant_id,
-            Uuid::now_v7(),
-            format!("audit-{}", Uuid::now_v7()),
-            None,
-        ))
+        refresh_issuance(
+            &database_url,
+            refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                Uuid::now_v7(),
+                format!("audit-{}", Uuid::now_v7()),
+                None,
+            ),
+        )
         .await
     };
     for user_id in [None, Some(fixture.user_id)] {
@@ -1047,7 +1055,7 @@ async fn refresh_token_client_attestation_binding_round_trips() {
 
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(token).await)
+            .commit_token_issuance(refresh_issuance(&database_url, token).await)
             .await
             .expect("attested refresh token should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1077,7 +1085,7 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
     let repository = TokenRepository::new(create_pool(&database_url, 2).unwrap());
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(token).await)
+            .commit_token_issuance(refresh_issuance(&database_url, token).await)
             .await
             .expect("refresh token with a complete authentication context should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1161,7 +1169,7 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     let root = refresh_token_fixture(&fixture, tenant_id, chain_family, root_raw.clone(), None);
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(root).await)
+            .commit_token_issuance(refresh_issuance(&database_url, root).await)
             .await
             .expect("root refresh token should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1182,7 +1190,7 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     );
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(child).await)
+            .commit_token_issuance(refresh_issuance(&database_url, child).await)
             .await
             .expect("direct child should rotate"),
         CommitTokenIssuanceResult::Committed
@@ -1196,13 +1204,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     assert_eq!(
         issuance
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    chain_family,
-                    format!("direct-parent-grandchild-{}", Uuid::now_v7()),
-                    Some(child_id),
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        chain_family,
+                        format!("direct-parent-grandchild-{}", Uuid::now_v7()),
+                        Some(child_id),
+                    )
+                )
                 .await
             )
             .await
@@ -1214,13 +1225,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     assert_eq!(
         issuance
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    duplicate_root_family,
-                    format!("duplicate-root-first-{}", Uuid::now_v7()),
-                    None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        duplicate_root_family,
+                        format!("duplicate-root-first-{}", Uuid::now_v7()),
+                        None,
+                    )
+                )
                 .await
             )
             .await
@@ -1230,13 +1244,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     assert_eq!(
         issuance
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    duplicate_root_family,
-                    format!("duplicate-root-second-{}", Uuid::now_v7()),
-                    None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        duplicate_root_family,
+                        format!("duplicate-root-second-{}", Uuid::now_v7()),
+                        None,
+                    )
+                )
                 .await
             )
             .await
@@ -1255,13 +1272,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     assert_eq!(
         issuance
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    context_mismatch_family,
-                    context_root_raw.clone(),
-                    None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        context_mismatch_family,
+                        context_root_raw.clone(),
+                        None,
+                    )
+                )
                 .await
             )
             .await
@@ -1287,7 +1307,7 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     mismatched_context.contract.authentication_context.amr = vec!["mfa".to_owned()];
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(mismatched_context).await)
+            .commit_token_issuance(refresh_issuance(&database_url, mismatched_context).await)
             .await
             .expect("context mismatch should be classified"),
         CommitTokenIssuanceResult::RotationConflict
@@ -1304,13 +1324,16 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     assert_eq!(
         issuance
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    owner_mismatch_family,
-                    owner_root_raw.clone(),
-                    None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        owner_mismatch_family,
+                        owner_root_raw.clone(),
+                        None,
+                    )
+                )
                 .await
             )
             .await
@@ -1334,7 +1357,7 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
     wrong_subject.contract.subject = fixture.client_public_id.clone();
     assert_eq!(
         issuance
-            .commit_token_issuance(refresh_issuance(wrong_subject).await)
+            .commit_token_issuance(refresh_issuance(&database_url, wrong_subject).await)
             .await
             .expect("a parent owned by another subject should be classified"),
         CommitTokenIssuanceResult::RotationConflict
@@ -1366,13 +1389,10 @@ async fn issuance_waits_for_principal_deactivation_and_rechecks_the_committed_st
             "principal-deactivation-{principal_table}-{}",
             Uuid::now_v7()
         );
-        let input = refresh_issuance(refresh_token_fixture(
-            &fixture,
-            tenant_id,
-            Uuid::now_v7(),
-            raw_token.clone(),
-            None,
-        ))
+        let input = refresh_issuance(
+            &database_url,
+            refresh_token_fixture(&fixture, tenant_id, Uuid::now_v7(), raw_token.clone(), None),
+        )
         .await;
         let application_name = format!("issuance-{principal_table}-{}", Uuid::now_v7().simple());
         let repository = TokenIssuanceRepository::new(
@@ -1433,13 +1453,16 @@ async fn issuance_waits_for_principal_deactivation_and_rechecks_the_committed_st
 async fn client_deactivation_waits_for_issuance_and_revokes_committed_credentials() {
     let database_url = database_url()
         .expect("issuance/deactivation regression requires a live PostgreSQL database");
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let fixture = fixture(&database_url).await;
     let family_id = Uuid::now_v7();
     let raw_token = format!("issuance-before-deactivation-{}", Uuid::now_v7());
-    let input = refresh_issuance(refresh_token_fixture(
-        &fixture, tenant_id, family_id, raw_token, None,
-    ))
+    let input = refresh_issuance(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, family_id, raw_token, None),
+    )
     .await;
     let access_token_jti = input.access_token_jti.clone();
     let gate_key = family_lock_key(family_id).wrapping_add(1);
@@ -1707,9 +1730,10 @@ async fn grant_revoke_skips_already_revoked_family_lock() {
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture, tenant_id, family_id, root_raw, None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(&fixture, tenant_id, family_id, root_raw, None,)
+                )
                 .await
             )
             .await
@@ -1773,6 +1797,8 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     let fixture = fixture(&database_url).await;
     let admin_actor = admin_grant_required::seed_current_admin(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
@@ -1783,13 +1809,16 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    family_id,
-                    original_raw.clone(),
-                    None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        family_id,
+                        original_raw.clone(),
+                        None,
+                    )
+                )
                 .await
             )
             .await
@@ -1836,9 +1865,10 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
         successor_raw,
         Some(original.id),
     );
+    let rotation_input = refresh_issuance(&database_url, successor).await;
     let rotation = tokio::spawn(async move {
         rotation_repository
-            .commit_token_issuance(refresh_issuance(successor).await)
+            .commit_token_issuance(rotation_input)
             .await
     });
     wait_for_lock_wait(&mut coordinator, &rotation_application).await;
@@ -1911,7 +1941,7 @@ async fn refresh_rotation_reuse_compromises_the_whole_family() {
     };
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(make("original", None)).await)
+            .commit_token_issuance(refresh_issuance(&database_url, make("original", None)).await)
             .await
             .expect("original token should persist"),
         CommitTokenIssuanceResult::Committed
@@ -1923,14 +1953,18 @@ async fn refresh_rotation_reuse_compromises_the_whole_family() {
         .expect("original token should exist");
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(make("successor", Some(original.id))).await)
+            .commit_token_issuance(
+                refresh_issuance(&database_url, make("successor", Some(original.id))).await
+            )
             .await
             .expect("successor should rotate"),
         CommitTokenIssuanceResult::Committed
     );
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
-            .commit_token_issuance(refresh_issuance(make("reuse", Some(original.id))).await)
+            .commit_token_issuance(
+                refresh_issuance(&database_url, make("reuse", Some(original.id))).await
+            )
             .await
             .expect("reuse should be classified"),
         CommitTokenIssuanceResult::RotationConflict
@@ -2123,6 +2157,8 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let family_id = Uuid::now_v7();
@@ -2133,13 +2169,16 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
     assert_eq!(
         TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
             .commit_token_issuance(
-                refresh_issuance(refresh_token_fixture(
-                    &fixture,
-                    tenant_id,
-                    family_id,
-                    original_raw.clone(),
-                    None,
-                ))
+                refresh_issuance(
+                    &database_url,
+                    refresh_token_fixture(
+                        &fixture,
+                        tenant_id,
+                        family_id,
+                        original_raw.clone(),
+                        None,
+                    )
+                )
                 .await
             )
             .await
@@ -2173,9 +2212,10 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
         successor_raw,
         Some(original.id),
     );
+    let rotation_input = refresh_issuance(&database_url, successor).await;
     let rotation = tokio::spawn(async move {
         rotation_repository
-            .commit_token_issuance(refresh_issuance(successor).await)
+            .commit_token_issuance(rotation_input)
             .await
     });
     wait_for_lock_wait(&mut coordinator, &rotation_application).await;
@@ -2519,14 +2559,9 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
 }
 
 // ---------------------------------------------------------------------------
-// Refresh-rotation conflict (DB-005/DB-006) and SELECT EXISTS (DB-010) matrix
-// coverage.  Helpers below stay private to this file and only append.
-//
-// These tests share the database with the gated concurrency tests above: a
-// parked gated transaction can queue trigger DDL ahead of an ordinary commit
-// long enough to trip the 2s lock_timeout inside commit_token_issuance.
-// Serializing the added tests among themselves keeps their combined lock
-// footprint small; `retry_token_infra` absorbs the residual queue waits.
+// Refresh-rotation conflict and SELECT EXISTS matrix coverage.
+// Trigger-based fault injection owns isolated databases; each measured
+// repository call executes once, including transport-error outcomes.
 // ---------------------------------------------------------------------------
 static ROTATION_MATRIX_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
@@ -2684,33 +2719,6 @@ fn raw_refresh_row<'a>(
     }
 }
 
-/// Bounded retry for token-repository calls that may abort on transient
-/// lock-queue timeouts.  The shared test database serializes the gated
-/// concurrency tests' `CREATE`/`DROP TRIGGER` DDL on `oauth_refresh_spent_tokens`
-/// and `security_audit_events` behind parked rotation transactions, so an
-/// unrelated commit can hit its 2s `lock_timeout` through no fault of the
-/// path under test.  An `Err` always means the transaction rolled back, so
-/// retrying is safe; business verdicts return immediately and deterministic
-/// failures still surface after the last attempt.
-async fn retry_token_infra<T, Fut>(
-    mut call: impl FnMut() -> Fut,
-) -> Result<T, nazo_auth::TokenPortError>
-where
-    Fut: std::future::Future<Output = Result<T, nazo_auth::TokenPortError>>,
-{
-    let mut last_error = None;
-    for _ in 0..4 {
-        match call().await {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                last_error = Some(error);
-                tokio::task::yield_now().await;
-            }
-        }
-    }
-    Err(last_error.expect("at least one attempt must run"))
-}
-
 async fn commit_refresh(
     database_url: &str,
     token: RefreshFixture,
@@ -2723,9 +2731,10 @@ async fn commit_refresh_labeled(
     token: RefreshFixture,
     label: &str,
 ) -> (CommitTokenIssuanceResult, CommitTokenIssuance) {
-    let input = refresh_issuance(token).await;
+    let input = refresh_issuance(database_url, token).await;
     let repository = TokenIssuanceRepository::new(create_pool(database_url, 2).unwrap());
-    let result = retry_token_infra(|| repository.commit_token_issuance(input.clone()))
+    let result = repository
+        .commit_token_issuance(input.clone())
         .await
         .unwrap_or_else(|error| panic!("{label} should return a business result: {error:?}"));
     (result, input)
@@ -3350,7 +3359,7 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         .contract
         .authentication_context
         .userinfo_claim_requests = (vec![claim_for(json!(1))]).into();
-    let float_input = refresh_issuance(float_child).await;
+    let float_input = refresh_issuance(&database_url, float_child).await;
     let incoming_context = serde_json::to_value(
         float_input
             .refresh_token
@@ -3383,7 +3392,8 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         "jsonb equality must consider 1 and 1.0 equal, so only a Rust-side serde_json::Value compare can reject this rotation"
     );
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
-    let result = retry_token_infra(|| repository.commit_token_issuance(float_input.clone()))
+    let result = repository
+        .commit_token_issuance(float_input.clone())
         .await
         .expect("serde-visible context drift must classify as a business conflict");
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
@@ -3519,21 +3529,27 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
 
     let app_left = format!("rotation-left-{}", Uuid::now_v7().simple());
     let app_right = format!("rotation-right-{}", Uuid::now_v7().simple());
-    let left_input = refresh_issuance(refresh_token_fixture(
-        &fixture,
-        tenant_id,
-        family_id,
-        format!("race-left-{}", Uuid::now_v7()),
-        Some(root_id),
-    ))
+    let left_input = refresh_issuance(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            family_id,
+            format!("race-left-{}", Uuid::now_v7()),
+            Some(root_id),
+        ),
+    )
     .await;
-    let right_input = refresh_issuance(refresh_token_fixture(
-        &fixture,
-        tenant_id,
-        family_id,
-        format!("race-right-{}", Uuid::now_v7()),
-        Some(root_id),
-    ))
+    let right_input = refresh_issuance(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            family_id,
+            format!("race-right-{}", Uuid::now_v7()),
+            Some(root_id),
+        ),
+    )
     .await;
     let left_repository = TokenIssuanceRepository::new(
         create_pool(tagged_database_url(&database_url, &app_left), 1).unwrap(),
@@ -3543,11 +3559,11 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
     );
     let mut left = tokio::spawn({
         let input = left_input.clone();
-        async move { retry_token_infra(|| left_repository.commit_token_issuance(input.clone())).await }
+        async move { left_repository.commit_token_issuance(input.clone()).await }
     });
     let mut right = tokio::spawn({
         let input = right_input.clone();
-        async move { retry_token_infra(|| right_repository.commit_token_issuance(input.clone())).await }
+        async move { right_repository.commit_token_issuance(input.clone()).await }
     });
     wait_for_lock_wait_or_task(&mut coordinator, &app_left, &mut left).await;
     wait_for_lock_wait_or_task(&mut coordinator, &app_right, &mut right).await;
@@ -3709,10 +3725,10 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
         original_blake3: original.token_blake3,
         retry_started_at,
     });
-    let retry_input = refresh_issuance(retry_token).await;
+    let retry_input = refresh_issuance(&database_url, retry_token).await;
     let mut retry = tokio::spawn({
         let input = retry_input.clone();
-        async move { retry_token_infra(|| retry_repository.commit_token_issuance(input.clone())).await }
+        async move { retry_repository.commit_token_issuance(input.clone()).await }
     });
     wait_for_lock_wait_or_task(&mut coordinator, &retry_application, &mut retry).await;
 
@@ -4097,13 +4113,16 @@ async fn rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflic
     .await;
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
-    let failing = refresh_issuance(refresh_token_fixture(
-        &fixture,
-        tenant_id,
-        family_id,
-        other_raw.clone(),
-        Some(root_id),
-    ))
+    let failing = refresh_issuance(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            family_id,
+            other_raw.clone(),
+            Some(root_id),
+        ),
+    )
     .await;
     let failing_issuance_id = failing.issuance_id;
     let result = repository
@@ -4276,8 +4295,8 @@ async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
             .expect("unknown jti lookup should load"),
         "an unknown jti is not revoked"
     );
-    retry_token_infra(|| {
-        issuance.revoke_token_with_audit(
+    issuance
+        .revoke_token_with_audit(
             TokenRevocation {
                 tenant_id,
                 client_id: fixture.client_id,
@@ -4291,9 +4310,8 @@ async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
             "revocation-test-client",
             "test-source-hash",
         )
-    })
-    .await
-    .expect("revocation should commit");
+        .await
+        .expect("revocation should commit");
     assert!(
         tokens
             .access_token_revoked(tenant_id, &jti)
@@ -4352,7 +4370,7 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
         None,
     );
     let family_id = token.family_id;
-    let mut input = refresh_issuance(token).await;
+    let mut input = refresh_issuance(&database_url, token).await;
     let holder = nazo_auth::AuthorizationCodeHolderEvidence::from_verified_requirements(
         nazo_auth::AuthorizationCodeClientAuthentication::Authenticated,
         None,
@@ -4388,13 +4406,16 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
     );
 
     // Fresh issuances carry no single-use fence and must not resolve.
-    let fresh = refresh_issuance(refresh_token_fixture(
-        &fixture,
-        tenant_id,
-        Uuid::now_v7(),
-        format!("fresh-{}", Uuid::now_v7()),
-        None,
-    ))
+    let fresh = refresh_issuance(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            Uuid::now_v7(),
+            format!("fresh-{}", Uuid::now_v7()),
+            None,
+        ),
+    )
     .await;
     assert_eq!(
         repository.commit_token_issuance(fresh).await.unwrap(),
@@ -4912,6 +4933,8 @@ async fn required_revocation_event_failure_rolls_back_access_and_refresh_effects
     let Some(database_url) = database_url() else {
         return;
     };
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let database_url = database.url.clone();
     let owner = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let family_id = Uuid::now_v7();

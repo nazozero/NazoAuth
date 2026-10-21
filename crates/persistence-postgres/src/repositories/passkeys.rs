@@ -194,19 +194,39 @@ impl PasskeyRepository {
         user_id: UserId,
         id: Uuid,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        diesel::delete(
-            user_passkey_credentials::table
-                .find(id)
-                .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
-                .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid())),
-        )
-        .execute(&mut connection)
-        .await
-        .map(|count| count == 1)
-        .map_err(map_error)
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let deleted = guard
+            .connection()
+            .transaction::<_, Error, _>(async |connection| {
+                let count = diesel::delete(
+                    user_passkey_credentials::table
+                        .find(id)
+                        .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
+                        .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid())),
+                )
+                .execute(connection)
+                .await?;
+                if count == 1 {
+                    super::audit_ledger::append_fresh_security_audit_on_connection(connection,
+                    &nazo_persistence::SecurityAuditEvent {
+                        event_id: Uuid::now_v7(), event_type: "passkey_deleted".into(),
+                        event_category: "authentication".into(), occurred_at: chrono::Utc::now(),
+                        payload: serde_json::json!({
+                            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                            "event_category": "authentication", "tenant_id": tenant_id.as_uuid(),
+                            "user_id": user_id.as_uuid(), "credential_id": id,
+                        }),
+                    }).await?;
+                }
+                Ok(count == 1)
+            })
+            .await
+            .map_err(map_error)?;
+        guard.return_to_pool();
+        Ok(deleted)
     }
 }
 

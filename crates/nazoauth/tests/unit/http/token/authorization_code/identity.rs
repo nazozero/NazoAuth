@@ -275,6 +275,7 @@ async fn authorization_code_legacy_payload_and_cache_only_marker_cannot_issue_or
         .as_object_mut()
         .unwrap()
         .remove("redemption_contract_version");
+    raw["payload"] = Value::String(raw["payload"].to_string());
     fixture
         .store_raw_code_state(&legacy, &raw.to_string())
         .await;

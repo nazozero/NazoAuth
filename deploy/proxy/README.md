@@ -16,6 +16,13 @@ starting point. It separates ordinary HTTPS from a dedicated listener that
 requires a client certificate. `active-client-cas.pem` is deployment state and
 contains only approved production client roots; never put a private key in it.
 
+This preset forwards only the peer leaf certificate. Its supported tenant-PKI
+profile requires that leaf to be issued directly by the tenant's approved trust
+anchor. For root → intermediate → leaf chains, use a terminator configuration
+that also emits the verified intermediates in RFC 9440 `Client-Cert-Chain`.
+NazoAuth does not fetch missing intermediates; successful proxy TLS validation
+does not replace the tenant's current trust check.
+
 Apply trust-bundle changes recoverably:
 
 1. Write the candidate bundle in a root-owned directory with mode `0600`.

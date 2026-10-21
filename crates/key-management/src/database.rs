@@ -143,7 +143,23 @@ fn prepared_source(
         .min();
     Ok(Some(PreparedDatabaseSource {
         fingerprint,
-        next_lifecycle_check: rotation_check.into_iter().chain(retirement).min(),
+        next_lifecycle_check: rotation_check
+            .into_iter()
+            .chain(retirement)
+            .chain(protocol_rotation_check(
+                keys,
+                nazo_crypto::jwt::Algorithm::RS256,
+                settings,
+            )?)
+            .chain(protocol_rotation_check(
+                keys,
+                nazo_crypto::jwt::Algorithm::PS256,
+                settings,
+            )?)
+            .chain(crate::request_object_encryption::next_encryption_check(
+                payload, settings,
+            )?)
+            .min(),
     }))
 }
 
@@ -245,7 +261,13 @@ pub(crate) async fn register_external(
 ) -> anyhow::Result<LoadedKeyset> {
     validate_external_registration(&registration)?;
     update(binding, require_record(binding).await?, None, |payload| {
+        let active_kid = payload["active_kid"].as_str().ok_or_else(|| anyhow!("keyset missing active_kid"))?.to_owned();
         let keys = payload.get_mut("keys").and_then(Value::as_array_mut).ok_or_else(|| anyhow!("keyset missing keys"))?;
+        let active = keys.iter().find(|key| key["kid"].as_str() == Some(active_kid.as_str()))
+            .ok_or_else(|| anyhow!("keyset active key does not exist"))?;
+        if key_entry_algorithm(active)? != registration.algorithm {
+            anyhow::bail!("external successor must use the current active signing algorithm; algorithm transitions are not supported");
+        }
         let algorithm = signing_algorithm_name(registration.algorithm).ok_or_else(|| anyhow!("unsupported signing alg"))?;
         if let Some(existing) = keys.iter().find(|key| key.get("kid").and_then(Value::as_str) == Some(registration.kid.as_str())) {
             if existing.get("alg").and_then(Value::as_str) == Some(algorithm)
@@ -544,7 +566,7 @@ pub(crate) fn initial_payload_with_active(
         )?);
     }
     Ok(
-        json!({"schema_version":KEYSET_SCHEMA_VERSION,"active_kid":keys[0]["kid"].clone(),"keys":keys,"request_object_private_pem":URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?)}),
+        json!({"schema_version":KEYSET_SCHEMA_VERSION,"active_kid":keys[0]["kid"].clone(),"keys":keys,"request_object_private_pem":URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?),"request_object_created_at":now,"request_object_retained_keys":[]}),
     )
 }
 fn local_entry(
@@ -647,14 +669,93 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
             )?);
             changed = true;
         }
-        for algorithm in [
-            nazo_crypto::jwt::Algorithm::RS256,
-            nazo_crypto::jwt::Algorithm::PS256,
-        ] {
-            if active_is_local
-                && algorithm != active_algorithm
-                && !has_live_protocol_key(keys, algorithm, now)?
+        changed |= maintain_protocol_keys(keys, active_algorithm, active_is_local, settings, now)?;
+        // Expired signing entries retain public provenance, not signing secrets.
+        // IACA private material has its separate CRL lifecycle in openid4vc.
+        for entry in keys.iter_mut() {
+            if entry.get("kid").and_then(Value::as_str) != Some(active_kid.as_str())
+                && entry.get("backend").and_then(Value::as_str) == Some("local-db")
+                && key_entry_retire_at(entry)?.is_some_and(|retire| retire <= now)
             {
+                changed |= entry
+                    .as_object_mut()
+                    .expect("key entry is an object")
+                    .remove("private_pkcs8_der")
+                    .is_some();
+            }
+        }
+        (changed, next_active)
+    };
+    if let Some(next_active) = next_active {
+        payload["active_kid"] = json!(next_active);
+    }
+    Ok(crate::request_object_encryption::maintain_encryption_keys(payload, settings)? | changed)
+}
+
+fn protocol_key_indices(
+    keys: &[Value],
+    algorithm: nazo_crypto::jwt::Algorithm,
+) -> anyhow::Result<(Option<usize>, Option<usize>)> {
+    let mut current = None;
+    let mut pending = None;
+    for (index, entry) in keys.iter().enumerate() {
+        if entry["backend"] != "local-db"
+            || key_entry_algorithm(entry)? != algorithm
+            || key_entry_retire_at(entry)?.is_some()
+            || !key_entry_purposes(entry)?.is_some_and(|purposes| {
+                purposes.len() == PROTOCOL_SIGNING_PURPOSES.len()
+                    && PROTOCOL_SIGNING_PURPOSES
+                        .iter()
+                        .all(|purpose| purposes.contains(purpose))
+            })
+        {
+            continue;
+        }
+        let slot = if entry["prepublished"] == true {
+            &mut pending
+        } else {
+            &mut current
+        };
+        if slot.replace(index).is_some() {
+            anyhow::bail!("duplicate current or pending local protocol key");
+        }
+    }
+    Ok((current, pending))
+}
+
+fn protocol_rotation_check(
+    keys: &[Value],
+    algorithm: nazo_crypto::jwt::Algorithm,
+    settings: &KeySettings,
+) -> anyhow::Result<Option<DateTime<Utc>>> {
+    let (current, pending) = protocol_key_indices(keys, algorithm)?;
+    let Some(current) = current else {
+        return Ok(None);
+    };
+    let due = key_entry_created_at(&keys[current])? + settings.rotation_interval;
+    Ok(Some(match pending {
+        Some(pending) => {
+            due.max(key_entry_created_at(&keys[pending])? + settings.prepublish_window)
+        }
+        None => due - settings.prepublish_window,
+    }))
+}
+
+fn maintain_protocol_keys(
+    keys: &mut Vec<Value>,
+    active_algorithm: nazo_crypto::jwt::Algorithm,
+    active_is_local: bool,
+    settings: &KeySettings,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let mut changed = false;
+    for algorithm in [
+        nazo_crypto::jwt::Algorithm::RS256,
+        nazo_crypto::jwt::Algorithm::PS256,
+    ] {
+        let (current, pending) = protocol_key_indices(keys, algorithm)?;
+        let Some(current) = current else {
+            if active_is_local && algorithm != active_algorithm {
                 keys.push(local_entry(
                     algorithm,
                     timestamp(now),
@@ -662,11 +763,30 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
                 )?);
                 changed = true;
             }
+            continue;
+        };
+        let due = key_entry_created_at(&keys[current])? + settings.rotation_interval;
+        if let Some(pending) = pending {
+            if now >= due
+                && now >= key_entry_created_at(&keys[pending])? + settings.prepublish_window
+            {
+                keys[current]["retire_at"] = json!(timestamp(
+                    now + settings.verification_grace
+                        + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS
+                ));
+                keys[pending]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("prepublished");
+                changed = true;
+            }
+        } else if now >= due - settings.prepublish_window {
+            let mut candidate =
+                local_entry(algorithm, timestamp(now), Some(PROTOCOL_SIGNING_PURPOSES))?;
+            candidate["prepublished"] = json!(true);
+            keys.push(candidate);
+            changed = true;
         }
-        (changed, next_active)
-    };
-    if let Some(next_active) = next_active {
-        payload["active_kid"] = json!(next_active);
     }
     Ok(changed)
 }
@@ -712,27 +832,6 @@ fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: DateTim
     }
 }
 
-fn has_live_protocol_key(
-    keys: &[Value],
-    algorithm: nazo_crypto::jwt::Algorithm,
-    now: DateTime<Utc>,
-) -> anyhow::Result<bool> {
-    for entry in keys {
-        if entry.get("backend").and_then(Value::as_str) == Some("local-db")
-            && key_entry_algorithm(entry)? == algorithm
-            && key_entry_purposes(entry)?.is_some_and(|purposes| {
-                PROTOCOL_SIGNING_PURPOSES
-                    .iter()
-                    .all(|purpose| purposes.contains(purpose))
-            })
-            && key_entry_retire_at(entry)?.is_none_or(|retire| retire > now)
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 pub(crate) fn persist_payload(
     tenant_id: Uuid,
     revision: i64,
@@ -754,7 +853,7 @@ pub(crate) fn persist_payload(
     })
 }
 
-fn public_projection(payload: &Value) -> anyhow::Result<Value> {
+pub(crate) fn public_projection(payload: &Value) -> anyhow::Result<Value> {
     let payload = payload
         .as_object()
         .ok_or_else(|| anyhow!("keyset payload must be object"))?;
@@ -766,6 +865,21 @@ fn public_projection(payload: &Value) -> anyhow::Result<Value> {
     for (name, value) in payload {
         let public = match name.as_str() {
             "request_object_private_pem" => continue,
+            "request_object_retained_keys" => Value::Array(
+                value
+                    .as_array()
+                    .ok_or_else(|| anyhow!("request object retained keys must be an array"))?
+                    .iter()
+                    .map(|entry| {
+                        let mut public = entry
+                            .as_object()
+                            .ok_or_else(|| anyhow!("request object key must be an object"))?
+                            .clone();
+                        public.remove("private_pem");
+                        Ok(Value::Object(public))
+                    })
+                    .collect::<anyhow::Result<_>>()?,
+            ),
             "openid4vc" => Value::Object(
                 value
                     .as_object()
@@ -878,6 +992,22 @@ fn load_payload(
             .get("backend")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("keyset key {kid} missing backend"))?;
+        if retired_at.is_some_and(|time| time <= Utc::now()) {
+            if kid == active_kid {
+                anyhow::bail!("active key {kid} is retired");
+            }
+            if !matches!(backend, "local-db" | "external-command") {
+                anyhow::bail!("keyset key {kid} has unsupported backend {backend}");
+            }
+            validate_external_public_jwk(
+                kid,
+                signing_algorithm_name(algorithm).unwrap(),
+                entry
+                    .get("public_jwk")
+                    .ok_or_else(|| anyhow!("key {kid} has no public material"))?,
+            )?;
+            continue;
+        }
         let (public_jwk, handle, signing) = match backend {
             "local-db" => {
                 let private =
@@ -946,12 +1076,12 @@ fn load_payload(
                 kid: kid.to_owned(),
                 algorithm: signing_algorithm_name(algorithm).unwrap().to_owned(),
                 purposes,
-                state: if entry.get("purposes").is_some() || kid == active_kid {
-                    KeyState::Active
-                } else if retired_at.is_some_and(|time| time <= Utc::now()) {
-                    KeyState::Retired
-                } else if retired_at.is_some() {
+                state: if retired_at.is_some() {
                     KeyState::Grace
+                } else if entry["prepublished"] == true {
+                    KeyState::Prepublished
+                } else if entry.get("purposes").is_some() || kid == active_kid {
+                    KeyState::Active
                 } else {
                     KeyState::Prepublished
                 },
@@ -967,6 +1097,9 @@ fn load_payload(
         verification_keys,
         request_object_decryption_key,
         request_object_encryption_jwk,
+        request_object_retained_keys: crate::request_object_encryption::load_retained_keys(
+            payload,
+        )?,
         openid4vc_material: payload
             .get("openid4vc")
             .map(Openid4vcMaterial::deserialize)
@@ -998,6 +1131,8 @@ fn records(payload: &Value) -> anyhow::Result<Vec<KeyRecord>> {
                 KeyRecordStatus::Retired
             } else if retire_at.is_some() {
                 KeyRecordStatus::Grace
+            } else if entry["prepublished"] == true {
+                KeyRecordStatus::Prepublished
             } else if entry.get("purposes").is_some() {
                 KeyRecordStatus::PurposeScoped
             } else {

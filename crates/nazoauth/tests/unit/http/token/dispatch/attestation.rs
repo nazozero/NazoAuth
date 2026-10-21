@@ -110,6 +110,7 @@ async fn par_with_state(
                     dpop: nazo_oauth_server::contracts::request_facts::DpopRequestFacts {
                         method: http::Method::POST,
                         path: "/par",
+                        authority: Some("issuer.example"),
                         proof: Ok(None),
                         proof_present: false,
                     },

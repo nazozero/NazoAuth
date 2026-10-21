@@ -189,3 +189,149 @@ fn executor_rejects_an_outcome_that_the_journal_cannot_publish() {
         Err(TenantResourceExecutorError::TooLarge)
     );
 }
+
+#[tokio::test]
+async fn managed_users_reapply_in_place_and_datasets_have_one_physical_owner() {
+    use diesel_async::SimpleAsyncConnection as _;
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("ownership regression requires real PostgreSQL");
+    crate::run_pending_migrations(&url).await.unwrap();
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    connection.begin_test_transaction().await.unwrap();
+    let tenant = TenantContext::default_system();
+    let tenant_id = tenant.tenant_id.as_uuid();
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = TenantResourceIdentity {
+        kind: TenantResourceKind::User,
+        resource_id: format!("owner-{suffix}"),
+        digest: "a".repeat(64),
+    };
+    let user_resources = vec![PreparedTenantResource {
+        identity: user.clone(),
+        payload: None,
+    }];
+    let user_payloads = vec![PreparedApplyPayload::User(Box::new(PreparedUser {
+        identity: user.clone(),
+        username: format!("owner-{suffix}"),
+        email: format!("{suffix}@example.test"),
+        password_hash: "fixture".into(),
+        email_verified: true,
+        profile: UserProfileFields::default(),
+    }))];
+    let key = Some([42; 32]);
+    apply_resources(
+        &mut connection,
+        tenant_id,
+        tenant,
+        &user_resources,
+        &user_payloads,
+        &key,
+    )
+    .await
+    .unwrap();
+    let original = active_binding_map(&mut connection, tenant_id)
+        .await
+        .unwrap();
+    let original = &original[&ResourceKey::from_identity(&user)].locator;
+    revoke_resources(&mut connection, tenant_id, tenant, &user_resources)
+        .await
+        .unwrap();
+    apply_resources(
+        &mut connection,
+        tenant_id,
+        tenant,
+        &user_resources,
+        &user_payloads,
+        &key,
+    )
+    .await
+    .unwrap();
+    let restored = active_binding_map(&mut connection, tenant_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        &restored[&ResourceKey::from_identity(&user)].locator,
+        original
+    );
+    let subject = parse_uuid_locator(original, TenantResourceKind::User).unwrap();
+    #[derive(QueryableByName)]
+    struct Epoch {
+        #[diesel(sql_type=sql_types::BigInt)]
+        epoch: i64,
+    }
+    let epoch = sql_query("SELECT access_token_epoch AS epoch FROM users WHERE id=$1")
+        .bind::<sql_types::Uuid, _>(subject)
+        .get_result::<Epoch>(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(
+        epoch.epoch, 1,
+        "reactivation must retain the revocation epoch"
+    );
+    let dataset = |name: &str, claim: i64| {
+        let identity = TenantResourceIdentity {
+            kind: TenantResourceKind::Openid4vcDataset,
+            resource_id: format!("{name}-{suffix}"),
+            digest: "b".repeat(64),
+        };
+        (
+            PreparedTenantResource {
+                identity: identity.clone(),
+                payload: None,
+            },
+            PreparedApplyPayload::Dataset(Box::new(PreparedDataset {
+                identity,
+                user_resource_id: user.resource_id.clone(),
+                configuration_id: "credential".into(),
+                claims: json!({"value":claim}),
+            })),
+        )
+    };
+    let (first, first_payload) = dataset("first", 1);
+    apply_resources(
+        &mut connection,
+        tenant_id,
+        tenant,
+        &[first],
+        &[first_payload],
+        &key,
+    )
+    .await
+    .unwrap();
+    let (alias, alias_payload) = dataset("alias", 2);
+    let rejected = apply_resources(
+        &mut connection,
+        tenant_id,
+        tenant,
+        &[alias],
+        &[alias_payload],
+        &key,
+    )
+    .await;
+    assert!(matches!(
+        rejected,
+        Err(ExecutorTransactionError::Executor(
+            TenantResourceExecutorError::Conflict
+        ))
+    ));
+    // The database also enforces ownership for races whose initial snapshot did not
+    // contain the other identity. The conflicting transaction must roll back.
+    let duplicate = connection.transaction::<(),diesel::result::Error,_>(async |connection| {
+        sql_query("INSERT INTO tenant_resource_bindings (id,tenant_id,resource_kind,resource_id,resource_digest,active,locator) VALUES ($1,$2,'openid4vc-dataset',$3,$4,true,$5)")
+            .bind::<sql_types::Uuid,_>(Uuid::now_v7()).bind::<sql_types::Uuid,_>(tenant_id)
+            .bind::<sql_types::Text,_>(format!("racing-{suffix}"))
+            .bind::<sql_types::Text,_>("c".repeat(64))
+            .bind::<sql_types::Text,_>(dataset_locator(subject,"credential"))
+            .execute(connection).await?;
+        Ok(())
+    }).await;
+    assert!(matches!(
+        duplicate,
+        Err(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            _
+        ))
+    ));
+    connection.batch_execute("ROLLBACK").await.unwrap();
+}

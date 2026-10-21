@@ -8,16 +8,6 @@ pub use jsonwebtoken::{Algorithm, Header, TokenData, Validation};
 
 use crate::CryptoError;
 
-/// Records header-member presence, including `null` and empty values.
-/// JOSE consumers that implement no critical extensions reject any `crit`.
-pub fn deserialize_present_header<'de, D>(d: D) -> Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let _ = <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d)?;
-    Ok(true)
-}
-
 #[derive(Clone)]
 pub struct VerificationKey {
     pub(crate) inner: jsonwebtoken::DecodingKey,
@@ -82,7 +72,9 @@ impl VerificationKey {
 }
 
 pub fn decode_header(token: &str) -> crate::Result<Header> {
-    jsonwebtoken::decode_header(token).map_err(token_error)
+    let header = jsonwebtoken::decode_header(token).map_err(token_error)?;
+    reject_unsupported_extensions(&header)?;
+    Ok(header)
 }
 
 pub fn decode<T: serde::de::DeserializeOwned>(
@@ -90,7 +82,16 @@ pub fn decode<T: serde::de::DeserializeOwned>(
     key: &VerificationKey,
     validation: &Validation,
 ) -> crate::Result<TokenData<T>> {
-    jsonwebtoken::decode(token, &key.inner, validation).map_err(token_error)
+    let decoded = jsonwebtoken::decode(token, &key.inner, validation).map_err(token_error)?;
+    reject_unsupported_extensions(&decoded.header)?;
+    Ok(decoded)
+}
+
+fn reject_unsupported_extensions(header: &Header) -> crate::Result<()> {
+    if header.crit.is_some() {
+        return Err(CryptoError::InvalidToken);
+    }
+    Ok(())
 }
 
 pub mod dangerous {

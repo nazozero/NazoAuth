@@ -102,6 +102,10 @@ impl OperatorPersistence for PostgresOperatorPersistence {
         Arc::new(TenantDirectoryRepository::new(self.pool.clone()))
     }
 
+    fn schema_revision(&self) -> OperatorBackendFuture<'_, String> {
+        Box::pin(nazo_postgres::migration_schema_revision(&self.database_url))
+    }
+
     fn run_migrations(&self) -> OperatorBackendFuture<'_, bool> {
         Box::pin(async move {
             let runtime_role = std::env::var(MIGRATION_RUNTIME_ROLE_ENV)
@@ -147,8 +151,12 @@ impl PersistenceLauncher for PostgresLauncher {
             let database_url = config::database_url(source)?;
             let max_connections = config::database_max_connections(source)?;
             let pool = nazo_postgres::create_pool(database_url, max_connections)?;
+            let totp_keys = crate::settings::mfa_totp_key_ring(source)?;
+            nazo_postgres::MfaRepository::with_totp_key_ring(pool.clone(), totp_keys.clone())
+                .activate_totp_key()
+                .await?;
             Ok(ServerPersistenceBindings::new(Arc::new(
-                PostgresProvider::new(pool, crate::settings::mfa_totp_key_ring(source)?),
+                PostgresProvider::new(pool, totp_keys),
             )))
         })
     }

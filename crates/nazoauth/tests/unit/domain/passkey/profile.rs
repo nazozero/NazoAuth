@@ -254,8 +254,8 @@ impl FakeAuthenticator {
 
 impl LivePasskeyFixture {
     async fn new() -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let database_url = crate::test_support::backend_url("DATABASE_URL")?;
+        let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://example.com"),
             ("TRANSPORT_MODE", "direct-tls"),
@@ -333,6 +333,7 @@ impl LivePasskeyFixture {
 
     async fn store_session_at(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time,
             amr: vec!["pwd".to_owned()],
@@ -341,7 +342,7 @@ impl LivePasskeyFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )

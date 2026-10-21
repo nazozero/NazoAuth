@@ -70,7 +70,7 @@ where
 
 fn credentialed_api_cors() -> Cors {
     Cors::default()
-        .allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+        .allowed_methods(vec!["GET", "POST", "PUT", "PATCH", "DELETE"])
         .allowed_headers(vec![
             header::AUTHORIZATION,
             header::CONTENT_TYPE,

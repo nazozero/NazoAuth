@@ -60,7 +60,9 @@ pub(crate) async fn parse_backchannel_authentication_form(
                 form.requested_expiry_seconds = parse_requested_expiry_string(&value)
             }
             "client_id" => form.client_id = non_empty(value.into_owned()),
-            "client_secret" => form.client_secret = non_empty(value.into_owned()),
+            "client_secret" => {
+                form.client_secret = (!value.is_empty()).then(|| value.into_owned());
+            }
             "client_assertion_type" => form.client_assertion_type = non_empty(value.into_owned()),
             "client_assertion" => form.client_assertion = non_empty(value.into_owned()),
             _ => {}

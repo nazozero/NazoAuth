@@ -67,6 +67,7 @@ pub struct RequestObjectPolicy<'a> {
     pub client_id: &'a str,
     pub jti_policy: RequestObjectJtiPolicy,
     pub require_integrity_protected_parameters: bool,
+    pub require_issuer_audience: bool,
     pub now: i64,
 }
 
@@ -100,7 +101,7 @@ struct RequestObjectHeader {
     #[serde(
         rename = "crit",
         default,
-        deserialize_with = "nazo_crypto::jwt::deserialize_present_header"
+        deserialize_with = "nazo_crypto::deserialize_present_header"
     )]
     critical_extension_present: bool,
 }
@@ -345,12 +346,15 @@ fn request_object_audience_valid(
 ) -> bool {
     match &claims.aud {
         Some(Value::String(audience)) => {
-            audience == policy.issuer || audience.strip_suffix("/authorize") == Some(policy.issuer)
+            audience == policy.issuer
+                || (!policy.require_issuer_audience
+                    && audience.strip_suffix("/authorize") == Some(policy.issuer))
         }
         Some(Value::Array(audiences)) => audiences.iter().any(|audience| {
             audience.as_str().is_some_and(|audience| {
                 audience == policy.issuer
-                    || audience.strip_suffix("/authorize") == Some(policy.issuer)
+                    || (!policy.require_issuer_audience
+                        && audience.strip_suffix("/authorize") == Some(policy.issuer))
             })
         }),
         _ => false,

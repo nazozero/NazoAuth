@@ -170,6 +170,11 @@ fn profile_account_error_response(
             "当前用户资料查询失败.",
         ),
         ProfileAccountError::Validation(error) => match error {
+            ProfileValidationError::InvalidFormat(field) => oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                &format!("{field} 格式无效."),
+            ),
             ProfileValidationError::FieldTooLong(field) => oauth_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",

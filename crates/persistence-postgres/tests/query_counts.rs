@@ -25,6 +25,10 @@ mod password;
 mod refresh_fixture;
 use refresh_fixture::RefreshFixture;
 
+#[path = "support/pre_authorized.rs"]
+#[allow(dead_code)]
+mod pre_authorized;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
@@ -1751,14 +1755,10 @@ async fn up06_upsert_access_verifies_no_write_retries() {
 // VF-01: pre-authorized access persistence
 // ---------------------------------------------------------------------------
 
-/// VF-01: `persist_pre_authorized_access` folds the active-client `FOR SHARE`
-/// lock and the conditional grant upsert into one CTE statement on one
-/// connection — no wrapping transaction. A `registered_client_id` mismatch is
-/// rejected before any connection is acquired, and the anonymous path is the
-/// same single conditional upsert. Identical retries on either path require
-/// a second, locked exact-fact check without writing a new row version.
+/// The prepared offer and access grant share one explicit commit. Preparation
+/// is measured separately, outside the transaction and signing boundary.
 #[tokio::test]
-async fn vf01_pre_authorized_access_is_one_statement_per_path() {
+async fn pre_authorized_access_commits_offer_and_grant_in_one_transaction() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1789,225 +1789,43 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
 
-    // A registered client id that does not match the access row must be
-    // rejected purely in memory: no connection checkout, no statement.
-    let (result, delta) = measure(
-        &counter,
-        issuer.persist_pre_authorized_access(
-            &format!("qc-mismatch-{}", Uuid::now_v7()),
-            &access,
-            Some("qc-not-the-registered-client"),
-        ),
-    )
-    .await;
-    assert!(matches!(
-        result,
-        Err(CredentialStoreError::InvalidTransition)
-    ));
-    assert_eq!(delta.data_queries, 0);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-
-    let registered_hash = format!("qc-access-hash-{}", Uuid::now_v7());
-    // Registered path: 1 data statement — WITH active_client (FOR SHARE) +
-    // conditional upsert + outcome probe in a single CTE.
-    let (result, delta) = measure(
-        &counter,
-        issuer.persist_pre_authorized_access(
-            &registered_hash,
-            &access,
-            Some(seed.client.client_id.as_str()),
-        ),
-    )
-    .await;
-    result.expect("active-client pre-authorized persist must succeed");
-    assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-
-    // No-write retry: the conditional upsert plus a fresh locked exact-fact
-    // verification. It retains one checkout and never rewrites an identical row.
-    let (result, delta) = measure(
-        &counter,
-        issuer.persist_pre_authorized_access(
-            &registered_hash,
-            &access,
-            Some(seed.client.client_id.as_str()),
-        ),
-    )
-    .await;
-    result.expect("an exact registered retry must succeed");
-    assert_eq!(delta.data_queries, 2);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-
-    // Anonymous path: 1 data statement — the plain conditional upsert, no
-    // oauth_clients read.
-    let (result, delta) = measure(
-        &counter,
-        issuer.persist_pre_authorized_access(
-            &format!("qc-access-hash-{}", Uuid::now_v7()),
-            &CredentialAccess {
-                token_id: Uuid::now_v7(),
-                proof_origin: nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized,
-                ..access.clone()
-            },
-            None,
-        ),
-    )
-    .await;
-    result.expect("anonymous pre-authorized persist must succeed");
-    assert_eq!(delta.data_queries, 1);
-    assert_no_transaction(delta);
-    assert_clean(delta);
-
-    // Opt-in bounded measurement uses this same production owner and existing
-    // instrumentation. All ordinary VF-01 assertions above always execute.
-    // This is a single-writer owner-call boundary, not HTTP or capacity evidence.
-    if std::env::var_os("NAZO_VCI_OWNER_MEASUREMENT").is_some() {
-        const SAMPLES: usize = 100;
-        #[derive(diesel::QueryableByName, Debug, PartialEq, Eq)]
-        struct RowVersion {
-            #[diesel(sql_type = sql_types::Uuid)]
-            token_id: Uuid,
-            #[diesel(sql_type = sql_types::Text)]
-            row_version: String,
-        }
-        async fn row_versions(pool: &DbPool, subject_id: Uuid) -> Vec<RowVersion> {
-            let mut connection = get_conn(pool).await.expect("version checkout succeeds");
-            sql_query("SELECT token_id, xmin::text AS row_version FROM openid4vci_access_grants WHERE subject_id = $1 ORDER BY token_id")
-                .bind::<sql_types::Uuid, _>(subject_id)
-                .load(&mut connection)
-                .await
-                .expect("version read succeeds")
-        }
-        #[derive(diesel::QueryableByName, serde::Serialize)]
-        struct Durability {
-            #[diesel(sql_type = sql_types::Text)]
-            fsync: String,
-            #[diesel(sql_type = sql_types::Text)]
-            synchronous_commit: String,
-            #[diesel(sql_type = sql_types::Text)]
-            full_page_writes: String,
-            #[diesel(sql_type = sql_types::Text)]
-            server_version: String,
-        }
-        let durability = {
-            let mut connection = get_conn(&pool).await.expect("settings checkout succeeds");
-            sql_query("SELECT current_setting('fsync') AS fsync, current_setting('synchronous_commit') AS synchronous_commit, current_setting('full_page_writes') AS full_page_writes, current_setting('server_version') AS server_version")
-                .get_result::<Durability>(&mut connection)
-                .await
-                .expect("durability settings are readable")
-        };
-        assert_eq!(durability.fsync, "on");
-        assert_eq!(durability.synchronous_commit, "on");
-        assert_eq!(durability.full_page_writes, "on");
-        let baseline = row_versions(&pool, seed.user_id).await;
-        // A known mTLS binding is immutable even for this lineage-free fixture.
-        // DPoP projection updates on lineage-free rows are intentionally allowed.
-        let requests = (0..SAMPLES)
-            .map(|_| {
-                let access = CredentialAccess {
-                    token_id: Uuid::now_v7(),
-                    mtls_x5t_s256: Some("B".repeat(43)),
-                    ..access.clone()
-                };
-                (blake3_hex(&access.token_id.to_string()), access)
-            })
-            .collect::<Vec<_>>();
-        let mut phases = Vec::new();
-        for (phase_index, phase) in [
-            "fresh_registered_write",
-            "exact_no_write_retry",
-            "immutable_sender_rejection",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let versions_before = row_versions(&pool, seed.user_id).await;
-            let mut samples_ns = Vec::with_capacity(SAMPLES);
-            let mut queries = QuerySnapshot::default();
-            let mut accepted = 0;
-            let mut rejected = 0;
-            let phase_started = std::time::Instant::now();
-            for (hash, access) in &requests {
-                let attempted = if phase_index == 2 {
-                    CredentialAccess {
-                        mtls_x5t_s256: Some("A".repeat(43)),
-                        ..access.clone()
-                    }
-                } else {
-                    access.clone()
-                };
-                let started = std::time::Instant::now();
-                let (result, delta) = measure(
-                    &counter,
-                    issuer.persist_pre_authorized_access(
-                        hash,
-                        &attempted,
-                        Some(seed.client.client_id.as_str()),
-                    ),
-                )
-                .await;
-                samples_ns.push(
-                    u64::try_from(started.elapsed().as_nanos()).expect("bounded duration fits u64"),
-                );
-                if phase_index == 2 {
-                    assert_eq!(result, Err(CredentialStoreError::InvalidTransition));
-                    rejected += 1;
-                } else {
-                    result.expect("the complete owner call is accepted");
-                    accepted += 1;
-                }
-                assert_eq!(delta.data_queries, if phase_index == 0 { 1 } else { 2 });
-                assert_no_transaction(delta);
-                assert_clean(delta);
-                queries = queries.checked_add(delta);
-            }
-            let phase_seconds = phase_started.elapsed().as_secs_f64();
-            let versions_after = row_versions(&pool, seed.user_id).await;
-            if phase_index == 0 {
-                assert_eq!(versions_after.len(), baseline.len() + SAMPLES);
+    for registered in [true, false] {
+        let access = CredentialAccess {
+            token_id: Uuid::now_v7(),
+            proof_origin: if registered {
+                nazo_openid4vci::CredentialProofOrigin::RegisteredClient
             } else {
-                assert_eq!(
-                    versions_after, versions_before,
-                    "retry/rejection may not rewrite any grant row version"
-                );
-            }
-            assert_eq!(samples_ns.len(), SAMPLES);
-            assert_eq!(accepted + rejected, SAMPLES);
-            let mut ordered = samples_ns.clone();
-            ordered.sort_unstable();
-            phases.push(json!({
-                "scenario": phase, "planned_calls": SAMPLES, "completed_calls": SAMPLES,
-                "accepted": accepted, "expected_invalid_transition": rejected,
-                "unexpected_errors": 0, "unstarted_calls": 0,
-                "complete_call_samples_ns": samples_ns, "phase_wall_seconds": phase_seconds,
-                "completed_calls_per_second": SAMPLES as f64 / phase_seconds,
-                "complete_call_p50_ms": ordered[49] as f64 / 1_000_000.0,
-                "complete_call_p95_ms": ordered[94] as f64 / 1_000_000.0,
-                "complete_call_p99_ms": ordered[98] as f64 / 1_000_000.0,
-                "data_statements": queries.data_queries, "failed_statements": queries.failed_queries,
-                "pool_checkouts": serde_json::Value::Null, "pool_checkout_observation_status": "unavailable: production acquisition collection removed", "explicit_begins": queries.begins,
-                "explicit_commits": queries.commits, "rollbacks": queries.rollbacks,
-                "new_grant_rows": if phase_index == 0 { SAMPLES } else { 0 },
-                "unchanged_existing_row_versions": phase_index != 0,
-                "row_version_writes": if phase_index == 0 { SAMPLES } else { 0 }
-            }));
-        }
-        println!(
-            "NAZO_VCI_OWNER_METRICS {}",
-            json!({
-                "recipe": "vf01-owner-serial-3x100-v1", "sample_count_per_phase": SAMPLES,
-                "percentile_method": "empirical nearest rank: sorted100 indices49/94/98",
-                "boundary": "complete instrumented production repository call; one pooled connection; single writer; includes QueryCounter snapshot overhead; excludes HTTP/signature/proof processing and fixture/version-read setup",
-                "drop_boundary": "unstarted_calls is planned minus completed in this closed-loop recipe; no fixed-arrival-rate dropped_iterations claim",
-                "write_boundary": "row_version_writes tracks inserted/new xmin versions; unchanged xmin does not assert zero WAL or physical writes",
-                "durability": durability, "phases": phases
-            })
+                nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+            },
+            ..access.clone()
+        };
+        let prepared = pre_authorized::prepared_offer(&issuer, &access).await;
+        let hash = Uuid::now_v7().to_string();
+        let client = registered.then_some(access.client_id.as_str());
+        let (result, delta) = measure(
+            &counter,
+            issuer.persist_pre_authorized_access(&prepared, &hash, &access, client),
+        )
+        .await;
+        result.expect("offer and grant must commit together");
+        assert_eq!(delta.begins, 1);
+        assert_eq!(delta.commits, 1);
+        assert_eq!(
+            delta.data_queries, 3,
+            "subject fence, grant/client fence, offer CAS"
+        );
+        assert_clean(delta);
+        let (result, delta) = measure(
+            &counter,
+            issuer.persist_pre_authorized_access(&prepared, &hash, &access, client),
+        )
+        .await;
+        assert_eq!(result, Err(CredentialStoreError::InvalidTransition));
+        assert_eq!(
+            delta.rollbacks, 1,
+            "a consumed offer cannot commit a second grant"
         );
     }
-
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 

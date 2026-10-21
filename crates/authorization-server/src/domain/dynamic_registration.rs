@@ -25,6 +25,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct DynamicRegistrationConfig {
+    pub require_fapi2: bool,
     pub tenant: nazo_identity::TenantContext,
     pub issuer: String,
     pub default_audience: String,
@@ -192,8 +193,23 @@ impl DynamicRegistrationApplication {
         let payload =
             parse_client_configuration_update(payload, &current, has_secret, secret_matches)
                 .map_err(registration_error)?;
-        let registration = prepare_dynamic_client_registration(payload, self.registration_policy())
-            .map_err(registration_error)?;
+        let mut registration =
+            prepare_dynamic_client_registration(payload, self.registration_policy())
+                .map_err(registration_error)?;
+        if !registration
+            .request
+            .scopes
+            .iter()
+            .all(|scope| current.scopes.contains(scope))
+        {
+            return Err(OAuthEndpointError::json(
+                StatusCode::BAD_REQUEST,
+                "invalid_client_metadata",
+                "Configuration updates cannot expand the currently authorized scopes.",
+            ));
+        }
+        // Audience authorization is administrator-owned, not registration metadata.
+        registration.request.allowed_audiences = current.allowed_audiences.clone();
         let response_types = registration.response_types;
         let registration_access_token = self.security.registration_tokens.random_token();
         let mut prepared = match self
@@ -412,6 +428,14 @@ impl DynamicRegistrationApplication {
         if let Some(security_policy) = security_policy_override {
             request.security_policy = security_policy;
         }
+        request.id_token_signed_response_alg = Some(
+            nazo_auth::id_token_signing_algorithm(
+                request.id_token_signed_response_alg.as_deref(),
+                self.config.require_fapi2 || request.security_policy.requires_fapi2_security(),
+            )
+            .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?
+            .to_owned(),
+        );
         let policy = AdminClientPolicy {
             tenant: self.config.tenant,
             pairwise_subject_secret: self.config.pairwise_subject_secret.clone(),

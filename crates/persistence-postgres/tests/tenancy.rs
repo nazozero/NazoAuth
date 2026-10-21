@@ -94,6 +94,24 @@ async fn directory_initialization_is_atomic_and_excludes_suspended_tenants() {
     let mut connection = get_conn(&pool)
         .await
         .expect("pool should provide connection");
+    sql_query("UPDATE tenant_runtime_bindings SET runtime_revision = runtime_revision + 1 WHERE tenant_id = $1")
+        .bind::<sql_types::Uuid, _>(active.tenant_id.as_uuid())
+        .execute(&mut connection).await.unwrap();
+    assert!(
+        !directory
+            .initialize(nazo_identity::TenantDirectoryBinding {
+                tenant: active,
+                runtime_revision: 1,
+                issuer: "https://auth.example".into(),
+                external_host: "auth.example".into(),
+            })
+            .await
+            .expect("bootstrap must preserve the live runtime revision")
+    );
+    assert_eq!(
+        directory.load_active().await.unwrap().tenants[0].runtime_revision,
+        2
+    );
     sql_query("UPDATE tenants SET status = 'suspended' WHERE id = $1")
         .bind::<sql_types::Uuid, _>(active.tenant_id.as_uuid())
         .execute(&mut connection)
@@ -104,7 +122,7 @@ async fn directory_initialization_is_atomic_and_excludes_suspended_tenants() {
         .load_active()
         .await
         .expect("suspended directory should load");
-    assert_eq!(suspended_directory.revision, 2);
+    assert_eq!(suspended_directory.revision, 3);
     assert!(suspended_directory.tenants.is_empty());
 
     let mut connection = get_conn(&pool)
@@ -119,7 +137,7 @@ async fn directory_initialization_is_atomic_and_excludes_suspended_tenants() {
         .load_active()
         .await
         .expect("restored directory should load");
-    assert_eq!(restored_directory.revision, 3);
+    assert_eq!(restored_directory.revision, 4);
     assert_eq!(restored_directory.tenants.len(), 1);
 
     drop(connection);

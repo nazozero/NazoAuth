@@ -39,7 +39,9 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                 match maintenance.cleanup_batch(scope).await {
                     Ok(counts) => {
                         batches += 1;
-                        rows += counts.authorization_decisions
+                        rows += counts.totp_rewrapped
+                            + counts.authorization_decisions
+                            + counts.device_authorization_decisions
                             + counts.issuances
                             + counts.refresh_tokens
                             + counts.spent_refresh_proofs
@@ -59,6 +61,7 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             + counts.credential_responses;
                         issuances += counts.issuances;
                         tracing::debug!(
+                            totp_rewrapped = counts.totp_rewrapped,
                             issuances = counts.issuances,
                             authorization_decisions = counts.authorization_decisions,
                             refresh_tokens = counts.refresh_tokens,

@@ -317,6 +317,7 @@ async fn handler_extracts_calls_core_and_preserves_success_contract() {
     )
     .await;
     let request = test::TestRequest::get()
+        .insert_header((header::HOST, "auth.example"))
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, "Bearer access-token"))
         .insert_header(("x-fapi-interaction-id", "interaction-1"))
@@ -362,6 +363,7 @@ async fn fapi_resource_rejects_form_body_access_tokens_without_signature_module(
     let response = test::call_service(
         &app,
         test::TestRequest::post()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
             .set_payload("access_token=form-token")
@@ -391,7 +393,10 @@ async fn missing_token_preserves_bearer_error_and_skips_core() {
     .await;
     let response = test::call_service(
         &app,
-        test::TestRequest::get().uri("/fapi/resource").to_request(),
+        test::TestRequest::get()
+            .insert_header((header::HOST, "auth.example"))
+            .uri("/fapi/resource")
+            .to_request(),
     )
     .await;
 
@@ -420,6 +425,7 @@ async fn signed_get_uses_one_authorization_call_and_signs_the_success_response()
     let response = test::call_service(
         &app,
         test::TestRequest::get()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::AUTHORIZATION, "Bearer access-token"))
             .insert_header(("signature-input", fields.signature_input))
@@ -448,10 +454,7 @@ async fn signed_get_uses_one_authorization_call_and_signs_the_success_response()
     assert!(content_digest_field_matches(&digest, &body));
     assert_eq!(
         *state.targets.lock().unwrap(),
-        vec![vec![
-            "https://auth.example/fapi/resource".to_owned(),
-            "https://mtls.auth.example/fapi/resource".to_owned(),
-        ]]
+        vec![vec!["https://auth.example/fapi/resource".to_owned(),]]
     );
     let bases = state.bases.lock().unwrap();
     let base = std::str::from_utf8(&bases[0]).unwrap();
@@ -476,6 +479,7 @@ async fn signed_post_binds_the_received_request_digest() {
     let response = test::call_service(
         &app,
         test::TestRequest::post()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::AUTHORIZATION, "Bearer access-token"))
             .insert_header(("content-digest", digest.as_str()))
@@ -496,7 +500,7 @@ async fn signed_post_binds_the_received_request_digest() {
 }
 
 #[actix_web::test]
-async fn malformed_or_duplicate_signature_fields_fail_before_authorization_and_are_signed() {
+async fn malformed_or_duplicate_signature_fields_fail_before_authorization_without_signing() {
     for duplicate in [false, true] {
         let state = signature_endpoint(AuthorizationOutcome::Success, Ok(()), false);
         let app = test::init_service(
@@ -506,6 +510,7 @@ async fn malformed_or_duplicate_signature_fields_fail_before_authorization_and_a
         )
         .await;
         let mut request = test::TestRequest::get()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::AUTHORIZATION, "Bearer access-token"));
         if duplicate {
@@ -519,8 +524,9 @@ async fn malformed_or_duplicate_signature_fields_fail_before_authorization_and_a
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(state.authorizer_calls.load(Ordering::Relaxed), 0);
         assert_eq!(state.verify_calls.load(Ordering::Relaxed), 0);
-        assert!(response.headers().contains_key("signature-input"));
-        assert!(response.headers().contains_key("signature"));
+        assert!(!response.headers().contains_key("signature-input"));
+        assert!(state.bases.lock().unwrap().is_empty());
+        assert!(!response.headers().contains_key("signature"));
         assert!(!response.headers().contains_key(header::CACHE_CONTROL));
     }
 }
@@ -537,6 +543,7 @@ async fn duplicate_dpop_header_preserves_invalid_dpop_contract_and_skips_core() 
     let response = test::call_service(
         &app,
         test::TestRequest::get()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::AUTHORIZATION, "DPoP access-token"))
             .append_header(("dpop", "first"))
@@ -545,7 +552,7 @@ async fn duplicate_dpop_header_preserves_invalid_dpop_contract_and_skips_core() 
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert_eq!(
         response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
@@ -561,7 +568,8 @@ async fn duplicate_dpop_header_preserves_invalid_dpop_contract_and_skips_core() 
 }
 
 #[actix_web::test]
-async fn nonce_challenge_and_nonce_dependency_failure_keep_exact_signed_http_contracts() {
+async fn nonce_challenge_and_nonce_dependency_failure_keep_http_contracts_without_private_signing()
+{
     for (outcome, status, error, description, challenge) in [
         (
             AuthorizationOutcome::UseNonce,
@@ -589,6 +597,7 @@ async fn nonce_challenge_and_nonce_dependency_failure_keep_exact_signed_http_con
         let response = test::call_service(
             &app,
             test::TestRequest::get()
+                .insert_header((header::HOST, "auth.example"))
                 .uri("/fapi/resource")
                 .insert_header((header::AUTHORIZATION, "Bearer access-token"))
                 .insert_header(("dpop", "proof"))
@@ -606,7 +615,8 @@ async fn nonce_challenge_and_nonce_dependency_failure_keep_exact_signed_http_con
         if matches!(outcome, AuthorizationOutcome::UseNonce) {
             assert_eq!(response.headers().get("dpop-nonce").unwrap(), "nonce-1");
         }
-        assert!(response.headers().contains_key("signature-input"));
+        assert!(!response.headers().contains_key("signature-input"));
+        assert!(state.bases.lock().unwrap().is_empty());
         assert_eq!(
             test::read_body_json::<Value, _>(response).await,
             json!({"error": error, "error_description": description})
@@ -615,7 +625,7 @@ async fn nonce_challenge_and_nonce_dependency_failure_keep_exact_signed_http_con
 }
 
 #[actix_web::test]
-async fn signature_verification_failures_preserve_status_and_signed_error_contracts() {
+async fn signature_verification_failures_preserve_status_without_private_signing() {
     for (verification, status) in [
         (
             Err(FapiSignatureVerificationError::Invalid),
@@ -645,6 +655,7 @@ async fn signature_verification_failures_preserve_status_and_signed_error_contra
         let response = test::call_service(
             &app,
             test::TestRequest::get()
+                .insert_header((header::HOST, "auth.example"))
                 .uri("/fapi/resource")
                 .insert_header((header::AUTHORIZATION, "Bearer access-token"))
                 .insert_header(("signature-input", fields.signature_input))
@@ -656,14 +667,15 @@ async fn signature_verification_failures_preserve_status_and_signed_error_contra
         assert_eq!(response.status(), status);
         assert_eq!(state.authorizer_calls.load(Ordering::Relaxed), 1);
         assert_eq!(state.verify_calls.load(Ordering::Relaxed), 1);
-        assert!(response.headers().contains_key("signature-input"));
-        assert!(response.headers().contains_key("signature"));
+        assert!(!response.headers().contains_key("signature-input"));
+        assert!(state.bases.lock().unwrap().is_empty());
+        assert!(!response.headers().contains_key("signature"));
     }
 }
 
 #[actix_web::test]
 async fn response_signer_failure_returns_an_empty_unsigned_503() {
-    let state = signature_endpoint(AuthorizationOutcome::InvalidDpop, Ok(()), true);
+    let state = signature_endpoint(AuthorizationOutcome::Success, Ok(()), true);
     let app = test::init_service(
         App::new()
             .app_data(state.endpoint.clone())
@@ -674,6 +686,7 @@ async fn response_signer_failure_returns_an_empty_unsigned_503() {
     let response = test::call_service(
         &app,
         test::TestRequest::get()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::AUTHORIZATION, "Bearer access-token"))
             .insert_header(("signature-input", fields.signature_input))
@@ -693,13 +706,18 @@ async fn response_signing_preserves_body_storage_and_multiple_physical_header_va
     let state = signature_endpoint(AuthorizationOutcome::Success, Ok(()), false);
     let fields = request_signature_fields("GET", b"", None);
     let request = test::TestRequest::get()
+        .insert_header((header::HOST, "auth.example"))
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, "Bearer access-token"))
         .insert_header(("signature-input", fields.signature_input))
         .insert_header(("signature", fields.signature))
         .to_http_request();
     let request_body = Bytes::new();
-    let original = CapturedRequest::capture("https://auth.example", &request, &request_body);
+    let original = CapturedRequest::capture(
+        "https://auth.example/fapi/resource".to_owned(),
+        &request,
+        &request_body,
+    );
     let body = Bytes::from(serde_json::to_vec(&json!({"ok": true})).unwrap());
     let pointer = body.as_ptr();
     let response = HttpResponse::Ok()
@@ -737,6 +755,7 @@ async fn signature_enabled_endpoint_rejects_form_body_access_tokens_before_core(
     let response = test::call_service(
         &app,
         test::TestRequest::post()
+            .insert_header((header::HOST, "auth.example"))
             .uri("/fapi/resource")
             .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
             .set_payload("access_token=form-token")
@@ -747,8 +766,9 @@ async fn signature_enabled_endpoint_rejects_form_body_access_tokens_before_core(
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(state.authorizer_calls.load(Ordering::Relaxed), 0);
     assert_eq!(state.verify_calls.load(Ordering::Relaxed), 0);
-    assert!(response.headers().contains_key("signature-input"));
-    assert!(response.headers().contains_key("signature"));
+    assert!(!response.headers().contains_key("signature-input"));
+    assert!(state.bases.lock().unwrap().is_empty());
+    assert!(!response.headers().contains_key("signature"));
     assert_eq!(
         test::read_body_json::<Value, _>(response).await,
         json!({
@@ -810,10 +830,10 @@ async fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
         (
             ProtectedResourceAuthorizationError::TokenNotDpopBound,
             AccessTokenAuthScheme::DPoP,
-            StatusCode::BAD_REQUEST,
-            "invalid_dpop_proof",
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
             "Token is not DPoP-bound.",
-            "DPoP error=\"invalid_dpop_proof\"",
+            "DPoP error=\"invalid_token\"",
         ),
         (
             ProtectedResourceAuthorizationError::MissingSenderConstraint,
@@ -834,15 +854,15 @@ async fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
         (
             ProtectedResourceAuthorizationError::DpopBindingMismatch,
             AccessTokenAuthScheme::DPoP,
-            StatusCode::BAD_REQUEST,
-            "invalid_dpop_proof",
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
             "DPoP binding mismatch.",
-            "DPoP error=\"invalid_dpop_proof\"",
+            "DPoP error=\"invalid_token\"",
         ),
         (
             ProtectedResourceAuthorizationError::ReplayDetected,
             AccessTokenAuthScheme::DPoP,
-            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
             "invalid_dpop_proof",
             "DPoP proof jti has already been used.",
             "DPoP error=\"invalid_dpop_proof\"",
@@ -852,7 +872,7 @@ async fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
                 DpopProofVerifierError::MalformedProof,
             ),
             AccessTokenAuthScheme::DPoP,
-            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
             "invalid_dpop_proof",
             "DPoP proof is malformed.",
             "DPoP error=\"invalid_dpop_proof\"",
@@ -862,7 +882,7 @@ async fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
                 DpopProofVerifierError::ReplayDetected,
             ),
             AccessTokenAuthScheme::DPoP,
-            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
             "invalid_dpop_proof",
             "DPoP proof jti has already been used.",
             "DPoP error=\"invalid_dpop_proof\"",
@@ -872,7 +892,7 @@ async fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
                 DpopProofVerifierError::InvalidSignature,
             ),
             AccessTokenAuthScheme::DPoP,
-            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
             "invalid_dpop_proof",
             "DPoP proof validation failed.",
             "DPoP error=\"invalid_dpop_proof\"",
@@ -952,4 +972,80 @@ fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease
         ModuleId::HttpMessageSignatures,
         CapabilityAdmission::NewRequest,
     )
+}
+
+#[actix_web::test]
+async fn missing_token_and_invalid_dpop_never_invoke_response_signer() {
+    for with_token in [false, true] {
+        let state = signature_endpoint(AuthorizationOutcome::InvalidDpop, Ok(()), true);
+        let mut request = test::TestRequest::get()
+            .insert_header((header::HOST, "auth.example"))
+            .uri("/fapi/resource");
+        if with_token {
+            let fields = request_signature_fields("GET", b"", None);
+            request = request
+                .insert_header((header::AUTHORIZATION, "Bearer access-token"))
+                .insert_header(("signature-input", fields.signature_input))
+                .insert_header(("signature", fields.signature));
+        }
+        let response = fapi_resource(
+            state.endpoint.clone(),
+            request.to_http_request(),
+            Bytes::new(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(state.bases.lock().unwrap().is_empty());
+        assert!(!response.headers().contains_key("signature"));
+    }
+}
+
+#[actix_web::test]
+async fn resource_target_binds_actual_alias_and_signed_query() {
+    let state = signature_endpoint(AuthorizationOutcome::Success, Ok(()), false);
+    let app = test::init_service(
+        App::new()
+            .app_data(state.endpoint.clone())
+            .route("/fapi/resource", web::get().to(fapi_resource)),
+    )
+    .await;
+    let fields = request_signature_fields("GET", b"", None);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/fapi/resource?view=full")
+            .insert_header((header::HOST, "mtls.auth.example"))
+            .insert_header(("forwarded", "host=auth.example;proto=https"))
+            .insert_header((header::AUTHORIZATION, "Bearer access-token"))
+            .insert_header(("signature-input", fields.signature_input))
+            .insert_header(("signature", fields.signature))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        *state.targets.lock().unwrap(),
+        vec![vec!["https://mtls.auth.example/fapi/resource".to_owned()]]
+    );
+    {
+        let bases = state.bases.lock().unwrap();
+        assert!(
+            std::str::from_utf8(&bases[0])
+                .unwrap()
+                .contains("https://mtls.auth.example/fapi/resource?view=full")
+        );
+    }
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/fapi/resource")
+            .insert_header((header::HOST, "unbound.example"))
+            .insert_header(("x-forwarded-host", "auth.example"))
+            .insert_header((header::AUTHORIZATION, "Bearer access-token"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(state.authorizer_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.bases.lock().unwrap().len(), 1);
 }

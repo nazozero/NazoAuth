@@ -329,6 +329,14 @@ impl OAuthClientRepository {
                 let written = Self::replace_on_connection(connection, client)
                     .await
                     .map_err(MetadataUpdateError::Repository)?;
+                if current.is_active && !written.is_active {
+                    revoke_client_dependents_on_connection(
+                        connection,
+                        written.tenant_id,
+                        written.id,
+                    )
+                    .await?;
+                }
                 if let Some((actor_id, source_ip_hash)) = audit {
                     append_admin_client_audit(
                         connection,
@@ -580,7 +588,7 @@ impl OAuthClientRepository {
                 registration_access_token_blake3 = $5,
                 redirect_uris = $3->'redirect_uris',
                 post_logout_redirect_uris = $3->'post_logout_redirect_uris',
-                scopes = $3->'scopes', allowed_audiences = $3->'allowed_audiences',
+                scopes = $3->'scopes',
                 grant_types = $3->'grant_types',
                 token_endpoint_auth_method = $3->>'token_endpoint_auth_method',
                 subject_type = $3->>'subject_type',
@@ -630,6 +638,7 @@ impl OAuthClientRepository {
                 updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE
               AND registration_access_token_blake3 = $6
+              AND scopes @> ($3->'scopes')
             RETURNING
                 id, tenant_id, realm_id, organization_id, client_id, client_name,
                 client_type, redirect_uris, scopes, allowed_audiences, grant_types,
@@ -674,7 +683,18 @@ impl OAuthClientRepository {
                 )
                 .load::<OAuthClientRecord>(connection)
                 .await?;
-        let updated = records.pop().ok_or(diesel::result::Error::NotFound)?.into_domain().map_err(MetadataUpdateError::Repository)?;
+        let Some(record) = records.pop() else {
+            // Distinguish a current authority ceiling from stale RAT credentials.
+            let still_authorized = oauth_clients::table
+                .filter(oauth_clients::tenant_id.eq(client.tenant_id))
+                .filter(oauth_clients::id.eq(client.id))
+                .filter(oauth_clients::is_active.eq(true))
+                .filter(oauth_clients::registration_access_token_blake3.eq(expected_registration_access_token_blake3))
+                .select(oauth_clients::id).load::<Uuid>(connection).await?;
+            return Err(if still_authorized.is_empty() { diesel::result::Error::NotFound.into() }
+                else { MetadataUpdateError::Repository(RepositoryError::Conflict) });
+        };
+        let updated = record.into_domain().map_err(MetadataUpdateError::Repository)?;
         // The administrator owns this field. A DCR request validated against
         // an older policy must roll back its metadata and credential rotation.
         if updated.security_policy != client.security_policy {

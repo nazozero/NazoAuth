@@ -184,6 +184,7 @@ fn encrypted_jar_without_outer_client_id_survives_par_preparation() {
                     dpop: DpopRequestFacts {
                         method: http::Method::POST,
                         path: "/par",
+                        authority: Some("issuer.example"),
                         proof: Ok(None),
                         proof_present: false,
                     },
@@ -450,6 +451,7 @@ fn protocol_par_invalid_signed_scope_does_not_consume_request_object_replay() {
                     dpop: DpopRequestFacts {
                         method: http::Method::POST,
                         path: "/par",
+                        authority: Some("issuer.example"),
                         proof: Ok(None),
                         proof_present: false,
                     },

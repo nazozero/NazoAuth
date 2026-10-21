@@ -571,11 +571,12 @@ async fn prompt_none_issues_single_use_authorization_code_without_user_interacti
         Some("https://issuer.example")
     );
     assert!(!query.contains_key("error"));
-    let raw = valkey_get(&fixture.live.state.valkey, authorization_code_key(code))
+    let stored = nazo_valkey::AuthorizationStore::new(&fixture.live.state.valkey_connection())
+        .load_authorization_code(code)
         .await
-        .expect("code readable")
+        .unwrap()
         .expect("code exists");
-    match serde_json::from_str::<AuthorizationCodeState>(&raw).expect("code deserializes") {
+    match stored {
         AuthorizationCodeState::Pending { payload } => {
             assert_eq!(payload.user_id, fixture.user_id);
             assert_eq!(payload.client_id, fixture.client_id);

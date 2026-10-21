@@ -395,7 +395,8 @@ async fn provider_config_handler_preserves_http_contract() {
     );
     let document = actix_test::read_body_json::<Value, _>(response).await;
     assert_eq!(document["id"], "nazo-oauth-scim");
-    assert_eq!(document["patch"], json!({"supported": true}));
+    assert_eq!(document["patch"], json!({"supported": false}));
+    assert_eq!(document["filter"]["supported"], false);
     assert_eq!(
         document["pagination"]["cursorTimeout"],
         nazo_identity::scim::SCIM_CURSOR_TIMEOUT_SECONDS

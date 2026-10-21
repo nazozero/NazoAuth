@@ -36,7 +36,8 @@ pub use store::{
     AuthorizationOfferPort, CredentialAccess, CredentialAuthorization, CredentialProofOrigin,
     CredentialResponseEncoding, CredentialSelection, CredentialStoreError, CredentialStoreFuture,
     CredentialStorePort, DeferredClaimOutcome, DeferredCredential, IssuanceNotification,
-    NonceRecord, NotificationHandle, StoredCredentialOffer, StoredCredentialResponse,
+    NonceRecord, NotificationHandle, PreparedPreAuthorizedOffer, StoredCredentialOffer,
+    StoredCredentialResponse,
 };
 
 pub const PRE_AUTHORIZED_CODE_GRANT: &str = "urn:ietf:params:oauth:grant-type:pre-authorized_code";

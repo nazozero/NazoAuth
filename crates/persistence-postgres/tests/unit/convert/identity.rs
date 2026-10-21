@@ -4,6 +4,8 @@ use uuid::Uuid;
 
 fn user_row() -> PublicAccountRow {
     PublicAccountRow {
+        avatar_revision: 0,
+        access_token_epoch: 0,
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),

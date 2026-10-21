@@ -57,6 +57,7 @@ pub fn add_amr(amr: &mut Vec<String>, value: &str) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SessionRecord {
     user_id: UserId,
+    authorization_epoch: i64,
     auth_time: i64,
     auth_time_micros: Option<i64>,
     amr: Vec<String>,
@@ -442,10 +443,10 @@ impl SessionService {
         if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
         }
-        let Some(user) = load_account(record.user_id())
-            .await?
-            .filter(|account| account.as_ref().active)
-        else {
+        let Some(user) = load_account(record.user_id()).await?.filter(|account| {
+            let principal = account.as_ref();
+            principal.active && principal.authorization_epoch == record.authorization_epoch()
+        }) else {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);
         };
@@ -484,6 +485,7 @@ impl SessionRecord {
     #[must_use]
     pub fn new(
         user_id: UserId,
+        authorization_epoch: i64,
         auth_time: i64,
         amr: Vec<String>,
         pending_mfa: bool,
@@ -491,6 +493,7 @@ impl SessionRecord {
     ) -> Self {
         Self {
             user_id,
+            authorization_epoch,
             auth_time,
             auth_time_micros: None,
             amr,
@@ -498,6 +501,11 @@ impl SessionRecord {
             oidc_sid,
             logged_in_client_ids: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub const fn authorization_epoch(&self) -> i64 {
+        self.authorization_epoch
     }
 
     #[must_use]

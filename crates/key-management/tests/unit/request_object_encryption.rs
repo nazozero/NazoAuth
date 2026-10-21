@@ -27,6 +27,29 @@ async fn dedicated_request_object_key_decrypts_authenticated_nested_jwt() {
 }
 
 #[tokio::test]
+async fn unique_request_object_recipient_accepts_omitted_kid_but_rejects_wrong_kid() {
+    let manager = crate::test_support::key_manager(settings()).await.unwrap();
+    let jwk = manager.snapshot().request_object_encryption_jwk.clone();
+    let header = json!({"alg":"RSA-OAEP-256", "enc":"A256GCM", "cty":"JWT"});
+    let compact = encrypt_with_header(&jwk, b"header.claims.signature", header.clone());
+    assert_eq!(
+        manager.decrypt_request_object(&compact).unwrap(),
+        "header.claims.signature"
+    );
+    let mut wrong = header;
+    wrong["kid"] = json!("unavailable-key");
+    assert!(
+        manager
+            .decrypt_request_object(&encrypt_with_header(
+                &jwk,
+                b"header.claims.signature",
+                wrong
+            ))
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn authenticated_request_object_rejects_unimplemented_critical_headers() {
     let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let jwk = manager.snapshot().request_object_encryption_jwk.clone();
@@ -163,4 +186,173 @@ fn encrypt_with_header(
         URL_SAFE_NO_PAD.encode(ciphertext),
         URL_SAFE_NO_PAD.encode(tag)
     )
+}
+
+#[tokio::test]
+async fn protocol_and_encryption_rotation_prepublishes_switches_and_retires_in_one_generation() {
+    use crate::{SigningKeyRepository, SigningKeyWrappingKeyRing};
+    use std::sync::Arc;
+    let repository = Arc::new(crate::test_support::MemorySigningKeyRepository::default());
+    let tenant = uuid::Uuid::now_v7();
+    let wrapping = SigningKeyWrappingKeyRing::new("wrapping", [42; 32], None).unwrap();
+    let manager = crate::KeyManager::load_or_create_database(
+        settings(),
+        None,
+        tenant,
+        repository.clone(),
+        wrapping.clone(),
+    )
+    .await
+    .unwrap();
+    let old_jwk = manager.snapshot().request_object_encryption_jwk.clone();
+    let old_compact = encrypt(&old_jwk, b"old.claims.signature");
+    let old_ps = manager
+        .snapshot()
+        .signing_verification_key(
+            nazo_auth::SigningPurpose::AccessToken,
+            nazo_crypto::jwt::Algorithm::PS256,
+        )
+        .unwrap()
+        .kid
+        .clone();
+    let mut record = repository.load().await.unwrap().unwrap();
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(wrapping.open_generation(tenant, &mut record).unwrap()).unwrap();
+    let aged = (chrono::Utc::now() - settings().rotation_interval - chrono::Duration::seconds(1))
+        .to_rfc3339();
+    payload["request_object_created_at"] = json!(aged);
+    for key in payload["keys"].as_array_mut().unwrap() {
+        if key["kid"] == old_ps {
+            key["created_at"] = json!(aged);
+        }
+    }
+    repository.replace(Some(
+        crate::database::persist_payload(tenant, record.revision + 1, payload, &wrapping).unwrap(),
+    ));
+    manager.refresh().await.unwrap();
+    assert_eq!(manager.snapshot().request_object_encryption_jwk, old_jwk);
+    assert_eq!(
+        manager
+            .snapshot()
+            .signing_verification_key(
+                nazo_auth::SigningPurpose::AccessToken,
+                nazo_crypto::jwt::Algorithm::PS256
+            )
+            .unwrap()
+            .kid,
+        old_ps
+    );
+    let mut record = repository.load().await.unwrap().unwrap();
+    assert!(
+        !serde_json::to_string(&record.public_metadata)
+            .unwrap()
+            .contains("private_pem")
+    );
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(wrapping.open_generation(tenant, &mut record).unwrap()).unwrap();
+    let candidate = &payload["request_object_retained_keys"][0];
+    let candidate_der = super::private_key(&candidate["private_pem"]).unwrap();
+    let next_jwk = super::request_object_encryption_jwk(&candidate_der).unwrap();
+    let new_compact = encrypt(&next_jwk, b"new.claims.signature");
+    assert_eq!(
+        manager.decrypt_request_object(&new_compact).unwrap(),
+        "new.claims.signature",
+        "next recipient is loaded before it is advertised"
+    );
+    assert!(
+        manager.snapshot().jwks()["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|key| key["kid"] != next_jwk["kid"])
+    );
+    let next_ps = payload["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["prepublished"] == true)
+        .unwrap()["kid"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        !manager
+            .snapshot()
+            .verification_key(&next_ps)
+            .unwrap()
+            .can_sign(nazo_auth::SigningPurpose::AccessToken)
+    );
+    let ready = (chrono::Utc::now() - settings().prepublish_window - chrono::Duration::seconds(1))
+        .to_rfc3339();
+    payload["request_object_retained_keys"][0]["created_at"] = json!(ready);
+    for key in payload["keys"].as_array_mut().unwrap() {
+        if key["kid"] == next_ps {
+            key["created_at"] = json!(ready);
+        }
+    }
+    repository.replace(Some(
+        crate::database::persist_payload(tenant, record.revision + 1, payload, &wrapping).unwrap(),
+    ));
+    manager.refresh().await.unwrap();
+    assert_eq!(manager.snapshot().request_object_encryption_jwk, next_jwk);
+    assert_eq!(
+        manager.decrypt_request_object(&old_compact).unwrap(),
+        "old.claims.signature"
+    );
+    assert_eq!(
+        manager.decrypt_request_object(&new_compact).unwrap(),
+        "new.claims.signature"
+    );
+    assert_eq!(
+        manager
+            .snapshot()
+            .signing_verification_key(
+                nazo_auth::SigningPurpose::AccessToken,
+                nazo_crypto::jwt::Algorithm::PS256
+            )
+            .unwrap()
+            .kid,
+        next_ps
+    );
+    assert!(
+        !manager
+            .snapshot()
+            .verification_key(&old_ps)
+            .unwrap()
+            .can_sign(nazo_auth::SigningPurpose::AccessToken)
+    );
+    let mut record = repository.load().await.unwrap().unwrap();
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(wrapping.open_generation(tenant, &mut record).unwrap()).unwrap();
+    let expired = (chrono::Utc::now() - chrono::Duration::seconds(1)).to_rfc3339();
+    payload["request_object_retained_keys"][0]["retire_at"] = json!(expired);
+    for key in payload["keys"].as_array_mut().unwrap() {
+        if key["kid"] == old_ps {
+            key["retire_at"] = json!(expired);
+        }
+    }
+    repository.replace(Some(
+        crate::database::persist_payload(tenant, record.revision + 1, payload, &wrapping).unwrap(),
+    ));
+    manager.refresh().await.unwrap();
+    assert!(manager.decrypt_request_object(&old_compact).is_err());
+    assert!(manager.snapshot().verification_key(&old_ps).is_none());
+    let mut record = repository.load().await.unwrap().unwrap();
+    let payload: serde_json::Value =
+        serde_json::from_slice(wrapping.open_generation(tenant, &mut record).unwrap()).unwrap();
+    assert!(
+        payload["request_object_retained_keys"][0]
+            .get("private_pem")
+            .is_none()
+    );
+    assert!(
+        payload["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|key| key["kid"] == old_ps)
+            .unwrap()
+            .get("private_pkcs8_der")
+            .is_none()
+    );
 }

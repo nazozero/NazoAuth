@@ -180,6 +180,7 @@ fn completion_ports(existing: bool, active: bool) -> std::sync::Arc<CompletionPo
         existing,
         account: PublicAccount {
             principal: crate::Principal {
+                authorization_epoch: 0,
                 user_id: crate::UserId::new(uuid::Uuid::from_u128(1)).unwrap(),
                 tenant: TenantContext::default_system(),
                 role: crate::UserRole::User,

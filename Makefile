@@ -4,10 +4,10 @@ perf:
 	docker compose -f docker-compose.perf.yml up --build --abort-on-container-exit --exit-code-from perf
 
 perf-capacity:
-	python perf/capacity.py --duration 30m --instances 1,2,4
+	python perf/tools/current_capacity.py --stop-at "$(STOP_AT)" $(CAPACITY_ARGS)
 
 perf-capacity-smoke:
-	python perf/capacity.py --smoke
+	python perf/tools/current_capacity.py --stop-at "$(STOP_AT)" --smoke $(CAPACITY_ARGS)
 
 perf-down:
 	docker compose -f docker-compose.perf.yml down

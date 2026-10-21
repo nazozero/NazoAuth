@@ -41,13 +41,31 @@ and `OPTIONS` is handled by the CORS policy without invoking profile operations.
 
 ## Update consistency
 
-Profile persistence and the subsequent authorized-client count are two
-separate PostgreSQL operations. If the write succeeds but the count read
-fails, the endpoint returns a service-unavailable error even though the profile
-change is already durable. Repeating the same full profile patch is
-idempotent. Tests lock this partial-success and retry contract so callers do
-not assume a rollback that did not occur.
+The authorized-client count is read before profile or avatar mutation. A count
+read failure therefore leaves the requested change unapplied. The response uses
+the committed account result and that count; a later display-only query cannot
+turn a successful write into a failure response. The count is a snapshot, not a
+transactional guarantee about concurrent client grants.
 
 The profile write is tenant-scoped and restricted to active users. A concurrent
 account deactivation therefore causes the update to fail as login-required
 instead of modifying an inactive account.
+
+## Profile field syntax
+
+`birthdate` accepts a four-digit year or a valid `YYYY-MM-DD` date; `0000`
+represents an unspecified year. `locale` must be a syntactically valid BCP 47
+language tag. `zoneinfo` must resolve in the IANA timezone database. Invalid
+values are rejected before persistence.
+
+## Session termination
+
+Administrative account disable advances the existing authorization epoch and
+revokes durable grants in the same transaction. Sessions retain the epoch from
+login and compare it with the current account; re-enabling an account cannot
+revive its earlier sessions. Client disable likewise revokes its durable grants.
+
+Local logout with an existing session cookie requires the CSRF cookie/header
+pair. Session-store failure returns service unavailable and retains the cookie
+for retry; success is reported only after deletion. A request without a session
+cookie is idempotent.

@@ -96,17 +96,12 @@ impl ServerMfaProfileOperations {
             .map_err(MfaProfileError::rate_limit)
     }
 
-    async fn reserve_mfa_attempt(
-        &self,
-        context: &MfaRequestContext,
-        account: &PublicAccount,
-    ) -> Result<(), MfaProfileError> {
+    async fn reserve_mfa_attempt(&self, account: &PublicAccount) -> Result<(), MfaProfileError> {
         let decision = self
             .mfa_attempt_throttle
             .reserve_attempt(
                 account.tenant().tenant_id,
                 account.user_id(),
-                &context.session_id,
                 self.mfa_failure_window_seconds,
                 self.mfa_failure_max_attempts,
             )
@@ -127,14 +122,10 @@ impl ServerMfaProfileOperations {
         }
     }
 
-    async fn clear_mfa_attempts(&self, context: &MfaRequestContext, account: &PublicAccount) {
+    async fn clear_mfa_attempts(&self, account: &PublicAccount) {
         if let Err(error) = self
             .mfa_attempt_throttle
-            .clear_attempts(
-                account.tenant().tenant_id,
-                account.user_id(),
-                &context.session_id,
-            )
+            .clear_attempts(account.tenant().tenant_id, account.user_id())
             .await
         {
             tracing::warn!(%error, "failed to clear MFA attempt budget");
@@ -149,12 +140,12 @@ impl ServerMfaProfileOperations {
     ) -> Result<nazo_identity::MfaVerificationProof, MfaProfileError> {
         match self.verify_factor(account, code, context.now).await {
             Ok(method) => {
-                self.clear_mfa_attempts(context, account).await;
+                self.clear_mfa_attempts(account).await;
                 Ok(method)
             }
             Err(error) => {
                 if error.kind != MfaProfileErrorKind::InvalidCode {
-                    self.clear_mfa_attempts(context, account).await;
+                    self.clear_mfa_attempts(account).await;
                 }
                 Err(error)
             }
@@ -240,7 +231,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             let account = self.current_account(&command.context, false).await?;
             self.enforce_rate_limit(&command.context).await?;
             self.ensure_required_ready().await?;
-            self.reserve_mfa_attempt(&command.context, &account).await?;
+            self.reserve_mfa_attempt(&account).await?;
             let prepared = match self
                 .mfa
                 .prepare_totp_confirmation(&account, command.code, command.context.now)
@@ -250,7 +241,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 Err(error) => {
                     let mapped = map_core_error(error);
                     if mapped.kind != MfaProfileErrorKind::InvalidCode {
-                        self.clear_mfa_attempts(&command.context, &account).await;
+                        self.clear_mfa_attempts(&account).await;
                     }
                     return Err(mapped);
                 }
@@ -269,7 +260,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 .await;
             match result {
                 Ok(TotpConfirmationOutcome::Accepted { backup_codes }) => {
-                    self.clear_mfa_attempts(&command.context, &account).await;
+                    self.clear_mfa_attempts(&account).await;
                     tracing::info!(user_id = %account.id(), "MFA TOTP enabled");
                     Ok(MfaTotpConfirmation {
                         rotation,
@@ -285,7 +276,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 Err(error) => {
                     tracing::warn!(?error, "failed to confirm TOTP enrollment");
                     self.discard_unpublished_rotation(&rotation).await;
-                    self.clear_mfa_attempts(&command.context, &account).await;
+                    self.clear_mfa_attempts(&account).await;
                     let mut mapped = map_core_error(error);
                     mapped.clear_session_cookies = true;
                     Err(mapped)
@@ -301,7 +292,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
         Box::pin(async move {
             let account = self.current_account(&command.context, true).await?;
             self.enforce_rate_limit(&command.context).await?;
-            self.reserve_mfa_attempt(&command.context, &account).await?;
+            self.reserve_mfa_attempt(&account).await?;
             let method = match self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await
@@ -355,7 +346,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
             if !account.account.mfa_enabled {
                 return Err(MfaProfileError::new(MfaProfileErrorKind::MfaDisabled));
             }
-            self.reserve_mfa_attempt(&command.context, &account).await?;
+            self.reserve_mfa_attempt(&account).await?;
             let method = match self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await
@@ -395,7 +386,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 return Err(MfaProfileError::new(MfaProfileErrorKind::MfaDisabled));
             }
             self.ensure_required_ready().await?;
-            self.reserve_mfa_attempt(&command.context, &account).await?;
+            self.reserve_mfa_attempt(&account).await?;
             let method = self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;
@@ -437,7 +428,7 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 return Ok(false);
             }
             self.ensure_required_ready().await?;
-            self.reserve_mfa_attempt(&command.context, &account).await?;
+            self.reserve_mfa_attempt(&account).await?;
             let proof = self
                 .verify_reserved_factor(&command.context, &account, &command.code)
                 .await?;

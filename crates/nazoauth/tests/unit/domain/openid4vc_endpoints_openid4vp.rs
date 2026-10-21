@@ -227,7 +227,7 @@ fn valid_dcql() -> DcqlQuery {
             id: "pid".to_owned(),
             format: CredentialFormat::SdJwtVc,
             multiple: false,
-            meta: Some(json!({})),
+            meta: Some(json!({"vct_values":["ExampleCredential"]})),
             claims: None,
             claim_sets: None,
             trusted_authorities: None,
@@ -448,7 +448,7 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
 
 #[tokio::test]
 async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
-    let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
+    let Some(database_url) = crate::test_support::backend_url("DATABASE_URL") else {
         return;
     };
     let pool = nazo_postgres::create_pool(database_url, 2).expect("live pool should build");
@@ -469,7 +469,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
     // current domain serializer. Existing JTI records must remain retryable.
     let legacy = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
         wallet_authorization_endpoint: url_query_input.wallet_authorization_endpoint.clone(),
-        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt", "meta": {}}]}),
+        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt", "meta":{"vct_values":["ExampleCredential"]}}]}),
         haip: false,
         client_id_prefix: "redirect_uri".to_owned(),
         request_method: "url_query".to_owned(),
@@ -567,14 +567,14 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
         ))
         .await
         .expect("signed POST presentation should be stored");
-    assert_eq!(
+    assert!(matches!(
         operations
             .request(signed_post.transaction_id, None)
             .await
-            .expect_err("signed POST requires a wallet nonce")
-            .status,
-        400
-    );
+            .expect("wallet nonce is optional in request_uri POST"),
+        PresentationResponseBody::RequestObject(_)
+    ));
+
     let PresentationResponseBody::RequestObject(value) = operations
         .request(signed_post.transaction_id, Some("wallet-nonce"))
         .await
@@ -762,7 +762,7 @@ fn canonicalize_controller_start_wire() {
 
 #[tokio::test]
 async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_rejected() {
-    let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
+    let Some(database_url) = crate::test_support::backend_url("DATABASE_URL") else {
         return;
     };
     let pool = nazo_postgres::create_pool(database_url, 2).unwrap();
@@ -912,7 +912,7 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
 async fn typed_presentation_create_rejects_empty_sets_and_malformed_metadata_before_storage() {
     let enabled = operations(invalid_pool(), true).await;
     for query in [
-        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}],"credential_sets":[]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]}}],"credential_sets":[]}),
         json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":"required-type"}}]}),
         json!({"credentials":[{"id":"pid","format":"mso_mdoc","meta":{"doctype_value":["required-doctype"]}}]}),
         json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":17}]}),

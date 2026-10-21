@@ -9,12 +9,7 @@ use nazo_postgres::{DbPool, OAuthClientRepository, create_pool, get_conn};
 use uuid::Uuid;
 
 fn test_repository() -> Option<OAuthClientRepository> {
-    let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()?;
-    Some(OAuthClientRepository::new(
-        create_pool(database_url, 4).unwrap(),
-    ))
+    Some(OAuthClientRepository::new(test_pool()?))
 }
 
 fn test_pool() -> Option<DbPool> {
@@ -343,12 +338,9 @@ async fn oauth_client_reads_fail_closed_across_tenants() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dcr_replace_cannot_resurrect_a_concurrently_deleted_client() {
-    let Ok(database_url) =
-        std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL"))
-    else {
+    let Some(pool) = test_pool() else {
         return;
     };
-    let pool = create_pool(database_url, 4).unwrap();
     let repository = OAuthClientRepository::new(pool.clone());
     let client = client(TenantContext::default_system());
     let initial_token = registration_token(&client, "registration-token");
@@ -537,12 +529,9 @@ async fn registration_token_rotation_rejects_a_stale_authenticated_token() {
 
 #[tokio::test]
 async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
-    let Ok(database_url) =
-        std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL"))
-    else {
+    let Some(pool) = test_pool() else {
         return;
     };
-    let pool = create_pool(database_url, 4).unwrap();
     let repository = OAuthClientRepository::new(pool.clone());
     let mut client = client(TenantContext::default_system());
     let initial_token = registration_token(&client, "registration-token");
@@ -638,12 +627,9 @@ async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
 
 #[tokio::test]
 async fn dynamic_registration_store_round_trips_registration_and_secret_material() {
-    let Ok(database_url) =
-        std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL"))
-    else {
+    let Some(pool) = test_pool() else {
         return;
     };
-    let pool = create_pool(database_url, 4).unwrap();
     let repository = OAuthClientRepository::new(pool.clone());
     let tenant = TenantContext::default_system();
     let template = client(tenant);
@@ -1558,3 +1544,54 @@ async fn dcr_required_event_failure_rolls_back_each_owned_effect() {
 
 #[path = "support/admin_client_required.rs"]
 mod admin_client_required;
+
+#[tokio::test]
+async fn dcr_scope_ceiling_is_checked_again_at_commit_and_audience_is_admin_owned() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let mut original = client(TenantContext::default_system());
+    original.scopes = vec!["openid".into(), "email".into()];
+    let token = registration_token(&original, "authority-ceiling");
+    repository
+        .insert(&original, None, Some(&token))
+        .await
+        .unwrap();
+    let mut candidate = original.clone();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET scopes='[\"openid\"]',allowed_audiences='[\"https://restricted.example\"]' WHERE id=$1")
+        .bind::<SqlUuid,_>(original.id).execute(&mut connection).await.unwrap();
+    let before = client_credential_state(&pool, original.id).await;
+    assert!(matches!(
+        DynamicRegistrationClientStore::replace_registration(
+            &repository,
+            &candidate,
+            None,
+            &token,
+            Some("next-authority-token"),
+            "source"
+        )
+        .await,
+        Err(DynamicRegistrationDependencyError::PolicyChanged)
+    ));
+    assert_eq!(client_credential_state(&pool, original.id).await, before);
+    candidate.scopes = vec!["openid".into()];
+    let updated = DynamicRegistrationClientStore::replace_registration(
+        &repository,
+        &candidate,
+        None,
+        &token,
+        Some("next-authority-token"),
+        "source",
+    )
+    .await
+    .unwrap();
+    assert_eq!(updated.allowed_audiences, ["https://restricted.example"]);
+    assert_eq!(updated.scopes, ["openid"]);
+    sql_query("DELETE FROM oauth_clients WHERE id=$1")
+        .bind::<SqlUuid, _>(original.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}

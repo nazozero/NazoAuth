@@ -28,7 +28,7 @@ for c in $LEVELS; do
     -e PERF_DURATION="$DUR" -e CAP_WARMUP_MS="$WARM" \
     -e PERF_USER_COUNT="$users" \
     perf > "$d/run.log" 2>&1
-  read tps errs p99 appcpu <<<"$(docker run --rm -v "$d":/r -v /workspace/cap_point.py:/cap_point.py docker.io/library/python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2 python /cap_point.py /r "$SCEN" 2>/dev/null)"
+  read tps errs p99 appcpu <<<"$(docker run --rm -v "$d":/r -v /workspace/perf/cap_point.py:/cap_point.py docker.io/library/python:3.15.0-alpine@sha256:2699b90f4d562a22e2dd076c82f964032f64814204bff36d271a54ba4cc2c7e2 python /cap_point.py /r "$SCEN" 2>/dev/null)"
   if [ -z "${tps:-}" ]; then
     echo "  FAILED: no measured stats; see $d/run.log"; tail -5 "$d/run.log"
     [ -f /workspace/perf-results/STOP ] && break

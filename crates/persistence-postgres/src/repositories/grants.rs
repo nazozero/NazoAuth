@@ -108,7 +108,11 @@ impl GrantRepository {
                 user_client_grants::last_scopes,
                 user_client_grants::last_authorization_details,
             ))
-            .order(user_client_grants::last_authorized_at.desc())
+            .order((
+                user_client_grants::last_authorized_at.desc(),
+                user_client_grants::user_id.desc(),
+                user_client_grants::client_id.desc(),
+            ))
             .limit(limit)
             .offset(offset)
             .load::<GrantRecord>(&mut connection)
@@ -142,6 +146,7 @@ impl GrantRepository {
             scopes,
             resource_indicators,
             authorization_details,
+            false,
         )
         .await
         .map_err(map_error)
@@ -221,7 +226,7 @@ impl GrantRepository {
                     return Ok(());
                 }
                 ensure_on_connection(connection, write.tenant_id, write.user_id, write.client_id,
-                    write.scopes, write.resource_indicators, write.authorization_details).await
+                    write.scopes, write.resource_indicators, write.authorization_details, true).await
             },
         ).await;
         if result.is_ok() {
@@ -448,6 +453,7 @@ impl From<GrantRevokeTransactionError> for AdminGrantRevokeError {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ensure_on_connection(
     connection: &mut diesel_async::AsyncPgConnection,
     tenant_id: Uuid,
@@ -456,6 +462,7 @@ async fn ensure_on_connection(
     scopes: &[String],
     resource_indicators: &[String],
     authorization_details: &Value,
+    new_authorization: bool,
 ) -> Result<(), diesel::result::Error> {
     let now = Utc::now();
     diesel::insert_into(user_client_grants::table)
@@ -484,6 +491,8 @@ async fn ensure_on_connection(
                 .eq(excluded(user_client_grants::last_resource_indicators)),
             user_client_grants::last_authorization_details
                 .eq(excluded(user_client_grants::last_authorization_details)),
+            user_client_grants::authorization_count
+                .eq(user_client_grants::authorization_count + i32::from(new_authorization)),
         ))
         .execute(connection)
         .await?;

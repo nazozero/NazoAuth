@@ -154,60 +154,17 @@ Run one scenario:
 PERF_SCENARIO=token_client_credentials PERF_DURATION=30s PERF_VUS=16 make perf
 ```
 
-Run a short capacity-curve smoke test:
+For bounded capacity runs, set an exclusive `SIS_PROJECT`, `SIS_WORKSPACE`,
+`SIS_APP_SHA`, and `STOP_AT` as described below, then run:
 
 ```sh
 make perf-capacity-smoke
+make perf-capacity CAPACITY_ARGS="--mode multi --scenarios cap_mixed --rates 2400 --pool-connections 32"
 ```
 
-Run the long fixed-arrival-rate capacity curve:
-
-```sh
-make perf-capacity
-```
-
-Run a short App CPU smoke test:
-
-```sh
-./perf/app_cpu_capacity_smoke.sh
-```
-
-This test uses the NazoAuth service CPU override only (`PERF_APP_CPUS`, default
-`1`; optionally `PERF_APP_TASKSET` for process-level CPU affinity). PostgreSQL,
-Valkey, migration, and the k6 perf runner remain unrestricted unless
-`APP_CPU_CAPACITY_INFRA_CPUSET` is set explicitly. In nested Docker
-environments where Docker CPU quota is not enforced reliably, process-level
-`taskset` is the effective limiter.
-
-Run a single-instance full-flow max test:
-
-```sh
-./perf/single_instance_full_flow_max.sh
-```
-
-This runs one NazoAuth instance through the full OIDC cold-login flow with
-short, high-arrival-rate points. The script splits the runner's allowed CPU set
-into an application half and an infrastructure half: NazoAuth is pinned to the
-application half, while PostgreSQL, Valkey, migration, and k6 use the
-infrastructure half. The default scenario is `oidc_cold_login_refresh`, which
-includes PAR, password login, authorization decision, authorization-code token
-exchange, and refresh-token rotation.
-
-The extended matrix wrapper runs the selected scenarios and leaves results
-in ignored `perf/results/`. It does not change Git identity, commit or push.
-
-```sh
-./perf/extended_capacity_matrix.sh
-```
-
-The long capacity curve runs 30 minutes per point across 1, 2, and 4 NazoAuth
-replicas. It is intended for dedicated benchmark machines, not routine local
-verification.
-
-Results and Markdown reports are written to ignored `perf/results/`. Retain
-raw JSON, source identity and environment capture together in external artifacts
-when publishing a benchmark claim. See the
-[measurement guide](../docs/performance/README.md).
+The current driver records the workload, binary, infrastructure, CPU assignment,
+and measurement windows. Pool comparisons use separate `--pool-connections`
+recipes. A shared old resume file cannot establish those identities.
 
 ## Load Model
 
@@ -234,7 +191,7 @@ happy-path session:
 | `oidc-mixed` | `refresh_token_rotation`, `introspect_opaque_refresh_token`, `authorize_par_session` | Exercises normal OIDC login, PAR, authorization-code exchange, refresh rotation, and opaque refresh-token introspection across many users. |
 | `oidc-same-user-contention` | `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Exercises concurrent operations from one account to reveal account/session contention risks. |
 | `fapi2-high-security` | `fapi2_par_jar_private_key_jwt_dpop`, `fapi2_logged_in_high_security` | Exercises PAR + signed JAR + `private_key_jwt` + DPoP-bound authorization-code and refresh paths. |
-| `capacity` | `token_only_client_credentials`, `oidc_cold_login_refresh`, `oidc_logged_in_authorization_code`, `oidc_refresh_only`, `fapi2_full_security`, `fapi2_logged_in_high_security` | Fixed-arrival-rate scenarios used by `perf/capacity.py` to build 1/2/4 replica capacity curves. |
+| `capacity` | `token_only_client_credentials`, `oidc_cold_login_refresh`, `oidc_logged_in_authorization_code`, `oidc_refresh_only`, `fapi2_full_security`, `fapi2_logged_in_high_security` | Legacy fixed-arrival scenarios; use the current cap scenarios for windowed capacity evidence. |
 | `extended-capacity` | `mtls_client_credentials`, `par_signed_request_object`, `introspect_opaque_refresh_token`, `authorize_par_session`, `revoke_refresh_token`, `metadata_jwks`, `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Covers protocol and security surfaces that should not be mixed into the primary capacity curve. |
 
 ## Capacity Curve Model
@@ -265,45 +222,21 @@ and Docker-exec round-trip time so observation cost remains visible.
 A mismatch invalidates the point. Docker exec inspection and healthcheck roots
 are excluded from service-tree verification.
 
-`perf/capacity.py` runs one fixed-arrival-rate point at a time, tears down the
-compose stack, and repeats for each selected replica count, scenario, and rate.
-The default long matrix covers:
+`perf/tools/current_capacity.py` is the supported capacity runner. The old
+matrix/soak scripts depended on retired application collectors and were removed.
+`perf/tools/capacity_search.py` supplies its evidence evaluator; `pool_size_ab.py`
+retains offline `--reeval` for historical A/B records.
 
-- `token_only_client_credentials`: token-only machine-to-machine traffic.
-- `oidc_cold_login_refresh`: PAR, password login, authorization decision,
-  authorization-code token exchange, and refresh rotation.
-- `oidc_logged_in_authorization_code`: one session warm-up per VU, then
-  logged-in PAR, authorization decision, and authorization-code exchange.
-- `oidc_refresh_only`: one bootstrap flow per VU, then refresh-token rotation.
-- `fapi2_full_security`: PAR + signed JAR + `private_key_jwt` + DPoP-bound
-  authorization-code and refresh paths.
+Render old capacity records without running containers or changing their source:
 
-`perf/extended_capacity_matrix.sh` runs a separate 30 minute per point
-matrix for mTLS, opaque-token introspection, PAR/JAR endpoint cost,
-authorization-session cost, token revocation, discovery/JWKS reads, and same-user contention. The current runner has no
-CIBA scenario. Dynamic Client Registration still requires
-dedicated provisioning setup and is kept out of this matrix.
+```sh
+python perf/capacity.py --input perf/results/data/capacity/latest.json --report-path perf/results/reports/capacity.md
+```
 
-The report normalizes observed throughput by NazoAuth service CPU usage:
-`100%` Docker CPU is treated as one effective CPU core. This avoids claiming
-capacity only from raw RPS when the service is consuming many cores.
-
-Each isolated point starts with fresh database and runtime volumes. Signing
-keys belong to that point's database; the harness does not establish that
-different points use identical signing key material.
-
-For strict App CPU tests, `perf/run_capacity.sh` also supports:
-
-| Variable | Meaning |
-| --- | --- |
-| `PERF_APP_CPUS` | Docker CPU quota for the NazoAuth service, for example `1`, `2`, or `4`. |
-| `PERF_APP_TASKSET` | Process-level CPU affinity for NazoAuth. This is the effective limiter in nested Docker environments where CPU quota is not enforced reliably. |
-| `PERF_APP_CPUSET` | Optional CPU set for NazoAuth. |
-| `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, migrate, and perf runner. |
-| `SINGLE_INSTANCE_MAX_DURATION` | Duration per point for `single_instance_full_flow_max.sh`, default `2m`. |
-| `SINGLE_INSTANCE_MAX_RATES` | Comma-separated fixed arrival rates for the full-flow max test, default `16,32,64,96,128,192,256,384,512`. |
-| `SINGLE_INSTANCE_MAX_MAX_VUS` | k6 maximum VUs for the full-flow max test, default `4096`. |
-| `SINGLE_INSTANCE_MAX_SCENARIO` | Scenario for the full-flow max test, default `oidc_cold_login_refresh`. |
+Legacy records without a valid business measurement window are not capacity
+passes. Offline reports do not fill missing source SHA, CPU identity, duration,
+or matrix coverage from the current machine. `finalize_capacity_reports.py`
+reads recorded durations and marks absent provenance unavailable.
 
 ## Metrics
 
@@ -417,3 +350,25 @@ and retain valid published results, then request only missing new points.
 Historical reports remain tied to their original controller and configuration.
 
 P-256 performance fixtures encode `x`, `y`, and `d` as exactly 32 octets, including leading zero octets. Validate deterministic short-coordinate keys in the perf runner with `python -m unittest perf.tests.test_seed_jwk -v`; RSA integer encoding remains unchanged.
+
+## Preview and evidence interpretation
+
+The optional capacity preview binds `127.0.0.1` by default. Set
+`CAPACITY_PREVIEW_HOST` explicitly when a controlled remote-access boundary is
+available. Dashboard clients share a system snapshot refreshed at most once per
+five seconds after collection completes. Authentication and protocol failures
+remain visible in preview logs.
+
+Throughput gates use business operations in the measured window, preserving zero
+as a valid measured value. A missing business counter is unavailable evidence,
+not a reason to substitute HTTP request rate. Stability runs require adjacent,
+complete time buckets. Checkpoint correlation counts distinct observed write
+windows, not the number of buckets overlapped by a single checkpoint. Load budget
+elapsed time ends at the latest observed main or sidecar completion.
+
+The Rust `token_hotpath_perf` fixture reports cold-client group throughput:
+`wall_ms` includes thread, HTTP client, and connection setup. Warmup carries
+server and token state forward, but does not preserve worker connections.
+Per-operation latency ends after the complete response body and excludes worker
+construction. The JSONL scope fields distinguish these measurements; they are
+not a claim of steady-state connection-pool throughput.

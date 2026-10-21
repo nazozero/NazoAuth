@@ -24,7 +24,7 @@ mod unavailable;
 
 pub use pool::{
     DbConnection, DbPool, configure_runtime_role, create_pool, get_conn, health_check,
-    run_pending_migrations,
+    migration_schema_revision, run_pending_migrations,
 };
 pub use repositories::{
     AccessRequestRepository, AdminProvisionError, AdminProvisionReceipt, AdminProvisionRepository,
@@ -53,9 +53,9 @@ pub use repositories::{
     active_public_client_ids_on_connection, append_fresh_security_audit_on_connection,
     deactivate_client_on_connection, delete_operator_managed_dataset_on_connection,
     disable_user_on_connection, insert_client_on_connection,
-    insert_operator_managed_trust_anchor_on_connection, insert_user_on_connection,
-    protect_dataset_claims, revoke_operator_managed_trust_anchor_on_connection,
-    unprotect_dataset_claims, upsert_operator_managed_dataset_on_connection,
+    insert_operator_managed_trust_anchor_on_connection, protect_dataset_claims,
+    revoke_operator_managed_trust_anchor_on_connection, unprotect_dataset_claims,
+    upsert_operator_managed_dataset_on_connection, write_managed_user_on_connection,
 };
 pub use tenant_resource_executor::PostgresTenantResourceExecutor;
 

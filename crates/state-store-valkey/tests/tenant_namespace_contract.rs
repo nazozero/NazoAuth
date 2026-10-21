@@ -29,7 +29,7 @@ async fn server_time(client: &fred::prelude::Client) -> i64 {
 #[test]
 fn tenant_is_part_of_every_physical_state_key() {
     let epoch = Uuid::from_u128(0x301);
-    let business_key = "oauth:session:same-session";
+    let business_key = "oauth:session:v2:same-session";
     let first =
         nazo_valkey::test_support::storage_key("deployment", epoch, tenant(0x100), business_key)
             .expect("valid first physical key");
@@ -39,10 +39,14 @@ fn tenant_is_part_of_every_physical_state_key() {
 
     assert_ne!(first, second);
     assert!(
-        first.ends_with(":tenant:00000000-0000-0000-0000-000000000100:oauth:session:same-session")
+        first.ends_with(
+            ":tenant:00000000-0000-0000-0000-000000000100:oauth:session:v2:same-session"
+        )
     );
     assert!(
-        second.ends_with(":tenant:00000000-0000-0000-0000-000000000101:oauth:session:same-session")
+        second.ends_with(
+            ":tenant:00000000-0000-0000-0000-000000000101:oauth:session:v2:same-session"
+        )
     );
 }
 
@@ -63,6 +67,7 @@ async fn two_tenants_can_store_the_same_logical_key_without_conflict() {
     let session_id = format!("shared-{}", Uuid::now_v7());
     let first_record = SessionRecord::new(
         UserId::new(Uuid::from_u128(0x300)).expect("user id"),
+        0,
         1_000,
         vec!["first".to_owned()],
         false,
@@ -70,6 +75,7 @@ async fn two_tenants_can_store_the_same_logical_key_without_conflict() {
     );
     let second_record = SessionRecord::new(
         UserId::new(Uuid::from_u128(0x301)).expect("user id"),
+        0,
         2_000,
         vec!["second".to_owned()],
         false,
@@ -290,6 +296,7 @@ async fn deployment_and_epoch_remain_physical_key_boundaries() {
     let session_id = format!("namespace-{}", Uuid::now_v7());
     let record = SessionRecord::new(
         UserId::new(Uuid::from_u128(0x404)).expect("user id"),
+        0,
         1_000,
         vec!["password".to_owned()],
         false,

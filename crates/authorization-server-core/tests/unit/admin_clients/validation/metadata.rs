@@ -913,7 +913,7 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
             }
         ]
     });
-    let mut ambiguous_encryption_key = metadata(
+    let mut rotation_encryption_keys = metadata(
         "confidential",
         &redirect_uris,
         &scopes,
@@ -923,14 +923,8 @@ fn client_metadata_validates_userinfo_and_authorization_response_crypto_metadata
         Some(&duplicate_encryption_jwks),
         None,
     );
-    ambiguous_encryption_key.userinfo_encrypted_response_alg = Some("RSA-OAEP-256");
-    ambiguous_encryption_key.userinfo_encrypted_response_enc = Some("A256GCM");
-    let error = validate_metadata_fixture(ambiguous_encryption_key)
-        .expect_err("response encryption key selection must be unambiguous");
-    assert!(
-        error
-            .to_string()
-            .contains("必须且只能配置一个匹配的 jwks 加密公钥"),
-        "unexpected error: {error}"
-    );
+    rotation_encryption_keys.userinfo_encrypted_response_alg = Some("RSA-OAEP-256");
+    rotation_encryption_keys.userinfo_encrypted_response_enc = Some("A256GCM");
+    validate_metadata_fixture(rotation_encryption_keys)
+        .expect("distinct encryption key identifiers permit overlap during rotation");
 }

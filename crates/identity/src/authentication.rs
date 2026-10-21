@@ -244,13 +244,14 @@ where
         } else {
             false
         };
-        let mut amr = vec!["password".to_owned()];
+        let mut amr = vec!["pwd".to_owned()];
         if remembered_mfa {
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
         let mut session = SessionRecord::new(
             user_id,
+            account.authorization_epoch,
             input.now.timestamp(),
             amr,
             account.mfa_enabled && !remembered_mfa,

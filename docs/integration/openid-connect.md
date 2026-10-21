@@ -562,3 +562,20 @@ Before putting a relying party into production:
 - [OAuth 2.0 Resource Indicators](https://www.rfc-editor.org/rfc/rfc8707.html)
 - [OAuth 2.0 Pushed Authorization Requests](https://www.rfc-editor.org/rfc/rfc9126.html)
 - [JWT Secured Authorization Request](https://www.rfc-editor.org/rfc/rfc9101.html)
+
+
+Native SSO refresh preserves a valid device secret bound to the original subject,
+session, source client and refresh family. A missing or invalid secret receives a
+new secret with the matching ID Token `ds_hash`; valid secrets are not forcibly
+rotated on every refresh. The supported protocol remains draft 07 / ID2.
+
+Reauthentication completion is single-use and bound to the original authorization
+parameters, including its PAR or JAR identity. Parameter ordering is irrelevant;
+a different transaction cannot consume that completion. Outstanding completions
+from before this binding format require fresh login after upgrade.
+
+Encrypted Request Objects may omit `kid` to select the currently advertised
+recipient key. A cached prior recipient must supply its `kid` during decryption
+grace. Matching uses only dedicated Request Object keys; signing keys are never
+used for decryption. Successors are loaded before publication, and retired
+recipient private material is removed when its decryption grace expires.

@@ -237,6 +237,7 @@ mod ciba_device_contract {
 
     async fn store_device_session(state: &TestInfrastructure, session_id: &str, user_id: Uuid) {
         let payload = crate::test_support::SessionPayload {
+            authorization_epoch: 0,
             user_id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned()],
@@ -245,7 +246,7 @@ mod ciba_device_contract {
         };
         valkey_set_ex(
             &state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{session_id}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{session_id}")),
             serde_json::to_string(&payload).expect("device session should serialize"),
             state.settings.session.session_ttl_seconds,
         )
@@ -395,7 +396,7 @@ mod ciba_device_contract {
         let mut state = super::live_transport_state().await;
         configure_ciba_test_mtls_proxy(&mut state);
         state.keyset =
-            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
         let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
         let mut client = ciba_private_key_jwt_client_with_alg("golden-ciba", &key);
         client.client_id = format!("golden-ciba-{}", client.id);

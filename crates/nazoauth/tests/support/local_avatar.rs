@@ -29,6 +29,7 @@ impl LocalFixture {
             root,
             account: PublicAccount {
                 principal: Principal {
+                    authorization_epoch: 0,
                     user_id: UserId::new(Uuid::now_v7()).unwrap(),
                     tenant: TenantContext::default_system(),
                     role: UserRole::User,
@@ -100,6 +101,7 @@ impl AvatarRepositoryPort for CasRepository {
         tenant_id: TenantId,
         user_id: UserId,
         expected_avatar_url: Option<&'a str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> RepositoryFuture<'a, Option<PublicAccount>> {
         Box::pin(async move {
@@ -116,8 +118,13 @@ impl AvatarRepositoryPort for CasRepository {
                 let mut account = self.account.lock().unwrap();
                 assert_eq!(tenant_id, account.tenant().tenant_id);
                 assert_eq!(user_id, account.user_id());
-                if account.profile.avatar_url.as_deref() != expected_avatar_url {
+                if account.profile.avatar_url.as_deref() != expected_avatar_url
+                    || account.profile.avatar_revision != expected_avatar_revision
+                {
                     return Ok(None);
+                }
+                if account.profile.avatar_url != avatar_url {
+                    account.profile.avatar_revision += 1;
                 }
                 account.profile.avatar_url = avatar_url;
                 account.clone()
@@ -156,12 +163,19 @@ impl<R: AvatarRepositoryPort> AvatarRepositoryPort for CommitThenError<R> {
         tenant_id: TenantId,
         user_id: UserId,
         expected_avatar_url: Option<&'a str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> RepositoryFuture<'a, Option<PublicAccount>> {
         Box::pin(async move {
             match self
                 .0
-                .compare_and_set_avatar(tenant_id, user_id, expected_avatar_url, avatar_url)
+                .compare_and_set_avatar(
+                    tenant_id,
+                    user_id,
+                    expected_avatar_url,
+                    expected_avatar_revision,
+                    avatar_url,
+                )
                 .await?
             {
                 Some(_) => Err(RepositoryError::Unavailable),

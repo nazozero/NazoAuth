@@ -44,6 +44,7 @@ const CLEANUP_BATCH_LIMIT: i64 = 256;
 #[derive(Clone)]
 pub struct SecurityStateMaintenanceRepository {
     pool: DbPool,
+    totp_keys: Option<crate::MfaTotpKeyRing>,
     contract_cursor: Arc<tokio::sync::Mutex<Option<ContractSweepCursor>>>,
     grant_cursor: Arc<tokio::sync::Mutex<Option<GrantSweepCursor>>>,
 }
@@ -151,30 +152,37 @@ impl SecurityStateMaintenanceRepository {
     pub fn new(pool: DbPool) -> Self {
         Self {
             pool,
+            totp_keys: None,
             contract_cursor: Arc::new(tokio::sync::Mutex::new(None)),
             grant_cursor: Arc::new(tokio::sync::Mutex::new(None)),
         }
+    }
+
+    pub fn with_totp_key_ring(mut self, keys: Option<crate::MfaTotpKeyRing>) -> Self {
+        self.totp_keys = keys;
+        self
     }
 
     async fn generic_cleanup(
         &self,
         connection: &mut AsyncPgConnection,
         scope: nazo_persistence::CleanupScope,
-    ) -> Result<GenericCleanupCounts, RepositoryError> {
+    ) -> Result<(GenericCleanupCounts, u64), RepositoryError> {
         // These receipts only fence still-live device approvals. Admission
         // checks the database deadline before trying to insert a receipt.
-        sql_query(
+        let device_authorization_decisions = sql_query(
             "WITH due AS (SELECT tenant_id, device_code_hash FROM device_authorization_decisions \
              WHERE expires_at <= CURRENT_TIMESTAMP ORDER BY expires_at LIMIT 256 FOR UPDATE SKIP LOCKED) \
              DELETE FROM device_authorization_decisions AS receipt USING due \
              WHERE receipt.tenant_id = due.tenant_id AND receipt.device_code_hash = due.device_code_hash",
         ).execute(&mut *connection).await.map_err(map_error)?;
-        sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state($1)")
+        let generic = sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state($1)")
             .bind::<sql_types::Bool, _>(scope == nazo_persistence::CleanupScope::IncludingHistory)
             .load::<GenericCleanupCounts>(connection)
             .await
             .map(single_cleanup_row)
-            .map_err(map_error)
+            .map_err(map_error)?;
+        Ok((generic, device_authorization_decisions as u64))
     }
 
     async fn decision_cleanup(
@@ -678,7 +686,12 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             let mut guard = DiscardOnDrop(Some(self.connection().await?));
             let result = async {
                 let connection = &mut **guard.connection();
-                let generic = self.generic_cleanup(connection, scope).await?;
+                let totp_rewrapped = match self.totp_keys.as_ref() {
+                    Some(keys) => super::mfa::rewrap::rewrap_batch(connection, keys).await?,
+                    None => 0,
+                };
+                let (generic, device_authorization_decisions) =
+                    self.generic_cleanup(connection, scope).await?;
                 let authorization_decisions = self.decision_cleanup(connection).await?;
                 let (expired_proofs, expired_saturated) =
                     self.delete_expired_spent_proofs(connection).await?;
@@ -691,7 +704,9 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     self.delete_orphan_refresh_contracts(connection).await?;
                 let presentations = self.presentation_cleanup(connection).await?;
                 let credentials = self.credential_cleanup(connection).await?;
-                let saturated = authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
+                let saturated = totp_rewrapped >= super::mfa::rewrap::BATCH_LIMIT as u64
+                    || authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
+                    || device_authorization_decisions >= CLEANUP_BATCH_LIMIT as u64
                     || families_saturated
                     || expired_saturated
                     || contracts_saturated
@@ -706,7 +721,9 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                     || presentations >= CLEANUP_BATCH_LIMIT as u64
                     || credentials.saturated;
                 Ok(CleanupBatchResult {
+                    totp_rewrapped,
                     authorization_decisions,
+                    device_authorization_decisions,
                     issuances: generic.deleted_issuances as u64,
                     refresh_tokens,
                     spent_refresh_proofs,

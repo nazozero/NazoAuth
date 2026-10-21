@@ -1,8 +1,9 @@
 use super::*;
+use nazo_openid4vci::PreparedPreAuthorizedOffer;
 
 /// Credential store test double that deactivates the authenticated
 /// `oauth_clients` row inside `persist_pre_authorized_access`, reproducing the
-/// window between pre-authorized offer consumption and final grant
+/// window between pre-authorized offer preparation and final grant
 /// persistence where a registered client can be deactivated. Every other
 /// transition delegates to the real PostgreSQL store unchanged.
 struct ClientDeactivatingStore {
@@ -42,6 +43,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
 
     fn persist_pre_authorized_access<'a>(
         &'a self,
+        offer: &'a [u8],
         token_hash: &'a str,
         access: &'a CredentialAccess,
         registered_client_id: Option<&'a str>,
@@ -51,7 +53,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
                 self.deactivate(access.tenant_id, client_id).await?;
             }
             self.inner
-                .persist_pre_authorized_access(token_hash, access, registered_client_id)
+                .persist_pre_authorized_access(offer, token_hash, access, registered_client_id)
                 .await
         })
     }
@@ -66,17 +68,17 @@ impl CredentialStorePort for ClientDeactivatingStore {
         self.inner.offer(tenant_id, id, now)
     }
 
-    fn consume_pre_authorized_offer<'a>(
+    fn prepare_pre_authorized_offer<'a>(
         &'a self,
         tenant_id: Uuid,
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
         now: chrono::DateTime<chrono::Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>
     {
         self.inner
-            .consume_pre_authorized_offer(tenant_id, code_hash, tx_code, client_id, now)
+            .prepare_pre_authorized_offer(tenant_id, code_hash, tx_code, client_id, now)
     }
 
     fn issue_nonce<'a>(
@@ -451,7 +453,7 @@ async fn live_pre_authorized_uuid_access_resolves_without_generic_issuance_row()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn live_pre_authorized_rejects_inactive_subject_after_offer_consumption() {
+async fn live_pre_authorized_rejects_inactive_subject_without_consuming_offer() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-inactive-subject", false).await else {
         return;
     };
@@ -502,12 +504,12 @@ async fn live_pre_authorized_rejects_inactive_subject_after_offer_consumption() 
         .issuer
         .pre_authorized_token(request(&code))
         .await
-        .expect_err("the consumed offer must not be replayable");
+        .expect_err("the inactive subject must still be rejected");
     assert_error(
         error,
         400,
         "invalid_grant",
-        "Pre-authorized code or transaction code is invalid.",
+        "Credential subject is inactive.",
     );
     fixture.cleanup().await;
 }
@@ -558,7 +560,7 @@ async fn live_pre_authorized_rejects_client_deactivated_before_persistence() {
     let code = pre_authorized_code(&offer);
 
     // The deactivating store flips the registered client to inactive inside the
-    // persistence call, reproducing the window after offer consumption where
+    // persistence call, reproducing the window after offer preparation where
     // the earlier authentication check can no longer see the client state.
     let error = fixture
         .issuer
@@ -631,12 +633,12 @@ async fn live_pre_authorized_rejects_client_deactivated_before_persistence() {
             mtls_x5t_s256: None,
         })
         .await
-        .expect_err("the consumed offer must not be replayable");
+        .expect_err("the inactive client must still be rejected");
     assert_error(
         error,
         400,
-        "invalid_grant",
-        "Pre-authorized code or transaction code is invalid.",
+        "unauthorized_client",
+        "Credential client is inactive.",
     );
     fixture.cleanup().await;
 }

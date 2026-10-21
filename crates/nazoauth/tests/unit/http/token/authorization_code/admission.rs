@@ -386,6 +386,7 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
         .unwrap();
     pkce_state["payload"]["code_challenge"] = challenge;
     // Missing legacy method must fail closed, never become an absent challenge.
+    pkce_state["payload"] = Value::String(pkce_state["payload"].to_string());
     let raw_pkce_state = pkce_state.to_string();
     fixture
         .store_raw_code_state(&pkce_state_code, &raw_pkce_state)

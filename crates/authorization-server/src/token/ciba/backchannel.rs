@@ -19,7 +19,9 @@ use crate::{
     },
     crypto::{blake3_hex, random_urlsafe_token},
     domain::{
-        client_policy::{client_supports_grant, is_subset, parse_scope, refresh_client_jwks},
+        client_policy::{
+            audiences_allowed, client_supports_grant, is_subset, parse_scope, refresh_client_jwks,
+        },
         rows::ClientRow,
     },
     ports::audit::audit_fields,
@@ -198,6 +200,14 @@ impl CibaApplication {
             validate_ciba_binding_message(&form)?;
         }
         validate_ciba_delivery_request(&client, &form)?;
+        let audiences = vec![config.default_audience.to_string()];
+        if !audiences_allowed(&client, &audiences) {
+            return Err(OAuthEndpointError::json(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "CIBA audience is not allowed for this client.",
+            ));
+        }
         let scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
         if !scopes.iter().any(|scope| scope == "openid") || !is_subset(&scopes, &client.scopes) {
             return Err(OAuthEndpointError::json(
@@ -329,7 +339,7 @@ impl CibaApplication {
             client_id: client.registration.client_id,
             user_id: user.id(),
             scopes,
-            audiences: vec![config.default_audience.to_string()],
+            audiences,
             acr,
             authentication_context: None,
             binding_message: form.binding_message,

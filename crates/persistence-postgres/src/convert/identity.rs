@@ -16,15 +16,14 @@ impl From<IdentityModelError> for ConversionError {
         Self(error.to_string())
     }
 }
-fn principal_parts(
+fn identity_parts(
     id: uuid::Uuid,
     tenant_id: uuid::Uuid,
     realm_id: uuid::Uuid,
     organization_id: uuid::Uuid,
     role: &str,
     admin_level: i32,
-    active: bool,
-) -> Result<Principal, ConversionError> {
+) -> Result<(UserId, TenantContext, UserRole), ConversionError> {
     let role = match (role, admin_level) {
         ("user", 0) => UserRole::User,
         ("admin", level) if level > 0 => UserRole::Admin {
@@ -36,28 +35,33 @@ fn principal_parts(
             ));
         }
     };
-    Ok(Principal {
-        user_id: UserId::new(id)?,
-        tenant: TenantContext {
+    Ok((
+        UserId::new(id)?,
+        TenantContext {
             tenant_id: TenantId::new(tenant_id)?,
             realm_id: RealmId::new(realm_id)?,
             organization_id: OrganizationId::new(organization_id)?,
         },
         role,
-        active,
-    })
+    ))
 }
 
 pub(crate) fn principal_row(row: PrincipalRow) -> Result<Principal, ConversionError> {
-    principal_parts(
+    let (user_id, tenant, role) = identity_parts(
         row.id,
         row.tenant_id,
         row.realm_id,
         row.organization_id,
         &row.role,
         row.admin_level,
-        row.is_active,
-    )
+    )?;
+    Ok(Principal {
+        user_id,
+        tenant,
+        role,
+        active: row.is_active,
+        authorization_epoch: row.access_token_epoch,
+    })
 }
 
 pub(crate) fn authentication_identity(
@@ -74,15 +78,21 @@ impl TryFrom<PublicAccountRow> for PublicAccount {
     type Error = ConversionError;
 
     fn try_from(row: PublicAccountRow) -> Result<Self, Self::Error> {
-        let principal = principal_parts(
+        let (user_id, tenant, role) = identity_parts(
             row.id,
             row.tenant_id,
             row.realm_id,
             row.organization_id,
             &row.role,
             row.admin_level,
-            row.is_active,
         )?;
+        let principal = Principal {
+            user_id,
+            tenant,
+            role,
+            active: row.is_active,
+            authorization_epoch: row.access_token_epoch,
+        };
         Ok(Self {
             principal,
             account: AccountIdentity {
@@ -92,6 +102,7 @@ impl TryFrom<PublicAccountRow> for PublicAccount {
                 mfa_enabled: row.mfa_enabled,
             },
             profile: UserProfile {
+                avatar_revision: row.avatar_revision,
                 display_name: row.display_name,
                 avatar_url: row.avatar_url,
                 given_name: row.given_name,
@@ -124,16 +135,15 @@ impl TryFrom<PublicAccountRow> for PublicAccount {
 pub(crate) fn active_subject_claims(
     row: SubjectClaimsRow,
 ) -> Result<SubjectClaims, ConversionError> {
-    let principal = principal_parts(
+    let (user_id, _, _) = identity_parts(
         row.id,
         row.tenant_id,
         row.realm_id,
         row.organization_id,
         &row.role,
         row.admin_level,
-        row.is_active,
     )?;
-    if !principal.active {
+    if !row.is_active {
         return Err(ConversionError(
             "inactive account returned from active claims query".to_owned(),
         ));
@@ -147,7 +157,7 @@ pub(crate) fn active_subject_claims(
         country: row.address_country,
     };
     Ok(SubjectClaims {
-        subject: principal.user_id,
+        subject: user_id,
         preferred_username: row.username,
         name: row.display_name,
         given_name: row.given_name,

@@ -348,6 +348,30 @@ fn unknown_yaml_key_is_rejected_with_the_key_name() {
 }
 
 #[test]
+fn mfa_controls_are_loaded_from_yaml_and_environment() {
+    let path = temp_config_dir("mfa_controls");
+    std::fs::write(path.join(CONFIG_FILE), "MFA_FAILURE_WINDOW_SECONDS: 600\nMFA_FAILURE_MAX_ATTEMPTS: 4\nPENDING_MFA_SESSION_TTL_SECONDS: 120\n").unwrap();
+    let config = ConfigSource::load_from_dir(&path).unwrap();
+    for (key, value) in [
+        ("MFA_FAILURE_WINDOW_SECONDS", 600),
+        ("MFA_FAILURE_MAX_ATTEMPTS", 4),
+        ("PENDING_MFA_SESSION_TTL_SECONDS", 120),
+    ] {
+        assert_eq!(config.parse::<u64>(key, 0).unwrap(), value);
+    }
+    let config = ConfigSource::load_from_dir_with_env(
+        &path,
+        [("MFA_FAILURE_MAX_ATTEMPTS".into(), "7".into())],
+    )
+    .unwrap();
+    assert_eq!(
+        config.parse::<u64>("MFA_FAILURE_MAX_ATTEMPTS", 0).unwrap(),
+        7
+    );
+    std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn retired_token_issuance_response_keys_are_rejected_as_unknown() {
     for key in [
         "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
@@ -982,6 +1006,9 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
     assert_eq!(
         ENV_CONFIG_KEYS,
         &[
+            "MFA_FAILURE_WINDOW_SECONDS",
+            "MFA_FAILURE_MAX_ATTEMPTS",
+            "PENDING_MFA_SESSION_TTL_SECONDS",
             "ACCESS_TOKEN_TTL_SECONDS",
             "ADDITIONAL_SCOPES_SUPPORTED",
             "AUTH_CODE_TTL_SECONDS",

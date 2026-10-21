@@ -41,6 +41,7 @@ pub struct ProfilePatch {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProfileValidationError {
+    InvalidFormat(&'static str),
     FieldTooLong(&'static str),
     InvalidAbsoluteUrl(&'static str),
     InvalidHttpUrl(&'static str),
@@ -49,6 +50,7 @@ pub enum ProfileValidationError {
 impl std::fmt::Display for ProfileValidationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidFormat(field) => write!(formatter, "{field} has an invalid format"),
             Self::FieldTooLong(field) => write!(formatter, "{field} exceeds its length limit"),
             Self::InvalidAbsoluteUrl(field) => {
                 write!(formatter, "{field} must be an absolute URL")
@@ -264,14 +266,20 @@ impl AccountProfileService {
         patch: ProfilePatch,
     ) -> Result<AccountOverview, UpdateProfileError> {
         let profile = normalize_profile_patch(patch).map_err(UpdateProfileError::Validation)?;
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(principal.tenant.tenant_id, principal.user_id.as_uuid())
+            .await
+            .map_err(UpdateProfileError::OverviewRepository)?;
         let account = self
             .profiles
             .update_profile(principal.tenant.tenant_id, principal.user_id, profile)
             .await
             .map_err(UpdateProfileError::UpdateRepository)?;
-        self.overview(account)
-            .await
-            .map_err(UpdateProfileError::OverviewRepository)
+        Ok(AccountOverview {
+            account,
+            authorized_application_count,
+        })
     }
 
     pub async fn applications(
@@ -285,6 +293,27 @@ impl AccountProfileService {
 }
 
 fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileValidationError> {
+    let birthdate = profile_text(patch.birthdate, 10, "birthdate")?;
+    if birthdate
+        .as_deref()
+        .is_some_and(|value| !valid_birthdate(value))
+    {
+        return Err(ProfileValidationError::InvalidFormat("birthdate"));
+    }
+    let zoneinfo = profile_text(patch.zoneinfo, 64, "zoneinfo")?;
+    if zoneinfo
+        .as_deref()
+        .is_some_and(|value| jiff::tz::TimeZone::get(value).is_err())
+    {
+        return Err(ProfileValidationError::InvalidFormat("zoneinfo"));
+    }
+    let locale = profile_text(patch.locale, 35, "locale")?;
+    if locale
+        .as_deref()
+        .is_some_and(|value| language_tags::LanguageTag::parse(value).is_err())
+    {
+        return Err(ProfileValidationError::InvalidFormat("locale"));
+    }
     Ok(ProfilePatch {
         display_name: profile_text(patch.display_name, 80, "display_name")?,
         given_name: profile_text(patch.given_name, 80, "given_name")?,
@@ -294,9 +323,9 @@ fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileV
         profile_url: normalize_profile_url(patch.profile_url, "profile_url")?,
         website_url: normalize_profile_url(patch.website_url, "website_url")?,
         gender: profile_text(patch.gender, 40, "gender")?,
-        birthdate: profile_text(patch.birthdate, 10, "birthdate")?,
-        zoneinfo: profile_text(patch.zoneinfo, 64, "zoneinfo")?,
-        locale: profile_text(patch.locale, 35, "locale")?,
+        birthdate,
+        zoneinfo,
+        locale,
         address_formatted: profile_text(patch.address_formatted, 512, "address_formatted")?,
         address_street_address: profile_text(
             patch.address_street_address,
@@ -309,6 +338,21 @@ fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileV
         address_country: profile_text(patch.address_country, 64, "address_country")?,
         phone_number: profile_text(patch.phone_number, 32, "phone_number")?,
     })
+}
+
+fn valid_birthdate(value: &str) -> bool {
+    if value.len() == 4 {
+        return value.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    value.len() == 10
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 4 | 7) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
+        && chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
 }
 
 pub(crate) fn trim_text(mut value: String) -> String {
@@ -601,7 +645,13 @@ where
             .consume(account.user_id, &token, &stored)
             .await
         {
-            Ok(DeliveryConsume::Consumed) => Ok(stored.value),
+            Ok(DeliveryConsume::Consumed) => {
+                let mut value = stored.value;
+                if let Some(object) = value.as_object_mut() {
+                    object.remove("approval_binding");
+                }
+                Ok(value)
+            }
             Ok(DeliveryConsume::MissingOrChanged) => Err(DeliveryReadError::Invalid),
             Err(error) => Err(DeliveryReadError::DeliveryStore(error)),
         }

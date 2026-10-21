@@ -471,3 +471,14 @@ Front-channel 和 session-management 行为由项目自有协议测试覆盖。�
 - [OAuth 2.0 Resource Indicators](https://www.rfc-editor.org/rfc/rfc8707.html)
 - [OAuth 2.0 Pushed Authorization Requests](https://www.rfc-editor.org/rfc/rfc9126.html)
 - [JWT Secured Authorization Request](https://www.rfc-editor.org/rfc/rfc9101.html)
+
+
+Native SSO 刷新复用与原主体、会话、来源客户端及刷新令牌族绑定的有效 device secret。
+缺失或无效时签发新 secret，并在 ID Token 中返回匹配的 `ds_hash`；有效 secret 不必每次轮换。
+支持版本仍为 draft 07 / ID2。
+
+重认证完成凭据只能使用一次，并绑定原始授权参数及 PAR/JAR 身份。参数顺序不影响绑定，
+另一笔交易不能消费该凭据。升级前尚未完成的旧格式凭据需要重新登录。
+
+加密 Request Object 在当前接收密钥唯一时可省略 `kid`；提供时必须匹配该接收密钥，
+服务端不会遍历历史签名密钥尝试解密。

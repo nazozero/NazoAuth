@@ -108,6 +108,12 @@ pub(crate) async fn apply_request_object_with_context(
         outer,
         verified.claims,
         RequestObjectPolicy {
+            require_issuer_audience: context
+                .config
+                .requires_fapi2_security(&client.security_policy)
+                && context
+                    .config
+                    .requires_signed_authorization_request(&client.security_policy),
             issuer: &context.config.issuer,
             client_id: &client.client_id,
             jti_policy: match context.config.request_object_jti_policy {

@@ -69,6 +69,7 @@ pub async fn userinfo(
             method: http::Method::from_bytes(request.method().as_str().as_bytes())
                 .expect("HTTP method is valid"),
             path: request.uri().path(),
+            authority: crate::dpop_request_authority(&request),
             proof: crate::dpop_proof_header(request.headers()),
             proof_present: crate::dpop_proof_present(request.headers()),
         },
@@ -181,15 +182,15 @@ fn userinfo_dpop_error_response(error: UserinfoDpopError) -> HttpResponse {
         UserinfoDpopError::NonceStoreUnavailable => "DPoP nonce validation is unavailable.",
     };
     let status = match &error {
-        UserinfoDpopError::MissingProof | UserinfoDpopError::UseNonce(_) => {
-            StatusCode::UNAUTHORIZED
-        }
         UserinfoDpopError::NonceStoreUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-        _ => StatusCode::BAD_REQUEST,
+        _ => StatusCode::UNAUTHORIZED,
     };
     let (error_code, challenge) = match &error {
         UserinfoDpopError::UseNonce(_) => ("use_dpop_nonce", "DPoP error=\"use_dpop_nonce\""),
         UserinfoDpopError::NonceStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
+        UserinfoDpopError::BindingMismatch | UserinfoDpopError::TokenNotBound => {
+            ("invalid_token", "DPoP error=\"invalid_token\"")
+        }
         _ => ("invalid_dpop_proof", "DPoP error=\"invalid_dpop_proof\""),
     };
     let mut response = oauth_error(status, error_code, description);

@@ -86,7 +86,7 @@ def main():
         "kind": "meta", "run_id": RUN_ID, "script_sha256": self_sha256(),
         "db": DB.split("@")[-1], "collection_contract": "blackbox-db-v1",
         "application_pool_status": "UNAVAILABLE", "in_process_queue_status": "UNVERIFIED",
-        "started_at": int(time.time()),
+        "started_at": int(time.time()), "interval_s": INTERVAL,
     }) + "\n")
     next_issuance_count = 0.0
     next_audit_count = 0.0
@@ -124,8 +124,7 @@ def main():
                         "SELECT xact_commit,xact_rollback,blks_read,blks_hit,"
                         "tup_returned,tup_inserted,tup_updated,tup_deleted,"
                         "deadlocks,temp_bytes "
-                        "FROM pg_stat_database WHERE datname=%s",
-                        ("oauth",)).fetchone()))
+                        "FROM pg_stat_database WHERE datname=current_database()").fetchone()))
                 # ---- refresh-state model counters (bounded tables: exact
                 # counts; spent/issuance volume: pg_stat counters) -----------
                 row["refresh"] = dict(zip(
@@ -203,21 +202,23 @@ def main():
                 # ---- storage: db total + per-relation bytes ----------------
                 row["db_bytes"] = c.execute(
                     "SELECT pg_database_size(current_database())").fetchone()[0]
-                row["wal_bytes"] = c.execute(
-                    "SELECT wal_bytes::bigint FROM pg_stat_wal").fetchone()[0]
+                row["wal_bytes"], row["wal_stats_reset"] = c.execute(
+                    "SELECT wal_bytes::bigint, stats_reset::text FROM pg_stat_wal").fetchone()
                 # PG18 WAL flush accounting lives in pg_stat_io (the old
                 # pg_stat_wal.wal_sync time fields are gone). Summed across
                 # backend_type/context for the same-window delta series;
                 # full dimensions stay in the wal_snapshot evidence.
                 row["wal_io"] = dict(zip(
                     ["writes", "write_bytes", "write_time_ms", "fsyncs",
-                     "fsync_time_ms"],
+                     "fsync_time_ms", "stats_reset"],
                     c.execute(
                         "SELECT COALESCE(sum(writes),0)::bigint,"
                         " COALESCE(sum(write_bytes),0)::bigint,"
                         " COALESCE(sum(write_time),0)::float8,"
                         " COALESCE(sum(fsyncs),0)::bigint,"
-                        " COALESCE(sum(fsync_time),0)::float8"
+                        " COALESCE(sum(fsync_time),0)::float8,"
+                        " json_agg(json_build_array(backend_type, object, context, stats_reset)"
+                        " ORDER BY backend_type, object, context)"
                         " FROM pg_stat_io WHERE object='wal'").fetchone()))
                 try:
                     # PG18: cumulative checkpointer counters — per-60s

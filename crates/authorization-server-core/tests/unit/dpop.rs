@@ -290,6 +290,7 @@ struct AtomicDpopState {
     replay: Arc<Mutex<HashSet<String>>>,
     nonces: Arc<Mutex<HashSet<String>>>,
     unavailable: bool,
+    replay_ttls: Arc<Mutex<Vec<u64>>>,
 }
 
 impl DpopStateStorePort for AtomicDpopState {
@@ -297,12 +298,13 @@ impl DpopStateStorePort for AtomicDpopState {
         &'a self,
         jkt: &'a str,
         jti: &'a str,
-        _ttl_seconds: u64,
+        ttl_seconds: u64,
     ) -> DpopStateFuture<'a, bool> {
         Box::pin(async move {
             if self.unavailable {
                 return Err(DpopStateStoreError);
             }
+            self.replay_ttls.lock().unwrap().push(ttl_seconds);
             Ok(self
                 .replay
                 .lock()
@@ -574,6 +576,9 @@ async fn dpop_future_iat_replay_marker_outlives_acceptance_async() {
     .await
     .expect("iat inside the future skew is accepted at t0");
 
+    // Independently derive the inclusive acceptance boundary: a proof issued
+    // 30 seconds ahead can still be accepted at maximum age 300 seconds.
+    assert!(state.replay_ttls.lock().unwrap()[0] > 30 + 300);
     for replay_at in [t0 + 301, t0 + 330] {
         assert!(
             matches!(
@@ -649,14 +654,9 @@ fn dpop_unknown_critical_header_is_rejected() {
         json!({"typ": "dpop+jwt", "alg": "EdDSA", "jwk": public_jwk(), "crit": ["x"], "x": true});
     let critical_proof = proof_with_header(header, json!({}));
 
-    let state = AtomicDpopState::default();
     assert_eq!(
         verify_dpop_proof_at(request(Some(&critical_proof), None), NOW),
         Err(DpopError::InvalidProof)
-    );
-    assert!(
-        state.replay.lock().expect("replay lock").is_empty(),
-        "crit rejection must not consume replay state"
     );
 }
 

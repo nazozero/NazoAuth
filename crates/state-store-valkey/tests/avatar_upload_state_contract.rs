@@ -29,6 +29,7 @@ fn authorization(upload_id: String, user_id: UserId) -> AvatarUploadAuthorizatio
         tenant_id: tenant(1),
         user_id,
         expected_avatar_url: Some(format!("https://images.example.test/{upload_id}")),
+        expected_avatar_revision: 9_007_199_254_740_993,
         staging_object_id: format!("staging/{upload_id}"),
         expires_at: Utc::now() + ChronoDuration::seconds(60),
     }

@@ -13,6 +13,7 @@ use nazo_identity::{
 mod backup_codes;
 mod ports;
 mod remembered_devices;
+pub(crate) mod rewrap;
 mod totp;
 
 #[derive(Clone)]
@@ -170,6 +171,12 @@ enum MfaAuditError {
 impl From<diesel::result::Error> for MfaAuditError {
     fn from(error: diesel::result::Error) -> Self {
         Self::Diesel(error)
+    }
+}
+
+impl From<RepositoryError> for MfaAuditError {
+    fn from(error: RepositoryError) -> Self {
+        Self::Repository(error)
     }
 }
 

@@ -31,7 +31,7 @@ The following stable runtime modules are enabled on a new database:
 | JWT Bearer Grant | The implemented profile remains client-bound | Client grant allowlist and client authentication |
 | SCIM | Server role can coexist with OAuth/OIDC roles | SCIM bearer authority and scope checks |
 | Front-Channel Logout | Endpoint support does not register an RP logout URI | Registered client logout metadata |
-| Session Management | The iframe can coexist with logout and OIDC | `session_management=true` |
+| Session Management | Same-site iframe polling can coexist with logout and OIDC; cross-site RPs use Back-Channel Logout | `session_management=true` |
 
 The following modules are enabled only when their real prerequisite exists:
 

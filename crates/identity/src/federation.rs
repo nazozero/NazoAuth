@@ -448,6 +448,7 @@ where
         let now = Utc::now();
         let mut session = SessionRecord::new(
             account.user_id(),
+            account.principal.authorization_epoch,
             now.timestamp(),
             vec![method.clone(), "federated".to_owned()],
             account.account.mfa_enabled,

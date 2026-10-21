@@ -148,6 +148,7 @@ fn tenant_directory_payloads_reject_bad_identities_and_unknown_fields() {
         },
         other => unreachable!("{other:?}"),
     };
+    expect_policy_error(payload.clone());
     if let ControlOperationPayload::TenantDirectoryCreate { realm, .. } = &mut payload {
         realm.id = "not-a-uuid".to_owned();
     }

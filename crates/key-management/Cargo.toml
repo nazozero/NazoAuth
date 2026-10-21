@@ -15,7 +15,7 @@ anyhow.workspace = true
 base64.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 nazo-auth.workspace = true
-nazo-crypto = { workspace = true, features = ["jose", "ecdh", "aead"] }
+nazo-crypto = { workspace = true, features = ["jose", "ecdh", "aead", "ed25519"] }
 nazo-digital-credentials.workspace = true
 pem.workspace = true
 rand.workspace = true

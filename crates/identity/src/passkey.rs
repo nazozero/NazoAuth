@@ -573,6 +573,7 @@ where
         };
         let mut session = SessionRecord::new(
             account.user_id(),
+            account.principal.authorization_epoch,
             now.timestamp(),
             amr,
             pending_mfa,

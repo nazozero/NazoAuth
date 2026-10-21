@@ -1,3 +1,4 @@
+use nazo_openid4vci::PreparedPreAuthorizedOffer;
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
@@ -5,9 +6,9 @@ use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
-    CredentialAccess, CredentialAuthorization, CredentialResponseEncoding, CredentialStoreError,
-    CredentialStoreFuture, CredentialStorePort, DeferredCredential, IssuanceNotification,
-    NonceRecord, NotificationHandle, StoredCredentialOffer, StoredCredentialResponse,
+    CredentialAccess, CredentialResponseEncoding, CredentialStoreError, CredentialStoreFuture,
+    CredentialStorePort, DeferredCredential, IssuanceNotification, NonceRecord, NotificationHandle,
+    StoredCredentialOffer, StoredCredentialResponse,
 };
 use uuid::Uuid;
 
@@ -37,11 +38,12 @@ impl CredentialStorePort for Openid4vciRepository {
 
     fn persist_pre_authorized_access<'a>(
         &'a self,
+        offer: &'a [u8],
         token_hash: &'a str,
         access: &'a CredentialAccess,
         registered_client_id: Option<&'a str>,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        self.access_persist_pre_authorized(token_hash, access, registered_client_id)
+        self.offer_commit_pre_authorized(offer, token_hash, access, registered_client_id)
     }
 
     fn find_response<'a>(
@@ -65,16 +67,16 @@ impl CredentialStorePort for Openid4vciRepository {
         self.offer_lookup(tenant_id, id, now)
     }
 
-    fn consume_pre_authorized_offer<'a>(
+    fn prepare_pre_authorized_offer<'a>(
         &'a self,
         tenant_id: Uuid,
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>
     {
-        self.offer_consume_pre_authorized(tenant_id, code_hash, tx_code, client_id, now)
+        self.offer_prepare_pre_authorized(tenant_id, code_hash, tx_code, client_id, now)
     }
 
     fn issue_nonce<'a>(

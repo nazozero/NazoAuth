@@ -89,6 +89,7 @@ pub trait FederationLinkRepositoryPort: Send + Sync {
         user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<FederationLinkSummary>>;
 
+    /// Unlink and append the required lifecycle audit in the same commit.
     fn delete(
         &self,
         tenant_id: TenantId,

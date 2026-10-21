@@ -162,7 +162,7 @@ impl TenantDirectoryRepository {
                     .get_result::<TenantDirectoryBindingRow>(connection)
                     .await
                     .optional()?;
-                    let matches = existing.is_some_and(|existing| binding_rows_equal(&existing, &binding));
+                    let matches = existing.is_some_and(|existing| binding_identity_equal(&existing, &binding));
                     if matches {
                         ensure_runtime_module_defaults(connection, tenant_id).await?;
                     }
@@ -442,12 +442,18 @@ struct BoundaryOwnershipRow {
 }
 
 fn binding_rows_equal(row: &TenantDirectoryBindingRow, binding: &TenantDirectoryBinding) -> bool {
+    binding_identity_equal(row, binding) && row.runtime_revision == binding.runtime_revision as i64
+}
+
+fn binding_identity_equal(
+    row: &TenantDirectoryBindingRow,
+    binding: &TenantDirectoryBinding,
+) -> bool {
     row.tenant_id == binding.tenant.tenant_id.as_uuid()
         && row.realm_id == binding.tenant.realm_id.as_uuid()
         && row.organization_id == binding.tenant.organization_id.as_uuid()
         && row.issuer == binding.issuer
         && row.external_host == binding.external_host
-        && row.runtime_revision == binding.runtime_revision as i64
 }
 
 /// Applies the same routing-identity rules as the runtime snapshot reader so

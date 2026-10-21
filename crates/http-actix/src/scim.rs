@@ -13,11 +13,12 @@ use nazo_identity::{
         ScimCursorContext, ScimCursorError, ScimCursorSubject, ScimListRequest, ScimPagination,
         ScimPatchRequest, ScimRequiredScope, ScimService, ScimUserRequest,
         build_scim_cursor_plaintext, decode_scim_cursor_envelope, decode_scim_cursor_plaintext,
-        encode_scim_cursor_envelope, normalize_patch, normalize_scim_user_filter,
-        normalize_scim_user_payload, parse_scim_list_query, scim_cursor_list_document,
-        scim_error_document, scim_index_list_document, scim_resource_types_document,
-        scim_schemas_document, scim_service_provider_config_document_with_events,
-        scim_user_document, select_scim_pagination, validate_patch_schema,
+        decode_scim_request, encode_scim_cursor_envelope, normalize_patch,
+        normalize_scim_user_filter, normalize_scim_user_payload, parse_scim_list_query,
+        scim_cursor_list_document, scim_error_document, scim_index_list_document,
+        scim_resource_types_document, scim_schemas_document,
+        scim_service_provider_config_document_with_events, scim_user_document,
+        select_scim_pagination,
     },
 };
 use nazo_scim_events::{EventPollerPort, MutationContext, PollRequest, ValidatedPollRequest};
@@ -331,13 +332,18 @@ async fn list_users(
 pub async fn scim_create_user(
     endpoint: Data<ScimEndpoint>,
     request: HttpRequest,
-    Json(payload): Json<ScimUserRequest>,
+    Json(payload): Json<serde_json::Value>,
 ) -> HttpResponse {
     let credential = match authorize(&endpoint, &request, ScimRequiredScope::Write).await {
         Ok(credential) => credential,
         Err(error) => return authorization_error(error),
     };
-    let input = match normalize_scim_user_payload(payload, true) {
+    let input = match decode_scim_request::<ScimUserRequest>(
+        payload,
+        nazo_identity::scim::SCIM_USER_SCHEMA,
+    )
+    .and_then(|payload| normalize_scim_user_payload(payload, true))
+    {
         Ok(input) => input,
         Err(error) => return core_error(StatusCode::BAD_REQUEST, &error),
     };
@@ -384,13 +390,18 @@ pub async fn scim_replace_user(
     endpoint: Data<ScimEndpoint>,
     request: HttpRequest,
     path: Path<uuid::Uuid>,
-    Json(payload): Json<ScimUserRequest>,
+    Json(payload): Json<serde_json::Value>,
 ) -> HttpResponse {
     let credential = match authorize(&endpoint, &request, ScimRequiredScope::Write).await {
         Ok(credential) => credential,
         Err(error) => return authorization_error(error),
     };
-    let input = match normalize_scim_user_payload(payload, true) {
+    let input = match decode_scim_request::<ScimUserRequest>(
+        payload,
+        nazo_identity::scim::SCIM_USER_SCHEMA,
+    )
+    .and_then(|payload| normalize_scim_user_payload(payload, true))
+    {
         Ok(input) => input,
         Err(error) => return core_error(StatusCode::BAD_REQUEST, &error),
     };
@@ -418,15 +429,17 @@ pub async fn scim_patch_user(
     endpoint: Data<ScimEndpoint>,
     request: HttpRequest,
     path: Path<uuid::Uuid>,
-    Json(payload): Json<ScimPatchRequest>,
+    Json(payload): Json<serde_json::Value>,
 ) -> HttpResponse {
     let credential = match authorize(&endpoint, &request, ScimRequiredScope::Write).await {
         Ok(credential) => credential,
         Err(error) => return authorization_error(error),
     };
-    if let Err(error) = validate_patch_schema(&payload.schemas) {
-        return core_error(StatusCode::BAD_REQUEST, &error);
-    }
+    let payload: ScimPatchRequest =
+        match decode_scim_request(payload, nazo_identity::scim::SCIM_PATCH_SCHEMA) {
+            Ok(payload) => payload,
+            Err(error) => return core_error(StatusCode::BAD_REQUEST, &error),
+        };
     let patch = match normalize_patch(payload.operations) {
         Ok(patch) => patch,
         Err(error) => return core_error(StatusCode::BAD_REQUEST, &error),

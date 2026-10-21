@@ -128,5 +128,10 @@ async fn access_fails_closed_when_revocation_state_is_unavailable() {
         .access(&context)
         .await
         .expect_err("unavailable revocation state must fail closed");
-    assert_error(error, 401, "invalid_token", "Access token is revoked.");
+    assert_error(
+        error,
+        503,
+        "server_error",
+        "Access token revocation state is unavailable.",
+    );
 }

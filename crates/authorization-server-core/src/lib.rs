@@ -230,8 +230,8 @@ pub use token_service::{
     PreparedTokenSubject, RefreshTokenSnapshot, SingleUseRedemption, TokenFuture, TokenInspection,
     TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError, TokenPrincipalState,
     TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
-    UserinfoSnapshot, UserinfoSubjectRef, jwt_response_signing_algorithm,
-    validate_sender_constraint,
+    UserinfoSnapshot, UserinfoSubjectRef, id_token_signing_algorithm,
+    jwt_response_signing_algorithm, validate_sender_constraint,
 };
 pub use transaction::{
     AUTHORIZATION_CODE_REDEMPTION_VERSION, AuthorizationCodeState, CodePayload, ConsentPayload,
@@ -240,5 +240,6 @@ pub use transaction::{
 pub use uri_policy::{
     RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,
     resolve_registered_redirect_uri, validate_cors_origin, validate_frontend_base_url,
-    validate_issuer_url, validate_oauth_redirect_uri, validate_protected_resource_identifier,
+    validate_http_endpoint_url, validate_issuer_url, validate_oauth_redirect_uri,
+    validate_protected_resource_identifier,
 };

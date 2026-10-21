@@ -293,8 +293,8 @@ impl LivePasskeyFixture {
     }
 
     async fn with_user_verification(required: bool) -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let database_url = crate::test_support::backend_url("DATABASE_URL")?;
+        let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://example.com"),
             ("TRANSPORT_MODE", "direct-tls"),
@@ -399,7 +399,7 @@ impl LivePasskeyFixture {
     async fn session_payload(&self, sid: &str) -> SessionPayload {
         let raw = valkey_get(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
         )
         .await
         .expect("session lookup should succeed")
@@ -411,7 +411,7 @@ impl LivePasskeyFixture {
         self.state
             .valkey
             .ttl(nazo_valkey::test_support::state_storage_key(format!(
-                "oauth:session:{sid}"
+                "oauth:session:v2:{sid}"
             )))
             .await
             .expect("session TTL lookup should succeed")
@@ -632,6 +632,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
     let previous_session_id = Uuid::now_v7().to_string();
     let previous_session = nazo_identity::session::SessionRecord::new(
         nazo_identity::UserId::new(user.id).expect("fixture user id is valid"),
+        0,
         Utc::now().timestamp(),
         vec!["pwd".to_owned()],
         false,
@@ -701,7 +702,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
         valkey_get(
             &fixture.state.valkey,
             nazo_valkey::test_support::state_storage_key(format!(
-                "oauth:session:{previous_session_id}"
+                "oauth:session:v2:{previous_session_id}"
             ))
         )
         .await
@@ -820,9 +821,20 @@ async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
 
 #[actix_web::test]
 async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
-    let Some(fixture) = LivePasskeyFixture::with_user_verification(false).await else {
+    let Some(mut fixture) = LivePasskeyFixture::with_user_verification(false).await else {
         return;
     };
+    let base = crate::test_support::backend_url("DATABASE_URL").unwrap();
+    let database = crate::test_support::database::OwnedDatabase::new(&base).await;
+    nazo_postgres::run_pending_migrations(&database.url)
+        .await
+        .unwrap();
+    fixture.state = Data::new(TestInfrastructure {
+        diesel_db: create_pool(database.url.clone(), 4).unwrap(),
+        valkey: fixture.state.valkey.clone(),
+        settings: fixture.state.settings.clone(),
+        keyset: fixture.state.keyset.clone(),
+    });
     let suffix = Uuid::now_v7().simple().to_string();
     let user_agent = format!("passkey-remembered-mfa/{suffix}");
     let user = fixture

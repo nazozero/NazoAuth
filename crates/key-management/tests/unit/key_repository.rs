@@ -329,14 +329,7 @@ fn replace_payload(
     payload: serde_json::Value,
 ) {
     let mut record = repository.snapshot().unwrap();
-    let mut public_metadata = payload.clone();
-    public_metadata
-        .as_object_mut()
-        .unwrap()
-        .remove("request_object_private_pem");
-    for key in public_metadata["keys"].as_array_mut().unwrap() {
-        key.as_object_mut().unwrap().remove("private_pkcs8_der");
-    }
+    let public_metadata = crate::database::public_projection(&payload).unwrap();
     let sealed = ring
         .seal_generation(
             tenant,
@@ -495,7 +488,7 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
 }
 
 #[tokio::test]
-async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifiable() {
+async fn expired_database_key_discards_private_material_but_preserves_public_provenance() {
     let settings = KeySettings {
         rotation_interval: chrono::Duration::seconds(-1),
         prepublish_window: chrono::Duration::zero(),
@@ -527,10 +520,24 @@ async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifia
     );
     replace_payload(&repository, tenant, &ring, payload);
 
-    let restarted =
-        KeyManager::load_or_create_database(settings, None, tenant, repository.clone(), ring)
-            .await
-            .unwrap();
+    let restarted = KeyManager::load_or_create_database(
+        settings,
+        None,
+        tenant,
+        repository.clone(),
+        ring.clone(),
+    )
+    .await
+    .unwrap();
+    let persisted = decrypted_payload(&repository, tenant, &ring);
+    let retired = persisted["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["kid"] == retired_kid)
+        .unwrap();
+    assert!(retired.get("private_pkcs8_der").is_none());
+    assert!(retired.get("public_jwk").is_some());
     assert!(
         repository.load().await.unwrap().unwrap().public_metadata["keys"]
             .as_array()

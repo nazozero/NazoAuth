@@ -122,12 +122,30 @@ fn signed_request_object_json(now: i64) -> Value {
 
 fn signed_policy(now: i64) -> RequestObjectPolicy<'static> {
     RequestObjectPolicy {
+        require_issuer_audience: false,
         issuer: "https://issuer.example",
         client_id: "client",
         jti_policy: RequestObjectJtiPolicy::RequiredForSignedJar,
         require_integrity_protected_parameters: true,
         now,
     }
+}
+
+#[test]
+fn message_signing_requires_issuer_audience_without_changing_baseline_jar() {
+    let claims = signed_claims(1000);
+    let outer = HashMap::new();
+    assert!(normalize_request_object(&outer, &claims, signed_policy(1000)).is_ok());
+    let policy = RequestObjectPolicy {
+        require_issuer_audience: true,
+        ..signed_policy(1000)
+    };
+    assert!(normalize_request_object(&outer, &claims, policy).is_err());
+    let claims = RequestObjectClaims {
+        aud: Some(json!("https://issuer.example")),
+        ..claims
+    };
+    assert!(normalize_request_object(&outer, &claims, policy).is_ok());
 }
 
 fn signed_claims(now: i64) -> RequestObjectClaims {

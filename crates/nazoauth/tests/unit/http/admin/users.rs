@@ -17,6 +17,7 @@ use nazo_postgres::{UserRepository, create_pool};
 fn user_row() -> PublicAccount {
     let now = Utc::now();
     DatabaseUserFixture {
+        avatar_revision: 0,
         id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         realm_id: Uuid::now_v7(),

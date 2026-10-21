@@ -3,6 +3,9 @@
 //! full migration chain applied, so trigger and constraint behavior is the
 //! production behavior.
 
+#[path = "support/database.rs"]
+mod isolated_database;
+
 use diesel::{sql_query, sql_types};
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection as _,
@@ -31,29 +34,23 @@ fn database_url() -> Option<String> {
 struct IsolatedDirectory {
     pool: nazo_postgres::DbPool,
     repository: TenantDirectoryRepository,
+    database: isolated_database::OwnedDatabase,
 }
 
 async fn isolated_directory() -> Option<IsolatedDirectory> {
     let database_url = database_url()?;
-    let database_name = format!("tenant_directory_{}", Uuid::now_v7().simple());
-    let mut coordinator = AsyncPgConnection::establish(&database_url)
-        .await
-        .expect("test database should connect");
-    coordinator
-        .batch_execute(&format!("CREATE DATABASE \"{database_name}\";"))
-        .await
-        .expect("isolated database should create");
-    drop(coordinator);
-
-    let mut isolated_url = url::Url::parse(&database_url).expect("test database URL is valid");
-    isolated_url.set_path(&format!("/{database_name}"));
-    let isolated_url = isolated_url.to_string();
+    let database = isolated_database::OwnedDatabase::new(&database_url).await;
+    let isolated_url = database.url.clone();
     run_pending_migrations(&isolated_url)
         .await
         .expect("isolated database migrations should apply");
     let pool = create_pool(isolated_url, 4).expect("pool should create");
     let repository = TenantDirectoryRepository::new(pool.clone());
-    Some(IsolatedDirectory { pool, repository })
+    Some(IsolatedDirectory {
+        pool,
+        repository,
+        database,
+    })
 }
 
 fn boundary_definition<Id>(id: Id, slug: &str) -> TenantBoundaryDefinition<Id> {
@@ -106,7 +103,12 @@ struct CountRow {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn provision_seeds_tenant_capabilities_without_overwriting_switches_on_replay() {
-    let Some(IsolatedDirectory { pool, repository }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        pool,
+        repository,
+        database: _database,
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (_, request) = provisioning_request(0, "capabilities", "capabilities.example");
@@ -206,7 +208,12 @@ async fn provision_seeds_tenant_capabilities_without_overwriting_switches_on_rep
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn provision_advances_revision_and_replays_idempotently() {
-    let Some(IsolatedDirectory { repository, .. }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        repository,
+        database: _database,
+        ..
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (expected, request) = provisioning_request(0, "alpha", "alpha.example");
@@ -253,7 +260,12 @@ async fn provision_advances_revision_and_replays_idempotently() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn update_moves_binding_and_revision_without_replaying_effects() {
-    let Some(IsolatedDirectory { repository, .. }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        repository,
+        database: _database,
+        ..
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (_, request) = provisioning_request(0, "alpha", "alpha.example");
@@ -325,7 +337,12 @@ async fn update_moves_binding_and_revision_without_replaying_effects() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_transitions_require_a_binding_and_stay_replay_safe() {
-    let Some(IsolatedDirectory { repository, .. }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        repository,
+        database: _database,
+        ..
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (_, request) = provisioning_request(0, "alpha", "alpha.example");
@@ -376,7 +393,12 @@ async fn status_transitions_require_a_binding_and_stay_replay_safe() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn finalize_removes_routing_and_replays_after_deletion() {
-    let Some(IsolatedDirectory { pool, repository }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        pool,
+        repository,
+        database: _database,
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (_, request) = provisioning_request(0, "alpha", "alpha.example");
@@ -421,7 +443,12 @@ async fn finalize_removes_routing_and_replays_after_deletion() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_writers_serialize_through_the_revision_fence() {
-    let Some(IsolatedDirectory { repository, .. }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        repository,
+        database: _database,
+        ..
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (first, first_request) = provisioning_request(0, "alpha", "alpha.example");
@@ -473,7 +500,12 @@ struct CurrentDatabaseRow {
 /// update the state row, while ordinary binding mutations keep working.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn limited_runtime_role_cannot_write_the_revision_state() {
-    let Some(IsolatedDirectory { pool, repository }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        pool,
+        repository,
+        mut database,
+    }) = isolated_directory().await
+    else {
         return;
     };
     let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -493,6 +525,7 @@ async fn limited_runtime_role_cannot_write_the_revision_state() {
         .await
         .expect("admin connection should establish");
     let role = format!("runtime_role_{}", Uuid::now_v7().simple());
+    database.roles.push(role.clone());
     admin
         .batch_execute(&format!(
             "CREATE ROLE {role} LOGIN PASSWORD 'test-only';
@@ -575,7 +608,12 @@ async fn limited_runtime_role_cannot_write_the_revision_state() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_active_binding_requires_each_boundary_and_never_returns_a_peer() {
-    let Some(IsolatedDirectory { pool, repository }) = isolated_directory().await else {
+    let Some(IsolatedDirectory {
+        pool,
+        repository,
+        database: _database,
+    }) = isolated_directory().await
+    else {
         return;
     };
     let (_, target) = provisioning_request(0, "target", "target.example");

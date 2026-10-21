@@ -81,3 +81,40 @@ Administrator provisioning receipts and recovery used-key history retain their
 operation/key identities without unused timestamps. Revocations use
 `(tenant_id, access_token_jti_blake3)` as the primary key, with tenant/client
 binding, first revocation time and monotonic retention through verifier skew.
+
+## Transient authorization wire changes
+
+Authorization-code payloads are stored as opaque JSON bytes. Lua changes only
+the surrounding state/CAS fields and never decodes and re-encodes application
+claims, preserving JSON integers, decimals and nested arrays.
+
+Session keys use `oauth:session:v2:` and require the login authorization epoch.
+Upgrading from the unversioned session namespace requires a fresh login; old
+records expire under their existing TTL and are never reinterpreted with a
+fabricated epoch. Drain old server instances before switching traffic. Pending
+authorization transactions from the earlier code-payload format must expire or
+restart during this rollout; do not run mixed writers against the same state.
+
+Consent transactions have a ten-minute lifetime capped by the originating PAR
+expiry. The authorization-code lifetime starts when the code is issued.
+
+Each active controller dataset binding owns exactly one physical
+`(tenant, subject, credential configuration)` dataset. A second logical resource
+for that tuple is rejected atomically. The ownership-index migration rejects
+existing aliases; reconcile the signed resource inventory before applying it.
+Reapplying a revoked managed user restores its retained owned UUID, preserves
+its revocation epoch and enrolled factors, and does not resurrect old grants.
+
+Avatar selection carries a monotonic revision, including changes back to no
+avatar. Upload authorizations retain that revision; CAS retries of the same
+selected candidate are idempotent. A confirmed revision-fenced miss permits
+candidate deletion, while unknown database outcomes retain the object. Successful
+direct replacements delete the former final object before recording completion;
+a cleanup failure remains retryable under the existing upload authorization.
+This does not provide inventory-based garbage collection after abandoned uploads
+or process loss. Object-store staging expiration remains provider-owned.
+
+The avatar revision migration requires stopping older server binaries before
+starting the updated version: older writers do not carry the revision fence.
+In-flight authorizations without a revision must expire and be restarted; their
+missing revision is never guessed from the current account.

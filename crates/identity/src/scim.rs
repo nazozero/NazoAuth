@@ -383,10 +383,57 @@ impl From<bool> for ScimDeleteOutcome {
 }
 
 pub fn validate_patch_schema(schemas: &[String]) -> Result<(), ScimError> {
-    if schemas.is_empty() || schemas.iter().any(|schema| schema == SCIM_PATCH_SCHEMA) {
+    if schemas == [SCIM_PATCH_SCHEMA] {
         Ok(())
     } else {
         Err(ScimError::new("invalidSyntax", "unsupported PATCH schema"))
+    }
+}
+
+/// Decode the supported SCIM document, whose attribute names are case insensitive.
+/// Values (including schema URIs, paths and email strings) retain their bytes.
+pub fn decode_scim_request<T: serde::de::DeserializeOwned>(
+    value: Value,
+    schema: &str,
+) -> Result<T, ScimError> {
+    let value = canonical_scim_attributes(value)?;
+    if value.get("schemas") != Some(&serde_json::json!([schema])) {
+        return Err(ScimError::new(
+            "invalidSyntax",
+            "unsupported or missing SCIM schema",
+        ));
+    }
+    serde_json::from_value(value)
+        .map_err(|_| ScimError::new("invalidSyntax", "invalid SCIM document"))
+}
+
+fn canonical_scim_attributes(value: Value) -> Result<Value, ScimError> {
+    match value {
+        Value::Object(object) => {
+            let mut canonical = serde_json::Map::new();
+            for (key, value) in object {
+                let key = match key.to_ascii_lowercase().as_str() {
+                    "username" => "userName".to_owned(),
+                    "givenname" => "givenName".to_owned(),
+                    "familyname" => "familyName".to_owned(),
+                    "operations" => "Operations".to_owned(),
+                    _ => key.to_ascii_lowercase(),
+                };
+                if canonical
+                    .insert(key, canonical_scim_attributes(value)?)
+                    .is_some()
+                {
+                    return Err(ScimError::new("invalidSyntax", "duplicate SCIM attribute"));
+                }
+            }
+            Ok(Value::Object(canonical))
+        }
+        Value::Array(values) => values
+            .into_iter()
+            .map(canonical_scim_attributes)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
+        value => Ok(value),
     }
 }
 
@@ -459,6 +506,7 @@ pub fn normalize_patch(operations: Vec<ScimPatchOperation>) -> Result<ScimPatch,
 }
 
 pub fn apply_patch_object(patch: &mut ScimPatch, value: Value) -> Result<(), ScimError> {
+    let value = canonical_scim_attributes(value)?;
     let Value::Object(mut object) = value else {
         return Err(ScimError::new(
             "invalidSyntax",
@@ -521,7 +569,7 @@ pub fn normalize_scim_user_filter(filter: Option<&str>) -> Result<Option<String>
     let Some(filter) = filter.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
-    let Some((field, value)) = filter.split_once(" eq ") else {
+    let Some((field, remainder)) = filter.split_once(char::is_whitespace) else {
         return Err(ScimError::new(
             "invalidFilter",
             "only eq filters are supported",
@@ -533,14 +581,21 @@ pub fn normalize_scim_user_filter(filter: Option<&str>) -> Result<Option<String>
             "only userName filters are supported",
         ));
     }
-    let value = value.trim();
-    if !(value.starts_with('"') && value.ends_with('"') && value.len() >= 2) {
+    let Some((operator, value)) = remainder.trim_start().split_once(char::is_whitespace) else {
         return Err(ScimError::new(
             "invalidFilter",
             "filter value must be quoted",
         ));
+    };
+    if !operator.eq_ignore_ascii_case("eq") {
+        return Err(ScimError::new(
+            "invalidFilter",
+            "only eq filters are supported",
+        ));
     }
-    normalize_email_address(&value[1..value.len() - 1])
+    let value: String = serde_json::from_str(value.trim())
+        .map_err(|_| ScimError::new("invalidFilter", "filter value must be a JSON string"))?;
+    normalize_email_address(&value)
         .map(Some)
         .map_err(|_| ScimError::new("invalidFilter", "userName filter is invalid"))
 }
@@ -565,7 +620,7 @@ pub fn primary_email(values: Option<Vec<ScimEmail>>, required: bool) -> Result<S
 }
 
 pub fn primary_email_from_value(value: Value) -> Result<String, ScimError> {
-    let emails = serde_json::from_value::<Vec<ScimEmail>>(value)
+    let emails = serde_json::from_value::<Vec<ScimEmail>>(canonical_scim_attributes(value)?)
         .map_err(|_| ScimError::new("invalidValue", "emails must be an array"))?;
     primary_email(Some(emails), true)
 }

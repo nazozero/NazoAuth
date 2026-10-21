@@ -72,9 +72,9 @@ impl ServerCredentialIssuerOperations {
                 .client_id
                 .as_deref()
                 .unwrap_or("pre-authorized-wallet");
-            let authorization = self
+            let prepared = self
                 .store
-                .consume_pre_authorized_offer(
+                .prepare_pre_authorized_offer(
                     self.tenant_id,
                     &blake3_hex(&request.pre_authorized_code),
                     request.tx_code.as_deref(),
@@ -96,6 +96,7 @@ impl ServerCredentialIssuerOperations {
                         "Pre-authorized code or transaction code is invalid.",
                     )
                 })?;
+            let authorization = prepared.authorization;
             let token_subject = authorization.subject_id.to_string();
             if self
                 .token_service
@@ -154,11 +155,8 @@ impl ServerCredentialIssuerOperations {
                         "Credential access token signing failed.",
                     )
                 })?;
-            // The pre-authorized offer is consumed before the JWT is signed.  Persist the
-            // resulting grant before returning the bearer/DPoP token so every token delivered
-            // by this endpoint is visible to the credential endpoint's revocation and
-            // lifecycle checks.  A failed persistence write fails closed: the token is never
-            // sent to the wallet.
+            // Signing and subject preparation do not consume the offer. The store
+            // commits consumption and the usable grant together below.
             let token_id = Uuid::parse_str(&issued.jti).map_err(|_| {
                 vci_error(
                     503,
@@ -177,6 +175,7 @@ impl ServerCredentialIssuerOperations {
             let token_type = if dpop_jkt.is_some() { "DPoP" } else { "Bearer" };
             self.store
                 .persist_pre_authorized_access(
+                    &prepared.commit_token,
                     &blake3_hex(&issued.token),
                     &CredentialAccess {
                         authorization_id: Some(authorization_id),
@@ -202,6 +201,11 @@ impl ServerCredentialIssuerOperations {
                     nazo_openid4vci::CredentialStoreError::ClientInactive => {
                         vci_error(400, "unauthorized_client", "Credential client is inactive.")
                     }
+                    nazo_openid4vci::CredentialStoreError::InvalidTransition => vci_error(
+                        400,
+                        "invalid_grant",
+                        "Credential offer is no longer available.",
+                    ),
                     _ => vci_error(
                         503,
                         "server_error",

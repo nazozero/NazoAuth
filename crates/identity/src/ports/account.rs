@@ -1,10 +1,8 @@
-use std::{collections::HashMap, sync::Mutex};
-
 use crate::{
     Principal, ProfilePatch, PublicAccount, SubjectClaims, TenantContext, TenantId, UserId,
 };
 
-use super::common::{PasswordHashInput, RepositoryError, RepositoryFuture};
+use super::common::{PasswordHashInput, RepositoryFuture};
 
 #[derive(Clone, Debug)]
 pub struct NewUser {
@@ -84,58 +82,4 @@ pub trait ProfileRepositoryPort: Send + Sync {
         user_id: UserId,
         update: ProfilePatch,
     ) -> RepositoryFuture<'a, PublicAccount>;
-}
-
-#[derive(Default)]
-pub struct FakeUserRepository {
-    principals: Mutex<HashMap<(TenantId, UserId), Principal>>,
-    claims: Mutex<HashMap<(TenantId, UserId), SubjectClaims>>,
-}
-
-impl FakeUserRepository {
-    pub fn insert_principal(&self, principal: Principal) {
-        self.principals
-            .lock()
-            .expect("fake repository mutex poisoned")
-            .insert((principal.tenant.tenant_id, principal.user_id), principal);
-    }
-
-    pub fn insert_subject_claims(&self, tenant_id: TenantId, claims: SubjectClaims) {
-        self.claims
-            .lock()
-            .expect("fake repository mutex poisoned")
-            .insert((tenant_id, claims.subject), claims);
-    }
-}
-
-impl UserRepositoryPort for FakeUserRepository {
-    fn principal_by_id<'a>(
-        &'a self,
-        tenant: TenantContext,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<Principal>> {
-        Box::pin(async move {
-            Ok(self
-                .principals
-                .lock()
-                .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-                .get(&(tenant.tenant_id, user_id))
-                .cloned())
-        })
-    }
-
-    fn subject_claims_by_id<'a>(
-        &'a self,
-        tenant: TenantContext,
-        user_id: UserId,
-    ) -> RepositoryFuture<'a, Option<SubjectClaims>> {
-        Box::pin(async move {
-            Ok(self
-                .claims
-                .lock()
-                .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-                .get(&(tenant.tenant_id, user_id))
-                .cloned())
-        })
-    }
 }

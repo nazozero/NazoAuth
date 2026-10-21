@@ -181,13 +181,12 @@ impl nazo_identity::ports::MfaAttemptThrottlePort for RateLimitStore {
         &'a self,
         tenant_id: nazo_identity::TenantId,
         user_id: nazo_identity::UserId,
-        session_id: &'a str,
         window_seconds: u64,
         max_attempts: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::MfaAttemptThrottleDecision>
     {
         Box::pin(async move {
-            let subject = format!("{}:{}:{session_id}", tenant_id.as_uuid(), user_id.as_uuid());
+            let subject = format!("{}:{}", tenant_id.as_uuid(), user_id.as_uuid());
             let count = self
                 .increment_mfa_failure(&subject, window_seconds)
                 .await
@@ -206,10 +205,9 @@ impl nazo_identity::ports::MfaAttemptThrottlePort for RateLimitStore {
         &'a self,
         tenant_id: nazo_identity::TenantId,
         user_id: nazo_identity::UserId,
-        session_id: &'a str,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let subject = format!("{}:{}:{session_id}", tenant_id.as_uuid(), user_id.as_uuid());
+            let subject = format!("{}:{}", tenant_id.as_uuid(), user_id.as_uuid());
             self.clear_mfa_failure(&subject)
                 .await
                 .map(|_| ())

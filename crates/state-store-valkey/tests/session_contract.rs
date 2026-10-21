@@ -9,7 +9,12 @@ use nazo_identity::{
 use nazo_valkey::SessionStore;
 
 async fn setup() -> Option<(SessionStore, fred::prelude::Client)> {
-    let url = std::env::var("VALKEY_URL").ok()?;
+    let url = std::env::var("VALKEY_URL").ok();
+    assert!(
+        url.is_some() || std::env::var_os("CI").is_none(),
+        "CI requires VALKEY_URL"
+    );
+    let url = url?;
     let connection = nazo_valkey::test_support::scoped_connect(&url, Duration::from_secs(1))
         .await
         .expect("an explicitly configured Valkey must be available");
@@ -26,6 +31,7 @@ async fn setup() -> Option<(SessionStore, fred::prelude::Client)> {
 fn payload() -> SessionRecord {
     SessionRecord::new(
         UserId::new(uuid::Uuid::from_u128(1)).unwrap(),
+        0,
         1_000,
         vec!["password".to_owned()],
         true,
@@ -39,14 +45,14 @@ async fn session_store_preserves_exact_key_payload_and_ttl() {
         return;
     };
     let sid = uuid::Uuid::now_v7().to_string();
-    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}"));
     let value = payload();
 
     store.store(&sid, &value, 30).await.unwrap();
 
     assert_eq!(
         inspector.get::<String, _>(&key).await.unwrap(),
-        r#"{"user_id":"00000000-0000-0000-0000-000000000001","auth_time":1000,"amr":["password"],"pending_mfa":true,"oidc_sid":"oidc-sid"}"#
+        r#"{"user_id":"00000000-0000-0000-0000-000000000001","authorization_epoch":0,"auth_time":1000,"amr":["password"],"pending_mfa":true,"oidc_sid":"oidc-sid"}"#
     );
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
     assert_eq!(store.load(&sid).await.unwrap().unwrap().value(), &value);
@@ -59,13 +65,13 @@ async fn session_load_rejects_a_record_without_current_mfa_state() {
     };
     let session_id = SessionId::new(format!("missing-mfa-state-{}", uuid::Uuid::now_v7()));
     let key = nazo_valkey::test_support::state_storage_key(format!(
-        "oauth:session:{}",
+        "oauth:session:v2:{}",
         session_id.as_str()
     ));
     inspector
         .set::<(), _, _>(
             &key,
-            r#"{"user_id":"00000000-0000-0000-0000-000000000001","auth_time":1000,"amr":["password"]}"#,
+            r#"{"user_id":"00000000-0000-0000-0000-000000000001","authorization_epoch":0,"auth_time":1000,"amr":["password"]}"#,
             None,
             None,
             false,
@@ -83,7 +89,7 @@ async fn session_compare_and_set_preserves_ttl_and_logged_in_rps() {
     };
     let sid = format!("bind-{}", uuid::Uuid::now_v7());
     let session_id = SessionId::new(sid.clone());
-    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}"));
     store.store(&sid, &payload(), 30).await.unwrap();
     let before_ttl = inspector.ttl::<i64, _>(&key).await.unwrap();
     let snapshot = SessionStorePort::load(&store, &session_id)
@@ -204,9 +210,9 @@ async fn concurrent_session_rotation_has_exactly_one_winner_and_no_partial_state
             .is_none()
     );
     let first_key =
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{first_sid}"));
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{first_sid}"));
     let second_key =
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{second_sid}"));
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{second_sid}"));
     let first_exists = inspector.exists::<i64, _>(first_key).await.unwrap();
     let second_exists = inspector.exists::<i64, _>(second_key).await.unwrap();
     assert_eq!(first_exists + second_exists, 1);
@@ -218,7 +224,7 @@ async fn session_authentication_precision_roundtrips_and_malformed_precision_is_
         return;
     };
     let sid = uuid::Uuid::now_v7().to_string();
-    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}"));
     let mut value = payload();
     value.record_authentication_at(chrono::DateTime::from_timestamp_micros(1_000_500_001).unwrap());
     store.store(&sid, &value, 30).await.unwrap();
@@ -234,4 +240,25 @@ async fn session_authentication_precision_roundtrips_and_malformed_precision_is_
         .await
         .unwrap();
     assert!(store.load(&sid).await.is_err());
+}
+
+#[tokio::test]
+async fn unversioned_sessions_require_fresh_login() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let sid = uuid::Uuid::now_v7().to_string();
+    let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}"));
+    inspector
+        .set::<(), _, _>(
+            &key,
+            "historical session",
+            Some(fred::types::Expiration::EX(30)),
+            None,
+            false,
+        )
+        .await
+        .unwrap();
+    assert!(store.load(&sid).await.unwrap().is_none());
+    inspector.del::<(), _>(&key).await.unwrap();
 }

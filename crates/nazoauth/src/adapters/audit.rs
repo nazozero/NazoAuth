@@ -374,6 +374,11 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         AuditEventClass::Required,
     ),
     (
+        "passkey_deleted",
+        "authentication",
+        AuditEventClass::Required,
+    ),
+    (
         "passkey_registration_rejected",
         "authentication",
         AuditEventClass::Required,

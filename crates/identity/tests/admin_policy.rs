@@ -8,6 +8,7 @@ fn principal(user: u128, tenant: u128, level: Option<u32>, active: bool) -> Prin
     let mut context = TenantContext::default_system();
     context.tenant_id = TenantId::new(Uuid::from_u128(tenant)).unwrap();
     Principal {
+        authorization_epoch: 0,
         user_id: UserId::new(Uuid::from_u128(user)).unwrap(),
         tenant: context,
         role: level.map_or(UserRole::User, |level| UserRole::Admin { level }),

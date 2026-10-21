@@ -15,10 +15,11 @@ pub async fn issue_token_response(
         || client.security_policy.requires_fapi2_security();
     let issue_includes_openid = issue.scopes.iter().any(|s| s == "openid");
     let id_token_algorithm = if issue_includes_openid {
-        nazo_auth::jwt_response_signing_algorithm(
+        nazo_auth::id_token_signing_algorithm(
             client.id_token_signed_response_alg.as_deref(),
             require_fapi2,
         )
+        .map(Some)
         .map_err(|_| {
             OAuthEndpointError::token(
                 StatusCode::BAD_REQUEST,
@@ -503,8 +504,7 @@ pub async fn issue_token_response(
                 acr: issue.acr.as_deref(),
                 extra_claims: Some(&user_claims),
                 ttl_seconds: context.config.id_token_ttl_seconds,
-                signing_algorithm: id_token_algorithm
-                    .or_else(|| signing_algorithm_name(id_token_signing_alg_for_client(client))),
+                signing_algorithm: id_token_algorithm,
             })
             .await
         {

@@ -226,6 +226,7 @@ impl ScimRepositoryPort for CrudScimRepository {
 fn public_account(tenant: TenantContext, user_id: UserId) -> PublicAccount {
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id,
             tenant,
             role: UserRole::User,

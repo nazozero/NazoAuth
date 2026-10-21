@@ -1,3 +1,4 @@
+# One durable instance per release; this Deployment does not provision HA identities.
 replicaCount: 1
 
 image:
@@ -22,8 +23,7 @@ connections:
   valkeyUrlKey: valkey-url
 
 appSecrets:
-  # Empty means that one replica generates and persists application secrets on
-  # the data PVC. Set this for multiple replicas.
+  # Empty means the instance generates and persists these secrets on its PVC.
   existingSecret: ""
   clientSecretPepperKey: client-secret-pepper
   pairwiseSubjectSecretKey: pairwise-subject-secret
@@ -35,6 +35,10 @@ persistence:
   storageClass: ""
 
 signing:
+  # Required existing wrapping root; it must match the bootstrapped database.
+  existingSecret: ""
+  wrappingKeySecretKey: signing-key-encryption-key
+  wrappingKeyId: ""
   # An external command is the KMS/HSM boundary. The executable and its
   # credentials must be mounted by extraVolumes/extraVolumeMounts.
   externalCommand: ""

@@ -4,7 +4,8 @@ fs=glob.glob(d+"/*.summary.json")
 if not fs: sys.exit(0)
 s=json.load(open(fs[0]))
 k6=s.get("k6",{}); m=k6.get("measure") or {}
-ops=m.get("ops_per_s") or k6.get("rps",0)
+ops=m.get("ops_per_s")
+if ops is None: sys.exit("UNAVAILABLE: missing business throughput")
 errs=m.get("errors") if m.get("errors") is not None else round(k6.get("error_rate",0)*k6.get("http_reqs",0))
 p99=(m.get("latency_ms") or k6.get("latency_ms",{})).get("p99",0)
 cpu=0

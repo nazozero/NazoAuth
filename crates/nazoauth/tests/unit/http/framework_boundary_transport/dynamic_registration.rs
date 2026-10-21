@@ -240,7 +240,8 @@ fn cas_registration_endpoint(
 ) -> nazo_http_actix::DynamicRegistrationEndpoint {
     let application = Arc::new(nazo_oauth_server::domain::dynamic_registration::DynamicRegistrationApplication::new(
         nazo_oauth_server::domain::dynamic_registration::DynamicRegistrationConfig {
-            tenant: nazo_identity::TenantContext::default_system(),
+            require_fapi2: false,
+        tenant: nazo_identity::TenantContext::default_system(),
             issuer: "https://issuer.example".to_owned(),
             default_audience: "https://api.example".to_owned(),
             pairwise_subject_secret: None,

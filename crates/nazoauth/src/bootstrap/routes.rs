@@ -529,7 +529,11 @@ fn configure_with_cors(
                 ))
                 .route("/offers", web::post().to(create_credential_offer))
                 .route("/offers/{offer_id}", web::get().to(credential_offer))
-                .route("/nonce", web::post().to(credential_nonce))
+                .service(
+                    web::resource("/nonce")
+                        .wrap(from_fn(crate::http::rate_limit::auth_request_budget))
+                        .route(web::post().to(credential_nonce)),
+                )
                 .route("/credential", web::post().to(credential))
                 .route("/deferred_credential", web::post().to(deferred_credential))
                 .route("/notification", web::post().to(notification)),

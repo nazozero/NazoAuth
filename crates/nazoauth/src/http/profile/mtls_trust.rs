@@ -10,9 +10,7 @@ use nazo_http_actix::{
 };
 use serde::Deserialize;
 
-use crate::adapters::audit::audit_event_required;
 use crate::http::sessions::SessionProfileHandles;
-use nazo_oauth_server::ports::audit::audit_fields;
 use nazo_oauth_server::services::MtlsTrustAnchorService;
 
 #[derive(Deserialize)]
@@ -92,30 +90,7 @@ pub(crate) async fn create_mtls_trust_request(
         not_after: validated.not_after,
     };
     match service.create_for_owned_client(request).await {
-        Ok(created) => {
-            if audit_event_required(
-                "mtls_trust_anchor_requested",
-                audit_fields([
-                    ("request_id", serde_json::json!(created.id)),
-                    ("requester_user_id", serde_json::json!(user.id())),
-                    ("client_id", serde_json::json!(&created.client_id)),
-                    (
-                        "certificate_sha256",
-                        serde_json::json!(&created.certificate_sha256),
-                    ),
-                ]),
-            )
-            .await
-            .is_err()
-            {
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "信任锚申请审计失败.",
-                );
-            }
-            json_response_status_no_store(StatusCode::CREATED, created)
-        }
+        Ok(created) => json_response_status_no_store(StatusCode::CREATED, created),
         Err(nazo_identity::ports::RepositoryError::NotFound) => oauth_error(
             StatusCode::NOT_FOUND,
             "invalid_request",

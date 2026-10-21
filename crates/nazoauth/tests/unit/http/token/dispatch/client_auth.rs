@@ -100,14 +100,14 @@ async fn store_authorization_code_state(
     code: &str,
     code_state: &AuthorizationCodeState,
 ) {
-    valkey_set_ex(
-        &state.valkey,
-        authorization_code_key(code),
-        serde_json::to_string(code_state).expect("authorization code state should serialize"),
-        state.settings.protocol.auth_code_ttl_seconds,
-    )
-    .await
-    .expect("authorization code state should store");
+    nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .store_authorization_code_hash(
+            &nazo_oauth_server::crypto::blake3_hex(code),
+            code_state,
+            state.settings.protocol.auth_code_ttl_seconds,
+        )
+        .await
+        .expect("authorization code state should store");
 }
 
 async fn store_raw_authorization_code_state(
@@ -183,7 +183,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
     let session_id = format!("browser-session-{}", Uuid::now_v7());
     let unauthenticated_client_id = format!("browser-session-client-{}", Uuid::now_v7());
     let session_key =
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{session_id}"));
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{session_id}"));
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
@@ -211,6 +211,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
         &state.valkey,
         &session_key,
         serde_json::to_string(&SessionPayload {
+            authorization_epoch: 0,
             user_id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned()],

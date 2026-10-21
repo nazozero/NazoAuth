@@ -240,8 +240,6 @@ impl LogoutService {
             active_clients.push(client.clone());
         }
         let frontchannel_logout_urls = self.frontchannel_urls(
-            hinted_client.as_ref(),
-            hinted_client_is_bound,
             &active_clients,
             input.session.as_ref(),
             input.frontchannel_enabled,
@@ -249,7 +247,6 @@ impl LogoutService {
         let operation_key = input.session.as_ref().map(logout_operation_key);
         if let (Some(session), Some(operation_key)) =
             (input.session.as_ref(), operation_key.as_deref())
-            && (input.id_token_hint.is_none() || hint_matches_current_session)
         {
             self.enqueue_backchannel(session, &active_clients, operation_key, input.now)
                 .await?;
@@ -336,8 +333,6 @@ impl LogoutService {
 
     fn frontchannel_urls(
         &self,
-        hinted_client: Option<&RegisteredLogoutClient>,
-        hinted_client_is_bound: bool,
         active_clients: &[RegisteredLogoutClient],
         session: Option<&LogoutSession>,
         enabled: bool,
@@ -348,9 +343,6 @@ impl LogoutService {
         let Some(session) = session else {
             return Vec::new();
         };
-        if hinted_client.is_some() && !hinted_client_is_bound {
-            return Vec::new();
-        }
         active_clients
             .iter()
             .filter_map(|client| {

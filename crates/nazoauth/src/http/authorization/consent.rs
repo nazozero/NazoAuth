@@ -3,7 +3,7 @@
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use nazo_auth::ConsentPayload;
-use nazo_http_actix::{cookie_value, json_response, oauth_endpoint_error_response};
+use nazo_http_actix::{cookie_value, json_response_no_store, oauth_endpoint_error_response};
 use nazo_identity::SessionId;
 use nazo_oauth_server::authorization::AuthorizationApplication;
 use serde::Serialize;
@@ -25,7 +25,7 @@ fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) ->
         authorization_details: serde_json::Value,
         csrf_token: Option<String>,
     }
-    json_response(ConsentPage {
+    json_response_no_store(ConsentPage {
         request_id: payload.request_id,
         client_id: payload.client_id,
         client_name: payload.client_name,

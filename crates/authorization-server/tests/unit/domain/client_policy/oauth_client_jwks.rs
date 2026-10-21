@@ -9,6 +9,12 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+fn ed25519_public_x() -> serde_json::Value {
+    let alg = nazo_crypto::jwt::Algorithm::EdDSA;
+    let private = nazo_crypto::signature::generate_private_key(alg).unwrap();
+    nazo_crypto::signature::public_jwk(alg, &private).unwrap()["x"].clone()
+}
+
 fn test_x5c(common_name: &str, not_before_offset: i64, not_after_offset: i64) -> String {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test P-256 key");
     let mut params = CertificateParams::default();
@@ -69,7 +75,7 @@ fn client_jwks_allows_one_unidentified_key_class_but_rejects_empty_or_duplicate_
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "x": ed25519_public_x(),
             "alg": "EdDSA",
             "use": "sig"
         }]
@@ -81,7 +87,7 @@ fn client_jwks_allows_one_unidentified_key_class_but_rejects_empty_or_duplicate_
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "x": ed25519_public_x(),
             "alg": "EdDSA",
             "use": "sig",
             "kid": ""
@@ -98,7 +104,7 @@ fn client_jwks_allows_one_unidentified_key_class_but_rejects_empty_or_duplicate_
             {
                 "kty": "OKP",
                 "crv": "Ed25519",
-                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+                "x": ed25519_public_x(),
                 "alg": "EdDSA",
                 "use": "sig",
                 "kid": "key-1"
@@ -143,7 +149,7 @@ fn client_jwks_requires_declared_algorithm() {
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "x": ed25519_public_x(),
             "use": "sig",
             "kid": "no-alg"
         }]
@@ -178,7 +184,7 @@ fn client_jwks_rejects_encryption_algorithm_key_type_mismatch() {
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "x": ed25519_public_x(),
             "alg": "RSA-OAEP-256",
             "use": "enc",
             "kid": "wrong-enc-alg"
@@ -199,7 +205,7 @@ fn client_jwks_rejects_private_key_material() {
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "x": ed25519_public_x(),
             "alg": "EdDSA",
             "d": URL_SAFE_NO_PAD.encode([8u8; 32]),
             "kid": "key-1"
@@ -215,51 +221,27 @@ fn client_jwks_rejects_private_key_material() {
 
 #[test]
 fn client_jwks_accepts_supported_public_key_algorithms() {
-    let jwks = json!({
-        "keys": [
-            {
-                "kty": "OKP",
-                "crv": "Ed25519",
-                "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
-                "alg": "EdDSA",
-                "use": "sig",
-                "kid": "ed-key"
-            },
-            {
-                "kty": "RSA",
-                "n": URL_SAFE_NO_PAD.encode([0x91u8; 256]),
-                "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
-                "alg": "RS256",
-                "use": "sig",
-                "kid": "rs-key"
-            },
-            {
-                "kty": "EC",
-                "crv": "P-256",
-                "x": "w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ",
-                "y": "wQg1EytcsEmGrM70Gb53oluoDbVhCZ3Uq3hHMslHVb4",
-                "alg": "ES256",
-                "use": "sig",
-                "kid": "es-key"
-            },
-            {
-                "kty": "RSA",
-                "n": URL_SAFE_NO_PAD.encode([0x92u8; 256]),
-                "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
-                "alg": "PS256",
-                "use": "sig",
-                "kid": "ps-key"
-            },
-            {
-                "kty": "RSA",
-                "n": URL_SAFE_NO_PAD.encode([0x93u8; 256]),
-                "e": URL_SAFE_NO_PAD.encode([0x01u8, 0x00, 0x01]),
-                "alg": "RSA-OAEP-256",
-                "use": "enc",
-                "kid": "enc-key"
-            }
-        ]
-    });
+    use nazo_crypto::jwt::Algorithm;
+    let mut keys = Vec::new();
+    for (alg, name, kid) in [
+        (Algorithm::EdDSA, "EdDSA", "ed-key"),
+        (Algorithm::RS256, "RS256", "rs-key"),
+        (Algorithm::ES256, "ES256", "es-key"),
+        (Algorithm::PS256, "PS256", "ps-key"),
+    ] {
+        let private = nazo_crypto::signature::generate_private_key(alg).unwrap();
+        let mut key = nazo_crypto::signature::public_jwk(alg, &private).unwrap();
+        key["alg"] = json!(name);
+        key["use"] = json!("sig");
+        key["kid"] = json!(kid);
+        keys.push(key);
+    }
+    let mut encryption = keys[1].clone();
+    encryption["alg"] = json!("RSA-OAEP-256");
+    encryption["use"] = json!("enc");
+    encryption["kid"] = json!("enc-key");
+    keys.push(encryption);
+    let jwks = json!({"keys": keys});
 
     validate_client_jwks(&jwks)
         .expect("supported public signing keys should be accepted for private_key_jwt");
@@ -271,7 +253,7 @@ fn client_jwks_rejects_algorithm_key_type_mismatch() {
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "x": ed25519_public_x(),
             "alg": "RS256",
             "use": "sig",
             "kid": "wrong-alg"

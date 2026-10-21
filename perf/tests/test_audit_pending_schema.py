@@ -148,7 +148,11 @@ class FakeConnection:
             row = (7, 5 if self.has_exported_at else 0)
         elif "count(*) FROM oauth_token_issuances" in query:
             row = (100, 0)
-        elif "pg_database_size" in query or "wal_bytes::bigint" in query:
+        elif "wal_bytes::bigint" in query:
+            row = (0, "2026-10-21T00:00:00Z")
+        elif "FROM pg_stat_io WHERE object='wal'" in query:
+            row = (0, 0, 0, 0, 0, [["checkpointer", "wal", "normal", "2026-10-21T00:00:00Z"]])
+        elif "pg_database_size" in query:
             row = (0,)
         else:
             row = ()

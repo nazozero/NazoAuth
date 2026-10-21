@@ -1654,6 +1654,34 @@ fn oidc_federation_rejects_insecure_runtime_urls() {
 }
 
 #[test]
+fn federation_endpoint_policy_preserves_credentials_and_legal_query_urls() {
+    let config = oidc_provider_registry_config_with("client_secret", " secret+%: ");
+    let settings = Settings::from_config(&config).unwrap();
+    let provider = settings
+        .identity
+        .federation
+        .providers
+        .enabled_provider("oidc-upstream")
+        .unwrap();
+    let federation::ExternalLoginProviderAdapter::Oidc(oidc) = &provider.adapter else {
+        panic!("OIDC provider")
+    };
+    assert_eq!(oidc.client_secret, " secret+%: ");
+    for key in [
+        "authorization_endpoint",
+        "token_endpoint",
+        "jwks_url",
+        "redirect_uri",
+    ] {
+        let config =
+            oidc_provider_registry_config_with(key, "https://idp.example.test/endpoint/?tenant=a");
+        assert!(Settings::from_config(&config).is_ok(), "{key}");
+    }
+    let config = oidc_provider_registry_config_with("issuer", "https://idp.example.test?tenant=a");
+    assert!(Settings::from_config(&config).is_err());
+}
+
+#[test]
 fn federation_provider_strings_preserve_unicode_trimming_and_empty_options() {
     let config = oidc_provider_registry_config_with("display_name", "\u{3000} 登录 \u{2003}");
     let settings = Settings::from_config(&config).unwrap();

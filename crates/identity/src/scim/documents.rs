@@ -59,9 +59,9 @@ pub fn scim_service_provider_config_document_with_events(events_enabled: bool) -
     let mut document = json!({
         "id": "nazo-oauth-scim",
         "schemas": [SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA],
-        "patch": {"supported": true},
+        "patch": {"supported": false},
         "bulk": {"supported": false, "maxOperations": 0, "maxPayloadSize": 0},
-        "filter": {"supported": true, "maxResults": SCIM_MAX_PAGE_SIZE},
+        "filter": {"supported": false, "maxResults": SCIM_MAX_PAGE_SIZE},
         "changePassword": {"supported": false},
         "sort": {"supported": false},
         "etag": {"supported": false},

@@ -415,18 +415,12 @@ impl MfaAttemptThrottlePort for AllowedAttempts {
         &'a self,
         _tenant: TenantId,
         _user: UserId,
-        _session: &'a str,
         _window: u64,
         _maximum: u64,
     ) -> RepositoryFuture<'a, MfaAttemptThrottleDecision> {
         Box::pin(async { Ok(MfaAttemptThrottleDecision::Allowed) })
     }
-    fn clear_attempts<'a>(
-        &'a self,
-        _tenant: TenantId,
-        _user: UserId,
-        _session: &'a str,
-    ) -> RepositoryFuture<'a, ()> {
+    fn clear_attempts<'a>(&'a self, _tenant: TenantId, _user: UserId) -> RepositoryFuture<'a, ()> {
         Box::pin(async { Ok(()) })
     }
 }
@@ -461,7 +455,11 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
             return;
         }
     };
-    let pool = create_pool(url, 4).unwrap();
+    let database = crate::test_support::database::OwnedDatabase::new(&url).await;
+    nazo_postgres::run_pending_migrations(&database.url)
+        .await
+        .unwrap();
+    let pool = create_pool(database.url.clone(), 4).unwrap();
     let tenant = TenantContext::default_system();
     let user = UserId::new(Uuid::now_v7()).unwrap();
     let mut connection = get_conn(&pool).await.unwrap();
@@ -517,6 +515,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         SessionSnapshot::new(
             SessionRecord::new(
                 user,
+                0,
                 now,
                 vec!["pwd".to_owned()],
                 false,

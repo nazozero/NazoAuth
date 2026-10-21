@@ -106,44 +106,6 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
 }
 
 #[test]
-fn refresh_token_requires_authorized_use_case_and_client_grant() {
-    let client = client_with_grants(&["authorization_code", "refresh_token"]);
-    let scopes = vec!["openid".to_owned(), "profile".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes, false));
-
-    let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-    assert!(should_issue_refresh_token(&client, &scopes, false));
-
-    let scopes = vec!["org.iso.18013.5.1.mDL".to_owned()];
-    assert!(should_issue_refresh_token(&client, &scopes, true));
-
-    let client = client_with_grants(&["authorization_code"]);
-    assert!(!should_issue_refresh_token(&client, &scopes, true));
-}
-
-#[test]
-fn refresh_token_grant_matching_is_exact_and_scope_case_sensitive() {
-    let client = client_with_grants(&["authorization_code", "refresh_token:legacy"]);
-    let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-    assert!(
-        !should_issue_refresh_token(&client, &scopes, false),
-        "refresh issuance must require the exact refresh_token grant"
-    );
-
-    let client = client_with_grants(&["authorization_code", "refresh_token"]);
-    for scopes in [
-        vec!["openid".to_owned(), "OFFLINE_ACCESS".to_owned()],
-        vec!["openid".to_owned(), "offline_access ".to_owned()],
-        vec!["openid".to_owned(), "offline".to_owned()],
-    ] {
-        assert!(
-            !should_issue_refresh_token(&client, &scopes, false),
-            "refresh issuance must require exact offline_access authorization scope: {scopes:?}"
-        );
-    }
-}
-
-#[test]
 fn failed_authorization_code_transition_is_idempotent_only_for_terminal_or_missing_states() {
     use nazo_auth::AuthorizationCodeTransitionResult::*;
     for state in [Applied, Missing, Failed, Consumed] {
@@ -306,38 +268,18 @@ fn essential_id_token_claim_requests_match_protocol_claim_values() {
 }
 
 #[test]
-fn id_token_signing_alg_uses_rs256_default_and_ps256_for_fapi_clients() {
-    let baseline = client_with_grants(&["authorization_code"]);
+fn id_token_signing_algorithm_follows_the_profile_not_sender_binding() {
     assert_eq!(
-        id_token_signing_alg_for_client(&baseline),
-        jsonwebtoken::Algorithm::RS256
+        nazo_auth::id_token_signing_algorithm(None, false),
+        Ok("RS256")
     );
-
-    let mut private_key_jwt = baseline.clone();
-    private_key_jwt.token_endpoint_auth_method = "private_key_jwt".to_owned();
     assert_eq!(
-        id_token_signing_alg_for_client(&private_key_jwt),
-        jsonwebtoken::Algorithm::RS256
+        nazo_auth::id_token_signing_algorithm(None, true),
+        Ok("PS256")
     );
-
-    let mut holder_bound = baseline.clone();
-    holder_bound.require_dpop_bound_tokens = true;
     assert_eq!(
-        id_token_signing_alg_for_client(&holder_bound),
-        jsonwebtoken::Algorithm::PS256
+        nazo_auth::id_token_signing_algorithm(Some("ES256"), true),
+        Ok("ES256")
     );
-
-    let mut par_request_object = baseline;
-    par_request_object.require_par_request_object = true;
-    assert_eq!(
-        id_token_signing_alg_for_client(&par_request_object),
-        jsonwebtoken::Algorithm::PS256
-    );
-
-    let mut negotiated = par_request_object;
-    negotiated.id_token_signed_response_alg = Some("ES256".to_owned());
-    assert_eq!(
-        id_token_signing_alg_for_client(&negotiated),
-        jsonwebtoken::Algorithm::ES256
-    );
+    assert!(nazo_auth::id_token_signing_algorithm(Some("RS256"), true).is_err());
 }

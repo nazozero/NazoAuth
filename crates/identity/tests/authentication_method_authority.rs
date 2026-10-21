@@ -7,6 +7,7 @@ use nazo_identity::{
 fn session_amr_preserves_unknown_evidence_without_inventing_federation() {
     let mut session = SessionRecord::new(
         UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        0,
         1_700_000_000,
         vec!["pwd".into(), "hwk".into(), "vendor:custom".into()],
         false,

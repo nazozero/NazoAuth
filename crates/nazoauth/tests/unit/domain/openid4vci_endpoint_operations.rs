@@ -9,10 +9,10 @@ use nazo_openid4vci::application::{
     CredentialRequestContext, CredentialResponseBody, PreAuthorizedTokenRequest,
 };
 use nazo_openid4vci::{
-    CredentialAccess, CredentialAuthorization, CredentialConfiguration, CredentialRequest,
-    CredentialStoreError, CredentialStoreFuture, CredentialStorePort, DeferredCredential,
-    DeferredCredentialRequest, IssuanceNotification, NonceRecord, NotificationHandle,
-    NotificationRequest, StoredCredentialOffer, StoredCredentialResponse,
+    CredentialAccess, CredentialConfiguration, CredentialRequest, CredentialStoreError,
+    CredentialStoreFuture, CredentialStorePort, DeferredCredential, DeferredCredentialRequest,
+    IssuanceNotification, NonceRecord, NotificationHandle, NotificationRequest,
+    StoredCredentialOffer, StoredCredentialResponse,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
