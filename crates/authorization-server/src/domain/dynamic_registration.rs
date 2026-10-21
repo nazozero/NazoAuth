@@ -423,10 +423,20 @@ impl DynamicRegistrationApplication {
                     })?,
             ));
         }
-        // Updates validate against administrator-owned policy. Registration
-        // never grants an exception to PKCE on the client's behalf.
+        // OIDC confidential clients may use nonce instead of PKCE (RFC 9700
+        // section 2.1.1). Record that baseline registration policy once; an
+        // update must retain the administrator's current policy, including a
+        // later decision to require PKCE. Hardened clients never get it.
         if let Some(security_policy) = security_policy_override {
             request.security_policy = security_policy;
+        } else {
+            request.security_policy.allow_confidential_oidc_without_pkce =
+                !self.config.require_fapi2
+                    && !request.security_policy.requires_fapi2_security()
+                    && request.client_type == "confidential"
+                    && request.scopes.iter().any(|scope| scope == "openid")
+                    && !request.require_dpop_bound_tokens
+                    && !request.require_mtls_bound_tokens;
         }
         request.id_token_signed_response_alg = Some(
             nazo_auth::id_token_signing_algorithm(

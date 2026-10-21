@@ -288,8 +288,16 @@ impl DynamicRegistrationRequestGuard for Guard {
     }
 }
 fn application(store: Arc<Store>, guard: Arc<Guard>) -> DynamicRegistrationApplication {
+    application_with_config(store, guard, application_config())
+}
+
+fn application_with_config(
+    store: Arc<Store>,
+    guard: Arc<Guard>,
+    config: DynamicRegistrationConfig,
+) -> DynamicRegistrationApplication {
     DynamicRegistrationApplication::new(
-        application_config(),
+        config,
         store,
         Arc::new(FakeSecurity),
         DynamicRegistrationSecurityServices::new(
@@ -577,13 +585,58 @@ fn dynamic_registration_guard_preserves_fixed_window_threshold() {
 }
 
 #[test]
+fn dynamic_oidc_registration_limits_pkce_compatibility_to_baseline_confidential_clients() {
+    block_on(async {
+        for (auth, scope, dpop, mtls, fapi2, compatible) in [
+            ("client_secret_basic", "openid", false, false, false, true),
+            ("none", "openid", false, false, false, false),
+            ("client_secret_basic", "profile", false, false, false, false),
+            ("client_secret_basic", "openid", true, false, false, false),
+            ("client_secret_basic", "openid", false, true, false, false),
+            ("client_secret_basic", "openid", false, false, true, false),
+        ] {
+            let mut config = application_config();
+            config.require_fapi2 = fapi2;
+            let app = application_with_config(
+                Arc::new(Store::default()),
+                Arc::new(Guard::default()),
+                config,
+            );
+            let payload = serde_json::from_value(json!({
+                "redirect_uris": ["https://client.example/callback"],
+                "token_endpoint_auth_method": auth,
+                "scope": scope,
+                "dpop_bound_access_tokens": dpop,
+                "tls_client_certificate_bound_access_tokens": mtls,
+            }))
+            .unwrap();
+            let DynamicRegistrationResult::Created(created) = app
+                .create(payload, Some("initial-token"), "203.0.113.77")
+                .await
+                .unwrap()
+            else {
+                panic!("created result")
+            };
+            assert_eq!(
+                created
+                    .client
+                    .security_policy
+                    .allow_confidential_oidc_without_pkce,
+                compatible,
+                "{auth}, {scope}, dpop={dpop}, mtls={mtls}, fapi2={fapi2}",
+            );
+        }
+    });
+}
+
+#[test]
 fn configuration_update_keeps_administrator_policy_through_validation() {
     block_on(async {
         let store = Arc::new(Store::default());
         let app = application(store.clone(), Arc::new(Guard::default()));
         let created = create(&app).await;
         assert!(
-            !created
+            created
                 .client
                 .security_policy
                 .allow_confidential_oidc_without_pkce
@@ -591,7 +644,7 @@ fn configuration_update_keeps_administrator_policy_through_validation() {
         {
             let mut state = store.0.lock().unwrap();
             let policy = &mut state.client.as_mut().unwrap().registration.security_policy;
-            policy.allow_confidential_oidc_without_pkce = true;
+            policy.allow_confidential_oidc_without_pkce = false;
             policy.introspection_audiences = vec!["https://resource.example".to_owned()];
         }
         let DynamicRegistrationResult::Updated(updated) = app
@@ -607,7 +660,7 @@ fn configuration_update_keeps_administrator_policy_through_validation() {
             panic!("updated result")
         };
         assert!(
-            updated
+            !updated
                 .client
                 .security_policy
                 .allow_confidential_oidc_without_pkce

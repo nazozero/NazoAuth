@@ -528,7 +528,7 @@ async fn configured_initial_access_token_keeps_oauth_only_client_pkce_policy() {
 }
 
 #[actix_web::test]
-async fn configured_initial_access_token_keeps_confidential_oidc_pkce_required() {
+async fn configured_initial_access_token_registers_baseline_confidential_oidc_compatibility() {
     let store = FakeStore::new();
     let service = test::init_service(
         App::new()
@@ -559,7 +559,7 @@ async fn configured_initial_access_token_keeps_confidential_oidc_pkce_required()
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
     );
 }
 
@@ -597,8 +597,19 @@ async fn configured_initial_access_update_preserves_security_policy() {
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
     );
+
+    // An administrator can subsequently require PKCE. Client updates must
+    // retain that decision instead of reapplying the registration default.
+    store
+        .client
+        .lock()
+        .expect("client lock")
+        .as_mut()
+        .expect("registered client")
+        .security_policy
+        .allow_confidential_oidc_without_pkce = false;
 
     let updated = test::call_service(
         &service,

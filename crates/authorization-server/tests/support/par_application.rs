@@ -102,6 +102,34 @@ fn par_persists_bound_request_and_reports_write_failure() {
 }
 
 #[test]
+fn par_defers_required_token_binding_until_token_issuance() {
+    block_on(async {
+        for (require_dpop, require_mtls) in [(true, false), (false, true), (true, true)] {
+            let mut client = client(true);
+            client.require_dpop_bound_tokens = require_dpop;
+            client.require_mtls_bound_tokens = require_mtls;
+            let fixture = par_fixture(Ok(Some(client)));
+            let app = fixture.make_application();
+            app.begin_par("127.0.0.1")
+                .await
+                .unwrap()
+                .prepare_parameters(params(), false, None)
+                .unwrap()
+                .prepare_client(&transport(), false, false)
+                .await
+                .unwrap()
+                .par(facts(), None)
+                .await
+                .unwrap();
+            let stored = fixture.ports.stored_par.lock().unwrap();
+            assert_eq!(stored.len(), 1);
+            assert!(stored[0].1.dpop_jkt.is_none());
+            assert!(stored[0].1.mtls_x5t_s256.is_none());
+        }
+    });
+}
+
+#[test]
 fn par_rejects_two_token_bindings_but_allows_mtls_authentication_with_dpop() {
     block_on(async {
         for require_mtls in [false, true] {
