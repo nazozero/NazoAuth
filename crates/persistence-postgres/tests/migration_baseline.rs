@@ -371,8 +371,12 @@ async fn baseline_matches_release_and_adopts_populated_database_without_mutation
     drop(old);
     drop(new);
     drop(normalized);
+    // The fixture administrator owns cleanup across the owner and runtime logins.
+    // Dropping a client does not wait for PostgreSQL to close its backend.
+    let mut cleanup_url = url::Url::parse(&base).unwrap();
     for url in [&released, &fresh, &canonical] {
-        database::drop(url).await;
+        cleanup_url.set_path(url::Url::parse(url).unwrap().path());
+        database::drop(cleanup_url.as_str()).await;
     }
     admin
         .batch_execute(&format!("DROP ROLE {runtime}, {owner}"))
