@@ -264,6 +264,7 @@ class MatrixContext:
             f"{BASE_URL}/scim/v2/Users",
             headers=self.headers(self.tokens["a"]),
             json={
+                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
                 "userName": email,
                 "active": True,
                 "name": {"formatted": "RFC 9967 Matrix", "givenName": "RFC", "familyName": "Matrix"},
@@ -410,6 +411,7 @@ def handlers(context: MatrixContext) -> dict[str, Any]:
             f"{BASE_URL}/scim/v2/Users/{context.user_id}",
             headers=context.headers(context.tokens["a"]),
             json={
+                "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
                 "userName": email,
                 "active": True,
                 "name": {"formatted": "RFC PUT", "givenName": "RFC", "familyName": "PUT"},
