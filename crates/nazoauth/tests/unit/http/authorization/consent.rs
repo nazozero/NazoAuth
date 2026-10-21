@@ -179,10 +179,16 @@ impl ConsentLiveFixture {
             .await
             .expect("restricted Valkey ACL user should be configured");
         let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
-        let restricted_url =
-            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut restricted_url = url::Url::parse(&valkey_url).expect("VALKEY_URL should parse");
+        restricted_url
+            .set_username(username)
+            .expect("Valkey URL supports username");
+        restricted_url
+            .set_password(Some(password))
+            .expect("Valkey URL supports password");
         let mut valkey_builder = ValkeyBuilder::from_config(
-            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+            ValkeyConfig::from_url(restricted_url.as_str())
+                .expect("restricted VALKEY_URL should parse"),
         );
         valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
             performance.default_command_timeout = StdDuration::from_millis(1000);
@@ -304,6 +310,7 @@ impl ConsentLiveFixture {
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time,
             amr: vec!["pwd".to_owned()],
@@ -312,7 +319,7 @@ impl ConsentLiveFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )
@@ -434,11 +441,10 @@ async fn consent_page_response_exposes_only_page_safe_fields() {
         }
     ]);
 
-    let (status, body) = response_json(consent_page_response(
-        payload,
-        Some("csrf-token".to_owned()),
-    ))
-    .await;
+    let response = consent_page_response(payload, Some("csrf-token".to_owned()));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    assert_eq!(response.headers().get("pragma").unwrap(), "no-cache");
+    let (status, body) = response_json(response).await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["request_id"], "req-123");
@@ -578,7 +584,7 @@ async fn authorize_consent_fails_closed_when_consent_state_read_fails() {
                 format!(">{password}"),
                 format!(
                     "~{}",
-                    nazo_valkey::test_support::state_storage_key("oauth:session:*")
+                    nazo_valkey::test_support::state_storage_key("oauth:session:v2:*")
                 ),
                 "+@all".to_owned(),
             ],

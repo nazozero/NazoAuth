@@ -416,6 +416,19 @@ fn device_prepared_authentication_conflicts_and_missing_client_fail_before_io() 
     )
     .unwrap();
     assert_eq!(prepared.form().client_id.as_deref(), Some("client-1"));
+    let prepared = prepare_device_authorization(
+        DeviceAuthorizationForm {
+            client_id: None,
+            scope: None,
+            resources: vec![],
+            client_secret: None,
+            client_assertion: None,
+            client_assertion_type: None,
+        },
+        true,
+    )
+    .unwrap();
+    assert!(prepared.form().client_id.is_none());
 }
 #[test]
 fn ciba_decision_persists_audit_intent_before_state_transition_and_result_audit() {

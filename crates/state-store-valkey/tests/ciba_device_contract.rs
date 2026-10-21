@@ -487,7 +487,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
         issued_at: now,
         status: CibaStatus::Pending,
         interval_seconds: 5,
-        expires_at: now + 1,
+        expires_at: now + 60,
         retention_expires_at: now + 180,
         last_poll_at: None,
         ping_notification: Some(CibaPingNotification {
@@ -516,7 +516,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
 
     assert!(
         store
-            .claim_due_ping(now + 2, now + 17, 10)
+            .claim_due_ping(now + 61, now + 76, 10)
             .await
             .unwrap()
             .deliveries

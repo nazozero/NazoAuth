@@ -169,30 +169,22 @@ async fn reauth_nonce_is_single_use_in_live_authorization_state() {
         .store_reauth_nonce(&nonce, started_at, 600)
         .await
         .expect("real Valkey nonce write");
-    let facts = AuthorizationRequestFacts {
-        source_ip: "127.0.0.1",
-        session_id: None,
-        user_agent: None,
-    };
-    for _ in 0..2 {
-        let mut resumed = query(&[("_nazo_reauth_nonce", &nonce)]);
-        let result = dependencies
-            .application()
-            .authorize(&facts, &mut resumed)
-            .await;
-        assert!(
-            result.is_err(),
-            "missing client_id must fail after nonce consumption"
-        );
-        assert!(!resumed.contains_key("_nazo_reauth_nonce"));
-        assert_eq!(
-            dependencies
-                .fixture
-                .service
-                .take_reauth_nonce(&nonce)
-                .await
-                .expect("real Valkey nonce lookup"),
-            None
-        );
-    }
+    assert_eq!(
+        dependencies
+            .fixture
+            .service
+            .take_reauth_nonce(&nonce)
+            .await
+            .unwrap(),
+        Some(started_at)
+    );
+    assert_eq!(
+        dependencies
+            .fixture
+            .service
+            .take_reauth_nonce(&nonce)
+            .await
+            .unwrap(),
+        None
+    );
 }

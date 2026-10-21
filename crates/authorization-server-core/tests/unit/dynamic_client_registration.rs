@@ -278,7 +278,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
             id_token_encryption_enc_values_supported: Some(vec!["A256GCM".to_owned()]),
             request_object_signing_alg_values_supported: Some(vec![
                 "HS256".to_owned(),
-                "ES256".to_owned(),
+                "PS256".to_owned(),
             ]),
             request_object_encryption_alg_values_supported: Some(vec!["RSA-OAEP-256".to_owned()]),
             request_object_encryption_enc_values_supported: Some(vec!["A256GCM".to_owned()]),
@@ -288,7 +288,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
             ]),
             userinfo_signing_alg_values_supported: Some(vec![
                 "HS256".to_owned(),
-                "ES256".to_owned(),
+                "PS256".to_owned(),
             ]),
             userinfo_encryption_alg_values_supported: Some(vec![
                 "unsupported".to_owned(),
@@ -301,7 +301,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
             ]),
             authorization_signing_alg_values_supported: Some(vec![
                 "HS256".to_owned(),
-                "EdDSA".to_owned(),
+                "PS256".to_owned(),
             ]),
             authorization_encryption_alg_values_supported: Some(vec![
                 "unsupported".to_owned(),
@@ -342,7 +342,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
     );
     assert_eq!(
         prepared.request.request_object_signing_alg.as_deref(),
-        Some("ES256")
+        Some("PS256")
     );
     assert_eq!(
         prepared.request.request_object_encryption_alg.as_deref(),
@@ -365,7 +365,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
     );
     assert_eq!(
         prepared.request.userinfo_signed_response_alg.as_deref(),
-        Some("ES256")
+        Some("PS256")
     );
     assert_eq!(
         prepared.request.userinfo_encrypted_response_alg.as_deref(),
@@ -387,7 +387,7 @@ fn rp_metadata_choices_select_supported_single_values_and_reject_inconsistency()
             .request
             .authorization_signed_response_alg
             .as_deref(),
-        Some("EdDSA")
+        Some("PS256")
     );
     assert_eq!(
         prepared

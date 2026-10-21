@@ -105,6 +105,7 @@ async fn password_login_projection_tracks_current_state_and_tenant() {
             .await
             .unwrap(),
         Some(LoginAccountState {
+            authorization_epoch: 0,
             active: true,
             mfa_enabled: false
         })
@@ -151,6 +152,7 @@ async fn password_login_projection_tracks_current_state_and_tenant() {
             .await
             .unwrap(),
         Some(LoginAccountState {
+            authorization_epoch: 1,
             active: false,
             mfa_enabled: true
         })
@@ -3733,4 +3735,224 @@ async fn backup_verifier_consumption_rolls_back_with_its_audit_failure() {
     );
     drop(connection);
     cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn administrative_disable_terminates_grants_across_reenable() {
+    let Some((pool, tenant, actor)) = database_fixture().await else {
+        return;
+    };
+    let (_, _, subject) = database_fixture().await.unwrap();
+    let users = UserRepository::new(pool.clone());
+    let clients = OAuthClientRepository::new(pool.clone());
+    let client = oauth_client(tenant, format!("termination-{}", Uuid::now_v7()));
+    clients.upsert(&client, None).await.unwrap();
+    let client = clients
+        .by_client_id(client.tenant_id, &client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET role='admin', admin_level=10 WHERE id=$1")
+        .bind::<SqlUuid, _>(actor.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let contract = json!({
+        "subject": subject.as_uuid().to_string(), "scopes": ["openid"],
+        "audiences": ["resource://default"], "authorization_details": [],
+        "authentication_context": {"version": 1, "issuer": "https://issuer.example",
+            "audience": client.client_id, "auth_time": 1_700_000_000, "amr": ["pwd"],
+            "userinfo_claims": [], "id_token_claims": []}
+    });
+    let digest = blake3::hash(&serde_json::to_vec(&contract).unwrap())
+        .as_bytes()
+        .to_vec();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO oauth_refresh_contracts (tenant_id,contract_blake3,contract) VALUES ($1,$2,$3)")
+        .bind::<SqlUuid,_>(tenant.tenant_id.as_uuid()).bind::<diesel::sql_types::Binary,_>(&digest)
+        .bind::<Jsonb,_>(contract).execute(&mut connection).await.unwrap();
+    drop(connection);
+    for owner in ["user", "client"] {
+        let family = Uuid::now_v7();
+        let mut connection = get_conn(&pool).await.unwrap();
+        sql_query("INSERT INTO oauth_refresh_families (tenant_id,token_family_id,client_id,user_id,contract_blake3,current_member_id,current_token_blake3,current_audience,current_issued_at,current_expires_at) VALUES ($1,$2,$3,$4,$5,$2,decode(replace($2::text,'-','')||replace($2::text,'-',''),'hex'),'[\"resource://default\"]',now(),now()+interval '1 hour')")
+            .bind::<SqlUuid,_>(tenant.tenant_id.as_uuid()).bind::<SqlUuid,_>(family)
+            .bind::<SqlUuid,_>(client.id).bind::<SqlUuid,_>(subject.as_uuid())
+            .bind::<diesel::sql_types::Binary,_>(&digest)
+            .execute(&mut connection).await.unwrap();
+        sql_query("INSERT INTO user_client_grants (tenant_id,user_id,client_id,first_authorized_at,last_authorized_at,last_scopes) VALUES ($1,$2,$3,now(),now(),'[\"openid\"]')")
+            .bind::<SqlUuid,_>(tenant.tenant_id.as_uuid()).bind::<SqlUuid,_>(subject.as_uuid())
+            .bind::<SqlUuid,_>(client.id).execute(&mut connection).await.unwrap();
+        drop(connection);
+        for active in [false, true] {
+            if owner == "user" {
+                let outcome = users
+                    .admin_update_with_required_audit(
+                        tenant,
+                        actor,
+                        subject,
+                        AdminUserUpdate {
+                            role: None,
+                            admin_level: None,
+                            active: Some(active),
+                        },
+                        "fixture-source".to_owned(),
+                    )
+                    .await
+                    .unwrap();
+                assert!(matches!(outcome, AdminUserUpdateOutcome::Updated(_)));
+            } else {
+                let current = clients
+                    .by_client_id(client.tenant_id, &client.client_id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let mut changed = current.clone();
+                changed.is_active = active;
+                clients
+                    .update_metadata_if_current(&current, &changed)
+                    .await
+                    .unwrap();
+            }
+        }
+        #[derive(QueryableByName)]
+        struct State {
+            #[diesel(sql_type=diesel::sql_types::Bool)]
+            revoked: bool,
+            #[diesel(sql_type=diesel::sql_types::BigInt)]
+            grants: i64,
+        }
+        let mut connection = get_conn(&pool).await.unwrap();
+        let state = sql_query("SELECT revoked_at IS NOT NULL AS revoked, (SELECT count(*) FROM user_client_grants WHERE user_id=$2 AND client_id=$3) AS grants FROM oauth_refresh_families WHERE token_family_id=$1")
+            .bind::<SqlUuid,_>(family).bind::<SqlUuid,_>(subject.as_uuid()).bind::<SqlUuid,_>(client.id)
+            .get_result::<State>(&mut connection).await.unwrap();
+        assert!(
+            state.revoked,
+            "{owner} reenable cannot revive a refresh family"
+        );
+        assert_eq!(state.grants, 0);
+    }
+    let account = users
+        .public_account_by_id(tenant.tenant_id, subject)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(account.principal.active);
+    assert_eq!(account.principal.authorization_epoch, 1);
+    let principal = users
+        .principal_by_tenant_id(tenant.tenant_id, subject)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        principal.authorization_epoch,
+        account.principal.authorization_epoch
+    );
+    cleanup_oauth_client(&pool, client.id).await;
+    cleanup(&pool, subject).await;
+    cleanup(&pool, actor).await;
+}
+
+#[tokio::test]
+async fn credential_deletion_rolls_back_when_required_audit_fails() {
+    use diesel_async::SimpleAsyncConnection;
+    let Some((pool, tenant, user)) = database_fixture().await else {
+        return;
+    };
+    let passkeys = PasskeyRepository::new(pool.clone());
+    let federation = FederationRepository::new(pool.clone());
+    let key = passkeys
+        .insert(
+            tenant.tenant_id,
+            user,
+            test_passkey(user.as_uuid().as_bytes(), 0),
+            "device".into(),
+        )
+        .await
+        .unwrap();
+    let link = federation
+        .insert(NewFederationLink {
+            tenant_id: tenant.tenant_id,
+            user_id: user,
+            provider_type: "oidc".into(),
+            provider_id: "fixture".into(),
+            subject: user.as_uuid().to_string(),
+            email: "user@example.test".into(),
+            claims: json!({}),
+        })
+        .await
+        .unwrap();
+    let name = format!("credential_delete_audit_fail_{}", Uuid::now_v7().simple());
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type IN ('passkey_deleted','external_identity_unlinked') AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
+    drop(connection);
+    let key_failed = passkeys.delete(tenant.tenant_id, user, key.id).await;
+    let link_failed = federation.delete(tenant.tenant_id, user, link.id).await;
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection
+        .batch_execute(&format!(
+            "DROP TRIGGER {name} ON security_audit_events; DROP FUNCTION {name}();"
+        ))
+        .await
+        .unwrap();
+    drop(connection);
+    assert!(key_failed.is_err());
+    assert!(link_failed.is_err());
+    assert_eq!(
+        passkeys
+            .list_summaries(tenant.tenant_id, user)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        federation
+            .list_summaries(tenant.tenant_id, user)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        passkeys
+            .delete(tenant.tenant_id, user, key.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        federation
+            .delete(tenant.tenant_id, user, link.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        !passkeys
+            .delete(tenant.tenant_id, user, key.id)
+            .await
+            .unwrap()
+    );
+    assert!(
+        federation
+            .delete(tenant.tenant_id, user, link.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    #[derive(QueryableByName)]
+    struct Count {
+        #[diesel(sql_type=diesel::sql_types::BigInt)]
+        count: i64,
+    }
+    let mut connection = get_conn(&pool).await.unwrap();
+    for event in ["passkey_deleted", "external_identity_unlinked"] {
+        let count = sql_query("SELECT count(*) AS count FROM security_audit_events WHERE event_type=$1 AND payload->>'user_id'=$2")
+            .bind::<Text,_>(event).bind::<Text,_>(user.as_uuid().to_string()).get_result::<Count>(&mut connection).await.unwrap();
+        assert_eq!(count.count, 1);
+    }
+    drop(connection);
+    cleanup(&pool, user).await;
 }

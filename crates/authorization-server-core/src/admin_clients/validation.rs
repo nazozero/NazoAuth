@@ -41,6 +41,7 @@ mod mtls_tests;
 mod test_support;
 
 pub(super) struct ClientMetadata<'a> {
+    require_fapi2: bool,
     client_type: &'a str,
     redirect_uris: &'a [String],
     post_logout_redirect_uris: &'a [String],
@@ -118,6 +119,7 @@ impl<'a> ClientMetadata<'a> {
             introspection_encrypted_response_enc: request
                 .introspection_encrypted_response_enc
                 .as_deref(),
+            require_fapi2: request.security_policy.requires_fapi2_security(),
             userinfo_signed_response_alg: request.userinfo_signed_response_alg.as_deref(),
             userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg.as_deref(),
             userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc.as_deref(),
@@ -173,6 +175,7 @@ impl<'a> ClientMetadata<'a> {
             introspection_encrypted_response_enc: client
                 .introspection_encrypted_response_enc
                 .as_deref(),
+            require_fapi2: client.security_policy.requires_fapi2_security(),
             userinfo_signed_response_alg: client.userinfo_signed_response_alg.as_deref(),
             userinfo_encrypted_response_alg: client.userinfo_encrypted_response_alg.as_deref(),
             userinfo_encrypted_response_enc: client.userinfo_encrypted_response_enc.as_deref(),
@@ -437,6 +440,40 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         let logout = validate_logout_uri("frontchannel_logout_uri", uri)?;
         validate_frontchannel_logout_origin(&logout, metadata.redirect_uris)?;
     }
+    if metadata.require_fapi2 {
+        for (field, algorithm) in [
+            (
+                "id_token_signed_response_alg",
+                metadata.id_token_signed_response_alg,
+            ),
+            (
+                "request_object_signing_alg",
+                metadata.request_object_signing_alg,
+            ),
+            (
+                "token_endpoint_auth_signing_alg",
+                metadata.token_endpoint_auth_signing_alg,
+            ),
+            (
+                "userinfo_signed_response_alg",
+                metadata.userinfo_signed_response_alg,
+            ),
+            (
+                "authorization_signed_response_alg",
+                metadata.authorization_signed_response_alg,
+            ),
+            (
+                "introspection_signed_response_alg",
+                metadata.introspection_signed_response_alg,
+            ),
+        ] {
+            if algorithm
+                .is_some_and(|algorithm| !crate::FAPI2_JWT_SIGNING_ALGS.contains(&algorithm))
+            {
+                return invalid(format!("{field} must use a FAPI2 signing algorithm"));
+            }
+        }
+    }
     Ok(keys)
 }
 
@@ -498,10 +535,7 @@ fn validate_jwe_metadata(
                 .copied()
                 .unwrap_or_default()
             {
-                1 => Ok(()),
-                2.. => invalid(format!(
-                    "启用 {capability_name} 必须且只能配置一个匹配的 jwks 加密公钥"
-                )),
+                1.. => Ok(()),
                 _ => invalid(format!(
                     "启用 {capability_name} 必须配置匹配的 jwks 加密公钥"
                 )),

@@ -258,14 +258,35 @@ async fn anonymous_preauthorized_rejects_duplicate_dpop_headers() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let mut infrastructure = state.get_ref().clone();
+    Arc::make_mut(&mut infrastructure.settings)
+        .protocol
+        .dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
+    let state = Data::new(infrastructure);
+    let key = crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let signed_request = crate::test_support::dpop_token_request(state.settings.as_ref(), &key);
+    let proof = signed_request
+        .headers()
+        .get("DPoP")
+        .unwrap()
+        .to_str()
+        .unwrap();
     let issuer = Arc::new(Issuer::default());
-    let request = actix_web::test::TestRequest::post()
-        .uri("/token")
-        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
-        .insert_header(("DPoP", "proof-one"))
-        .insert_header(("DPoP", "proof-two"))
-        .to_http_request();
-    let response = token_with_credential_issuer(
+    for duplicate in [true, false] {
+        let mut request = actix_web::test::TestRequest::post()
+            .uri("/token")
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .insert_header(("Host", "issuer.example"))
+            .insert_header(("DPoP", proof));
+        if duplicate {
+            request = request.append_header(("DPoP", proof));
+        }
+        let request = request.to_http_request();
+        assert_eq!(
+            request.headers().get_all("DPoP").count(),
+            if duplicate { 2 } else { 1 }
+        );
+        let response = token_with_credential_issuer(
         state.clone(),
         request,
         Bytes::from(
@@ -281,17 +302,24 @@ async fn anonymous_preauthorized_rejects_duplicate_dpop_headers() {
         },
     )
     .await;
-    assert_token_error(
-        response,
-        StatusCode::BAD_REQUEST,
-        "invalid_dpop_proof",
-        true,
-    )
-    .await;
-    assert!(
-        issuer.requests.lock().unwrap().is_empty(),
-        "a duplicated DPoP header must never reach the operation"
-    );
+        if duplicate {
+            assert_token_error(
+                response,
+                StatusCode::BAD_REQUEST,
+                "invalid_dpop_proof",
+                true,
+            )
+            .await;
+            assert!(issuer.requests.lock().unwrap().is_empty());
+        } else {
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "the same valid proof alone must reach issuance"
+            );
+            assert_eq!(issuer.requests.lock().unwrap().len(), 1);
+        }
+    }
 }
 
 #[actix_web::test]
@@ -313,41 +341,69 @@ async fn authenticated_preauthorized_rejects_duplicate_dpop_headers() {
         true,
     )
     .await;
+    let mut infrastructure = state.get_ref().clone();
+    Arc::make_mut(&mut infrastructure.settings)
+        .protocol
+        .dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
+    let state = Data::new(infrastructure);
+    let key = crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
+    let signed_request = crate::test_support::dpop_token_request(state.settings.as_ref(), &key);
+    let proof = signed_request
+        .headers()
+        .get("DPoP")
+        .unwrap()
+        .to_str()
+        .unwrap();
     let issuer = Arc::new(Issuer::default());
-    let request = actix_web::test::TestRequest::post()
-        .uri("/token")
-        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
-        .insert_header(("DPoP", "proof-one"))
-        .insert_header(("DPoP", "proof-two"))
-        .to_http_request();
-    let response = token_with_credential_issuer(
-        state.clone(),
-        request,
-        Bytes::from(format!(
-            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code\
+    for duplicate in [true, false] {
+        let mut request = actix_web::test::TestRequest::post()
+            .uri("/token")
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .insert_header(("Host", "issuer.example"))
+            .insert_header(("DPoP", proof));
+        if duplicate {
+            request = request.append_header(("DPoP", proof));
+        }
+        let request = request.to_http_request();
+        assert_eq!(
+            request.headers().get_all("DPoP").count(),
+            if duplicate { 2 } else { 1 }
+        );
+        let response = token_with_credential_issuer(
+            state.clone(),
+            request,
+            Bytes::from(format!(
+                "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code\
              &pre-authorized_code=accepted-code&client_id={client_id}&client_secret={secret}"
-        )),
-        Arc::new(
-            crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
-                .unwrap(),
-        ),
-        Openid4vcTokenHandles {
-            credential_issuer: Some(issuer.clone()),
-            client_attestation: None,
-        },
-    )
-    .await;
-    assert_token_error(
-        response,
-        StatusCode::BAD_REQUEST,
-        "invalid_dpop_proof",
-        true,
-    )
-    .await;
-    assert!(
-        issuer.requests.lock().unwrap().is_empty(),
-        "a duplicated DPoP header must never reach the operation"
-    );
+            )),
+            Arc::new(
+                crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                    .unwrap(),
+            ),
+            Openid4vcTokenHandles {
+                credential_issuer: Some(issuer.clone()),
+                client_attestation: None,
+            },
+        )
+        .await;
+        if duplicate {
+            assert_token_error(
+                response,
+                StatusCode::BAD_REQUEST,
+                "invalid_dpop_proof",
+                true,
+            )
+            .await;
+            assert!(issuer.requests.lock().unwrap().is_empty());
+        } else {
+            assert_eq!(
+                response.status(),
+                StatusCode::OK,
+                "the same valid proof alone must reach issuance"
+            );
+            assert_eq!(issuer.requests.lock().unwrap().len(), 1);
+        }
+    }
 }
 
 #[actix_web::test]

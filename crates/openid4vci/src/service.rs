@@ -26,12 +26,13 @@ where
 
     fn persist_pre_authorized_access<'a>(
         &'a self,
+        offer: &'a [u8],
         token_hash: &'a str,
         access: &'a CredentialAccess,
         registered_client_id: Option<&'a str>,
     ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
         self.as_ref()
-            .persist_pre_authorized_access(token_hash, access, registered_client_id)
+            .persist_pre_authorized_access(offer, token_hash, access, registered_client_id)
     }
 
     fn offer<'a>(
@@ -46,7 +47,7 @@ where
         self.as_ref().offer(tenant_id, id, now)
     }
 
-    fn consume_pre_authorized_offer<'a>(
+    fn prepare_pre_authorized_offer<'a>(
         &'a self,
         tenant_id: Uuid,
         code_hash: &'a str,
@@ -55,10 +56,10 @@ where
         now: DateTime<Utc>,
     ) -> crate::CredentialStoreFuture<
         'a,
-        Result<Option<crate::CredentialAuthorization>, crate::CredentialStoreError>,
+        Result<Option<crate::PreparedPreAuthorizedOffer>, crate::CredentialStoreError>,
     > {
         self.as_ref()
-            .consume_pre_authorized_offer(tenant_id, code_hash, tx_code, client_id, now)
+            .prepare_pre_authorized_offer(tenant_id, code_hash, tx_code, client_id, now)
     }
 
     fn issue_nonce<'a>(
@@ -570,8 +571,8 @@ where
                 let protected = DeferredPayload {
                     dataset,
                     status: issuance.status,
-                    issued_at: now,
-                    expires_at: issuance.expires_at,
+                    issued_at: batch_privacy_claim_time(now),
+                    expires_at: batch_privacy_claim_time(issuance.expires_at),
                 };
                 let deferred = crate::DeferredCredential {
                     selection: Some(selection),

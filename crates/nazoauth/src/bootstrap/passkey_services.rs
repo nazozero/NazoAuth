@@ -48,16 +48,6 @@ impl TracingPasskeyAudit {
                     ("reason", json!(reason.as_str())),
                 ]),
             ),
-            nazo_identity::PasskeyAuditEvent::Registered {
-                user_id,
-                credential_id,
-            } => (
-                "passkey_registered",
-                audit_fields([
-                    ("user_id", json!(user_id.as_uuid())),
-                    ("credential_id", json!(credential_id)),
-                ]),
-            ),
         }
     }
 }

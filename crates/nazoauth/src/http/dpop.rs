@@ -10,6 +10,7 @@ pub(crate) fn dpop_request_facts(request: &HttpRequest) -> DpopRequestFacts<'_> 
         method: http::Method::from_bytes(request.method().as_str().as_bytes())
             .expect("HTTP method is valid"),
         path: request.uri().path(),
+        authority: nazo_http_actix::dpop_request_authority(request),
         proof: nazo_http_actix::dpop_proof_header(request.headers()),
         proof_present: dpop_proof_present(request),
     }

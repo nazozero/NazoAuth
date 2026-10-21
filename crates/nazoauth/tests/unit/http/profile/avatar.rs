@@ -342,6 +342,7 @@ impl LiveAvatarFixture {
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned()],
@@ -350,7 +351,7 @@ impl LiveAvatarFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )
@@ -601,6 +602,7 @@ fn pending_direct_claim(
                 .expect("default tenant ID should be valid"),
             user_id: nazo_identity::UserId::new(user.id).expect("fixture user ID should be valid"),
             expected_avatar_url: None,
+            expected_avatar_revision: user.avatar_revision,
             staging_object_id: upload_id.to_owned(),
             expires_at,
         },
@@ -1441,7 +1443,7 @@ async fn upload_avatar_maps_multipart_parse_and_profile_overview_failures() {
             .fresh_user(overview_user.id)
             .await
             .avatar_url
-            .is_some()
+            .is_none()
     );
 }
 
@@ -1521,6 +1523,7 @@ async fn upload_avatar_reports_session_lookup_failure_after_valid_csrf_before_re
         keyset: fixture.state.keyset.clone(),
     });
     let payload = SessionPayload {
+        authorization_epoch: 0,
         user_id: Uuid::now_v7(),
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".to_owned()],
@@ -1529,7 +1532,7 @@ async fn upload_avatar_reports_session_lookup_failure_after_valid_csrf_before_re
     };
     valkey_set_ex(
         &state.valkey,
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
         serde_json::to_string(&payload).expect("session should serialize"),
         state.settings.session.session_ttl_seconds,
     )
@@ -1574,6 +1577,7 @@ async fn delete_avatar_reports_session_lookup_failure_after_valid_csrf_before_pr
         keyset: fixture.state.keyset.clone(),
     });
     let payload = SessionPayload {
+        authorization_epoch: 0,
         user_id: Uuid::now_v7(),
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".to_owned()],
@@ -1582,7 +1586,7 @@ async fn delete_avatar_reports_session_lookup_failure_after_valid_csrf_before_pr
     };
     valkey_set_ex(
         &state.valkey,
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
         serde_json::to_string(&payload).expect("session should serialize"),
         state.settings.session.session_ttl_seconds,
     )

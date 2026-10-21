@@ -33,17 +33,10 @@ use serde_json::json;
 pub(crate) const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 pub(crate) const JWT_BEARER_ASSERTION_TYP: &str = "oauth-jwt-bearer+jwt";
 
-pub fn jwt_bearer_grant_key(
-    assertion_jti: &str,
-    dpop_jkt: Option<&str>,
-    mtls_x5t_s256: Option<&str>,
-) -> String {
-    format!(
-        "jwt_bearer:{}:{}:{}",
-        blake3_hex(assertion_jti),
-        dpop_jkt.map(blake3_hex).unwrap_or_default(),
-        mtls_x5t_s256.map(blake3_hex).unwrap_or_default(),
-    )
+pub fn jwt_bearer_grant_key(assertion_jti: &str) -> String {
+    // The durable receipt is already scoped to the authenticated client.
+    // A different valid sender proof cannot create a second grant identity.
+    format!("jwt_bearer:{}", blake3_hex(assertion_jti))
 }
 
 #[derive(Debug)]
@@ -313,11 +306,7 @@ pub async fn token_jwt_bearer_with_service(
         token_service,
         client,
         TokenIssuanceMode::SingleUse {
-            grant_key: jwt_bearer_grant_key(
-                &assertion.jti,
-                sender.dpop_jkt.as_deref(),
-                sender.mtls_x5t_s256.as_deref(),
-            ),
+            grant_key: jwt_bearer_grant_key(&assertion.jti),
             grant_expires_at: assertion.expires_at,
         },
         TokenIssue {

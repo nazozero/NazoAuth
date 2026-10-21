@@ -66,21 +66,18 @@ impl DeviceDecisionHandles {
             audit,
         }
     }
-    pub fn check_admission(
+    pub fn acquire_request(
         &self,
         admission: CapabilityAdmission,
-    ) -> Result<(), OAuthEndpointError> {
-        if nazo_auth::module_admissible(
-            self.runtime.load_full().as_ref(),
-            nazo_runtime_modules::ModuleId::DeviceAuthorization,
-            admission,
-        ) {
-            Ok(())
-        } else {
-            Err(device_authorization_request_error(
-                DeviceAuthorizationRequestError::Disabled,
-            ))
-        }
+    ) -> Result<nazo_runtime_modules::RequestLease, OAuthEndpointError> {
+        self.runtime
+            .lease(
+                nazo_runtime_modules::ModuleId::DeviceAuthorization,
+                admission,
+            )
+            .ok_or_else(|| {
+                device_authorization_request_error(DeviceAuthorizationRequestError::Disabled)
+            })
     }
     pub async fn enforce_creation_rate_limit(
         &self,

@@ -80,7 +80,7 @@ async fn issue_counted(
                 grant_type: Some(nazo_auth::GrantType::ClientCredentials),
                 client_epoch: 0,
                 config: &config,
-                modules: &modules,
+                modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
                 authorization: &authorization,
                 security_audit: audit,
                 remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -461,10 +461,19 @@ async fn revoked_audit_append_execute_fails_the_candidate_commit() {
     .execute(&mut admin)
     .await
     .expect("restricted role should be creatable");
-    sql_query(format!("GRANT CONNECT ON DATABASE oauth TO \"{role}\""))
-        .execute(&mut admin)
-        .await
-        .expect("connect grant should apply");
+    let database_name = diesel::select(diesel::dsl::sql::<diesel::sql_types::Text>(
+        "current_database()",
+    ))
+    .get_result::<String>(&mut admin)
+    .await
+    .unwrap()
+    .replace('"', "\"\"");
+    sql_query(format!(
+        "GRANT CONNECT ON DATABASE \"{database_name}\" TO \"{role}\""
+    ))
+    .execute(&mut admin)
+    .await
+    .expect("connect grant should apply");
     nazo_postgres::configure_runtime_role(&database_url, &role)
         .await
         .expect("the production grant path should configure the role");
@@ -602,10 +611,12 @@ async fn revoked_audit_append_execute_fails_the_candidate_commit() {
     assert_eq!(audit.counts(), (0, 3));
 
     drop(restricted_pool);
-    sql_query(format!("REVOKE ALL ON DATABASE oauth FROM \"{role}\""))
-        .execute(&mut admin)
-        .await
-        .expect("database grant should be revoked");
+    sql_query(format!(
+        "REVOKE ALL ON DATABASE \"{database_name}\" FROM \"{role}\""
+    ))
+    .execute(&mut admin)
+    .await
+    .expect("database grant should be revoked");
     sql_query(format!("DROP OWNED BY \"{role}\""))
         .execute(&mut admin)
         .await

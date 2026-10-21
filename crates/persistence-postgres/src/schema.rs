@@ -142,10 +142,12 @@ diesel::table! {
 
 diesel::table! {
     users (id) {
+        deleted_at -> Nullable<Timestamptz>,
         id -> Uuid, tenant_id -> Uuid, realm_id -> Uuid, organization_id -> Uuid,
         username -> Varchar, email -> Varchar, password_hash -> Varchar, is_active -> Bool,
         mfa_enabled -> Bool, created_at -> Timestamptz, updated_at -> Timestamptz,
         email_verified -> Bool, display_name -> Nullable<Varchar>, avatar_url -> Nullable<Varchar>,
+        avatar_revision -> Int8,
         given_name -> Nullable<Varchar>, family_name -> Nullable<Varchar>, middle_name -> Nullable<Varchar>,
         nickname -> Nullable<Varchar>, profile_url -> Nullable<Varchar>, website_url -> Nullable<Varchar>,
         gender -> Nullable<Varchar>, birthdate -> Nullable<Varchar>, zoneinfo -> Nullable<Varchar>,

@@ -19,6 +19,7 @@ profile requirement.
 - Password authentication for an MFA-enabled user creates a pending MFA session, not a fully authenticated session.
 - `current_session` rejects pending MFA sessions. Authorization and profile-management endpoints therefore do not treat password-only MFA sessions as logged in.
 - `/auth/me` returns `mfa_required: true` for pending MFA sessions so a frontend can continue the challenge without losing the HTTPOnly session cookie.
+- MFA verification attempts share the tenant/account failure window across pending login sessions. Starting another password login does not reset that budget.
 - TOTP uses HMAC-SHA1, six digits, 30-second steps, and a one-step clock skew window.
 - Confirmed TOTP credentials track the last accepted time step and reject replay of the same or older step.
 - Backup codes are generated as high-entropy display codes, normalized before verification, Argon2id-hashed at rest, and consumed once.

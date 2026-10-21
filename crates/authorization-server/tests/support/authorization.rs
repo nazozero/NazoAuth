@@ -670,6 +670,7 @@ pub fn account() -> PublicAccount {
     let now = Utc::now();
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::from_u128(10)).unwrap(),
             tenant: TenantContext::default_system(),
             role: UserRole::User,
@@ -690,6 +691,7 @@ pub fn session() -> SessionSnapshot {
     let now = Utc::now();
     let mut record = SessionRecord::new(
         account().user_id(),
+        0,
         now.timestamp(),
         vec!["pwd".into()],
         false,

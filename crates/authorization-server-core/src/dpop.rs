@@ -123,17 +123,9 @@ struct DpopHeader {
     #[serde(
         rename = "crit",
         default,
-        deserialize_with = "deserialize_present_header"
+        deserialize_with = "nazo_crypto::deserialize_present_header"
     )]
     critical_extension_present: bool,
-}
-
-fn deserialize_present_header<'de, D>(d: D) -> Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let _ = serde::de::IgnoredAny::deserialize(d)?;
-    Ok(true)
 }
 
 #[derive(Deserialize)]

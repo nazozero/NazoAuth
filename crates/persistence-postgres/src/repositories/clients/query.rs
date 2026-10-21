@@ -144,7 +144,7 @@ impl OAuthClientRepository {
         let clients = oauth_clients::table
             .filter(oauth_clients::tenant_id.eq(tenant_id))
             .select(OAuthClientRecord::as_select())
-            .order(oauth_clients::created_at.desc())
+            .order((oauth_clients::created_at.desc(), oauth_clients::id.desc()))
             .limit(limit)
             .offset(offset)
             .load::<OAuthClientRecord>(&mut connection)

@@ -269,6 +269,7 @@ impl LiveAdminClientListFixture {
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
             amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
@@ -277,7 +278,7 @@ impl LiveAdminClientListFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )

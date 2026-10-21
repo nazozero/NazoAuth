@@ -25,6 +25,7 @@ fn fixture_user() -> PublicAccount {
         .expect("fixture timestamp is valid");
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::from_u128(0x11111111111111111111111111111111))
                 .expect("fixture user ID is non-nil"),
             tenant: TenantContext::default_system(),
@@ -211,7 +212,7 @@ fn filter_and_identity_normalization_are_case_stable() {
 
 #[test]
 fn patch_schema_and_operations_preserve_scim_error_semantics() {
-    assert!(validate_patch_schema(&[]).is_ok());
+    assert!(validate_patch_schema(&[]).is_err());
     assert!(validate_patch_schema(&[SCIM_PATCH_SCHEMA.to_owned()]).is_ok());
     let schema_error = validate_patch_schema(&[SCIM_USER_SCHEMA.to_owned()])
         .expect_err("unsupported schema must fail");
@@ -495,4 +496,54 @@ fn scim_json_models_deserialize_post_and_patch_inputs_without_extra_dtos() {
         normalize_patch(patch.operations).unwrap().active,
         Some(false)
     );
+}
+
+#[test]
+fn scim_wire_attributes_are_case_insensitive_and_schema_is_required() {
+    use nazo_identity::scim::{ScimPatchRequest, decode_scim_request};
+    let user: ScimUserRequest = decode_scim_request(
+        json!({
+            "SCHEMAS": [SCIM_USER_SCHEMA], "USERNAME": "alice@example.test",
+            "NAME": {"GIVENNAME": "Alice"},
+            "EMAILS": [{"VALUE": "alice@example.test", "PRIMARY": true}]
+        }),
+        SCIM_USER_SCHEMA,
+    )
+    .unwrap();
+    let user = normalize_scim_user_payload(user, true).unwrap();
+    assert_eq!(user.given_name.as_deref(), Some("Alice"));
+    let patch: ScimPatchRequest = decode_scim_request(
+        json!({
+            "SCHEMAS": [SCIM_PATCH_SCHEMA], "operations": [{"OP": "REPLACE",
+            "VALUE": {"ACTIVE": false, "NAME": {"FAMILYNAME": "Smith"}}}]
+        }),
+        SCIM_PATCH_SCHEMA,
+    )
+    .unwrap();
+    let patch = normalize_patch(patch.operations).unwrap();
+    assert_eq!(patch.active, Some(false));
+    assert_eq!(patch.family_name.as_deref(), Some("Smith"));
+    for value in [
+        json!({"userName": "a@example.test"}),
+        json!({"schemas": []}),
+        json!({"schemas": [SCIM_USER_SCHEMA, "unknown"]}),
+        json!({"schemas": [SCIM_USER_SCHEMA], "userName": "a", "USERNAME": "b"}),
+    ] {
+        assert!(decode_scim_request::<ScimUserRequest>(value, SCIM_USER_SCHEMA).is_err());
+    }
+}
+
+#[test]
+fn scim_eq_filter_parses_operator_case_whitespace_and_json_escapes() {
+    assert_eq!(
+        normalize_scim_user_filter(Some(r#"USERNAME   EQ   "alice\u0040example.test""#)).unwrap(),
+        Some("alice@example.test".to_owned())
+    );
+    for filter in [
+        r#"userName eq "alice@example.test" or active eq true"#,
+        r#"userName eq "alice\q@example.test""#,
+        r#"userName ne "alice@example.test""#,
+    ] {
+        assert!(normalize_scim_user_filter(Some(filter)).is_err());
+    }
 }

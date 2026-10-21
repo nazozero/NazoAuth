@@ -277,6 +277,7 @@ fn account() -> PublicAccount {
     let now = Utc::now();
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::now_v7()).unwrap(),
             tenant: TenantContext::default_system(),
             role: UserRole::User,

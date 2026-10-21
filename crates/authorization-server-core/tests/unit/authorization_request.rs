@@ -122,12 +122,30 @@ fn signed_request_object_json(now: i64) -> Value {
 
 fn signed_policy(now: i64) -> RequestObjectPolicy<'static> {
     RequestObjectPolicy {
+        require_issuer_audience: false,
         issuer: "https://issuer.example",
         client_id: "client",
         jti_policy: RequestObjectJtiPolicy::RequiredForSignedJar,
         require_integrity_protected_parameters: true,
         now,
     }
+}
+
+#[test]
+fn message_signing_requires_issuer_audience_without_changing_baseline_jar() {
+    let claims = signed_claims(1000);
+    let outer = HashMap::new();
+    assert!(normalize_request_object(&outer, &claims, signed_policy(1000)).is_ok());
+    let policy = RequestObjectPolicy {
+        require_issuer_audience: true,
+        ..signed_policy(1000)
+    };
+    assert!(normalize_request_object(&outer, &claims, policy).is_err());
+    let claims = RequestObjectClaims {
+        aud: Some(json!("https://issuer.example")),
+        ..claims
+    };
+    assert!(normalize_request_object(&outer, &claims, policy).is_ok());
 }
 
 fn signed_claims(now: i64) -> RequestObjectClaims {
@@ -216,6 +234,7 @@ fn signed_request_object_crypto_uses_strict_shared_client_jwk_policy() {
     );
     let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
     let verified = verify_request_object(RequestObjectVerificationInput {
+        require_fapi2: false,
         request_object: &token,
         client: &client,
         expected_signing_algorithm: None,
@@ -228,6 +247,7 @@ fn signed_request_object_crypto_uses_strict_shared_client_jwk_policy() {
     }));
     assert_eq!(
         verify_request_object(RequestObjectVerificationInput {
+            require_fapi2: false,
             request_object: &token,
             client: &duplicate,
             expected_signing_algorithm: None,
@@ -246,12 +266,33 @@ fn signed_request_object_crypto_uses_strict_shared_client_jwk_policy() {
         let client = request_object_client(json!({"keys": [key]}));
         assert_eq!(
             verify_request_object(RequestObjectVerificationInput {
+                require_fapi2: false,
                 request_object: &token,
                 client: &client,
                 expected_signing_algorithm: None,
             }),
             Err(RequestObjectVerificationError::InvalidKey),
             "accepted invalid JWK member {member}"
+        );
+    }
+}
+
+#[test]
+fn signed_request_objects_reject_unimplemented_critical_headers() {
+    let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+    for critical in [json!(["unknown"]), json!([]), Value::Null] {
+        let token = signed_request_object(
+            &signed_request_object_json(1_700_000_000),
+            json!({"alg": "EdDSA", "kid": "jar-key", "crit": critical, "unknown": true}),
+        );
+        assert_eq!(
+            verify_request_object(RequestObjectVerificationInput {
+                require_fapi2: false,
+                request_object: &token,
+                client: &client,
+                expected_signing_algorithm: None,
+            }),
+            Err(RequestObjectVerificationError::InvalidHeader)
         );
     }
 }
@@ -268,6 +309,7 @@ fn registered_request_object_signing_algorithm_is_enforced() {
 
     assert_eq!(
         verify_request_object(RequestObjectVerificationInput {
+            require_fapi2: false,
             request_object: &token,
             client: &client,
             expected_signing_algorithm: client.request_object_signing_alg.as_deref(),
@@ -285,6 +327,7 @@ fn signed_request_object_crypto_defers_time_policy_to_injected_clock() {
     );
     let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
     let verified = verify_request_object(RequestObjectVerificationInput {
+        require_fapi2: false,
         request_object: &token,
         client: &client,
         expected_signing_algorithm: None,
@@ -297,6 +340,39 @@ fn signed_request_object_crypto_defers_time_policy_to_injected_clock() {
         normalize_request_object(&HashMap::new(), &verified.claims, signed_policy(now + 121)),
         Err(AuthorizationRequestError::RequestObjectClaims)
     );
+}
+
+#[test]
+fn request_object_fapi_algorithm_policy_uses_client_or_server_requirement() {
+    for (require_fapi2, client_fapi) in [(false, false), (true, false), (false, true)] {
+        let mut client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
+        if client_fapi {
+            client.security_policy = crate::ClientSecurityPolicy::fapi2();
+        }
+        for algorithm in ["EdDSA", "RS256"] {
+            let token = signed_request_object(
+                &signed_request_object_json(1_700_000_000),
+                json!({"alg": algorithm, "kid": "jar-key"}),
+            );
+            let result = verify_request_object(RequestObjectVerificationInput {
+                request_object: &token,
+                client: &client,
+                expected_signing_algorithm: None,
+                require_fapi2,
+            });
+            if algorithm == "EdDSA" {
+                assert!(result.is_ok());
+            } else if require_fapi2 || client_fapi {
+                assert_eq!(
+                    result,
+                    Err(RequestObjectVerificationError::InvalidAlgorithm)
+                );
+            } else {
+                // Baseline permits RS256 and proceeds to key selection.
+                assert_eq!(result, Err(RequestObjectVerificationError::InvalidKey));
+            }
+        }
+    }
 }
 
 #[test]
@@ -322,6 +398,7 @@ fn compact_shape_algorithm_key_and_signature_errors_remain_distinct() {
     ] {
         assert_eq!(
             verify_request_object(RequestObjectVerificationInput {
+                require_fapi2: false,
                 request_object,
                 client: &client,
                 expected_signing_algorithm: None,
@@ -334,6 +411,7 @@ fn compact_shape_algorithm_key_and_signature_errors_remain_distinct() {
     let invalid_signature = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode([0; 64]));
     assert_eq!(
         verify_request_object(RequestObjectVerificationInput {
+            require_fapi2: false,
             request_object: &invalid_signature,
             client: &client,
             expected_signing_algorithm: None,
@@ -358,6 +436,7 @@ fn unsigned_request_objects_are_rejected_for_every_client_profile() {
     for client in [&client, &sender_constrained, &par_required] {
         assert_eq!(
             verify_request_object(RequestObjectVerificationInput {
+                require_fapi2: false,
                 request_object: &unsigned,
                 client,
                 expected_signing_algorithm: None,
@@ -395,6 +474,7 @@ fn client_selection_hint_does_not_accept_invalid_signed_claims() {
     );
     assert_eq!(
         verify_request_object(RequestObjectVerificationInput {
+            require_fapi2: false,
             request_object: &token,
             client: &client,
             expected_signing_algorithm: None,

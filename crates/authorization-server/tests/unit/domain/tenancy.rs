@@ -18,6 +18,7 @@ fn includes_client(context: TenantContext, client: &ClientRow) -> bool {
 fn user_in_context(context: TenantContext) -> PublicAccount {
     PublicAccount {
         principal: nazo_identity::Principal {
+            authorization_epoch: 0,
             user_id: nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
             tenant: context,
             role: nazo_identity::UserRole::User,

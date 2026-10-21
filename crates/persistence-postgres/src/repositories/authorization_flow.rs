@@ -246,14 +246,7 @@ impl DeviceGrantRepositoryPort for AuthorizationFlowRepository {
                 return Err(DeviceGrantPortError::CorruptData);
             }
             self.grants
-                .ensure(
-                    self.tenant_id,
-                    write.user_id,
-                    write.client_id,
-                    write.scopes,
-                    write.resource_indicators,
-                    write.authorization_details,
-                )
+                .commit_device_approval(write)
                 .await
                 .map_err(map_device_repository_error)
         })

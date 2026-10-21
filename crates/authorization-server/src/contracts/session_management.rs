@@ -6,26 +6,13 @@ pub type SessionManagementOriginFuture<'a> =
     Pin<Box<dyn Future<Output = Result<bool, SessionManagementError>> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SessionManagementAvailability {
-    Disabled,
-    Enabled,
-    Draining,
-}
-
-impl SessionManagementAvailability {
-    pub const fn permits_existing_transaction(self) -> bool {
-        matches!(self, Self::Enabled | Self::Draining)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionManagementError {
     SessionLookupUnavailable,
 }
 
 /// Storage and runtime-module boundary required by the session-management transport.
 pub trait SessionManagementOperations: Send + Sync {
-    fn availability(&self) -> SessionManagementAvailability;
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease>;
 
     fn is_origin_allowed<'a>(
         &'a self,

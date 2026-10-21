@@ -97,14 +97,17 @@ impl DirectoryControlOutcome {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TenantDirectoryControlError {
-    /// The revision fence or the operation ledger lost a race. Retrying with
-    /// a fresh expected revision is safe; replaying the same operation id
-    /// replays the recorded outcome.
+    /// The revision fence or the operation ledger lost a race. This attempt
+    /// committed no mutation. A settled terminal failure can be followed by a
+    /// new operation with a fresh revision; an existing operation keeps its
+    /// original request and recorded outcome.
     Conflict,
     /// The authoritative directory rejected the request (stale revision,
     /// unknown tenant, conflicting binding, or invalid routing identity).
+    /// This attempt committed no mutation.
     Rejected,
-    /// The directory storage is unavailable; the operation may be retried.
+    /// Storage failed or the commit outcome is unknown. Retry only the same
+    /// operation identity and payload so the durable receipt resolves it.
     Unavailable,
 }
 

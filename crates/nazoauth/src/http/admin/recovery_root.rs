@@ -16,7 +16,9 @@ use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
 use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
-use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, json_response, oauth_error};
+use nazo_http_actix::{
+    csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store, oauth_error,
+};
 use nazo_oauth_server::crypto::blake3_hex;
 use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{IdentityApprovalError, RecoveryRotationError};
@@ -65,7 +67,7 @@ pub(crate) async fn admin_recovery_root(
         );
     };
     match recovery.current_root(deployment_id).await {
-        Ok(Some(root)) => json_response(serde_json::json!({
+        Ok(Some(root)) => json_response_no_store(serde_json::json!({
             "deployment_id": root.deployment_id,
             "present": true,
             "recovery_kid": root.recovery_kid,
@@ -74,7 +76,7 @@ pub(crate) async fn admin_recovery_root(
             "created_at": root.created_at.to_rfc3339(),
             "updated_at": root.updated_at.to_rfc3339(),
         })),
-        Ok(None) => json_response(serde_json::json!({
+        Ok(None) => json_response_no_store(serde_json::json!({
             "deployment_id": deployment_id,
             "present": false,
         })),
@@ -120,7 +122,7 @@ pub(crate) async fn admin_recovery_root_approval(
         Ok(issued) => {
             // Durable evidence that a fresh-MFA administrator approved this
             // exact rotation digest.  The plaintext token is never audited.
-            json_response(serde_json::json!({
+            json_response_no_store(serde_json::json!({
                 "approval_token": issued.token,
                 "action": "recovery-root-rotate",
                 "action_sha256": issued.action_sha256,
@@ -171,7 +173,7 @@ pub(crate) async fn admin_recovery_root_rotate(
         )
         .await
     {
-        Ok(root) => json_response(serde_json::json!({
+        Ok(root) => json_response_no_store(serde_json::json!({
             "recovery_root": {
                 "deployment_id": root.deployment_id,
                 "recovery_kid": root.recovery_kid,

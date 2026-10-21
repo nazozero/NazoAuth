@@ -26,7 +26,7 @@ pub fn certificate_chain_identity(
     let der = chain.first()?.as_ref();
     let x509 = parse_current_x509(der)?;
     let thumbprint = URL_SAFE_NO_PAD.encode(Sha256::digest(der));
-    let subject_dn = subject_name_to_dn(x509.subject())?;
+    let subject_dn = subject_name_to_dn(x509.subject());
     let mut san_dns = Vec::new();
     let mut san_uri = Vec::new();
     let mut san_email = Vec::new();
@@ -48,7 +48,7 @@ pub fn certificate_chain_identity(
     }
     Some(ClientCertificateFacts {
         thumbprint: Some(thumbprint),
-        subject_dn: Some(subject_dn),
+        subject_dn,
         san_dns: sorted_unique(san_dns),
         san_uri: sorted_unique(san_uri),
         san_ip: sorted_unique(san_ip),

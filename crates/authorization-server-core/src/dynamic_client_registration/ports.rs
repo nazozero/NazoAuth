@@ -11,6 +11,7 @@ pub type DynamicRegistrationFuture<'a, T> =
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DynamicRegistrationDependencyError {
+    PolicyChanged,
     Unavailable,
     StaleCredentials,
 }

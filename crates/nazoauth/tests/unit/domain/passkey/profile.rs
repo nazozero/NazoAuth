@@ -254,8 +254,8 @@ impl FakeAuthenticator {
 
 impl LivePasskeyFixture {
     async fn new() -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let database_url = crate::test_support::backend_url("DATABASE_URL")?;
+        let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
         let config = ConfigSource::from_pairs_for_test([
             ("ISSUER", "https://example.com"),
             ("TRANSPORT_MODE", "direct-tls"),
@@ -327,16 +327,22 @@ impl LivePasskeyFixture {
     }
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
+        self.store_session_at(user, sid, Utc::now().timestamp())
+            .await;
+    }
+
+    async fn store_session_at(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
         let payload = SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time,
             amr: vec!["pwd".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )
@@ -1125,5 +1131,83 @@ async fn delete_passkey_cannot_remove_another_users_credential() {
             .await
             .expect("attacker passkeys should load")
             .is_empty()
+    );
+}
+
+#[actix_web::test]
+async fn stale_session_cannot_begin_finish_or_delete_a_passkey() {
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix).await;
+    let sid = format!("stale-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let (status, begin) = response_json(
+        passkey_registration_begin(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            Json(PasskeyBeginRequest {
+                label: Some("Fresh ceremony".into()),
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let row = fixture
+        .insert_passkey_credential(
+            &user,
+            &format!("existing-{suffix}"),
+            json!({"placeholder": true}),
+            "Existing key",
+        )
+        .await;
+    fixture
+        .store_session_at(&user, &sid, Utc::now().timestamp() - 301)
+        .await;
+    let authenticator = FakeAuthenticator::new(format!("new-{suffix}").as_bytes());
+    let responses = [
+        passkey_registration_begin(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            Json(PasskeyBeginRequest { label: None }),
+        )
+        .await,
+        passkey_registration_finish(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            Json(PasskeyFinishRequest {
+                ceremony_id: begin["ceremony_id"].as_str().unwrap().into(),
+                response: authenticator.registration_response(
+                    begin["publicKey"]["challenge"].as_str().unwrap(),
+                    &fixture.state.settings.identity.passkey.origin,
+                ),
+            }),
+        )
+        .await,
+        passkey_delete(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            actix_web::web::Path::from(row.id),
+        )
+        .await,
+    ];
+    for response in responses {
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"], "reauthentication_required");
+    }
+    assert_eq!(
+        nazo_postgres::PasskeyRepository::new(fixture.state.diesel_db.clone())
+            .list_summaries(
+                user.identity().tenant().tenant_id,
+                user.identity().user_id()
+            )
+            .await
+            .unwrap()
+            .len(),
+        1
     );
 }

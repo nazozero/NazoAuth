@@ -37,6 +37,22 @@ pub struct CredentialAuthorization {
     pub expires_at: DateTime<Utc>,
 }
 
+/// Read-only authorization preparation. The adapter owns the opaque commit token;
+/// callers must return it unchanged when atomically consuming the offer and grant.
+#[derive(Clone)]
+pub struct PreparedPreAuthorizedOffer {
+    pub authorization: CredentialAuthorization,
+    pub commit_token: Vec<u8>,
+}
+
+impl std::fmt::Debug for PreparedPreAuthorizedOffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedPreAuthorizedOffer")
+            .field("authorization", &self.authorization)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoredCredentialOffer {
     pub id: Uuid,
@@ -210,14 +226,16 @@ pub trait CredentialStorePort: Send + Sync {
         access: &'a CredentialAccess,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 
-    /// Persist a pre-authorized access grant. When `registered_client_id` is
+    /// Atomically consume the unchanged prepared offer and persist its access grant.
+    /// A failure must roll back both effects. When `registered_client_id` is
     /// present the implementation must re-verify that registered client is
-    /// still active under a `FOR SHARE` lock in the same transaction as the
+    /// still active in the same atomic operation as the
     /// grant write, so a client deactivation cannot slip between the earlier
     /// authentication check and the grant becoming usable. Anonymous grants
     /// carry no registered client and skip the lock entirely.
     fn persist_pre_authorized_access<'a>(
         &'a self,
+        offer: &'a [u8],
         token_hash: &'a str,
         access: &'a CredentialAccess,
         registered_client_id: Option<&'a str>,
@@ -230,14 +248,14 @@ pub trait CredentialStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>;
 
-    fn consume_pre_authorized_offer<'a>(
+    fn prepare_pre_authorized_offer<'a>(
         &'a self,
         tenant_id: Uuid,
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>;
+    ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>;
 
     fn issue_nonce<'a>(
         &'a self,

@@ -84,6 +84,7 @@ pub(super) fn decoding_key_from_public_jwk(
             }
             let x = key.get("x")?.as_str()?;
             let bytes = URL_SAFE_NO_PAD.decode(x).ok()?.try_into().ok()?;
+            nazo_crypto::ed25519::VerifyingKey::from_bytes(&bytes).ok()?;
             Some(JwtVerificationKey::from_ed25519_bytes(&bytes))
         }
         nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256 => {

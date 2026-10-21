@@ -8,14 +8,17 @@ use super::common::{AvatarStorageFuture, RepositoryFuture};
 
 /// Persistence boundary for compare-and-set avatar metadata updates.
 ///
-/// The expected URL is part of the write contract so a stale upload/delete
-/// cannot overwrite a newer request after its storage preparation has completed.
+/// URL and monotonic revision fence stale uploads, including URL A -> B -> A.
+/// Repeating a non-empty candidate at expected_revision + 1 returns that account
+/// as success. A confirmed miss therefore proves this candidate is not selected;
+/// an unavailable/unknown commit must never be reported as a miss.
 pub trait AvatarRepositoryPort: Send + Sync {
     fn compare_and_set_avatar<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
         expected_avatar_url: Option<&'a str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> RepositoryFuture<'a, Option<PublicAccount>>;
 }
@@ -70,6 +73,7 @@ pub struct AvatarUploadAuthorization {
     pub tenant_id: TenantId,
     pub user_id: UserId,
     pub expected_avatar_url: Option<String>,
+    pub expected_avatar_revision: i64,
     pub staging_object_id: String,
     pub expires_at: DateTime<Utc>,
 }

@@ -410,6 +410,10 @@ pub struct ControlResult {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ControlResultData {
+    /// True only when the durable pre-operation schema revision equals the
+    /// final revision. False also covers older interrupted operations without
+    /// a pre-operation checkpoint; it never authorizes binary-only rollback.
+    MigrationApplied { unchanged: bool },
     /// Public receipt for a freshly generated tenant-local signing key. The
     /// certificate bundle contains public material only; private key bytes
     /// never leave the managed tenant key directory.
@@ -1085,6 +1089,7 @@ pub fn validate_control_result(result: &ControlResult) -> Result<(), ProtocolErr
 /// digest-bound identity sets only.
 fn validate_control_result_data(data: &ControlResultData) -> Result<(), ProtocolError> {
     let (resources, resource_mappings, resource_manifest_sha256, is_apply) = match data {
+        ControlResultData::MigrationApplied { .. } => return Ok(()),
         ControlResultData::TenantKeyGenerated {
             tenant_id,
             kid,

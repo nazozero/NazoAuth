@@ -12,6 +12,8 @@ blake3.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 hmac.workspace = true
 image.workspace = true
+jiff = "0.2.38"
+language-tags = "0.3.2"
 lettre.workspace = true
 nazo-crypto = { workspace = true, features = ["password"] }
 nazo-scim-events.workspace = true

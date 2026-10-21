@@ -246,6 +246,7 @@ async fn insert_device_user(state: &TestInfrastructure, user_id: Uuid) {
 
 async fn store_device_session(state: &TestInfrastructure, session_id: &str, user_id: Uuid) {
     let payload = crate::test_support::SessionPayload {
+        authorization_epoch: 0,
         user_id,
         auth_time: Utc::now().timestamp(),
         amr: vec!["pwd".to_owned()],
@@ -254,7 +255,7 @@ async fn store_device_session(state: &TestInfrastructure, session_id: &str, user
     };
     valkey_set_ex(
         &state.valkey,
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{session_id}")),
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{session_id}")),
         serde_json::to_string(&payload).expect("device session should serialize"),
         state.settings.session.session_ttl_seconds,
     )
@@ -301,7 +302,7 @@ async fn call_device_token_with_request_for_test(
         grant_type: Some(nazo_auth::GrantType::DeviceCode),
         client_epoch,
         config: &issuance_config,
-        modules: &modules,
+        modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
         authorization: &authorization,
         security_audit: crate::http::authorization::test_support::test_security_audit(),
         remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -530,7 +531,7 @@ async fn device_token_rejects_client_policy_before_polling_state() {
         grant_type: Some(nazo_auth::GrantType::DeviceCode),
         client_epoch: 0,
         config: &issuance_config,
-        modules: &modules,
+        modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
         authorization: &authorization,
         security_audit: crate::http::authorization::test_support::test_security_audit(),
         remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -723,7 +724,7 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
     settings.protocol.dpop_nonce_policy = nazo_auth::DpopNoncePolicy::Optional;
     state.settings = Arc::new(settings);
     state.keyset =
-        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
     let mut client = device_client();
     client.client_id = format!("device-sender-fence-{}", Uuid::now_v7());
     client.require_dpop_bound_tokens = true;

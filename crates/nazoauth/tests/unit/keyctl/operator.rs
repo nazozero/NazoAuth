@@ -113,14 +113,14 @@ async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
     assert_eq!(listed_revision, first_revision);
 
     let external_registration =
-        crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256)
+        crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::RS256)
             .public_jwk("external-key");
     let external_revision = operator_register_external_database_for_tenant(
         &config,
         &binding,
         &persistence,
         "external-key",
-        "ES256",
+        "RS256",
         "kms://unit/external-key",
         &serde_json::to_vec(&external_registration).unwrap(),
     )

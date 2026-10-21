@@ -1,4 +1,5 @@
 use nazo_identity::TenantContext;
+use zeroize::Zeroize;
 
 use crate::{OAuthClient, ValidatedClientRegistration};
 
@@ -13,13 +14,6 @@ impl SuppliedClientSecret {
         let value = &secret.0;
         if value.len() < 32 || value.len() > 512 || value.iter().any(u8::is_ascii_control) {
             return Err("supplied client secret has invalid size or characters");
-        }
-        let distinct = value
-            .iter()
-            .copied()
-            .collect::<std::collections::BTreeSet<_>>();
-        if distinct.len() < 16 {
-            return Err("supplied client secret has insufficient entropy");
         }
         Ok(secret)
     }
@@ -37,7 +31,7 @@ impl std::fmt::Debug for SuppliedClientSecret {
 
 impl Drop for SuppliedClientSecret {
     fn drop(&mut self) {
-        self.0.fill(0);
+        self.0.zeroize();
     }
 }
 
@@ -184,6 +178,6 @@ impl Drop for CreatedClient {
 fn wipe_secret_string(value: &mut Option<String>) {
     if let Some(secret) = value.take() {
         let mut bytes = secret.into_bytes();
-        bytes.fill(0);
+        bytes.zeroize();
     }
 }

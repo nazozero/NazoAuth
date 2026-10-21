@@ -104,19 +104,25 @@ impl DpopProofVerifier {
         htu: &str,
         access_token: &str,
     ) -> Result<VerifiedSenderConstraintProof, DpopProofVerifierError> {
-        let verification = self.verify_without_replay_at(
-            proof_jwt,
-            method,
-            htu,
-            access_token,
-            Utc::now().timestamp(),
-        )?;
+        self.verify_at(proof_jwt, method, htu, access_token, Utc::now().timestamp())
+    }
+
+    fn verify_at(
+        &self,
+        proof_jwt: &str,
+        method: &str,
+        htu: &str,
+        access_token: &str,
+        now: i64,
+    ) -> Result<VerifiedSenderConstraintProof, DpopProofVerifierError> {
+        let verification =
+            self.verify_without_replay_at(proof_jwt, method, htu, access_token, now)?;
         let jkt = verification
             .proof
             .dpop_jkt
             .as_deref()
             .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
-        self.check_replay(jkt, &verification.jti, Utc::now().timestamp())?;
+        self.check_replay(jkt, &verification.jti, now, verification.expires_at)?;
         Ok(verification.proof)
     }
 
@@ -160,7 +166,9 @@ impl DpopProofVerifier {
         let expires_at = claims
             .iat
             .saturating_add(self.config.max_age_seconds.max(1))
-            .saturating_add(self.config.clock_skew_seconds.max(0));
+            .saturating_add(self.config.clock_skew_seconds.max(0))
+            // Proof age validation includes the final second.
+            .saturating_add(1);
         Ok(DpopProofVerification {
             proof: VerifiedSenderConstraintProof {
                 dpop_jkt: Some(jkt),
@@ -216,12 +224,13 @@ impl DpopProofVerifier {
         Ok(())
     }
 
-    fn check_replay(&self, jkt: &str, jti: &str, now: i64) -> Result<(), DpopProofVerifierError> {
-        let ttl = self
-            .config
-            .max_age_seconds
-            .max(1)
-            .saturating_add(self.config.clock_skew_seconds.max(0));
+    fn check_replay(
+        &self,
+        jkt: &str,
+        jti: &str,
+        now: i64,
+        expires_at: i64,
+    ) -> Result<(), DpopProofVerifierError> {
         let replay_key = format!("{jkt}:{jti}");
         let mut cache = self
             .replay_cache
@@ -250,7 +259,7 @@ impl DpopProofVerifier {
         cache.keys.insert(Arc::clone(&replay_key));
         cache
             .expirations
-            .entry(now.saturating_add(ttl))
+            .entry(expires_at)
             .or_default()
             .push(replay_key);
         Ok(())
@@ -273,6 +282,9 @@ fn decode_dpop_header(
     // Keep the raw JWK members: the typed header discards private-key fields.
     let mut header = serde_json::from_slice::<Value>(&header)
         .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+    if header.get("crit").is_some() {
+        return Err(DpopProofVerifierError::MalformedProof);
+    }
     let jwk = header
         .as_object_mut()
         .and_then(|header| header.remove("jwk"));

@@ -7,6 +7,7 @@ use nazo_identity::{
 fn session_amr_preserves_unknown_evidence_without_inventing_federation() {
     let mut session = SessionRecord::new(
         UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        0,
         1_700_000_000,
         vec!["pwd".into(), "hwk".into(), "vendor:custom".into()],
         false,
@@ -63,6 +64,34 @@ fn real_session_metadata_rejects_empty_evidence_and_invalid_time_or_sid() {
     ));
 }
 
+#[test]
+fn credential_management_reuses_only_fresh_sufficient_authentication() {
+    use nazo_identity::session::recent_credential_management_authentication as permits;
+    let now = 1_700_000_000;
+    for methods in [
+        vec!["pwd".to_owned()],
+        vec!["passkey".to_owned()],
+        vec!["federated".to_owned()],
+    ] {
+        assert!(permits(now, &methods, false, now));
+        assert!(!permits(now - 301, &methods, false, now));
+        assert!(!permits(now + 1, &methods, false, now));
+        assert!(!permits(now, &methods, true, now));
+    }
+    for methods in [
+        vec!["pwd".into(), "otp".into(), "mfa".into()],
+        vec!["passkey".into(), "passkey_uv".into(), "mfa".into()],
+    ] {
+        assert!(permits(now, &methods, true, now));
+        assert!(!permits(now - 301, &methods, true, now));
+    }
+    assert!(!permits(
+        now,
+        &["passkey".into(), "remembered_mfa".into(), "mfa".into()],
+        true,
+        now
+    ));
+}
 #[test]
 fn totp_credentials_do_not_expose_seeds_in_debug_output() {
     use nazo_identity::TotpEnrollmentStart;

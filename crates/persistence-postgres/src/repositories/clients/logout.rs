@@ -10,11 +10,13 @@ use uuid::Uuid;
 use super::base::OAuthClientRepository;
 use super::mapping::string_array;
 
-// Logout reads only its own policy and delivery facts; token/authentication
-// metadata is neither an authority nor a prerequisite for ending a session.
+// Logout reads its session/delivery facts and the policy for its signed response.
+// Unrelated token or authentication metadata does not gate ending a session.
 #[derive(diesel::Queryable, diesel::Selectable)]
 #[diesel(table_name = oauth_clients)]
 struct LogoutClientRecord {
+    security_policy: serde_json::Value,
+    id_token_signed_response_alg: Option<String>,
     id: Uuid,
     tenant_id: Uuid,
     client_id: String,
@@ -31,6 +33,12 @@ struct LogoutClientRecord {
 impl LogoutClientRecord {
     fn into_domain(self) -> Result<RegisteredLogoutClient, LogoutDependencyError> {
         Ok(RegisteredLogoutClient {
+            require_fapi2: serde_json::from_value::<nazo_auth::ClientSecurityPolicy>(
+                self.security_policy,
+            )
+            .map_err(|_| LogoutDependencyError::Consistency)?
+            .requires_fapi2_security(),
+            id_token_signed_response_alg: self.id_token_signed_response_alg,
             id: self.id,
             tenant_id: self.tenant_id,
             client_id: self.client_id,

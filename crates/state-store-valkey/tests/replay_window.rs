@@ -11,7 +11,12 @@ use nazo_auth::DpopStateStorePort;
 use nazo_valkey::{ReplayStore, test_support};
 
 fn explicit_valkey_url() -> Option<String> {
-    std::env::var("VALKEY_URL").ok()
+    let url = std::env::var("VALKEY_URL").ok();
+    assert!(
+        url.is_some() || std::env::var_os("CI").is_none(),
+        "CI requires VALKEY_URL"
+    );
+    url
 }
 
 #[tokio::test]
@@ -40,6 +45,7 @@ async fn replay_nx_allows_only_one_concurrent_acceptance() {
     ));
     let _: i64 = inspector.del(&inspected_key).await.expect("cleanup");
 
+    let started = std::time::Instant::now();
     let attempts = join_all((0..32).map(|_| {
         let store = &store;
         let jti = &jti;
@@ -67,8 +73,9 @@ async fn replay_nx_allows_only_one_concurrent_acceptance() {
         .pttl::<i64, _>(&inspected_key)
         .await
         .expect("marker key must be inspectable");
+    let minimum = (retention_seconds * 1000) as i64 - started.elapsed().as_millis() as i64 - 1;
     assert!(
-        pttl > 0 && pttl <= (retention_seconds * 1000) as i64,
+        pttl > 0 && pttl >= minimum && pttl <= (retention_seconds * 1000) as i64,
         "marker PTTL {pttl} must cover the configured {retention_seconds}s retention"
     );
 

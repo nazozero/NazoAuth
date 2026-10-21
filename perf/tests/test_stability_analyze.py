@@ -27,6 +27,13 @@ class SustainedCliffTest(unittest.TestCase):
         self.assertFalse(sa.sustained_cliff(_buckets(), {})[
             "sustained_cliff"])
 
+    def test_separated_minutes_and_short_tail_do_not_prove_five_minutes(self):
+        separated = {i: _bucket(i, ops=1000) for i in [1, 3, 5, 7, 9]}
+        self.assertFalse(sa.sustained_cliff(separated, {})["sustained_cliff"])
+        partial = _buckets(5, ops=1000)
+        partial[5]["span_s"] = 20.0
+        self.assertFalse(sa.sustained_cliff(partial, {})["sustained_cliff"])
+
     def test_single_spike_is_not_cliff(self):
         b = _buckets()
         b[7]["p95"], b[7]["p99"] = 109.0, 395.0

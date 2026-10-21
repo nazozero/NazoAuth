@@ -6,6 +6,7 @@ use super::common::{RepositoryFuture, SecretVerifyFuture};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LoginAccountState {
+    pub authorization_epoch: i64,
     pub active: bool,
     pub mfa_enabled: bool,
 }
@@ -65,17 +66,13 @@ where
     }
 }
 
-/// Atomic budget for MFA factor attempts on one authenticated login session.
-///
-/// The session-bound subject deliberately avoids a global email/account lock:
-/// an unrelated caller cannot consume another user's pending challenge budget,
-/// while the same challenge cannot evade the budget by changing source IPs.
+/// Atomic budget for an authenticated account's MFA attempts across login sessions.
+/// Only callers that have completed the first factor may reserve this budget.
 pub trait MfaAttemptThrottlePort: Send + Sync {
     fn reserve_attempt<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        session_id: &'a str,
         window_seconds: u64,
         max_attempts: u64,
     ) -> RepositoryFuture<'a, MfaAttemptThrottleDecision>;
@@ -84,7 +81,6 @@ pub trait MfaAttemptThrottlePort: Send + Sync {
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
-        session_id: &'a str,
     ) -> RepositoryFuture<'a, ()>;
 }
 

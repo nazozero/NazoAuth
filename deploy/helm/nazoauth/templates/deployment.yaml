@@ -1,9 +1,10 @@
-{{- if and (gt (int .Values.replicaCount) 1) (not .Values.appSecrets.existingSecret) }}
-{{- fail "replicaCount > 1 requires appSecrets.existingSecret so every replica uses identical application secrets" }}
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "this Deployment supports one persistent instance; HA requires separately owned instance identities and storage" }}
 {{- end }}
-{{- if and (gt (int .Values.replicaCount) 1) .Values.persistence.enabled }}
-{{- fail "replicaCount > 1 cannot use the default ReadWriteOnce generated-secret PVC; provide shared storage through extraVolumes or disable persistence" }}
+{{- if not .Values.persistence.enabled }}
+{{- fail "persistence.enabled is required for instance identity and generated secrets" }}
 {{- end }}
+{{- $probeHost := required "publicBaseUrl must include a host" ((urlParse .Values.publicBaseUrl).host) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,6 +39,10 @@ spec:
             - name: http
               containerPort: 8000
           env:
+            - name: SIGNING_KEY_ENCRYPTION_KEY_FILE
+              value: /run/nazoauth-signing-root/key
+            - name: SIGNING_KEY_ENCRYPTION_KEY_ID
+              value: {{ required "signing.wrappingKeyId is required" .Values.signing.wrappingKeyId | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -60,6 +65,9 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
+            - name: signing-root
+              mountPath: /run/nazoauth-signing-root
+              readOnly: true
             - name: config
               mountPath: /app/.env.yaml
               subPath: .env.yaml
@@ -82,23 +90,38 @@ spec:
             httpGet:
               path: /startup
               port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ $probeHost | quote }}
             periodSeconds: 2
             failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /health
               port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ $probeHost | quote }}
             periodSeconds: 5
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /live
               port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ $probeHost | quote }}
             periodSeconds: 10
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
+        - name: signing-root
+          secret:
+            secretName: {{ required "signing.existingSecret is required" .Values.signing.existingSecret }}
+            items:
+              - key: {{ .Values.signing.wrappingKeySecretKey }}
+                path: key
         - name: config
           configMap:
             name: {{ include "nazoauth.fullname" . }}

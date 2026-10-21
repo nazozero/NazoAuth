@@ -224,6 +224,48 @@ fn require_accepted(accepted: bool) -> Result<(), CredentialStoreError> {
     }
 }
 
+pub(super) async fn persist_pre_authorized_on_connection(
+    connection: &mut AsyncPgConnection,
+    token_hash: &str,
+    access: &CredentialAccess,
+    registered_client_id: Option<&str>,
+) -> Result<(), CredentialStoreError> {
+    if let Some(client_id) = registered_client_id
+        && client_id != access.client_id
+    {
+        return Err(CredentialStoreError::InvalidTransition);
+    }
+    let expected_origin = if registered_client_id.is_some() {
+        nazo_openid4vci::CredentialProofOrigin::RegisteredClient
+    } else {
+        nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
+    };
+    if access.proof_origin != expected_origin {
+        return Err(CredentialStoreError::InvalidTransition);
+    }
+    let Some(client_id) = registered_client_id else {
+        return access_upsert_on_connection(connection, token_hash, access)
+            .await
+            .map_err(|_| CredentialStoreError::Unavailable)
+            .and_then(require_accepted);
+    };
+    let outcome =
+        access_persist_registered_on_connection(connection, token_hash, access, client_id)
+            .await
+            .map_err(|_| CredentialStoreError::Unavailable)?;
+    let outcome = if outcome.client_active && !outcome.grant_accepted {
+        access_verify_on_connection(connection, token_hash, access, Some(client_id))
+            .await
+            .map_err(|_| CredentialStoreError::Unavailable)?
+    } else {
+        outcome
+    };
+    if !outcome.client_active {
+        return Err(CredentialStoreError::ClientInactive);
+    }
+    require_accepted(outcome.grant_accepted)
+}
+
 impl Openid4vciRepository {
     pub(super) fn access_upsert<'a>(
         &'a self,
@@ -238,69 +280,6 @@ impl Openid4vciRepository {
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)
                 .and_then(require_accepted)
-        })
-    }
-
-    pub(super) fn access_persist_pre_authorized<'a>(
-        &'a self,
-        token_hash: &'a str,
-        access: &'a CredentialAccess,
-        registered_client_id: Option<&'a str>,
-    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
-        Box::pin(async move {
-            if let Some(client_id) = registered_client_id
-                && client_id != access.client_id
-            {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            let expected_origin = if registered_client_id.is_some() {
-                nazo_openid4vci::CredentialProofOrigin::RegisteredClient
-            } else {
-                nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized
-            };
-            if access.proof_origin != expected_origin {
-                return Err(CredentialStoreError::InvalidTransition);
-            }
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            let Some(client_id) = registered_client_id else {
-                return access_upsert_with_conflict_retry(&mut connection, token_hash, access)
-                    .await
-                    .map_err(|_| CredentialStoreError::Unavailable)
-                    .and_then(require_accepted);
-            };
-            let outcome = match access_persist_registered_on_connection(
-                &mut connection,
-                token_hash,
-                access,
-                client_id,
-            )
-            .await
-            {
-                Err(error) if is_unique_violation(&error) => {
-                    access_persist_registered_on_connection(
-                        &mut connection,
-                        token_hash,
-                        access,
-                        client_id,
-                    )
-                    .await
-                }
-                result => result,
-            }
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            let outcome = if outcome.client_active && !outcome.grant_accepted {
-                access_verify_on_connection(&mut connection, token_hash, access, Some(client_id))
-                    .await
-                    .map_err(|_| CredentialStoreError::Unavailable)?
-            } else {
-                outcome
-            };
-            if !outcome.client_active {
-                return Err(CredentialStoreError::ClientInactive);
-            }
-            require_accepted(outcome.grant_accepted)
         })
     }
 

@@ -1,71 +1,6 @@
-use nazo_identity::{
-    Principal, PublicAccount, SubjectClaims, TenantContext, UserId, UserRole,
-    ports::{
-        AvatarStorageError, AvatarUploadAuthorization, AvatarUploadClaim, AvatarUploadTarget,
-        EncodedSecretHash, FakeUserRepository, PasswordHashInput, RepositoryError,
-        UserRepositoryPort,
-    },
+use nazo_identity::ports::{
+    AvatarStorageError, AvatarUploadTarget, EncodedSecretHash, PasswordHashInput, RepositoryError,
 };
-use uuid::Uuid;
-
-#[tokio::test]
-async fn fake_user_repository_is_a_minimal_test_substitute() {
-    let tenant = TenantContext::default_system();
-    let user_id = UserId::new(Uuid::now_v7()).unwrap();
-    let fake = FakeUserRepository::default();
-    assert!(
-        fake.principal_by_id(tenant, user_id)
-            .await
-            .unwrap()
-            .is_none()
-    );
-}
-
-#[tokio::test]
-async fn fake_user_repository_round_trips_principals_and_subject_claims() {
-    let tenant = TenantContext::default_system();
-    let user_id = UserId::new(Uuid::now_v7()).unwrap();
-    let fake = FakeUserRepository::default();
-    let principal = Principal {
-        user_id,
-        tenant,
-        role: UserRole::Admin { level: 2 },
-        active: true,
-    };
-    fake.insert_principal(principal.clone());
-    assert_eq!(
-        fake.principal_by_id(tenant, user_id).await.unwrap(),
-        Some(principal)
-    );
-
-    let claims = SubjectClaims {
-        subject: user_id,
-        preferred_username: "alice".to_owned(),
-        name: None,
-        given_name: None,
-        family_name: None,
-        middle_name: None,
-        nickname: None,
-        profile: None,
-        picture: None,
-        website: None,
-        gender: None,
-        birthdate: None,
-        zoneinfo: None,
-        locale: None,
-        email: "alice@example.test".to_owned(),
-        email_verified: true,
-        address: None,
-        phone_number: None,
-        phone_number_verified: false,
-        updated_at: 42,
-    };
-    fake.insert_subject_claims(tenant.tenant_id, claims.clone());
-    assert_eq!(
-        fake.subject_claims_by_id(tenant, user_id).await.unwrap(),
-        Some(claims)
-    );
-}
 
 #[test]
 fn identity_port_errors_and_secret_wrappers_preserve_safe_messages() {
@@ -148,32 +83,6 @@ fn avatar_direct_upload_contract_keeps_storage_details_opaque() {
         target.headers.get("upload-token"),
         Some(&"opaque".to_owned())
     );
-}
-
-#[test]
-fn avatar_upload_claim_preserves_the_fixed_candidate_across_a_retry() {
-    let authorization = AvatarUploadAuthorization {
-        upload_id: "upload-1".to_owned(),
-        tenant_id: TenantContext::default_system().tenant_id,
-        user_id: UserId::new(Uuid::now_v7()).expect("test id"),
-        expected_avatar_url: None,
-        staging_object_id: "staging-1".to_owned(),
-        expires_at: chrono::Utc::now(),
-    };
-    let claim = AvatarUploadClaim::Publishing {
-        authorization,
-        ownership_token: "lease-2".to_owned(),
-        staged_version: "etag-1".to_owned(),
-        final_object_id: "candidate-1".to_owned(),
-    };
-
-    assert!(matches!(claim, AvatarUploadClaim::Publishing { .. }));
-}
-
-#[test]
-fn public_account_is_composed_from_domain_concepts_not_a_flat_database_row() {
-    fn assert_public_account(_: &PublicAccount) {}
-    let _ = assert_public_account;
 }
 
 #[test]

@@ -3,8 +3,8 @@ import json,glob,os,csv
 def load(f):
     rows=[]
     for r in csv.reader(open(f)):
-        if not r or r[0]=="epoch" or len(r)<8: continue
-        try: rows.append([int(r[0])]+[int(x) if x else 0 for x in r[1:8]])
+        if not r or r[0]=="epoch" or len(r)<9: continue
+        try: rows.append([int(r[0])]+[int(x) if x else 0 for x in r[1:9]])
         except: pass
     return rows
 allrows=load("/workspace/perf-results/proc-stats.csv")

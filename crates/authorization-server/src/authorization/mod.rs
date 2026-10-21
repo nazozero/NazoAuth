@@ -17,7 +17,7 @@ use crate::{
 use config::AuthorizationConfig;
 use nazo_identity::SessionId;
 use nazo_openid4vci::AuthorizationOfferPort;
-use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, SnapshotStore};
+use nazo_runtime_modules::{ModuleId, RequestSnapshot, SnapshotStore};
 use std::{collections::HashMap, sync::Arc};
 use uuid::Uuid;
 pub type AuthorizationOutcome = AuthorizationDecisionResponse;
@@ -94,7 +94,7 @@ impl AuthorizationApplication {
             security_audit: self.security_audit.as_ref(),
             config: &self.config,
             sessions: &self.sessions,
-            modules: self.snapshots.load_full(),
+            modules: self.snapshots.request(),
             remote_client_documents: self.remote_client_documents.as_ref(),
             request_object_resolver: self.request_object_resolver.as_ref(),
             request_object_keys: &self.request_object_keys,
@@ -108,7 +108,7 @@ pub(crate) struct AuthorizationRequestContext<'a> {
     pub(crate) security_audit: &'a dyn SecurityAudit,
     pub(crate) config: &'a AuthorizationConfig,
     pub(crate) sessions: &'a SessionResolver,
-    pub(crate) modules: Arc<ActiveModuleSnapshot>,
+    pub(crate) modules: RequestSnapshot,
     pub(crate) remote_client_documents: &'a dyn RemoteJwksResolverPort,
     pub(crate) request_object_resolver: &'a dyn RemoteRequestObjectResolverPort,
     pub(crate) request_object_keys: &'a nazo_key_management::KeyManager,
@@ -119,18 +119,15 @@ pub(crate) fn accepts_module(
     context: &AuthorizationRequestContext<'_>,
     module_id: ModuleId,
 ) -> bool {
-    nazo_auth::module_admissible(
-        &context.modules,
-        module_id,
-        nazo_auth::CapabilityAdmission::NewRequest,
-    )
+    context
+        .modules
+        .permits(module_id, nazo_auth::CapabilityAdmission::NewRequest)
 }
 pub(crate) fn permits_existing_module_transaction(
     context: &AuthorizationRequestContext<'_>,
     module_id: ModuleId,
 ) -> bool {
-    nazo_auth::module_admissible(
-        &context.modules,
+    context.modules.permits(
         module_id,
         nazo_auth::CapabilityAdmission::ExistingTransaction,
     )

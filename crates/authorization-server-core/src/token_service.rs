@@ -312,7 +312,36 @@ pub struct SingleUseRedemption {
     pub refresh_token_family_id: Option<Uuid>,
 }
 
+/// Select the effective JWT response algorithm at the profile owner.
+/// Ordinary OIDC keeps its configured/default algorithm; FAPI defaults to PS256.
+pub fn jwt_response_signing_algorithm(
+    configured: Option<&str>,
+    require_fapi2: bool,
+) -> Result<Option<&str>, &'static str> {
+    if !require_fapi2 {
+        return Ok(configured);
+    }
+    match configured {
+        Some(algorithm) if !crate::FAPI2_JWT_SIGNING_ALGS.contains(&algorithm) => {
+            Err("JWT signing algorithm is incompatible with FAPI 2.0")
+        }
+        Some(algorithm) => Ok(Some(algorithm)),
+        None => Ok(Some("PS256")),
+    }
+}
+
+/// ID Tokens always have a signing algorithm: OIDC defaults to RS256,
+/// while an enabled FAPI policy selects PS256 when none was negotiated.
+pub fn id_token_signing_algorithm(
+    configured: Option<&str>,
+    require_fapi2: bool,
+) -> Result<&str, &'static str> {
+    jwt_response_signing_algorithm(configured, require_fapi2)
+        .map(|algorithm| algorithm.unwrap_or("RS256"))
+}
+
 pub struct AccessTokenSignInput<'a> {
+    pub signing_algorithm: Option<&'a str>,
     pub authorization_id: Option<Uuid>,
     pub client_epoch: Option<i64>,
     pub user_epoch: Option<i64>,
@@ -1014,8 +1043,18 @@ where
             return Ok(TokenInspection::Inactive);
         };
         if token.client_id != resource_server.id
+            || !resource_server.is_active
             || token.revoked_at.is_some()
             || token.expires_at <= now
+        {
+            return Ok(TokenInspection::Inactive);
+        }
+        if let Some(user_id) = token.user_id
+            && self
+                .repository
+                .active_subject_id(token.tenant_id, user_id)
+                .await?
+                .is_none()
         {
             return Ok(TokenInspection::Inactive);
         }

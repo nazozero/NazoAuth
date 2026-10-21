@@ -49,6 +49,16 @@ prerequisite-gated protocol surface.
   responses.
 - Metadata truth tests proving discovery only advertises DCR when the registration endpoint is enabled and protected.
 
+RFC 7592 PUT preserves the current secret digest when `client_secret` is omitted;
+when supplied, it must match. The current stored scopes are the management ceiling:
+a client can narrow them, while an administrator must authorize an expansion.
+The store rechecks that ceiling at commit. Audiences remain administrator-owned
+and are never replaced by DCR defaults during PUT.
+
+Registration materializes the ID Token signing algorithm: omitted metadata resolves
+to RS256 for baseline OIDC and PS256 for the effective FAPI profile. Explicit
+algorithms must satisfy that profile and be available for signing.
+
 ### Unsupported or separately scoped behavior
 
 - A public protocol for issuing initial access tokens is not implemented.

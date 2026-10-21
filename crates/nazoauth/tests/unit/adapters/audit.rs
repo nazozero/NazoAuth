@@ -1265,14 +1265,10 @@ mod transactional_readiness {
 
     #[tokio::test]
     async fn transactional_ready_fails_closed_without_a_durable_repository() {
-        // The production entry point consults the process-global sink; when
-        // bootstrap never installed it the call must fail rather than let a
-        // commit probe reach a missing ledger.
-        if PERSISTENT_AUDIT_SINK.get().is_some() {
-            // Another test already installed it in this process; the unwrap
-            // branch is covered by startup ordering instead.
+        if crate::test_support::run_in_fresh_test_process() {
             return;
         }
+        assert!(PERSISTENT_AUDIT_SINK.get().is_none());
         let error = ensure_transactional_audit_ready()
             .await
             .expect_err("missing durable repository must reject issuance");

@@ -239,7 +239,7 @@ fn response_uses_admitted_client_without_another_repository_query() {
 #[test]
 fn authorization_response_redirect_jarm_profile_signs_without_response_mode() {
     block_on(async {
-        let mut state = fixture();
+        let mut state = fixture().with_algorithm(jsonwebtoken::Algorithm::PS256);
         state.config.profile = AuthorizationServerProfile::Fapi2MessageSigningJarm;
 
         let response = authorization_response_redirect_with_protection(
@@ -269,6 +269,30 @@ fn authorization_response_redirect_jarm_profile_signs_without_response_mode() {
         assert!(!pairs.contains_key("state"));
         assert!(!pairs.contains_key("iss"));
 
+        assert_eq!(
+            jsonwebtoken::decode_header(pairs["response"].as_ref())
+                .unwrap()
+                .alg,
+            jsonwebtoken::Algorithm::PS256
+        );
+        let rejected = authorization_response_redirect_with_protection(
+            &state,
+            "client-jarm-profile",
+            AuthorizationResponseRedirect {
+                redirect_uri: "https://client.example/callback",
+                response_mode: None,
+                code: Some("code"),
+                error: None,
+                state: None,
+                oidc_sid: None,
+            },
+            AuthorizationResponseProtection {
+                signing_alg: Some("RS256"),
+                ..Default::default()
+            },
+        )
+        .await;
+        assert_unavailable_without_redirect(rejected);
         let claims = decode_jarm_claims(
             &state,
             pairs

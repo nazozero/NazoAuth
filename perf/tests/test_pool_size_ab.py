@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import pool_size_ab as psa  # noqa: E402
 import single_instance_scaling as sis  # noqa: E402
+import stability_analyze as stability  # noqa: E402
 
 
 def _rec(run_id="A1", pool=24, ops=2800.0, p99=1100.0, drop=0.05,
@@ -245,18 +246,27 @@ class ClassifyStabilityTest(unittest.TestCase):
         stab = {"reauth_herd": {"herd": False},
                 "sustained_cliff": {"sustained_cliff": True},
                 "anomaly_buckets": [
-                    {"bucket": 7, "in_checkpoint_write_window": True},
-                    {"bucket": 13, "in_checkpoint_write_window": True}],
+                    {"bucket": 7, "in_checkpoint_write_window": True, "checkpoint_window_ids": ["one"]},
+                    {"bucket": 13, "in_checkpoint_write_window": True, "checkpoint_window_ids": ["two"]}],
                 "buckets": []}
         self.assertEqual(("FAIL", "CHECKPOINT_CORRELATED_CLIFF"),
                          psa.classify_stability("PASS", stab, []))
+
+    def test_checkpoint_attribution_uses_producer_event_identity(self):
+        buckets = {i: {"bucket": i, "span_s": 60, "p95": 2000, "p99": 3000,
+                       "wal": {"wal_share": 0.9}} for i in (1, 2)}
+        anomalies = stability.anomaly_buckets(buckets, [(0, 120)])
+        report = {"anomaly_buckets": anomalies, "buckets": list(buckets.values())}
+        self.assertEqual(psa._cliff_fail_class(report), "SUSTAINED_DB_WAL_CLIFF")
+        report["anomaly_buckets"] = stability.anomaly_buckets(buckets, [(0, 60), (60, 120)])
+        self.assertEqual(psa._cliff_fail_class(report), "CHECKPOINT_CORRELATED_CLIFF")
 
     def test_sustained_cliff_wal_dominated(self):
         stab = {"reauth_herd": {"herd": False},
                 "sustained_cliff": {"sustained_cliff": True},
                 "anomaly_buckets": [],
-                "buckets": [{"wal": {"wal_wait_share": 0.6}},
-                            {"wal": {"wal_wait_share": 0.55}}]}
+                "buckets": [{"wal": {"wal_share": 0.6}},
+                            {"wal": {"wal_share": 0.55}}]}
         self.assertEqual(("FAIL", "SUSTAINED_DB_WAL_CLIFF"),
                          psa.classify_stability("PASS", stab, []))
 
@@ -264,8 +274,8 @@ class ClassifyStabilityTest(unittest.TestCase):
         stab = {"reauth_herd": {"herd": False},
                 "sustained_cliff": {"sustained_cliff": True},
                 "anomaly_buckets": [
-                    {"bucket": 7, "in_checkpoint_write_window": True}],
-                "buckets": [{"wal": {"wal_wait_share": 0.3}}]}
+                    {"bucket": 7, "in_checkpoint_write_window": True, "checkpoint_window_ids": ["one"]}],
+                "buckets": [{"wal": {"wal_share": 0.3}}]}
         self.assertEqual(("FAIL", "UNRESOLVED"),
                          psa.classify_stability("PASS", stab, []))
 

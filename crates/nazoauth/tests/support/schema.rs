@@ -131,6 +131,7 @@ diesel::table! {
         email_verified -> Bool,
         display_name -> Nullable<Varchar>,
         avatar_url -> Nullable<Varchar>,
+        avatar_revision -> Int8,
         given_name -> Nullable<Varchar>,
         family_name -> Nullable<Varchar>,
         middle_name -> Nullable<Varchar>,

@@ -334,6 +334,15 @@ async fn deployment_routes_are_gated_but_runtime_modules_are_tenant_scoped() {
     let tenant_admin_route =
         test::call_service(&app, preflight("tenant.example", "/admin/users")).await;
     assert_eq!(tenant_admin_route.status(), actix_web::http::StatusCode::OK);
+    let forbidden = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/.well-known/nazoauth-control")
+            .insert_header((actix_web::http::header::HOST, "tenant.example"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(forbidden.status(), actix_web::http::StatusCode::NOT_FOUND);
 }
 
 #[actix_web::test]

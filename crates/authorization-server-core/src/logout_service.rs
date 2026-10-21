@@ -43,6 +43,8 @@ pub struct LogoutSession {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisteredLogoutClient {
+    pub require_fapi2: bool,
+    pub id_token_signed_response_alg: Option<String>,
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub client_id: String,
@@ -138,7 +140,7 @@ pub trait BackchannelLogoutOutboxPort: Send + Sync {
 pub trait LogoutTokenSignerPort: Send + Sync {
     fn sign_logout_token<'a>(
         &'a self,
-        client_id: &'a str,
+        client: &'a RegisteredLogoutClient,
         subject: Option<&'a str>,
         sid: &'a str,
         issued_at: DateTime<Utc>,
@@ -238,8 +240,6 @@ impl LogoutService {
             active_clients.push(client.clone());
         }
         let frontchannel_logout_urls = self.frontchannel_urls(
-            hinted_client.as_ref(),
-            hinted_client_is_bound,
             &active_clients,
             input.session.as_ref(),
             input.frontchannel_enabled,
@@ -247,7 +247,6 @@ impl LogoutService {
         let operation_key = input.session.as_ref().map(logout_operation_key);
         if let (Some(session), Some(operation_key)) =
             (input.session.as_ref(), operation_key.as_deref())
-            && (input.id_token_hint.is_none() || hint_matches_current_session)
         {
             self.enqueue_backchannel(session, &active_clients, operation_key, input.now)
                 .await?;
@@ -334,8 +333,6 @@ impl LogoutService {
 
     fn frontchannel_urls(
         &self,
-        hinted_client: Option<&RegisteredLogoutClient>,
-        hinted_client_is_bound: bool,
         active_clients: &[RegisteredLogoutClient],
         session: Option<&LogoutSession>,
         enabled: bool,
@@ -346,12 +343,7 @@ impl LogoutService {
         let Some(session) = session else {
             return Vec::new();
         };
-        let clients = match hinted_client {
-            Some(client) if hinted_client_is_bound => std::slice::from_ref(client),
-            Some(_) => return Vec::new(),
-            None => active_clients,
-        };
-        clients
+        active_clients
             .iter()
             .filter_map(|client| {
                 let uri = client.frontchannel_logout_uri.as_deref()?;
@@ -389,7 +381,7 @@ impl LogoutService {
             let logout_token = self
                 .signer
                 .sign_logout_token(
-                    &client.client_id,
+                    client,
                     subject.as_deref(),
                     &session.oidc_sid,
                     now,

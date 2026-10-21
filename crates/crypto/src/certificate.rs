@@ -88,6 +88,88 @@ pub fn verify_signature(
         .map_err(|_| CryptoError::InvalidSignature)
 }
 
+/// Validates an ordered document-signing certificate path against one explicit
+/// trust anchor. The chain excludes that anchor. WebPKI owns path length, name
+/// constraints, critical extensions, validity and signatures; KeyUsage is
+/// checked here because WebPKI intentionally does not enforce that extension.
+/// Application-specific EKU and revocation policy remain with the consumer.
+pub fn verify_document_signing_chain_at(
+    chain: &[CertificateDer<'_>],
+    anchor: &CertificateDer<'_>,
+    unix_seconds: u64,
+) -> crate::Result<()> {
+    use rustls::pki_types::UnixTime;
+    use x509_parser::time::ASN1Time;
+
+    let time = ASN1Time::from_timestamp(
+        i64::try_from(unix_seconds).map_err(|_| CryptoError::InvalidInput)?,
+    )
+    .map_err(|_| CryptoError::InvalidInput)?;
+    let (leaf, intermediates) = chain.split_first().ok_or(CryptoError::InvalidInput)?;
+    for (index, der) in chain.iter().chain(std::iter::once(anchor)).enumerate() {
+        let (remainder, certificate) = x509_parser::parse_x509_certificate(der.as_ref())
+            .map_err(|_| CryptoError::InvalidInput)?;
+        if !remainder.is_empty()
+            || !certificate.validity().is_valid_at(time)
+            || certificate.is_ca() != (index > 0)
+        {
+            return Err(CryptoError::InvalidInput);
+        }
+        if let Some(usage) = certificate
+            .key_usage()
+            .map_err(|_| CryptoError::InvalidInput)?
+            && !(if index == 0 {
+                usage.value.digital_signature()
+            } else {
+                usage.value.key_cert_sign()
+            })
+        {
+            return Err(CryptoError::InvalidInput);
+        }
+    }
+    let anchor = webpki::anchor_from_trusted_cert(anchor).map_err(|_| CryptoError::InvalidInput)?;
+    let roots = [anchor];
+    let leaf = webpki::EndEntityCert::try_from(leaf).map_err(|_| CryptoError::InvalidInput)?;
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    // Every supplied intermediate must be on the authenticated path, in wire
+    // order. Consumers use that same chain for revocation and authority facts.
+    let exact_path = |path: &webpki::VerifiedPath<'_>| {
+        if path
+            .intermediate_certificates()
+            .map(|cert| cert.der())
+            .eq(intermediates.iter().cloned())
+        {
+            Ok(())
+        } else {
+            Err(webpki::Error::UnknownIssuer)
+        }
+    };
+    leaf.verify_for_usage(
+        provider.signature_verification_algorithms.all,
+        &roots,
+        intermediates,
+        UnixTime::since_unix_epoch(Duration::from_secs(unix_seconds)),
+        DocumentSigningEku,
+        None,
+        Some(&exact_path),
+    )
+    .map(|_| ())
+    .map_err(|_| CryptoError::InvalidSignature)
+}
+
+// Document signing has no universal TLS client/server EKU. Consume and validate
+// the extension's DER without inventing a TLS purpose for VC credentials.
+struct DocumentSigningEku;
+
+impl webpki::ExtendedKeyUsageValidator for DocumentSigningEku {
+    fn validate(&self, usages: webpki::KeyPurposeIdIter<'_, '_>) -> Result<(), webpki::Error> {
+        for usage in usages {
+            usage?;
+        }
+        Ok(())
+    }
+}
+
 /// Standard client-certificate chain verification against PEM trust anchors
 /// at a caller-supplied Unix time.
 pub fn verify_client_chain_at(

@@ -57,7 +57,7 @@ impl Openid4vcProofValidator {
             match repository
                 .for_client(*tenant_id, client_id)
                 .await
-                .map_err(|_| ProofError::InvalidKeyAttestation)?
+                .map_err(|_| ProofError::Unavailable)?
             {
                 ClientTrustPolicy::Unbound => {}
                 ClientTrustPolicy::BoundInactive => {
@@ -134,6 +134,9 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     return Err(ProofError::UnsupportedType);
                 }
                 let jwk = header.jwk.as_ref().ok_or(ProofError::InvalidSignature)?;
+                if header.kid.is_some() || header.x5c.is_some() {
+                    return Err(ProofError::InvalidSignature);
+                }
                 let jwk = serde_json::to_value(jwk).map_err(|_| ProofError::InvalidSignature)?;
                 let key = decoding_key(&jwk, header.alg)?;
                 let mut validation = Validation::new(header.alg);

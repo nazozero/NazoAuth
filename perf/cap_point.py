@@ -23,6 +23,8 @@ cpu = (
     .get("cpu_percent_avg", 0)
 )
 lat = m.get("latency_ms", {})
+if m.get("ops_per_s") is None:
+    sys.exit("UNAVAILABLE: missing business throughput")
 print(
     m.get("ops_per_s", 0),
     m.get("errors", 0),

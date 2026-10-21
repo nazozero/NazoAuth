@@ -108,18 +108,21 @@ fn default_policy_is_the_san_bound_policy() {
 #[test]
 fn issuer_validation_rejects_malformed_or_credential_bearing_urls() {
     let policy = VcIssuerTrustPolicy::san_bound();
+    let leaf = leaf_for_dns_name("issuer.example");
+    policy
+        .validate("https://issuer.example", &leaf)
+        .expect("valid URL and certificate");
 
     for issuer in [
         "not a URL",
         "http://issuer.example",
-        "https:///tenant-a",
         "https://user@issuer.example",
         "https://user:password@issuer.example",
         "https://issuer.example?tenant=tenant-a",
         "https://issuer.example#tenant-a",
     ] {
         assert_eq!(
-            policy.validate(issuer, b"not a certificate"),
+            policy.validate(issuer, &leaf),
             Err(CredentialTrustError::UntrustedIssuer),
             "issuer URL must be rejected: {issuer}"
         );

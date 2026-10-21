@@ -18,6 +18,7 @@ pub struct ScimAuthenticationFacts<'a> {
 
 #[derive(Clone, Debug)]
 pub struct ScimAuthorizedRequest {
+    pub modules: std::sync::Arc<nazo_runtime_modules::RequestSnapshot>,
     pub tenant: TenantContext,
     pub cursor_subject: ScimCursorSubject,
     pub event_receiver: Option<EventReceiver>,
@@ -41,14 +42,6 @@ pub trait ScimRequestAuthorizer: Send + Sync {
         facts: ScimAuthenticationFacts<'a>,
         required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>>;
-
-    fn security_events_enabled(&self) -> bool {
-        false
-    }
-
-    fn security_event_delivery_enabled(&self) -> bool {
-        self.security_events_enabled()
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

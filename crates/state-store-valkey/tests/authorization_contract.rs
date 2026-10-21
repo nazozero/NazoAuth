@@ -479,6 +479,48 @@ async fn par_preserves_exact_hashed_key_json_ttl_and_conditional_cleanup() {
 }
 
 #[tokio::test]
+async fn authorization_code_transition_preserves_approved_json() {
+    let Some((store, _)) = setup().await else {
+        return;
+    };
+    let code_hash = uuid::Uuid::now_v7().to_string();
+    let mut payload = code_payload(&code_hash);
+    payload.authorization_details = json!([{
+        "type": "account_information",
+        "amount": 1234567890123456_u64,
+        "ratio": 0.12345678901234567_f64,
+        "nested": [],
+        "text": "quoted \"value\" and unicode 中文"
+    }]);
+    let expected = serde_json::to_value(&payload).unwrap();
+    store
+        .store_authorization_code_hash(&code_hash, &AuthorizationCodeState::Pending { payload }, 30)
+        .await
+        .unwrap();
+    let AuthorizationCodeBeginResult::Consuming(actual) = store
+        .begin_authorization_code(&code_hash, Utc::now())
+        .await
+        .unwrap()
+    else {
+        panic!("first begin must consume the pending code")
+    };
+    assert_eq!(serde_json::to_value(actual).unwrap(), expected);
+    let AuthorizationCodeState::Consuming { payload, .. } = store
+        .load_authorization_code_hash(&code_hash)
+        .await
+        .unwrap()
+        .unwrap()
+    else {
+        panic!("state must retain the consuming payload")
+    };
+    assert_eq!(serde_json::to_value(payload).unwrap(), expected);
+    store
+        .delete_authorization_code_hash(&code_hash)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn concurrent_authorization_code_begin_has_one_consuming_winner() {
     let Some((store, _)) = setup().await else {
         return;

@@ -138,7 +138,10 @@ impl AccessRequestRepository {
             .filter(client_access_requests::tenant_id.eq(tenant_id.as_uuid()))
             .filter(client_access_requests::user_id.eq(user_id.as_uuid()))
             .select(user_record_selection!())
-            .order(client_access_requests::created_at.desc())
+            .order((
+                client_access_requests::created_at.desc(),
+                client_access_requests::id.desc(),
+            ))
             .load::<AccessRequestRecord>(&mut connection)
             .await
             .map_err(map_error)?
@@ -162,7 +165,7 @@ impl AccessRequestRepository {
                 client_access_requests::status.eq(AccessRequestStatus::Pending.code()),
             ))
             .returning(user_record_selection!())
-            .get_result::<AccessRequestRecord>(&mut connection)
+            .load::<AccessRequestRecord>(&mut connection)
             .await
             .map_err(|error| match error {
                 // The existing user/tenant foreign keys enforce membership at
@@ -173,6 +176,8 @@ impl AccessRequestRepository {
                 ) => RepositoryError::NotFound,
                 other => map_error(other),
             })?
+            .pop()
+            .ok_or(RepositoryError::NotFound)?
             .try_into()
     }
 
@@ -232,7 +237,10 @@ impl AccessRequestRepository {
         }
         let items = items_query
             .select(admin_record_selection!())
-            .order(client_access_requests::created_at.desc())
+            .order((
+                client_access_requests::created_at.desc(),
+                client_access_requests::id.desc(),
+            ))
             .limit(limit)
             .offset(offset)
             .load::<AccessRequestRecord>(&mut connection)

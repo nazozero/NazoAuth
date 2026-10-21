@@ -28,13 +28,13 @@ pub fn prepare_device_authorization(
     form: DeviceAuthorizationForm,
     has_basic: bool,
 ) -> Result<PreparedDeviceAuthorization, OAuthEndpointError> {
-    let Some(_) = form.client_id.as_deref() else {
+    if form.client_id.is_none() && !has_basic {
         return Err(OAuthEndpointError::json(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "缺少 client_id.",
         ));
-    };
+    }
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     if has_basic && (form.client_secret.is_some() || has_assertion)
         || has_assertion && form.client_secret.is_some()

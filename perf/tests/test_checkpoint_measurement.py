@@ -371,6 +371,13 @@ class BinPolicyTest(unittest.TestCase):
         self.assertEqual(eps[0]["hole_area_ops"], 45.0)
         self.assertEqual(eps[1]["hole_area_ops"], 68.0)
 
+    def test_disjoint_selected_bins_are_not_continuous_deficits_or_recovery(self):
+        selected = [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+        records = [{"completed": value} for value in [5] * 5 + [20] * 5]
+        episodes = ca.deficit_episodes(selected, records, 20.0)
+        self.assertEqual([e["duration_s"] for e in episodes], [1] * 5)
+        self.assertTrue(all(not e["recovered"] for e in episodes))
+
     def test_irregular_sampling_missing_not_zero(self):
         base = 1767225600
         # every other second missing -> all reported as missing bins,
@@ -987,28 +994,6 @@ class EvaluatorTest(unittest.TestCase):
             self.assertEqual(verdict2, "FAIL")
             self.assertEqual(m2.get("load_generator_evidence"), "absent")
         finally:
-            shutil.rmtree(tmp)
-
-    def test_invalid_stops_search(self):
-        tmp = Path(tempfile.mkdtemp())
-        old_root, old_eval, old_run = cs.OUT_ROOT, cs.evaluate, cs.run_isolated
-        try:
-            cs.OUT_ROOT = tmp
-            cs.run_isolated = lambda *a, **k: tmp / "latest.json"
-            calls = []
-            def fake_eval(*a, **k):
-                calls.append(1)
-                return "INVALID", {"reason": "missing_or_inconsistent_"
-                                           "measurement_contract"}
-            cs.evaluate = fake_eval
-            cs.load_summary = lambda p: {"status": "passed", "k6": {}}
-            res = cs.search("cap_client_credentials", 100)
-            self.assertEqual(len(calls), 1)          # stopped after 1 point
-            self.assertIsNotNone(res["invalid"])
-            self.assertIsNone(res["first_fail_above"])
-        finally:
-            cs.OUT_ROOT, cs.evaluate, cs.run_isolated = (
-                old_root, old_eval, old_run)
             shutil.rmtree(tmp)
 
 

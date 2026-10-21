@@ -243,9 +243,7 @@ pub fn token_endpoint_success_response(
             }
             response
         }
-        TokenEndpointSuccess::PreAuthorized(body) => HttpResponse::Ok()
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .json(body),
+        TokenEndpointSuccess::PreAuthorized(body) => json_response_no_store(body),
     }
 }
 

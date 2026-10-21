@@ -52,13 +52,9 @@ impl SessionManagementEndpoint {
 }
 
 pub async fn check_session_iframe(endpoint: Data<SessionManagementEndpoint>) -> HttpResponse {
-    if !endpoint
-        .operations
-        .availability()
-        .permits_existing_transaction()
-    {
+    let Some(_lease) = endpoint.operations.acquire_request() else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
     let status_endpoint = format!("{}/check_session/status", endpoint.config.issuer);
     HttpResponse::Ok()
         .insert_header((header::CACHE_CONTROL, "no-store"))
@@ -79,13 +75,9 @@ pub async fn check_session_status(
     request: HttpRequest,
     Query(query): Query<CheckSessionStatusQuery>,
 ) -> HttpResponse {
-    if !endpoint
-        .operations
-        .availability()
-        .permits_existing_transaction()
-    {
+    let Some(_lease) = endpoint.operations.acquire_request() else {
         return empty_response(StatusCode::NOT_FOUND);
-    }
+    };
 
     // Preserve the protocol distinction between malformed state and a missing
     // OP session without performing a storage lookup for malformed input.

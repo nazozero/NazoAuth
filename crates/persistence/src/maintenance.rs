@@ -12,12 +12,16 @@ use nazo_identity::ports::RepositoryError;
 pub type SecurityStateMaintenanceFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, RepositoryError>> + Send + 'a>>;
 
-/// Deletion counters for one bounded maintenance batch.
+/// Progress counters for one bounded security-state maintenance batch.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CleanupBatchResult {
+    /// TOTP envelopes migrated to the current at-rest encryption key.
+    pub totp_rewrapped: u64,
     pub issuances: u64,
     /// Exported authorization facts whose business retention has ended.
     pub authorization_decisions: u64,
+    /// Expired one-use device approval receipts.
+    pub device_authorization_decisions: u64,
     /// Refresh families deleted because their current generation expired.
     pub refresh_tokens: u64,
     /// Compact spent/replay proofs deleted at their own expiry.

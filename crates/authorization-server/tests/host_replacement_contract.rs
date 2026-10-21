@@ -100,6 +100,7 @@ fn security_facts_validate_signature_target_and_replay_without_host_state() {
     let facts = DpopRequestFacts {
         method: http::Method::POST,
         path: "/token",
+        authority: Some("issuer.example"),
         proof: Ok(Some(&proof)),
         proof_present: true,
     };
@@ -115,6 +116,13 @@ fn security_facts_validate_signature_target_and_replay_without_host_state() {
             None,
         ))
     };
+    let mut other_endpoint = facts.clone();
+    other_endpoint.authority = Some("mtls.example");
+    assert_eq!(validate(other_endpoint), Err(DpopError::InvalidProof));
+    assert!(
+        store.0.lock().unwrap().is_empty(),
+        "wrong alias must not consume proof"
+    );
     let thumbprint = validate(facts.clone())
         .unwrap()
         .expect("verified key binding");

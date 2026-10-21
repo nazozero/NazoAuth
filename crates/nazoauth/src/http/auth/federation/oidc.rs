@@ -23,7 +23,7 @@ pub(super) struct OidcIdTokenClaims {
     pub(super) sub: String,
     pub(super) aud: Value,
     pub(super) azp: Option<String>,
-    pub(super) iat: Option<i64>,
+    pub(super) iat: i64,
     pub(super) nonce: Option<String>,
     pub(super) email: Option<String>,
     pub(super) email_verified: Option<bool>,
@@ -38,8 +38,9 @@ pub(super) fn oidc_authorization_url(
     nonce: &str,
     verifier: &str,
 ) -> String {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-    serializer
+    let mut url =
+        url::Url::parse(&provider.authorization_endpoint).expect("validated federation endpoint");
+    url.query_pairs_mut()
         .append_pair("response_type", "code")
         .append_pair("client_id", &provider.client_id)
         .append_pair("redirect_uri", &provider.redirect_uri)
@@ -48,11 +49,7 @@ pub(super) fn oidc_authorization_url(
         .append_pair("nonce", nonce)
         .append_pair("code_challenge_method", "S256")
         .append_pair("code_challenge", &pkce_s256(verifier));
-    format!(
-        "{}?{}",
-        provider.authorization_endpoint,
-        serializer.finish()
-    )
+    url.into()
 }
 
 pub(super) async fn exchange_oidc_code(
@@ -69,7 +66,13 @@ pub(super) async fn exchange_oidc_code(
         .finish();
     let response = client
         .post(&provider.token_endpoint)
-        .basic_auth(&provider.client_id, Some(&provider.client_secret))
+        .basic_auth(
+            url::form_urlencoded::byte_serialize(provider.client_id.as_bytes()).collect::<String>(),
+            Some(
+                url::form_urlencoded::byte_serialize(provider.client_secret.as_bytes())
+                    .collect::<String>(),
+            ),
+        )
         .header(
             reqwest::header::CONTENT_TYPE,
             "application/x-www-form-urlencoded",
@@ -134,9 +137,7 @@ pub(super) fn verify_oidc_id_token(
     let audience_count = claims.aud.as_array().map_or(1, Vec::len);
     if claims.nonce.as_deref() != Some(expected_nonce)
         || (audience_count > 1 && claims.azp.as_deref() != Some(&provider.client_id))
-        || claims
-            .iat
-            .is_some_and(|iat| iat > Utc::now().timestamp() + 60)
+        || claims.iat > Utc::now().timestamp() + 60
     {
         anyhow::bail!("OIDC ID Token claims failed policy");
     }

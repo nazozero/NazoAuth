@@ -1,3 +1,6 @@
+#[path = "support/pre_authorized.rs"]
+mod pre_authorized;
+use pre_authorized::PreAuthorizedFixture as _;
 #[path = "support/credential_response.rs"]
 mod credential_response;
 
@@ -661,7 +664,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     let pre_authorized_consume_at = Utc::now();
     assert!(
         issuer
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 offer_tenant_b_id,
                 &pre_authorized_hash,
                 None,
@@ -675,7 +678,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     );
     assert!(
         issuer
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 tenant_id,
                 &pre_authorized_hash,
                 None,
@@ -689,7 +692,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
     );
     assert!(
         issuer
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 tenant_id,
                 &pre_authorized_hash,
                 None,
@@ -769,7 +772,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
                 id: "pid".to_owned(),
                 format: CredentialFormat::SdJwtVc,
                 multiple: false,
-                meta: Some(serde_json::json!({})),
+                meta: Some(serde_json::json!({"vct_values":["ExampleCredential"]})),
                 claims: None,
                 claim_sets: None,
                 trusted_authorities: None,
@@ -1970,7 +1973,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         .unwrap();
     assert!(
         issuer
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 tenant_id,
                 &pre_authorized_hash,
                 Some("0000"),
@@ -1982,7 +1985,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
             .is_none()
     );
     let authorization = issuer
-        .consume_pre_authorized_offer(
+        .consume_offer_with_access(
             tenant_id,
             &pre_authorized_hash,
             Some("2468"),
@@ -1995,7 +1998,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
     assert_eq!(authorization.subject_id, subject_id);
     assert!(
         issuer
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 tenant_id,
                 &pre_authorized_hash,
                 Some("2468"),
@@ -2032,7 +2035,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         .unwrap();
     assert!(
         issuer
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 tenant_id,
                 &no_subject_hash,
                 None,
@@ -3471,7 +3474,7 @@ async fn pre_authorized_persist_rejects_a_client_deactivated_after_authenticatio
         .to_string();
     assert_eq!(
         issuer
-            .persist_pre_authorized_access(&token_hash, &access, Some(&client_id))
+            .persist_new_offer_access(&token_hash, &access, Some(&client_id))
             .await,
         Err(CredentialStoreError::ClientInactive),
         "a registered client deactivated after authentication must fail closed"
@@ -3562,7 +3565,7 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
     let persist_client_id = client_id.clone();
     let mut persist_task = tokio::spawn(async move {
         persist_repository
-            .persist_pre_authorized_access(&persist_hash, &persist_access, Some(&persist_client_id))
+            .persist_new_offer_access(&persist_hash, &persist_access, Some(&persist_client_id))
             .await
     });
 
@@ -3684,7 +3687,7 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
         .to_hex()
         .to_string();
     issuer
-        .persist_pre_authorized_access(&anonymous_hash, &anonymous, None)
+        .persist_new_offer_access(&anonymous_hash, &anonymous, None)
         .await
         .expect("anonymous persist must not consult oauth_clients");
     let anonymous_row = persisted_access_grant(&pool, &anonymous_hash)
@@ -3742,7 +3745,7 @@ async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
         .to_hex()
         .to_string();
     issuer
-        .persist_pre_authorized_access(&impersonating_hash, &impersonating, None)
+        .persist_new_offer_access(&impersonating_hash, &impersonating, None)
         .await
         .expect(
             "registered_client_id = None must skip the client check even when \
@@ -3787,11 +3790,7 @@ async fn pre_authorized_persist_distinguishes_mismatched_and_inactive_clients() 
         .to_string();
     assert_eq!(
         issuer
-            .persist_pre_authorized_access(
-                &mismatch_hash,
-                &mismatch,
-                Some("other-registered-client")
-            )
+            .persist_new_offer_access(&mismatch_hash, &mismatch, Some("other-registered-client"))
             .await,
         Err(CredentialStoreError::InvalidTransition),
         "a registered client id that differs from the grant client must fail before SQL"
@@ -3819,7 +3818,7 @@ async fn pre_authorized_persist_distinguishes_mismatched_and_inactive_clients() 
         .to_string();
     assert_eq!(
         issuer
-            .persist_pre_authorized_access(&inactive_hash, &inactive, Some(&client_id))
+            .persist_new_offer_access(&inactive_hash, &inactive, Some(&client_id))
             .await,
         Err(CredentialStoreError::ClientInactive),
         "a matching-but-inactive registered client must fail closed"
@@ -3844,7 +3843,7 @@ async fn pre_authorized_persist_distinguishes_mismatched_and_inactive_clients() 
         .to_hex()
         .to_string();
     issuer
-        .persist_pre_authorized_access(&active_hash, &active, Some(&client_id))
+        .persist_new_offer_access(&active_hash, &active, Some(&client_id))
         .await
         .expect("an active matching client must persist the grant");
     let active_row = persisted_access_grant(&pool, &active_hash)
@@ -3923,7 +3922,7 @@ async fn revoked_access_grants_stay_revoked_through_every_persist_path() {
         .to_hex()
         .to_string();
     issuer
-        .persist_pre_authorized_access(&persisted_hash, &persisted, Some(&client_id))
+        .persist_new_offer_access(&persisted_hash, &persisted, Some(&client_id))
         .await
         .unwrap();
     let mut connection = get_conn(&pool).await.unwrap();
@@ -3938,7 +3937,7 @@ async fn revoked_access_grants_stay_revoked_through_every_persist_path() {
     let mut repersisted = persisted.clone();
     repersisted.dpop_jkt = Some("openid4vc-vf07-dpop-thumbprint".to_owned());
     issuer
-        .persist_pre_authorized_access(&persisted_hash, &repersisted, Some(&client_id))
+        .persist_new_offer_access(&persisted_hash, &repersisted, Some(&client_id))
         .await
         .expect("the pre-authorized persist on a revoked grant is still Ok");
     let row = persisted_access_grant(&pool, &persisted_hash)
@@ -4285,9 +4284,6 @@ async fn anonymous_pre_authorized_persist_writes_the_upsert_row_shape() {
         Duration::minutes(10),
     );
     via_upsert.proof_origin = nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized;
-    via_upsert
-        .credential_identifiers
-        .push(nazo_openid4vci::CredentialIdentifier("pid-1".to_owned()));
     via_upsert.dpop_jkt = Some("openid4vc-up05-dpop-thumbprint".to_owned());
     let upsert_hash = blake3::hash(via_upsert.token_id.as_bytes())
         .to_hex()
@@ -4303,7 +4299,7 @@ async fn anonymous_pre_authorized_persist_writes_the_upsert_row_shape() {
         .to_hex()
         .to_string();
     issuer
-        .persist_pre_authorized_access(&persist_hash, &via_persist, None)
+        .persist_new_offer_access(&persist_hash, &via_persist, None)
         .await
         .unwrap();
 
@@ -5111,7 +5107,7 @@ async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
         let tenant_id = offer.tenant_id;
         attempts.push(tokio::spawn(async move {
             repository
-                .consume_pre_authorized_offer(
+                .consume_offer_with_access(
                     tenant_id,
                     &code_hash,
                     Some("2468"),
@@ -5177,7 +5173,7 @@ async fn pre_authorized_verification_releases_the_pool_and_has_one_consumer() {
     assert!(after < before);
     assert!(
         repository
-            .consume_pre_authorized_offer(
+            .consume_offer_with_access(
                 offer.tenant_id,
                 &code_hash,
                 Some("2468"),
@@ -5219,13 +5215,7 @@ async fn pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result() 
         let tenant_id = offer.tenant_id;
         let attempt = tokio::spawn(async move {
             repository
-                .consume_pre_authorized_offer(
-                    tenant_id,
-                    &code_hash,
-                    Some("2468"),
-                    "wallet",
-                    read_at,
-                )
+                .consume_offer_with_access(tenant_id, &code_hash, Some("2468"), "wallet", read_at)
                 .await
         });
         tokio::time::timeout(
@@ -5914,7 +5904,7 @@ async fn presentation_completion_rechecks_owner_clock_after_pool_and_record_wait
                 "client_id":"redirect_uri:https://verifier.example/response",
                 "response_type":"vp_token", "response_mode":"direct_post",
                 "response_uri":"https://verifier.example/response", "nonce":"nonce", "state":state,
-                "dcql_query":{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}]}
+                "dcql_query":{"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]}}]}
             }))
             .unwrap(),
             request_object: None,
@@ -6392,12 +6382,12 @@ async fn credential_persistence_rejects_binding_conflicts_and_accepts_exact_retr
             .to_hex()
             .to_string();
         issuer
-            .persist_pre_authorized_access(&hash, &access, registered)
+            .persist_new_offer_access(&hash, &access, registered)
             .await
             .unwrap();
         let before = persisted_access_grant(&pool, &hash).await.unwrap();
         issuer
-            .persist_pre_authorized_access(&hash, &access, registered)
+            .persist_new_offer_access(&hash, &access, registered)
             .await
             .expect("an exact retry must succeed without rewriting the row");
         assert_eq!(
@@ -6417,7 +6407,7 @@ async fn credential_persistence_rejects_binding_conflicts_and_accepts_exact_retr
             );
             assert_eq!(
                 issuer
-                    .persist_pre_authorized_access(&hash, &wrong, registered)
+                    .persist_new_offer_access(&hash, &wrong, registered)
                     .await,
                 Err(CredentialStoreError::InvalidTransition)
             );
@@ -6441,7 +6431,7 @@ async fn credential_persistence_rejects_binding_conflicts_and_accepts_exact_retr
     candidate.expires_at += Duration::minutes(5);
     assert_eq!(
         issuer
-            .persist_pre_authorized_access(&hash, &candidate, Some(&client_id))
+            .persist_new_offer_access(&hash, &candidate, Some(&client_id))
             .await,
         Err(CredentialStoreError::InvalidTransition)
     );
@@ -6458,4 +6448,86 @@ fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
         issued_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
         expires_at: chrono::DateTime::from_timestamp(1_700_003_600, 0).unwrap(),
     }
+}
+
+#[tokio::test]
+async fn pre_authorized_commit_rolls_back_grant_when_offer_write_fails_and_can_retry() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 2).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "preauth-atomic").await;
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x74; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let mut access =
+        openid4vc_access_fixture(tenant_id, subject_id, "wallet", Duration::minutes(5));
+    access.proof_origin = nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized;
+    let prepared = pre_authorized::prepared_offer(&issuer, &access).await;
+    let token_hash = Uuid::now_v7().to_string();
+    let name = format!("preauth_fail_{}", subject_id.simple());
+    let mut conn = get_conn(&pool).await.unwrap();
+    conn.batch_execute(&format!(
+        "CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected offer write failure'; END $$; \
+         CREATE TRIGGER {name} BEFORE UPDATE ON openid4vci_offers FOR EACH ROW WHEN (NEW.subject_id = '{subject_id}') EXECUTE FUNCTION {name}();"
+    )).await.unwrap();
+    drop(conn);
+    assert_eq!(
+        issuer
+            .persist_pre_authorized_access(&prepared, &token_hash, &access, None)
+            .await,
+        Err(CredentialStoreError::Unavailable)
+    );
+    assert!(
+        issuer
+            .resolve_access(&token_hash, Utc::now())
+            .await
+            .unwrap()
+            .is_none(),
+        "grant insertion must roll back with offer consumption"
+    );
+    let mut conn = get_conn(&pool).await.unwrap();
+    let remaining = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE subject_id = $1 AND consumed_at IS NULL")
+        .bind::<SqlUuid, _>(subject_id).get_result::<CountRow>(&mut conn).await.unwrap();
+    assert_eq!(remaining.count, 1);
+    conn.batch_execute(&format!(
+        "DROP TRIGGER {name} ON openid4vci_offers; DROP FUNCTION {name}();"
+    ))
+    .await
+    .unwrap();
+    drop(conn);
+    issuer
+        .persist_pre_authorized_access(&prepared, &token_hash, &access, None)
+        .await
+        .unwrap();
+    assert!(
+        issuer
+            .resolve_access(&token_hash, Utc::now())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let mut competing = access.clone();
+    competing.token_id = Uuid::now_v7();
+    let competing_hash = Uuid::now_v7().to_string();
+    assert_eq!(
+        issuer
+            .persist_pre_authorized_access(&prepared, &competing_hash, &competing, None)
+            .await,
+        Err(CredentialStoreError::InvalidTransition)
+    );
+    assert!(
+        issuer
+            .resolve_access(&competing_hash, Utc::now())
+            .await
+            .unwrap()
+            .is_none()
+    );
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
 }

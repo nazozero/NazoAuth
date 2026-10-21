@@ -435,7 +435,7 @@ fn after_accept_crash_executes_the_side_effect_exactly_once() {
     assert_eq!(applications.load(AtomicOrdering::SeqCst), 1);
 
     // And another restart observes the completed result only.
-    let (_, _, effect) = ledger_side_effect(&directory);
+    let (replay_invocations, _, effect) = ledger_side_effect(&directory);
     let replay = tokio::runtime::Runtime::new()
         .unwrap()
         .block_on(run_journaled_operation(
@@ -448,7 +448,7 @@ fn after_accept_crash_executes_the_side_effect_exactly_once() {
         ))
         .unwrap();
     assert!(replay.recovered);
-    assert_eq!(invocations.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(replay_invocations.load(AtomicOrdering::SeqCst), 0);
     fs::remove_dir_all(directory).unwrap();
 }
 #[tokio::test]
@@ -465,6 +465,10 @@ async fn executing_records_reenter_only_for_proven_idempotent_owners() {
 
     // The owner's own ledger makes re-entry apply the mutation once even
     // though the business action is invoked twice across two processes.
+    let (first_invocations, first_applications, first_effect) = ledger_side_effect(&directory);
+    first_effect().await.unwrap();
+    assert_eq!(first_invocations.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(first_applications.load(AtomicOrdering::SeqCst), 1);
     let (invocations, applications, effect) = ledger_side_effect(&directory);
     let outcome = run_journaled_operation(
         &directory,
@@ -478,9 +482,11 @@ async fn executing_records_reenter_only_for_proven_idempotent_owners() {
     .unwrap();
     assert!(!outcome.recovered);
     assert_eq!(invocations.load(AtomicOrdering::SeqCst), 1);
-    assert_eq!(applications.load(AtomicOrdering::SeqCst), 1);
-
-    assert_eq!(applications.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(
+        applications.load(AtomicOrdering::SeqCst),
+        0,
+        "committed owner mutation must not repeat"
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -674,6 +680,7 @@ fn torn_publication_windows_recover_monotonically_or_fail_closed() {
     let accepted = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
         recovery_coverage_version: None,
+        migration_baseline: None,
         operation_id: OPERATION_ID.to_owned(),
         request_hash: hash('a'),
         controller_id: CONTROLLER_ID.to_owned(),
@@ -755,6 +762,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
         let mut record = OperationJournalRecord {
             schema: CONTROL_JOURNAL_SCHEMA,
             recovery_coverage_version: None,
+            migration_baseline: None,
             operation_id: OPERATION_ID.to_owned(),
             request_hash: hash('a'),
             controller_id: CONTROLLER_ID.to_owned(),
@@ -827,6 +835,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
         let record = OperationJournalRecord {
             schema: CONTROL_JOURNAL_SCHEMA,
             recovery_coverage_version: None,
+            migration_baseline: None,
             operation_id: OPERATION_ID.to_owned(),
             request_hash: hash('a'),
             controller_id: CONTROLLER_ID.to_owned(),
@@ -866,6 +875,7 @@ fn cleanup_record(directory: &Path, id: &str, phase: &str, completed_at: Option<
     let record = OperationJournalRecord {
         schema: CONTROL_JOURNAL_SCHEMA,
         recovery_coverage_version: None,
+        migration_baseline: None,
         operation_id: id.to_owned(),
         request_hash: hash('a'),
         controller_id: CONTROLLER_ID.to_owned(),
@@ -1402,5 +1412,51 @@ fn recovery_coverage_marker_is_closed_and_nonterminal_records_remain_resumable()
     );
     record.recovery_coverage_version = None;
     validate_record(&record).unwrap();
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn migration_baseline_survives_effect_commit_before_result_publication() {
+    let directory = temporary_directory();
+    let request_hash = hash('a');
+    accept(
+        &directory,
+        &operation(OPERATION_ID),
+        &request_hash,
+        &snapshot(),
+    )
+    .unwrap();
+    let mut record = load_accepted(&directory, OPERATION_ID, &request_hash)
+        .unwrap()
+        .unwrap();
+    record
+        .persist_migration_baseline(&directory, "schema-before".to_owned())
+        .unwrap();
+    let first = super::run_journaled_operation(&directory, record, &|_| {}, async |record| {
+        assert_eq!(record.migration_baseline.as_deref(), Some("schema-before"));
+        Err(SideEffectError::Retryable(anyhow::anyhow!(
+            "commit acknowledged locally; result connection lost"
+        )))
+    })
+    .await;
+    assert!(matches!(
+        first,
+        Err(JournalFlowError::RetryableExecution(_))
+    ));
+    let record = load_accepted(&directory, OPERATION_ID, &request_hash)
+        .unwrap()
+        .unwrap();
+    assert!(!record.needs_migration_baseline());
+    let completed = super::run_journaled_operation(&directory, record, &|_| {}, async |record| {
+        Ok(Some(ControlResultData::MigrationApplied {
+            unchanged: record.migration_baseline.as_deref() == Some("schema-after"),
+        }))
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        completed.result.result,
+        Some(ControlResultData::MigrationApplied { unchanged: false })
+    );
     fs::remove_dir_all(directory).unwrap();
 }

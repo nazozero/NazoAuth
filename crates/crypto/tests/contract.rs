@@ -53,6 +53,40 @@ mod jose {
         0x20,
     ];
 
+    #[test]
+    fn verified_jws_rejects_unhandled_critical_headers() {
+        let private = signature::generate_private_key(Algorithm::ES256).unwrap();
+        let key = verification_key(Algorithm::ES256, &private);
+        let mut validation = jwt::Validation::new(Algorithm::ES256);
+        validation.required_spec_claims.clear();
+        validation.validate_exp = false;
+        for (extra, accepted) in [
+            (serde_json::json!({}), true),
+            (serde_json::json!({"crit":["future"],"future":true}), false),
+            (serde_json::json!({"crit":[]}), false),
+        ] {
+            let mut header = serde_json::json!({"alg":"ES256"});
+            header
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let input = format!(
+                "{}.{}",
+                URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap()),
+                URL_SAFE_NO_PAD.encode(b"{\"sub\":\"subject\"}")
+            );
+            let token = format!(
+                "{input}.{}",
+                URL_SAFE_NO_PAD.encode(sign_raw(Algorithm::ES256, &private, input.as_bytes()))
+            );
+            assert_eq!(jwt::decode_header(&token).is_ok(), accepted);
+            assert_eq!(
+                jwt::decode::<serde_json::Value>(&token, &key, &validation).is_ok(),
+                accepted
+            );
+        }
+    }
+
     /// Prepares signing material from DER and performs one raw sign call,
     /// matching the request-time prepared-key usage in production.
     fn sign_raw(algorithm: Algorithm, private_der: &[u8], message: &[u8]) -> Vec<u8> {

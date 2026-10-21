@@ -409,8 +409,8 @@ fn issuance_errors_map_to_stable_http_contracts() {
         ),
         (
             CredentialIssuanceError::Proof(ProofError::Unavailable),
-            400,
-            "invalid_proof",
+            503,
+            "server_error",
         ),
         (
             CredentialIssuanceError::InvalidHolderBinding,

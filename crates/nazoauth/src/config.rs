@@ -196,6 +196,9 @@ const SECRET_FILE_INPUTS: &[(&str, &str)] = &[
     ("PAIRWISE_SUBJECT_SECRET", "PAIRWISE_SUBJECT_SECRET_FILE"),
 ];
 const ENV_CONFIG_KEYS: &[&str] = &[
+    "MFA_FAILURE_WINDOW_SECONDS",
+    "MFA_FAILURE_MAX_ATTEMPTS",
+    "PENDING_MFA_SESSION_TTL_SECONDS",
     "ACCESS_TOKEN_TTL_SECONDS",
     "ADDITIONAL_SCOPES_SUPPORTED",
     "AUTH_CODE_TTL_SECONDS",
@@ -975,6 +978,9 @@ fn read_or_create_generated_secret_with_size(
         )
     })?;
 
+    #[cfg(windows)]
+    restrict_secret_directory_permissions(parent)?;
+
     let mut generated = vec![0_u8; generated_bytes];
     rand::rng().fill_bytes(&mut generated);
     let value = URL_SAFE_NO_PAD.encode(generated);
@@ -985,17 +991,19 @@ fn read_or_create_generated_secret_with_size(
             .unwrap_or("secret"),
         URL_SAFE_NO_PAD.encode(rand::random::<[u8; 12]>())
     ));
-    let mut temporary = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary_path)
-        .with_context(|| {
-            format!(
-                "failed to create generated secret temporary file {}",
-                temporary_path.display()
-            )
-        })?;
-    restrict_secret_permissions(&temporary_path)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut temporary = options.open(&temporary_path).with_context(|| {
+        format!(
+            "failed to create generated secret temporary file {}",
+            temporary_path.display()
+        )
+    })?;
     temporary.write_all(value.as_bytes()).with_context(|| {
         format!(
             "failed to write generated secret {}",
@@ -1020,6 +1028,13 @@ fn read_or_create_generated_secret_with_size(
         }
     }
     let _ = std::fs::remove_file(&temporary_path);
+    #[cfg(unix)]
+    File::open(parent)?.sync_all().with_context(|| {
+        format!(
+            "failed to persist generated secret directory {}",
+            parent.display()
+        )
+    })?;
     read_generated_secret(path)
 }
 
@@ -1045,16 +1060,45 @@ fn read_generated_secret(path: &Path) -> anyhow::Result<String> {
     Ok(value)
 }
 
-#[cfg(unix)]
-fn restrict_secret_permissions(path: &Path) -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt as _;
-
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-        .with_context(|| format!("failed to restrict generated secret {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn restrict_secret_permissions(_path: &Path) -> anyhow::Result<()> {
+#[cfg(windows)]
+fn restrict_secret_directory_permissions(path: &Path) -> anyhow::Result<()> {
+    // Restrict the secret directory before creating the file, so even its
+    // initial inherited ACL is private. No readable temporary file is exposed.
+    // Native ACL utilities are invoked directly, without a command shell.
+    let identity = std::process::Command::new("whoami.exe")
+        .args(["/user", "/fo", "csv", "/nh"])
+        .output()
+        .context("failed to read the Windows secret owner")?;
+    anyhow::ensure!(
+        identity.status.success(),
+        "failed to read the Windows secret owner"
+    );
+    let identity = String::from_utf8_lossy(&identity.stdout);
+    let sid = identity
+        .trim()
+        .rsplit(',')
+        .next()
+        .unwrap_or("")
+        .trim_matches('"');
+    anyhow::ensure!(
+        sid.starts_with("S-1-")
+            && sid
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || byte == b'S' || byte == b'-'),
+        "Windows secret owner SID is malformed"
+    );
+    let result = std::process::Command::new("icacls.exe")
+        .arg(path)
+        .args(["/inheritance:r", "/grant:r"])
+        .arg(format!("*{sid}:(OI)(CI)(F)"))
+        .arg("*S-1-5-18:(OI)(CI)(F)")
+        .output()
+        .context("failed to restrict the Windows secret ACL")?;
+    anyhow::ensure!(
+        result.status.success(),
+        "failed to restrict generated secret {}",
+        path.display()
+    );
     Ok(())
 }
 

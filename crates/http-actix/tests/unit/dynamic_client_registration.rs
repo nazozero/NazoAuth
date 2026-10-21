@@ -263,8 +263,8 @@ struct FakeGuard {
 }
 
 impl DynamicRegistrationRequestGuard for FakeGuard {
-    fn accepts_new_requests(&self) -> bool {
-        self.enabled
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        test_module_lease(self.enabled)
     }
 
     fn enforce_rate_limit<'a>(
@@ -292,6 +292,7 @@ fn endpoint(enabled: bool) -> DynamicRegistrationEndpoint {
 
 fn application_config() -> DynamicRegistrationConfig {
     DynamicRegistrationConfig {
+        require_fapi2: false,
         tenant: TenantContext::default_system(),
         issuer: "https://issuer.example".to_owned(),
         default_audience: "https://api.example".to_owned(),
@@ -527,7 +528,7 @@ async fn configured_initial_access_token_keeps_oauth_only_client_pkce_policy() {
 }
 
 #[actix_web::test]
-async fn configured_initial_access_token_applies_baseline_confidential_oidc_policy() {
+async fn configured_initial_access_token_keeps_confidential_oidc_pkce_required() {
     let store = FakeStore::new();
     let service = test::init_service(
         App::new()
@@ -558,43 +559,7 @@ async fn configured_initial_access_token_applies_baseline_confidential_oidc_poli
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
-    );
-}
-
-#[actix_web::test]
-async fn configured_token_preserves_oidc_policy() {
-    let store = FakeStore::new();
-    let service = test::init_service(
-        App::new()
-            .app_data(Data::new(endpoint_with_store(true, store.clone())))
-            .configure(configure),
-    )
-    .await;
-
-    let response = test::call_service(
-        &service,
-        test::TestRequest::post()
-            .uri("/register")
-            .insert_header((header::AUTHORIZATION, "Bearer initial-token"))
-            .set_json(json!({
-                "grant_types": ["authorization_code"],
-                "redirect_uris": ["https://client.example/callback"],
-                "scope": "openid profile"
-            }))
-            .to_request(),
-    )
-    .await;
-
-    assert_eq!(response.status(), StatusCode::CREATED);
-    assert!(
-        store
-            .client
-            .lock()
-            .expect("client lock")
-            .as_ref()
-            .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 }
 
@@ -632,7 +597,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 
     let updated = test::call_service(
@@ -643,6 +608,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
             .set_json(json!({
                 "client_id": client_id,
                 "client_secret": "current-secret",
+                "scope": "openid",
                 "client_name": "Updated registered client",
                 "redirect_uris": ["https://client.example/callback"]
             }))
@@ -657,7 +623,7 @@ async fn configured_initial_access_update_preserves_security_policy() {
             .expect("client lock")
             .as_ref()
             .map(|client| &client.security_policy)
-            .is_some_and(|policy| policy.allow_confidential_oidc_without_pkce)
+            .is_some_and(|policy| !policy.allow_confidential_oidc_without_pkce)
     );
 }
 
@@ -698,28 +664,6 @@ async fn configured_public_client_keeps_strict_pkce_policy() {
 
 #[actix_web::test]
 async fn unknown_initial_access_token_remains_invalid() {
-    let service = test::init_service(
-        App::new()
-            .app_data(Data::new(endpoint(true)))
-            .configure(configure),
-    )
-    .await;
-    let response = test::call_service(
-        &service,
-        test::TestRequest::post()
-            .uri("/register")
-            .insert_header((header::AUTHORIZATION, "Bearer unknown-token"))
-            .set_json(json!({}))
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    let body: Value = test::read_body_json(response).await;
-    assert_eq!(body["error"], "invalid_token");
-}
-
-#[actix_web::test]
-async fn non_configured_initial_access_token_is_rejected_without_dependency_lookup() {
     let service = test::init_service(
         App::new()
             .app_data(Data::new(endpoint(true)))
@@ -906,6 +850,7 @@ async fn registration_and_management_methods_keep_wire_contracts() {
             .set_json(json!({
                 "client_id": client_id,
                 "client_secret": "current-secret",
+                "scope": "openid",
                 "client_name": "Updated Client",
                 "redirect_uris": ["https://client.example/callback"]
             }))
@@ -956,6 +901,7 @@ async fn client_configuration_update_preserves_server_managed_security_policy() 
             .set_json(json!({
                 "client_id": "client-test",
                 "client_secret": "current-secret",
+                "scope": "openid",
                 "client_name": "Updated Client",
                 "redirect_uris": ["https://client.example/callback"]
             }))
@@ -1141,4 +1087,23 @@ fn client() -> OAuthClient {
         require_mtls_bound_tokens: false,
         is_active: true,
     }
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::DynamicClientRegistration].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::DynamicClientRegistration,
+        CapabilityAdmission::NewRequest,
+    )
 }

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use actix_web::{
     http::{StatusCode, header},
@@ -29,8 +29,8 @@ impl nazo_oauth_server::contracts::fapi_resource::FapiResourceAuthorizer for NoF
 struct NoFapiSignatures;
 
 impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures for NoFapiSignatures {
-    fn enabled(&self) -> bool {
-        false
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        None
     }
     fn verify_and_consume<'a>(
         &'a self,
@@ -65,7 +65,9 @@ async fn framework_boundary_transport_fapi_missing_token_has_exact_unsigned_wire
     ));
     let response = nazo_http_actix::fapi_resource(
         endpoint,
-        TestRequest::get().uri("/fapi/resource").to_http_request(),
+        TestRequest::get()
+            .uri("https://issuer.example/fapi/resource")
+            .to_http_request(),
         Bytes::new(),
     )
     .await;
@@ -86,180 +88,8 @@ async fn framework_boundary_transport_fapi_missing_token_has_exact_unsigned_wire
     );
 }
 
-struct FailingFapiResponseSigner {
-    calls: Arc<Mutex<Vec<&'static str>>>,
-}
-
-impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures
-    for FailingFapiResponseSigner
-{
-    fn enabled(&self) -> bool {
-        self.calls.lock().unwrap().push("enabled");
-        true
-    }
-
-    fn verify_and_consume<'a>(
-        &'a self,
-        _tenant_id: &'a str,
-        _client_id: &'a str,
-        _input: &'a nazo_http_signatures::ParsedSignatureInput,
-    ) -> nazo_oauth_server::contracts::fapi_resource::FapiFuture<
-        'a,
-        Result<(), nazo_oauth_server::contracts::fapi_resource::FapiSignatureVerificationError>,
-    > {
-        panic!("missing token must stop before signature verification")
-    }
-
-    fn response_signature(
-        &self,
-    ) -> Result<
-        Arc<dyn nazo_oauth_server::contracts::fapi_resource::FapiResponseSignature>,
-        nazo_oauth_server::contracts::fapi_resource::FapiSignatureOperationError,
-    > {
-        self.calls.lock().unwrap().push("response_signature");
-        Err(nazo_oauth_server::contracts::fapi_resource::FapiSignatureOperationError::Unavailable)
-    }
-}
-
-#[actix_web::test]
-async fn framework_boundary_transport_fapi_signer_failure_erases_error_wire_after_capture() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let endpoint = Data::new(nazo_http_actix::FapiResourceEndpoint::new(
-        "https://issuer.example",
-        "https://mtls.issuer.example",
-        300,
-        Arc::new(NoFapiAuthorizer),
-        Arc::new(NoFapiMtls),
-        Arc::new(FailingFapiResponseSigner {
-            calls: calls.clone(),
-        }),
-    ));
-    let response = nazo_http_actix::fapi_resource(
-        endpoint,
-        TestRequest::get().uri("/fapi/resource").to_http_request(),
-        Bytes::new(),
-    )
-    .await;
-    assert_eq!(
-        calls.lock().unwrap().as_slice(),
-        &["enabled", "response_signature"]
-    );
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert!(!response.headers().contains_key("signature"));
-    assert!(!response.headers().contains_key("signature-input"));
-    assert_eq!(ready_body_bytes(response).await, b"");
-}
-
-struct RecordingFapiSigner {
-    bases: Arc<Mutex<Vec<Vec<u8>>>>,
-}
-
-impl nazo_oauth_server::contracts::fapi_resource::FapiResponseSignature for RecordingFapiSigner {
-    fn kid(&self) -> &str {
-        "response-key"
-    }
-    fn algorithm(&self) -> &str {
-        "ed25519"
-    }
-    fn sign<'a>(
-        &'a self,
-        signature_base: &'a [u8],
-    ) -> nazo_oauth_server::contracts::fapi_resource::FapiFuture<
-        'a,
-        Result<Vec<u8>, nazo_oauth_server::contracts::fapi_resource::FapiSignatureOperationError>,
-    > {
-        self.bases.lock().unwrap().push(signature_base.to_vec());
-        Box::pin(async { Ok(vec![7; 64]) })
-    }
-}
-
-struct RecordingFapiSignatures {
-    calls: Arc<Mutex<Vec<&'static str>>>,
-    signer: Arc<RecordingFapiSigner>,
-}
-
-impl nazo_oauth_server::contracts::fapi_resource::FapiHttpMessageSignatures
-    for RecordingFapiSignatures
-{
-    fn enabled(&self) -> bool {
-        self.calls.lock().unwrap().push("enabled");
-        true
-    }
-    fn verify_and_consume<'a>(
-        &'a self,
-        _tenant_id: &'a str,
-        _client_id: &'a str,
-        _input: &'a nazo_http_signatures::ParsedSignatureInput,
-    ) -> nazo_oauth_server::contracts::fapi_resource::FapiFuture<
-        'a,
-        Result<(), nazo_oauth_server::contracts::fapi_resource::FapiSignatureVerificationError>,
-    > {
-        panic!("no token must skip request signature verification")
-    }
-    fn response_signature(
-        &self,
-    ) -> Result<
-        Arc<dyn nazo_oauth_server::contracts::fapi_resource::FapiResponseSignature>,
-        nazo_oauth_server::contracts::fapi_resource::FapiSignatureOperationError,
-    > {
-        self.calls.lock().unwrap().push("response_signature");
-        Ok(self.signer.clone())
-    }
-}
-
-#[actix_web::test]
-async fn framework_boundary_transport_fapi_signed_error_preserves_body_and_content_digest() {
-    let calls = Arc::new(Mutex::new(Vec::new()));
-    let bases = Arc::new(Mutex::new(Vec::new()));
-    let endpoint = Data::new(nazo_http_actix::FapiResourceEndpoint::new(
-        "https://issuer.example",
-        "https://mtls.issuer.example",
-        300,
-        Arc::new(NoFapiAuthorizer),
-        Arc::new(NoFapiMtls),
-        Arc::new(RecordingFapiSignatures {
-            calls: calls.clone(),
-            signer: Arc::new(RecordingFapiSigner {
-                bases: bases.clone(),
-            }),
-        }),
-    ));
-    let response = nazo_http_actix::fapi_resource(
-        endpoint,
-        TestRequest::get().uri("/fapi/resource").to_http_request(),
-        Bytes::new(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
-        calls.lock().unwrap().as_slice(),
-        &["enabled", "response_signature"]
-    );
-    let expected_body = br#"{"error":"invalid_token","error_description":"Request failed."}"#;
-    assert_eq!(
-        response.headers().get("content-digest").unwrap(),
-        nazo_http_signatures::content_digest(expected_body).as_str()
-    );
-    assert!(response.headers().contains_key("signature-input"));
-    assert!(response.headers().contains_key("signature"));
-    {
-        let signature_base = bases.lock().unwrap();
-        assert_eq!(signature_base.len(), 1);
-        assert!(
-            signature_base[0]
-                .windows(b"content-digest".len())
-                .any(|window| window == b"content-digest")
-        );
-        assert!(
-            signature_base[0]
-                .windows(b"@status".len())
-                .any(|window| window == b"@status")
-        );
-    }
-    assert_eq!(ready_body_bytes(response).await, expected_body);
-}
-
 mod fapi_signed_contract {
+    use super::test_module_lease;
     use actix_web::{
         HttpRequest,
         body::to_bytes,
@@ -307,10 +137,7 @@ mod fapi_signed_contract {
             assert_eq!(context.method, "POST");
             assert_eq!(
                 context.target_uris,
-                &[
-                    "https://issuer.example/fapi/resource",
-                    "https://mtls.example/fapi/resource"
-                ]
+                &["https://issuer.example/fapi/resource"]
             );
             let outcome = self.outcome;
             Box::pin(async move {
@@ -342,9 +169,9 @@ mod fapi_signed_contract {
         }
     }
     impl FapiHttpMessageSignatures for Ports {
-        fn enabled(&self) -> bool {
+        fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
             self.calls.lock().unwrap().push("enabled");
-            true
+            test_module_lease(true)
         }
         fn verify_and_consume<'a>(
             &'a self,
@@ -404,7 +231,7 @@ mod fapi_signed_contract {
     }
 
     #[actix_web::test]
-    async fn real_fapi_authorization_and_signature_failures_preserve_signed_wire_and_port_order() {
+    async fn real_fapi_signs_accepted_requests_and_rejects_failures_before_signing() {
         const TARGET: &str = "https://issuer.example/fapi/resource";
         const BODY: &[u8] = b"{\"signed\": true, \"space\":\"  \"}\n";
         for outcome in [
@@ -451,7 +278,7 @@ mod fapi_signed_contract {
                 ports,
             ));
             let request = TestRequest::post()
-                .uri("/fapi/resource")
+                .uri(TARGET)
                 .insert_header((header::AUTHORIZATION, "Bearer access-token"))
                 .insert_header(("content-digest", request_digest.as_str()))
                 .insert_header(("x-fapi-interaction-id", "t00-interaction"))
@@ -489,6 +316,26 @@ mod fapi_signed_contract {
             assert_eq!(challenges, challenge.into_iter().collect::<Vec<_>>());
             assert_eq!(response.headers().get_all(header::SET_COOKIE).count(), 0);
             assert!(response.headers().get(header::LOCATION).is_none());
+            if !matches!(outcome, Outcome::Success) {
+                assert!(!response.headers().contains_key("signature"));
+                assert!(!response.headers().contains_key("signature-input"));
+                assert!(!response.headers().contains_key("content-digest"));
+                let expected_calls: &[&str] = match outcome {
+                    Outcome::ChangedBody => &["enabled"],
+                    Outcome::Revoked => &["enabled", "mtls", "authorize"],
+                    _ => &["enabled", "mtls", "authorize", "verify_and_consume"],
+                };
+                assert_eq!(
+                    calls.lock().unwrap().as_slice(),
+                    expected_calls,
+                    "{outcome:?}"
+                );
+                assert_eq!(
+                    to_bytes(response.into_body()).await.unwrap().as_ref(),
+                    expected_body
+                );
+                continue;
+            }
             assert_eq!(
                 response.headers().get("content-digest").unwrap(),
                 content_digest(expected_body).as_str()
@@ -601,4 +448,23 @@ mod fapi_signed_contract {
             );
         }
     }
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::HttpMessageSignatures].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::HttpMessageSignatures,
+        CapabilityAdmission::NewRequest,
+    )
 }

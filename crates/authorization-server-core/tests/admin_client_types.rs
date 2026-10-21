@@ -161,7 +161,7 @@ fn supplied_client_secret_is_bounded_and_redacted() {
     assert_eq!(debug, "[REDACTED]");
     assert!(!debug.contains(value));
     assert!(nazo_auth::SuppliedClientSecret::new("short").is_err());
-    assert!(nazo_auth::SuppliedClientSecret::new("0".repeat(64)).is_err());
+    assert!(nazo_auth::SuppliedClientSecret::new("0".repeat(64)).is_ok());
     assert!(nazo_auth::SuppliedClientSecret::new(format!("{}\n", "A".repeat(64))).is_err());
 }
 
@@ -182,6 +182,49 @@ fn policy(pairwise_subject_secret: Option<&str>) -> AdminClientPolicy {
         tenant: TenantContext::default(),
         pairwise_subject_secret: pairwise_subject_secret.map(str::to_owned),
         client_secret_pepper: "pepper".to_owned(),
+    }
+}
+
+#[test]
+fn enabling_fapi_rejects_preexisting_incompatible_signing_metadata() {
+    let resolver = StaticSectorIdentifier(vec![]);
+    for field in [
+        "id_token",
+        "request",
+        "auth",
+        "userinfo",
+        "jarm",
+        "introspection",
+    ] {
+        let mut client = oauth_client();
+        client.client_type = "confidential".into();
+        client.token_endpoint_auth_method = "private_key_jwt".into();
+        client.require_dpop_bound_tokens = true;
+        client.jwks = Some(std::sync::Arc::new(json!({"keys": []})));
+        let selected = match field {
+            "id_token" => &mut client.id_token_signed_response_alg,
+            "request" => &mut client.request_object_signing_alg,
+            "auth" => &mut client.token_endpoint_auth_signing_alg,
+            "userinfo" => &mut client.userinfo_signed_response_alg,
+            "jarm" => &mut client.authorization_signed_response_alg,
+            _ => &mut client.introspection_signed_response_alg,
+        };
+        *selected = Some("RS256".into());
+        let result = futures_executor::block_on(prepare_client_patch(
+            client,
+            PatchClientRequest {
+                security_policy: Some(ClientSecurityPolicy::fapi2()),
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &resolver,
+            &TestCrypto,
+        ));
+        let error = result.expect_err(field);
+        assert!(
+            matches!(error, AdminClientError::InvalidRequest(_)),
+            "{field}: {error}"
+        );
     }
 }
 

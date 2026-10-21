@@ -69,7 +69,13 @@ Outside the implemented SCIM boundary:
 - `DELETE /scim/v2/Users/{user_id}`
 - `POST /scim/v2/SecurityEvents` (RFC 8936 poll delivery, when enabled)
 
-`DELETE` is a soft delete: it sets `active=false` and keeps the user record for audit and token-revocation continuity.
+`DELETE` records `deleted_at`, sets `active=false`, and revokes the user's
+existing authorization state in one transaction. The internal row remains for
+audit and foreign-key continuity. Deleted resources are absent from GET/list;
+GET, PUT, PATCH and repeated DELETE return 404. They cannot be reactivated.
+Setting `active=false` with PATCH remains a reversible deactivation. When SET
+emission is enabled, deletion emits the delete event once, rather than a
+deactivate event.
 
 ## Identity Mapping
 
@@ -167,7 +173,7 @@ SET errors, and polling capacity. Disabling the event module stops creation and
 advertisement immediately; the runtime drain window continues serving already
 stored events for up to the configured retention period.
 
-PATCH supports `replace` for:
+The provisioning subset accepts PATCH `replace` for:
 
 - `userName`
 - `active`
@@ -176,5 +182,13 @@ PATCH supports `replace` for:
 - `name.familyName`
 - `emails`
 
+Attribute names and the `eq` operator are case insensitive. Filter string values
+use JSON string escaping. Requests must include the corresponding User or PatchOp
+schema in `schemas`; unsupported schema extensions are rejected.
+
+`ServiceProviderConfig` advertises `patch.supported=false` and
+`filter.supported=false`: this subset does not implement the complete RFC 7644
+PATCH operations or filter grammar. Explicit integrations may use the documented
+`replace` paths and `userName eq` lookup; generic clients can use PUT and pagination.
 Bulk operations, sorting, password changes, groups, and SCIM enterprise-user
 extensions are not advertised.

@@ -132,6 +132,7 @@ fn account(admin_level: u32) -> PublicAccount {
     };
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::from_u128(4)).unwrap(),
             tenant,
             role: UserRole::Admin { level: admin_level },
@@ -206,7 +207,14 @@ fn endpoint(
     let tenant_id = user.tenant().tenant_id;
     let user_id = user.user_id();
     let snapshot = SessionSnapshot::new(
-        SessionRecord::new(user_id, auth_time, amr, false, Some("oidc-sid".to_owned())),
+        SessionRecord::new(
+            user_id,
+            0,
+            auth_time,
+            amr,
+            false,
+            Some("oidc-sid".to_owned()),
+        ),
         SessionVersion::from_storage(vec![1]),
     );
     Data::new(RuntimeModuleAdminEndpoint::with_clock(
@@ -606,7 +614,7 @@ async fn static_routes_lock_cors_security_method_and_preflight_contracts() {
         .map(str::trim)
         .collect::<Vec<_>>();
     allowed_methods.sort_unstable();
-    assert_eq!(allowed_methods, ["DELETE", "GET", "PATCH", "POST"]);
+    assert_eq!(allowed_methods, ["DELETE", "GET", "PATCH", "POST", "PUT"]);
     assert_eq!(
         options
             .headers()

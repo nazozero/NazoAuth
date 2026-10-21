@@ -101,6 +101,7 @@ async fn linked_federation_obeys_local_mfa_and_uses_pending_session_lifetime() {
                 let ports = Ports {
                     account: PublicAccount {
                         principal: Principal {
+                            authorization_epoch: 0,
                             user_id: UserId::new(uuid::Uuid::now_v7()).unwrap(),
                             tenant: TenantContext::default_system(),
                             role: UserRole::User,

@@ -1001,6 +1001,7 @@ def deficit_episodes(sel_bins: list[int], records: list[dict | None],
         start = i
         j = i
         while j < n and records[j] is not None \
+                and (j == start or sel_bins[j] == sel_bins[j - 1] + 1) \
                 and records[j]["completed"] < thresh:
             j += 1
         ep_bins = sel_bins[start:j]
@@ -1014,6 +1015,7 @@ def deficit_episodes(sel_bins: list[int], records: list[dict | None],
         while k < n:
             m = k
             while m < n and records[m] is not None \
+                    and (m == k or sel_bins[m] == sel_bins[m - 1] + 1) \
                     and records[m]["completed"] >= thresh:
                 m += 1
             if m - k >= 5:
@@ -1080,7 +1082,7 @@ def load_windows(cfg: dict) -> dict:
         loads.append({"name": "main", "kind": "missing", "exact": False,
                       "start": None, "end": None,
                       "source": "measurement_contract absent/invalid"})
-    warmup_s = float(cfg.get("warmup_s") or 15)
+    warmup_s = float(cfg["warmup_s"] if cfg.get("warmup_s") is not None else 15)
     for sc in cfg.get("sidecars", []):
         name = sc.get("name", "?")
         win = sc.get("window") or {}

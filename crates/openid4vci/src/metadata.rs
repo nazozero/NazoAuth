@@ -146,10 +146,12 @@ impl CredentialConfiguration {
                 .any(|(proof_type, proof)| {
                     !matches!(proof_type.as_str(), "jwt" | "attestation")
                         || proof.proof_signing_alg_values_supported.is_empty()
-                        || proof
-                            .proof_signing_alg_values_supported
-                            .iter()
-                            .any(|alg| !matches!(alg.as_str(), "ES256" | "EdDSA"))
+                        || proof.proof_signing_alg_values_supported.iter().any(|alg| {
+                            !matches!(alg.as_str(), "ES256" | "EdDSA")
+                                || (self.format == CredentialFormat::MsoMdoc
+                                    && proof_type == "jwt"
+                                    && alg != "ES256")
+                        })
                 })
         {
             return Err(MetadataError::EmptyAlgorithmSet);

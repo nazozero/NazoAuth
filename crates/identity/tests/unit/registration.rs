@@ -108,10 +108,11 @@ impl EmailVerificationStorePort for RecordingVerificationStore {
         })
     }
 
-    fn load_code<'a>(
+    fn reserve_code_attempt<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         _email: &'a str,
+        _max_attempts: u64,
     ) -> RepositoryFuture<'a, Option<EmailVerificationRecord>> {
         let calls = Arc::clone(&self.calls);
         Box::pin(async move {

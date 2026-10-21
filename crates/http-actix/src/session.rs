@@ -119,10 +119,22 @@ pub async fn profile_logout(
     endpoint: Data<SessionLogoutEndpoint>,
     request: HttpRequest,
 ) -> HttpResponse {
-    if let Some(session_id) = endpoint.cookies.session_id(&request)
-        && let Err(error) = endpoint.sessions.delete(&session_id).await
-    {
-        (endpoint.on_delete_error)(&error);
+    if let Some(session_id) = endpoint.cookies.session_id(&request) {
+        if !endpoint.cookies.has_valid_csrf_token(&request, None) {
+            return oauth_error(
+                StatusCode::FORBIDDEN,
+                "invalid_request",
+                "CSRF validation failed.",
+            );
+        }
+        if let Err(error) = endpoint.sessions.delete(&session_id).await {
+            (endpoint.on_delete_error)(&error);
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "Session revocation is unavailable.",
+            );
+        }
     }
     logout_response(&endpoint.cookies)
 }

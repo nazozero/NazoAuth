@@ -59,6 +59,14 @@ header context once per request using lowercase unique names and valid
 control-free text; ambiguous or non-text values are unavailable to component
 reconstruction and therefore fail closed if selected.
 
+Response signatures are generated after access-token, sender-constraint and
+request-signature verification succeeds. Authentication errors, nonce challenges
+and rejected/replayed HTTP signatures return their normal OAuth status and body
+over TLS without invoking the private response signer. A client must not treat
+an unsigned response as successful resource evidence. This profile does not
+promise signed rejection receipts for unauthenticated requests; draft section
+5.3.2 specifies how a signed response is constructed.
+
 ## Evidence and conformance status
 
 The Rust crate is the canonical canonicalization and cryptographic-vector

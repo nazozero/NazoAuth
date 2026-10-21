@@ -113,7 +113,9 @@ fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> TestInfrastruc
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_auxiliary(
+            jsonwebtoken::Algorithm::RS256,
+        ),
     }
 }
 
@@ -131,7 +133,9 @@ async fn live_ciba_replay_state() -> Option<TestInfrastructure> {
         diesel_db: create_pool(database_url, 2).expect("CIBA test database should build"),
         valkey,
         settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_auxiliary(
+            jsonwebtoken::Algorithm::RS256,
+        ),
     })
 }
 
@@ -393,7 +397,7 @@ async fn call_ciba_token_with_prepared_service(
         grant_type: Some(nazo_auth::GrantType::Ciba),
         client_epoch,
         config: &issuance_config,
-        modules: &modules,
+        modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
         authorization: &authorization,
         security_audit,
         remote_client_documents: crate::test_support::test_remote_client_documents(),

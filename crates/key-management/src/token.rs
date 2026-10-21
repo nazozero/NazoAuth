@@ -26,9 +26,15 @@ impl TokenSignerPort for KeyManager {
         // Pin the header and signing key to one generation. Rotation may publish
         // another generation before this future is polled or while it signs.
         let generation = self.inner.generation.load_full();
-        let mut header = nazo_crypto::jwt::Header::new(generation.snapshot.active_alg);
-        header.typ = Some("at+jwt".to_owned());
         Box::pin(async move {
+            let algorithm = match input.signing_algorithm {
+                Some(name) => {
+                    signing_algorithm_from_name(name).ok_or(TokenPortError::Unexpected)?
+                }
+                None => generation.snapshot.active_alg,
+            };
+            let mut header = nazo_crypto::jwt::Header::new(algorithm);
+            header.typ = Some("at+jwt".to_owned());
             let now = Utc::now().timestamp();
             let jti = Uuid::now_v7().to_string();
             let expires_at = now + input.ttl_seconds;

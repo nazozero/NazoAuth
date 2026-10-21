@@ -202,17 +202,35 @@ where
                     &uris,
                 )?);
             }
-            None if client.sector_identifier_host.is_none() => {
-                client.sector_identifier_host = Some(all_same_host(&client.redirect_uris).ok_or_else(|| {
+            None => {
+                let host = all_same_host(&client.redirect_uris).ok_or_else(|| {
                     AdminClientError::InvalidRequest(
-                        "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host".to_owned(),
+                        "pairwise 主题需要 sector_identifier_uri 或所有 redirect_uri 使用同一 host"
+                            .to_owned(),
                     )
-                })?);
+                })?;
+                if client
+                    .sector_identifier_host
+                    .as_ref()
+                    .is_some_and(|existing| existing != &host)
+                {
+                    return Err(AdminClientError::InvalidRequest(
+                        "redirect_uri 不可改变既有 pairwise sector".to_owned(),
+                    ));
+                }
+                client.sector_identifier_host = Some(host);
             }
-            None => {}
         }
     }
 
+    client.id_token_signed_response_alg = Some(
+        crate::id_token_signing_algorithm(
+            client.id_token_signed_response_alg.as_deref(),
+            client.security_policy.requires_fapi2_security(),
+        )
+        .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?
+        .to_owned(),
+    );
     let keys = validate_client_metadata(
         ClientMetadata::from_client(&client),
         &crypto.id_token_signing_algorithms(),

@@ -19,6 +19,10 @@ fn userinfo_config(settings: &Settings) -> UserinfoConfig {
         settings.protocol.default_audience.as_str(),
         settings.endpoint.mtls_endpoint_base_url.as_str(),
         settings.protocol.dpop_nonce_policy,
+        settings
+            .protocol
+            .authorization_server_profile
+            .requires_fapi2_security(),
     )
 }
 
@@ -527,6 +531,7 @@ async fn revoke_access_token(
 #[allow(clippy::too_many_arguments)]
 async fn signed_userinfo_access_token(
     state: &Data<TestInfrastructure>,
+    client_id: &str,
     tenant_id: Uuid,
     subject: &str,
     user_id: Option<Uuid>,
@@ -544,7 +549,7 @@ async fn signed_userinfo_access_token(
             subject,
             user_id,
             subject_type,
-            client_id: "userinfo-client",
+            client_id,
             audiences,
             scopes,
             authorization_details: &json!([]),
@@ -659,6 +664,7 @@ async fn userinfo_rejects_signed_access_token_with_wrong_audience() {
     };
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -733,6 +739,7 @@ async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
     let client_row_id = insert_userinfo_client(&state, "userinfo-client").await;
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -759,6 +766,7 @@ async fn userinfo_returns_server_error_when_ownership_lookup_fails() {
     let state = userinfo_state_with_valid_signing_key_invalid_db();
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &format!("pairwise-{}", Uuid::now_v7()),
         None,
@@ -786,6 +794,7 @@ async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
     };
     let bearer_with_dpop_cnf = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -806,6 +815,7 @@ async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
 
     let dpop_without_cnf = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -817,10 +827,10 @@ async fn userinfo_rejects_sender_constrained_tokens_on_wrong_transport() {
     )
     .await;
     let response = userinfo_error_for_token(state, "DPoP", &dpop_without_cnf.token).await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
         oauth_error_code(response).await.as_deref(),
-        Some("invalid_dpop_proof")
+        Some("invalid_token")
     );
 }
 
@@ -831,6 +841,7 @@ async fn userinfo_rejects_mtls_bound_token_without_verified_certificate() {
     };
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -862,6 +873,7 @@ async fn userinfo_requires_openid_scope_and_user_subject_type() {
     ] {
         let token = signed_userinfo_access_token(
             &state,
+            "userinfo-client",
             DEFAULT_TENANT_ID,
             &Uuid::now_v7().to_string(),
             None,
@@ -890,6 +902,7 @@ async fn userinfo_rejects_invalid_or_inactive_token_subject() {
     };
     let invalid_subject = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         "not-a-uuid",
         None,
@@ -910,6 +923,7 @@ async fn userinfo_rejects_invalid_or_inactive_token_subject() {
     let inactive = insert_userinfo_user(&state, false).await;
     let inactive_token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &inactive.id.to_string(),
         Some(inactive.id),
@@ -958,6 +972,7 @@ async fn userinfo_resolves_pairwise_subject_through_issuance_ownership() {
     let pairwise_sub = format!("pairwise-{}", Uuid::now_v7());
     let token = signed_userinfo_access_token(
         &state,
+        &client_id,
         DEFAULT_TENANT_ID,
         &pairwise_sub,
         None,
@@ -1038,6 +1053,7 @@ async fn userinfo_resolves_pairwise_subject_through_issuance_ownership() {
     .expect("foreign client insert should succeed");
     let foreign_jti_token = signed_userinfo_access_token(
         &state,
+        &client_id,
         DEFAULT_TENANT_ID,
         &format!("pairwise-{}", Uuid::now_v7()),
         None,
@@ -1309,6 +1325,7 @@ async fn userinfo_returns_server_error_when_revocation_lookup_fails_after_decode
     let state = userinfo_state_with_valid_signing_key_invalid_db();
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -1349,6 +1366,7 @@ async fn userinfo_returns_server_error_when_revocation_query_fails_after_decode(
     .await;
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -1396,6 +1414,7 @@ async fn userinfo_returns_server_error_when_subject_lookup_fails_after_token_val
     let user = insert_userinfo_user(&state, true).await;
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &user.id.to_string(),
         Some(user.id),
@@ -1425,6 +1444,7 @@ async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate(
     };
     let token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &Uuid::now_v7().to_string(),
         None,
@@ -1513,6 +1533,7 @@ async fn userinfo_reports_missing_subject_before_client_state() {
     let pairwise_sub = format!("pairwise-{}", Uuid::now_v7());
     let jti_token = signed_userinfo_access_token(
         &state,
+        "userinfo-client",
         DEFAULT_TENANT_ID,
         &pairwise_sub,
         None,

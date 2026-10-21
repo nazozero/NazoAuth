@@ -65,6 +65,7 @@ async fn signed_policy_access_token(
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            signing_algorithm: None,
             authorization_id: None,
             client_epoch: None,
             user_epoch: None,
@@ -144,11 +145,7 @@ async fn retain_policy_credential_access(
         Arc::new(crate::bootstrap::LoginPasswordVerifier),
     );
     repository
-        .persist_pre_authorized_access(
-            blake3::hash(token.as_bytes()).to_hex().as_ref(),
-            &access,
-            Some(&access.client_id),
-        )
+        .upsert_access(blake3::hash(token.as_bytes()).to_hex().as_ref(), &access)
         .await
         .expect("the real registered owner retains the exact signed credential provenance");
 }
@@ -270,6 +267,7 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            signing_algorithm: None,
             authorization_id: None,
             client_epoch: None,
             user_epoch: None,
@@ -441,6 +439,7 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            signing_algorithm: None,
             authorization_id: None,
             client_epoch: None,
             user_epoch: None,
@@ -708,6 +707,7 @@ async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            signing_algorithm: None,
             authorization_id: None,
             client_epoch: None,
             user_epoch: None,
@@ -841,6 +841,7 @@ async fn live_access_fails_closed_when_subject_state_is_unavailable() {
         .issuer
         .token_service
         .sign_access_token(nazo_auth::AccessTokenSignInput {
+            signing_algorithm: None,
             authorization_id: None,
             client_epoch: None,
             user_epoch: None,

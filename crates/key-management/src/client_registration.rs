@@ -278,52 +278,7 @@ fn client_jwt_algorithm_from_name(value: &str) -> Option<(&'static str, Algorith
 }
 
 fn valid_client_signing_key(key: &Value, alg: Algorithm) -> bool {
-    if key.get("d").is_some()
-        || key
-            .get("use")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != "sig")
-    {
-        return false;
-    }
-    let coordinate = |name: &str| {
-        key.get(name).and_then(Value::as_str).is_some_and(|value| {
-            URL_SAFE_NO_PAD
-                .decode_slice(value, &mut [0_u8; 32])
-                .is_ok_and(|length| length == 32)
-        })
-    };
-    match alg {
-        Algorithm::EdDSA => {
-            key.get("kty").and_then(Value::as_str) == Some("OKP")
-                && key.get("crv").and_then(Value::as_str) == Some("Ed25519")
-                && coordinate("x")
-        }
-        Algorithm::RS256 | Algorithm::PS256 => {
-            if key.get("kty").and_then(Value::as_str) != Some("RSA") {
-                return false;
-            }
-            let (Some(n), Some(e)) = (
-                key.get("n").and_then(Value::as_str),
-                key.get("e").and_then(Value::as_str),
-            ) else {
-                return false;
-            };
-            let (Ok(modulus), Ok(exponent)) =
-                (URL_SAFE_NO_PAD.decode(n), URL_SAFE_NO_PAD.decode(e))
-            else {
-                return false;
-            };
-            modulus.len() >= 256 && !exponent.is_empty()
-        }
-        Algorithm::ES256 => {
-            key.get("kty").and_then(Value::as_str) == Some("EC")
-                && key.get("crv").and_then(Value::as_str) == Some("P-256")
-                && coordinate("x")
-                && coordinate("y")
-        }
-        _ => false,
-    }
+    crate::external::decoding_key_from_public_jwk(key, alg).is_some()
 }
 
 fn valid_current_x5c_certificate(value: &str) -> bool {

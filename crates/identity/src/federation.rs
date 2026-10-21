@@ -100,11 +100,6 @@ pub enum FederationAuditEvent {
         provider_id: String,
         email: String,
     },
-    IdentityLinked {
-        user_id: crate::UserId,
-        provider_type: String,
-        provider_id: String,
-    },
     LoginSuccess {
         user_id: crate::UserId,
         method: String,
@@ -390,8 +385,8 @@ where
             .resolve_existing(&login)
             .await
             .map_err(FederationError::Account)?;
-        let (account, linked_provider) = if let Some(account) = existing {
-            (account, None)
+        let account = if let Some(account) = existing {
+            account
         } else {
             if existing_only {
                 return Err(FederationError::VerifiedEmailRequired);
@@ -421,9 +416,7 @@ where
                 .hash_bootstrap_secret()
                 .await
                 .map_err(FederationError::Password)?;
-            let linked_provider = (login.provider_type.clone(), login.provider_id.clone());
-            let account = self
-                .accounts
+            self.accounts
                 .create_federated(NewFederatedIdentity {
                     login,
                     email,
@@ -431,8 +424,7 @@ where
                     password_hash,
                 })
                 .await
-                .map_err(FederationError::Account)?;
-            (account, Some(linked_provider))
+                .map_err(FederationError::Account)?
         };
         // Every account-producing branch converges here, including an
         // adapter's unique-conflict recovery. Upstream proof is already
@@ -443,16 +435,6 @@ where
             } else {
                 FederationError::LoginFailed
             });
-        }
-        if let Some((provider_type, provider_id)) = linked_provider {
-            self.audit
-                .record_required(FederationAuditEvent::IdentityLinked {
-                    user_id: account.user_id(),
-                    provider_type,
-                    provider_id,
-                })
-                .await
-                .map_err(FederationError::State)?;
         }
         Ok(account)
     }
@@ -466,6 +448,7 @@ where
         let now = Utc::now();
         let mut session = SessionRecord::new(
             account.user_id(),
+            account.principal.authorization_epoch,
             now.timestamp(),
             vec![method.clone(), "federated".to_owned()],
             account.account.mfa_enabled,

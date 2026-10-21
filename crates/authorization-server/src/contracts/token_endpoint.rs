@@ -20,8 +20,8 @@ pub struct PreparedTokenRequest {
 }
 
 pub fn prepare_token_request(
-    parsed: super::token_forms::ParsedTokenForm,
-    auth: super::token_client_auth::TokenClientAuthTransportFacts,
+    mut parsed: super::token_forms::ParsedTokenForm,
+    basic: super::token_client_auth::BasicAuthorizationCredentials,
 ) -> Result<PreparedTokenRequest, super::oauth_error::OAuthEndpointError> {
     use super::oauth_error::OAuthEndpointError;
     if parsed.form.has_audience_param
@@ -34,6 +34,15 @@ pub fn prepare_token_request(
             false,
         ));
     }
+    // The parsed form already owns these strings. Transfer them to the single
+    // credential source used throughout execution instead of copying at HTTP ingress.
+    let auth = super::token_client_auth::TokenClientAuthTransportFacts::from_parts(
+        basic,
+        parsed.form.client_id.take(),
+        parsed.form.client_secret.take(),
+        parsed.form.client_assertion_type.take(),
+        parsed.form.client_assertion.take(),
+    );
     let client_auth_context = nazo_auth::token_client_authentication_context(auth.presentation())
         .map_err(|_| {
         OAuthEndpointError::token(
@@ -49,6 +58,10 @@ pub fn prepare_token_request(
         client_auth_context,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/contracts/token_endpoint.rs"]
+mod tests;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenEndpointSuccess {

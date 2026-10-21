@@ -13,18 +13,17 @@ Review the rendered manifests against the current
 - Set `valkeyStateEpoch` to the deployment's current UUIDv7. A restore requires
   a fresh epoch and the token-invalidation/ingress-deadline recovery procedure;
   an ordinary restart reuses its existing epoch.
-- Provision the shared signing-key wrapping root and ID through `extraEnv`
-  plus Secret mounts. Signing keys live in encrypted database generations;
-  the chart does not generate their wrapping root or initialize that keyset.
-- `appSecrets.existingSecret` mounts only the client-secret pepper, pairwise
-  subject secret, and dynamic-registration token. It does not provide all
-  shared encryption roots. MFA, token-response and enabled OpenID4VC secrets
-  must also remain consistent across replicas through explicit inputs.
-- The default data PVC is ReadWriteOnce. The template rejects multiple replicas
-  with that PVC, or without `appSecrets.existingSecret`. For HA, supply each replica's persistent instance identity, shared secrets and suitable avatar storage.
-- The current probes have no Host override. For a hostname-bound tenant, add
-  the issuer's Host to `/startup`, `/health`, and `/live` probes in the rendered
-  deployment. An IP-only probe is rejected by tenant routing.
+- Set `signing.existingSecret`, `signing.wrappingKeySecretKey`, and
+  `signing.wrappingKeyId` to the wrapping root already used by the database.
+  The chart mounts the root and supplies its file path; it does not generate
+  the root or initialize the encrypted database keyset.
+- `appSecrets.existingSecret` optionally imports the client-secret pepper,
+  pairwise subject secret, and dynamic-registration token. Without it these
+  values, the MFA root, and instance identity persist on the data PVC.
+- This Deployment supports one replica with persistence enabled. Each HA
+  instance needs its own persistent identity and correctly shared encryption
+  roots; those resources are not supplied by this chart.
+- Startup, readiness and liveness probes use the public issuer's Host.
 - The image template renders `repository:tag`. Verify the artifact first and
   pin its platform digest in the rendered Deployment through the deployment
   pipeline; a mutable tag alone does not verify Release identity.

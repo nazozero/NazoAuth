@@ -85,6 +85,7 @@ impl DeliveryStorePort for ControlledDelivery {
 }
 
 struct UnknownApproval {
+    fail_before_commit: bool,
     inner: Arc<dyn AdminAccessRequestStore>,
     commits: AtomicUsize,
 }
@@ -112,6 +113,9 @@ impl AdminAccessRequestStore for UnknownApproval {
         source_ip_hash: String,
     ) -> RepositoryFuture<'a, nazo_persistence::AdminAccessRequestApproval> {
         Box::pin(async move {
+            if self.fail_before_commit {
+                return Err(RepositoryError::Unavailable);
+            }
             let _committed = self
                 .inner
                 .approve_with_required_audit(tenant, id, actor, prepared, source_ip_hash)
@@ -363,6 +367,15 @@ async fn verify_requester_publish_race(recover_before_release: bool) {
 
 #[actix_web::test]
 async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret_or_ttl_rotation() {
+    verify_unknown_approval(false).await;
+}
+
+#[actix_web::test]
+async fn uncommitted_approval_reuses_original_stage_and_commits_on_retry() {
+    verify_unknown_approval(true).await;
+}
+
+async fn verify_unknown_approval(fail_before_commit: bool) {
     let fixture = LiveAdminAccessRequestFixture::new()
         .await
         .expect("real PG/Valkey fixture required");
@@ -380,6 +393,7 @@ async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret
         .await;
     let dependencies = admin_access_request_dependencies(&fixture.state);
     let repository = Arc::new(UnknownApproval {
+        fail_before_commit,
         inner: Arc::new(AccessRequestRepository::new(
             fixture.state.diesel_db.clone(),
         )),
@@ -395,7 +409,10 @@ async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret
     )
     .await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(AtomicUsize::load(&repository.commits, Ordering::Acquire), 1);
+    assert_eq!(
+        AtomicUsize::load(&repository.commits, Ordering::Acquire),
+        usize::from(!fail_before_commit)
+    );
     let store = Arc::new(nazo_valkey::DeliveryStore::new(
         &fixture.state.valkey_connection(),
     ));
@@ -415,12 +432,48 @@ async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(row.status, AccessRequestStatus::Approved);
+    assert_eq!(
+        row.status,
+        if fail_before_commit {
+            AccessRequestStatus::Pending
+        } else {
+            AccessRequestStatus::Approved
+        }
+    );
     let audit_count = required_approval_audit_count(&fixture, id).await;
     assert_eq!(
-        audit_count, 1,
+        audit_count,
+        i64::from(!fail_before_commit),
         "the real committed Unknown approval retains its canonical outcome"
     );
+    if fail_before_commit {
+        let dependencies = admin_access_request_dependencies(&fixture.state);
+        let mut changed = secret_registration();
+        changed
+            .allowed_audiences
+            .push("https://changed.example/resource".to_owned());
+        let mut prepared = dependencies
+            .client_service
+            .prepare_registration(changed)
+            .await
+            .unwrap();
+        assert!(
+            !resume_pending_approval(
+                &mut prepared,
+                &before,
+                &dependencies.config,
+                id,
+                applicant.id
+            ),
+            "an unresolved attempt cannot be resumed with changed authorization metadata"
+        );
+        assert!(
+            DeliveryStorePort::load(store.as_ref(), user, &token)
+                .await
+                .unwrap()
+                == Some(before.clone())
+        );
+    }
     let response = invoke_admin_approve_access_request(
         fixture.state.clone(),
         fixture.admin_post_request(
@@ -443,13 +496,13 @@ async fn unknown_approval_ack_retains_original_stage_and_recovers_without_secret
     assert!(after.value["client_secret"] == before.value["client_secret"]);
     assert_eq!(
         AtomicUsize::load(&repository.commits, Ordering::Acquire),
-        1,
-        "recovery must not approve or rotate again"
+        usize::from(!fail_before_commit),
+        "the interrupted worker must not approve again"
     );
     assert_eq!(
         required_approval_audit_count(&fixture, id).await,
-        audit_count,
-        "recovery must not append a second success event"
+        1,
+        "recovery commits exactly one approval and required success event"
     );
 }
 

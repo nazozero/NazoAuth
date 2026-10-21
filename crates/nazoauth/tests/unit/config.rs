@@ -348,6 +348,30 @@ fn unknown_yaml_key_is_rejected_with_the_key_name() {
 }
 
 #[test]
+fn mfa_controls_are_loaded_from_yaml_and_environment() {
+    let path = temp_config_dir("mfa_controls");
+    std::fs::write(path.join(CONFIG_FILE), "MFA_FAILURE_WINDOW_SECONDS: 600\nMFA_FAILURE_MAX_ATTEMPTS: 4\nPENDING_MFA_SESSION_TTL_SECONDS: 120\n").unwrap();
+    let config = ConfigSource::load_from_dir(&path).unwrap();
+    for (key, value) in [
+        ("MFA_FAILURE_WINDOW_SECONDS", 600),
+        ("MFA_FAILURE_MAX_ATTEMPTS", 4),
+        ("PENDING_MFA_SESSION_TTL_SECONDS", 120),
+    ] {
+        assert_eq!(config.parse::<u64>(key, 0).unwrap(), value);
+    }
+    let config = ConfigSource::load_from_dir_with_env(
+        &path,
+        [("MFA_FAILURE_MAX_ATTEMPTS".into(), "7".into())],
+    )
+    .unwrap();
+    assert_eq!(
+        config.parse::<u64>("MFA_FAILURE_MAX_ATTEMPTS", 0).unwrap(),
+        7
+    );
+    std::fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
 fn retired_token_issuance_response_keys_are_rejected_as_unknown() {
     for key in [
         "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
@@ -982,6 +1006,9 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
     assert_eq!(
         ENV_CONFIG_KEYS,
         &[
+            "MFA_FAILURE_WINDOW_SECONDS",
+            "MFA_FAILURE_MAX_ATTEMPTS",
+            "PENDING_MFA_SESSION_TTL_SECONDS",
             "ACCESS_TOKEN_TTL_SECONDS",
             "ADDITIONAL_SCOPES_SUPPORTED",
             "AUTH_CODE_TTL_SECONDS",
@@ -1214,4 +1241,23 @@ fn database_url_does_not_rewrite_unsupported_legacy_driver_scheme() {
         database_url(&source).unwrap(),
         "postgresql+psycopg://nazo:secret@db.internal:5432/oauth"
     );
+}
+
+#[test]
+#[cfg(unix)]
+fn generated_secret_is_published_with_owner_only_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = temp_config_dir("secret_permissions");
+    let path = directory.join("private").join("secret");
+    let value = read_or_create_generated_secret(&path).unwrap();
+    assert!(!value.is_empty());
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        std::fs::read_dir(path.parent().unwrap()).unwrap().count(),
+        1
+    );
+    std::fs::remove_dir_all(directory).unwrap();
 }

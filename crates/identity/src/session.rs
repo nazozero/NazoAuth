@@ -28,7 +28,25 @@ pub fn recent_interactive_mfa(auth_time: i64, amr: &[String], now: i64) -> bool 
         && amr.iter().any(|method| method == "mfa")
         && amr
             .iter()
-            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
+            .any(|method| matches!(method.as_str(), "otp" | "recovery_code" | "passkey_uv"))
+}
+
+/// Credential management can reuse a fresh login. Accounts requiring MFA need
+/// interactive second-factor evidence, including a verified passkey UV.
+#[must_use]
+pub fn recent_credential_management_authentication(
+    auth_time: i64,
+    amr: &[String],
+    mfa_required: bool,
+    now: i64,
+) -> bool {
+    if mfa_required {
+        return recent_interactive_mfa(auth_time, amr, now);
+    }
+    (0..=ADMIN_MFA_MAX_AGE_SECONDS).contains(&now.saturating_sub(auth_time))
+        && amr
+            .iter()
+            .any(|method| matches!(method.as_str(), "pwd" | "passkey" | "federated"))
 }
 
 pub fn add_amr(amr: &mut Vec<String>, value: &str) {
@@ -39,6 +57,7 @@ pub fn add_amr(amr: &mut Vec<String>, value: &str) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SessionRecord {
     user_id: UserId,
+    authorization_epoch: i64,
     auth_time: i64,
     auth_time_micros: Option<i64>,
     amr: Vec<String>,
@@ -424,10 +443,10 @@ impl SessionService {
         if expected_pending_mfa.is_some_and(|expected| record.pending_mfa() != expected) {
             return Ok(SessionResolution::Missing);
         }
-        let Some(user) = load_account(record.user_id())
-            .await?
-            .filter(|account| account.as_ref().active)
-        else {
+        let Some(user) = load_account(record.user_id()).await?.filter(|account| {
+            let principal = account.as_ref();
+            principal.active && principal.authorization_epoch == record.authorization_epoch()
+        }) else {
             let _ = self.sessions.delete(session_id).await;
             return Ok(SessionResolution::Invalidated);
         };
@@ -466,6 +485,7 @@ impl SessionRecord {
     #[must_use]
     pub fn new(
         user_id: UserId,
+        authorization_epoch: i64,
         auth_time: i64,
         amr: Vec<String>,
         pending_mfa: bool,
@@ -473,6 +493,7 @@ impl SessionRecord {
     ) -> Self {
         Self {
             user_id,
+            authorization_epoch,
             auth_time,
             auth_time_micros: None,
             amr,
@@ -480,6 +501,11 @@ impl SessionRecord {
             oidc_sid,
             logged_in_client_ids: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub const fn authorization_epoch(&self) -> i64 {
+        self.authorization_epoch
     }
 
     #[must_use]

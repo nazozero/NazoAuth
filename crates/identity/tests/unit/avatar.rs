@@ -247,10 +247,22 @@ impl AvatarRepositoryPort for AvatarRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
         expected_avatar_url: Option<&'a str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> RepositoryFuture<'a, Option<PublicAccount>> {
         let mut account = self.0.lock().unwrap();
-        let result = if account.profile.avatar_url.as_deref() == expected_avatar_url {
+        if avatar_url.is_some()
+            && account.profile.avatar_url == avatar_url
+            && account.profile.avatar_revision == expected_avatar_revision + 1
+        {
+            return Box::pin(std::future::ready(Ok(Some(account.clone()))));
+        }
+        let result = if account.profile.avatar_url.as_deref() == expected_avatar_url
+            && account.profile.avatar_revision == expected_avatar_revision
+        {
+            if account.profile.avatar_url != avatar_url {
+                account.profile.avatar_revision += 1;
+            }
             account.profile.avatar_url = avatar_url;
             Some(account.clone())
         } else {
@@ -477,6 +489,7 @@ impl AvatarRepositoryPort for ScriptedAvatarRepository {
         _tenant_id: crate::TenantId,
         _user_id: UserId,
         expected_avatar_url: Option<&'a str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> RepositoryFuture<'a, Option<PublicAccount>> {
         let result = self.result.clone();
@@ -486,8 +499,19 @@ impl AvatarRepositoryPort for ScriptedAvatarRepository {
             match result {
                 AvatarRepositoryResult::Update => {
                     let mut account = account.lock().unwrap();
-                    if account.profile.avatar_url.as_deref() != expected.as_deref() {
+                    if avatar_url.is_some()
+                        && account.profile.avatar_url == avatar_url
+                        && account.profile.avatar_revision == expected_avatar_revision + 1
+                    {
+                        return Ok(Some(account.clone()));
+                    }
+                    if account.profile.avatar_url.as_deref() != expected.as_deref()
+                        || account.profile.avatar_revision != expected_avatar_revision
+                    {
                         return Ok(None);
+                    }
+                    if account.profile.avatar_url != avatar_url {
+                        account.profile.avatar_revision += 1;
                     }
                     account.profile.avatar_url = avatar_url;
                     Ok(Some(account.clone()))
@@ -517,6 +541,7 @@ fn direct_account() -> PublicAccount {
     let now = chrono::Utc::now();
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::now_v7()).expect("test user"),
             tenant: TenantContext::default_system(),
             role: UserRole::User,
@@ -543,6 +568,7 @@ fn upload_authorization(
         tenant_id: account.tenant().tenant_id,
         user_id: account.user_id(),
         expected_avatar_url: account.profile.avatar_url.clone(),
+        expected_avatar_revision: account.profile.avatar_revision,
         staging_object_id: "staging-scripted".to_owned(),
         expires_at,
     }
@@ -1451,7 +1477,7 @@ async fn pending_reads_once_and_keeps_validated_mime_while_candidate_failures_ne
 }
 
 #[tokio::test]
-async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes() {
+async fn direct_candidates_are_deleted_only_after_revision_fenced_miss() {
     let account = direct_account();
     for outcome in [
         AvatarRepositoryResult::Conflict,
@@ -1464,6 +1490,7 @@ async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes
             &account,
             chrono::Utc::now() + chrono::Duration::minutes(5),
         ));
+        let expected_deletions = usize::from(matches!(outcome, AvatarRepositoryResult::Conflict));
         let service = scripted_direct_service(&account, storage, state, Ok(0), outcome);
         assert!(
             service
@@ -1472,6 +1499,32 @@ async fn direct_shared_candidates_survive_database_cas_miss_and_unknown_outcomes
                 .is_err()
         );
         assert_eq!(published.load(Ordering::Relaxed), 1);
-        assert_eq!(deleted.load(Ordering::Relaxed), 0);
+        assert_eq!(deleted.load(Ordering::Relaxed), expected_deletions);
     }
+}
+
+#[tokio::test]
+async fn direct_replacement_retires_previous_final_before_completing_upload() {
+    let mut account = direct_account();
+    account.profile.avatar_url = Some(avatar_url("old-final"));
+    account.profile.avatar_revision = 3;
+    let storage = ScriptedDirectStorage::default();
+    let deletes = storage.delete_final_calls.clone();
+    let state = ScriptedDirectState::pending(upload_authorization(
+        &account,
+        chrono::Utc::now() + chrono::Duration::minutes(5),
+    ));
+    let service = scripted_direct_service(
+        &account,
+        storage,
+        state,
+        Ok(0),
+        AvatarRepositoryResult::Update,
+    );
+    let updated = service
+        .complete_upload(account, "upload-scripted")
+        .await
+        .unwrap();
+    assert_eq!(deletes.load(Ordering::Relaxed), 1);
+    assert_eq!(updated.account.profile.avatar_revision, 4);
 }

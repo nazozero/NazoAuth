@@ -419,6 +419,31 @@ impl TenantResourceRepository {
         Err(RepositoryError::Conflict)
     }
 
+    /// Resolve retained user ownership after the caller acquired its identity lock.
+    pub async fn inactive_user_locator_on_connection(
+        connection: &mut AsyncPgConnection,
+        tenant_id: Uuid,
+        resource_id: &str,
+    ) -> Result<Option<String>, RepositoryError> {
+        #[derive(QueryableByName)]
+        struct Locator {
+            #[diesel(sql_type = sql_types::Text)]
+            locator: String,
+        }
+        sql_query(
+            "SELECT locator FROM tenant_resource_bindings
+            WHERE tenant_id=$1 AND resource_kind='user' AND resource_id=$2 AND NOT active
+            FOR UPDATE",
+        )
+        .bind::<sql_types::Uuid, _>(tenant_id)
+        .bind::<sql_types::Text, _>(resource_id)
+        .get_result::<Locator>(connection)
+        .await
+        .optional()
+        .map(|row| row.map(|row| row.locator))
+        .map_err(map_error)
+    }
+
     pub async fn active_bindings_on_connection(
         connection: &mut AsyncPgConnection,
         tenant_id: Uuid,

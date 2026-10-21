@@ -20,6 +20,16 @@ that immutable origin. Drain old VCI consumers during the rollout; an old binary
 does not acquire these validation guarantees merely by sharing the new schema.
 The guarded down migration refuses to lose retained anonymous provenance.
 
+Pre-authorized token issuance first verifies the offer and transaction code without
+consuming them. Subject lookup and signing happen before the final store call.
+The adapter atomically consumes the unchanged, unexpired offer and persists the
+access grant while fencing subject/client deactivation. A failed transaction leaves
+both unchanged; concurrent redemption has one winner. An unknown commit outcome
+is not treated as a rollback or permission to reopen a consumed code.
+
+The public nonce route shares the configured authentication request budget and
+trusted source-IP resolution. Budget rejection occurs before nonce persistence.
+
 An embedded key attestation must attest the actual JWT signing key even when
 attestation is optional. Its algorithm must be in the selected configuration's
 advertised list. This issuer advertises a Nonce Endpoint, so standalone and
@@ -310,3 +320,11 @@ lease; the response becomes Claimed only after full COMMIT acknowledgement.
 Cancellation or unknown transaction completion discards the physical pooled
 connection. The query contract is two statements, including authorization
 projection, with no separate intent lookup or tentative unauthorized lease.
+
+## Certificate paths
+
+VC certificate validation checks the complete supplied path to an explicit
+trust anchor, including validity, basic constraints/path length, CA key usage,
+name constraints and unknown critical extensions. The caller's document/profile
+EKU policy is applied separately; a TLS-server EKU is not substituted for a
+credential-signing purpose. An empty or unrelated chain is rejected.

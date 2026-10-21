@@ -21,12 +21,13 @@ pub const SCIM_EVENTS_SCOPE: &str = "scim:events";
 pub const DEFAULT_POLL_EVENTS: u16 = 20;
 pub const MAX_POLL_EVENTS: u16 = 100;
 
-pub const SUPPORTED_EVENT_URIS: [&str; 5] = [
+pub const SUPPORTED_EVENT_URIS: [&str; 6] = [
     CREATE_NOTICE_EVENT,
     PATCH_NOTICE_EVENT,
     PUT_NOTICE_EVENT,
     ACTIVATE_EVENT,
     DEACTIVATE_EVENT,
+    DELETE_EVENT,
 ];
 
 /// Per-write instruction passed through the identity persistence boundary.
@@ -134,14 +135,14 @@ impl StoredEvent {
     }
 
     #[must_use]
-    pub fn deactivate(
+    pub fn delete(
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
         occurred_at: DateTime<Utc>,
     ) -> Self {
         let mut events = BTreeMap::new();
-        events.insert(DEACTIVATE_EVENT.to_owned(), json!({}));
+        events.insert(DELETE_EVENT.to_owned(), json!({}));
         Self::new(tenant_id, user_id, transaction_id, occurred_at, events)
     }
 

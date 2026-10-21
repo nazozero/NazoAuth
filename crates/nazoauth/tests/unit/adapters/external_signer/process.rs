@@ -73,6 +73,9 @@ async fn external_signer_port_preserves_version_one_json_and_decodes_signature()
 
 #[tokio::test]
 async fn external_signer_deadline_includes_waiting_for_shared_capacity() {
+    if crate::test_support::run_in_fresh_test_process() {
+        return;
+    }
     let slots = EXTERNAL_SIGNER_SLOTS
         .acquire_many(MAX_CONCURRENT_EXTERNAL_SIGNERS as u32)
         .await

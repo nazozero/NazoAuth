@@ -9,6 +9,7 @@ fn authorization() -> AvatarUploadAuthorization {
         tenant_id: TenantId::new(Uuid::from_u128(1)).unwrap(),
         user_id: UserId::new(Uuid::now_v7()).unwrap(),
         expected_avatar_url: None,
+        expected_avatar_revision: 0,
         staging_object_id: Uuid::now_v7().to_string(),
         expires_at: Utc::now() + chrono::Duration::minutes(1),
     }
@@ -141,7 +142,7 @@ async fn upload_authorization_is_create_once_and_expiry_is_authoritative() {
 #[test]
 fn initial_upload_state_contains_no_lease_or_future_stage_placeholders() {
     let value = serde_json::to_value(AvatarUploadWireState::from(&authorization())).unwrap();
-    assert_eq!(value.as_object().unwrap().len(), 8);
+    assert_eq!(value.as_object().unwrap().len(), 9);
     for field in [
         "ownership_token",
         "lease_until",

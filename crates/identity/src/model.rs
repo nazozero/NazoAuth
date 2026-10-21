@@ -30,6 +30,8 @@ pub enum UserRole {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Principal {
+    /// Durable account authorization generation; changes when access is terminated.
+    pub authorization_epoch: i64,
     pub user_id: UserId,
     pub tenant: TenantContext,
     pub role: UserRole,
@@ -114,6 +116,8 @@ pub struct AuthenticationIdentity {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct UserProfile {
+    /// Monotonic avatar selection revision, including transitions to no avatar.
+    pub avatar_revision: i64,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
     pub given_name: Option<String>,

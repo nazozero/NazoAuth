@@ -416,8 +416,8 @@ fn cardinality_transaction() -> PresentationTransaction {
             "nonce": "nonce",
             "state": "state",
             "dcql_query": {"credentials": [
-                {"id": "first", "format": "mso_mdoc", "meta": {}},
-                {"id": "second", "format": "mso_mdoc", "meta": {}}
+                {"id": "first", "format": "mso_mdoc", "meta": {"doctype_value":"org.iso.18013.5.1.mDL"}},
+                {"id": "second", "format": "mso_mdoc", "meta": {"doctype_value":"org.iso.18013.5.1.mDL"}}
             ]}
         }))
         .unwrap(),
@@ -787,7 +787,7 @@ async fn dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings() {
 #[tokio::test]
 async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response() {
     for query in [
-        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}],"credential_sets":[]}),
+        json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]}}],"credential_sets":[]}),
         json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":"required-type"}}]}),
         json!({"credentials":[{"id":"pid","format":"mso_mdoc","meta":{"doctype_value":["required-doctype"]}}]}),
         json!({"credentials":[{"id":"pid","format":"dc+sd-jwt"}]}),

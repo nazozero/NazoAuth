@@ -72,10 +72,13 @@ pub trait EmailVerificationStorePort: Send + Sync {
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, ()>;
 
-    fn load_code<'a>(
+    /// Atomically reserves one attempt on the current challenge, without extending its expiry.
+    /// Exhausted or missing challenges return None; the returned version identifies that challenge.
+    fn reserve_code_attempt<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        max_attempts: u64,
     ) -> RepositoryFuture<'a, Option<EmailVerificationRecord>>;
 
     fn consume_code<'a>(
@@ -143,12 +146,14 @@ where
             .store_code(tenant_id, email, owner, password_hash, ttl_seconds)
     }
 
-    fn load_code<'a>(
+    fn reserve_code_attempt<'a>(
         &'a self,
         tenant_id: crate::TenantId,
         email: &'a str,
+        max_attempts: u64,
     ) -> RepositoryFuture<'a, Option<EmailVerificationRecord>> {
-        self.as_ref().load_code(tenant_id, email)
+        self.as_ref()
+            .reserve_code_attempt(tenant_id, email, max_attempts)
     }
 
     fn consume_code<'a>(

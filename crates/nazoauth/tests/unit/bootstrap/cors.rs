@@ -291,6 +291,7 @@ async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() 
     let keyset = crate::test_support::test_key_manager();
     let keys = keyset.snapshot();
     let config = DynamicRegistrationConfig {
+        require_fapi2: false,
         tenant: settings.tenant.context,
         issuer: settings.endpoint.issuer.clone(),
         default_audience: settings.protocol.default_audience.clone(),

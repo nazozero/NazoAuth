@@ -25,6 +25,9 @@ fn password_hash_capacity_defaults_match_the_documented_bounded_policy() {
 
 #[test]
 fn cancelled_password_callers_keep_capacity_until_the_blocking_workers_finish() {
+    if crate::test_support::run_in_fresh_test_process() {
+        return;
+    }
     use std::{future::Future, pin::Pin, task::Poll};
 
     let runtime = tokio::runtime::Builder::new_current_thread()

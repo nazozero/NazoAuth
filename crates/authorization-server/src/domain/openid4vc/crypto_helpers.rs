@@ -164,36 +164,23 @@ pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
     anchors: &'a [Vec<u8>],
     scoped: &'a [Vec<u8>],
 ) -> anyhow::Result<&'a [u8]> {
-    let (_, mut current) = parse_x509(&certificates[0], "OpenID4VC signing leaf")?;
-    if current.is_ca() || !current.validity().is_valid() {
-        anyhow::bail!("OpenID4VC signing leaf must be a currently valid end-entity certificate");
-    }
-    for intermediate in certificates
+    let chain = certificates
         .iter()
-        .skip(1)
-        .filter(|der| !anchors.contains(der) && !scoped.contains(der))
-    {
-        let (_, issuer) = parse_x509(intermediate, "OpenID4VC intermediate certificate")?;
-        if !issuer.is_ca()
-            || !issuer.validity().is_valid()
-            || current.issuer() != issuer.subject()
-            || nazo_crypto::certificate::verify_signature(&current, issuer.public_key()).is_err()
-        {
-            anyhow::bail!("OpenID4VC signing certificate chain is invalid");
-        }
-        current = issuer;
-    }
+        .enumerate()
+        .filter(|(index, der)| *index == 0 || (!anchors.contains(der) && !scoped.contains(der)))
+        .map(|(_, der)| CertificateDer::from(der.as_slice()))
+        .collect::<Vec<_>>();
+    let now = u64::try_from(chrono::Utc::now().timestamp())?;
     let anchored = scoped
         .iter()
         .chain(anchors.iter().filter(|anchor| !scoped.contains(anchor)))
         .find(|anchor| {
-            parse_x509(anchor, "OpenID4VC trust anchor").is_ok_and(|(_, anchor)| {
-                anchor.is_ca()
-                    && anchor.validity().is_valid()
-                    && current.issuer() == anchor.subject()
-                    && nazo_crypto::certificate::verify_signature(&current, anchor.public_key())
-                        .is_ok()
-            })
+            nazo_crypto::certificate::verify_document_signing_chain_at(
+                &chain,
+                &CertificateDer::from(anchor.as_slice()),
+                now,
+            )
+            .is_ok()
         });
     let Some(anchored) = anchored else {
         anyhow::bail!(

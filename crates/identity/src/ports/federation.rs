@@ -89,6 +89,7 @@ pub trait FederationLinkRepositoryPort: Send + Sync {
         user_id: UserId,
     ) -> RepositoryFuture<'_, Vec<FederationLinkSummary>>;
 
+    /// Unlink and append the required lifecycle audit in the same commit.
     fn delete(
         &self,
         tenant_id: TenantId,
@@ -109,6 +110,8 @@ pub trait FederationLoginRepositoryPort: Send + Sync {
         email: &'a str,
     ) -> RepositoryFuture<'a, bool>;
 
+    /// Atomically create the account, link and required identity-linked audit.
+    /// Resolving a concurrent, already committed link emits no second event.
     fn create_federated(
         &self,
         identity: NewFederatedIdentity,

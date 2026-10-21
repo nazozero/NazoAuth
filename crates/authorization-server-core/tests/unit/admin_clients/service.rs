@@ -68,7 +68,7 @@ struct NoopCrypto;
 
 impl AdminClientCryptoPort for NoopCrypto {
     fn response_signing_algorithms(&self) -> Vec<String> {
-        Vec::new()
+        vec!["RS256".to_owned()]
     }
 
     fn issue_client_secret(&self, _pepper: &str) -> (String, String) {
@@ -194,6 +194,25 @@ fn client_patch_keeps_subject_type_validation_in_the_core() {
     ))
     .unwrap();
     assert_eq!(retained, original);
+    for redirects in [
+        vec!["https://other.example/callback".to_owned()],
+        vec![
+            "https://client.example/callback".to_owned(),
+            "https://other.example/callback".to_owned(),
+        ],
+    ] {
+        let result = futures_executor::block_on(super::super::patch::prepare_client_patch(
+            original.clone(),
+            PatchClientRequest {
+                redirect_uris: Some(redirects),
+                ..Default::default()
+            },
+            &policy,
+            &NoopSectorIdentifierResolver,
+            &NoopCrypto,
+        ));
+        assert!(matches!(result, Err(AdminClientError::InvalidRequest(_))));
+    }
 }
 
 impl ClientSecretDigesterPort for NoopCrypto {

@@ -7,7 +7,7 @@ use actix_web::{
 };
 
 use nazo_oauth_server::contracts::session_management::{
-    SessionManagementAvailability, SessionManagementFuture, SessionManagementOriginFuture,
+    SessionManagementFuture, SessionManagementOriginFuture,
 };
 
 use crate::security_headers;
@@ -22,8 +22,27 @@ struct TestOperations {
 }
 
 impl SessionManagementOperations for TestOperations {
-    fn availability(&self) -> SessionManagementAvailability {
-        self.availability
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        use nazo_runtime_modules::{
+            ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+        };
+        SnapshotStore::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(1),
+            accepting: if matches!(self.availability, SessionManagementAvailability::Enabled) {
+                [ModuleId::SessionManagement].into()
+            } else {
+                Default::default()
+            },
+            draining: if matches!(self.availability, SessionManagementAvailability::Draining) {
+                [ModuleId::SessionManagement].into()
+            } else {
+                Default::default()
+            },
+        })
+        .lease(
+            ModuleId::SessionManagement,
+            CapabilityAdmission::ExistingTransaction,
+        )
     }
 
     fn is_origin_allowed<'a>(
@@ -215,4 +234,117 @@ async fn status_rejects_an_origin_not_registered_for_the_client() {
         actix_test::read_body(response).await,
         r#"{"status":"error"}"#.as_bytes()
     );
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SessionManagementAvailability {
+    Disabled,
+    Enabled,
+    Draining,
+}
+
+struct PendingOperations {
+    runtime: Arc<nazo_runtime_modules::SnapshotStore>,
+    ready: std::sync::atomic::AtomicBool,
+}
+
+impl SessionManagementOperations for PendingOperations {
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        self.runtime.lease(
+            nazo_runtime_modules::ModuleId::SessionManagement,
+            nazo_runtime_modules::CapabilityAdmission::ExistingTransaction,
+        )
+    }
+
+    fn is_origin_allowed<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+    ) -> SessionManagementOriginFuture<'a> {
+        Box::pin(std::future::poll_fn(|_| {
+            if self.ready.load(std::sync::atomic::Ordering::SeqCst) {
+                std::task::Poll::Ready(Ok(true))
+            } else {
+                std::task::Poll::Pending
+            }
+        }))
+    }
+
+    fn op_browser_state<'a>(&'a self, _: &'a str) -> SessionManagementFuture<'a> {
+        Box::pin(async { Ok(Some("opbs-1".into())) })
+    }
+}
+
+#[test]
+fn http_request_holds_its_lease_across_await_and_releases_on_completion_or_cancellation() {
+    use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision, SnapshotStore};
+    use std::{
+        future::Future,
+        sync::atomic::{AtomicBool, Ordering},
+        task::{Context, Poll, Waker},
+    };
+
+    for cancel in [false, true] {
+        let runtime = Arc::new(SnapshotStore::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(1),
+            accepting: [ModuleId::SessionManagement].into(),
+            draining: Default::default(),
+        }));
+        let operations = Arc::new(PendingOperations {
+            runtime: runtime.clone(),
+            ready: AtomicBool::new(false),
+        });
+        let endpoint = Data::new(SessionManagementEndpoint::new(
+            operations.clone(),
+            SessionManagementConfig::new("https://issuer.example", "sid"),
+        ));
+        let request = || {
+            check_session_status(
+                endpoint.clone(),
+                actix_test::TestRequest::get()
+                    .cookie(Cookie::new("sid", "session-1"))
+                    .to_http_request(),
+                Query(CheckSessionStatusQuery {
+                    client_id: "client-1".into(),
+                    origin: "https://client.example".into(),
+                    session_state: nazo_auth::issue_oidc_session_state(
+                        "client-1",
+                        "https://client.example/callback",
+                        "opbs-1",
+                    )
+                    .unwrap(),
+                }),
+            )
+        };
+        let mut context = Context::from_waker(Waker::noop());
+        let mut admitted = Box::pin(request());
+        assert!(admitted.as_mut().poll(&mut context).is_pending());
+        runtime
+            .compare_and_publish(
+                ModuleRevision::new(1),
+                ActiveModuleSnapshot {
+                    revision: ModuleRevision::new(2),
+                    accepting: Default::default(),
+                    draining: Default::default(),
+                },
+            )
+            .unwrap();
+        let mut rejected = Box::pin(request());
+        let Poll::Ready(response) = rejected.as_mut().poll(&mut context) else {
+            panic!("closed admission must reject without reaching the pending lookup");
+        };
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let mut drain = Box::pin(runtime.wait_until_idle(ModuleId::SessionManagement));
+        assert!(drain.as_mut().poll(&mut context).is_pending());
+        if !cancel {
+            operations.ready.store(true, Ordering::SeqCst);
+            let Poll::Ready(response) = admitted.as_mut().poll(&mut context) else {
+                panic!("the admitted request must finish after admission closes");
+            };
+            assert_eq!(response.status(), StatusCode::OK);
+        } else {
+            drop(admitted);
+        }
+        assert!(drain.as_mut().poll(&mut context).is_ready());
+    }
 }

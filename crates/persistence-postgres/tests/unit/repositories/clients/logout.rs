@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn logout_projection_selects_only_its_eleven_facts() {
+fn logout_projection_selects_logout_and_response_signing_facts() {
     let query = oauth_clients::table.select(LogoutClientRecord::as_select());
     let sql = diesel::debug_query::<diesel::pg::Pg, _>(&query).to_string();
     let projection = sql
@@ -10,6 +10,8 @@ fn logout_projection_selects_only_its_eleven_facts() {
         .expect("logout selection should be a SELECT projection");
     let columns: Vec<_> = projection.split(", ").collect();
     let expected: Vec<_> = [
+        "security_policy",
+        "id_token_signed_response_alg",
         "id",
         "tenant_id",
         "client_id",

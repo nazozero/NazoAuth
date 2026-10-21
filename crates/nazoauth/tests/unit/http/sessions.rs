@@ -20,6 +20,7 @@ use std::time::Duration as StdDuration;
 
 fn valid_payload() -> SessionPayload {
     SessionPayload {
+        authorization_epoch: 0,
         user_id: Uuid::now_v7(),
         auth_time: 1_000,
         amr: vec!["password".to_owned()],
@@ -62,7 +63,7 @@ fn session_state() -> TestInfrastructure {
 }
 
 async fn live_session_state() -> Option<TestInfrastructure> {
-    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
     let mut state = session_state();
     let mut builder =
         ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
@@ -92,7 +93,7 @@ fn session_request(state: &TestInfrastructure, sid: &str) -> HttpRequest {
 async fn store_raw_session(state: &TestInfrastructure, sid: &str, raw: &str) {
     valkey_set_ex(
         &state.valkey,
-        nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+        nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
         raw.to_owned(),
         state.settings.session.session_ttl_seconds,
     )
@@ -197,7 +198,7 @@ async fn invalid_or_malformed_session_payloads_are_cleared_and_anonymous() {
     assert_eq!(
         valkey_get(
             &state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{invalid_sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{invalid_sid}")),
         )
         .await
         .expect("invalid session cleanup lookup should succeed"),
@@ -229,7 +230,7 @@ async fn invalid_or_malformed_session_payloads_are_cleared_and_anonymous() {
         valkey_get(
             &state.valkey,
             nazo_valkey::test_support::state_storage_key(format!(
-                "oauth:session:{invalid_pending_sid}"
+                "oauth:session:v2:{invalid_pending_sid}"
             ))
         )
         .await
@@ -250,7 +251,9 @@ async fn invalid_or_malformed_session_payloads_are_cleared_and_anonymous() {
     assert_eq!(
         valkey_get(
             &state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{malformed_sid}")),
+            nazo_valkey::test_support::state_storage_key(format!(
+                "oauth:session:v2:{malformed_sid}"
+            )),
         )
         .await
         .expect("malformed pending MFA cleanup lookup should succeed"),

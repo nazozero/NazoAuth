@@ -31,7 +31,7 @@ The following stable runtime modules are enabled on a new database:
 | JWT Bearer Grant | The implemented profile remains client-bound | Client grant allowlist and client authentication |
 | SCIM | Server role can coexist with OAuth/OIDC roles | SCIM bearer authority and scope checks |
 | Front-Channel Logout | Endpoint support does not register an RP logout URI | Registered client logout metadata |
-| Session Management | The iframe can coexist with logout and OIDC | `session_management=true` |
+| Session Management | Same-site iframe polling can coexist with logout and OIDC; cross-site RPs use Back-Channel Logout | `session_management=true` |
 
 The following modules are enabled only when their real prerequisite exists:
 
@@ -89,12 +89,18 @@ compose compatible controls, for example:
 
 `allow_confidential_oidc_without_pkce` defaults to false. Only a controlled
 baseline confidential OIDC compatibility boundary may set it; FAPI and
-sender-constrained authorization still require S256. The DCR application sets
-this exception for its supported confidential OIDC registration profile.
+sender-constrained authorization still require S256. Dynamic registration does
+not grant this exception. DCR metadata updates preserve administrator-owned
+security policy and reject a concurrent policy change instead of overwriting it.
 
 These fields are independent. FAPI2 assurance enforces confidential client
 type, strong client authentication, PAR, S256 PKCE, sender-constrained tokens,
-and the FAPI authorization-code lifetime. It does not prevent JAR, JARM, signed
+and the FAPI authorization-code lifetime. Effective deployment/client FAPI
+policy limits JWT signatures to PS256, ES256 or EdDSA (Ed25519), including
+registration, Request Objects, client assertions and signed responses. FAPI JWT
+responses without an explicit algorithm use PS256; ordinary OIDC retains its
+algorithm defaults. Existing incompatible metadata is rejected at the signing
+boundary as well as during registration. It does not prevent JAR, JARM, signed
 introspection, CIBA, Device Grant, or Session Management from being selected at
 the same time.
 
@@ -176,6 +182,13 @@ Publication is followed by revision validation; a changed intent is read again.
 Missing or unavailable state closes admission and remains an error. A stopped
 or uncertain lifecycle cannot reopen until a later reconciliation initializes
 it. Closed snapshot generations continue rejecting delayed lease acquisition.
+
+An admitted operation holds its process-local capability lease until it completes
+or is cancelled. Disabling a finish-executing module rejects later requests and
+waits for those leases before reporting completion. A stored-transaction drain
+keeps the original persisted deadline, then closes existing-transaction admission
+and waits for its executing requests. Unused capabilities and discovery snapshot
+reads do not count as executing work.
 
 Discarded work is recorded through a separate state-preserving observation
 operation. Its event describes unchanged actual state, including absent state;

@@ -10,11 +10,7 @@ pub use document::{
     protected_resource_metadata,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CapabilityAdmission {
-    NewRequest,
-    ExistingTransaction,
-}
+pub use nazo_runtime_modules::CapabilityAdmission;
 
 #[must_use]
 pub fn module_admissible(
@@ -22,9 +18,7 @@ pub fn module_admissible(
     module: ModuleId,
     admission: CapabilityAdmission,
 ) -> bool {
-    snapshot.accepting.contains(&module)
-        || (matches!(admission, CapabilityAdmission::ExistingTransaction)
-            && snapshot.draining.contains(&module))
+    snapshot.permits(module, admission)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

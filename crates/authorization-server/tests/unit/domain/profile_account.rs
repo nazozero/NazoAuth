@@ -98,6 +98,7 @@ impl ProfileRepositoryPort for StoredProfile {
         let phone_number_verified = account.profile.phone_number_verified
             && account.profile.phone_number == update.phone_number;
         account.profile = UserProfile {
+            avatar_revision: account.profile.avatar_revision,
             display_name: update.display_name,
             given_name: update.given_name,
             family_name: update.family_name,
@@ -159,6 +160,7 @@ fn account() -> PublicAccount {
     let now = Utc::now();
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::from_u128(10)).unwrap(),
             tenant: TenantContext::default_system(),
             role: UserRole::User,
@@ -185,6 +187,7 @@ fn snapshot(pending_mfa: bool) -> SessionSnapshot {
     SessionSnapshot::new(
         SessionRecord::new(
             account().user_id(),
+            0,
             Utc::now().timestamp(),
             vec!["pwd".to_owned()],
             pending_mfa,
@@ -357,6 +360,7 @@ fn auth_me_classifies_active_pending_missing_and_invalidated_from_one_session_re
         let invalid = SessionSnapshot::new(
             SessionRecord::new(
                 account().user_id(),
+                0,
                 i64::MAX,
                 vec!["pwd".to_owned()],
                 true,

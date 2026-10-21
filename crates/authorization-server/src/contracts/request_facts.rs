@@ -9,6 +9,9 @@ pub enum DpopErrorContext {
 pub struct DpopRequestFacts<'a> {
     pub method: http::Method,
     pub path: &'a str,
+    /// Original HTTP authority, excluding forwarding headers. It selects one
+    /// configured endpoint origin; it never introduces an arbitrary origin.
+    pub authority: Option<&'a str>,
     pub proof: Result<Option<&'a str>, nazo_auth::DpopError>,
     pub proof_present: bool,
 }

@@ -32,7 +32,17 @@ Passkey login:
 - `POST /auth/passkey/begin`
 - `POST /auth/passkey/finish`
 
-Registration and deletion require the existing HTTPOnly session cookie plus CSRF validation. Login uses an email-first flow so the server can scope allowed credentials to one active tenant-bound user.
+Registration begin/finish and deletion require the existing HTTPOnly session
+cookie, CSRF validation, and interactive authentication within five minutes.
+Accounts requiring MFA must have recent verified MFA, including passkey user
+verification. An old session receives `403 reauthentication_required`; listing
+credentials does not require a fresh proof. Login uses an email-first flow so the
+server can scope allowed credentials to one active tenant-bound user.
+
+Email-first login exposes stable allowed credential identifiers for enrolled
+accounts. Dummy challenges keep the response shape usable for absent accounts,
+but do not guarantee account non-enumerability across repeated requests. This
+profile does not implement discoverable, username-free login.
 
 ## Security Model
 
@@ -40,8 +50,11 @@ WebAuthn ceremonies use the `passkey-auth` verifier. The server verifies challen
 
 Ceremony state is stored only in Valkey with a five-minute TTL and is consumed with `GETDEL` at finish time. Persisted credentials are bound to `(tenant_id, user_id)` and credential ID uniqueness is enforced per tenant.
 
-Successful passkey login creates the normal HTTPOnly server-side session with
-`amr=["passkey"]`.
+Successful passkey login with authenticator-verified UV creates a normal
+HTTPOnly session with `amr=["passkey", "passkey_uv", "mfa"]`. That signed proof
+satisfies the existing MFA requirement without an additional OTP. Assertions
+without UV retain the existing pending-MFA or remembered-device flow; the
+`passkey` method alone is not evidence of user verification.
 
 The profile list selects only tenant/user-scoped display metadata, without loading
 the credential JSON. Login and registration still load and decode complete
@@ -49,6 +62,10 @@ credentials; registration obtains exclusion IDs from that decoded material, so
 damaged credential data cannot silently turn into a usable exclusion list.
 
 ## Credential Persistence
+
+Credential insertion and deletion commit with their Required `passkey_registered`
+and `passkey_deleted` audit events in the same adapter-owned transaction. Each
+mutation and its audit fact either both persist or neither persists.
 
 Credential JSONB uses the existing WebAuthn Serde implementation. Identity
 consumes the credential Value from its owned repository row when decoding,

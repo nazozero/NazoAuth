@@ -84,7 +84,7 @@ async fn token_refresh_with_repository(
                 grant_type: Some(nazo_auth::GrantType::RefreshToken),
                 client_epoch: 0,
                 config: &config,
-                modules: &modules,
+                modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
                 authorization: &authorization,
                 security_audit: crate::http::authorization::test_support::test_security_audit(),
                 remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -107,7 +107,6 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
-use crate::test_support::client_signing_fixture;
 use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
@@ -155,9 +154,6 @@ fn live_refresh_state_from_database_url(
     profile: AuthorizationServerProfile,
     database_url: String,
 ) -> Option<TestInfrastructure> {
-    let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
-    let active_kid = "refresh-test-kid".to_owned();
-    let _public_jwk = key_material.public_jwk(&active_kid);
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.protocol.authorization_server_profile = profile;
@@ -168,7 +164,13 @@ fn live_refresh_state_from_database_url(
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
+        keyset: crate::test_support::test_key_manager_with_algorithm(
+            if profile.requires_fapi2_security() {
+                jsonwebtoken::Algorithm::PS256
+            } else {
+                jsonwebtoken::Algorithm::EdDSA
+            },
+        ),
     })
 }
 
@@ -1429,6 +1431,12 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
         response_json(token_refresh(&state, &req, &client, &form, None).await).await;
 
     assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+    assert_eq!(
+        jsonwebtoken::decode_header(body["access_token"].as_str().unwrap())
+            .unwrap()
+            .alg,
+        jsonwebtoken::Algorithm::PS256
+    );
     let returned_refresh = body["refresh_token"]
         .as_str()
         .expect("bound lost-response retry must return a newly issued refresh token");
@@ -3273,4 +3281,108 @@ async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
     assert_eq!(repository.active_subject_claims_count(), 1);
     assert_eq!(repository.principal_snapshot_count(), 0);
     assert_eq!(repository.commit_count(), 1);
+}
+
+#[actix_web::test]
+async fn native_sso_refresh_issues_missing_secret_reuses_valid_and_replaces_invalid() {
+    use fred::interfaces::ClientLike as _;
+    use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
+    let mut state = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
+        .expect("real PostgreSQL required");
+    let url = std::env::var("VALKEY_URL").expect("real Valkey required");
+    state.valkey =
+        fred::prelude::Builder::from_config(fred::prelude::Config::from_url(&url).unwrap())
+            .build()
+            .unwrap();
+    state.valkey.init().await.unwrap();
+    state.keyset =
+        crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    client.scopes = vec![
+        "openid".into(),
+        "offline_access".into(),
+        "device_sso".into(),
+    ];
+    insert_refresh_client(&state, &client).await;
+    let user = Uuid::now_v7();
+    insert_refresh_user(&state, user, true).await;
+    let mut token = token_row_for_client(&state, &client);
+    token.user_id = Some(user);
+    token.contract.subject = user.to_string();
+    token.contract.scopes = client.scopes.clone();
+    token.id_token_sid = Some(format!("native-{}", Uuid::now_v7()));
+    token.contract.authentication_context.oidc_sid = token.id_token_sid.clone();
+    token.dpop_jkt = None;
+    let raw = format!("native-refresh-{}", Uuid::now_v7());
+    insert_refresh_token_row(&state, &raw, &token, None, None).await;
+    let service = ServerTokenService::from_port(
+        Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
+        Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    let config = crate::http::token::issue::token_issuance_config(&state.settings);
+    let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
+    let mut modules = state.active_module_snapshot();
+    modules
+        .accepting
+        .insert(nazo_runtime_modules::ModuleId::NativeSso);
+    let modules = nazo_runtime_modules::SnapshotStore::new(modules).request();
+    let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::RefreshToken),
+        client_epoch: 0,
+        config: &config,
+        modules: &modules,
+        authorization: &authorization,
+        security_audit: crate::http::authorization::test_support::test_security_audit(),
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
+    };
+    let request = actix_web::test::TestRequest::post()
+        .uri("/oauth/token")
+        .to_http_request();
+    let facts =
+        crate::http::token::issue::test_support::token_request_facts(&request, &state.settings);
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw);
+    let mut previous_secret = String::new();
+    for attempt in 0..3 {
+        form.device_secret = match attempt {
+            0 => None,
+            1 => Some(previous_secret.clone()),
+            _ => Some("invalid-secret".into()),
+        };
+        let TokenEndpointSuccess::Issued { body, .. } =
+            token_refresh_with_service(&service, &issuance, &facts, &client, &form, None, None)
+                .await
+                .unwrap()
+        else {
+            panic!("refresh must issue tokens")
+        };
+        let secret = body["device_secret"].as_str().unwrap();
+        if attempt == 1 {
+            assert_eq!(secret, previous_secret);
+        } else {
+            assert_ne!(secret, previous_secret);
+        }
+        let claims = service
+            .decode_id_token(config.issuer(), body["id_token"].as_str().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            claims["ds_hash"],
+            nazo_oauth_server::token::native_sso::native_sso_device_secret_hash(secret)
+        );
+        let stored = service.load_native_sso(secret).await.unwrap().unwrap();
+        assert_eq!(
+            stored["refresh_token_family_id"],
+            json!(token.token_family_id)
+        );
+        previous_secret = secret.to_owned();
+        form.refresh_token = Some(body["refresh_token"].as_str().unwrap().to_owned());
+    }
 }

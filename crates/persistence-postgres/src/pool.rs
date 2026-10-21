@@ -219,6 +219,46 @@ pub async fn health_check(pool: &DbPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Opaque revision of the adapter's committed migration ledger. Reading an
+/// empty database does not create the ledger or run any migration.
+pub async fn migration_schema_revision(database_url: &str) -> anyhow::Result<String> {
+    use diesel_async::RunQueryDsl as _;
+    #[derive(diesel::QueryableByName)]
+    struct LedgerPresent {
+        #[diesel(sql_type = diesel::sql_types::Bool)]
+        present: bool,
+    }
+    #[derive(diesel::QueryableByName)]
+    struct Version {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        version: String,
+    }
+    let mut connection = establish_connection(database_url).await?;
+    let present = diesel::sql_query(
+        "SELECT to_regclass('__diesel_schema_migrations') IS NOT NULL AS present",
+    )
+    .get_result::<LedgerPresent>(&mut connection)
+    .await
+    .map_err(crate::unavailable::migration_query)?
+    .present;
+    let versions = if present {
+        diesel::sql_query(
+            "SELECT version::text AS version FROM __diesel_schema_migrations ORDER BY version",
+        )
+        .load::<Version>(&mut connection)
+        .await
+        .map_err(crate::unavailable::migration_query)?
+        .into_iter()
+        .map(|row| row.version)
+        .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    Ok(blake3::hash(&serde_json::to_vec(&versions)?)
+        .to_hex()
+        .to_string())
+}
+
 pub async fn run_pending_migrations(database_url: &str) -> anyhow::Result<bool> {
     // diesel-async bridges Diesel's synchronous migration harness with
     // `block_in_place`. Isolate that orchestration so current-thread callers

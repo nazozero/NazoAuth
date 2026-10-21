@@ -4,22 +4,12 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import re
-import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "perf" / "results"
 DOCS = RESULTS / "reports"
-DURATION = "30m"
-INSTANCES = "1,2,4"
-SCENARIO_RATES = {
-    "token_only_client_credentials": "1000, 2500, 5000, 7500, 10000 flow/s",
-    "oidc_cold_login_refresh": "16, 32, 64, 128, 256 flow/s",
-    "oidc_logged_in_authorization_code": "16, 32, 64, 128, 256 flow/s",
-    "oidc_refresh_only": "250, 500, 1000, 1500, 2000 flow/s",
-    "fapi2_full_security": "16, 32, 64, 128, 256 flow/s",
-}
 SUFFIX_SCENARIO = {
     "token-only": "token_only_client_credentials",
     "oidc-cold-login": "oidc_cold_login_refresh",
@@ -38,62 +28,27 @@ def load_capacity_module():
     return module
 
 
-def run(command: list[str], timeout: int = 8) -> str:
-    try:
-        completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, timeout=timeout)
-    except Exception as exc:
-        return f"{type(exc).__name__}: {exc}"
-    output = completed.stdout.strip() or completed.stderr.strip()
-    return output.replace("|", "-") if output else "unknown"
-
-
-def read_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return ""
-
-
-def cpuset_for_suffix(suffix: str) -> str:
-    text = read_text(RESULTS / ".run" / f"docker-compose.cpuset-dev-{suffix}.yml")
-    match = re.search(r"cpuset:\s*[\"']?([^\"'\n]+)", text)
-    return match.group(1).strip() if match else "unrestricted"
-
-
-def cpuset_count(value: str) -> str:
-    if value == "unrestricted":
-        return "unrestricted"
-    count = 0
-    for part in value.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            start, end = [int(item) for item in part.split("-", 1)]
-            count += end - start + 1
-        else:
-            count += 1
-    return str(count)
-
-
 def markdown_table(rows: list[tuple[str, str]]) -> str:
     lines = ["| Field | Value |", "| --- | --- |"]
     lines.extend(f"| {field} | {value} |" for field, value in rows)
     return "\n".join(lines)
 
 
-def evidence_block(*, suffix: str, scenario: str) -> str:
-    cpuset = cpuset_for_suffix(suffix)
+def recorded_values(data, field):
+    return ", ".join(sorted({str(point.get(field) or "UNAVAILABLE") for point in data})) or "UNAVAILABLE"
+
+
+def evidence_block(*, suffix: str, data: list) -> str:
     rows = [
-        ("Source commit", run(["git", "rev-parse", "HEAD"], 4)),
-        ("Runner architecture", run(["uname", "-m"], 4)),
-        ("CPU set", cpuset),
-        ("CPU set size", cpuset_count(cpuset)),
-        ("Capacity scenario", scenario),
-        ("Duration per point", DURATION),
-        ("App instance stages", f"{INSTANCES} NazoAuth replica(s)"),
-        ("Target rates", SCENARIO_RATES.get(scenario, "custom")),
-        ("Results JSON", f"[perf/results/data/dev/{suffix}.json](../../../../perf/results/data/dev/{suffix}.json)"),
+        ("Source commit", "UNAVAILABLE (not recorded by this legacy producer)"),
+        ("Runner architecture", "UNAVAILABLE"),
+        ("CPU set", "UNAVAILABLE"),
+        ("Capacity scenarios", recorded_values(data, "scenario")),
+        ("Duration per point", recorded_values(data, "duration")),
+        ("Recorded instance stages", recorded_values(data, "instances")),
+        ("Recorded target rates", recorded_values(data, "target_rate")),
+        ("Matrix completeness", "UNVERIFIED (no registered matrix manifest)"),
+        ("Results JSON", f"[source](../data/dev/{suffix}.json)"),
     ]
     return "## Evidence\n\n" + markdown_table(rows) + "\n\n"
 
@@ -111,7 +66,7 @@ def insert_evidence(source: str, evidence: str) -> str:
     return source.rstrip() + "\n\n" + evidence
 
 
-def finalize_report(*, capacity, suffix: str, scenario: str, require_complete: bool) -> None:
+def finalize_report(*, capacity, suffix: str, scenario: str, expected_points: int | None = None) -> None:
     results_path = RESULTS / "data" / "dev" / f"{suffix}.json"
     report_path = DOCS / f"performance-capacity-curve-dev-{suffix}.md"
     if not results_path.exists():
@@ -120,23 +75,23 @@ def finalize_report(*, capacity, suffix: str, scenario: str, require_complete: b
     data = capacity.json.loads(results_path.read_text(encoding="utf-8"))
     if not isinstance(data, list):
         raise SystemExit(f"{suffix}: expected list results, got {type(data).__name__}")
-    if require_complete and len(data) < 15:
-        raise SystemExit(f"{suffix}: expected 15 capacity points before writeback, got {len(data)}")
-    capacity.write_report(data, duration=DURATION, report_path=report_path, results_path=results_path)
+    if expected_points is not None and len(data) != expected_points:
+        raise SystemExit(f"{suffix}: expected {expected_points} recorded points, got {len(data)}")
+    capacity.write_report(data, duration=recorded_values(data, "duration"), report_path=report_path, results_path=results_path)
     source = report_path.read_text(encoding="utf-8")
-    source = insert_evidence(source, evidence_block(suffix=suffix, scenario=scenario))
+    source = insert_evidence(source, evidence_block(suffix=suffix, data=data))
     report_path.write_text(source, encoding="utf-8", newline="\n")
     print(f"finalized {report_path}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--allow-partial", action="store_true", help="Rewrite reports even if fewer than 15 points are present.")
+    parser.add_argument("--expected-points", type=int, help="Optional explicit record count; does not prove matrix coverage.")
     args = parser.parse_args()
 
     capacity = load_capacity_module()
     for suffix, scenario in SUFFIX_SCENARIO.items():
-        finalize_report(capacity=capacity, suffix=suffix, scenario=scenario, require_complete=not args.allow_partial)
+        finalize_report(capacity=capacity, suffix=suffix, scenario=scenario, expected_points=args.expected_points)
 
 
 if __name__ == "__main__":

@@ -13,10 +13,11 @@ const REAUTH_NONCE_TTL_SECONDS: u64 = 600;
 
 pub(super) async fn consume_reauth_nonce_with_context(
     context: &AuthorizationRequestContext<'_>,
-    q: &mut HashMap<String, String>,
+    nonce: Option<&str>,
+    q: &HashMap<String, String>,
 ) -> Option<i64> {
-    let nonce = q.remove(REAUTH_NONCE_PARAMETER)?;
-    match context.service.take_reauth_nonce(&nonce).await {
+    let key = reauth_nonce_key(nonce?, q);
+    match context.service.take_reauth_nonce(&key).await {
         Ok(Some(started_at)) => (started_at > 0).then_some(started_at),
         Ok(None) => None,
         Err(error) => {
@@ -32,7 +33,7 @@ pub(super) async fn authorization_login_url_with_context(
     reauthentication_required: bool,
 ) -> Result<String, OAuthEndpointError> {
     let reauth_nonce = if reauthentication_required {
-        Some(issue_reauth_nonce(context).await?)
+        Some(issue_reauth_nonce(context, q).await?)
     } else {
         None
     };
@@ -45,12 +46,17 @@ pub(super) async fn authorization_login_url_with_context(
 
 async fn issue_reauth_nonce(
     context: &AuthorizationRequestContext<'_>,
+    q: &HashMap<String, String>,
 ) -> Result<String, OAuthEndpointError> {
     let nonce = random_urlsafe_token();
     let started_at = Utc::now().timestamp_micros();
     context
         .service
-        .store_reauth_nonce(&nonce, started_at, REAUTH_NONCE_TTL_SECONDS)
+        .store_reauth_nonce(
+            &reauth_nonce_key(&nonce, q),
+            started_at,
+            REAUTH_NONCE_TTL_SECONDS,
+        )
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to store reauthentication nonce");
@@ -61,4 +67,16 @@ async fn issue_reauth_nonce(
             )
         })?;
     Ok(nonce)
+}
+
+/// Bind one completion to the original request, including the PAR/JAR identity.
+/// Sorting makes query ordering irrelevant; length-delimited JSON pairs preserve
+/// boundaries between parameter names and values. No request data enters KV keys.
+pub(super) fn reauth_nonce_key(nonce: &str, query: &HashMap<String, String>) -> String {
+    let parameters: std::collections::BTreeMap<_, _> = query
+        .iter()
+        .filter(|(name, _)| name.as_str() != REAUTH_NONCE_PARAMETER)
+        .collect();
+    let encoded = serde_json::to_string(&parameters).expect("string map serialization cannot fail");
+    format!("v2:{nonce}:{}", crate::crypto::blake3_hex(&encoded))
 }

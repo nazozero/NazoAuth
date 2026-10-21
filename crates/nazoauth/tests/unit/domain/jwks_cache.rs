@@ -170,14 +170,19 @@ fn refresh_budget_survives_failure_and_resets_after_expiry() {
 #[test]
 fn stale_observer_reuses_new_result_without_spending_refresh_budget() {
     let cache = cache(2);
-    let document = fetch(&cache, "a", None, 0)
+    let old = fetch(&cache, "a", None, 0)
         .finish(Ok(json!(1)), Duration::ZERO)
         .unwrap();
-    assert!(matches!(
-        cache.begin("a".into(), None, Duration::ZERO),
-        Lookup::Ready(_)
-    ));
-    drop(fetch(&cache, "a", Some(&document), 1));
+    let current = fetch(&cache, "a", None, 30)
+        .finish(Ok(json!(2)), Duration::from_secs(30))
+        .unwrap();
+    let Lookup::Ready(observed) = cache.begin("a".into(), Some(&old), Duration::from_secs(31))
+    else {
+        panic!("stale observer must reuse the newer publication");
+    };
+    assert!(Arc::ptr_eq(&observed, &current));
+    assert_eq!(*observed, json!(2));
+    drop(fetch(&cache, "a", Some(&current), 31));
 }
 
 #[test]

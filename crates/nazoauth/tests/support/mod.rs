@@ -1,3 +1,5 @@
+#[path = "../../../persistence-postgres/tests/support/database.rs"]
+pub(crate) mod database;
 mod session_payload;
 pub(crate) use session_payload::SessionPayload;
 pub(crate) mod admin_mutations;
@@ -568,6 +570,12 @@ pub(crate) fn dpop_token_request(
     let claims = json!({"jti":uuid::Uuid::now_v7().to_string(),"htm":"POST","htu":format!("{}/token",settings.endpoint.issuer.trim_end_matches('/')),"iat":chrono::Utc::now().timestamp()});
     actix_web::test::TestRequest::post()
         .uri("/token")
+        .insert_header((
+            "Host",
+            url::Url::parse(&settings.endpoint.issuer).unwrap()
+                [url::Position::BeforeHost..url::Position::AfterPort]
+                .to_owned(),
+        ))
         .insert_header(("dpop", key.encode_jwt(&header, &claims)))
         .to_http_request()
 }
@@ -594,4 +602,76 @@ fn dpop_token_fixture_has_valid_signature_and_target() {
         result.is_ok(),
         "signed DPoP fixture must validate: {result:?}"
     );
+}
+
+/// Runs a test that intentionally owns process-global state in its own process.
+/// Returns true in the parent, after the selected child test has passed.
+pub(crate) fn run_in_fresh_test_process() -> bool {
+    let thread = std::thread::current();
+    let name = thread.name().expect("named test thread");
+    const CHILD: &str = "NAZO_TEST_ISOLATED_CASE";
+    if std::env::var(CHILD).ok().as_deref() == Some(name) {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture"])
+        .env(CHILD, name)
+        .output()
+        .expect("isolated test must start");
+    assert!(
+        output.status.success(),
+        "isolated test failed: {} {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+        "isolated filter must execute exactly one test"
+    );
+    true
+}
+
+pub(crate) async fn read_http_test_request(stream: &mut tokio::net::TcpStream) -> String {
+    use tokio::io::AsyncReadExt as _;
+    let mut buffer = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    let mut expected_len = None;
+    loop {
+        let read = stream.read(&mut chunk).await.expect("request should read");
+        assert_ne!(read, 0, "fixture request ended before its declared body");
+        buffer.extend_from_slice(&chunk[..read]);
+        assert!(buffer.len() <= 64 * 1024, "fixture request exceeds bound");
+        if expected_len.is_none()
+            && let Some(header_end) = buffer.windows(4).position(|window| window == b"\r\n\r\n")
+        {
+            let headers = String::from_utf8_lossy(&buffer[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            assert!(
+                content_length <= 64 * 1024 - header_end - 4,
+                "fixture request length exceeds bound"
+            );
+            expected_len = Some(header_end + 4 + content_length);
+        }
+        if expected_len.is_some_and(|len| buffer.len() >= len) {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&buffer).to_string()
+}
+
+/// Live backends are optional locally, but required when CI runs these tests.
+pub(crate) fn backend_url(name: &str) -> Option<String> {
+    match std::env::var(name) {
+        Ok(value) => Some(value),
+        Err(std::env::VarError::NotPresent) if std::env::var_os("CI").is_none() => None,
+        Err(error) => panic!("test backend {name} is required and must be valid: {error}"),
+    }
 }

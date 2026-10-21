@@ -138,6 +138,7 @@ impl SessionAccountPort for MissingAccounts {
 fn record(pending_mfa: bool) -> SessionRecord {
     SessionRecord::new(
         UserId::new(uuid::Uuid::from_u128(2)).unwrap(),
+        0,
         900,
         vec!["password".to_owned()],
         pending_mfa,
@@ -171,6 +172,7 @@ fn current_session_exposes_exact_logged_in_clients() {
         pending_mfa: false,
         user: PublicAccount {
             principal: Principal {
+                authorization_epoch: 0,
                 user_id: UserId::new(uuid::Uuid::from_u128(2)).unwrap(),
                 tenant: TenantContext::default_system(),
                 role: UserRole::User,
@@ -370,6 +372,7 @@ fn recent_interactive_mfa_has_one_strict_time_and_factor_policy() {
 }
 
 struct CountingSessionAccounts {
+    authorization_epoch: i64,
     calls: std::sync::atomic::AtomicUsize,
     active: bool,
     unavailable: bool,
@@ -401,6 +404,7 @@ impl SessionAccountPort for CountingSessionAccounts {
             let now = chrono::Utc::now();
             Ok(Some(PublicAccount {
                 principal: Principal {
+                    authorization_epoch: self.authorization_epoch,
                     user_id,
                     tenant: TenantContext {
                         tenant_id,
@@ -427,6 +431,7 @@ async fn mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_st
     for pending in [false, true] {
         let store = Arc::new(FakeStore::with_record(record(pending)));
         let accounts = Arc::new(CountingSessionAccounts {
+            authorization_epoch: 0,
             calls: 0.into(),
             active: true,
             unavailable: false,
@@ -453,6 +458,7 @@ async fn mfa_resolution_reads_one_snapshot_and_one_account_for_either_session_st
 async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_dependency_failures() {
     for case in [
         "inactive",
+        "reenabled",
         "corrupt",
         "store_unavailable",
         "account_unavailable",
@@ -466,6 +472,7 @@ async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_depen
             *store.load_error.lock().unwrap() = Some(RepositoryError::Unavailable);
         }
         let accounts = Arc::new(CountingSessionAccounts {
+            authorization_epoch: i64::from(case == "reenabled"),
             calls: 0.into(),
             active: case != "inactive",
             unavailable: case == "account_unavailable",
@@ -479,18 +486,23 @@ async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_depen
             .resolve_for_mfa(&SessionId::new("session-1"), 1000)
             .await;
         match case {
-            "inactive" => assert_eq!(resolution.unwrap(), SessionResolution::Invalidated),
+            "inactive" | "reenabled" => {
+                assert_eq!(resolution.unwrap(), SessionResolution::Invalidated)
+            }
             "corrupt" => assert_eq!(resolution.unwrap(), SessionResolution::Missing),
             _ => assert_eq!(resolution, Err(RepositoryError::Unavailable)),
         }
         assert_eq!(store.loads.load(std::sync::atomic::Ordering::Relaxed), 1);
         assert_eq!(
             accounts.calls.load(std::sync::atomic::Ordering::Relaxed),
-            usize::from(matches!(case, "inactive" | "account_unavailable"))
+            usize::from(matches!(
+                case,
+                "inactive" | "reenabled" | "account_unavailable"
+            ))
         );
         assert_eq!(
             store.deleted.lock().unwrap().len(),
-            usize::from(matches!(case, "inactive" | "corrupt"))
+            usize::from(matches!(case, "inactive" | "reenabled" | "corrupt"))
         );
     }
 }
@@ -542,6 +554,7 @@ async fn principal_guard_uses_one_narrow_lookup_and_preserves_session_gates() {
         let tenant = TenantContext::default_system();
         let accounts = Arc::new(PrincipalOnlyAccounts {
             principal: Principal {
+                authorization_epoch: 0,
                 user_id: record.user_id(),
                 tenant,
                 role: UserRole::Admin { level: 2 },

@@ -166,11 +166,11 @@ impl MtlsTrustAnchorRepository {
         request: NewMtlsTrustAnchorRequest,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let id = Uuid::now_v7();
-        let mut connection = self.connection().await?;
-        let outcome = connection
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let outcome = guard.connection()
             .transaction::<CreateOutcomeRow, diesel::result::Error, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, request.tenant_id).await?;
-                sql_query(format!(
+                let outcome = sql_query(format!(
                     "WITH eligible AS MATERIALIZED (
                  SELECT c.id
                  FROM oauth_clients c
@@ -238,10 +238,25 @@ impl MtlsTrustAnchorRepository {
                 .bind::<sql_types::BigInt, _>(MAX_PENDING_TRUST_REQUESTS_PER_CLIENT)
                 .bind::<sql_types::BigInt, _>(MAX_PENDING_TRUST_REQUESTS_PER_USER)
                 .get_result::<CreateOutcomeRow>(connection)
-                .await
+                .await?;
+                if let Some(row) = &outcome.request {
+                    super::audit_ledger::append_fresh_security_audit_on_connection(connection,
+                        &nazo_persistence::SecurityAuditEvent {
+                            event_id: Uuid::now_v7(), event_type: "mtls_trust_anchor_requested".into(),
+                            event_category: "trust_lifecycle".into(), occurred_at: chrono::Utc::now(),
+                            payload: serde_json::json!({
+                                "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                                "event_category": "trust_lifecycle", "tenant_id": request.tenant_id.as_uuid(),
+                                "request_id": row.id, "requester_user_id": request.user_id.as_uuid(),
+                                "client_id": row.client_id, "certificate_sha256": row.certificate_sha256,
+                            }),
+                        }).await?;
+                }
+                Ok(outcome)
             })
             .await
             .map_err(map_error)?;
+        guard.return_to_pool();
         match outcome.request {
             Some(row) => Ok(map_request_row(row)),
             None if outcome.eligible => Err(RepositoryError::Conflict),
@@ -300,7 +315,7 @@ impl MtlsTrustAnchorRepository {
              JOIN users u ON u.id = r.user_id AND u.tenant_id = r.tenant_id
              JOIN oauth_clients c ON c.id = r.client_id AND c.tenant_id = r.tenant_id
              WHERE r.tenant_id = $1 AND ($2::smallint IS NULL OR r.status = $2)
-             ORDER BY r.created_at DESC LIMIT $3 OFFSET $4"
+             ORDER BY r.created_at DESC, r.id DESC LIMIT $3 OFFSET $4"
         ))
         .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
         .bind::<sql_types::Nullable<sql_types::SmallInt>, _>(status)

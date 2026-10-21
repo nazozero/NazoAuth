@@ -154,7 +154,13 @@ start_worker() { # start_worker <tag>
 
 stop_workers() {
   local p
-  for p in "${WORKER_PIDS[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done
+  for p in "${WORKER_PIDS[@]:-}"; do
+    if [ -n "$p" ]; then
+      kill -CONT "$p" 2>/dev/null || true
+      kill "$p" 2>/dev/null || true
+      wait "$p" 2>/dev/null || true
+    fi
+  done
   WORKER_PIDS=()
   sleep 0.3
 }
@@ -277,14 +283,21 @@ check "chain contiguous (no gaps)" \
 # stale lease: pause both workers, re-emit, claim sits until lock expiry
 stop_workers
 emit_events 4 s7b
-GEN_BEFORE="$(psql -c 'SELECT coalesce(max(batch_generation),0) FROM public.security_audit_chain_state')"
-start_worker stale; sleep 3; kill -STOP "${WORKER_PIDS[0]}" 2>/dev/null || true
+stop_receiver # No ACK can consume the claimed batch before the fault barrier.
+start_worker stale
+wait_for "stale worker owns a retained in-flight batch" \
+  "SELECT batch_last_sequence IS NOT NULL FROM public.security_audit_chain_state" 30
+kill -STOP "${WORKER_PIDS[0]}"
+IFS='|' read -r GEN_BEFORE BATCH_LAST <<<"$(psql -c 'SELECT batch_generation, batch_last_sequence FROM public.security_audit_chain_state')"
+check "all stale-batch events remain unacknowledged" "$(pending_depth)" "4"
 start_worker reclaim
-wait_for "reclaim after lock expiry bumps generation" \
+wait_for "same batch reclaimed with a newer generation while ACK is blocked" \
+  "SELECT batch_last_sequence = $BATCH_LAST AND batch_generation > $GEN_BEFORE FROM public.security_audit_chain_state" 40
+start_receiver
+kill -CONT "${WORKER_PIDS[0]}"
+wait_for "reclaimed batch drains after receiver recovery" \
   "SELECT count(*) = 0 FROM public.security_audit_events" 40
-GEN_AFTER="$(psql -c 'SELECT coalesce(max(batch_generation),0) FROM public.security_audit_chain_state')"
-kill -CONT "${WORKER_PIDS[0]}" 2>/dev/null || true
-if [ "${GEN_AFTER:-0}" -gt "${GEN_BEFORE:-0}" ]; then ok "generation advanced on reclaim ($GEN_BEFORE -> $GEN_AFTER)"; else bad "generation did not advance"; fi
+check "recovered anchor covers the same batch" "$(anchor_seq)" "$BATCH_LAST"
 stop_workers
 
 # --- S8: in-flight member tampering detected on reclaim -------------------

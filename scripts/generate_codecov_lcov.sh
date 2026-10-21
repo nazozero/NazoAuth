@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IGNORE_REGEX='(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|(^|/)cargo/registry/src/|(^|/)(schema|db|lib)\.rs$|(^|/)domain/(rows|mod|state|keyset)\.rs$|(^|/)bootstrap/(routes|observability|mod)\.rs$|(^|/)support/(valkey|mod)\.rs$|(^|/)http/(mod|admin|profile|token)\.rs$|(^|/)http/admin/clients/mod\.rs$|(^|/)http/auth/mod\.rs$|(^|/)http/authorization/mod\.rs$|(^|/)main\.rs$|(^|/)bin/nazo_oauth_(keyctl|migrate)\.rs$'
+IGNORE_REGEX='(^|/)(tests?|benches|examples|migrations)(/|\.rs$)|(^|/)cargo/registry/src/|(^|/)crates/persistence-postgres/src/schema\.rs$'
 
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
 export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
@@ -186,8 +186,8 @@ fi
 remove_owned_container "$POSTGRES_CONTAINER"
 remove_owned_container "$VALKEY_CONTAINER"
 remove_owned_container "$MINIO_CONTAINER"
-postgres_port_args=(-p "${POSTGRES_PORT}:5432")
-valkey_port_args=(-p "${VALKEY_PORT}:6379")
+postgres_port_args=(-p "127.0.0.1:${POSTGRES_PORT}:5432")
+valkey_port_args=(-p "127.0.0.1:${VALKEY_PORT}:6379")
 docker run -d --name "$POSTGRES_CONTAINER" \
   --label "io.nazoauth.owner=$CODECOV_OWNER_LABEL" \
   -e POSTGRES_PASSWORD=postgres \

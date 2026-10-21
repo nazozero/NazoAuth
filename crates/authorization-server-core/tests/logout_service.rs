@@ -6,9 +6,8 @@ use std::{
 use chrono::{TimeZone as _, Utc};
 use nazo_auth::{
     BackchannelLogoutOutboxPort, IdTokenHintClaims, IdempotentBackchannelLogoutDelivery,
-    LogoutClientRepositoryPort, LogoutDependencyError, LogoutFuture, LogoutInput, LogoutService,
-    LogoutServiceError, LogoutSession, LogoutTokenSignerPort, RegisteredLogoutClient,
-    RpLogoutRequest,
+    LogoutClientRepositoryPort, LogoutFuture, LogoutInput, LogoutService, LogoutServiceError,
+    LogoutSession, LogoutTokenSignerPort, RegisteredLogoutClient, RpLogoutRequest,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -100,13 +99,13 @@ struct Signer;
 impl LogoutTokenSignerPort for Signer {
     fn sign_logout_token<'a>(
         &'a self,
-        client_id: &'a str,
+        client: &'a RegisteredLogoutClient,
         _subject: Option<&'a str>,
         sid: &'a str,
         _issued_at: chrono::DateTime<Utc>,
         _ttl_seconds: i64,
     ) -> LogoutFuture<'a, String> {
-        Box::pin(async move { Ok(format!("logout-token:{client_id}:{sid}")) })
+        Box::pin(async move { Ok(format!("logout-token:{}:{sid}", client.client_id)) })
     }
 }
 
@@ -144,7 +143,7 @@ fn no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel() {
 }
 
 #[test]
-fn hinted_frontchannel_preserves_only_hinted_client_compatibility() {
+fn hinted_frontchannel_notifies_every_active_rp_in_the_session() {
     let tenant_id = Uuid::now_v7();
     let clients = Arc::new(Clients::default());
     *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
@@ -154,13 +153,28 @@ fn hinted_frontchannel_preserves_only_hinted_client_compatibility() {
     ]);
     let outbox = Arc::new(Outbox::default());
     let service = service(clients, outbox);
-    let result =
-        futures_executor::block_on(service.execute(input(tenant_id, Some("client-a")))).unwrap();
-
-    assert_eq!(
-        result.frontchannel_logout_urls,
-        vec!["https://client-a.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1"]
-    );
+    for with_hint in [false, true] {
+        let mut request = input(tenant_id, Some("client-a"));
+        if with_hint {
+            let session = request.session.as_ref().unwrap();
+            request.request.id_token_hint_present = true;
+            request.id_token_hint = Some(IdTokenHintClaims {
+                sub: session.user_id.to_string(),
+                aud: json!("client-a"),
+                sid: Some(session.oidc_sid.clone()),
+            });
+            request.csrf_authorized = false;
+            request.user_confirmed = false;
+        }
+        let result = futures_executor::block_on(service.execute(request)).unwrap();
+        assert_eq!(
+            result.frontchannel_logout_urls,
+            vec![
+                "https://client-a.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1",
+                "https://client-b.example/frontchannel?iss=https%3A%2F%2Fissuer.example&sid=sid-1",
+            ]
+        );
+    }
 }
 
 #[test]
@@ -204,6 +218,35 @@ fn logout_batches_session_clients_and_reuses_the_validated_hint() {
             .map(|delivery| delivery.client_public_id.as_str())
             .collect::<Vec<_>>(),
         vec!["client-b", "client-a"]
+    );
+}
+
+#[test]
+fn unrelated_hint_does_not_suppress_confirmed_current_session_notifications() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    clients.clients.lock().unwrap().extend([
+        client(tenant_id, "client-a", true),
+        client(tenant_id, "client-b", true),
+    ]);
+    let outbox = Arc::new(Outbox::default());
+    let mut request = input(tenant_id, Some("client-a"));
+    request.request.id_token_hint_present = true;
+    request.id_token_hint = Some(IdTokenHintClaims {
+        sub: Uuid::now_v7().to_string(),
+        aud: json!("client-a"),
+        sid: Some("another-session".to_owned()),
+    });
+    let result =
+        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
+    assert_eq!(result.frontchannel_logout_urls.len(), 2);
+    let deliveries = outbox.deliveries.lock().unwrap();
+    assert_eq!(deliveries.len(), 2);
+    assert!(
+        deliveries
+            .iter()
+            .all(|delivery| delivery.logout_token.ends_with(":sid-1"))
     );
 }
 
@@ -367,6 +410,8 @@ fn input(tenant_id: Uuid, client_id: Option<&str>) -> LogoutInput {
 
 fn client(tenant_id: Uuid, client_id: &str, active: bool) -> RegisteredLogoutClient {
     RegisteredLogoutClient {
+        require_fapi2: false,
+        id_token_signed_response_alg: None,
         id: Uuid::now_v7(),
         tenant_id,
         client_id: client_id.to_owned(),
@@ -379,14 +424,6 @@ fn client(tenant_id: Uuid, client_id: &str, active: bool) -> RegisteredLogoutCli
         subject_type: "public".to_owned(),
         sector_identifier_host: None,
     }
-}
-
-#[test]
-fn dependency_error_is_closed_and_non_http() {
-    assert_eq!(
-        LogoutDependencyError::Unavailable,
-        LogoutDependencyError::Unavailable
-    );
 }
 
 #[test]

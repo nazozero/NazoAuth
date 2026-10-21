@@ -188,7 +188,7 @@ fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
 }
 
 fn database_url_with_search_path(schema: &str) -> Option<String> {
-    let base = std::env::var("DATABASE_URL").ok()?;
+    let base = crate::test_support::backend_url("DATABASE_URL")?;
     let separator = if base.contains('?') { "&" } else { "?" };
     Some(format!(
         "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
@@ -203,7 +203,7 @@ struct DecisionLiveFixture {
 
 impl DecisionLiveFixture {
     async fn new() -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let database_url = crate::test_support::backend_url("DATABASE_URL")?;
         Self::from_database_url(database_url, None).await
     }
 
@@ -217,7 +217,7 @@ impl DecisionLiveFixture {
     }
 
     async fn from_database_url(database_url: String, schema: Option<String>) -> Option<Self> {
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("test settings should load");
         settings.endpoint.issuer = "https://issuer.example".to_owned();
@@ -265,10 +265,16 @@ impl DecisionLiveFixture {
             .await
             .expect("restricted Valkey ACL user should be configured");
         let valkey_url = std::env::var("VALKEY_URL").expect("VALKEY_URL should be set");
-        let restricted_url =
-            valkey_url.replacen("redis://", &format!("redis://{username}:{password}@"), 1);
+        let mut restricted_url = url::Url::parse(&valkey_url).expect("VALKEY_URL should parse");
+        restricted_url
+            .set_username(username)
+            .expect("Valkey URL supports username");
+        restricted_url
+            .set_password(Some(password))
+            .expect("Valkey URL supports password");
         let mut valkey_builder = ValkeyBuilder::from_config(
-            ValkeyConfig::from_url(&restricted_url).expect("restricted VALKEY_URL should parse"),
+            ValkeyConfig::from_url(restricted_url.as_str())
+                .expect("restricted VALKEY_URL should parse"),
         );
         valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
             performance.default_command_timeout = StdDuration::from_millis(1000);
@@ -438,6 +444,7 @@ impl DecisionLiveFixture {
 
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
         let payload = crate::test_support::SessionPayload {
+            authorization_epoch: 0,
             user_id: user.id,
             auth_time,
             amr: vec!["pwd".to_owned()],
@@ -446,7 +453,7 @@ impl DecisionLiveFixture {
         };
         valkey_set_ex(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
             serde_json::to_string(&payload).expect("session should serialize"),
             self.state.settings.session.session_ttl_seconds,
         )
@@ -688,7 +695,7 @@ async fn authorization_decision_fails_closed_when_consent_state_read_fails() {
                 format!(">{password}"),
                 format!(
                     "~{}",
-                    nazo_valkey::test_support::state_storage_key("oauth:session:*")
+                    nazo_valkey::test_support::state_storage_key("oauth:session:v2:*")
                 ),
                 "+@all".to_owned(),
             ],

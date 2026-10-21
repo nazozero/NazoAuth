@@ -16,12 +16,12 @@ use nazo_openid4vci::{
     CredentialIssuerMetadata, CredentialOffer, CredentialRequest, CredentialResponse,
     DeferredCredentialRequest, NotificationRequest,
 };
+use nazo_openid4vp::PresentationResult;
 use nazo_openid4vp::application::{
     CreatePresentationRequest, CreatePresentationResponse, PresentationFuture,
     PresentationHttpError, PresentationOperations, PresentationResponseBody,
     PresentationResponseInput,
 };
-use nazo_openid4vp::{PresentationResult, PresentationTransaction};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -1017,9 +1017,10 @@ async fn notification_endpoint_accepts_extension_members_without_relaxing_authen
 }
 
 #[actix_web::test]
-async fn credential_endpoint_rejects_query_tokens_and_non_json_or_jwt_bodies() {
+async fn credential_endpoint_authenticates_only_headers_and_rejects_unsupported_bodies() {
+    let issuer = Arc::new(Issuer::default());
     let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
-        Arc::new(Issuer::default()),
+        issuer.clone(),
         b"management-token".to_vec(),
     ));
     let app = test::init_service(
@@ -1039,6 +1040,23 @@ async fn credential_endpoint_rejects_query_tokens_and_non_json_or_jwt_bodies() {
     )
     .await;
     assert_eq!(query_token.status(), StatusCode::UNAUTHORIZED);
+
+    assert!(issuer.credential_contexts.lock().unwrap().is_empty());
+    let header_token = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/credential?access_token=ignored")
+            .insert_header(("authorization", "Bearer header-token"))
+            .insert_header(("content-type", "application/json"))
+            .set_payload("{}")
+            .to_request(),
+    )
+    .await;
+    assert_eq!(header_token.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        issuer.credential_contexts.lock().unwrap()[0].bearer_token,
+        "header-token"
+    );
 
     let unsupported = test::call_service(
         &app,
@@ -1215,7 +1233,7 @@ async fn direct_post_preserves_json_vp_token_and_jwt_response_shapes() {
         test::TestRequest::post()
             .uri(&format!("/response/{id}"))
             .insert_header(("content-type", "application/x-www-form-urlencoded"))
-            .set_payload("vp_token=%7B%22credential%22%3A%5B%22encoded%22%5D%7D&state=state")
+            .set_payload("vp_token=%7B%22credential%22%3A%5B%22encoded%22%5D%7D&state=state&future=one&future=two")
             .to_request(),
     )
     .await;
@@ -1265,5 +1283,3 @@ async fn direct_post_preserves_json_vp_token_and_jwt_response_shapes() {
         PresentationResponseInput::DirectPostJwt("signed.jwt".to_owned())
     );
 }
-
-fn _assert_transaction_type(_: &PresentationTransaction) {}

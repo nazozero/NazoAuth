@@ -582,3 +582,115 @@ async fn fresh_audit_conflict_rolls_back_the_callers_business_transaction() {
     );
     f.close().await;
 }
+
+#[tokio::test]
+async fn identity_mutations_and_required_audit_share_the_commit_boundary() {
+    use nazo_identity::{
+        TenantContext,
+        ports::{FederationLogin, NewFederatedIdentity, PasswordHashInput},
+    };
+    let Some(mut f) = Fixture::new().await else {
+        return;
+    };
+    let tenant = TenantContext::default_system();
+    let federation = nazo_postgres::FederationRepository::new(f.pool.clone());
+    let identity = |suffix: &str| NewFederatedIdentity {
+        login: FederationLogin {
+            tenant,
+            provider_type: "oidc".into(),
+            provider_id: "commit-test".into(),
+            subject: suffix.into(),
+            email: Some(format!("{suffix}@example.test")),
+            claims: json!({}),
+        },
+        email: format!("{suffix}@example.test"),
+        display_name: None,
+        password_hash: PasswordHashInput::new("test").unwrap(),
+    };
+    let user = federation
+        .create_federated(identity("existing"))
+        .await
+        .unwrap();
+    let before = f.snapshot().await;
+    let passkeys = nazo_postgres::PasskeyRepository::new(f.pool.clone());
+    let credential = passkey_auth::PasskeyCredential {
+        id: passkey_auth::CredentialId(vec![1, 2, 3]),
+        counter: 0,
+        public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
+        transports: vec!["internal".into()],
+        aaguid: [0; 16],
+    };
+    f.mode("raise").await;
+    assert!(
+        passkeys
+            .insert(
+                tenant.tenant_id,
+                user.user_id(),
+                credential.clone(),
+                "test".into()
+            )
+            .await
+            .is_err()
+    );
+    assert!(
+        passkeys
+            .list_summaries(tenant.tenant_id, user.user_id())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        federation
+            .create_federated(identity("rejected"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        sql_query(
+            "SELECT COUNT(*)::bigint AS value FROM users WHERE email='rejected@example.test'"
+        )
+        .get_result::<Count>(&mut f.observer)
+        .await
+        .unwrap()
+        .value,
+        0
+    );
+    assert_eq!(f.snapshot().await, before);
+    f.mode("off").await;
+    passkeys
+        .insert(tenant.tenant_id, user.user_id(), credential, "test".into())
+        .await
+        .unwrap();
+    federation
+        .create_federated(identity("rejected"))
+        .await
+        .unwrap();
+    assert_eq!(sql_query("SELECT COUNT(*)::bigint AS value FROM security_audit_events WHERE event_type IN ('passkey_registered','external_identity_linked')")
+        .get_result::<Count>(&mut f.observer).await.unwrap().value, 3);
+
+    // A standalone RETURNING update must also wait for a deferred commit error.
+    f.observer.batch_execute("CREATE CONSTRAINT TRIGGER revision_user_late AFTER UPDATE ON users DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION revision_deferred_fault()").await.unwrap();
+    f.mode("raise").await;
+    let users = nazo_postgres::UserRepository::new(f.pool.clone());
+    assert!(
+        users
+            .compare_and_set_avatar(
+                tenant.tenant_id,
+                user.user_id(),
+                None,
+                user.profile.avatar_revision,
+                Some("avatar".into())
+            )
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        sql_query("SELECT COUNT(*)::bigint AS value FROM users WHERE avatar_url IS NOT NULL")
+            .get_result::<Count>(&mut f.observer)
+            .await
+            .unwrap()
+            .value,
+        0
+    );
+    f.close().await;
+}

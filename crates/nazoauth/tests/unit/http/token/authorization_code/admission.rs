@@ -57,7 +57,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
             grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
             client_epoch: 0,
             config: &config,
-            modules: &modules,
+            modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
             authorization: &authorization,
             security_audit: crate::http::authorization::test_support::test_security_audit(),
             remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -120,7 +120,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
         grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
         client_epoch: 0,
         config: &config,
-        modules: &modules,
+        modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
         authorization: &authorization,
         security_audit: crate::http::authorization::test_support::test_security_audit(),
         remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -386,6 +386,7 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
         .unwrap();
     pkce_state["payload"]["code_challenge"] = challenge;
     // Missing legacy method must fail closed, never become an absent challenge.
+    pkce_state["payload"] = Value::String(pkce_state["payload"].to_string());
     let raw_pkce_state = pkce_state.to_string();
     fixture
         .store_raw_code_state(&pkce_state_code, &raw_pkce_state)

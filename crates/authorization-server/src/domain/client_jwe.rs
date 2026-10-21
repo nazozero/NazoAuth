@@ -54,13 +54,17 @@ pub fn client_jwe_key<'a>(
     let Some(jwk) = matching_keys.next() else {
         anyhow::bail!("{response_name} JWE client has no matching encryption key");
     };
-    if matching_keys.next().is_some() {
-        anyhow::bail!("{response_name} JWE client has ambiguous encryption keys");
-    }
     let kid = jwk
         .get("kid")
         .and_then(Value::as_str)
         .filter(|kid| !kid.trim().is_empty());
+    // The first published matching key is the recipient's preferred key.
+    // Overlapping rotation keys are valid; the chosen key must be identifiable.
+    for other in matching_keys {
+        if kid.is_none() || other.get("kid").and_then(Value::as_str) == kid {
+            anyhow::bail!("{response_name} JWE client has ambiguous encryption key identifiers");
+        }
+    }
     Ok(Some(ClientJweKey { kid, alg, enc, jwk }))
 }
 

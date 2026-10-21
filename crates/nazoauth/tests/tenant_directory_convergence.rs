@@ -7,8 +7,10 @@
 //! `NAZO_TEST_VALKEY_URL`/`VALKEY_URL` the test skips so plain `cargo test`
 //! stays hermetic; in CI their absence is a hard failure.
 
+#[path = "support/http_probe.rs"]
+mod http_probe;
+
 use std::{
-    io::{Read as _, Write as _},
     net::{SocketAddr, ToSocketAddrs},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -36,11 +38,15 @@ const STATE_EPOCH: &str = "0198f7d1-0000-7000-8000-000000000001";
 fn test_databases() -> Option<(String, String)> {
     let database = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
-        .ok()?;
+        .ok();
     let valkey = std::env::var("NAZO_TEST_VALKEY_URL")
         .or_else(|_| std::env::var("VALKEY_URL"))
-        .ok()?;
-    Some((database, valkey))
+        .ok();
+    assert!(
+        (database.is_some() && valkey.is_some()) || std::env::var_os("CI").is_none(),
+        "CI requires PostgreSQL and Valkey URLs"
+    );
+    Some((database?, valkey?))
 }
 
 /// Replaces the path component of a PostgreSQL URL with one database name.
@@ -64,12 +70,22 @@ fn free_port() -> u16 {
         .port()
 }
 
-fn server_config_yaml(port: u16, database_url: &str, valkey_url: &str, data_dir: &Path) -> String {
+fn server_config_yaml(
+    port: u16,
+    database_url: &str,
+    valkey_url: &str,
+    data_dir: &Path,
+    signing_key: &str,
+) -> String {
     format!(
         r#"BIND: "127.0.0.1:{port}"
 DATA_DIR: "{}"
 DEPLOYMENT_ID: "{DEPLOYMENT_ID}"
 DATABASE_URL: "{database_url}"
+SIGNING_KEY_ENCRYPTION_KEY_ID: "fixture-root"
+SIGNING_KEY_ENCRYPTION_KEY: "{signing_key}"
+MFA_TOTP_ENCRYPTION_KEY_ID: "fixture-totp"
+MFA_TOTP_ENCRYPTION_KEY: "{signing_key}"
 VALKEY_URL: "{valkey_url}"
 VALKEY_STATE_EPOCH: "{STATE_EPOCH}"
 VALKEY_COMMAND_TIMEOUT_MS: 1000
@@ -107,7 +123,13 @@ impl ServerProcess {
     fn wait_until_ready(&mut self, host: &str) -> Duration {
         let started = Instant::now();
         loop {
-            let status = discovery_status(self.port, host);
+            let status = discovery_status(
+                self.port,
+                host,
+                CONVERGENCE_WINDOW
+                    .saturating_sub(started.elapsed())
+                    .min(Duration::from_secs(2)),
+            );
             if status == 200 {
                 return started.elapsed();
             }
@@ -137,6 +159,14 @@ impl ServerProcess {
 /// configuration file is authoritative for it.
 const OVERRIDING_ENV_KEYS: &[&str] = &[
     "DATABASE_URL",
+    "SIGNING_KEY_ENCRYPTION_KEY_ID",
+    "MFA_TOTP_ENCRYPTION_KEY",
+    "MFA_TOTP_ENCRYPTION_KEY_FILE",
+    "MFA_TOTP_ENCRYPTION_KEY_ID",
+    "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",
+    "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE",
+    "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID",
+    "SIGNING_KEY_ENCRYPTION_KEY",
     "VALKEY_URL",
     "VALKEY_STATE_EPOCH",
     "ISSUER",
@@ -199,19 +229,16 @@ fn run_cli(command: &str, config: &Path) {
 }
 
 /// One HTTP probe of the discovery endpoint under a forced tenant Host.
-fn discovery_status(port: u16, host: &str) -> u16 {
-    let Ok(mut stream) = std::net::TcpStream::connect(("127.0.0.1", port)) else {
-        return 0;
-    };
+fn discovery_status(port: u16, host: &str, budget: Duration) -> u16 {
     let request =
         format!("GET {DISCOVERY_PATH} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n");
-    if stream.write_all(request.as_bytes()).is_err() {
+    let Ok(response) = http_probe::exchange(
+        SocketAddr::from(([127, 0, 0, 1], port)),
+        request.as_bytes(),
+        budget,
+    ) else {
         return 0;
-    }
-    let mut response = Vec::new();
-    if stream.read_to_end(&mut response).is_err() {
-        return 0;
-    }
+    };
     let head = String::from_utf8_lossy(&response);
     head.split_whitespace()
         .nth(1)
@@ -222,7 +249,13 @@ fn discovery_status(port: u16, host: &str) -> u16 {
 fn wait_for_routing(port: u16, host: &str, expected: u16) -> Duration {
     let started = Instant::now();
     loop {
-        let status = discovery_status(port, host);
+        let status = discovery_status(
+            port,
+            host,
+            CONVERGENCE_WINDOW
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_secs(2)),
+        );
         if status == expected {
             return started.elapsed();
         }
@@ -237,7 +270,14 @@ fn wait_for_routing(port: u16, host: &str, expected: u16) -> Duration {
 fn wait_for_away(port: u16, host: &str) {
     let started = Instant::now();
     loop {
-        if discovery_status(port, host) == 404 {
+        if discovery_status(
+            port,
+            host,
+            CONVERGENCE_WINDOW
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_secs(2)),
+        ) == 404
+        {
             return;
         }
         assert!(
@@ -313,23 +353,26 @@ impl ValkeyProxy {
         let listener = Self::bind(port).await;
         let (shutdown, mut shutdown_rx) = tokio::sync::watch::channel(false);
         let task = tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
             loop {
                 tokio::select! {
                     _ = shutdown_rx.changed() => break,
+                    _ = connections.join_next(), if !connections.is_empty() => {},
                     accepted = listener.accept() => {
                         let (mut client, _) = match accepted {
                             Ok(pair) => pair,
                             Err(_) => break,
                         };
-                        let Ok(mut server) = TcpStream::connect(upstream).await else {
-                            continue;
-                        };
-                        tokio::spawn(async move {
+                        connections.spawn(async move {
+                            let Ok(mut server) = TcpStream::connect(upstream).await else {
+                                return;
+                            };
                             let _ = tokio::io::copy_bidirectional(&mut client, &mut server).await;
                         });
                     }
                 }
             }
+            connections.shutdown().await;
         });
         Self {
             upstream,
@@ -430,11 +473,21 @@ async fn two_processes_converge_on_lifecycle_mutations_and_survive_cache_failure
     let proxied_valkey = format!("redis://127.0.0.1:{proxy_port}");
 
     // Production install chain: one persistence transition, then servers.
+    let signing_key = base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        rand::random::<[u8; 32]>(),
+    );
     let bootstrap_dir = temporary_directory("bootstrap");
     let bootstrap_config = bootstrap_dir.join(".env.yaml");
     write_config(
         &bootstrap_config,
-        &server_config_yaml(free_port(), &isolated_url, &proxied_valkey, &bootstrap_dir),
+        &server_config_yaml(
+            free_port(),
+            &isolated_url,
+            &proxied_valkey,
+            &bootstrap_dir,
+            &signing_key,
+        ),
     );
     // The migration runtime role is cluster-wide: create it once, idempotently.
     {
@@ -460,11 +513,23 @@ async fn two_processes_converge_on_lifecycle_mutations_and_survive_cache_failure
     let config_b = process_b_dir.join(".env.yaml");
     write_config(
         &config_a,
-        &server_config_yaml(port_a, &isolated_url, &proxied_valkey, &process_a_dir),
+        &server_config_yaml(
+            port_a,
+            &isolated_url,
+            &proxied_valkey,
+            &process_a_dir,
+            &signing_key,
+        ),
     );
     write_config(
         &config_b,
-        &server_config_yaml(port_b, &isolated_url, &proxied_valkey, &process_b_dir),
+        &server_config_yaml(
+            port_b,
+            &isolated_url,
+            &proxied_valkey,
+            &process_b_dir,
+            &signing_key,
+        ),
     );
     let mut server_a = spawn_server(&config_a, port_a);
     let mut server_b = spawn_server(&config_b, port_b);
@@ -539,12 +604,39 @@ async fn exercise_lifecycle(
         .await?;
     wait_for_routing(port_a, renamed_host, 200);
     wait_for_routing(port_b, renamed_host, 200);
-    assert_eq!(discovery_status(port_a, &alpha_host), 404);
-    assert_eq!(discovery_status(port_b, &alpha_host), 404);
+    assert_eq!(
+        discovery_status(port_a, &alpha_host, Duration::from_secs(2)),
+        404
+    );
+    assert_eq!(
+        discovery_status(port_b, &alpha_host, Duration::from_secs(2)),
+        404
+    );
     println!("tenant host update converged at revision {revision}");
 
     // 3. Valkey outage: the cache path dies, DB reconciliation still delivers.
+    let mut existing_cache_connection = TcpStream::connect(proxy.address()).await?;
+    existing_cache_connection
+        .write_all(b"*1\r\n$4\r\nPING\r\n")
+        .await?;
+    let mut pong = [0; 7];
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        existing_cache_connection.read_exact(&mut pong),
+    )
+    .await??;
+    assert_eq!(&pong, b"+PONG\r\n");
     proxy.stop().await;
+    let read = tokio::time::timeout(
+        Duration::from_secs(2),
+        existing_cache_connection.read(&mut pong),
+    )
+    .await
+    .expect("stopping the proxy must close existing connections");
+    assert!(
+        matches!(read, Ok(0) | Err(_)),
+        "cache connection remained usable after stop"
+    );
     let outage_host = "t1-outage.example";
     let tenant_c = provisioning_request("outage", outage_host);
     let outage_tenant_id = tenant_c.binding.tenant.tenant_id;
@@ -600,10 +692,22 @@ async fn exercise_lifecycle(
         .await?;
     wait_for_away(port_a, outage_host);
     wait_for_away(port_b, outage_host);
-    assert_eq!(discovery_status(port_a, &baseline_host), 200);
-    assert_eq!(discovery_status(port_b, &baseline_host), 200);
-    assert_eq!(discovery_status(port_a, "127.0.0.1"), 200);
-    assert_eq!(discovery_status(port_b, "127.0.0.1"), 200);
+    assert_eq!(
+        discovery_status(port_a, &baseline_host, Duration::from_secs(2)),
+        200
+    );
+    assert_eq!(
+        discovery_status(port_b, &baseline_host, Duration::from_secs(2)),
+        200
+    );
+    assert_eq!(
+        discovery_status(port_a, "127.0.0.1", Duration::from_secs(2)),
+        200
+    );
+    assert_eq!(
+        discovery_status(port_b, "127.0.0.1", Duration::from_secs(2)),
+        200
+    );
     println!("tenant disable converged at revision {revision}; baseline tenants unaffected");
 
     Ok(())

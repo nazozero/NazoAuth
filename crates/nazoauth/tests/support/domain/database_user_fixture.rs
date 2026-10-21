@@ -12,6 +12,7 @@ use nazo_identity::{
 #[derive(Debug, Queryable, QueryableByName, Selectable, Serialize, Clone)]
 #[diesel(table_name = crate::schema::users)]
 pub(crate) struct DatabaseUserFixture {
+    pub(crate) avatar_revision: i64,
     #[diesel(sql_type = diesel::sql_types::Uuid)]
     pub(crate) id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Uuid)]
@@ -75,6 +76,7 @@ impl TryFrom<DatabaseUserFixture> for PublicAccount {
         };
         Ok(Self {
             principal: Principal {
+                authorization_epoch: 0,
                 user_id: UserId::new(row.id).map_err(|_| "invalid user ID")?,
                 tenant: TenantContext {
                     tenant_id: TenantId::new(row.tenant_id).map_err(|_| "invalid tenant ID")?,
@@ -92,6 +94,7 @@ impl TryFrom<DatabaseUserFixture> for PublicAccount {
                 mfa_enabled: row.mfa_enabled,
             },
             profile: UserProfile {
+                avatar_revision: row.avatar_revision,
                 display_name: row.display_name,
                 avatar_url: row.avatar_url,
                 given_name: row.given_name,

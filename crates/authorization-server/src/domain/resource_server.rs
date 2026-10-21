@@ -206,9 +206,8 @@ mod production {
     }
 
     impl FapiHttpMessageSignatures for ServerFapiHttpMessageSignatures {
-        fn enabled(&self) -> bool {
-            nazo_auth::module_admissible(
-                &self.runtime_modules.load_full(),
+        fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+            self.runtime_modules.lease(
                 ModuleId::HttpMessageSignatures,
                 nazo_auth::CapabilityAdmission::NewRequest,
             )

@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import time
+from threading import Lock
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,7 @@ from urllib.parse import unquote, urlparse
 
 ROOT = Path(os.environ.get('CAPACITY_PREVIEW_ROOT', os.getcwd())).resolve()
 RESULTS = ROOT / 'perf' / 'results'
+HOST = os.environ.get('CAPACITY_PREVIEW_HOST', '127.0.0.1')
 PORT = int(os.environ.get('CAPACITY_PREVIEW_PORT', '18080'))
 START_TS = os.environ.get('CAPACITY_PREVIEW_STARTED_AT', datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
 MAIN_SCENARIOS = {
@@ -172,19 +174,6 @@ def file_lines(path: Path) -> int:
         return 0
 
 
-def sanitize_log(text: str) -> str:
-    hidden = (
-        'Error response from daemon: No such container:',
-        ' Error while Stopping',
-        'GoError: oidc PAR failed: 400',
-        'GoError: fapi PAR failed: 401',
-        'PAR request rejected http_status=400',
-        'PAR request rejected http_status=401',
-        'client_assertion_rejected reason=decode_expired',
-    )
-    return '\n'.join(line for line in text.splitlines() if not any(marker in line for marker in hidden))
-
-
 def docker_container_exists(name: str) -> bool:
     output = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], 5)
     return name in set(output.splitlines())
@@ -332,7 +321,7 @@ def deleted_log_writer_message(path: Path) -> str:
 
 def stream_file_log(handler: BaseHTTPRequestHandler, path: Path, lines: int = 80) -> None:
     if path.exists():
-        for line in sanitize_log(read_tail(path, lines)).splitlines():
+        for line in read_tail(path, lines).splitlines():
             if not write_sse_line(handler, line):
                 return
         try:
@@ -361,7 +350,7 @@ def stream_file_log(handler: BaseHTTPRequestHandler, path: Path, lines: int = 80
                 chunk = handle.read()
                 position = handle.tell()
             if chunk:
-                for line in sanitize_log(chunk).splitlines():
+                for line in chunk.splitlines():
                     if not write_sse_line(handler, line):
                         return
             else:
@@ -380,7 +369,7 @@ def stream_docker_or_file_log(handler: BaseHTTPRequestHandler, key: str) -> None
     name = perf_container_name(key)
     if docker_container_exists(name):
         snapshot = docker_perf_logs(key, 80)
-        for line in sanitize_log(snapshot).splitlines():
+        for line in snapshot.splitlines():
             if not write_sse_line(handler, line):
                 return
         process = subprocess.Popen(
@@ -492,7 +481,7 @@ def completed_stage_rows(key: str, records: list[dict]) -> list[dict]:
 
 
 def matrix_runtime_status() -> dict:
-    processes = run(['sh', '-lc', "ps -eo pid,ppid,stat,pcpu,pmem,etime,cmd --sort=pid | grep -E 'dev_capacity_matrix|extended_capacity_matrix|run_capacity|capacity.py' | grep -v grep || true"], 3)
+    processes = run(['sh', '-lc', "ps -eo pid,ppid,stat,pcpu,pmem,etime,cmd --sort=pid | grep -E 'current_capacity.py|point_runner.py' | grep -v grep || true"], 3)
     tail = read_tail(MATRIX_LOG, 120)
     final_line = ''
     for line in tail.splitlines():
@@ -605,6 +594,22 @@ def scenario_state(key: str, completed_points: int, k6_tail: str, matrix: dict, 
     }
 
 
+_snapshot_lock = Lock()
+_snapshot = None
+_snapshot_at = 0.0
+
+
+def collect_cached() -> dict:
+    global _snapshot, _snapshot_at
+    # All preview clients share the same bounded system sample. A slow probe
+    # cannot overlap another probe; freshness starts when collection completes.
+    with _snapshot_lock:
+        if _snapshot is None or time.monotonic() - _snapshot_at >= 5:
+            _snapshot = collect()
+            _snapshot_at = time.monotonic()
+        return _snapshot
+
+
 def collect() -> dict:
     now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     matrix = matrix_runtime_status()
@@ -623,7 +628,7 @@ def collect() -> dict:
             report_count += 1
         container_running = docker_container_exists(perf_container_name(key))
         live_log = docker_perf_logs(key, 120) if container_running else ''
-        log_tail_for_status = sanitize_log(live_log or read_tail(log, 120))
+        log_tail_for_status = (live_log or read_tail(log, 120))
         state = scenario_state(
             key,
             completed_points,
@@ -937,6 +942,8 @@ async function refreshDashboard() {
     bindOpenLogViews();
   } catch (error) {
     console.warn('capacity preview refresh failed', error);
+  } finally {
+    setTimeout(refreshDashboard, 5000);
   }
 }
 
@@ -953,7 +960,7 @@ document.addEventListener('toggle', (event) => {
 }, true);
 
 window.addEventListener('DOMContentLoaded', () => {
-  setInterval(refreshDashboard, 5000);
+  setTimeout(refreshDashboard, 5000);
 });
 
 window.addEventListener('beforeunload', () => {
@@ -1005,7 +1012,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
         if parsed.path == '/data.json':
-            payload = json.dumps(collect(), ensure_ascii=False, indent=2).encode('utf-8')
+            payload = json.dumps(collect_cached(), ensure_ascii=False, indent=2).encode('utf-8')
             self.send_response(HTTPStatus.OK)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
             self.send_header('Cache-Control', 'no-store')
@@ -1014,7 +1021,7 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return
         if parsed.path == '/fragment':
-            payload = render_dashboard(collect()).encode('utf-8')
+            payload = render_dashboard(collect_cached()).encode('utf-8')
             self.send_response(HTTPStatus.OK)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Cache-Control', 'no-store')
@@ -1064,7 +1071,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path not in ('/', '/index.html'):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        payload = render_page(collect())
+        payload = render_page(collect_cached())
         self.send_response(HTTPStatus.OK)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Cache-Control', 'no-store')
@@ -1081,6 +1088,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    server = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
-    print(f'capacity preview listening on 0.0.0.0:{PORT}', flush=True)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f'capacity preview listening on {HOST}:{PORT}', flush=True)
     server.serve_forever()

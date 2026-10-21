@@ -176,3 +176,47 @@ async fn oauth_error_name(response: actix_web::HttpResponse) -> Option<String> {
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
 }
+
+#[actix_web::test]
+async fn public_nonce_budget_rejects_before_the_persistent_operation() {
+    use actix_web::{App, middleware::from_fn, test, web};
+    for (count, expected) in [(1, StatusCode::OK), (3, StatusCode::TOO_MANY_REQUESTS)] {
+        let store = FakeRateLimiter::returning(Ok(count));
+        let calls = store.calls.clone();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(AuthRequestLimiter::new(
+                    Arc::new(store),
+                    60,
+                    2,
+                )))
+                .app_data(web::Data::new(direct_client_ip()))
+                .service(
+                    web::resource("/openid4vci/nonce")
+                        .wrap(from_fn(auth_request_budget))
+                        .route(web::post().to(|| async { HttpResponse::Ok().body("issued") })),
+                ),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            TestRequest::post()
+                .uri("/openid4vci/nonce")
+                .peer_addr("203.0.113.77:12345".parse().unwrap())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), expected);
+        let body = test::read_body(response).await;
+        assert_eq!(
+            body.as_ref() == b"issued",
+            count == 1,
+            "rejected request must not reach nonce creation"
+        );
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            1,
+            "one entry budget per request"
+        );
+    }
+}

@@ -70,7 +70,7 @@ impl ScimRepositoryPort for UnusedRepository {
         Box::pin(async { Err(RepositoryError::Unavailable) })
     }
 
-    fn deactivate<'a>(
+    fn delete<'a>(
         &'a self,
         _tenant: TenantContext,
         _user_id: UserId,
@@ -102,6 +102,7 @@ impl ScimRequestAuthorizer for AllowRequests {
         Box::pin(async {
             let tenant = TenantContext::default_system();
             Ok(ScimAuthorizedRequest {
+                modules: test_modules(false),
                 tenant,
                 cursor_subject: ScimCursorSubject {
                     tenant_id: tenant.tenant_id.as_uuid(),
@@ -163,6 +164,7 @@ impl ScimRequestAuthorizer for EventRequests {
         Box::pin(async move {
             let tenant = TenantContext::default_system();
             Ok(ScimAuthorizedRequest {
+                modules: test_modules(true),
                 tenant,
                 cursor_subject: ScimCursorSubject {
                     tenant_id: tenant.tenant_id.as_uuid(),
@@ -171,10 +173,6 @@ impl ScimRequestAuthorizer for EventRequests {
                 event_receiver: Some(receiver),
             })
         })
-    }
-
-    fn security_events_enabled(&self) -> bool {
-        true
     }
 }
 
@@ -397,7 +395,8 @@ async fn provider_config_handler_preserves_http_contract() {
     );
     let document = actix_test::read_body_json::<Value, _>(response).await;
     assert_eq!(document["id"], "nazo-oauth-scim");
-    assert_eq!(document["patch"], json!({"supported": true}));
+    assert_eq!(document["patch"], json!({"supported": false}));
+    assert_eq!(document["filter"]["supported"], false);
     assert_eq!(
         document["pagination"]["cursorTimeout"],
         nazo_identity::scim::SCIM_CURSOR_TIMEOUT_SECONDS
@@ -502,6 +501,7 @@ impl ScimRequestAuthorizer for DiscoveryAuthority {
             }
             let tenant = TenantContext::default_system();
             Ok(ScimAuthorizedRequest {
+                modules: test_modules(self.events_enabled.load(Ordering::SeqCst)),
                 tenant,
                 cursor_subject: ScimCursorSubject {
                     tenant_id: tenant.tenant_id.as_uuid(),
@@ -510,10 +510,6 @@ impl ScimRequestAuthorizer for DiscoveryAuthority {
                 event_receiver: None,
             })
         })
-    }
-
-    fn security_events_enabled(&self) -> bool {
-        self.events_enabled.load(Ordering::SeqCst)
     }
 }
 
@@ -657,6 +653,10 @@ impl ScimRequestAuthorizer for PollBoundaryAuthority {
                 }
             }
             Ok(ScimAuthorizedRequest {
+                modules: test_modules(
+                    !(self.released_poll.load(Ordering::SeqCst)
+                        && matches!(self.change, PollBoundaryChange::DeliveryDisabled)),
+                ),
                 tenant,
                 cursor_subject: ScimCursorSubject {
                     tenant_id: tenant.tenant_id.as_uuid(),
@@ -665,15 +665,6 @@ impl ScimRequestAuthorizer for PollBoundaryAuthority {
                 event_receiver: receiver,
             })
         })
-    }
-
-    fn security_events_enabled(&self) -> bool {
-        true
-    }
-
-    fn security_event_delivery_enabled(&self) -> bool {
-        !(self.released_poll.load(Ordering::SeqCst)
-            && matches!(self.change, PollBoundaryChange::DeliveryDisabled))
     }
 }
 
@@ -822,4 +813,20 @@ async fn empty_immediate_poll_also_rechecks_current_authority() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(authority.calls.load(Ordering::SeqCst), 2);
     assert_eq!(poller.requests.lock().unwrap().len(), 1);
+}
+
+fn test_modules(events_enabled: bool) -> Arc<nazo_runtime_modules::RequestSnapshot> {
+    use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision, SnapshotStore};
+    let mut accepting = std::collections::BTreeSet::from([ModuleId::Scim]);
+    if events_enabled {
+        accepting.insert(ModuleId::ScimSecurityEvents);
+    }
+    Arc::new(
+        SnapshotStore::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(1),
+            accepting,
+            draining: Default::default(),
+        })
+        .request(),
+    )
 }

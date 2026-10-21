@@ -15,6 +15,7 @@ mod rate_limit;
 mod replay;
 mod session;
 mod tenant_directory;
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub mod test_support;
 mod token_issuance;

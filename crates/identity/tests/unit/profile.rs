@@ -17,7 +17,7 @@ use crate::{
 
 use super::{
     AccountProfileService, ProfilePatch, ProfileValidationError, UpdateProfileError,
-    normalize_profile_url, profile_text,
+    normalize_profile_patch, normalize_profile_url, profile_text,
 };
 
 #[derive(Clone)]
@@ -37,6 +37,7 @@ impl ProfileRepositoryPort for StoredProfileRepository {
         let phone_number_verified = account.profile.phone_number_verified
             && account.profile.phone_number == update.phone_number;
         account.profile = UserProfile {
+            avatar_revision: account.profile.avatar_revision,
             display_name: update.display_name,
             given_name: update.given_name,
             family_name: update.family_name,
@@ -119,6 +120,7 @@ fn account() -> PublicAccount {
     let now = Utc::now();
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id: UserId::new(Uuid::from_u128(10)).unwrap(),
             tenant: TenantContext::default(),
             role: UserRole::User,
@@ -217,7 +219,7 @@ fn profile_url_accepts_only_absolute_http_urls() {
 }
 
 #[tokio::test]
-async fn retry_is_idempotent_when_profile_write_succeeds_before_overview_failure() {
+async fn overview_failure_precedes_profile_write_and_retry_commits_once() {
     let original = account();
     let stored = Arc::new(Mutex::new(original.clone()));
     let writes = Arc::new(AtomicUsize::new(0));
@@ -245,14 +247,14 @@ async fn retry_is_idempotent_when_profile_write_succeeds_before_overview_failure
     );
     assert_eq!(
         stored.lock().unwrap().profile.display_name.as_deref(),
-        Some("Alice"),
-        "the profile write is committed before the independent overview read"
+        original.profile.display_name.as_deref(),
+        "an unavailable overview must not mask a committed profile write"
     );
 
     let retry = service.update(&original.principal, patch).await.unwrap();
     assert_eq!(retry.account.profile.display_name.as_deref(), Some("Alice"));
     assert_eq!(retry.authorized_application_count, 2);
-    assert_eq!(writes.load(Ordering::Relaxed), 2);
+    assert_eq!(writes.load(Ordering::Relaxed), 1);
     assert_eq!(
         stored.lock().unwrap().profile.display_name.as_deref(),
         Some("Alice"),
@@ -310,4 +312,78 @@ async fn profile_update_normalizes_only_writable_profile_fields() {
     );
     assert!(!updated.account.profile.phone_number_verified);
     assert_eq!(stored.lock().unwrap().profile, updated.account.profile);
+}
+
+#[test]
+fn oidc_profile_fields_validate_their_declared_syntax() {
+    for value in ["1980", "0000", "1980-02-29", "0000-02-29", "2000-12-31"] {
+        assert!(
+            normalize_profile_patch(ProfilePatch {
+                birthdate: Some(value.into()),
+                ..Default::default()
+            })
+            .is_ok(),
+            "{value}"
+        );
+    }
+    for value in [
+        "hello",
+        "1900-02-29",
+        "2000-13-01",
+        "2000-1-1",
+        "2000-00-00",
+    ] {
+        assert_eq!(
+            normalize_profile_patch(ProfilePatch {
+                birthdate: Some(value.into()),
+                ..Default::default()
+            }),
+            Err(ProfileValidationError::InvalidFormat("birthdate")),
+            "{value}"
+        );
+    }
+    assert_eq!(
+        normalize_profile_patch(ProfilePatch {
+            birthdate: Some("２０２０".into()),
+            ..Default::default()
+        }),
+        Err(ProfileValidationError::FieldTooLong("birthdate")),
+    );
+    for value in ["en-US", "zh-Hant-TW", "i-klingon", "x-private"] {
+        assert!(
+            normalize_profile_patch(ProfilePatch {
+                locale: Some(value.into()),
+                ..Default::default()
+            })
+            .is_ok(),
+            "{value}"
+        );
+    }
+    for value in ["en_US", "en--US", "not a language"] {
+        assert_eq!(
+            normalize_profile_patch(ProfilePatch {
+                locale: Some(value.into()),
+                ..Default::default()
+            }),
+            Err(ProfileValidationError::InvalidFormat("locale")),
+            "{value}"
+        );
+    }
+    for value in ["Asia/Shanghai", "UTC", "America/New_York"] {
+        assert!(
+            normalize_profile_patch(ProfilePatch {
+                zoneinfo: Some(value.into()),
+                ..Default::default()
+            })
+            .is_ok(),
+            "{value}"
+        );
+    }
+    assert_eq!(
+        normalize_profile_patch(ProfilePatch {
+            zoneinfo: Some("Mars/Olympus".into()),
+            ..Default::default()
+        }),
+        Err(ProfileValidationError::InvalidFormat("zoneinfo"))
+    );
 }

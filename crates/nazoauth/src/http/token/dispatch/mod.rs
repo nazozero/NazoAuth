@@ -5,8 +5,8 @@ use actix_web::{
     web::{Bytes, Data},
 };
 use nazo_http_actix::{
-    ClientIpConfig, TokenClientAuthForm, client_ip_with_config, oauth_endpoint_error_response,
-    oauth_token_error, parse_token_form_with_pre_authorized, token_client_auth_transport_facts,
+    ClientIpConfig, basic_authorization_credentials, client_ip_with_config,
+    oauth_endpoint_error_response, oauth_token_error, parse_token_form_with_pre_authorized,
     token_endpoint_success_response,
 };
 use nazo_oauth_server::contracts::token_endpoint::{
@@ -95,17 +95,7 @@ pub(crate) async fn token_with_service(
         }
     };
 
-    let form = &parsed_form.form;
-    let auth = token_client_auth_transport_facts(
-        &req,
-        TokenClientAuthForm {
-            client_id: form.client_id.as_deref(),
-            client_secret: form.client_secret.as_deref(),
-            client_assertion_type: form.client_assertion_type.as_deref(),
-            client_assertion: form.client_assertion.as_deref(),
-        },
-    );
-    let prepared = match prepare_token_request(parsed_form, auth) {
+    let prepared = match prepare_token_request(parsed_form, basic_authorization_credentials(&req)) {
         Ok(value) => value,
         Err(error) => return oauth_endpoint_error_response(error),
     };

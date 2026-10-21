@@ -35,7 +35,7 @@ pub(crate) async fn authorize_request_with_context(
         return Err(response);
     }
 
-    let reauth_started_at = consume_reauth_nonce_with_context(context, q).await;
+    let reauth_nonce = q.remove(super::REAUTH_NONCE_PARAMETER);
     let original_authorization_query =
         (q.contains_key("request_uri") || q.contains_key("request")).then(|| q.clone());
     // RFC 9101 section 5 and RFC 9126 section 4 require client_id in the
@@ -367,6 +367,12 @@ pub(crate) async fn authorize_request_with_context(
             ));
         }
     };
+    let reauth_started_at = consume_reauth_nonce_with_context(
+        context,
+        reauth_nonce.as_deref(),
+        original_authorization_query.as_ref().unwrap_or(q),
+    )
+    .await;
     match nazo_auth::authorization_session_decision(
         session.as_ref().map(|session| AuthorizationSession {
             auth_time: session.auth_time,
@@ -518,6 +524,21 @@ pub(crate) async fn authorize_request_with_context(
     } else {
         context.config.auth_code_ttl_seconds
     };
+    // Reading the consent page is part of the authorization transaction, not
+    // the later code redemption window. A retained PAR still caps its lifetime.
+    let consent_expires_at = (now + Duration::minutes(10))
+        .min(pending_pushed_request_expires_at.unwrap_or(now + Duration::minutes(10)));
+    let consent_ttl_seconds = (consent_expires_at - now).num_seconds();
+    if consent_ttl_seconds <= 0 {
+        return authorization_oauth_error_redirect(
+            context,
+            &mut client,
+            &redirect_uri,
+            "invalid_request",
+            q,
+        )
+        .await;
+    }
     let payload = ConsentPayload {
         request_id: request_id.clone(),
         user_id: session.user.id(),
@@ -546,7 +567,7 @@ pub(crate) async fn authorize_request_with_context(
         session_management_allowed: Some(client_policy.session_management),
         authorization_code_ttl_seconds: Some(authorization_code_ttl_seconds),
 
-        expires_at: now + Duration::seconds(authorization_code_ttl_seconds as i64),
+        expires_at: consent_expires_at,
     };
     if normalized.prompt.none {
         if !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
@@ -579,7 +600,7 @@ pub(crate) async fn authorize_request_with_context(
     }
     if let Err(error) = context
         .service
-        .store_consent(&request_id, &payload, authorization_code_ttl_seconds)
+        .store_consent(&request_id, &payload, consent_ttl_seconds as u64)
         .await
     {
         tracing::warn!(%error, "failed to persist consent request");

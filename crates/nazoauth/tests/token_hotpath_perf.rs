@@ -21,10 +21,18 @@
 //! paths (userinfo/token-exchange) redeem a fresh subject access token through
 //! a real code redemption before every group-run's warmup; the provisioning
 //! bootstrap token only proves the tenant's signing algorithm.
+//!
+//! This is a cold-client group benchmark: wall throughput includes thread,
+//! client and connection setup. Warmup prepares server/token state but does
+//! not retain client connections. Per-operation latency includes the complete
+//! response body and excludes worker construction; it is a different scope.
+
+#[path = "support/http_probe.rs"]
+mod http_probe;
 
 use std::{
     collections::HashMap,
-    io::{Read as _, Write as _},
+    io::Write as _,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Arc,
@@ -231,7 +239,18 @@ impl ServerProcess {
     fn wait_until_ready(&mut self, host: &str) {
         let started = Instant::now();
         loop {
-            if http_status(self.port, host, "GET", DISCOVERY_PATH, None, &[]) == 200 {
+            if http_status(
+                self.port,
+                host,
+                "GET",
+                DISCOVERY_PATH,
+                None,
+                &[],
+                READINESS_WINDOW
+                    .saturating_sub(started.elapsed())
+                    .min(Duration::from_secs(2)),
+            ) == 200
+            {
                 return;
             }
             if let Some(exit) = self
@@ -344,10 +363,9 @@ fn http_status(
     path: &str,
     body: Option<String>,
     extra_headers: &[(&str, &str)],
+    budget: Duration,
 ) -> u16 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut stream =
-            std::net::TcpStream::connect(("127.0.0.1", port)).expect("probe should connect");
         let mut request =
             format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
         if let Some(ref payload) = body {
@@ -361,13 +379,8 @@ fn http_status(
         if let Some(payload) = body {
             request.push_str(&payload);
         }
-        stream
-            .write_all(request.as_bytes())
-            .expect("probe should write");
-        let mut raw = Vec::new();
-        stream
-            .read_to_end(&mut raw)
-            .expect("probe should read to end");
+        let raw = http_probe::exchange(([127, 0, 0, 1], port).into(), request.as_bytes(), budget)
+            .expect("probe should complete within its deadline");
         let text = String::from_utf8_lossy(&raw).into_owned();
         text.split_whitespace()
             .nth(1)
@@ -618,7 +631,18 @@ async fn provision_algorithm_tenant(
     let port = fixture.server.port;
     let started = Instant::now();
     loop {
-        if http_status(port, host, "GET", DISCOVERY_PATH, None, &[]) == 200 {
+        if http_status(
+            port,
+            host,
+            "GET",
+            DISCOVERY_PATH,
+            None,
+            &[],
+            READINESS_WINDOW
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_secs(2)),
+        ) == 200
+        {
             break;
         }
         assert!(
@@ -640,6 +664,9 @@ async fn provision_algorithm_tenant(
             "/token",
             Some("grant_type=authorization_code".to_owned()),
             &[],
+            READINESS_WINDOW
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_secs(2)),
         );
         if status != 0 && status != 502 {
             break;
@@ -723,8 +750,9 @@ async fn provision_algorithm_tenant(
 }
 
 fn with_database_name(database_url: &str, name: &str) -> String {
-    let separator = database_url.rfind('/').expect("database URL has a path");
-    format!("{}/{}", &database_url[..separator], name)
+    let mut url = url::Url::parse(database_url).expect("database URL should parse");
+    url.set_path(name);
+    url.to_string()
 }
 
 async fn sql(connection: &mut AsyncPgConnection, statement: &str) {
@@ -918,8 +946,27 @@ impl Worker {
         match request.send() {
             Ok(response) => {
                 let status = response.status().as_u16();
-                let body = response.text().unwrap_or_default();
-                (status, body)
+                match response.text() {
+                    Ok(body) => {
+                        if status == 200 {
+                            let valid = serde_json::from_str::<serde_json::Value>(&body)
+                                .ok()
+                                .is_some_and(|body| {
+                                    body["access_token"]
+                                        .as_str()
+                                        .is_some_and(|value| !value.is_empty())
+                                        && body["token_type"]
+                                            .as_str()
+                                            .is_some_and(|value| !value.is_empty())
+                                });
+                            if !valid {
+                                return (0, "incomplete token response".into());
+                            }
+                        }
+                        (status, body)
+                    }
+                    Err(error) => (0, format!("token response body failed: {error}")),
+                }
             }
             Err(_) => (0, String::new()),
         }
@@ -931,7 +978,18 @@ impl Worker {
             .header("Host", &self.host)
             .header("Authorization", format!("Bearer {access_token}"))
             .send()
-            .map(|response| response.status().as_u16())
+            .and_then(|response| {
+                let status = response.status().as_u16();
+                let body = response.text()?;
+                if status == 200
+                    && !serde_json::from_str::<serde_json::Value>(&body)
+                        .ok()
+                        .is_some_and(|body| body["sub"].as_str().is_some_and(|sub| !sub.is_empty()))
+                {
+                    return Ok(0);
+                }
+                Ok(status)
+            })
             .unwrap_or(0)
     }
 }
@@ -1152,6 +1210,8 @@ fn split_inputs(codes: Vec<String>, workers: usize) -> Vec<Vec<String>> {
 
 #[derive(serde::Serialize)]
 struct GroupRecord {
+    throughput_scope: &'static str,
+    latency_scope: &'static str,
     path: String,
     signing_algorithms: String,
     concurrency: usize,
@@ -1494,6 +1554,8 @@ async fn measure_group_run(
     );
     let (sql_total, sql_attributed) = statement_delta(&before, &after);
     emit(&GroupRecord {
+        throughput_scope: "cold-client-group-including-thread-client-connection-setup",
+        latency_scope: "request-through-complete-response-body",
         path: path.name.to_owned(),
         signing_algorithms: path.algs.to_owned(),
         concurrency,
@@ -1787,5 +1849,43 @@ fn execute(
                 }
             },
         ),
+    }
+}
+
+#[test]
+fn http_workers_reject_truncated_and_incomplete_success_responses() {
+    use std::io::{Read, Write};
+    for userinfo in [false, true] {
+        for body in [
+            r#"{"access_token":"token","token_type":"Bearer","sub":"subject"}"#,
+            "{}",
+        ] {
+            for truncated in [false, true] {
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let port = listener.local_addr().unwrap().port();
+                let declared = body.len() + if truncated { 10 } else { 0 };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n{body}"
+                );
+                let server = std::thread::spawn(move || {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    let mut request = [0; 4096];
+                    assert!(stream.read(&mut request).unwrap() > 0);
+                    stream.write_all(response.as_bytes()).unwrap();
+                });
+                let worker = Worker::new(port, "fixture.example", "client", None);
+                let status = if userinfo {
+                    worker.get_userinfo("token")
+                } else {
+                    worker.post_token("grant_type=client_credentials").0
+                };
+                server.join().unwrap();
+                assert_eq!(
+                    status,
+                    if !truncated && body != "{}" { 200 } else { 0 },
+                    "userinfo={userinfo}, truncated={truncated}, body={body}"
+                );
+            }
+        }
     }
 }

@@ -88,6 +88,8 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         credential_id: &'a str,
     ) -> RepositoryFuture<'a, Option<PasskeyCredential>>;
 
+    /// Commit the credential and its required `passkey_registered` audit event
+    /// atomically. An error must leave neither business state nor success audit.
     fn insert(
         &self,
         tenant_id: TenantId,
@@ -105,6 +107,7 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         new_sign_count: u32,
     ) -> RepositoryFuture<'a, ()>;
 
+    /// Delete the credential and append its required lifecycle audit atomically.
     fn delete(&self, tenant_id: TenantId, user_id: UserId, id: Uuid) -> RepositoryFuture<'_, bool>;
 }
 

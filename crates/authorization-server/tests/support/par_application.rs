@@ -48,6 +48,7 @@ fn facts() -> ParRequestFacts<'static> {
         dpop: DpopRequestFacts {
             method: http::Method::POST,
             path: "/par",
+            authority: Some("issuer.example"),
             proof: Ok(None),
             proof_present: false,
         },
@@ -97,6 +98,46 @@ fn par_persists_bound_request_and_reports_write_failure() {
             .unwrap_err();
         assert_json_error(error, StatusCode::SERVICE_UNAVAILABLE, "server_error");
         assert_eq!(fixture.ports.stored_par.lock().unwrap().len(), 1);
+    });
+}
+
+#[test]
+fn par_rejects_two_token_bindings_but_allows_mtls_authentication_with_dpop() {
+    block_on(async {
+        for require_mtls in [false, true] {
+            let mut client = client(true);
+            client.require_mtls_bound_tokens = require_mtls;
+            let fixture = par_fixture(Ok(Some(client)));
+            let app = fixture.make_application();
+            let mut params = params();
+            params.insert("dpop_jkt".into(), "A".repeat(43));
+            let mut facts = facts();
+            facts.mtls_thumbprint = Some("certificate-thumbprint".into());
+            let result = app
+                .begin_par("127.0.0.1")
+                .await
+                .unwrap()
+                .prepare_parameters(params, false, None)
+                .unwrap()
+                .prepare_client(&transport(), false, false)
+                .await
+                .unwrap()
+                .par(facts, None)
+                .await;
+            if require_mtls {
+                assert_json_error(
+                    result.unwrap_err(),
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                );
+                assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
+            } else {
+                result.unwrap();
+                let stored = fixture.ports.stored_par.lock().unwrap();
+                assert!(stored[0].1.mtls_x5t_s256.is_none());
+                assert!(stored[0].1.dpop_jkt.is_some());
+            }
+        }
     });
 }
 #[test]

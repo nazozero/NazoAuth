@@ -235,6 +235,10 @@ Release commits must be reachable from `main`. `code-quality.yml`,
 successful run on `main`, triggered by `push` or `workflow_dispatch`. The gate
 searches the latest 100 runs per workflow.
 
+`conformance-security.yml` runs its independent protocol checks on matching
+changes. It is not part of this release helper's required-workflow list; that
+list alone does not describe repository branch-protection policy.
+
 A run may cover the exact release commit or an ancestor when the intervening
 net changes affect only `docs/`, root Markdown files, or the retired
 `NazoAuth-Web-Runtime-Refactor-Task-Package/`. Code, dependencies, build inputs,

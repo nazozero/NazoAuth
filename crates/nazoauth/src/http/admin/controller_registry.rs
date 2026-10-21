@@ -18,7 +18,9 @@ use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
 use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
-use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies, json_response, oauth_error};
+use nazo_http_actix::{
+    csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store, oauth_error,
+};
 use nazo_oauth_server::crypto::blake3_hex;
 use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{
@@ -247,7 +249,7 @@ pub(crate) async fn admin_controller_approval(
         Ok(issued) => {
             // Durable evidence that a fresh-MFA administrator approved this
             // exact action digest.  The plaintext token is never audited.
-            json_response(serde_json::json!({
+            json_response_no_store(serde_json::json!({
                 // The plaintext token appears here and nowhere else — never in
                 // logs or audit payloads.
                 "approval_token": issued.token,
@@ -496,12 +498,12 @@ fn slot_view(slot: &StoredControllerSlot) -> serde_json::Value {
 }
 
 fn slot_response(slot: &StoredControllerSlot) -> HttpResponse {
-    json_response(serde_json::json!({ "slot": slot_view(slot) }))
+    json_response_no_store(serde_json::json!({ "slot": slot_view(slot) }))
 }
 
 fn slots_list_response(deployment_id: &str, slots: &[StoredControllerSlot]) -> HttpResponse {
     let items: Vec<serde_json::Value> = slots.iter().map(slot_view).collect();
-    json_response(serde_json::json!({
+    json_response_no_store(serde_json::json!({
         "deployment_id": deployment_id,
         "total": items.len(),
         "max_active_slots": MAX_ACTIVE_CONTROLLER_SLOTS,

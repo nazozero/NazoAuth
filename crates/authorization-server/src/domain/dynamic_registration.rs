@@ -25,6 +25,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct DynamicRegistrationConfig {
+    pub require_fapi2: bool,
     pub tenant: nazo_identity::TenantContext,
     pub issuer: String,
     pub default_audience: String,
@@ -97,8 +98,8 @@ impl DynamicRegistrationApplication {
     }
 
     /// Evaluate admission before parsing a create/update body, once per request.
-    pub fn accepts_new_requests(&self) -> bool {
-        self.request_guard.accepts_new_requests()
+    pub fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        self.request_guard.acquire_request()
     }
 
     /// `initial_access_token` is extracted using the transport's Bearer grammar.
@@ -192,8 +193,23 @@ impl DynamicRegistrationApplication {
         let payload =
             parse_client_configuration_update(payload, &current, has_secret, secret_matches)
                 .map_err(registration_error)?;
-        let registration = prepare_dynamic_client_registration(payload, self.registration_policy())
-            .map_err(registration_error)?;
+        let mut registration =
+            prepare_dynamic_client_registration(payload, self.registration_policy())
+                .map_err(registration_error)?;
+        if !registration
+            .request
+            .scopes
+            .iter()
+            .all(|scope| current.scopes.contains(scope))
+        {
+            return Err(OAuthEndpointError::json(
+                StatusCode::BAD_REQUEST,
+                "invalid_client_metadata",
+                "Configuration updates cannot expand the currently authorized scopes.",
+            ));
+        }
+        // Audience authorization is administrator-owned, not registration metadata.
+        registration.request.allowed_audiences = current.allowed_audiences.clone();
         let response_types = registration.response_types;
         let registration_access_token = self.security.registration_tokens.random_token();
         let mut prepared = match self
@@ -243,6 +259,13 @@ impl DynamicRegistrationApplication {
             Err(DynamicRegistrationDependencyError::Unavailable) => {
                 return Err(server_error("Client configuration update failed."));
             }
+            Err(DynamicRegistrationDependencyError::PolicyChanged) => {
+                return Err(OAuthEndpointError::json(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_client_metadata",
+                    "Administrator policy changed; read the current client configuration and retry.",
+                ));
+            }
         };
         Ok(DynamicRegistrationResult::Updated(
             DynamicRegistrationResponse {
@@ -285,7 +308,11 @@ impl DynamicRegistrationApplication {
             Err(DynamicRegistrationDependencyError::StaleCredentials) => {
                 return Err(registration_access_denied());
             }
-            Ok(false) | Err(DynamicRegistrationDependencyError::Unavailable) => {
+            Ok(false)
+            | Err(
+                DynamicRegistrationDependencyError::Unavailable
+                | DynamicRegistrationDependencyError::PolicyChanged,
+            ) => {
                 return Err(server_error("Client deletion failed."));
             }
         }
@@ -396,23 +423,19 @@ impl DynamicRegistrationApplication {
                     })?,
             ));
         }
-        // A confidential OIDC authorization-code client can authenticate the
-        // code exchange and the baseline OIDC profile permits it to operate
-        // without PKCE.  Apply that ordinary protocol policy independently of
-        // how the RFC 7591 initial-access token was provisioned; public clients
-        // and OAuth-only registrations retain the stricter default. Updates
-        // retain the existing administrator-owned policy before validation.
+        // Updates validate against administrator-owned policy. Registration
+        // never grants an exception to PKCE on the client's behalf.
         if let Some(security_policy) = security_policy_override {
             request.security_policy = security_policy;
-        } else if request.client_type == "confidential"
-            && request.scopes.iter().any(|scope| scope == "openid")
-            && request
-                .grant_types
-                .iter()
-                .any(|grant_type| grant_type == "authorization_code")
-        {
-            request.security_policy.allow_confidential_oidc_without_pkce = true;
         }
+        request.id_token_signed_response_alg = Some(
+            nazo_auth::id_token_signing_algorithm(
+                request.id_token_signed_response_alg.as_deref(),
+                self.config.require_fapi2 || request.security_policy.requires_fapi2_security(),
+            )
+            .map_err(|message| AdminClientError::InvalidRequest(message.to_owned()))?
+            .to_owned(),
+        );
         let policy = AdminClientPolicy {
             tenant: self.config.tenant,
             pairwise_subject_secret: self.config.pairwise_subject_secret.clone(),
@@ -507,9 +530,8 @@ impl ServerDynamicRegistrationRequestGuard {
 }
 
 impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
-    fn accepts_new_requests(&self) -> bool {
-        nazo_auth::module_admissible(
-            &self.runtime_modules.load_full(),
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        self.runtime_modules.lease(
             nazo_runtime_modules::ModuleId::DynamicClientRegistration,
             nazo_auth::CapabilityAdmission::NewRequest,
         )

@@ -104,6 +104,8 @@ async fn fixed_tenant_adapter_rejects_cross_tenant_grant_writes_before_database_
         DeviceGrantRepositoryPort::upsert_grant(
             &repository,
             DeviceGrantWrite {
+                device_code_hash: "test-device-hash",
+                expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
                 tenant_id: Uuid::now_v7(),
                 user_id,
                 client_id,

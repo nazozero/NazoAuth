@@ -500,6 +500,11 @@ fn passkey_management_error(
 ) -> HttpResponse {
     match error {
         PasskeyEndpointError::SessionMissing => login_required_response(endpoint),
+        PasskeyEndpointError::ReauthenticationRequired => authorization_error_response(
+            StatusCode::FORBIDDEN,
+            "reauthentication_required",
+            "管理通行密钥需要最近五分钟内的登录验证；已启用多因素认证的账户需完成交互验证。",
+        ),
         PasskeyEndpointError::SessionUnavailable => authorization_error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",

@@ -62,10 +62,16 @@ impl std::fmt::Debug for MfaTotpEnrollment {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaTotpConfirmation {
     pub rotation: MfaSessionRotation,
     pub backup_codes: Vec<String>,
+}
+
+impl std::fmt::Debug for MfaTotpConfirmation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaTotpConfirmation([REDACTED])")
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -87,10 +93,16 @@ pub struct MfaStepUpSuccess {
     pub method: &'static str,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MfaBackupCodesRegenerated {
     pub rotation: MfaSessionRotation,
     pub backup_codes: Vec<String>,
+}
+
+impl std::fmt::Debug for MfaBackupCodesRegenerated {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MfaBackupCodesRegenerated([REDACTED])")
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

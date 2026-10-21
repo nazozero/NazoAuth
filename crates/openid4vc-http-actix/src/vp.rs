@@ -67,7 +67,7 @@ pub async fn presentation_request(
     transaction_id: web::Path<Uuid>,
     form: Option<web::Form<WalletNonceForm>>,
 ) -> HttpResponse {
-    let wallet_nonce = form.as_ref().map(|form| form.wallet_nonce.as_str());
+    let wallet_nonce = form.as_ref().and_then(|form| form.wallet_nonce.as_deref());
     match endpoint
         .operations
         .request(*transaction_id, wallet_nonce)
@@ -84,7 +84,7 @@ pub async fn presentation_request(
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 pub struct WalletNonceForm {
-    pub wallet_nonce: String,
+    pub wallet_nonce: Option<String>,
 }
 
 pub async fn presentation_response(
@@ -148,6 +148,12 @@ fn parse_presentation_response(
     }
     let mut values: BTreeMap<Cow<'_, str>, Cow<'_, str>> = BTreeMap::new();
     for (name, value) in url::form_urlencoded::parse(body) {
+        if !matches!(
+            name.as_ref(),
+            "response" | "vp_token" | "state" | "error" | "error_description"
+        ) {
+            continue;
+        }
         if values.insert(name, value).is_some() {
             return Err(invalid_response(
                 "Presentation response parameters must not repeat.",
@@ -177,11 +183,6 @@ fn parse_presentation_response(
         error: values.remove("error").map(Cow::into_owned),
         error_description: values.remove("error_description").map(Cow::into_owned),
     };
-    if !values.is_empty() {
-        return Err(invalid_response(
-            "Presentation response contains unknown parameters.",
-        ));
-    }
     Ok(PresentationResponseInput::DirectPost(response))
 }
 

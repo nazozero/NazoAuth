@@ -65,7 +65,7 @@ Endpoints:
 
 The flow uses authorization code, PKCE S256, nonce, short-lived Valkey state,
 token endpoint exchange, JWKS lookup, and ID Token verification. The server
-checks issuer, audience, expiry, nonce, `kid`, and signature. The ID Token must
+checks issuer, audience, expiry, required `iat`, nonce, `kid`, and signature. The ID Token must
 contain an email claim and `email_verified=true`; absent or false verification
 claims are rejected before account lookup, linking, or provisioning.
 
@@ -202,3 +202,17 @@ as other profile writes before account/link lookup, and emit
 Local session state remains the NazoAuth fact source. External provider logout
 failures do not mark remote logout as complete; local `/auth/logout` and OIDC
 OP logout clear the local session independently of upstream provider state.
+
+Account creation, provider-link insertion and their Required `external_identity_linked`
+audit event share one PostgreSQL transaction. Reusing an existing link does not
+emit a second creation event. A failed audit commit cannot leave a new linked
+account behind.
+
+Endpoint and callback URLs may contain query parameters and trailing slashes;
+the authorization redirect merges protocol parameters using URL query encoding.
+Issuer identifiers retain their separate stricter validation. Client IDs and
+secrets retain their exact configured bytes. OAuth Basic authentication
+form-encodes each credential component before constructing the header.
+
+Unlinking a federation identity and its required lifecycle audit share one
+persistence transaction. Audit failure leaves the link intact.

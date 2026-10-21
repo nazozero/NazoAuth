@@ -70,21 +70,14 @@ pub async fn send_code(
     request: HttpRequest,
     Json(payload): Json<SendCodeRequest>,
 ) -> HttpResponse {
-    if let Err(error) = endpoint
-        .rate_limit
-        .enforce(&client_ip_with_config(&request, &endpoint.client_ip))
-        .await
-    {
+    let peer_subject = client_ip_with_config(&request, &endpoint.client_ip);
+    if let Err(error) = endpoint.rate_limit.enforce(&peer_subject).await {
         return authentication_rate_limit_error_response(error);
     }
 
     let Ok(email) = normalize_email_address(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };
-    let peer_subject = request
-        .peer_addr()
-        .map(|address| address.ip().to_string())
-        .unwrap_or_else(|| "unknown".to_owned());
     match endpoint
         .operations
         .send_verification_code(&email, &peer_subject)

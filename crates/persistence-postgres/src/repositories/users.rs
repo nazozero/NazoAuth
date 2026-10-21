@@ -346,10 +346,10 @@ impl UserRepository {
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())
-        .get_result(&mut connection)
+        .load::<PublicAccountRow>(&mut connection)
         .await
-        .optional()
         .map_err(map_error)?
+        .pop()
         .ok_or(RepositoryError::NotFound)?;
         row.try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
@@ -359,26 +359,38 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
         expected_avatar_url: Option<&str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
+        use diesel::BoolExpressionMethods;
+        let replay_revision = expected_avatar_revision
+            .checked_add(1)
+            .ok_or_else(|| RepositoryError::Consistency("avatar revision overflow".into()))?;
         let row = diesel::update(
             users::table
                 .find(user_id.as_uuid())
                 .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-                .filter(users::avatar_url.is_not_distinct_from(expected_avatar_url)),
+                .filter(
+                    users::avatar_revision
+                        .eq(expected_avatar_revision)
+                        .and(users::avatar_url.is_not_distinct_from(expected_avatar_url))
+                        .or(users::avatar_revision
+                            .eq(replay_revision)
+                            .and(users::avatar_url.eq(avatar_url.as_deref()))),
+                ),
         )
         .set((
-            users::avatar_url.eq(avatar_url),
+            users::avatar_url.eq(avatar_url.as_deref()),
             users::updated_at.eq(diesel::dsl::now),
         ))
         .returning(PublicAccountRow::as_returning())
-        .get_result(&mut connection)
+        .load::<PublicAccountRow>(&mut connection)
         .await
-        .optional()
-        .map_err(map_error)?;
+        .map_err(map_error)?
+        .pop();
         row.map(PublicAccount::try_from)
             .transpose()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
@@ -401,7 +413,7 @@ impl UserRepository {
         let rows = users::table
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .select(PublicAccountRow::as_select())
-            .order(users::created_at.desc())
+            .order((users::created_at.desc(), users::id.desc()))
             .limit(limit)
             .offset(offset)
             .load::<PublicAccountRow>(&mut connection)
@@ -484,6 +496,7 @@ impl UserRepository {
                         .map_err(AdminAuthorizedUpdateError::Repository)?;
                         return Ok(AdminUserUpdateOutcome::TargetNotFound);
                     };
+                    let was_active = target.active;
                     let decision = if target.tenant != tenant {
                         Err(AdminPolicyError::CrossTenant)
                     } else {
@@ -541,6 +554,9 @@ impl UserRepository {
                         )
                         .await?;
                         return Ok(AdminUserUpdateOutcome::Updated(Box::new(target)));
+                    }
+                    if was_active && !resolved.active {
+                        disable_user_on_connection(connection, tenant_id, target_id).await?;
                     }
                     let updated = diesel::update(users::table.find(target_id.as_uuid()))
                         .set((
@@ -764,50 +780,68 @@ pub struct UserInsert<'a> {
     pub phone_number_verified: bool,
 }
 
-/// Inserts a user on a caller-owned transaction connection.  This is
-/// ownership-neutral: no external lifecycle metadata is consulted.
-/// The explicit role columns preserve the tenant's ordinary-user boundary.
-pub async fn insert_user_on_connection(
+/// Creates or restores an operator-owned ordinary user in the caller transaction.
+/// A restored ID must come from the locked inactive resource binding. Authorization
+/// epoch and enrolled factors are preserved; reactivation never revives old grants.
+pub async fn write_managed_user_on_connection(
     connection: &mut AsyncPgConnection,
+    previous_id: Option<Uuid>,
     user: UserInsert<'_>,
 ) -> Result<Uuid, diesel::result::Error> {
-    diesel::insert_into(users::table)
-        .values((
-            users::tenant_id.eq(user.tenant.tenant_id.as_uuid()),
-            users::realm_id.eq(user.tenant.realm_id.as_uuid()),
-            users::organization_id.eq(user.tenant.organization_id.as_uuid()),
-            users::username.eq(user.username),
-            users::email.eq(user.email),
-            users::password_hash.eq(user.password_hash),
-            users::is_active.eq(true),
-            users::mfa_enabled.eq(false),
-            users::email_verified.eq(user.email_verified),
-            users::display_name.eq(user.display_name),
-            users::given_name.eq(user.given_name),
-            users::family_name.eq(user.family_name),
-            users::middle_name.eq(user.middle_name),
-            users::nickname.eq(user.nickname),
-            users::profile_url.eq(user.profile_url),
-            users::avatar_url.eq(user.avatar_url),
-            users::website_url.eq(user.website_url),
-            users::gender.eq(user.gender),
-            users::birthdate.eq(user.birthdate),
-            users::zoneinfo.eq(user.zoneinfo),
-            users::locale.eq(user.locale),
-            users::address_formatted.eq(user.address_formatted),
-            users::address_street_address.eq(user.address_street_address),
-            users::address_locality.eq(user.address_locality),
-            users::address_region.eq(user.address_region),
-            users::address_postal_code.eq(user.address_postal_code),
-            users::address_country.eq(user.address_country),
-            users::phone_number.eq(user.phone_number),
-            users::phone_number_verified.eq(user.phone_number_verified),
-            users::role.eq("user"),
-            users::admin_level.eq(0),
-        ))
+    let values = (
+        users::tenant_id.eq(user.tenant.tenant_id.as_uuid()),
+        users::realm_id.eq(user.tenant.realm_id.as_uuid()),
+        users::organization_id.eq(user.tenant.organization_id.as_uuid()),
+        users::username.eq(user.username),
+        users::email.eq(user.email),
+        users::password_hash.eq(user.password_hash),
+        users::is_active.eq(true),
+        users::email_verified.eq(user.email_verified),
+        users::display_name.eq(user.display_name),
+        users::given_name.eq(user.given_name),
+        users::family_name.eq(user.family_name),
+        users::middle_name.eq(user.middle_name),
+        users::nickname.eq(user.nickname),
+        users::profile_url.eq(user.profile_url),
+        users::avatar_url.eq(user.avatar_url),
+        users::website_url.eq(user.website_url),
+        users::gender.eq(user.gender),
+        users::birthdate.eq(user.birthdate),
+        users::zoneinfo.eq(user.zoneinfo),
+        users::locale.eq(user.locale),
+        users::address_formatted.eq(user.address_formatted),
+        users::address_street_address.eq(user.address_street_address),
+        users::address_locality.eq(user.address_locality),
+        users::address_region.eq(user.address_region),
+        users::address_postal_code.eq(user.address_postal_code),
+        users::address_country.eq(user.address_country),
+        users::phone_number.eq(user.phone_number),
+        users::phone_number_verified.eq(user.phone_number_verified),
+        users::role.eq("user"),
+        users::admin_level.eq(0),
+    );
+    if let Some(id) = previous_id {
+        diesel::update(
+            users::table
+                .filter(users::id.eq(id))
+                .filter(users::tenant_id.eq(user.tenant.tenant_id.as_uuid()))
+                .filter(users::realm_id.eq(user.tenant.realm_id.as_uuid()))
+                .filter(users::organization_id.eq(user.tenant.organization_id.as_uuid()))
+                .filter(users::is_active.eq(false))
+                .filter(users::role.eq("user"))
+                .filter(users::admin_level.eq(0)),
+        )
+        .set(values)
         .returning(users::id)
         .get_result(connection)
         .await
+    } else {
+        diesel::insert_into(users::table)
+            .values(values)
+            .returning(users::id)
+            .get_result(connection)
+            .await
+    }
 }
 
 /// Disables a user on a caller-owned transaction connection.  The operation
@@ -1020,6 +1054,7 @@ impl nazo_identity::ports::AvatarRepositoryPort for UserRepository {
         tenant_id: nazo_identity::TenantId,
         user_id: nazo_identity::UserId,
         expected_avatar_url: Option<&'a str>,
+        expected_avatar_revision: i64,
         avatar_url: Option<String>,
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
         Box::pin(async move {
@@ -1028,6 +1063,7 @@ impl nazo_identity::ports::AvatarRepositoryPort for UserRepository {
                 tenant_id,
                 user_id,
                 expected_avatar_url,
+                expected_avatar_revision,
                 avatar_url,
             )
             .await
@@ -1089,18 +1125,23 @@ impl nazo_identity::ports::LoginAccountRepositoryPort for UserRepository {
             users::table
                 .find(user_id.as_uuid())
                 .filter(users::tenant_id.eq(tenant_id.as_uuid()))
-                .select((users::is_active, users::mfa_enabled))
-                .first::<(bool, bool)>(&mut connection)
+                .select((
+                    users::is_active,
+                    users::mfa_enabled,
+                    users::access_token_epoch,
+                ))
+                .first::<(bool, bool, i64)>(&mut connection)
                 .await
                 .optional()
                 .map_err(|error| RepositoryError::Unexpected(error.to_string()))
                 .map(|state| {
-                    state.map(
-                        |(active, mfa_enabled)| nazo_identity::ports::LoginAccountState {
+                    state.map(|(active, mfa_enabled, authorization_epoch)| {
+                        nazo_identity::ports::LoginAccountState {
+                            authorization_epoch,
                             active,
                             mfa_enabled,
-                        },
-                    )
+                        }
+                    })
                 })
         })
     }

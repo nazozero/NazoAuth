@@ -181,18 +181,22 @@ pub(super) async fn run(
             .wrap(from_fn(request_timeout))
             .wrap_fn(|req, service| {
                 let method = req.method().clone();
-                let path = req.path().to_owned();
                 let started = std::time::Instant::now();
                 let span = tracing::info_span!(
                     "http.request",
                     "otel.kind" = "server",
                     "http.request.method" = %method,
-                    "url.path" = %path
+                    "http.route" = tracing::field::Empty
                 );
                 let future = service.call(req);
                 async move {
                     let result = future.await;
                     if let Ok(response) = &result {
+                        let route = response
+                            .request()
+                            .match_pattern()
+                            .unwrap_or_else(|| "unmatched".to_owned());
+                        tracing::Span::current().record("http.route", route.as_str());
                         let status = response.status().as_u16();
                         let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
                         tracing::info!(
@@ -200,7 +204,7 @@ pub(super) async fn run(
                             histogram.http_server_request_duration_ms = elapsed_ms,
                             "http.request.method" = %method,
                             "http.response.status_code" = status as i64,
-                            "url.path" = %path,
+                            "http.route" = %route,
                             "HTTP request completed"
                         );
                     }

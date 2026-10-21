@@ -7,12 +7,36 @@ use serde_json::Value;
 struct StoredEmailVerificationCode<S> {
     owner: S,
     password_hash: S,
+    #[serde(default)]
+    attempts: u64,
 }
 
 const STORE_OWNED_EMAIL_CODE: &str = r#"
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 'missing_or_changed' end
 redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
 return 'stored'
+"#;
+
+const RESERVE_EMAIL_CODE_ATTEMPT: &str = r#"
+local raw = redis.call('GET', KEYS[1])
+if not raw then return '' end
+local value = cjson.decode(raw)
+local attempts = value.attempts or 0
+if attempts >= tonumber(ARGV[1]) then return '' end
+value.attempts = attempts + 1
+raw = cjson.encode(value)
+redis.call('SET', KEYS[1], raw, 'KEEPTTL')
+return raw
+"#;
+
+const CONSUME_EMAIL_CODE: &str = r#"
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 'missing' end
+local current = cjson.decode(raw)
+local expected = cjson.decode(ARGV[1])
+if current.owner ~= expected[1] or current.password_hash ~= expected[2] then return 'changed' end
+redis.call('DEL', KEYS[1])
+return 'deleted'
 "#;
 
 const DELETE_OWNED_EMAIL_CODE: &str = r#"
@@ -90,6 +114,7 @@ impl AuthenticationStore {
         let raw = serde_json::to_string(&StoredEmailVerificationCode {
             owner,
             password_hash: code,
+            attempts: 0,
         })
         .map_err(|_| Error::protocol("failed to serialize owned email verification code"))?;
         match command::eval_string(
@@ -310,35 +335,48 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
         })
     }
 
-    fn load_code<'a>(
+    fn reserve_code_attempt<'a>(
         &'a self,
         tenant_id: TenantId,
         email: &'a str,
+        max_attempts: u64,
     ) -> nazo_identity::ports::RepositoryFuture<
         'a,
         Option<nazo_identity::ports::EmailVerificationRecord>,
     > {
         Box::pin(async move {
-            let raw = command::get(&self.connection, keys::email_code(tenant_id, email))
-                .await
-                .map_err(crate::identity_repository_error)?;
-            raw.map(|raw| {
-                let stored: StoredEmailVerificationCode<String> = serde_json::from_str(&raw)
-                    .map_err(|_| {
-                        nazo_identity::ports::RepositoryError::Consistency(
-                            "malformed owned email verification code".to_owned(),
-                        )
-                    })?;
-                let password_hash = nazo_identity::PasswordHash::new(stored.password_hash)
-                    .map_err(|error| {
-                        nazo_identity::ports::RepositoryError::Consistency(error.to_string())
-                    })?;
-                Ok(nazo_identity::ports::EmailVerificationRecord {
-                    password_hash,
-                    opaque_version: raw,
-                })
-            })
-            .transpose()
+            let raw = command::eval_string(
+                &self.connection,
+                RESERVE_EMAIL_CODE_ATTEMPT,
+                vec![keys::email_code(tenant_id, email)],
+                vec![max_attempts.to_string()],
+            )
+            .await
+            .map_err(crate::identity_repository_error)?;
+            if raw.is_empty() {
+                return Ok(None);
+            }
+            let stored: StoredEmailVerificationCode<String> =
+                serde_json::from_str(&raw).map_err(|_| {
+                    nazo_identity::ports::RepositoryError::Consistency(
+                        "malformed owned email verification code".into(),
+                    )
+                })?;
+            // The challenge identity excludes its mutable attempt count.
+            let opaque_version = serde_json::to_string(&(&stored.owner, &stored.password_hash))
+                .map_err(|_| {
+                    nazo_identity::ports::RepositoryError::Consistency(
+                        "invalid email code version".into(),
+                    )
+                })?;
+            let password_hash =
+                nazo_identity::PasswordHash::new(stored.password_hash).map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+                })?;
+            Ok(Some(nazo_identity::ports::EmailVerificationRecord {
+                password_hash,
+                opaque_version,
+            }))
         })
     }
 
@@ -350,21 +388,23 @@ impl nazo_identity::ports::EmailVerificationStorePort for AuthenticationStore {
     ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::EmailVerificationConsume>
     {
         Box::pin(async move {
-            command::compare_delete(
+            let result = command::eval_string(
                 &self.connection,
-                keys::email_code(tenant_id, email),
-                expected_version,
+                CONSUME_EMAIL_CODE,
+                vec![keys::email_code(tenant_id, email)],
+                vec![expected_version.to_owned()],
             )
             .await
-            .map(|outcome| match outcome {
-                command::CompareDelete::Deleted => {
-                    nazo_identity::ports::EmailVerificationConsume::Consumed
+            .map_err(crate::identity_repository_error)?;
+            match result.as_str() {
+                "deleted" => Ok(nazo_identity::ports::EmailVerificationConsume::Consumed),
+                "missing" | "changed" => {
+                    Ok(nazo_identity::ports::EmailVerificationConsume::MissingOrChanged)
                 }
-                command::CompareDelete::MissingOrChanged => {
-                    nazo_identity::ports::EmailVerificationConsume::MissingOrChanged
-                }
-            })
-            .map_err(crate::identity_repository_error)
+                _ => Err(nazo_identity::ports::RepositoryError::Consistency(
+                    "unexpected email code consume result".into(),
+                )),
+            }
         })
     }
 

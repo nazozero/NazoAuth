@@ -7,6 +7,53 @@ fn credential_formats_use_final_spec_identifiers() {
 }
 
 #[test]
+fn dcql_validates_identifiers_scalar_values_and_mdoc_paths() {
+    let base = serde_json::json!({"credentials":[{
+        "id":"pid-1_a", "format":"dc+sd-jwt", "meta":{"vct_values":["ExampleCredential"]},
+        "claims":[{"id":"name", "path":["name"], "values":["Alice",42,true]}]
+    }]});
+    let check = |wire| {
+        serde_json::from_value::<DcqlQuery>(wire)
+            .unwrap()
+            .validate()
+    };
+    assert_eq!(check(base.clone()), Ok(()));
+    for id in ["", "a.b", "a b", "名字"] {
+        let mut wire = base.clone();
+        wire["credentials"][0]["id"] = id.into();
+        assert_eq!(check(wire), Err(DcqlError::InvalidCredentialId));
+        let mut wire = base.clone();
+        wire["credentials"][0]["claims"][0]["id"] = id.into();
+        assert_eq!(check(wire), Err(DcqlError::InvalidClaimId));
+    }
+    for values in [
+        serde_json::json!([]),
+        serde_json::json!([null]),
+        serde_json::json!([1.5]),
+        serde_json::json!([{}]),
+        serde_json::json!([[]]),
+    ] {
+        let mut wire = base.clone();
+        wire["credentials"][0]["claims"][0]["values"] = values;
+        assert_eq!(check(wire), Err(DcqlError::InvalidClaimValues));
+    }
+    let mut mdoc = base;
+    mdoc["credentials"][0]["format"] = "mso_mdoc".into();
+    mdoc["credentials"][0]["meta"] = serde_json::json!({"doctype_value":"org.iso.18013.5.1.mDL"});
+    for path in [
+        serde_json::json!(["namespace"]),
+        serde_json::json!(["namespace", 0]),
+        serde_json::json!(["namespace", null]),
+        serde_json::json!(["namespace", "name", "extra"]),
+    ] {
+        mdoc["credentials"][0]["claims"][0]["path"] = path;
+        assert_eq!(check(mdoc.clone()), Err(DcqlError::InvalidClaimPath));
+    }
+    mdoc["credentials"][0]["claims"][0]["path"] = serde_json::json!(["namespace", "name"]);
+    assert_eq!(check(mdoc), Ok(()));
+}
+
+#[test]
 fn dcql_requires_at_least_one_credential_query() {
     let query: DcqlQuery = serde_json::from_str(r#"{"credentials":[]}"#).unwrap();
     assert_eq!(query.validate(), Err(DcqlError::MissingCredentials));
@@ -14,8 +61,7 @@ fn dcql_requires_at_least_one_credential_query() {
 
 #[test]
 fn dcql_multiple_defaults_to_false_and_accepts_only_booleans() {
-    let mut value =
-        serde_json::json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{}}]});
+    let mut value = serde_json::json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]}}]});
     let default: DcqlQuery = serde_json::from_value(value.clone()).unwrap();
     assert!(!default.credentials[0].multiple);
     for multiple in [false, true] {
@@ -46,19 +92,19 @@ fn dcql_multiple_defaults_to_false_and_accepts_only_booleans() {
 fn dcql_claim_paths_and_sets_are_closed_over_declared_claims() {
     for (json, expected) in [
         (
-            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{},"claims":[{"path":[]}]}]}"#,
+            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]},"claims":[{"path":[]}]}]}"#,
             DcqlError::EmptyClaimPath,
         ),
         (
-            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{},"claims":[{"id":"","path":["name"]}]}]}"#,
+            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]},"claims":[{"id":"","path":["name"]}]}]}"#,
             DcqlError::InvalidClaimId,
         ),
         (
-            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{},"claims":[{"id":"name","path":["name"]},{"id":"name","path":["family_name"]}]}]}"#,
+            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]},"claims":[{"id":"name","path":["name"]},{"id":"name","path":["family_name"]}]}]}"#,
             DcqlError::InvalidClaimId,
         ),
         (
-            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{},"claims":[{"id":"name","path":["name"]}],"claim_sets":[["unknown"]]}]}"#,
+            r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]},"claims":[{"id":"name","path":["name"]}],"claim_sets":[["unknown"]]}]}"#,
             DcqlError::InvalidClaimSet,
         ),
     ] {
@@ -67,7 +113,7 @@ fn dcql_claim_paths_and_sets_are_closed_over_declared_claims() {
     }
 
     let query: DcqlQuery = serde_json::from_str(
-        r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{},"claims":[{"id":"name","path":["person","name"]}],"claim_sets":[["name"]]}]}"#,
+        r#"{"credentials":[{"id":"credential","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]},"claims":[{"id":"name","path":["person","name"]}],"claim_sets":[["name"]]}]}"#,
     )
     .expect("valid DCQL must deserialize");
     assert_eq!(query.validate(), Ok(()));
@@ -78,7 +124,7 @@ fn dcql_ignores_extensions_at_every_object_level_without_weakening_known_fields(
     let mut wire = serde_json::json!({
         "future_query": {"version": 2},
         "credentials": [{
-            "id": "pid", "format": "dc+sd-jwt", "meta": {},
+            "id": "pid", "format": "dc+sd-jwt", "meta":{"vct_values":["ExampleCredential"]},
             "future_credential": true,
             "claims": [{"id": "name", "path": ["given_name"], "future_claim": 7}],
             "claim_sets": [["name"]],
@@ -107,7 +153,7 @@ fn dcql_ignores_extensions_at_every_object_level_without_weakening_known_fields(
 #[test]
 fn dcql_rejects_empty_sets_and_malformed_known_metadata_while_ignoring_extensions() {
     let base = serde_json::json!({"credentials":[{
-        "id":"pid", "format":"dc+sd-jwt", "meta":{}
+        "id":"pid", "format":"dc+sd-jwt", "meta":{"vct_values":["ExampleCredential"]}
     }]});
     let mut empty_sets = base.clone();
     empty_sets["credential_sets"] = serde_json::json!([]);
@@ -119,6 +165,8 @@ fn dcql_rejects_empty_sets_and_malformed_known_metadata_while_ignoring_extension
     );
     for meta in [
         serde_json::Value::Null,
+        serde_json::json!({}),
+        serde_json::json!({"future_constraint":17}),
         serde_json::json!(17),
         serde_json::json!([]),
         serde_json::json!({"vct_values":"required-type"}),
@@ -170,7 +218,6 @@ fn dcql_rejects_empty_sets_and_malformed_known_metadata_while_ignoring_extension
             "mso_mdoc",
             serde_json::json!({"doctype_value":"org.iso.18013.5.1.mDL","future_constraint":[]}),
         ),
-        ("dc+sd-jwt", serde_json::json!({"future_constraint":17})),
     ] {
         let mut wire = base.clone();
         wire["credentials"][0]["format"] = format.into();

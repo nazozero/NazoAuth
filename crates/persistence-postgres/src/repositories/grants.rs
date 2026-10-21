@@ -108,7 +108,11 @@ impl GrantRepository {
                 user_client_grants::last_scopes,
                 user_client_grants::last_authorization_details,
             ))
-            .order(user_client_grants::last_authorized_at.desc())
+            .order((
+                user_client_grants::last_authorized_at.desc(),
+                user_client_grants::user_id.desc(),
+                user_client_grants::client_id.desc(),
+            ))
             .limit(limit)
             .offset(offset)
             .load::<GrantRecord>(&mut connection)
@@ -134,39 +138,18 @@ impl GrantRepository {
         authorization_details: &Value,
     ) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
-        let now = Utc::now();
-        diesel::insert_into(user_client_grants::table)
-            .values((
-                user_client_grants::tenant_id.eq(tenant_id),
-                user_client_grants::user_id.eq(user_id),
-                user_client_grants::client_id.eq(client_id),
-                user_client_grants::first_authorized_at.eq(now),
-                user_client_grants::last_authorized_at.eq(now),
-                user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
-                user_client_grants::last_resource_indicators
-                    .eq(serde_json::json!(resource_indicators)),
-                user_client_grants::last_authorization_details.eq(authorization_details),
-                user_client_grants::authorization_count.eq(1),
-            ))
-            .on_conflict((
-                user_client_grants::tenant_id,
-                user_client_grants::user_id,
-                user_client_grants::client_id,
-            ))
-            .do_update()
-            .set((
-                user_client_grants::last_authorized_at
-                    .eq(excluded(user_client_grants::last_authorized_at)),
-                user_client_grants::last_scopes.eq(excluded(user_client_grants::last_scopes)),
-                user_client_grants::last_resource_indicators
-                    .eq(excluded(user_client_grants::last_resource_indicators)),
-                user_client_grants::last_authorization_details
-                    .eq(excluded(user_client_grants::last_authorization_details)),
-            ))
-            .execute(&mut connection)
-            .await
-            .map_err(map_error)?;
-        Ok(())
+        ensure_on_connection(
+            &mut connection,
+            tenant_id,
+            user_id,
+            client_id,
+            scopes,
+            resource_indicators,
+            authorization_details,
+            false,
+        )
+        .await
+        .map_err(map_error)
     }
 
     pub async fn authorization(
@@ -204,6 +187,55 @@ impl GrantRepository {
                 )
             })
             .map_err(map_error)
+    }
+
+    pub async fn commit_device_approval(
+        &self,
+        write: nazo_auth::DeviceGrantWrite<'_>,
+    ) -> Result<(), RepositoryError> {
+        let connection = self.connection().await?;
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let result = guard.connection().transaction::<_, diesel::result::Error, _>(
+            async |connection| {
+                oauth_clients::table
+                    .filter(oauth_clients::tenant_id.eq(write.tenant_id))
+                    .filter(oauth_clients::id.eq(write.client_id))
+                    .filter(oauth_clients::is_active.eq(true))
+                    .select(oauth_clients::id).for_share().first::<Uuid>(connection).await?;
+                users::table.filter(users::tenant_id.eq(write.tenant_id))
+                    .filter(users::id.eq(write.user_id)).filter(users::is_active.eq(true))
+                    .select(users::id).for_share().first::<Uuid>(connection).await?;
+                lock_refresh_grant_scope(connection, write.tenant_id, Some(write.user_id), write.client_id).await?;
+                // The database clock is checked after lock acquisition. Once
+                // this deadline passes, deleting the receipt cannot reopen it.
+                let valid = diesel::select(
+                    diesel::dsl::sql::<diesel::sql_types::Bool>("clock_timestamp() < ")
+                        .bind::<diesel::sql_types::Timestamptz, _>(write.expires_at),
+                ).get_result::<bool>(connection).await?;
+                if !valid {
+                    return Err(diesel::result::Error::RollbackTransaction);
+                }
+                let inserted = diesel::sql_query(
+                    "INSERT INTO device_authorization_decisions (tenant_id, device_code_hash, expires_at) \
+                     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                ).bind::<diesel::sql_types::Uuid, _>(write.tenant_id)
+                    .bind::<diesel::sql_types::Text, _>(write.device_code_hash)
+                    .bind::<diesel::sql_types::Timestamptz, _>(write.expires_at)
+                    .execute(connection).await?;
+                if inserted == 0 {
+                    return Ok(());
+                }
+                ensure_on_connection(connection, write.tenant_id, write.user_id, write.client_id,
+                    write.scopes, write.resource_indicators, write.authorization_details, true).await
+            },
+        ).await;
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result.map_err(|error| match error {
+            diesel::result::Error::RollbackTransaction => RepositoryError::Conflict,
+            error => map_error(error),
+        })
     }
 
     pub async fn authorized_client_count(
@@ -419,4 +451,50 @@ impl From<GrantRevokeTransactionError> for AdminGrantRevokeError {
             }
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn ensure_on_connection(
+    connection: &mut diesel_async::AsyncPgConnection,
+    tenant_id: Uuid,
+    user_id: Uuid,
+    client_id: Uuid,
+    scopes: &[String],
+    resource_indicators: &[String],
+    authorization_details: &Value,
+    new_authorization: bool,
+) -> Result<(), diesel::result::Error> {
+    let now = Utc::now();
+    diesel::insert_into(user_client_grants::table)
+        .values((
+            user_client_grants::tenant_id.eq(tenant_id),
+            user_client_grants::user_id.eq(user_id),
+            user_client_grants::client_id.eq(client_id),
+            user_client_grants::first_authorized_at.eq(now),
+            user_client_grants::last_authorized_at.eq(now),
+            user_client_grants::last_scopes.eq(serde_json::json!(scopes)),
+            user_client_grants::last_resource_indicators.eq(serde_json::json!(resource_indicators)),
+            user_client_grants::last_authorization_details.eq(authorization_details),
+            user_client_grants::authorization_count.eq(1),
+        ))
+        .on_conflict((
+            user_client_grants::tenant_id,
+            user_client_grants::user_id,
+            user_client_grants::client_id,
+        ))
+        .do_update()
+        .set((
+            user_client_grants::last_authorized_at
+                .eq(excluded(user_client_grants::last_authorized_at)),
+            user_client_grants::last_scopes.eq(excluded(user_client_grants::last_scopes)),
+            user_client_grants::last_resource_indicators
+                .eq(excluded(user_client_grants::last_resource_indicators)),
+            user_client_grants::last_authorization_details
+                .eq(excluded(user_client_grants::last_authorization_details)),
+            user_client_grants::authorization_count
+                .eq(user_client_grants::authorization_count + i32::from(new_authorization)),
+        ))
+        .execute(connection)
+        .await?;
+    Ok(())
 }

@@ -59,7 +59,7 @@ impl ScimRepositoryPort for RecordingScimRepository {
         unsupported()
     }
 
-    fn deactivate<'a>(
+    fn delete<'a>(
         &'a self,
         _tenant: TenantContext,
         _user_id: UserId,
@@ -207,7 +207,7 @@ impl ScimRepositoryPort for CrudScimRepository {
         })
     }
 
-    fn deactivate<'a>(
+    fn delete<'a>(
         &'a self,
         _tenant: TenantContext,
         _user_id: UserId,
@@ -226,6 +226,7 @@ impl ScimRepositoryPort for CrudScimRepository {
 fn public_account(tenant: TenantContext, user_id: UserId) -> PublicAccount {
     PublicAccount {
         principal: Principal {
+            authorization_epoch: 0,
             user_id,
             tenant,
             role: UserRole::User,
@@ -295,7 +296,7 @@ async fn get_post_put_patch_and_delete_use_the_single_scim_repository_boundary()
         .expect("PATCH core should delegate");
     assert!(
         service
-            .deactivate_user(tenant, user_id)
+            .delete_user(tenant, user_id)
             .await
             .expect("DELETE core should delegate")
     );

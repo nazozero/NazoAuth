@@ -197,13 +197,10 @@ def diff(pre_path, post_path):
     for sec in ("WAL", "BGWRITER", "CHECKPOINTER", "IO", "DB_TOTAL",
                 "AUDIT", "ACTIVITY"):
         pk, qk = _kv(pre.get(sec, [])), _kv(post.get(sec, []))
-        reset_changed = (
-            pk.get((next(iter(pk), ("",))[0], "stats_reset"), None)
-            != qk.get((next(iter(qk), ("",))[0], "stats_reset"), None)
-        ) and ("stats_reset" in {k for _, k in qk})
         for (kind, key), nv in qk.items():
             if (kind, key) not in pk:
                 continue
+            reset_changed = pk.get((kind, "stats_reset")) != qk.get((kind, "stats_reset"))
             a, b = _num(pk[(kind, key)]), _num(nv)
             if a is None or b is None or key == "stats_reset":
                 continue

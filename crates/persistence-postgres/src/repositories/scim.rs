@@ -54,6 +54,7 @@ impl ScimRepository {
             .map_err(|_| RepositoryError::Unavailable)?;
         let mut count_query = users::table
             .filter(users::tenant_id.eq(query.tenant_id.as_uuid()))
+            .filter(users::deleted_at.is_null())
             .into_boxed();
         if let Some(email) = &query.email {
             count_query = count_query.filter(users::email.eq(email));
@@ -71,6 +72,7 @@ impl ScimRepository {
         }
         let mut rows_query = users::table
             .filter(users::tenant_id.eq(query.tenant_id.as_uuid()))
+            .filter(users::deleted_at.is_null())
             .into_boxed();
         if let Some(email) = query.email {
             rows_query = rows_query.filter(users::email.eq(email));
@@ -111,6 +113,7 @@ impl ScimRepository {
         users::table
             .find(user_id.as_uuid())
             .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+            .filter(users::deleted_at.is_null())
             .select(PublicAccountRow::as_select())
             .first::<PublicAccountRow>(&mut connection)
             .await
@@ -197,6 +200,7 @@ impl ScimRepository {
                         users::table
                             .find(user_id.as_uuid())
                             .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                            .filter(users::deleted_at.is_null())
                             .for_update()
                             .select(users::is_active)
                             .first::<bool>(connection)
@@ -208,7 +212,8 @@ impl ScimRepository {
                 let row = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
-                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid())),
+                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                        .filter(users::deleted_at.is_null()),
                 )
                 .set((
                     users::username.eq(replacement.user_name),
@@ -284,6 +289,7 @@ impl ScimRepository {
                             users::table
                                 .find(user_id.as_uuid())
                                 .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                                .filter(users::deleted_at.is_null())
                                 .for_update()
                                 .select(users::is_active)
                                 .first::<bool>(connection)
@@ -295,7 +301,8 @@ impl ScimRepository {
                 let row = diesel::update(
                     users::table
                         .find(user_id.as_uuid())
-                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid())),
+                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                        .filter(users::deleted_at.is_null()),
                 )
                 .set((
                     patch.user_name.map(|value| users::username.eq(value)),
@@ -340,16 +347,16 @@ impl ScimRepository {
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
 
-    pub async fn deactivate(
+    pub async fn delete(
         &self,
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<bool, RepositoryError> {
-        self.deactivate_with_mutation(tenant, user_id, MutationContext::disabled())
+        self.delete_with_mutation(tenant, user_id, MutationContext::disabled())
             .await
     }
 
-    pub async fn deactivate_with_mutation(
+    pub async fn delete_with_mutation(
         &self,
         tenant: TenantContext,
         user_id: UserId,
@@ -365,27 +372,25 @@ impl ScimRepository {
                     users::table
                         .find(user_id.as_uuid())
                         .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                        .filter(users::is_active.eq(true)),
+                        .filter(users::deleted_at.is_null()),
                 )
-                .set((users::is_active.eq(false), users::updated_at.eq(now)))
+                .set((
+                    users::is_active.eq(false),
+                    users::deleted_at.eq(now),
+                    users::updated_at.eq(now),
+                ))
                 .returning(users::updated_at)
                 .get_result::<chrono::DateTime<Utc>>(connection)
                 .await
                 .optional()?;
                 let Some(deactivated_at) = deactivated_at else {
-                    return diesel::select(diesel::dsl::exists(
-                        users::table
-                            .find(user_id.as_uuid())
-                            .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid())),
-                    ))
-                    .get_result(connection)
-                    .await;
+                    return Ok(false);
                 };
                 revoke(connection, tenant.tenant_id.as_uuid(), user_id.as_uuid()).await?;
                 if let Some(transaction_id) = mutation.transaction_id() {
                     insert_event(
                         connection,
-                        StoredEvent::deactivate(
+                        StoredEvent::delete(
                             tenant.tenant_id.as_uuid(),
                             user_id.as_uuid(),
                             transaction_id,
@@ -443,15 +448,13 @@ impl ScimRepositoryPort for ScimRepository {
         )
     }
 
-    fn deactivate<'a>(
+    fn delete<'a>(
         &'a self,
         tenant: TenantContext,
         user_id: UserId,
         mutation: MutationContext,
     ) -> RepositoryFuture<'a, bool> {
-        Box::pin(
-            async move { Self::deactivate_with_mutation(self, tenant, user_id, mutation).await },
-        )
+        Box::pin(async move { Self::delete_with_mutation(self, tenant, user_id, mutation).await })
     }
 }
 

@@ -266,6 +266,7 @@ async fn login_uses_current_account_state_after_password_verification() {
     for (active, mfa_enabled) in [(true, true), (true, false), (false, true)] {
         let authentication = active_identity();
         let state = LoginAccountState {
+            authorization_epoch: 0,
             active,
             mfa_enabled,
         };
@@ -312,4 +313,51 @@ async fn login_uses_current_account_state_after_password_verification() {
             assert!(sessions.0.lock().unwrap().is_empty());
         }
     }
+}
+
+#[tokio::test]
+async fn password_login_can_manage_credentials_with_recent_authentication() {
+    let now = Utc::now();
+    let service = AuthenticationService::new(
+        ActiveAccounts {
+            authentication: active_identity(),
+            state: LoginAccountState {
+                authorization_epoch: 0,
+                active: true,
+                mfa_enabled: false,
+            },
+        },
+        Throttles::default(),
+        AlwaysValidVerifier,
+        RememberedMfa,
+        RecordingSessions::default(),
+        Audit::default(),
+        AuthenticationServiceConfig {
+            tenant_id: TenantContext::default_system().tenant_id,
+            dummy_password_hash: PasswordHash::new("dummy-password-hash").unwrap(),
+            failure_window_seconds: 60,
+            failure_ip_email_max_attempts: 5,
+            session_ttl_seconds: 300,
+            pending_mfa_session_ttl_seconds: 120,
+        },
+    );
+    let result = service
+        .authenticate_password(AuthenticatePasswordInput {
+            email: "active@example.com".into(),
+            password: "candidate".into(),
+            source_ip: "192.0.2.1".into(),
+            remembered_mfa: None,
+            previous_session_id: None,
+            now,
+        })
+        .await
+        .unwrap();
+    let accepted = nazo_identity::session::recent_credential_management_authentication(
+        result.session.auth_time(),
+        result.session.amr(),
+        false,
+        now.timestamp(),
+    );
+    assert_eq!(result.session.amr(), &["pwd".to_owned()]);
+    assert!(accepted);
 }

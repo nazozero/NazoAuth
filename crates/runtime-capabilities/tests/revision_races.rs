@@ -702,9 +702,11 @@ fn disable_waits_for_the_removed_snapshot_generations_request_lease() {
     repository.force_desired(7, DesiredMode::Disabled);
     repository.force_instance(6, ModuleState::Enabled);
     let registry = registry(Arc::clone(&repository), true);
-    let lease = registry
-        .lease(ModuleId::Ciba)
-        .expect("active snapshot should admit CIBA");
+    let lease = registry.snapshot_store().request();
+    assert!(lease.permits(
+        ModuleId::Ciba,
+        nazo_runtime_modules::CapabilityAdmission::NewRequest
+    ));
     let mut future = std::pin::pin!(registry.reconcile_once(ModuleId::Ciba));
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
@@ -718,7 +720,19 @@ fn disable_waits_for_the_removed_snapshot_generations_request_lease() {
         ]
     );
     assert!(!registry.snapshot().admits(ModuleId::Ciba));
-    assert_eq!(lease.snapshot().revision, ModuleRevision::new(6));
+    assert!(lease.permits(
+        ModuleId::Ciba,
+        nazo_runtime_modules::CapabilityAdmission::NewRequest
+    ));
+    assert!(
+        registry
+            .snapshot_store()
+            .lease(
+                ModuleId::Ciba,
+                nazo_runtime_modules::CapabilityAdmission::ExistingTransaction
+            )
+            .is_none()
+    );
 
     drop(lease);
     assert!(matches!(

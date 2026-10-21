@@ -66,8 +66,9 @@ async fn isolated_directory(
         .await
         .expect("isolated database should create");
     drop(coordinator);
-    let separator = base.rfind('/').expect("database URL has a path");
-    let url = format!("{}/{}", &base[..separator], database_name);
+    let mut url = url::Url::parse(&base).expect("database URL should parse");
+    url.set_path(&database_name);
+    let url = url.to_string();
     {
         let mut role_coordinator = AsyncPgConnection::establish(&base)
             .await

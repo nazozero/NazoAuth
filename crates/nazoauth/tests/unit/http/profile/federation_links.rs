@@ -3,6 +3,7 @@ use crate::test_support::DatabaseExternalIdentityFixture;
 use nazo_identity::{DEFAULT_TENANT_ID, ports::FederationLinkSummary};
 
 use chrono::Utc;
+use serde_json::json;
 
 use super::*;
 

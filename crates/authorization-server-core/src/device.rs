@@ -198,6 +198,10 @@ impl std::fmt::Display for DeviceGrantPortError {
 impl std::error::Error for DeviceGrantPortError {}
 
 pub struct DeviceGrantWrite<'a> {
+    /// Stable across worker claims: a committed approval cannot recreate a
+    /// subsequently revoked grant. The persistence owner enforces its deadline.
+    pub device_code_hash: &'a str,
+    pub expires_at: DateTime<Utc>,
     pub tenant_id: Uuid,
     pub user_id: Uuid,
     pub client_id: Uuid,
@@ -889,6 +893,8 @@ where
                         }
                         repository
                             .upsert_grant(DeviceGrantWrite {
+                                device_code_hash: device_hash,
+                                expires_at: payload.expires_at,
                                 tenant_id: client.tenant_id,
                                 user_id: claimed_approval.user_id,
                                 client_id: client.id,

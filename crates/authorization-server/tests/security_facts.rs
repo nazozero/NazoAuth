@@ -7,7 +7,7 @@ use nazo_oauth_server::{
     contracts::{
         oauth_error::OAuthEndpointError,
         request_facts::DpopRequestFacts,
-        token_client_auth::{BasicAuthorizationCredentials, TokenClientAuthTransportFacts},
+        token_client_auth::BasicAuthorizationCredentials,
         token_endpoint::prepare_token_request,
         token_forms::{ParsedTokenForm, PreAuthorizedTokenParameters, TokenForm},
     },
@@ -27,7 +27,7 @@ fn parsed(grant_type: &str, has_audience_param: bool) -> ParsedTokenForm {
             refresh_token: None,
             device_secret: None,
             scope: None,
-            client_id: None,
+            client_id: Some("form-client".to_owned()),
             client_secret: None,
             client_assertion_type: None,
             client_assertion: None,
@@ -48,19 +48,12 @@ fn parsed(grant_type: &str, has_audience_param: bool) -> ParsedTokenForm {
     }
 }
 
-fn conflicting_auth() -> TokenClientAuthTransportFacts {
-    TokenClientAuthTransportFacts::from_parts(
-        BasicAuthorizationCredentials::Malformed,
-        Some("form-client".to_owned()),
-        None,
-        None,
-        None,
-    )
-}
-
 #[test]
 fn token_prepare_rejects_grant_parameter_before_auth_source_conflict() {
-    let first = prepare_token_request(parsed("client_credentials", true), conflicting_auth());
+    let first = prepare_token_request(
+        parsed("client_credentials", true),
+        BasicAuthorizationCredentials::Malformed,
+    );
     let Err(OAuthEndpointError::Token { fields, .. }) = first else {
         panic!("non-exchange audience must fail first");
     };
@@ -73,7 +66,7 @@ fn token_prepare_rejects_grant_parameter_before_auth_source_conflict() {
 
     let second = prepare_token_request(
         parsed(nazo_oauth_server::token::TOKEN_EXCHANGE_GRANT_TYPE, true),
-        conflicting_auth(),
+        BasicAuthorizationCredentials::Malformed,
     );
     let Err(OAuthEndpointError::Token { fields, .. }) = second else {
         panic!("once grant permits audience, source conflict must fail");
@@ -131,6 +124,7 @@ fn dpop_facts(
     DpopRequestFacts {
         method: http::Method::POST,
         path: "/oauth/token",
+        authority: Some("issuer.example"),
         proof,
         proof_present,
     }

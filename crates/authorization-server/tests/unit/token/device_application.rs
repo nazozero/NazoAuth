@@ -358,7 +358,8 @@ fn assert_error(error: OAuthEndpointError, status: StatusCode, code: &str) {
 fn create_and_verify_preserve_authorization_payload() {
     futures_executor::block_on(async {
         let (app, ports) = handles(Ok(Some(device_client())));
-        app.check_admission(nazo_auth::CapabilityAdmission::NewRequest)
+        let _lease = app
+            .acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
             .unwrap();
         app.enforce_creation_rate_limit("127.0.0.1").await.unwrap();
         let response = app

@@ -6,6 +6,7 @@ fn client() -> nazo_auth::OAuthClient {
         .grant_types
         .push("urn:openid:params:grant-type:ciba".into());
     client.security_policy.allow_cross_device_flows = true;
+    client.allowed_audiences = vec!["resource://default".into()];
     client
 }
 fn form() -> BackchannelAuthenticationForm {
@@ -294,5 +295,17 @@ fn delayed_create_crossing_authorization_expiry_cannot_report_success_while_rete
             1,
             "deadline failure must not generate a new handle or retry"
         );
+    });
+}
+
+#[test]
+fn ciba_rejects_default_audience_outside_client_policy_before_state_or_audit() {
+    block_on(async {
+        let mut client = client();
+        client.allowed_audiences = vec!["resource://other".into()];
+        let (application, ports, _, _) = creation_fixture(AuditFailure::None, client);
+        let error = create(&application, form()).await.err().unwrap();
+        assert_eq!(fields(&error).error, "invalid_target");
+        assert!(ports.calls().is_empty());
     });
 }

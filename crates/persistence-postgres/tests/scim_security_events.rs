@@ -258,11 +258,10 @@ async fn scim_outbox_is_atomic_receiver_scoped_and_terminally_acknowledged() {
     let concurrent_mutation = MutationContext::enabled();
     let repository = ScimRepository::new(pool.clone());
     let (first_delete, second_delete) = tokio::join!(
-        repository.deactivate_with_mutation(tenant, user_id, deactivate_mutation),
-        repository.deactivate_with_mutation(tenant, user_id, concurrent_mutation),
+        repository.delete_with_mutation(tenant, user_id, deactivate_mutation),
+        repository.delete_with_mutation(tenant, user_id, concurrent_mutation),
     );
-    assert!(first_delete.unwrap());
-    assert!(second_delete.unwrap());
+    assert_ne!(first_delete.unwrap(), second_delete.unwrap());
     let deactivated = store
         .apply_dispositions_and_poll(&first, &request)
         .await
@@ -276,8 +275,55 @@ async fn scim_outbox_is_atomic_receiver_scoped_and_terminally_acknowledged() {
         .contains(&Some(deactivated.events[0].transaction_id))
     );
     assert_eq!(deactivated.events[0].events.len(), 1);
-    assert!(deactivated.events[0].events.contains_key(DEACTIVATE_EVENT));
-    assert!(!deactivated.events[0].events.contains_key(DELETE_EVENT));
+    assert!(deactivated.events[0].events.contains_key(DELETE_EVENT));
+    assert!(!deactivated.events[0].events.contains_key(DEACTIVATE_EVENT));
+    assert!(repository.get(tenant, user_id).await.unwrap().is_none());
+    let page = repository
+        .list(nazo_identity::ports::ScimListQuery {
+            tenant_id: tenant.tenant_id,
+            email: Some(renamed.account.email.clone()),
+            after: None,
+            limit: 10,
+            offset: 0,
+        })
+        .await
+        .unwrap();
+    assert_eq!(page.total, 0);
+    assert!(page.users.is_empty());
+    let error = repository
+        .replace(
+            tenant,
+            user_id,
+            NormalizedScimUser {
+                user_name: format!("scim-event-recreated-{suffix}"),
+                email: renamed.account.email.clone(),
+                active: true,
+                display_name: None,
+                given_name: None,
+                family_name: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        nazo_identity::ports::RepositoryError::NotFound
+    ));
+    let error = repository
+        .patch(
+            tenant,
+            user_id,
+            ScimPatch {
+                active: Some(true),
+                ..ScimPatch::default()
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        nazo_identity::ports::RepositoryError::NotFound
+    ));
 
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("DELETE FROM scim_tokens WHERE id = $1 OR id = $2")

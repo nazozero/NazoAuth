@@ -6,8 +6,8 @@ use jsonwebtoken::{Algorithm, Header};
 use nazo_oauth_server::crypto::random_urlsafe_token;
 use serde_json::json;
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
 
 fn provider() -> OidcFederationSettings {
     OidcFederationSettings {
@@ -68,6 +68,49 @@ fn oidc_authorization_url_includes_all_required_params() {
     );
 }
 
+#[test]
+fn authorization_url_preserves_configured_endpoint_query() {
+    let mut provider = provider();
+    provider.authorization_endpoint = "https://issuer.example/authorize/?tenant=example".into();
+    let location = oidc_authorization_url(&provider, "state", "nonce", "verifier");
+    let url = url::Url::parse(&location).unwrap();
+    assert!(
+        url.query_pairs()
+            .any(|(name, value)| name == "tenant" && value == "example")
+    );
+    assert!(
+        url.query_pairs()
+            .any(|(name, value)| name == "response_type" && value == "code")
+    );
+}
+
+#[actix_web::test]
+async fn upstream_basic_auth_form_encodes_each_credential_without_trimming() {
+    use base64::Engine as _;
+    let (endpoint, request) = one_shot_json_server("200 OK", json!({"id_token":"token"})).await;
+    let mut provider = provider();
+    provider.token_endpoint = endpoint;
+    provider.client_id = "client:+%".into();
+    provider.client_secret = " +secret:% ".into();
+    exchange_oidc_code(
+        &super::super::federation_http_client().unwrap(),
+        &provider,
+        "code",
+        "verifier",
+    )
+    .await
+    .unwrap();
+    let request = request.await.unwrap();
+    let basic = raw_header_value(&request, "authorization")
+        .unwrap()
+        .strip_prefix("Basic ")
+        .unwrap();
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(basic)
+        .unwrap();
+    assert_eq!(decoded, b"client%3A%2B%25:+%2Bsecret%3A%25+");
+}
+
 async fn one_shot_json_server(
     status: &'static str,
     body: Value,
@@ -77,8 +120,9 @@ async fn one_shot_json_server(
         .expect("test server should bind");
     let addr: SocketAddr = listener.local_addr().expect("test server address");
     let handle = tokio::spawn(async move {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async move {
         let (mut stream, _) = listener.accept().await.expect("test request should arrive");
-        let request = read_http_request(&mut stream).await;
+        let request = crate::test_support::read_http_test_request(&mut stream).await;
         let response_body = body.to_string();
         let response = format!(
             "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -90,40 +134,9 @@ async fn one_shot_json_server(
             .await
             .expect("response should write");
         request
+        }).await.expect("fixture HTTP exchange exceeded total deadline")
     });
     (format!("http://{addr}"), handle)
-}
-
-async fn read_http_request(stream: &mut TcpStream) -> String {
-    let mut buffer = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    let mut expected_len = None;
-    loop {
-        let read = stream.read(&mut chunk).await.expect("request should read");
-        if read == 0 {
-            break;
-        }
-        buffer.extend_from_slice(&chunk[..read]);
-        if expected_len.is_none()
-            && let Some(header_end) = buffer.windows(4).position(|window| window == b"\r\n\r\n")
-        {
-            let headers = String::from_utf8_lossy(&buffer[..header_end]);
-            let content_length = headers
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().ok())
-                        .flatten()
-                })
-                .unwrap_or(0);
-            expected_len = Some(header_end + 4 + content_length);
-        }
-        if expected_len.is_some_and(|len| buffer.len() >= len) {
-            break;
-        }
-    }
-    String::from_utf8_lossy(&buffer).to_string()
 }
 
 fn raw_header_value<'a>(request: &'a str, name: &str) -> Option<&'a str> {
@@ -399,7 +412,7 @@ async fn federation_configuration_reuses_connection_for_successive_provider_requ
             // caller rebuilds its client, this read cannot complete.
             let (mut stream, _) = listener.accept().await.unwrap();
             for _ in 0..2 {
-                let request = read_http_request(&mut stream).await;
+                let request = crate::test_support::read_http_test_request(&mut stream).await;
                 assert!(request.starts_with("GET / HTTP/1.1"));
                 stream
                     .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 11\r\n\r\n{\"keys\":[]}")

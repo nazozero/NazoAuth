@@ -114,9 +114,10 @@ pub(crate) async fn device_authorization(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if let Err(error) = handles.check_admission(CapabilityAdmission::NewRequest) {
-        return oauth_endpoint_error_response(error);
-    }
+    let _lease = match handles.acquire_request(CapabilityAdmission::NewRequest) {
+        Ok(lease) => lease,
+        Err(error) => return oauth_endpoint_error_response(error),
+    };
     let source_ip = client_ip_with_context(
         &req,
         config.client_ip_header_mode,
@@ -157,9 +158,10 @@ pub(crate) async fn device_verification_page(
     config: Data<DeviceHttpConfig>,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if let Err(error) = handles.check_admission(CapabilityAdmission::ExistingTransaction) {
-        return oauth_endpoint_error_response(error);
-    }
+    let _lease = match handles.acquire_request(CapabilityAdmission::ExistingTransaction) {
+        Ok(lease) => lease,
+        Err(error) => return oauth_endpoint_error_response(error),
+    };
     redirect_to_device_verification_ui(
         &config,
         query
@@ -174,9 +176,10 @@ pub(crate) async fn device_verification(
     req: HttpRequest,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if let Err(error) = handles.check_admission(CapabilityAdmission::ExistingTransaction) {
-        return oauth_endpoint_error_response(error);
-    }
+    let _lease = match handles.acquire_request(CapabilityAdmission::ExistingTransaction) {
+        Ok(lease) => lease,
+        Err(error) => return oauth_endpoint_error_response(error),
+    };
     let data = handles
         .verification(
             query
@@ -198,9 +201,10 @@ pub(crate) async fn device_decision(
     req: HttpRequest,
     Form(form): Form<DeviceDecisionForm>,
 ) -> HttpResponse {
-    if let Err(error) = handles.check_admission(CapabilityAdmission::ExistingTransaction) {
-        return oauth_endpoint_error_response(error);
-    }
+    let _lease = match handles.acquire_request(CapabilityAdmission::ExistingTransaction) {
+        Ok(lease) => lease,
+        Err(error) => return oauth_endpoint_error_response(error),
+    };
     if !sessions.has_valid_csrf_token(&req, form.csrf_token.as_deref()) {
         return csrf_error();
     }

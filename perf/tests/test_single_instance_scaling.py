@@ -533,7 +533,8 @@ class WindowConsistencyTest(unittest.TestCase):
         return p
 
     def test_windowed_delta_interpolates(self):
-        p = self.soak([{"ts": t, "wal_bytes": t * 10}
+        p = self.soak([{"kind": "meta", "interval_s": 10}] +
+                      [{"ts": t, "wal_bytes": t * 10, "wal_stats_reset": "epoch"}
                        for t in range(100, 201, 10)])
         d = sis.windowed_series_delta(p, "wal_bytes", 120000, 180000)
         self.assertEqual(d["delta"], 600)

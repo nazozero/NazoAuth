@@ -245,7 +245,7 @@ where
     ) -> Result<PublicAccount, RegisterLocalAccountError> {
         let record = self
             .verification
-            .load_code(self.tenant.tenant_id, &input.email)
+            .reserve_code_attempt(self.tenant.tenant_id, &input.email, 5)
             .await
             .map_err(RegisterLocalAccountError::VerificationUnavailable)?
             .ok_or(RegisterLocalAccountError::InvalidVerificationCode)?;

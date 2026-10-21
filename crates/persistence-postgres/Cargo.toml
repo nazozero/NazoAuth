@@ -37,6 +37,7 @@ tokio = { workspace = true, features = ["rt", "sync"] }
 tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
 tracing.workspace = true
+zeroize.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
 

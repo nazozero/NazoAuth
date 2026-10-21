@@ -32,10 +32,9 @@ pub(super) fn social_authorization_url(
 ) -> String {
     // QQ 与微信使用不同的 client 参数名；adapter 在这里收敛差异，
     // 上层 handler 不需要知道 provider-specific URL 细节。
-    let mut url = provider.authorization_endpoint.clone();
-    url.push('?');
-    let query_start = url.len();
-    let mut serializer = url::form_urlencoded::Serializer::for_suffix(url, query_start);
+    let mut url =
+        Url::parse(&provider.authorization_endpoint).expect("validated federation endpoint");
+    let mut serializer = url.query_pairs_mut();
     serializer
         .append_pair("response_type", "code")
         .append_pair("redirect_uri", &provider.redirect_uri)
@@ -51,7 +50,8 @@ pub(super) fn social_authorization_url(
             serializer.append_pair("client_id", &provider.client_id);
         }
     }
-    serializer.finish()
+    drop(serializer);
+    url.into()
 }
 
 pub(super) async fn resolve_social_identity(

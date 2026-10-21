@@ -29,11 +29,14 @@ d,scen=sys.argv[1],sys.argv[2]
 files=glob.glob(d+"/*.summary.json")
 if not files: print("  -> NO SUMMARY"); sys.exit()
 s=json.load(open(files[0]))
-m=s["metrics"]
-rps=m.get("http_reqs",{}).get("rate",0)
-err=m.get("checks",{}).get("fails",0)
-p99=m.get("http_req_duration",{}).get("p(99)",0)
-iters=m.get("iterations",{}).get("count",0)
+k=s.get("result",s)["k6"]
+m=k.get("measure") or {}
+rps=m.get("ops_per_s")
+err=m.get("errors")
+p99=(m.get("latency_ms") or {}).get("p99")
+iters=m.get("ops")
+if rps is None or err is None or p99 is None:
+    print("  -> UNAVAILABLE: missing business measurement"); sys.exit(1)
 print(f"  -> {rps:.3f} ops/s errs={err} p99={p99:.2f}ms iters={iters}")
 PY
 }
@@ -59,12 +62,15 @@ d,scen=sys.argv[1],sys.argv[2]
 files=glob.glob(d+"/*.summary.json")
 if not files: print("  -> NO SUMMARY"); sys.exit()
 s=json.load(open(files[0]))
-m=s["metrics"]
-rps=m.get("http_reqs",{}).get("rate",0)
-err=m.get("checks",{}).get("fails",0)
-p99=m.get("http_req_duration",{}).get("p(99)",0)
-iters=m.get("iterations",{}).get("count",0)
-drop=m.get("dropped_iterations",{}).get("count",0)
+k=s.get("result",s)["k6"]
+m=k.get("measure") or {}
+rps=m.get("ops_per_s")
+err=m.get("errors")
+p99=(m.get("latency_ms") or {}).get("p99")
+iters=m.get("ops")
+if rps is None or err is None or p99 is None:
+    print("  -> UNAVAILABLE: missing business measurement"); sys.exit(1)
+drop=k.get("dropped_iterations")
 print(f"  -> {rps:.3f} ops/s errs={err} p99={p99:.2f}ms iters={iters} dropped={drop}")
 PY
 }

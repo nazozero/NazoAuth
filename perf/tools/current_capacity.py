@@ -196,11 +196,26 @@ def resource_profile(cpus, mode, *, vus=None, users=None, pool=None):
             "pool_connections": pool or 2 * len(cpus["postgres"])}
 
 
+def infrastructure_identity():
+    """Bind resume to resolved service configuration and immutable infra images."""
+    compose = json.loads(sis.compose("config", "--format", "json").stdout)
+    images = {}
+    for name in ("postgres", "postgres-init", "valkey", "audit-receiver"):
+        service = compose["services"][name]
+        reference = service.get("image") or f"{sis.PROJECT}-{name}"
+        images[name] = sis.dc("image", "inspect", reference, "--format", "{{.Id}}").stdout.strip()
+        if not images[name]:
+            raise RuntimeError(f"{name} image identity unavailable")
+    return {"compose_sha256": hashlib.sha256(
+                json.dumps(compose, sort_keys=True).encode()).hexdigest(),
+            "images": images}
+
+
 def recipe_id(config):
     # Controller revisions and stopping times do not change the workload.
     # Binary/images, CPU allocation and effective workload resources do.
     keys = ("cpus", "app_image_id", "runner_image_id", "binary_sha256",
-            "resources", "sidecars", "vector_counts", "gate")
+            "resources", "sidecars", "vector_counts", "gate", "infrastructure")
     fields = {k: config[k] for k in keys}
     fields["stream_workers"] = config.get("stream_workers", 1)
     encoded = json.dumps(fields, sort_keys=True).encode()
@@ -284,6 +299,7 @@ def main():
     if not binary:
         raise RuntimeError("application binary identity unavailable")
     config = {"cpus": cpus, "app_image": "nazoauth-perf-nazoauth",
+              "infrastructure": infrastructure_identity(),
               "binary_sha256": binary,
               "app_image_id": sis.dc("image", "inspect", "nazoauth-perf-nazoauth",
                                      "--format", "{{.Id}}").stdout.strip(),
@@ -322,6 +338,7 @@ def main():
         name = point_name(mode, scenario, rate, window, time.time())
         resources = config["resources"][mode]
         point = {"name": name, "phase": mode, "image": config["app_image"],
+                 "collection_contract": CONTRACT,
                  "capacity_recipe_id": identity,
                  "app_cpus": cpus[mode], "postgres_cpus": cpus["postgres"],
                  "valkey_cpus": cpus["valkey"], "infra_cpus": cpus["generator"],

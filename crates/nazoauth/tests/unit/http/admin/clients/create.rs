@@ -315,7 +315,7 @@ async fn prepare_client_insert_accepts_composable_fapi_and_signing_policy() {
         "keys": [{
             "kty": "OKP",
             "crv": "Ed25519",
-            "x": URL_SAFE_NO_PAD.encode([0x42u8; 32]),
+            "x": URL_SAFE_NO_PAD.encode(nazo_crypto::ed25519::SigningKey::from_bytes(&[0x42_u8; 32]).verifying_key().to_bytes()),
             "alg": "EdDSA",
             "use": "sig",
             "kid": "authorization-request-signing"

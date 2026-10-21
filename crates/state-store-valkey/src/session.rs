@@ -45,6 +45,7 @@ return 'ok'
 #[derive(Deserialize, Serialize)]
 struct SessionWireRecord<'a> {
     user_id: Uuid,
+    authorization_epoch: i64,
     auth_time: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     auth_time_micros: Option<i64>,
@@ -60,6 +61,7 @@ impl<'a> From<&'a SessionRecord> for SessionWireRecord<'a> {
     fn from(value: &'a SessionRecord) -> Self {
         Self {
             user_id: value.user_id().as_uuid(),
+            authorization_epoch: value.authorization_epoch(),
             auth_time: value.auth_time(),
             auth_time_micros: value.auth_time_micros(),
             amr: Cow::Borrowed(value.amr()),
@@ -79,6 +81,7 @@ impl TryFrom<SessionWireRecord<'_>> for SessionRecord {
         })?;
         let mut record = Self::new(
             user_id,
+            value.authorization_epoch,
             value.auth_time,
             value.amr.into_owned(),
             value.pending_mfa,

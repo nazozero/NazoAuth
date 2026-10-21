@@ -7,8 +7,10 @@
 //! `NAZO_TEST_VALKEY_URL`/`VALKEY_URL` the tests skip so plain `cargo test`
 //! stays hermetic; in CI their absence is a hard failure.
 
+#[path = "support/http_probe.rs"]
+mod http_probe;
+
 use std::{
-    io::{Read as _, Write as _},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Barrier,
@@ -49,8 +51,9 @@ fn test_databases() -> Option<(String, String)> {
 }
 
 fn with_database_name(database_url: &str, name: &str) -> String {
-    let separator = database_url.rfind('/').expect("database URL has a path");
-    format!("{}/{}", &database_url[..separator], name)
+    let mut url = url::Url::parse(database_url).expect("database URL should parse");
+    url.set_path(name);
+    url.to_string()
 }
 
 fn temporary_directory(tag: &str) -> PathBuf {
@@ -70,12 +73,20 @@ fn free_port() -> u16 {
         .port()
 }
 
-fn server_config_yaml(port: u16, database_url: &str, valkey_url: &str, data_dir: &Path) -> String {
+fn server_config_yaml(
+    port: u16,
+    database_url: &str,
+    valkey_url: &str,
+    data_dir: &Path,
+    signing_key: &str,
+) -> String {
     format!(
         r#"BIND: "127.0.0.1:{port}"
 DATA_DIR: "{}"
 DEPLOYMENT_ID: "{DEPLOYMENT_ID}"
 DATABASE_URL: "{database_url}"
+SIGNING_KEY_ENCRYPTION_KEY_ID: "fixture-root"
+SIGNING_KEY_ENCRYPTION_KEY: "{signing_key}"
 VALKEY_URL: "{valkey_url}"
 VALKEY_STATE_EPOCH: "{STATE_EPOCH}"
 VALKEY_COMMAND_TIMEOUT_MS: 1000
@@ -111,7 +122,18 @@ impl ServerProcess {
     fn wait_until_ready(&mut self, host: &str) {
         let started = Instant::now();
         loop {
-            if http_status(self.port, host, "GET", DISCOVERY_PATH, None, &[]) == 200 {
+            if http_status(
+                self.port,
+                host,
+                "GET",
+                DISCOVERY_PATH,
+                None,
+                &[],
+                READINESS_WINDOW
+                    .saturating_sub(started.elapsed())
+                    .min(Duration::from_secs(2)),
+            ) == 200
+            {
                 return;
             }
             if let Some(exit) = self
@@ -137,6 +159,8 @@ impl ServerProcess {
 
 const OVERRIDING_ENV_KEYS: &[&str] = &[
     "DATABASE_URL",
+    "SIGNING_KEY_ENCRYPTION_KEY_ID",
+    "SIGNING_KEY_ENCRYPTION_KEY",
     "VALKEY_URL",
     "VALKEY_STATE_EPOCH",
     "ISSUER",
@@ -200,16 +224,15 @@ fn run_cli(command: &str, config: &Path) {
 
 /// Raw synchronous HTTP/1.1 exchange against the real dispatcher. Returns
 /// (status, headers, body).
-fn http_request(
+fn http_request_with_budget(
     port: u16,
     host: &str,
     method: &str,
     path: &str,
     body: Option<String>,
     extra_headers: &[(&str, &str)],
+    budget: Duration,
 ) -> (u16, String, String) {
-    let mut stream =
-        std::net::TcpStream::connect(("127.0.0.1", port)).expect("test client should connect");
     let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
     if let Some(ref payload) = body {
         request.push_str("Content-Type: application/x-www-form-urlencoded\r\n");
@@ -222,13 +245,8 @@ fn http_request(
     if let Some(payload) = body {
         request.push_str(&payload);
     }
-    stream
-        .write_all(request.as_bytes())
-        .expect("request should write");
-    let mut raw = Vec::new();
-    stream
-        .read_to_end(&mut raw)
-        .expect("response should read to end");
+    let raw = http_probe::exchange(([127, 0, 0, 1], port).into(), request.as_bytes(), budget)
+        .expect("request should complete within its deadline");
     let text = String::from_utf8_lossy(&raw).into_owned();
     let (head, body) = text
         .split_once("\r\n\r\n")
@@ -249,9 +267,10 @@ fn http_status(
     path: &str,
     body: Option<String>,
     headers: &[(&str, &str)],
+    budget: Duration,
 ) -> u16 {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        http_request(port, host, method, path, body, headers)
+        http_request_with_budget(port, host, method, path, body, headers, budget)
     })) {
         Ok((status, _, _)) => status,
         Err(_) => 0,
@@ -264,13 +283,14 @@ fn post_token(
     form: &str,
     extra_headers: &[(&str, &str)],
 ) -> (u16, String, String) {
-    http_request(
+    http_request_with_budget(
         port,
         host,
         "POST",
         "/token",
         Some(form.to_owned()),
         extra_headers,
+        Duration::from_secs(10),
     )
 }
 
@@ -357,11 +377,21 @@ async fn start_issuance_fixture(
         drop(role_coordinator);
     }
 
+    let signing_key = base64::Engine::encode(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        rand::random::<[u8; 32]>(),
+    );
     let bootstrap_dir = temporary_directory("bootstrap");
     let bootstrap_config = bootstrap_dir.join(".env.yaml");
     write_config(
         &bootstrap_config,
-        &server_config_yaml(free_port(), &isolated_url, valkey_url, &bootstrap_dir),
+        &server_config_yaml(
+            free_port(),
+            &isolated_url,
+            valkey_url,
+            &bootstrap_dir,
+            &signing_key,
+        ),
     );
     run_cli("migrate", &bootstrap_config);
 
@@ -370,7 +400,7 @@ async fn start_issuance_fixture(
     let config = process_dir.join(".env.yaml");
     write_config(
         &config,
-        &server_config_yaml(port, &isolated_url, valkey_url, &process_dir),
+        &server_config_yaml(port, &isolated_url, valkey_url, &process_dir, &signing_key),
     );
     let mut server = spawn_server(&config, port);
     server.wait_until_ready("127.0.0.1");
@@ -391,7 +421,18 @@ async fn start_issuance_fixture(
 
     let started = Instant::now();
     loop {
-        if http_status(port, &host, "GET", DISCOVERY_PATH, None, &[]) == 200 {
+        if http_status(
+            port,
+            &host,
+            "GET",
+            DISCOVERY_PATH,
+            None,
+            &[],
+            READINESS_WINDOW
+                .saturating_sub(started.elapsed())
+                .min(Duration::from_secs(2)),
+        ) == 200
+        {
             break;
         }
         assert!(

@@ -32,13 +32,13 @@ impl CredentialDatasetAdminService {
         request: PutCredentialDatasetRequest,
     ) -> Result<CredentialDatasetResponse, CredentialHttpError> {
         self.require_configured_tenant(tenant_id)?;
-        if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+        let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest) else {
             return Err(vci_error(
                 503,
                 "temporarily_unavailable",
                 "Credential issuer is unavailable.",
             ));
-        }
+        };
         let Some(configuration) = self.configurations.get(&configuration_id) else {
             return Err(vci_error(
                 400,

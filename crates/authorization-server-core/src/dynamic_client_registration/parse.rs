@@ -49,6 +49,7 @@ pub fn parse_client_configuration_update(
     }
     let client_secret = object.remove("client_secret");
     match (current_has_secret, client_secret) {
+        (true, None) => {}
         (true, Some(Value::String(_))) if submitted_secret_matches => {}
         (true, _) => {
             return Err(DynamicRegistrationError::invalid_client_metadata(

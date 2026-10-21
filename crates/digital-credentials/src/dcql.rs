@@ -83,7 +83,7 @@ impl DcqlQuery {
         }
         let mut ids = std::collections::BTreeSet::new();
         for credential in &self.credentials {
-            if credential.id.is_empty() || !ids.insert(credential.id.as_str()) {
+            if !valid_identifier(&credential.id) || !ids.insert(credential.id.as_str()) {
                 return Err(DcqlError::InvalidCredentialId);
             }
             if credential.claims.as_ref().is_some_and(Vec::is_empty)
@@ -97,8 +97,30 @@ impl DcqlQuery {
                     if claim.path.is_empty() {
                         return Err(DcqlError::EmptyClaimPath);
                     }
+                    if credential.format == CredentialFormat::MsoMdoc
+                        && (claim.path.len() != 2
+                            || !claim
+                                .path
+                                .iter()
+                                .all(|segment| matches!(segment, ClaimPathSegment::Name(_))))
+                    {
+                        return Err(DcqlError::InvalidClaimPath);
+                    }
+                    if claim.values.as_ref().is_some_and(|values| {
+                        values.is_empty()
+                            || values.iter().any(|value| {
+                                !matches!(value, Value::String(_) | Value::Bool(_))
+                                    && !value.is_i64()
+                                    && !value.is_u64()
+                            })
+                    }) {
+                        return Err(DcqlError::InvalidClaimValues);
+                    }
+                    if credential.claim_sets.is_some() && claim.id.is_none() {
+                        return Err(DcqlError::InvalidClaimId);
+                    }
                     if let Some(id) = claim.id.as_deref()
-                        && (id.is_empty() || !claim_ids.insert(id))
+                        && (!valid_identifier(id) || !claim_ids.insert(id))
                     {
                         return Err(DcqlError::InvalidClaimId);
                     }
@@ -119,12 +141,11 @@ impl DcqlQuery {
                 .as_ref()
                 .and_then(Value::as_object)
                 .ok_or(DcqlError::InvalidMetadata)?;
-            // Empty metadata retains the existing unconstrained profile.
-            // Unknown properties remain ignored; a malformed known property
-            // cannot be reinterpreted as an omitted constraint.
+            // Unknown extensions are ignored, but each supported format's
+            // required type constraint must be present and well formed.
             match credential.format {
                 CredentialFormat::SdJwtVc => {
-                    if meta.get("vct_values").is_some_and(|value| {
+                    if meta.get("vct_values").is_none_or(|value| {
                         value.as_array().is_none_or(|values| {
                             values.is_empty()
                                 || values
@@ -138,7 +159,7 @@ impl DcqlQuery {
                 CredentialFormat::MsoMdoc => {
                     if meta
                         .get("doctype_value")
-                        .is_some_and(|value| value.as_str().is_none_or(str::is_empty))
+                        .is_none_or(|value| value.as_str().is_none_or(str::is_empty))
                     {
                         return Err(DcqlError::InvalidMetadata);
                     }
@@ -163,6 +184,13 @@ impl DcqlQuery {
     }
 }
 
+fn valid_identifier(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum DcqlError {
     #[error("DCQL credentials must not be empty")]
@@ -173,6 +201,10 @@ pub enum DcqlError {
     EmptySelection,
     #[error("DCQL claim paths must not be empty")]
     EmptyClaimPath,
+    #[error("mdoc claim paths must contain a namespace and data element name")]
+    InvalidClaimPath,
+    #[error("DCQL values must be non-empty strings, integers or booleans")]
+    InvalidClaimValues,
     #[error("DCQL claim identifiers must be unique and non-empty")]
     InvalidClaimId,
     #[error("DCQL claim set references are invalid")]

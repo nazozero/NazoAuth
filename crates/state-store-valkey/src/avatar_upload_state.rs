@@ -147,6 +147,7 @@ struct AvatarUploadWireState<'a> {
     tenant_id: Uuid,
     user_id: Uuid,
     expected_avatar_url: Option<&'a str>,
+    expected_avatar_revision: String,
     staging_object_id: &'a str,
     expires_at: i64,
     claim_generation: u64,
@@ -160,6 +161,7 @@ impl<'a> From<&'a AvatarUploadAuthorization> for AvatarUploadWireState<'a> {
             tenant_id: value.tenant_id.as_uuid(),
             user_id: value.user_id.as_uuid(),
             expected_avatar_url: value.expected_avatar_url.as_deref(),
+            expected_avatar_revision: value.expected_avatar_revision.to_string(),
             staging_object_id: &value.staging_object_id,
             expires_at: value.expires_at.timestamp(),
             claim_generation: 0,
@@ -191,6 +193,7 @@ struct AvatarUploadAuthorizationWire {
     tenant_id: Uuid,
     user_id: Uuid,
     expected_avatar_url: Option<String>,
+    expected_avatar_revision: String,
     staging_object_id: String,
     expires_at: i64,
 }
@@ -208,6 +211,12 @@ impl TryFrom<AvatarUploadAuthorizationWire> for AvatarUploadAuthorization {
                 Error::corrupt_data(format!("invalid avatar upload user: {error}"))
             })?,
             expected_avatar_url: value.expected_avatar_url,
+            expected_avatar_revision: value
+                .expected_avatar_revision
+                .parse::<i64>()
+                .ok()
+                .filter(|revision| *revision >= 0)
+                .ok_or_else(|| Error::corrupt_data("invalid avatar revision"))?,
             staging_object_id: value.staging_object_id,
             expires_at: DateTime::from_timestamp(value.expires_at, 0)
                 .ok_or_else(|| Error::corrupt_data("invalid avatar upload expiry"))?,

@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
-use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
-use diesel_async::RunQueryDsl;
+use diesel::{OptionalExtension, sql_query, sql_types};
+use diesel_async::{AsyncConnection, RunQueryDsl};
+use nazo_openid4vci::PreparedPreAuthorizedOffer;
 use nazo_openid4vci::{
-    CredentialAuthorization, CredentialStoreError, CredentialStoreFuture, StoredCredentialOffer,
+    CredentialAccess, CredentialAuthorization, CredentialStoreError, CredentialStoreFuture,
+    StoredCredentialOffer,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -40,14 +42,14 @@ impl Openid4vciRepository {
         })
     }
 
-    pub(super) fn offer_consume_pre_authorized<'a>(
+    pub(super) fn offer_prepare_pre_authorized<'a>(
         &'a self,
         tenant_id: Uuid,
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
         now: DateTime<Utc>,
-    ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>
+    ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>
     {
         Box::pin(async move {
             // Verification is CPU-bound and may queue behind the host's shared
@@ -96,57 +98,104 @@ impl Openid4vciRepository {
                 return Ok(None);
             }
 
+            let commit_token = serde_json::to_vec(&(code_hash, &row))
+                .map_err(|_| CredentialStoreError::InvalidTransition)?;
+            Ok(Some(PreparedPreAuthorizedOffer {
+                commit_token,
+                authorization: CredentialAuthorization {
+                    tenant_id: row.tenant_id,
+                    subject_id,
+                    client_id: client_id.to_owned(),
+                    configuration_ids,
+                    credential_identifiers: Vec::new(),
+                    expires_at: (now + chrono::Duration::minutes(10)).min(row.expires_at),
+                },
+            }))
+        })
+    }
+    pub(super) fn offer_commit_pre_authorized<'a>(
+        &'a self,
+        prepared: &'a [u8],
+        token_hash: &'a str,
+        access: &'a CredentialAccess,
+        registered_client_id: Option<&'a str>,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async move {
+            let (code_hash, row): (String, PreAuthorizedOfferRow) =
+                serde_json::from_slice(prepared)
+                    .map_err(|_| CredentialStoreError::InvalidTransition)?;
+            if row.tenant_id != access.tenant_id
+                || row.subject_id != Some(access.subject_id)
+                || row.credential_configuration_ids != serde_json::json!(access.configuration_ids)
+                || !access.credential_identifiers.is_empty()
+                || access.expires_at > row.expires_at
+                || access.expires_at <= Utc::now()
+            {
+                return Err(CredentialStoreError::InvalidTransition);
+            }
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            // Compare every authorization-bearing snapshot field. PostgreSQL
-            // rechecks this predicate after a concurrent updater wins; only one
-            // caller can consume the offer. Use the database clock here because
-            // the offer may expire while password verification is queued.
-            // Consumed offers are never decoded again. Keep the compact replay
-            // identity and authorization-code metadata, not the redeemed secret.
-            let consumed = sql_query(
-                "UPDATE openid4vci_offers \
-                 SET consumed_at = GREATEST($3, clock_timestamp(), created_at), \
+            connection.transaction::<(), OfferCommitError, _>(async move |connection| {
+                // Follow the revocation lock order: subject, client/grant, offer.
+                let active = sql_query("SELECT id FROM users WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE FOR SHARE")
+                    .bind::<sql_types::Uuid, _>(access.tenant_id)
+                    .bind::<sql_types::Uuid, _>(access.subject_id)
+                    .get_result::<ActiveSubjectRow>(connection).await.optional()?;
+                if active.is_none() {
+                    return Err(CredentialStoreError::InvalidTransition.into());
+                }
+                super::access::persist_pre_authorized_on_connection(connection, token_hash, access, registered_client_id).await?;
+                // Every authorization-bearing field is compared against the verified snapshot.
+                // No password verification or signing is repeated while holding database locks.
+                let consumed = sql_query(
+                    "UPDATE openid4vci_offers SET consumed_at = GREATEST(clock_timestamp(), created_at), \
                      grants_ciphertext = ''::bytea, tx_code_hash = NULL \
-                 WHERE tenant_id = $1 AND id = $2 AND consumed_at IS NULL \
-                   AND expires_at > GREATEST($3, clock_timestamp()) \
-                   AND pre_authorized_code_hash = $4 \
-                   AND tx_code_hash IS NOT DISTINCT FROM $5 \
-                   AND subject_id = $6 AND credential_configuration_ids = $7 \
-                   AND expires_at = $8 \
-                 RETURNING consumed_at",
-            )
-            .bind::<sql_types::Uuid, _>(tenant_id)
-            .bind::<sql_types::Uuid, _>(row.id)
-            .bind::<sql_types::Timestamptz, _>(now)
-            .bind::<sql_types::Text, _>(code_hash)
-            .bind::<sql_types::Nullable<sql_types::Text>, _>(row.tx_code_hash.as_deref())
-            .bind::<sql_types::Uuid, _>(subject_id)
-            .bind::<sql_types::Jsonb, _>(&row.credential_configuration_ids)
-            .bind::<sql_types::Timestamptz, _>(row.expires_at)
-            .get_result::<ConsumedOfferRow>(&mut connection)
-            .await
-            .optional()
-            .map_err(|_| CredentialStoreError::Unavailable)?;
-            let Some(consumed) = consumed else {
-                return Ok(None);
-            };
-            Ok(Some(CredentialAuthorization {
-                tenant_id: row.tenant_id,
-                subject_id,
-                client_id: client_id.to_owned(),
-                configuration_ids,
-                credential_identifiers: Vec::new(),
-                expires_at: (consumed.consumed_at + chrono::Duration::minutes(10))
-                    .min(row.expires_at),
-            }))
+                     WHERE tenant_id = $1 AND id = $2 AND consumed_at IS NULL \
+                       AND expires_at > clock_timestamp() AND pre_authorized_code_hash = $3 \
+                       AND tx_code_hash IS NOT DISTINCT FROM $4 AND subject_id = $5 \
+                       AND credential_configuration_ids = $6 AND expires_at = $7")
+                    .bind::<sql_types::Uuid, _>(row.tenant_id)
+                    .bind::<sql_types::Uuid, _>(row.id)
+                    .bind::<sql_types::Text, _>(&code_hash)
+                    .bind::<sql_types::Nullable<sql_types::Text>, _>(row.tx_code_hash.as_deref())
+                    .bind::<sql_types::Uuid, _>(access.subject_id)
+                    .bind::<sql_types::Jsonb, _>(&row.credential_configuration_ids)
+                    .bind::<sql_types::Timestamptz, _>(row.expires_at)
+                    .execute(connection).await?;
+                if consumed != 1 {
+                    return Err(CredentialStoreError::InvalidTransition.into());
+                }
+                Ok(())
+            }).await.map_err(|error| match error {
+                OfferCommitError::Store(error) => error,
+                OfferCommitError::Database => CredentialStoreError::Unavailable,
+            })
         })
     }
 }
 
-#[derive(QueryableByName)]
-struct ConsumedOfferRow {
-    #[diesel(sql_type = sql_types::Timestamptz)]
-    consumed_at: DateTime<Utc>,
+#[derive(diesel::QueryableByName)]
+struct ActiveSubjectRow {
+    #[diesel(sql_type = sql_types::Uuid)]
+    #[allow(dead_code)]
+    id: Uuid,
+}
+
+#[derive(Debug)]
+enum OfferCommitError {
+    Store(CredentialStoreError),
+    Database,
+}
+
+impl From<CredentialStoreError> for OfferCommitError {
+    fn from(error: CredentialStoreError) -> Self {
+        Self::Store(error)
+    }
+}
+
+impl From<diesel::result::Error> for OfferCommitError {
+    fn from(_: diesel::result::Error) -> Self {
+        Self::Database
+    }
 }

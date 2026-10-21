@@ -203,8 +203,8 @@ impl nazo_auth::ClientSecretDigesterPort for RegistrationSecurity {
 impl nazo_oauth_server::contracts::dynamic_client_registration::DynamicRegistrationRequestGuard
     for RegistrationSecurity
 {
-    fn accepts_new_requests(&self) -> bool {
-        true
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease> {
+        test_module_lease(true)
     }
     fn enforce_rate_limit<'a>(
         &'a self,
@@ -240,7 +240,8 @@ fn cas_registration_endpoint(
 ) -> nazo_http_actix::DynamicRegistrationEndpoint {
     let application = Arc::new(nazo_oauth_server::domain::dynamic_registration::DynamicRegistrationApplication::new(
         nazo_oauth_server::domain::dynamic_registration::DynamicRegistrationConfig {
-            tenant: nazo_identity::TenantContext::default_system(),
+            require_fapi2: false,
+        tenant: nazo_identity::TenantContext::default_system(),
             issuer: "https://issuer.example".to_owned(),
             default_audience: "https://api.example".to_owned(),
             pairwise_subject_secret: None,
@@ -437,4 +438,23 @@ async fn framework_boundary_transport_dcr_put_stale_cas_preserves_registration()
         store.calls.lock().unwrap().as_slice(),
         &["insert", "lookup", "replace_cas"]
     );
+}
+
+fn test_module_lease(enabled: bool) -> Option<nazo_runtime_modules::RequestLease> {
+    use nazo_runtime_modules::{
+        ActiveModuleSnapshot, CapabilityAdmission, ModuleId, ModuleRevision, SnapshotStore,
+    };
+    SnapshotStore::new(ActiveModuleSnapshot {
+        revision: ModuleRevision::new(1),
+        accepting: if enabled {
+            [ModuleId::DynamicClientRegistration].into()
+        } else {
+            Default::default()
+        },
+        draining: Default::default(),
+    })
+    .lease(
+        ModuleId::DynamicClientRegistration,
+        CapabilityAdmission::NewRequest,
+    )
 }

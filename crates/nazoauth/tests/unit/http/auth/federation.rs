@@ -339,12 +339,13 @@ async fn live_federation_state(
     oidc: Option<OidcFederationSettings>,
     saml_gateway: Option<SamlGatewaySettings>,
 ) -> Option<TestInfrastructure> {
-    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
     let mut settings = settings_with_oidc_provider(oidc.as_ref());
     settings.identity.federation.saml_gateway = saml_gateway;
     settings.identity.rate_limit.auth_max_requests = 1_000;
 
-    let valkey_config = ValkeyConfig::from_url(&valkey_url).ok()?;
+    let valkey_config =
+        ValkeyConfig::from_url(&valkey_url).expect("configured VALKEY_URL must parse");
     let mut valkey_builder = ValkeyBuilder::from_config(valkey_config);
     valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
         performance.default_command_timeout = Duration::from_secs(2);
@@ -378,8 +379,8 @@ impl LiveFederationFixture {
         oidc: Option<OidcFederationSettings>,
         saml_gateway: Option<SamlGatewaySettings>,
     ) -> Option<Self> {
-        let database_url = std::env::var("DATABASE_URL").ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let database_url = crate::test_support::backend_url("DATABASE_URL")?;
+        let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
         let mut settings = settings_with_oidc_provider(oidc.as_ref());
         settings.identity.federation.saml_gateway = saml_gateway;
         settings.identity.rate_limit.auth_max_requests = 1_000;
@@ -499,7 +500,7 @@ impl LiveFederationFixture {
     async fn session_payload(&self, sid: &str) -> SessionPayload {
         let raw = valkey_get(
             &self.state.valkey,
-            nazo_valkey::test_support::state_storage_key(format!("oauth:session:{sid}")),
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
         )
         .await
         .expect("session lookup should succeed")
@@ -614,10 +615,9 @@ async fn one_shot_json_server(body: Value) -> (String, tokio::task::JoinHandle<S
         .expect("test server should bind");
     let addr = listener.local_addr().expect("test server address");
     let handle = tokio::spawn(async move {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async move {
         let (mut stream, _) = listener.accept().await.expect("test request should arrive");
-        let mut buffer = vec![0_u8; 8192];
-        let read = stream.read(&mut buffer).await.expect("request should read");
-        let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+        let request = crate::test_support::read_http_test_request(&mut stream).await;
         let response_body = body.to_string();
         let response = format!(
             "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
@@ -629,6 +629,7 @@ async fn one_shot_json_server(body: Value) -> (String, tokio::task::JoinHandle<S
             .await
             .expect("response should write");
         request
+        }).await.expect("fixture HTTP exchange exceeded total deadline")
     });
     (format!("http://{addr}"), handle)
 }
@@ -2128,6 +2129,7 @@ async fn federation_response_exposes_pending_mfa_and_matching_cookie_lifetime() 
             csrf_token: "csrf-token".into(),
             session: nazo_identity::session::SessionRecord::new(
                 nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
+                0,
                 Utc::now().timestamp(),
                 vec!["oidc".into(), "federated".into()],
                 pending,
@@ -2165,4 +2167,22 @@ pub(super) fn saml_gateway_signature(
             .finalize()
             .into_bytes(),
     )
+}
+
+#[actix_web::test]
+async fn upstream_fixture_captures_the_complete_fragmented_request() {
+    let (endpoint, captured) = one_shot_json_server(serde_json::json!({"ok":true})).await;
+    let address = endpoint.trim_start_matches("http://");
+    let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+    client
+        .write_all(b"POST / HTTP/1.1\r\nHost: fixture\r\nContent-Length: 12\r\n\r\ncode=")
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    client.write_all(b"abc&v=1").await.unwrap();
+    let mut response = Vec::new();
+    client.read_to_end(&mut response).await.unwrap();
+    let request = captured.await.unwrap();
+    assert!(request.ends_with("\r\n\r\ncode=abc&v=1"));
+    assert!(response.starts_with(b"HTTP/1.1 200 OK"));
 }

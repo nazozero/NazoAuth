@@ -79,6 +79,7 @@ async fn audit_ledger_append_is_chained_and_pending() {
         .expect("audit ledger migration should apply");
     let pool = create_pool(database_url.clone(), 4).expect("audit pool should create");
     let repository = Arc::new(AuditLedgerRepository::new(pool));
+    drain_pending(&repository).await;
     let initial_health = repository
         .anchor_health()
         .await
@@ -94,7 +95,6 @@ async fn audit_ledger_append_is_chained_and_pending() {
     SecurityAuditExporter::observe_anchor(&repository, "test-deployment")
         .await
         .expect("the exporter should observe the complete shared anchor");
-    drain_pending(&repository).await;
     let first_id = Uuid::now_v7();
     let second_id = Uuid::now_v7();
     repository
@@ -215,6 +215,7 @@ async fn audit_ledger_append_is_chained_and_pending() {
         mutation.is_err(),
         "ledger mutation must be rejected by trigger"
     );
+    drain_pending(&repository).await;
 }
 
 #[derive(Debug, Eq, PartialEq, QueryableByName)]
@@ -700,7 +701,7 @@ async fn explain_query_plan(
     .await
     .expect("explain helper should install");
     let explain = if analyze {
-        "EXPLAIN (ANALYZE, FORMAT TEXT)"
+        "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)"
     } else {
         "EXPLAIN (FORMAT TEXT)"
     };
@@ -729,92 +730,93 @@ async fn explain_query_plan(
 }
 
 fn assert_bounded_claim_analysis(plan: &str) {
-    assert_bounded_claim_plan(plan);
-    // ANALYZE proof: the execution really ran (plain EXPLAIN carries no
-    // Execution Time) and its measured cost stayed bounded. The bound is
-    // deliberately generous — what must never appear is backlog-scale
-    // execution, which would surface as seconds-to-minutes at fixture depth.
-    let marker = "Execution Time: ";
-    let exec_ms: f64 = plan
-        .lines()
-        .find_map(|line| line.trim().strip_prefix(marker))
-        .and_then(|tail| tail.trim_end_matches(" ms").trim().parse().ok())
-        .expect("EXPLAIN ANALYZE must report a real Execution Time");
+    let explain: serde_json::Value = serde_json::from_str(plan).expect("JSON EXPLAIN ANALYZE");
+    let root = &explain[0]["Plan"];
+    let exec_ms = explain[0]["Execution Time"]
+        .as_f64()
+        .expect("measured execution time");
     assert!(
         exec_ms < 30_000.0,
-        "bounded claim executed in {exec_ms}ms:\n{plan}"
+        "claim execution exceeded its deadline: {plan}"
     );
+    let blocks = root["Shared Hit Blocks"]
+        .as_u64()
+        .expect("shared hit blocks")
+        + root["Shared Read Blocks"]
+            .as_u64()
+            .expect("shared read blocks");
+    // Logical reads include low-output scans through a dirty/dead prefix.
+    // The generous bound is independent of the backlog fixture's row count.
     assert!(
-        !plan.contains("Sort Method: external"),
-        "claim analysis must not spill to disk:\n{plan}"
+        blocks < 32768,
+        "claim read {blocks} shared blocks for at most 256 identities: {plan}"
     );
-    // An index scan can still read the whole backlog. Count the tuples
-    // actually emitted by every executed index node, including repeated
-    // primary-key probes; limiting only the final output is insufficient.
-    for line in plan.lines().filter(|line| {
-        (line.contains("Index Scan") || line.contains("Index Only Scan"))
-            && line.contains("(actual time=")
-    }) {
-        let actual = line.split("(actual time=").nth(1).unwrap();
-        // PostgreSQL 18 reports averaged rows with decimal precision.
-        let rows: f64 = actual
-            .split(" rows=")
-            .nth(1)
-            .and_then(|tail| tail.split_whitespace().next())
-            .and_then(|value| value.parse().ok())
-            .expect("executed index node must report rows");
-        let loops: f64 = actual
-            .split(" loops=")
-            .nth(1)
-            .and_then(|tail| tail.split(')').next())
-            .and_then(|value| value.parse().ok())
-            .expect("executed index node must report loops");
+    fn inspect(node: &serde_json::Value, indexes: &mut usize) {
+        let kind = node["Node Type"].as_str().expect("plan node type");
         assert!(
-            rows >= 0.0 && loops >= 0.0 && rows * loops <= 256.0,
-            "claim index work must stay within the candidate bound:\n{plan}"
+            !(kind == "Seq Scan"
+                && node["Relation Name"]
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("security_audit"))),
+            "audit relation scan: {node}"
         );
+        assert!(
+            !node["Sort Method"]
+                .as_str()
+                .is_some_and(|method| method.contains("external")),
+            "disk sort: {node}"
+        );
+        assert_eq!(
+            node["Temp Read Blocks"].as_u64().unwrap_or(0),
+            0,
+            "temporary reads: {node}"
+        );
+        assert_eq!(
+            node["Temp Written Blocks"].as_u64().unwrap_or(0),
+            0,
+            "temporary writes: {node}"
+        );
+        if kind.contains("Index") {
+            *indexes += 1;
+            let rows = node["Actual Rows"].as_f64().expect("actual rows");
+            let loops = node["Actual Loops"].as_f64().expect("actual loops");
+            assert!(
+                rows >= 0.0 && loops >= 0.0 && rows * loops <= 256.0,
+                "index output exceeds candidate bound: {node}"
+            );
+        }
+        if let Some(children) = node["Plans"].as_array() {
+            for child in children {
+                inspect(child, indexes);
+            }
+        }
     }
+    let mut indexes = 0;
+    inspect(root, &mut indexes);
+    assert!(indexes > 0, "claim must use an ordering index: {plan}");
 }
 
 #[test]
-fn bounded_claim_analysis_accepts_decimal_rows_and_rejects_backlog_scans() {
-    for (rows, loops, bounded) in [
-        ("256", "1", true),
-        ("256.00", "1", true),
-        ("1.00", "256", true),
-        ("10000.00", "1", false),
-        ("1.00", "257", false),
+fn bounded_claim_analysis_distinguishes_output_rows_from_read_cost() {
+    for (rows, loops, blocks, bounded) in [
+        (256.0, 1.0, 1000, true),
+        (1.0, 256.0, 1000, true),
+        (10000.0, 1.0, 1000, false),
+        (1.0, 257.0, 1000, false),
+        (1.0, 1.0, 100000, false),
     ] {
-        let plan = format!(
-            "Index Scan using pending_order on security_audit_events \
-             (cost=0.0..1.0 rows=256 width=192) \
-             (actual time=0.0..0.1 rows={rows} loops={loops})\nExecution Time: 1.0 ms"
-        );
+        let plan = json!([{"Execution Time":1.0,"Plan":{
+            "Node Type":"Index Scan", "Relation Name":"security_audit_events",
+            "Actual Rows":rows, "Actual Loops":loops,
+            "Shared Hit Blocks":blocks, "Shared Read Blocks":0
+        }}])
+        .to_string();
         assert_eq!(
             std::panic::catch_unwind(|| assert_bounded_claim_analysis(&plan)).is_ok(),
             bounded,
-            "unexpected index bound for rows={rows} loops={loops}"
+            "rows={rows}, loops={loops}, blocks={blocks}"
         );
     }
-}
-
-fn assert_bounded_claim_plan(plan: &str) {
-    // A quicksort over at most 256 materialized identities is bounded and
-    // acceptable; what must never appear is a table scan of the audit
-    // relations or a spill to disk (external merge / temp blocks).
-    assert!(
-        !plan.contains("Seq Scan on public.security_audit")
-            && !plan.contains("Seq Scan on security_audit")
-            && !plan.contains("external merge")
-            && !plan.contains("Temp Read Blocks")
-            && !plan.contains("temp Written Blocks")
-            && !plan.contains("Temp File"),
-        "claim plan must stay index-bounded without scans or spills:\n{plan}"
-    );
-    assert!(
-        plan.contains("Index Scan") || plan.contains("Index Only Scan"),
-        "claim plan must drive from the ordering index:\n{plan}"
-    );
 }
 
 const CHAINED_CLAIM_QUERY: &str = "\

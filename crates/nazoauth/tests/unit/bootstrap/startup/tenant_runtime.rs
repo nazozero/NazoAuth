@@ -836,6 +836,66 @@ async fn candidate_build_failure_retains_last_good_snapshot() {
 }
 
 #[tokio::test]
+async fn revoked_routes_leave_before_unrelated_candidate_builds_and_retry_same_revision() {
+    let tenant_a = binding(1, "tenant-a.example", "https://tenant-a.example");
+    let tenant_b = binding(2, "tenant-b.example", "https://tenant-b.example");
+    let next = snapshot(2, vec![tenant_b]);
+    let fixture = Fixture::new(snapshot(1, vec![tenant_a]), [], 1, []).await;
+    fixture.builder.fail_for("tenant-b.example");
+    for _ in 0..2 {
+        assert!(fixture.refresher.apply_snapshot(&next).await.is_err());
+        assert!(fixture.registry.load().by_host.is_empty());
+        assert_eq!(fixture.registry.revision(), 1);
+    }
+    *fixture.builder.failing_host.lock().unwrap() = None;
+    fixture.refresher.apply_snapshot(&next).await.unwrap();
+    assert_eq!(fixture.registry.revision(), 2);
+    assert!(
+        fixture
+            .registry
+            .load()
+            .by_host
+            .contains_key("tenant-b.example")
+    );
+    assert!(
+        !fixture
+            .registry
+            .load()
+            .by_host
+            .contains_key("tenant-a.example")
+    );
+}
+
+#[tokio::test]
+async fn failed_identity_replacement_retires_old_route_but_runtime_only_change_retains_it() {
+    for identity_changes in [false, true] {
+        let tenant = binding(1, "tenant-a.example", "https://tenant-a.example");
+        let mut next = tenant.clone();
+        next.runtime_revision += 1;
+        if identity_changes {
+            next.issuer = "https://tenant-a.example/replacement".to_owned();
+        }
+        let fixture = Fixture::new(snapshot(1, vec![tenant]), [], 1, []).await;
+        fixture.builder.fail_for("tenant-a.example");
+        assert!(
+            fixture
+                .refresher
+                .apply_snapshot(&snapshot(2, vec![next]))
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            fixture
+                .registry
+                .load()
+                .by_host
+                .contains_key("tenant-a.example"),
+            !identity_changes
+        );
+    }
+}
+
+#[tokio::test]
 async fn in_flight_request_arc_keeps_old_runtime_after_atomic_update() {
     let tenant_a = binding(1, "tenant-a.example", "https://tenant-a.example");
     let changed_a = binding(1, "tenant-a.example", "https://tenant-a.example/v2");

@@ -280,6 +280,10 @@ def sustained_cliff(buckets: dict[int, dict],
         win = ids[w:w + CLIFF_SPAN]
         if len(win) < CLIFF_SPAN:
             break
+        if any(right != left + 1 for left, right in zip(win, win[1:])):
+            continue
+        if any(buckets[i].get("span_s") != BUCKET_MS / 1000 for i in win):
+            continue
         bad_lat = sum(
             1 for i in win
             if (buckets[i]["p95"] is not None
@@ -321,13 +325,12 @@ def anomaly_buckets(buckets: dict[int, dict],
     for i, b in sorted(buckets.items()):
         if ((b["p95"] is not None and b["p95"] > P95_GATE_MS)
                 or (b["p99"] is not None and b["p99"] > P99_GATE_MS)):
-            out.append({**b,
-                        "in_checkpoint_write_window": any(
-                            lo <= i * BUCKET_MS / 1000 <= hi or
-                            lo <= (i - 1) * BUCKET_MS / 1000 <= hi or
-                            (i - 1) * BUCKET_MS / 1000 <= lo <= i
-                            * BUCKET_MS / 1000
-                            for lo, hi in ckpt_windows)})
+            start = (i - 1) * BUCKET_MS / 1000
+            end = start + b["span_s"]
+            windows = [f"{lo}:{hi}" for lo, hi in ckpt_windows
+                       if start < hi and lo < end]
+            out.append({**b, "checkpoint_window_ids": windows,
+                        "in_checkpoint_write_window": bool(windows)})
     return out
 
 

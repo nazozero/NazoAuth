@@ -46,7 +46,7 @@ pub trait FapiResponseSignature: Send + Sync {
 }
 
 pub trait FapiHttpMessageSignatures: Send + Sync {
-    fn enabled(&self) -> bool;
+    fn acquire_request(&self) -> Option<nazo_runtime_modules::RequestLease>;
 
     fn verify_and_consume<'a>(
         &'a self,

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, bail};
-use nazo_auth::validate_issuer_url;
+use nazo_auth::{validate_http_endpoint_url, validate_issuer_url};
 use serde::Deserialize;
 
 use crate::config::ConfigSource;
@@ -180,8 +180,8 @@ impl ProviderConfig {
             )?,
             token_endpoint: required_text(self.token_endpoint.take(), "token_endpoint")?,
             jwks_url: required_text(self.jwks_url.take(), "jwks_url")?,
-            client_id: required_text(self.client_id.take(), "client_id")?,
-            client_secret: required_text(self.client_secret.take(), "client_secret")?,
+            client_id: required_credential(self.client_id.take(), "client_id")?,
+            client_secret: required_credential(self.client_secret.take(), "client_secret")?,
             redirect_uri: required_text(self.redirect_uri.take(), "redirect_uri")?,
             scopes: self
                 .scopes
@@ -232,8 +232,8 @@ impl ProviderConfig {
                 .take()
                 .and_then(trimmed_optional)
                 .unwrap_or_else(|| defaults.userinfo_endpoint.to_owned()),
-            client_id: required_text(self.client_id.take(), "client_id")?,
-            client_secret: required_text(self.client_secret.take(), "client_secret")?,
+            client_id: required_credential(self.client_id.take(), "client_id")?,
+            client_secret: required_credential(self.client_secret.take(), "client_secret")?,
             redirect_uri: required_text(self.redirect_uri.take(), "redirect_uri")?,
             scopes: self
                 .scopes
@@ -266,13 +266,13 @@ impl ProviderConfig {
                 .and_then(trimmed_optional)
                 .or_else(|| defaults.union_id_claim.map(str::to_owned)),
         };
-        validate_issuer_url(&settings.authorization_endpoint)?;
-        validate_issuer_url(&settings.token_endpoint)?;
+        validate_http_endpoint_url(&settings.authorization_endpoint)?;
+        validate_http_endpoint_url(&settings.token_endpoint)?;
         if let Some(endpoint) = &settings.openid_endpoint {
-            validate_issuer_url(endpoint)?;
+            validate_http_endpoint_url(endpoint)?;
         }
-        validate_issuer_url(&settings.userinfo_endpoint)?;
-        validate_issuer_url(&settings.redirect_uri)?;
+        validate_http_endpoint_url(&settings.userinfo_endpoint)?;
+        validate_http_endpoint_url(&settings.redirect_uri)?;
         Ok(settings)
     }
 }
@@ -283,10 +283,10 @@ pub(super) fn validate_oidc_settings(
     scopes_key: &str,
 ) -> anyhow::Result<()> {
     validate_issuer_url(&settings.issuer)?;
-    validate_issuer_url(&settings.authorization_endpoint)?;
-    validate_issuer_url(&settings.token_endpoint)?;
-    validate_issuer_url(&settings.jwks_url)?;
-    validate_issuer_url(&settings.redirect_uri)?;
+    validate_http_endpoint_url(&settings.authorization_endpoint)?;
+    validate_http_endpoint_url(&settings.token_endpoint)?;
+    validate_http_endpoint_url(&settings.jwks_url)?;
+    validate_http_endpoint_url(&settings.redirect_uri)?;
     if !settings
         .scopes
         .split_whitespace()
@@ -321,6 +321,12 @@ fn validate_provider_id(provider_id: &str) -> anyhow::Result<()> {
         );
     }
     Ok(())
+}
+
+fn required_credential(value: Option<String>, field: &str) -> anyhow::Result<String> {
+    value
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("{field} is required for enabled federation provider"))
 }
 
 // 必填字符串统一 trim，避免空白字符串绕过配置完整性检查。

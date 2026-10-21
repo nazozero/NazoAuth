@@ -10,20 +10,21 @@ impl ServerCredentialIssuerOperations {
         Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
     > {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            let Some(_lease) = self.acquire_request(nazo_auth::CapabilityAdmission::NewRequest)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is not accepting new requests.",
                 ));
-            }
+            };
+            let access = self.access(&context).await?;
             let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
             validate_response_encryption_transport(
                 encrypted_request,
                 request.credential_response_encryption.as_ref(),
             )?;
-            let access = self.access(&context).await?;
             let configuration_id = resolve_configuration_id(&request, &access)?;
             let selection = Some(nazo_openid4vci::CredentialSelection {
                 configuration_id: configuration_id.clone(),
@@ -148,20 +149,22 @@ impl ServerCredentialIssuerOperations {
         Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
     > {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is unavailable.",
                 ));
-            }
+            };
+            let access = self.access(&context).await?;
             let encrypted_request = matches!(&body, CredentialRequestBody::Jwt(_));
             let request = request_json(&self.request_encryption, body)?;
             validate_response_encryption_transport(
                 encrypted_request,
                 request.credential_response_encryption.as_ref(),
             )?;
-            let access = self.access(&context).await?;
             let request_digest = issuance_request_digest(
                 "deferred",
                 &request,
@@ -356,13 +359,15 @@ impl ServerCredentialIssuerOperations {
     ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
     {
         Box::pin(async move {
-            if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
+            let Some(_lease) =
+                self.acquire_request(nazo_auth::CapabilityAdmission::ExistingTransaction)
+            else {
                 return Err(vci_error(
                     503,
                     "temporarily_unavailable",
                     "Credential issuer is unavailable.",
                 ));
-            }
+            };
             let access = self.access(&context).await?;
             let dpop_nonce =
                 next_dpop_nonce(self.authorization.as_ref(), &access, self.dpop_nonce_policy)

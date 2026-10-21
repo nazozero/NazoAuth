@@ -28,6 +28,26 @@ fn client_secret_digest_preserves_persisted_v1_format() {
 }
 
 #[test]
+fn registration_rejects_unusable_public_material_before_advertising_capability() {
+    let mut short_padded_modulus = [0_u8; 256];
+    short_padded_modulus[255] = 3;
+    for key in [
+        json!({"kty":"RSA", "alg":"RS256", "n":URL_SAFE_NO_PAD.encode(short_padded_modulus), "e":"AQAB"}),
+        json!({"kty":"RSA", "alg":"PS256", "n":URL_SAFE_NO_PAD.encode([255_u8; 256]), "e":"Ag"}),
+        json!({"kty":"EC", "crv":"P-256", "alg":"ES256", "x":URL_SAFE_NO_PAD.encode([0_u8; 32]), "y":URL_SAFE_NO_PAD.encode([0_u8; 32])}),
+    ] {
+        let jwks = json!({"keys":[key]});
+        assert!(validate_client_jwks(&jwks).is_err());
+        assert!(
+            inspect_client_jwks(&jwks, true)
+                .unwrap()
+                .signing_algorithms
+                .is_empty()
+        );
+    }
+}
+
+#[test]
 fn client_jwks_reject_private_key_material() {
     let error = validate_client_jwks(&json!({
         "keys": [{

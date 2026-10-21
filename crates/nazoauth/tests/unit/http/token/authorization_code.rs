@@ -164,7 +164,7 @@ async fn token_authorization_code_using_service(
                 grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
                 client_epoch: 0,
                 config: &config,
-                modules: &modules,
+                modules: &nazo_runtime_modules::SnapshotStore::new(modules.clone()).request(),
                 authorization: &authorization,
                 security_audit: crate::http::authorization::test_support::test_security_audit(),
                 remote_client_documents: crate::test_support::test_remote_client_documents(),
@@ -385,10 +385,14 @@ impl LiveAuthorizationCodeFixture {
     }
 
     async fn store_code_state(&self, code: &str, state: &impl serde::Serialize) {
+        let mut wire = serde_json::to_value(state).unwrap();
+        if let Some(payload) = wire.get_mut("payload") {
+            *payload = Value::String(payload.to_string());
+        }
         valkey_set_ex(
             &self.state.valkey,
             authorization_code_key(code),
-            serde_json::to_string(state).expect("authorization code state should serialize"),
+            wire.to_string(),
             self.state.settings.protocol.auth_code_ttl_seconds,
         )
         .await
@@ -407,11 +411,11 @@ impl LiveAuthorizationCodeFixture {
     }
 
     async fn code_state(&self, code: &str) -> AuthorizationCodeState {
-        let raw = valkey_get(&self.state.valkey, authorization_code_key(code))
+        nazo_valkey::AuthorizationStore::new(&self.state.valkey_connection())
+            .load_authorization_code(code)
             .await
-            .expect("authorization code lookup should succeed")
-            .expect("authorization code state should exist");
-        serde_json::from_str(&raw).expect("authorization code state should deserialize")
+            .unwrap()
+            .expect("code exists")
     }
 
     async fn insert_refresh_token(&self, client: &ClientRow, family_id: Uuid) {

@@ -99,12 +99,21 @@ pub(crate) async fn apply_request_object_with_context(
         request_object,
         client,
         expected_signing_algorithm: client.request_object_signing_alg.as_deref(),
+        require_fapi2: context
+            .config
+            .requires_fapi2_security(&client.security_policy),
     })
     .map_err(request_object_verification_error)?;
     let normalized = nazo_auth::normalize_request_object(
         outer,
         verified.claims,
         RequestObjectPolicy {
+            require_issuer_audience: context
+                .config
+                .requires_fapi2_security(&client.security_policy)
+                && context
+                    .config
+                    .requires_signed_authorization_request(&client.security_policy),
             issuer: &context.config.issuer,
             client_id: &client.client_id,
             jti_policy: match context.config.request_object_jti_policy {

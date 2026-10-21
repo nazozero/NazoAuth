@@ -8,6 +8,8 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 pub(crate) struct PublicAccountRow {
+    pub(crate) avatar_revision: i64,
+    pub(crate) access_token_epoch: i64,
     pub(crate) id: Uuid,
     pub(crate) tenant_id: Uuid,
     pub(crate) realm_id: Uuid,
@@ -46,6 +48,7 @@ pub(crate) struct PublicAccountRow {
 #[derive(Clone, Debug, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::users)]
 pub(crate) struct PrincipalRow {
+    pub(crate) access_token_epoch: i64,
     pub(crate) id: Uuid,
     pub(crate) tenant_id: Uuid,
     pub(crate) realm_id: Uuid,

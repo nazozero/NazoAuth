@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from current_capacity import SCENARIOS, bounds, point_name
 import current_capacity as cc
 from perf.tests.test_pool_size_ab import _rec
+from blackbox_contract import require_external_point
 
 
 def record(rate, verdict, seconds):
@@ -282,10 +283,12 @@ class IncrementalExecutionTests(unittest.TestCase):
                 patch.object(cc.sis, 'RESULTS', Path(tmp)), \
                 patch.object(cc, 'allocations', return_value=self.cpus), \
                 patch.object(cc.points, 'image_binary_sha', return_value='binary'), \
+                patch.object(cc, 'infrastructure_identity', return_value={'compose_sha256': 'compose', 'images': {'postgres': 'pg'}}) as infra, \
                 patch.object(cc.sis, 'dc', return_value=SimpleNamespace(stdout='image')), \
                 patch.object(cc.sis, 'sh', return_value=SimpleNamespace(stdout='controller')), \
                 patch.dict(cc.os.environ, {'SIS_APP_SHA': 'application'}), \
-                patch.object(cc.points, 'run_ab_point', return_value={}) as run, \
+                patch.object(cc.points, 'run_ab_point',
+                             side_effect=lambda point: (require_external_point(point), {})[1]) as run, \
                 patch.object(cc, 'evaluate_point', side_effect=lambda *a, **kw:
                              ('PASS', {'window_seconds': 180}, {}, None)), \
                 contextlib.redirect_stdout(io.StringIO()):
@@ -325,6 +328,13 @@ class IncrementalExecutionTests(unittest.TestCase):
             self.assertEqual(len(list(Path(tmp).glob('search-state-*.json'))), 3)
             self.assertTrue(all(call.args[0]['stream_workers'] == 4
                                 for call in run.call_args_list))
+            self.assertEqual(original.read_bytes(), original_bytes)
+            run.reset_mock()
+            infra.return_value = {'compose_sha256': 'changed', 'images': {'postgres': 'new'}}
+            with patch.object(sys, 'argv', args):
+                cc.main()
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(len(list(Path(tmp).glob('search-state-*.json'))), 4)
             self.assertEqual(original.read_bytes(), original_bytes)
 
     def test_offline_cli_needs_no_container_and_preserves_source(self):

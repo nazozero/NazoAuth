@@ -452,6 +452,8 @@ async fn logout_projection_reads_only_logout_facts_and_rejects_malformed_redirec
     .await
     .expect("logout facts and malformed unrelated metadata should persist");
     let expected = RegisteredLogoutClient {
+        require_fapi2: false,
+        id_token_signed_response_alg: None,
         id,
         tenant_id: DEFAULT_TENANT_ID,
         client_id: client_id.clone(),

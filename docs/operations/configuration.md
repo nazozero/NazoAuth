@@ -93,8 +93,11 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS` | `5` | Maximum failed login attempts per source IP and normalized email in the failed-login window |
 | `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | Global protocol profile. Every OAuth client must carry an explicit current `security_policy`; rows without it are rejected rather than inferred from this setting. |
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1` | CIBA-specific policy: FAPI-CIBA ID1 with orthogonal poll/ping delivery and private-key/mTLS client authentication, or internal `fapi2-ciba` hardening. Only these canonical values are accepted. |
+| `MFA_FAILURE_WINDOW_SECONDS` | `900` | Tenant/account MFA verification attempt window, shared by login sessions. |
+| `MFA_FAILURE_MAX_ATTEMPTS` | `5` | Maximum MFA verification attempts within that window. |
+| `PENDING_MFA_SESSION_TTL_SECONDS` | `600` | Pending MFA session lifetime; must be shorter than the full session lifetime. |
 | `MFA_TOTP_ENCRYPTION_KEY` / `MFA_TOTP_ENCRYPTION_KEY_ID` | generated under `DATA_DIR/secrets` | Current 32-byte base64url key and derived version id for TOTP seed envelope encryption. Prefer `MFA_TOTP_ENCRYPTION_KEY_FILE` when importing a controlled existing key. |
-| `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY` / `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID` | unset | Optional prior key for decrypting existing encrypted envelopes during a controlled key transition. Startup never scans, encrypts, or re-wraps credential rows. |
+| `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY` / `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID` | unset | Optional prior key during a controlled key transition. The PostgreSQL adapter checks retained key references before activation; bounded background maintenance re-wraps old envelopes. |
 
 | `OPENID4VC_REVOCATION_POLICY` | `disabled` | `disabled`, `optional`, or `required`. The VP verifier requires `required`. Certificate, trust-anchor, and revocation facts are read from the managed shared signing-key generation, so VP verification performs no network or file I/O. |
 | `OPENID4VC_MDOC_ISSUING_COUNTRY` | unset | Required only when local keyctl generates a certificate for an enabled `mso_mdoc` configuration. Two uppercase ASCII letters, and the generated DS/IACA Subject `C` uses this value. It is not required for externally issued certificate chains. |
@@ -122,6 +125,12 @@ setting. A direct value takes precedence; otherwise NazoAuth reads the reference
 file during startup. Relative file paths resolve from the configuration
 directory. `_FILE` is intentionally limited to secret material: it is not a
 generic indirection for URLs, endpoint addresses, flags, identifiers, or limits.
+
+Generated secrets are written to owner-only temporary files before atomic
+publication. Unix creates them with mode 0600 and synchronizes the containing
+directory after publication. Windows restricts the dedicated secret directory
+to the current account and SYSTEM before file creation, so its inherited file
+ACL is private from creation. Failure to apply those permissions fails startup.
 
 The supported pairs are:
 
@@ -389,6 +398,11 @@ loopback endpoints.
 - proxy and client IP handling: `TRUSTED_PROXY_CIDRS`,
   `CLIENT_IP_HEADER_MODE`, `MTLS_CERTIFICATE_SOURCE`
 
+External signing-key registration accepts successors of the current active
+algorithm. Registration of another algorithm is rejected because the current
+rotation policy cannot activate it. Registered successors still observe the
+configured prepublication window before activation.
+
 `MTLS_CERTIFICATE_SOURCE` accepts `disabled`, `direct-tls`, or `rfc9440`.
 `rfc9440` consumes the singleton RFC 9440 `Client-Cert` DER byte sequence.
 `trusted-proxy` requires both `TRUSTED_PROXY_CIDRS` and an explicit certificate
@@ -527,3 +541,55 @@ Publication does not register or grant a scope. Client allowlists, consent,
 resource binding and credential authorization remain authoritative. RFC 8414
 permits supported scopes to be omitted; configure public business scopes when
 clients need complete discovery, including the corresponding OIDF metadata check.
+
+Retired database signing entries retain their public metadata for diagnostics.
+After their verification grace expires, maintenance removes local signing private
+material and runtime generations no longer load it. This does not retire IACA
+private material needed to publish CRLs; that material follows the credential
+trust lifecycle. Older server binaries that require private material on every
+historical entry cannot read a generation after this cleanup. For the first
+upgrade from such a version, stop all old server instances before starting the
+new version: startup maintenance can perform cleanup immediately. Rolling back
+to that version requires restoring the pre-upgrade keyset backup, together with
+the corresponding database state; mixed-version rolling upgrades are unsupported
+across this format change.
+
+DPoP proofs bind to the configured external endpoint selected by the original
+HTTP Host or HTTP/2 authority, including its port. The ordinary issuer endpoint
+and the mTLS alias do not accept each other's proofs. Reverse proxies must
+preserve the original authority; Forwarded and X-Forwarded-Host do not select
+the DPoP target. Requests without proofs retain the existing authentication flow.
+
+### TOTP envelope key rotation
+
+Keep key IDs unique per key material. To rotate A to B, configure B as current and
+A as previous on all instances. PostgreSQL serializes activation against seed
+writes; after B activates, writers still using A cannot enroll or replace seeds.
+Restart those instances with the new ring. The existing security-state worker
+migrates up to 256 envelopes per batch, preserving credential IDs, confirmation,
+and replay counters. `totp_rewrapped` reports batch progress. Offline users are
+included. This is envelope migration, not plaintext recovery.
+
+Do not remove A until no rows reference it. Startup rejects a ring that cannot
+read a retained key ID, including an attempted B-to-C rotation that drops A too
+early. Inspect `SELECT secret_key_id, count(*) FROM user_totp_credentials GROUP BY
+secret_key_id` when planning retirement. Reverting to the previous write key is
+rejected. Interrupted batches roll back; committed batches resume from remaining
+old-key rows. Keep verified backups and their required keys together.
+
+### Local protocol and Request Object key rotation
+
+The existing signing rotation interval and prepublication window also govern
+locally generated PS256 protocol keys and the dedicated Request Object recipient.
+PS256 successors appear in JWKS before they can sign. Request Object successors
+are loaded for decryption before they replace the single advertised recipient,
+so refreshed instances can already decrypt requests for the next key. Size the
+window to cover instance refresh and discovery propagation.
+
+After switching, former signing keys verify and former recipient keys decrypt
+for the configured verification grace plus the maximum database snapshot stale
+window. Maintenance then removes their private material, retaining public
+provenance. A Request Object without `kid` selects the current advertised key;
+clients retaining an older recipient must send its `kid`. Existing recipient
+records without creation metadata start their schedule at the durable upgrade
+boundary. External signing keys remain operator-owned.

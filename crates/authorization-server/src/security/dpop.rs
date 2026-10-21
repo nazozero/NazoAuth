@@ -21,8 +21,17 @@ where
     S: DpopStateStorePort + ?Sized,
 {
     let proof = request.proof?;
-    let target_uris = dpop_target_uris(issuer, mtls_endpoint_base_url, request.path);
-    let target_uri_refs = [target_uris[0].as_str(), target_uris[1].as_str()];
+    let target_uri = proof
+        .map(|_| {
+            dpop_target_uri(
+                issuer,
+                mtls_endpoint_base_url,
+                request.authority,
+                request.path,
+            )
+        })
+        .transpose()?;
+    let target_uri_refs = [target_uri.as_deref().unwrap_or("")];
     let result = validate_authorization_server_dpop(
         store,
         DpopProofRequest {
@@ -58,10 +67,35 @@ where
     result
 }
 
-/// Uses configured endpoint origins and the original path, never forwarding headers.
-pub fn dpop_target_uris(issuer: &str, mtls_endpoint_base_url: &str, path: &str) -> [String; 2] {
-    [
-        format!("{}{path}", issuer.trim_end_matches('/')),
-        format!("{}{path}", mtls_endpoint_base_url.trim_end_matches('/')),
-    ]
+/// Select one configured origin using the request's original HTTP authority.
+pub fn dpop_target_uri(
+    issuer: &str,
+    mtls_endpoint_base_url: &str,
+    authority: Option<&str>,
+    path: &str,
+) -> Result<String, DpopError> {
+    let authority = authority
+        .filter(|value| !value.contains('@'))
+        .and_then(|value| value.parse::<http::uri::Authority>().ok())
+        .ok_or(DpopError::InvalidProof)?;
+    let mut selected = None;
+    for base in [issuer, mtls_endpoint_base_url] {
+        let origin = url::Url::parse(base).map_err(|_| DpopError::InvalidProof)?;
+        if !matches!(origin.scheme(), "http" | "https") {
+            return Err(DpopError::InvalidProof);
+        }
+        let request_origin = url::Url::parse(&format!("{}://{authority}", origin.scheme()))
+            .map_err(|_| DpopError::InvalidProof)?;
+        if origin.origin() == request_origin.origin() {
+            let candidate = format!("{}{path}", base.trim_end_matches('/'));
+            if selected
+                .as_ref()
+                .is_some_and(|current| current != &candidate)
+            {
+                return Err(DpopError::InvalidProof);
+            }
+            selected = Some(candidate);
+        }
+    }
+    selected.ok_or(DpopError::InvalidProof)
 }

@@ -69,6 +69,22 @@ fn metadata_rejects_algorithms_the_issuer_cannot_execute() {
     }))
     .unwrap();
     assert!(proof.validate().is_err());
+    let mut proof = proof;
+    proof
+        .proof_types_supported
+        .get_mut("jwt")
+        .unwrap()
+        .proof_signing_alg_values_supported = vec!["EdDSA".into()];
+    assert!(proof.validate().is_ok());
+    proof.format = CredentialFormat::MsoMdoc;
+    proof.doctype = Some("org.iso.18013.5.1.mDL".into());
+    assert!(proof.validate().is_err());
+    proof
+        .proof_types_supported
+        .get_mut("jwt")
+        .unwrap()
+        .proof_signing_alg_values_supported = vec!["ES256".into()];
+    assert!(proof.validate().is_ok());
 }
 
 #[test]

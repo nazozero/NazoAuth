@@ -1228,6 +1228,7 @@ async function fapiLoggedInHighSecurityOp() {
 }
 
 export async function ciba_private_key_jwt_dpop_poll() {
+  useSession(selectedLoggedInSession());
   const user = selectedUser(false);
   const authReqId = await cibaBackchannelAuthentication(user);
   approveCiba(authReqId);
@@ -2064,7 +2065,7 @@ function capPublicReadsOp() {
   if (roll < 88) {
     return checkErr(publicGet('/.well-known/oauth-protected-resource', 'oauth_protected_resource'), { 'opr 200': (r) => r.status === 200 });
   }
-  return checkErr(publicGet('/__perf/metrics', 'perf_metrics'), { 'perf_metrics 200': (r) => r.status === 200 });
+  return checkErr(publicGet('/jwks.json', 'jwks'), { 'jwks 200': (r) => r.status === 200 });
 }
 
 export async function cap_public_reads() {
