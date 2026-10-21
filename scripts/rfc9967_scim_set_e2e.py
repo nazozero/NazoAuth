@@ -35,9 +35,10 @@ CONFIG_PATH = "/scim/v2/ServiceProviderConfig"
 CREATE = "urn:ietf:params:scim:event:prov:create:notice"
 PATCH = "urn:ietf:params:scim:event:prov:patch:notice"
 PUT = "urn:ietf:params:scim:event:prov:put:notice"
+DELETE = "urn:ietf:params:scim:event:prov:delete"
 ACTIVATE = "urn:ietf:params:scim:event:prov:activate"
 DEACTIVATE = "urn:ietf:params:scim:event:prov:deactivate"
-EVENT_URIS = [CREATE, PATCH, PUT, ACTIVATE, DEACTIVATE]
+EVENT_URIS = [CREATE, PATCH, PUT, ACTIVATE, DEACTIVATE, DELETE]
 
 
 def load_registry() -> tuple[tuple[str, str, dict[str, object]], ...]:

@@ -101,7 +101,7 @@ proptest = "1.12.0"
 rand = "0.10.3"
 rustix = { version = "1.1.5", features = ["fs", "process"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
-webpki = { package = "rustls-webpki", version = "0.103.15" }
+webpki = { package = "rustls-webpki", version = "0.103.16" }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
 semver = "1.0.28"
 serde = "1.0.229"
