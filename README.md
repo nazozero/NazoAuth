@@ -51,6 +51,17 @@ opens the official register, including the certification and test-result records
 The OID4VCI and OID4VP registers spell the implementation version `v0.2.0`.
 The certification mark and scope above refer to these registered deployments.
 
+## Latest public OIDF regression
+
+The [2026-10-22 run for NazoAuth v0.3.5](https://github.com/nazozero/NazoAuth/releases/tag/v0.3.5)
+contains public links to all 44 plans on the official OIDF Suite and a complete
+module index: **1,169 executed, 1,121 PASSED, 40 REVIEW, 8 SKIPPED, zero failures
+or incomplete modules**. All FAPI, CIBA and OpenID4VCI groups passed.
+
+This is version-specific regression evidence. REVIEW and SKIPPED are preserved;
+the run does not establish an all-PASSED Suite result or extend the v0.2.0
+certification above. See [how to read the evidence](docs/conformance/README.md#public-oidf-regression).
+
 ## What it handles
 
 | Area | Capabilities |

@@ -46,6 +46,16 @@ OpenID Foundation 的公开认证目录收录了 **NazoAuth / Nazo Auth Server 0
 
 OID4VCI、OID4VP 登记页中的实现版本写作 `v0.2.0`。上方认证标识与范围对应这些已登记的实现。
 
+## 最新公开 OIDF 回归
+
+[2026-10-22 的 NazoAuth v0.3.5 测试记录](https://github.com/nazozero/NazoAuth/releases/tag/v0.3.5)
+提供官方 OIDF Suite 上全部 44 个计划的公开链接和完整模块索引：
+**1169 项已执行，1121 通过、40 待复核、8 跳过，失败和未完成均为 0**。
+FAPI、CIBA 和 OpenID4VCI 各组全部通过。
+
+这是对应版本的持续回归记录，保留待复核和跳过结果，不代表所有模块均为 PASSED，
+也不扩展上方 v0.2.0 的认证范围。参见[证据说明](docs/conformance/README.md#public-oidf-regression)。
+
 ## 能力
 
 | 领域 | 支持内容 |

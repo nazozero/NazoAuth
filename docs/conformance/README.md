@@ -39,7 +39,29 @@ official register and lists the complete profiles and registration dates.
 ## Run-specific evidence
 
 Keep candidate runs, manual review, acceptance logs, and artifact digests in
-CI artifacts or the associated issue/PR. A successful external test run applies
+release assets, CI artifacts or the associated issue/PR. A successful external test run applies
 to the identified artifact and is not a certification for later versions.
 Maintained commands and evidence formats belong to the controller's
-[OIDF artifact guide](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/oidf-artifacts.md).
+[OIDF guide](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/oidf.md).
+
+## Public OIDF regression
+
+[NazoAuth v0.3.5 release results](https://github.com/nazozero/NazoAuth/releases/tag/v0.3.5)
+link every plan in the latest published run on the official OIDF Suite.
+The [complete module index](https://gist.github.com/bymoye/d83684c532e98bd76d5dc7a6684592fa)
+records all 1,169 module outcomes, variants, public log URLs, the tested server
+image digest, controller version, input identity and anonymous-access checks.
+The Suite links expose the test records themselves; the index is a project-owned
+snapshot, not an OIDF-signed attestation. The source report SHA-256 identifies
+the private source used to generate it.
+
+For this run, `matrix_expectations_satisfied` is true, while `suite_pass` and
+`acceptance_pass` are false: 40 modules remain REVIEW and 8 are SKIPPED. These
+outcomes are not counted as PASSED. All 1,169 modules were instantiated and
+reached terminal states, with zero failed or incomplete modules.
+
+Use these records to track regression results for the identified release.
+A single run does not prove uninterrupted success across later commits or
+releases; compare subsequent published runs and retain their original outcomes.
+The historical certification registers above remain the authority for certified
+versions and profiles. Publishing a run does not submit a new certification.
