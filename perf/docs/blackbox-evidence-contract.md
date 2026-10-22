@@ -10,9 +10,8 @@ introduced into the business binary.
 Pool checkouts, acquire waiting and best-effort process queue counts are
 unavailable. Their JSON values are null and their status is UNAVAILABLE or
 UNVERIFIED. Three legacy process queue gates are explicitly UNVERIFIED and are
-not part of the external gate dictionary. A PASS is scoped to the declared
-external evidence; it does not assert these internal gates passed. DB outbox
-drainage cannot prove the process queue is empty.
+not part of the external gate dictionary. A PASS covers the declared external
+gates. Process queue state remains UNVERIFIED after DB outbox drainage.
 
 Required security checks retain DB persisted chain head/hash continuity,
 deployment binding, receiver checkpoint/ACK reconciliation, accepted-event

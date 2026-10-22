@@ -58,9 +58,7 @@ contains public links to all 44 plans on the official OIDF Suite and a complete
 module index: **1,169 executed, 1,121 PASSED, 40 REVIEW, 8 SKIPPED, zero failures
 or incomplete modules**. All FAPI, CIBA and OpenID4VCI groups passed.
 
-This is version-specific regression evidence. REVIEW and SKIPPED are preserved;
-the run does not establish an all-PASSED Suite result or extend the v0.2.0
-certification above. See [how to read the evidence](docs/conformance/README.md#public-oidf-regression).
+See the [run details and result definitions](docs/conformance/README.md#public-oidf-regression).
 
 ## What it handles
 

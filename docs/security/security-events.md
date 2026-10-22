@@ -215,8 +215,8 @@ already sent to storage: its atomic grant/fact/fence may still commit. This can
 leave an approved-but-undelivered decision; retries must preserve the same
 request/PAR identity and cannot consume a committed fence again. Cancellation
 after acknowledgement may also leave a stored code whose response was lost.
-This contract does not promise durable evidence
-for pre-commit crash attempts that caused no effective authorization.
+Durable authorization evidence is committed with the effective authorization.
+Attempts interrupted by a pre-commit crash may leave no durable record.
 
 The event type is reserved: ordinary audit append cannot create a business
 authority fact. Export and chain construction may happen later, but export
@@ -247,12 +247,14 @@ Verified access tokens remain access-only revocation authority and retain a zero
 refresh-member count. Refresh revocation retains the existing family lock and
 client/tenant predicates. Both effects and the `token_revoked` event commit
 together. An unknown token remains a successful, non-disclosing no-op with
-attempt evidence; an audit event does not assert that a token existed.
+attempt evidence. The audit event records the revocation attempt for both known
+and unknown tokens.
 Lower-level recovery revocation retains its separate existing contract.
 
 Dynamic transactional readiness still checks current anchor health in required
-mode. The transaction's own required append is the writer failure boundary;
-preflight is not an atomicity proof. Complete result and transaction
+mode. The transaction's own required append is the writer failure boundary.
+Preflight checks readiness; the transaction commit establishes atomicity.
+Complete result and transaction
 acknowledgement precede success. The existing `DiscardOnDrop` guard discards the
 physical connection on error or cancellation until a successful complete
 transaction outcome is known. An unknown acknowledgement may follow a committed transaction; recovery must retain the original operation identity.

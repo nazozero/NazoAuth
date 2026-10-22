@@ -370,5 +370,5 @@ The Rust `token_hotpath_perf` fixture reports cold-client group throughput:
 `wall_ms` includes thread, HTTP client, and connection setup. Warmup carries
 server and token state forward, but does not preserve worker connections.
 Per-operation latency ends after the complete response body and excludes worker
-construction. The JSONL scope fields distinguish these measurements; they are
-not a claim of steady-state connection-pool throughput.
+construction. The JSONL scope fields identify the setup and timing boundaries
+of each measurement.

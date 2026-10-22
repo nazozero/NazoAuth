@@ -2,8 +2,8 @@
 
 Implementation review: 2026-07-17. Official-source review: 2026-09-09.
 
-The source refresh updates versions and publication status only. Prior runtime
-evidence is not a compliance claim for the newer drafts or RFCs; see
+The source refresh updates specification versions and publication status.
+Implementation status and verification requirements are recorded in
 [the source delta review](spec-freshness.md#september-source-changes-and-implementation-boundaries).
 
 ## Scope

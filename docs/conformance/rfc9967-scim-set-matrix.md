@@ -4,8 +4,7 @@
 
 This is a project-owned, conformance-oriented regression matrix for the
 [RFC 9967 SCIM Profile for Security Event Tokens](https://www.rfc-editor.org/rfc/rfc9967.html)
-and its RFC 8936 poll delivery contract. It is an implementation regression
-contract, not a certification result or certification claim.
+and its RFC 8936 poll delivery contract.
 
 ## Executable matrix
 

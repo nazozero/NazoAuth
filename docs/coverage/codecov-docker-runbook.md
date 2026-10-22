@@ -80,7 +80,7 @@ CARGO_TARGET_DIR="$PWD/target/check" \
 
 Replace `PACKAGE` and `TEST_FILTER` with actual names. Database, Valkey, object
 storage, and HTTP tests still require their documented fixtures and current
-configuration; a name-filtered unit run is not coverage or deployment proof.
+configuration. A name-filtered run checks the selected tests.
 Use the coverage script for its owned full fixture lifecycle. There is no
 required pre-existing `nazo-oauth-codecov-runner:local` image or named coverage
 network in the current workflow.

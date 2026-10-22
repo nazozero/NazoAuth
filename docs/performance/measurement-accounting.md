@@ -6,7 +6,7 @@
 
 `capacity_search.py` 和 `pool_size_ab.py` 使用 `successful-ops-v1`：容量验收的吞吐分子是测量窗口内成功完成的逻辑操作，阈值仍为目标的 99.5%。`cap_mixed` 与其他 `capRun` 场景使用同一规则。`expected_rejection` 是协议正确拒绝，`local_no_request` 没有发出请求；两者保留为诊断量，均不计成功吞吐。
 
-`measured_ops_s` / `attempted_ops_per_s` 表示完成迭代速率，不能当作成功操作速率，也不等于 HTTP req/s。Pool A/B 的 `attainment` 使用成功操作速率除以目标速率。所有容量 gate 仍检查同一测量 cohort 的 dropped iterations、完整迭代 P95/P99 和异常。
+`measured_ops_s` / `attempted_ops_per_s` 统计每秒完成的迭代数；成功操作速率统计每秒成功完成的逻辑操作数，HTTP req/s 统计每秒请求数。Pool A/B 的 `attainment` 使用成功操作速率除以目标速率。所有容量 gate 仍检查同一测量 cohort 的 dropped iterations、完整迭代 P95/P99 和异常。
 
 测量窗口由所有 VU 共用的 scenario clock 定义，按迭代进入时间归属 cohort，graceful-stop 期间完成的迭代仍属于原 cohort。正式运行必须提供完整 stream 证据；成功、拒绝、无请求、异常和准备失败的 stream outcome 与 named counter 必须逐项一致。缺失、未知标签或冲突不能静默变为零。
 

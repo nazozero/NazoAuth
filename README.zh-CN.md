@@ -53,8 +53,7 @@ OID4VCI、OID4VP 登记页中的实现版本写作 `v0.2.0`。上方认证标识
 **1169 项已执行，1121 通过、40 待复核、8 跳过，失败和未完成均为 0**。
 FAPI、CIBA 和 OpenID4VCI 各组全部通过。
 
-这是对应版本的持续回归记录，保留待复核和跳过结果，不代表所有模块均为 PASSED，
-也不扩展上方 v0.2.0 的认证范围。参见[证据说明](docs/conformance/README.md#public-oidf-regression)。
+参见[运行详情与结果说明](docs/conformance/README.md#public-oidf-regression)。
 
 ## 能力
 
