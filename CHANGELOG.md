@@ -3,6 +3,117 @@
 Project changes are recorded by release. Before 0.5.0, the project iterates
 rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
+Release dates use UTC+8.
+
+## 0.3.5 - 2026-10-22
+
+### Fixed
+
+- Accept PAR requests without an early Token sender binding. Validate supplied
+  bindings against client policy and enforce required bindings at token issuance.
+- Apply the existing per-client PKCE compatibility policy to baseline confidential
+  OIDC dynamic registration. Public, FAPI, sender-constrained and non-OIDC clients
+  retain their PKCE requirements; registration updates preserve administrator policy.
+
+### Conformance
+
+- Publish the complete October 22 OIDF regression for this release with
+  NazoAuthCtl v0.3.7: 1,169 modules across 44 plans, with 1,121 PASSED, 40 REVIEW,
+  8 SKIPPED, zero failures and zero incomplete modules. All FAPI, CIBA and
+  OpenID4VCI groups passed. The [release record](https://github.com/nazozero/NazoAuth/releases/tag/v0.3.5)
+  links every public plan and the complete module index.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.4...v0.3.5)
+
+## 0.3.4 - 2026-10-21
+
+The GitHub Release was withdrawn and replaced by v0.3.5; the source tag is retained.
+
+### Security and correctness
+
+- Preserve opaque authorization payloads through KV operations and enforce current
+  tenant, client and user eligibility, revocation epochs and administrator-owned
+  dynamic-registration limits.
+- Correct DPoP endpoint binding, authentication assurance claims, CIBA audiences,
+  Device client authentication, PAR/consent lifetimes, SCIM event handling, JOSE
+  critical headers and mdoc certificate validation.
+- Commit Required identity audit facts with business mutations. External audit
+  anchoring remains asynchronous, and durable outcomes survive unknown commit
+  acknowledgements.
+- Add avatar revision compare-and-swap and ownership-aware object cleanup.
+  Complete protocol/JWE key prepublication, activation and retirement, and add
+  bounded TOTP rewrapping through the existing maintenance path.
+- Preserve operation and candidate identity during controller approval recovery.
+  Report actual migration effects and correct storage compatibility exercised by
+  the companion controller's fresh-database backup flow.
+
+### Dependencies and execution
+
+- Reduce federation queries and reuse borrowed OpenID4VP encoding inputs.
+- Refresh Rust dependencies, CI actions, build images and Python tooling. Update
+  TLS verification and certificate-root dependencies, including the audit receiver
+  and Python validation tools. Explicitly enable the Sigstore AWS-LC provider.
+- Keep database and KV implementation choices in adapters behind application ports.
+
+### Upgrade
+
+- Apply the included user-deletion, device-approval, dataset-ownership, TOTP-rotation
+  and avatar-revision migrations through the controller's migration/recovery flow.
+- Retain required TOTP decryption keys until rewrapping finishes. Stop old avatar
+  writers during the revision transition and restart pending uploads afterward.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.3...v0.3.4)
+
+## 0.3.3 - 2026-10-18
+
+### Database migration baseline
+
+- Consolidate the 127 migration pairs present in v0.3.2 into one baseline,
+  reducing the SQL file count from 254 to 2. Fresh databases install the final
+  schema and initial data directly.
+- Adopt databases that completed v0.3.2 migrations by adding baseline bookkeeping
+  while preserving business data, historical migration records, objects and grants.
+- Upgrade databases older than v0.3.2, or with incomplete v0.3.2 migrations, to
+  v0.3.2 first. Database rollback uses a verified backup.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.2...v0.3.3)
+
+## 0.3.2 - 2026-10-17
+
+### Security and correctness
+
+- Enforce federated-login MFA, cross-client token introspection authorization and
+  consistent FAPI client-assertion policy.
+- Correct SD-JWT disclosure reconstruction and credential validity checks.
+- Require administrator-granted `security_policy.introspection_audiences` for
+  cross-client introspection. Upgrade every server instance before configuring
+  a nonempty value.
+
+### Execution
+
+- Remove repeated database lookups, hashes, parsing and payload copies across
+  token, credential, JWE, mdoc and HTTP paths. Borrow JWE header fields and share
+  authenticated TLS certificate chains through the existing trust boundary.
+- Preserve operator protocol 3 and release-manifest schema 7.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.1...v0.3.2)
+
+## 0.3.1 - 2026-10-12
+
+### Discovery
+
+- Derive OpenID4VCI discovery scopes from configured credential profiles and
+  update their publication with issuance-module enablement and draining state.
+- Add optional `ADDITIONAL_SCOPES_SUPPORTED` to publish supported business scopes.
+  Client authorization continues to use the existing access policies.
+- Keep OIDC and OAuth discovery scopes consistent, deduplicate values and reject
+  invalid OAuth scope syntax at startup.
+
+### Dependencies
+
+- Update `sfv` to 0.16.0, `zeroize` to 1.9.1 and GitHub Actions dependencies.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.0...v0.3.1)
 
 ## 0.3.0 - 2026-10-11
 
