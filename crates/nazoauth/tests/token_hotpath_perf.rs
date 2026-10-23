@@ -484,6 +484,7 @@ struct AlgorithmTenant {
     issuer: String,
     user_id: Uuid,
     store: AuthorizationStore,
+    context: TenantContext,
 }
 
 async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> IssuanceFixture {
@@ -746,6 +747,7 @@ async fn provision_algorithm_tenant(
         issuer,
         user_id,
         store,
+        context: tenant,
     }
 }
 
@@ -1039,8 +1041,8 @@ where
     let mut final_inputs = Vec::with_capacity(workers);
     std::thread::scope(|scope| {
         let mut handles = Vec::new();
-        for index in 0..workers {
-            let mut worker_inputs = inputs.get(index).cloned().unwrap_or_default();
+        assert_eq!(inputs.len(), workers, "one input owner per worker");
+        for (index, mut worker_inputs) in inputs.into_iter().enumerate() {
             let barrier = barrier.clone();
             handles.push(scope.spawn(move || {
                 let worker = make_worker(index);
@@ -1488,6 +1490,7 @@ async fn measure_group_run(
     // Fresh inputs for every run — runs are independent executions, not
     // continuations of earlier state.
     let warmup_inputs = prepare_run_inputs(
+        connection,
         path,
         tenant,
         RunInputRequest {
@@ -1638,6 +1641,7 @@ struct RunInputRequest {
 /// seeded independently per op; refresh/native-SSO chains bootstrap through
 /// real code redemptions. Reusable subject tokens live on the tenant.
 async fn prepare_run_inputs(
+    connection: &mut AsyncPgConnection,
     path: &BenchPath,
     tenant: &AlgorithmTenant,
     request: RunInputRequest,
@@ -1662,15 +1666,22 @@ async fn prepare_run_inputs(
             split_inputs(codes, concurrency)
         }
         PathKind::Refresh => {
-            let codes = seed_codes(
-                &tenant.store,
-                path.client_id,
-                tenant.user_id,
-                &["openid", "offline_access", "api:read"],
-                concurrency,
-                None,
-            )
-            .await;
+            let mut codes = Vec::with_capacity(concurrency);
+            for _ in 0..concurrency {
+                let user_id = Uuid::now_v7();
+                seed_user(connection, &tenant.context, user_id).await;
+                codes.extend(
+                    seed_codes(
+                        &tenant.store,
+                        path.client_id,
+                        user_id,
+                        &["openid", "offline_access", "api:read"],
+                        1,
+                        None,
+                    )
+                    .await,
+                );
+            }
             let client_id = path.client_id.to_owned();
             let host = tenant.host.clone();
             tokio::task::block_in_place(move || {
@@ -1689,15 +1700,22 @@ async fn prepare_run_inputs(
             })
         }
         PathKind::NativeSso => {
-            let codes = seed_codes(
-                &tenant.store,
-                path.client_id,
-                tenant.user_id,
-                &["openid", "offline_access", DEVICE_SSO_SCOPE],
-                concurrency,
-                Some("perf-sso-sid"),
-            )
-            .await;
+            let mut codes = Vec::with_capacity(concurrency);
+            for _ in 0..concurrency {
+                let user_id = Uuid::now_v7();
+                seed_user(connection, &tenant.context, user_id).await;
+                codes.extend(
+                    seed_codes(
+                        &tenant.store,
+                        path.client_id,
+                        user_id,
+                        &["openid", "offline_access", DEVICE_SSO_SCOPE],
+                        1,
+                        Some("perf-sso-sid"),
+                    )
+                    .await,
+                );
+            }
             let client_id = path.client_id.to_owned();
             let host = tenant.host.clone();
             tokio::task::block_in_place(move || {
@@ -1843,10 +1861,21 @@ fn execute(
                     urlencoding::encode(secret),
                     urlencoding::encode(issuer),
                 ));
-                status == 200 || {
+                if status != 200 {
                     eprintln!("native_sso error {status}: {body}");
-                    false
+                    return false;
                 }
+                let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+                let (Some(id_token), Some(device_secret)) = (
+                    parsed["id_token"].as_str(),
+                    parsed["device_secret"].as_str(),
+                ) else {
+                    eprintln!("native_sso response missing continuation: {body}");
+                    return false;
+                };
+                slot_inputs[0] = id_token.to_owned();
+                slot_inputs[1] = device_secret.to_owned();
+                true
             },
         ),
     }

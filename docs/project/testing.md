@@ -211,8 +211,8 @@ Targeted suites with their own entry points:
   benchmark: set `NAZO_PERF_HOTPATH=1`, `NAZO_PERF_OUTPUT`, an isolated
   PostgreSQL with `pg_stat_statements` preloaded
   (`NAZO_TEST_DATABASE_URL`/`DATABASE_URL`), and `NAZO_TEST_VALKEY_URL`/
-  `VALKEY_URL`. `NAZO_PERF_OPS` (default 10000 measured operations per
-  group-run), `NAZO_PERF_RUNS` (default 5), `NAZO_PERF_WARMUP`, and
+  `VALKEY_URL`. `NAZO_PERF_OPS` (default 2000 measured operations per
+  group-run), `NAZO_PERF_RUNS` (default 3), `NAZO_PERF_WARMUP` (default 200), and
   `NAZO_PERF_CONCURRENCIES` (default `1,8,32`) control the matrix. The
   benchmark fails when `pg_stat_statements` cannot be read, when a measured
   group records any error, or when successful operations fall short of the
@@ -221,7 +221,10 @@ Targeted suites with their own entry points:
   production APIs, and per-tenant keysets are seeded through the
   key-management `test-support` harness so every supported access-token
   signing algorithm is exercised; no production logic is reimplemented in
-  the harness.
+  the harness. Refresh and Native SSO workers use independent users so the
+  per-user refresh-family limit does not invalidate another worker's inputs.
+  Native SSO follows each response's new ID token and device secret; it does
+  not keep presenting the initial family after that family has been retired.
 
 Update affected documentation, examples, and index entries when a change
 affects documented behavior, contracts, ownership, configuration, or source
