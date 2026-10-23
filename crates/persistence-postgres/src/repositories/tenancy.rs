@@ -192,9 +192,7 @@ impl TenantDirectoryRepository {
                 Ok(TenantDirectoryInitialization::Inserted)
             })
             .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
             .map_err(|error| {
@@ -523,9 +521,7 @@ impl TenantDirectoryRepository {
                         .map_err(DirectoryMutationError::from)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(RepositoryError::from)
@@ -692,9 +688,7 @@ impl TenantDirectoryRepository {
                     .map_err(DirectoryMutationError::from)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(RepositoryError::from)
@@ -728,9 +722,7 @@ impl TenantDirectoryRepository {
                     .map_err(DirectoryMutationError::from)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(RepositoryError::from)
@@ -757,9 +749,7 @@ impl TenantDirectoryRepository {
                         .map_err(DirectoryMutationError::from)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(RepositoryError::from)

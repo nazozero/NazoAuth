@@ -291,9 +291,7 @@ impl MfaRepository {
             })
             .await
             .map_err(MfaAuditError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
     pub async fn record_invalid_totp_attempt(
@@ -411,9 +409,7 @@ impl MfaRepository {
                     Ok(outcome)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(MfaAuditError::into_repository)

@@ -384,9 +384,7 @@ impl Openid4vciDatasetRepository {
             )
             .await
             .map_err(|_| CredentialStoreError::Unavailable);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -444,9 +442,7 @@ impl Openid4vciDatasetRepository {
                     "openid4vci_credential_dataset_deleted").await?;
                 Ok(true)
             }).await.map_err(|_| CredentialStoreError::Unavailable);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 }

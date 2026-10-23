@@ -214,9 +214,7 @@ impl ControllerRegistryRepository {
                 Ok(stored)
             })
             .await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -269,9 +267,7 @@ impl ControllerRegistryRepository {
                 Ok(stored)
             })
             .await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -331,9 +327,7 @@ impl ControllerRegistryRepository {
                 Ok(stored)
             })
             .await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 }

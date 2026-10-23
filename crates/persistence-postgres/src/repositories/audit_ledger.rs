@@ -270,9 +270,7 @@ impl AuditLedgerRepository {
             })
             .await
             .map_err(map_error);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 

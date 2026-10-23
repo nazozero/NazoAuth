@@ -495,9 +495,7 @@ impl MtlsTrustAnchorRepository {
             })
             .await
             .map_err(TrustMutationError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -560,9 +558,7 @@ impl MtlsTrustAnchorRepository {
             })
             .await
             .map_err(TrustMutationError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 

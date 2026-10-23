@@ -170,9 +170,7 @@ impl Openid4vciRepository {
                 }
                 Ok(())
             }).await;
-            if matches!(result, Ok(()) | Err(OfferCommitError::Store(_))) {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result.map_err(|error| match error {
                 OfferCommitError::Store(error) => error,
                 OfferCommitError::Database => CredentialStoreError::Unavailable,

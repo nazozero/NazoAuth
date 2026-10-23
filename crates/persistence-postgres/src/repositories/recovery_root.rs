@@ -582,9 +582,7 @@ impl RecoveryRootRepository {
                 Ok(written)
             })
             .await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -745,9 +743,7 @@ impl RecoveryRootRepository {
                     })
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
     }

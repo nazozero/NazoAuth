@@ -134,9 +134,7 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
                             )
                             .await
                     };
-                    if result.is_ok() {
-                        guard.return_to_pool();
-                    }
+                    guard.return_to_pool();
                     result.map_err(|_| AuthorizationPortError::Unexpected)
                 },
                 &self.pool.runtime,

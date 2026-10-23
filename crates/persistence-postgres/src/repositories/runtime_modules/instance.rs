@@ -179,9 +179,7 @@ pub(super) async fn compare_and_set_instance(
                 },
             )
             .await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
     .map_err(RuntimeTransactionError::into_repository)

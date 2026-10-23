@@ -171,9 +171,7 @@ impl ScimRepository {
                     Ok(row)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(map_error)?;
@@ -262,9 +260,7 @@ impl ScimRepository {
                     Ok(row)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(map_error)?;
@@ -362,9 +358,7 @@ impl ScimRepository {
                     Ok(row)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(map_error)?;
@@ -431,9 +425,7 @@ impl ScimRepository {
                     Ok(true)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(map_error)

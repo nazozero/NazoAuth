@@ -172,14 +172,24 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
                 .await
                 .unwrap();
         }
-        // Observe physical retirement before any pool checkout can recycle it.
-        wait_backend(&mut observer, pid, false).await;
+        if fault == "raise" {
+            // PostgreSQL rejected COMMIT and completed the rollback. The
+            // operation failed, but the physical connection remains reusable.
+            assert_eq!(pool.status().size, 1);
+        } else {
+            // Observe physical retirement before any checkout can recycle it.
+            wait_backend(&mut observer, pid, false).await;
+        }
         assert_eq!(nonce_count(&mut observer, "b").await, 1);
         if fault != "cancel" {
             assert_eq!(nonce_count(&mut observer, "a").await, 1);
         }
         let replacement = pool_pid(&pool).await;
-        assert_ne!(pid, replacement);
+        if fault == "raise" {
+            assert_eq!(pid, replacement);
+        } else {
+            assert_ne!(pid, replacement);
+        }
         observer
             .batch_execute("UPDATE cleanup_commit_fault SET mode = 'off'")
             .await
@@ -197,7 +207,9 @@ async fn cleanup_counts_wait_for_commit_and_uncertain_connections_are_discarded(
         assert_eq!(nonce_count(&mut observer, "a").await, 0);
         assert_eq!(nonce_count(&mut observer, "b").await, 1);
         assert_eq!(pool_pid(&pool).await, replacement);
-        println!("{fault}: no premature cleanup success, backend retired, recovery committed");
+        println!(
+            "{fault}: no premature cleanup success, connection state checked, recovery committed"
+        );
         drop(maintenance);
         drop(pool);
         drop(observer);

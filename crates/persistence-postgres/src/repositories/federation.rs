@@ -154,9 +154,7 @@ impl FederationRepository {
                     Ok(Some(user))
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(map_error)?
@@ -232,11 +230,7 @@ impl FederationRepository {
             })
             .await;
         // Conflict recovery borrows from this pool again after the transaction has ended.
-        if result.is_ok() {
-            guard.return_to_pool();
-        } else {
-            drop(guard);
-        }
+        guard.return_to_pool();
         match result {
             Ok(row) => row
                 .try_into()

@@ -87,9 +87,7 @@ impl MfaRepository {
                     Ok(true)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(|error| RepositoryError::Unexpected(error.to_string()))

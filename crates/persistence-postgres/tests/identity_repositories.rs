@@ -93,6 +93,63 @@ fn mfa_repository(pool: nazo_postgres::DbPool) -> MfaRepository {
 }
 
 #[tokio::test]
+async fn scim_reuses_connection_after_success_not_found_and_conflict() {
+    #[derive(QueryableByName)]
+    struct BackendPid {
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        pid: i32,
+    }
+    let Some((pool, tenant, _)) = database_fixture_with_pool_size(1).await else {
+        return;
+    };
+    let mut connection = get_conn(&pool).await.unwrap();
+    let original = sql_query("SELECT pg_backend_pid() AS pid")
+        .get_result::<BackendPid>(&mut connection)
+        .await
+        .unwrap()
+        .pid;
+    drop(connection);
+    let repository = ScimRepository::new(pool.clone());
+    let name = format!("reuse-{}", Uuid::now_v7());
+    let input = NormalizedScimUser {
+        user_name: name.clone(),
+        email: format!("{name}@example.test"),
+        active: true,
+        display_name: None,
+        given_name: None,
+        family_name: None,
+    };
+    let new_user = || nazo_identity::ports::NewScimUser {
+        tenant,
+        input: input.clone(),
+        password_hash: nazo_identity::ports::PasswordHashInput::new("test").unwrap(),
+        mutation: Default::default(),
+    };
+    repository.create(new_user()).await.unwrap();
+    assert!(matches!(
+        repository.create(new_user()).await,
+        Err(RepositoryError::Conflict)
+    ));
+    assert!(matches!(
+        repository
+            .replace(tenant, UserId::new(Uuid::now_v7()).unwrap(), input)
+            .await,
+        Err(RepositoryError::NotFound)
+    ));
+    assert_eq!(pool.status().size, 1);
+    let mut connection = get_conn(&pool).await.unwrap();
+    let current = sql_query("SELECT pg_backend_pid() AS pid")
+        .get_result::<BackendPid>(&mut connection)
+        .await
+        .unwrap()
+        .pid;
+    assert_eq!(
+        current, original,
+        "successful rollback must preserve the physical connection"
+    );
+}
+
+#[tokio::test]
 async fn password_login_projection_tracks_current_state_and_tenant() {
     use nazo_identity::ports::{LoginAccountRepositoryPort, LoginAccountState};
     let Some((pool, tenant, user_id)) = database_fixture().await else {

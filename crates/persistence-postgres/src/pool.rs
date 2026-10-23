@@ -2,8 +2,8 @@ use diesel::ConnectionError;
 use diesel_async::{
     AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, SimpleAsyncConnection,
     pooled_connection::{
-        AsyncDieselConnectionManager, ManagerConfig, RecyclingMethod, deadpool::Object,
-        deadpool::Pool,
+        AsyncDieselConnectionManager, ManagerConfig, PoolableConnection, RecyclingMethod,
+        deadpool::Object, deadpool::Pool,
     },
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
@@ -21,6 +21,10 @@ const MIGRATION_ADVISORY_LOCK: i64 = 564196923451771041;
 const MIGRATION_LOCK_TIMEOUT: Duration = Duration::from_secs(25);
 const MIGRATION_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const MIGRATION_STATEMENT_TIMEOUT: &str = "240s";
+
+#[cfg(test)]
+#[path = "../tests/unit/pool.rs"]
+mod tests;
 
 /// Shared connections and their transaction execution use one runtime owner.
 #[derive(Clone)]
@@ -78,7 +82,12 @@ impl DiscardOnDrop {
     }
 
     pub(crate) fn return_to_pool(mut self) {
-        let _ = self.0.take();
+        // A completed transaction can return a business error after a clean
+        // rollback. Reusability belongs to the connection, not that result.
+        // Keep incomplete/broken transactions armed for immediate disposal.
+        if !self.connection().is_broken() {
+            let _ = self.0.take();
+        }
     }
 }
 

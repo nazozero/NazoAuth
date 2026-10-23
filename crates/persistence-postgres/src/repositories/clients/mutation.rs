@@ -145,9 +145,7 @@ impl OAuthClientRepository {
             })
             .await
             .map_err(MetadataUpdateError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -351,9 +349,7 @@ impl OAuthClientRepository {
             })
             .await
             .map_err(MetadataUpdateError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -705,9 +701,7 @@ impl OAuthClientRepository {
         }
         Ok(updated)
         }).await.map_err(MetadataUpdateError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -808,9 +802,7 @@ impl OAuthClientRepository {
             })
             .await
             .map_err(MetadataUpdateError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 }

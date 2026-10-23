@@ -219,9 +219,7 @@ impl TenantDirectoryControlRepository {
                     Ok(outcome)
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(|error| match error {

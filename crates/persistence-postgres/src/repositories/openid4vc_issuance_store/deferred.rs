@@ -94,9 +94,7 @@ impl Openid4vciRepository {
                     Ok(())
                 })
                 .await;
-                if result.is_ok() {
-                    guard.return_to_pool();
-                }
+                guard.return_to_pool();
                 result
             }
                 .map_err(|_| CredentialStoreError::Unavailable)
@@ -196,9 +194,7 @@ impl Openid4vciRepository {
                     Ok(())
                 })
                 .await;
-                if result.is_ok() {
-                    guard.return_to_pool();
-                }
+                guard.return_to_pool();
                 result
             }
                 .map_err(|_| CredentialStoreError::Unavailable)
@@ -345,9 +341,7 @@ impl Openid4vciRepository {
                     },
                 )
                 .await;
-            if result.is_ok() {
-                guarded.return_to_pool();
-            }
+            guarded.return_to_pool();
             result.map_err(map_stored_credential_error)
         })
     }

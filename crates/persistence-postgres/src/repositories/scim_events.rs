@@ -131,9 +131,7 @@ impl EventStorePort for ScimEventRepository {
                         Self::page(connection, receiver, request.max_events).await
                     })
                     .await;
-                if result.is_ok() {
-                    guard.return_to_pool();
-                }
+                guard.return_to_pool();
                 result
             }
             .map_err(|_| EventStoreError::Unavailable)

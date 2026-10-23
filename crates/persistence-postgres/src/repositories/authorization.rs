@@ -86,9 +86,7 @@ impl AuthorizationRepository {
                     Ok(())
                 })
                 .await;
-            if result.is_ok() {
-                guard.return_to_pool();
-            }
+            guard.return_to_pool();
             result
         }
         .map_err(map_error)
