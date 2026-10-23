@@ -133,10 +133,12 @@ impl Openid4vciRepository {
             {
                 return Err(CredentialStoreError::InvalidTransition);
             }
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection.transaction::<(), OfferCommitError, _>(async move |connection| {
+            let mut guard = crate::pool::DiscardOnDrop(Some(
+                get_conn(&self.pool)
+                    .await
+                    .map_err(|_| CredentialStoreError::Unavailable)?,
+            ));
+            let result = guard.connection().transaction::<(), OfferCommitError, _>(async move |connection| {
                 // Follow the revocation lock order: subject, client/grant, offer.
                 let active = sql_query("SELECT id FROM users WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE FOR SHARE")
                     .bind::<sql_types::Uuid, _>(access.tenant_id)
@@ -167,7 +169,11 @@ impl Openid4vciRepository {
                     return Err(CredentialStoreError::InvalidTransition.into());
                 }
                 Ok(())
-            }).await.map_err(|error| match error {
+            }).await;
+            if matches!(result, Ok(()) | Err(OfferCommitError::Store(_))) {
+                guard.return_to_pool();
+            }
+            result.map_err(|error| match error {
                 OfferCommitError::Store(error) => error,
                 OfferCommitError::Database => CredentialStoreError::Unavailable,
             })

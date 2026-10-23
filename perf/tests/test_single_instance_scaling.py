@@ -484,15 +484,15 @@ class WaitHealthyExactTest(unittest.TestCase):
 class PgssIdentityResetTest(unittest.TestCase):
     def row(self, **kw):
         base = {"dbid": 1, "userid": 10, "toplevel": True, "queryid": 7,
-                "calls": 100, "total_exec_time": 500.0, "rows": 10,
+                "stats_since": "epoch-one", "calls": 100, "total_exec_time": 500.0, "rows": 10,
                 "q": "SELECT", "rolname": "nazoauth_perf_runtime"}
         base.update(kw)
         return base
 
     def test_delta_uses_full_identity_not_queryid(self):
-        pre = {"stats_reset": 1.0,
+        pre = {"stats_reset": 1.0, "dealloc": "0",
                "statements": [self.row()]}
-        post = {"stats_reset": 1.0,
+        post = {"stats_reset": 1.0, "dealloc": "0",
                 "statements": [
                     self.row(calls=150, total_exec_time=700.0),
                     # Same queryid, different userid — a distinct identity.
@@ -510,8 +510,8 @@ class PgssIdentityResetTest(unittest.TestCase):
         self.assertIn("reset", d["reason"])
 
     def test_missing_identity_refused(self):
-        pre = {"stats_reset": 1.0, "statements": []}
-        post = {"stats_reset": 1.0,
+        pre = {"stats_reset": 1.0, "dealloc": "0", "statements": []}
+        post = {"stats_reset": 1.0, "dealloc": "0",
                 "statements": [{"queryid": 7, "calls": 3, "q": "SELECT"}]}
         d = sis.pgss_delta(pre, post, 100)
         self.assertFalse(d["valid"])
@@ -520,6 +520,17 @@ class PgssIdentityResetTest(unittest.TestCase):
     def test_missing_reset_refused(self):
         d = sis.pgss_delta({"statements": []}, {"statements": []}, 100)
         self.assertFalse(d["valid"])
+
+
+    def test_entry_reset_eviction_and_negative_counters_invalidate_delta(self):
+        pre = {"stats_reset": 1, "dealloc": "0", "statements": [self.row()]}
+        for row, dealloc in [(self.row(stats_since="epoch-two", calls=150), "0"),
+                             (self.row(calls=150), "1"),
+                             (self.row(calls=99), "0"),
+                             (self.row(rows=9), "0")]:
+            post = {"stats_reset": 1, "dealloc": dealloc, "statements": [row]}
+            self.assertFalse(sis.pgss_delta(pre, post, 100)["valid"])
+        self.assertFalse(sis.pgss_delta(pre, {"stats_reset": 1, "dealloc": "0", "statements": []}, 100)["valid"])
 
 
 class WindowConsistencyTest(unittest.TestCase):

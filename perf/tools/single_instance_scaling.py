@@ -1350,14 +1350,12 @@ def pgss_delta(pre: dict, post: dict, http_reqs: int) -> dict:
                 int(s.get("calls", 0))
                 for s in post.get("statements", [])),
         }
-    rows_by_id = {}
     identity_complete = True
-    for s in post.get("statements", []):
+    for s in pre.get("statements", []) + post.get("statements", []):
         if None in (s.get("dbid"), s.get("userid"), s.get("toplevel"),
                     s.get("queryid")):
             identity_complete = False
             break
-        rows_by_id[pgss_identity(s)] = s
     if not identity_complete:
         return {
             "valid": False,
@@ -1365,9 +1363,21 @@ def pgss_delta(pre: dict, post: dict, http_reqs: int) -> dict:
             "pre_reset": pre_reset, "post_reset": post_reset,
         }
     before = {pgss_identity(s): s for s in pre.get("statements", [])}
+    rows_by_id = {pgss_identity(s): s for s in post.get("statements", [])}
+    if (pre.get("dealloc") is None or post.get("dealloc") is None
+            or pre["dealloc"] != post["dealloc"]):
+        return {"valid": False, "reason": "statement dealloc changed or missing"}
+    if before.keys() - rows_by_id.keys():
+        return {"valid": False, "reason": "statement disappeared between snapshots"}
     rows = []
     for s in post.get("statements", []):
         b = before.get(pgss_identity(s), {})
+        if (not s.get("stats_since")
+                or (b and b.get("stats_since") != s["stats_since"])):
+            return {"valid": False, "reason": "statement stats_since changed or missing"}
+        if any(float(s.get(key, 0)) < float(b.get(key, 0))
+               for key in ("calls", "total_exec_time", "rows")):
+            return {"valid": False, "reason": "statement counter regressed"}
         calls = int(s.get("calls", 0)) - int(b.get("calls", 0))
         if calls <= 0:
             continue
@@ -1825,6 +1835,7 @@ def extract_point_metrics(combined: dict) -> dict:
         "http_rps": k6.get("rps"),
         # whole-run population — diagnostics only, never a capRun gate
         "full_run_iterations_completed": k6.get("iterations_completed"),
+        "full_run_success": (k6.get("full_run") or {}).get("success"),
         "full_run_dropped_iterations": k6.get("dropped_iterations"),
         "full_run_drop_fraction": k6.get("drop_fraction"),
         "iterations_completed": k6.get("iterations_completed"),

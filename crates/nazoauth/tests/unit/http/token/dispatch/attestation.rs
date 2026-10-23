@@ -286,3 +286,101 @@ async fn signed_attestation_slow_node_cannot_reinsert_after_real_owner_expiry() 
             .is_none()
     );
 }
+
+struct UnavailableTrustPolicy;
+impl nazo_persistence::Openid4vcTrustPolicyStore for UnavailableTrustPolicy {
+    fn for_client<'a>(
+        &'a self,
+        _: Uuid,
+        _: &'a str,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<nazo_persistence::ClientTrustPolicy, nazo_identity::ports::RepositoryError>,
+    > {
+        Box::pin(async { Err(nazo_identity::ports::RepositoryError::Unavailable) })
+    }
+    fn active_for_origin<'a>(
+        &'a self,
+        _: Uuid,
+        _: &'a str,
+        _: &'a str,
+        _: &'a str,
+    ) -> futures_util::future::BoxFuture<
+        'a,
+        Result<
+            Option<nazo_persistence::Openid4vcTrustPolicyRecord>,
+            nazo_identity::ports::RepositoryError,
+        >,
+    > {
+        unreachable!("client attestation does not query wallet origins")
+    }
+}
+
+#[actix_web::test]
+async fn trust_policy_outage_returns_service_unavailable_in_token_and_par() {
+    let state = live_token_state(AuthorizationServerProfile::Oauth2Baseline)
+        .await
+        .expect("isolated PostgreSQL and Valkey required");
+    let client_id = format!("trust-outage-{}", Uuid::now_v7());
+    insert_token_client(
+        &state,
+        &client_id,
+        "confidential",
+        "attest_jwt_client_auth",
+        None,
+        vec!["authorization_code", "client_credentials"],
+        false,
+        false,
+        true,
+    )
+    .await;
+    let (_, attestation, proof, _) = signed_attestation(&client_id);
+    let validator = Arc::new(
+        Openid4vcClientAttestationValidator::with_trust_policies(
+            None,
+            Arc::new(UnavailableTrustPolicy),
+            DEFAULT_TENANT_ID,
+        )
+        .unwrap(),
+    );
+    let replay: Arc<dyn AuthorizationStateStorePort> = Arc::new(
+        nazo_valkey::AuthorizationStateAdapter::new(&state.valkey_connection()),
+    );
+    let request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header(("content-type", "application/x-www-form-urlencoded"))
+        .insert_header(("OAuth-Client-Attestation", attestation.as_str()))
+        .insert_header(("OAuth-Client-Attestation-PoP", proof.as_str()))
+        .to_http_request();
+    let token = token_with_port_repositories_and_state(
+        state.clone(),
+        Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
+        Arc::new(nazo_postgres::AuthorizationFlowRepository::new(
+            state.diesel_db.clone(),
+            DEFAULT_TENANT_ID,
+        )),
+        replay.clone(),
+        Arc::new(
+            crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                .unwrap(),
+        ),
+        Openid4vcTokenHandles {
+            credential_issuer: None,
+            client_attestation: Some(validator.clone()),
+        },
+        request,
+        Bytes::from(format!(
+            "grant_type=client_credentials&client_id={client_id}&scope=accounts"
+        )),
+    )
+    .await;
+    let par = par_with_state(&state, replay, &client_id, &validator, &attestation, &proof).await;
+    for response in [token, par] {
+        let (status, body) = token_json_body(response).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["error"], "server_error");
+        assert!(body.get("access_token").is_none() && body.get("request_uri").is_none());
+    }
+}

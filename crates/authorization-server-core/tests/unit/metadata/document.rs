@@ -384,11 +384,11 @@ fn ciba_metadata_is_complete_and_profile_scoped() {
     );
     assert_eq!(
         hardened["token_endpoint_auth_methods_supported"],
-        json!(["private_key_jwt"])
+        baseline["token_endpoint_auth_methods_supported"]
     );
     assert_eq!(
         hardened["token_endpoint_auth_signing_alg_values_supported"],
-        json!(["EdDSA", "ES256", "PS256"])
+        baseline["token_endpoint_auth_signing_alg_values_supported"]
     );
 }
 

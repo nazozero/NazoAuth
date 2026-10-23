@@ -46,3 +46,17 @@ fn duplicate_detection_is_limited_to_named_parameters() {
         &["client_id", "redirect_uri"]
     ));
 }
+
+#[test]
+fn scope_tokens_use_the_rfc6749_ascii_alphabet() {
+    for byte in 0u8..=127 {
+        let token = char::from(byte).to_string();
+        assert_eq!(
+            is_valid_scope_token(&token),
+            byte > 32 && byte < 127 && byte != b'"' && byte != b'\\'
+        );
+    }
+    assert!(!is_valid_scope_token("é"));
+    assert!(!is_valid_scope_token(""));
+    assert_eq!(parse_scope("read\twrite"), ["read\twrite"]);
+}

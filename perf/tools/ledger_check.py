@@ -277,7 +277,10 @@ def check_sampler(path, run_id):
                 for k in ("pg_err", "vk_err", "app_err"):
                     if rec.get(k):
                         failures.append(f"sampler row {k}: {rec[k][:100]}")
-                for k in ("pg", "pg_db", "vk", "pool"):
+                required = ["pg", "pg_db", "vk"]
+                if not meta or meta.get("collection_contract") != "blackbox-db-v1":
+                    required.append("pool")
+                for k in required:
                     if k not in rec:
                         failures.append(f"sampler row missing {k}")
     except OSError as e:

@@ -439,7 +439,10 @@ pub async fn issue_token_response(
     if let Some(issued_token_type) = issue.issued_token_type.as_deref() {
         body["issued_token_type"] = json!(issued_token_type);
     }
-    let mut refresh_token_family_id = None;
+    let mut refresh_token_family_id = issue
+        .refresh_authority
+        .as_ref()
+        .map(|source| source.family_id);
     let mut issued_id_token_sid = None;
     if issue_includes_openid {
         let id_token_claim_scopes = issue

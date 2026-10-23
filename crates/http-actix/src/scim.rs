@@ -229,7 +229,7 @@ fn discovery_response(cache: &OnceLock<Bytes>, document: impl FnOnce() -> Value)
         )
     });
     HttpResponse::Ok()
-        .content_type("application/json")
+        .content_type("application/scim+json")
         .body(body.clone())
 }
 
@@ -292,9 +292,10 @@ async fn list_users(
     let total = page.total;
     let mut users = page.users;
     match pagination {
-        ScimPagination::Index { start_index, .. } => {
-            json_response(scim_index_list_document(total, start_index, &users))
-        }
+        ScimPagination::Index { start_index, .. } => scim_json_response(
+            StatusCode::OK,
+            scim_index_list_document(total, start_index, &users),
+        ),
         ScimPagination::Cursor { count, .. } => {
             let has_more = users.len() > count as usize;
             if has_more {
@@ -320,11 +321,10 @@ async fn list_users(
             } else {
                 None
             };
-            json_response(scim_cursor_list_document(
-                total,
-                &users,
-                next_cursor.as_deref(),
-            ))
+            scim_json_response(
+                StatusCode::OK,
+                scim_cursor_list_document(total, &users, next_cursor.as_deref()),
+            )
         }
     }
 }
@@ -361,7 +361,7 @@ pub async fn scim_create_user(
         )
         .await
     {
-        Ok(user) => json_response_status(StatusCode::CREATED, scim_user_document(&user)),
+        Ok(user) => scim_json_response(StatusCode::CREATED, scim_user_document(&user)),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
         Err(_) => backend_unavailable(),
     }
@@ -380,7 +380,7 @@ pub async fn scim_get_user(
         return user_not_found();
     };
     match endpoint.service.user(credential.tenant, user_id).await {
-        Ok(Some(user)) => json_response(scim_user_document(&user)),
+        Ok(Some(user)) => scim_json_response(StatusCode::OK, scim_user_document(&user)),
         Ok(None) => user_not_found(),
         Err(_) => backend_unavailable(),
     }
@@ -418,7 +418,7 @@ pub async fn scim_replace_user(
         )
         .await
     {
-        Ok(user) => json_response(scim_user_document(&user)),
+        Ok(user) => scim_json_response(StatusCode::OK, scim_user_document(&user)),
         Err(RepositoryError::NotFound) => user_not_found(),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
         Err(_) => backend_unavailable(),
@@ -457,7 +457,7 @@ pub async fn scim_patch_user(
         )
         .await
     {
-        Ok(user) => json_response(scim_user_document(&user)),
+        Ok(user) => scim_json_response(StatusCode::OK, scim_user_document(&user)),
         Err(RepositoryError::NotFound) => user_not_found(),
         Err(RepositoryError::Conflict) => uniqueness_conflict(),
         Err(_) => backend_unavailable(),
@@ -671,8 +671,17 @@ fn core_error(status: StatusCode, error: &nazo_identity::scim::ScimError) -> Htt
 }
 
 fn scim_error(status: StatusCode, scim_type: &str, detail: &str) -> HttpResponse {
-    json_response_status(
+    scim_json_response(
         status,
         scim_error_document(status.as_u16(), scim_type, detail),
     )
+}
+
+fn scim_json_response(status: StatusCode, document: Value) -> HttpResponse {
+    let mut response = json_response_status(status, document);
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        header::HeaderValue::from_static("application/scim+json"),
+    );
+    response
 }

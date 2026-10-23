@@ -179,15 +179,15 @@ fn userinfo_dpop_error_response(error: UserinfoDpopError) -> HttpResponse {
         UserinfoDpopError::BindingMismatch => "DPoP binding mismatch.",
         UserinfoDpopError::TokenNotBound => "Token is not DPoP-bound.",
         UserinfoDpopError::UseNonce(_) => "Authorization server requires nonce in DPoP proof.",
-        UserinfoDpopError::NonceStoreUnavailable => "DPoP nonce validation is unavailable.",
+        UserinfoDpopError::StateStoreUnavailable => "DPoP nonce validation is unavailable.",
     };
     let status = match &error {
-        UserinfoDpopError::NonceStoreUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        UserinfoDpopError::StateStoreUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::UNAUTHORIZED,
     };
     let (error_code, challenge) = match &error {
         UserinfoDpopError::UseNonce(_) => ("use_dpop_nonce", "DPoP error=\"use_dpop_nonce\""),
-        UserinfoDpopError::NonceStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
+        UserinfoDpopError::StateStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
         UserinfoDpopError::BindingMismatch | UserinfoDpopError::TokenNotBound => {
             ("invalid_token", "DPoP error=\"invalid_token\"")
         }

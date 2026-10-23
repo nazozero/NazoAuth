@@ -451,6 +451,8 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
         },
         # Explicit full-run alias block: same numbers, unambiguous names.
         "full_run": {
+            "success": (int(metric_values(summary, "cap_total_success").get("count", 0))
+                        if "cap_total_success" in metrics else None),
             "iterations_completed": started_count,
             "dropped_iterations": dropped_count,
             "drop_fraction": full_run_drop,
@@ -1125,6 +1127,10 @@ def ensure_vector_capacity() -> None:
 
 
 def ensure_user_capacity() -> None:
+    # Explicit account cardinality is part of the workload recipe. k6 maps
+    # VUs to that population; changing concurrency must not change the seed.
+    if "PERF_USER_COUNT" in os.environ:
+        return
     vus = int(os.environ.get("PERF_VUS", "8"))
     flow_vus = int(os.environ.get("PERF_FLOW_VUS") or vus)
     max_vus = int(os.environ.get("PERF_MAX_VUS") or flow_vus)

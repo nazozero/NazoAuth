@@ -40,7 +40,7 @@ fn pre_authorized_dpop_error(error: nazo_auth::DpopError) -> OAuthEndpointError 
                 dpop_nonce: Some(nonce),
             }
         }
-        nazo_auth::DpopError::NonceStoreUnavailable => {
+        nazo_auth::DpopError::StateStoreUnavailable => {
             nazo_openid4vci::application::CredentialHttpError {
                 status: 503,
                 error: "server_error",

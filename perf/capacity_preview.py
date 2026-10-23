@@ -229,6 +229,10 @@ def latest_scenario_summary(key: str) -> str:
     )
 
 
+def sanitize_log(text: str) -> str:
+    return re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text).replace('\r', '\n')
+
+
 def scenario_log_fallback(key: str, lines: int = 50) -> str:
     summary = latest_scenario_summary(key)
     if summary:

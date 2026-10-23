@@ -161,7 +161,7 @@ async fn establish_configured_connection(
         let (client, connection) = config
             .connect(tokio_postgres::NoTls)
             .await
-            .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
+            .map_err(connection_setup_error)?;
         return AsyncPgConnection::try_from_client_and_connection(client, connection).await;
     }
 
@@ -184,11 +184,42 @@ async fn establish_configured_connection(
             tokio_postgres_rustls::MakeRustlsConnect::with_webpki_roots()
         }
     };
-    let (client, connection) = config
-        .connect(tls)
-        .await
-        .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
+    let (client, connection) = config.connect(tls).await.map_err(connection_setup_error)?;
     AsyncPgConnection::try_from_client_and_connection(client, connection).await
+}
+
+fn connection_setup_error(error: tokio_postgres::Error) -> ConnectionError {
+    use std::error::Error as _;
+    use std::io::ErrorKind;
+
+    let mut transport_unavailable = error.is_closed();
+    let mut cause = error.source();
+    while let Some(source) = cause {
+        if source.downcast_ref::<std::io::Error>().is_some_and(|io| {
+            matches!(
+                io.kind(),
+                ErrorKind::ConnectionRefused
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::NotConnected
+                    | ErrorKind::BrokenPipe
+                    | ErrorKind::TimedOut
+                    | ErrorKind::UnexpectedEof
+            )
+        }) {
+            transport_unavailable = true;
+            break;
+        }
+        cause = source.source();
+    }
+    if transport_unavailable {
+        ConnectionError::CouldntSetupConfiguration(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::ClosedConnection,
+            Box::new(error.to_string()),
+        ))
+    } else {
+        ConnectionError::BadConnection(error.to_string())
+    }
 }
 
 pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {

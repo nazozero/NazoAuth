@@ -1,6 +1,9 @@
 {{- if ne (int .Values.replicaCount) 1 }}
 {{- fail "this Deployment supports one persistent instance; HA requires separately owned instance identities and storage" }}
 {{- end }}
+{{- if ne .Values.transportMode "trusted-proxy" }}
+{{- fail "this chart requires transportMode=trusted-proxy; direct TLS needs a deployment with TLS-aware probes" }}
+{{- end }}
 {{- if not .Values.persistence.enabled }}
 {{- fail "persistence.enabled is required for instance identity and generated secrets" }}
 {{- end }}

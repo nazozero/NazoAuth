@@ -54,7 +54,7 @@ pub enum DpopError {
     BindingMismatch,
     TokenNotBound,
     UseNonce(String),
-    NonceStoreUnavailable,
+    StateStoreUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -238,7 +238,7 @@ where
             jti_hash: blake3::hash(verified.jti.as_bytes()).to_hex().to_string(),
             key_id: verified.key_id,
         })),
-        Err(DpopStateStoreError) => Err(DpopError::InvalidProof),
+        Err(DpopStateStoreError) => Err(DpopError::StateStoreUnavailable),
     }
 }
 
@@ -269,7 +269,7 @@ where
     store
         .issue_nonce(&nonce, DPOP_NONCE_TTL_SECONDS)
         .await
-        .map_err(|DpopStateStoreError| DpopError::NonceStoreUnavailable)?;
+        .map_err(|DpopStateStoreError| DpopError::StateStoreUnavailable)?;
     Ok(nonce)
 }
 
@@ -298,7 +298,7 @@ where
         Ok(false) => Err(DpopError::UseNonce(
             issue_authorization_server_dpop_nonce(store).await?,
         )),
-        Err(DpopStateStoreError) => Err(DpopError::NonceStoreUnavailable),
+        Err(DpopStateStoreError) => Err(DpopError::StateStoreUnavailable),
     }
 }
 

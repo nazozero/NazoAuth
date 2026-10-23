@@ -494,6 +494,9 @@ pub(super) fn accept(
     }
     let directory = control_journal_directory(state_directory);
     fs::create_dir_all(&directory).map_err(transport)?;
+    // The journal's own fsync cannot persist its new entry in the state directory.
+    // Sync on re-entry too: a prior process may have stopped just after mkdir.
+    sync_directory(state_directory).map_err(transport)?;
     let path = record_path(&directory, &operation.operation_id);
 
     let record = OperationJournalRecord {

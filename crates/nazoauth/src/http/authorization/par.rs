@@ -193,7 +193,7 @@ fn par_error_log_fields(
         OAuthEndpointError::Json(fields) => Some((fields.status.as_u16(), fields.error.clone())),
         OAuthEndpointError::Dpop { error, .. } => {
             let (status, code) = match error {
-                nazo_auth::DpopError::NonceStoreUnavailable => (503, "server_error"),
+                nazo_auth::DpopError::StateStoreUnavailable => (503, "server_error"),
                 nazo_auth::DpopError::UseNonce(_) => (400, "use_dpop_nonce"),
                 _ => (400, "invalid_dpop_proof"),
             };

@@ -1,5 +1,25 @@
 use super::*;
 
+#[tokio::test]
+async fn refused_connection_is_unavailable_but_invalid_configuration_is_not() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let pool = crate::create_pool(
+        format!(
+            "postgres://fixture:fixture@127.0.0.1:{port}/fixture?sslmode=disable&connect_timeout=1"
+        ),
+        1,
+    )
+    .unwrap();
+    let error = crate::get_conn(&pool)
+        .await
+        .err()
+        .expect("connection is refused");
+    assert!(signing_checkout(error).is::<nazo_key_management::SigningKeyRepositoryUnavailable>());
+    assert!(crate::create_pool("postgres://[invalid", 1).is_err());
+}
+
 #[test]
 fn only_typed_query_and_pool_failures_are_unavailable() {
     use diesel::ConnectionError;

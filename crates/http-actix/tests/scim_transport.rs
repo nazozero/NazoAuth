@@ -362,7 +362,7 @@ async fn authorization_errors_preserve_scim_documents_and_bearer_challenge() {
     );
     assert_eq!(
         response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/json"
+        "application/scim+json"
     );
     let document = actix_test::read_body_json::<Value, _>(response).await;
     assert_eq!(document["status"], "401");
@@ -391,7 +391,7 @@ async fn provider_config_handler_preserves_http_contract() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/json"
+        "application/scim+json"
     );
     let document = actix_test::read_body_json::<Value, _>(response).await;
     assert_eq!(document["id"], "nazo-oauth-scim");
@@ -550,6 +550,7 @@ async fn discovery_cached_bodies_keep_per_request_authority_and_current_variants
                 &app,
                 actix_test::TestRequest::get()
                     .uri(uri)
+                    .insert_header((header::ACCEPT, "application/scim+json"))
                     .insert_header((header::AUTHORIZATION, "Bearer discovery-token"))
                     .to_request(),
             )
@@ -557,7 +558,7 @@ async fn discovery_cached_bodies_keep_per_request_authority_and_current_variants
             assert_eq!(response.status(), StatusCode::OK);
             assert_eq!(
                 response.headers().get(header::CONTENT_TYPE).unwrap(),
-                "application/json"
+                "application/scim+json"
             );
             let body = actix_test::read_body(response).await;
             let expected = match uri {

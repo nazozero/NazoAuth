@@ -31,6 +31,14 @@ key custody and rotation, clock synchronization, Valkey durability and
 availability for atomic replay consumption, log redaction, incident handling,
 and signed-evidence retention. Key lookup is bound to the access token's tenant
 and `client_id`; request `keyid` never selects another client's key.
+This resource-signature path reads the client's registered `jwks`. It does not
+fetch or refresh `jwks_uri`; operators must update the registered keys before
+clients switch signing keys.
+
+Replay identity is the signed content, key ID and creation time. Clients making
+otherwise identical requests within the same second must include a unique
+`x-request-id` in each request and in the signed covered headers. An unsigned
+request ID does not distinguish requests for replay detection.
 
 ## Cryptographic and protocol limits
 

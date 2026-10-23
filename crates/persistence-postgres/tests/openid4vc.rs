@@ -3384,6 +3384,144 @@ struct ClientActiveRow {
     is_active: bool,
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn user_disable_waits_for_subject_before_touching_credential_offers() {
+    let database_url = database_url().expect("isolated PostgreSQL is required");
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 2).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "disable-lock-order").await;
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x75; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let mut access =
+        openid4vc_access_fixture(tenant_id, subject_id, "wallet", Duration::minutes(10));
+    access.credential_identifiers.clear();
+    let _prepared = pre_authorized::prepared_offer(&issuer, &access).await;
+    let gate_name = format!("subject-gate-{}", Uuid::now_v7().simple());
+    let disable_name = format!("disable-{}", Uuid::now_v7().simple());
+    let mut gate =
+        AsyncPgConnection::establish(&tagged_openid4vc_database_url(&database_url, &gate_name))
+            .await
+            .unwrap();
+    gate.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT id FROM users WHERE id = $1 FOR SHARE")
+        .bind::<SqlUuid, _>(subject_id)
+        .execute(&mut gate)
+        .await
+        .unwrap();
+    let disable_url = tagged_openid4vc_database_url(&database_url, &disable_name);
+    let mut disable = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&disable_url).await.unwrap();
+        connection
+            .transaction::<bool, diesel::result::Error, _>(async |connection| {
+                nazo_postgres::disable_user_on_connection(
+                    connection,
+                    nazo_identity::TenantId::new(tenant_id).unwrap(),
+                    nazo_identity::UserId::new(subject_id).unwrap(),
+                )
+                .await
+            })
+            .await
+    });
+    let mut observer = get_conn(&pool).await.unwrap();
+    wait_for_openid4vc_blocked_by_or_task(&mut observer, &disable_name, &gate_name, &mut disable)
+        .await;
+    sql_query("SELECT id FROM openid4vci_offers WHERE subject_id = $1 FOR UPDATE NOWAIT")
+        .bind::<SqlUuid, _>(subject_id)
+        .execute(&mut gate)
+        .await
+        .expect("disable must not hold the offer while waiting for the subject");
+    gate.batch_execute("COMMIT").await.unwrap();
+    assert!(disable.await.unwrap().unwrap());
+    let remaining = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE subject_id = $1 AND consumed_at IS NULL")
+        .bind::<SqlUuid, _>(subject_id).get_result::<CountRow>(&mut observer).await.unwrap();
+    assert_eq!(remaining.count, 0);
+    drop(observer);
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelled_offer_commit_releases_subject_without_reusing_owner_pool() {
+    let database_url = database_url().expect("isolated PostgreSQL is required");
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let observer_pool = create_pool(&database_url, 2).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&observer_pool, tenant_id, "offer-cancel").await;
+    let owner_name = format!("offer-owner-{}", Uuid::now_v7().simple());
+    let pool = create_pool(tagged_openid4vc_database_url(&database_url, &owner_name), 1).unwrap();
+    let mut setup = get_conn(&pool).await.unwrap();
+    // Qualify physical disposal while the backend is blocked inside the fixture.
+    setup
+        .batch_execute("SET client_connection_check_interval = '100ms'")
+        .await
+        .unwrap();
+    drop(setup);
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x76; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let mut access =
+        openid4vc_access_fixture(tenant_id, subject_id, "wallet", Duration::minutes(10));
+    access.credential_identifiers.clear();
+    access.proof_origin = nazo_openid4vci::CredentialProofOrigin::AnonymousPreAuthorized;
+    let prepared = pre_authorized::prepared_offer(&issuer, &access).await;
+    let hash = Uuid::now_v7().to_string();
+    let gate_name = format!("offer-gate-{}", Uuid::now_v7().simple());
+    let mut gate =
+        AsyncPgConnection::establish(&tagged_openid4vc_database_url(&database_url, &gate_name))
+            .await
+            .unwrap();
+    gate.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT id FROM openid4vci_offers WHERE subject_id = $1 FOR UPDATE")
+        .bind::<SqlUuid, _>(subject_id)
+        .execute(&mut gate)
+        .await
+        .unwrap();
+    let mut commit = tokio::spawn(async move {
+        issuer
+            .persist_pre_authorized_access(&prepared, &hash, &access, None)
+            .await
+    });
+    let mut observer = get_conn(&observer_pool).await.unwrap();
+    wait_for_openid4vc_blocked_by_or_task(&mut observer, &owner_name, &gate_name, &mut commit)
+        .await;
+    commit.abort();
+    assert!(commit.await.unwrap_err().is_cancelled());
+    observer
+        .batch_execute("SET lock_timeout = '3s'")
+        .await
+        .unwrap();
+    sql_query("SELECT id FROM users WHERE id = $1 FOR UPDATE")
+        .bind::<SqlUuid, _>(subject_id)
+        .execute(&mut observer)
+        .await
+        .expect("cancelled transaction must release its user lock without another checkout");
+    assert_eq!(
+        pool.status().size,
+        0,
+        "the cancelled physical connection was retired"
+    );
+    let grants = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE subject_id = $1",
+    )
+    .bind::<SqlUuid, _>(subject_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(grants.count, 0);
+    gate.batch_execute("ROLLBACK").await.unwrap();
+    drop(observer);
+    delete_openid4vc_subject_and_client(&observer_pool, subject_id, None).await;
+}
+
 #[derive(QueryableByName)]
 struct TextValueRow {
     #[diesel(sql_type = Text)]

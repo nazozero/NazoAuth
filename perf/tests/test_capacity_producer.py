@@ -116,6 +116,8 @@ class ProducerConsumerContractTest(unittest.TestCase):
                                  {expected: 1})
                 named = [p for p in points if p['metric'] == f'cap_measure_{expected}']
                 self.assertEqual(sum(p['data']['value'] for p in named), 1)
+                total_success = [p for p in points if p['metric'] == 'cap_total_success']
+                self.assertEqual(sum(p['data']['value'] for p in total_success), int(expected == 'success'))
                 bins = series.finalize_bins()
                 flattened = [ca.bin_record(b) for b in bins.values()]
                 self.assertEqual(sum(b[expected] for b in flattened), 1)

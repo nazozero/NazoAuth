@@ -117,13 +117,14 @@ pub fn parse_response_for_verification(
     if signature_input.len() != 1 || signatures.len() != 1 {
         return Err(VerifyError::AmbiguousSignature);
     }
-    let input_entry = signature_input
-        .get(SIGNATURE_NAME)
+    let (label, input_entry) = signature_input
+        .iter()
+        .next()
         .ok_or(VerifyError::MissingSignature)?;
     let signature_entry = signatures
         .into_iter()
         .next()
-        .filter(|(name, _)| name.as_str() == SIGNATURE_NAME)
+        .filter(|(name, _)| name == label)
         .map(|(_, entry)| entry)
         .ok_or(VerifyError::MissingSignature)?;
     let params = match input_entry {
@@ -155,7 +156,7 @@ pub fn parse_response_for_verification(
         .serialize()
         .ok_or(VerifyError::MalformedSignature)?;
     let signature_params = serialized
-        .strip_prefix(SIGNATURE_NAME)
+        .strip_prefix(label.as_str())
         .and_then(|value| value.strip_prefix('='))
         .ok_or(VerifyError::MalformedSignature)?;
     let base = signature_base(&expected_components, signature_params);
@@ -185,12 +186,7 @@ fn response_components(
     let target_uri = canonical_target_uri(original.input.target_uri)?;
 
     let supplied_response_digest = unique_header(response.headers, "content-digest")?;
-    let response_digest = if response.body.is_empty() {
-        if supplied_response_digest.is_some() {
-            return Err(invalid(
-                "Content-Digest is not allowed for an empty response body",
-            ));
-        }
+    let response_digest = if response.body.is_empty() && supplied_response_digest.is_none() {
         None
     } else {
         let supplied = supplied_response_digest
@@ -444,11 +440,8 @@ fn validate_original_digest(
     let supplied = unique_header(original.input.headers, "content-digest")?;
     match (original.input.body.is_empty(), supplied) {
         (true, None) => Ok(()),
-        (true, Some(_)) => Err(invalid(
-            "request Content-Digest is invalid for an empty body",
-        )),
         (false, None) => Err(invalid("request Content-Digest is missing")),
-        (false, Some(value)) => digest_matches(value, original.input.body, evidence)
+        (_, Some(value)) => digest_matches(value, original.input.body, evidence)
             .then_some(())
             .ok_or_else(|| invalid("request Content-Digest does not match its body")),
     }
@@ -458,8 +451,8 @@ fn validate_body_digest(headers: &[(&str, &str)], body: &[u8]) -> Result<(), Ver
     let supplied = unique_header_verify(headers, "content-digest")?;
     match (body.is_empty(), supplied) {
         (true, None) => Ok(()),
-        (true, Some(_)) | (false, None) => Err(VerifyError::DigestMismatch),
-        (false, Some(value)) => validate_digest_value(value, body),
+        (false, None) => Err(VerifyError::DigestMismatch),
+        (_, Some(value)) => validate_digest_value(value, body),
     }
 }
 

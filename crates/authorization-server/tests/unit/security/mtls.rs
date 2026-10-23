@@ -186,7 +186,7 @@ fn certificate_der_identity_extracts_san_values_and_escapes_subject_dn() {
 
     assert_eq!(
         parsed.subject_dn.as_deref(),
-        Some(r"CN=client\, one,O=Example \+ Org")
+        Some(r"O=Example \+ Org,CN=client\, one")
     );
     assert_eq!(parsed.certificate_chain_der[0].as_ptr(), der_storage);
     assert_eq!(
@@ -208,7 +208,7 @@ fn certificate_der_identity_extracts_full_subject_dn_names() {
 
     assert_eq!(
         parsed.subject_dn.as_deref(),
-        Some("C=US,ST=CA,L=San Francisco,OU=Security,emailAddress=client@example.com")
+        Some("EMAIL=client@example.com,OU=Security,L=San Francisco,ST=CA,C=US")
     );
 }
 

@@ -298,6 +298,14 @@ impl TokenEndpointHandles {
                 .await
             {
                 Ok(validated) => validated,
+                Err(error) if error.is::<crate::domain::openid4vc::client_attestation::ClientAttestationTrustUnavailable>() => {
+                    return Err(OAuthEndpointError::token(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "Client attestation trust policy is unavailable.",
+                        false,
+                    ));
+                }
                 _ => {
                     return Err(OAuthEndpointError::token(
                         StatusCode::UNAUTHORIZED,

@@ -212,6 +212,9 @@ fn requested_claims(
     };
     let claims: Value =
         serde_json::from_str(raw).map_err(|_| AuthorizationPolicyError::InvalidRequest)?;
+    let claims = claims
+        .as_object()
+        .ok_or(AuthorizationPolicyError::InvalidRequest)?;
     let userinfo = requested_claim_requests(claims.get("userinfo"))?;
     let id_token = requested_claim_requests(claims.get("id_token"))?;
     let acr = requested_acr_claim(claims.get("id_token"))?;

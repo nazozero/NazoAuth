@@ -31,7 +31,7 @@ pub enum UserinfoDpopError {
     BindingMismatch,
     TokenNotBound,
     UseNonce(String),
-    NonceStoreUnavailable,
+    StateStoreUnavailable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

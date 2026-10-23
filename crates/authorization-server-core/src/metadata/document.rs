@@ -92,12 +92,6 @@ pub enum CibaMetadataProfile {
     Fapi2Ciba,
 }
 
-impl CibaMetadataProfile {
-    const fn requires_fapi2_hardening(self) -> bool {
-        matches!(self, Self::Fapi2Ciba)
-    }
-}
-
 /// Signing algorithms made available by the current key snapshot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MetadataSigningAlgorithms<'a> {
@@ -159,7 +153,6 @@ pub fn authorization_server_metadata(
     }
     let token_auth_methods = token_endpoint_auth_methods_supported(
         input.profile,
-        input.ciba_profile,
         input.mtls_enabled,
         capabilities.openid4vci_issuer,
     );
@@ -173,8 +166,7 @@ pub fn authorization_server_metadata(
         .copied()
         .filter(|method| *method != "none")
         .collect();
-    let token_auth_signing_algs =
-        token_endpoint_auth_signing_alg_values_supported(input.profile, input.ciba_profile);
+    let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(input.profile);
     let request_object_signing_algs =
         request_object_signing_alg_values_supported(input.profile, active_signing_algs);
     let mut response_modes = response_modes_supported(input.profile);
@@ -372,11 +364,10 @@ fn subject_types_supported(input: AuthorizationServerMetadataInput<'_>) -> &'sta
 
 fn token_endpoint_auth_methods_supported(
     profile: MetadataAuthorizationServerProfile,
-    ciba_profile: CibaMetadataProfile,
     mtls_enabled: bool,
     client_attestation_enabled: bool,
 ) -> Vec<&'static str> {
-    let methods = if profile.requires_fapi2_security() || ciba_profile.requires_fapi2_hardening() {
+    let methods = if profile.requires_fapi2_security() {
         FAPI2_CLIENT_AUTH_METHODS.as_slice()
     } else {
         CLIENT_AUTH_METHODS.as_slice()
@@ -393,9 +384,8 @@ fn token_endpoint_auth_methods_supported(
 
 fn token_endpoint_auth_signing_alg_values_supported(
     profile: MetadataAuthorizationServerProfile,
-    ciba_profile: CibaMetadataProfile,
 ) -> &'static [&'static str] {
-    if profile.requires_fapi2_security() || ciba_profile.requires_fapi2_hardening() {
+    if profile.requires_fapi2_security() {
         return crate::FAPI2_JWT_SIGNING_ALGS;
     }
     SUPPORTED_CLIENT_JWT_SIGNING_ALGS

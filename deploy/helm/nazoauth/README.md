@@ -48,10 +48,11 @@ lifecycle and probe requirements.
 
 ## TLS and external signing
 
-The chart defaults to `transportMode=trusted-proxy`; its Service exposes HTTP
+The chart requires `transportMode=trusted-proxy`; its Service and probes use HTTP
 inside the cluster. Set `mtls.trustedProxyCidrs` to the exact ingress peers and
 configure an ingress/gateway separately. The current chart does not mount the
-server/client-CA identities required for Direct TLS. Follow the
+server/client-CA identities or TLS probes required for Direct TLS and rejects
+that mode when rendering. Follow the
 [proxy contract](../../proxy/README.md) when forwarding certificate identity.
 
 `signing.externalCommand` configures an external signer. Its executable and

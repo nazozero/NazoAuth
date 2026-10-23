@@ -279,10 +279,12 @@ pub fn receipt_for(
 
 pub fn parse_signing_key(encoded: &str) -> Result<SigningKey> {
     let trimmed = encoded.trim();
-    let bytes = URL_SAFE_NO_PAD
-        .decode(trimmed.as_bytes())
-        .or_else(|_| hex_decode(trimmed))
-        .map_err(|_| anyhow!("signing key must be base64url or hex"))?;
+    let bytes = if trimmed.len() == 64 && trimmed.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        hex_decode(trimmed)
+    } else {
+        URL_SAFE_NO_PAD.decode(trimmed.as_bytes()).map_err(|_| ())
+    }
+    .map_err(|_| anyhow!("signing key must be base64url or hex"))?;
     let seed: [u8; 32] = bytes
         .try_into()
         .map_err(|_| anyhow!("signing key must be 32 bytes"))?;
@@ -303,3 +305,7 @@ fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
         .map(|index| u8::from_str_radix(&value[index..index + 2], 16).map_err(|_| ()))
         .collect()
 }
+
+#[cfg(test)]
+#[path = "../tests/wire.rs"]
+mod tests;

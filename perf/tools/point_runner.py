@@ -764,16 +764,7 @@ def run_ab_point(point: dict) -> dict:
         # Whole-run completed iterations is a legitimate expected
         # issuance count ONLY when the run was completely clean.
         m = rec["metrics"]
-        clean_run = (
-            point["scenario"] == "cap_client_credentials"
-            and m.get("outcome_unexpected") == 0
-            and m.get("outcome_local_no_request") == 0
-            and m.get("outcome_expected_rejection") == 0
-            and m.get("outcome_prepare_failed") in (0, None)
-            and m.get("outcome_prepare_local_failed") in (0, None)
-            and m.get("outcome_prepare_sut_failed") in (0, None)
-            and rec["load"].get("load_status") == "completed")
-        expected = m.get("iterations_completed") if clean_run else None
+        expected = expected_issuances(point["scenario"], rec["load"], m)
         rec["audit_state_check"] = reconcile_audit_state(
             rec["audit_state_pre"], rec["audit_state_post"], run_id,
             expected, rec["journal_stats"],
@@ -831,6 +822,14 @@ def _cpu_sample_interval(proc_jsonl: Path,
         return None
     cpu_ms = (inside[-1][1] - inside[0][1]) * 1000.0 / hz
     return inside[0][0], inside[-1][0], cpu_ms
+
+
+def expected_issuances(scenario, load, metrics):
+    success = metrics.get("full_run_success")
+    if (scenario == "cap_client_credentials" and load.get("load_status") == "completed"
+            and success is not None and success == metrics.get("full_run_iterations_completed")):
+        return success
+    return None
 
 
 def _same_interval_cpu_per_success(proc_jsonl: Path, journal: dict,
