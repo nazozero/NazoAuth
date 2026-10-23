@@ -3417,7 +3417,7 @@ async fn user_disable_waits_for_subject_before_touching_credential_offers() {
     let subject_id = insert_openid4vc_subject(&pool, tenant_id, "disable-lock-order").await;
     let issuer = Openid4vciRepository::new(
         pool.clone(),
-        [0x75; 32],
+        rand::random::<[u8; 32]>(),
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let mut access =
@@ -3487,7 +3487,7 @@ async fn cancelled_offer_commit_releases_subject_without_reusing_owner_pool() {
     drop(setup);
     let issuer = Openid4vciRepository::new(
         pool.clone(),
-        [0x76; 32],
+        rand::random::<[u8; 32]>(),
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let mut access =
