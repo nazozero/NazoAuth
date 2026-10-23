@@ -538,10 +538,14 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
     let dataset = MovingDataset(Arc::default());
     let proofs = FixedProofs(vec![
         ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder-1"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder-1"}),
+            },
         },
         ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder-2"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder-2"}),
+            },
         },
     ]);
     let service = CredentialIssuerService::new(
@@ -614,7 +618,9 @@ async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_f
     let service = CredentialIssuerService::new(
         store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kty":"unsupported"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kty":"unsupported"}),
+            },
         }]),
         Dataset,
         InvalidHolderBindingSigner,
@@ -927,7 +933,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let claim_rejected_service = CredentialIssuerService::new(
         claim_rejected_store,
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -954,7 +962,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let dataset_service = CredentialIssuerService::new(
         dataset_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         ErrorDataset(CredentialIssuanceError::DatasetUnavailable),
         RecordingSigner::default(),
@@ -980,7 +990,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let signer_service = CredentialIssuerService::new(
         signer_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         ErrorSigner(CredentialTrustError::Unavailable),
@@ -1006,7 +1018,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let invalid_configuration_service = CredentialIssuerService::new(
         invalid_configuration_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1039,7 +1053,9 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let late_service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1070,7 +1086,9 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     let immediate_service = CredentialIssuerService::new(
         immediate_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1176,7 +1194,9 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     let deferred_service = CredentialIssuerService::new(
         deferred_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1229,7 +1249,9 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     let deferred_response_service = CredentialIssuerService::new(
         deferred_response_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1339,7 +1361,9 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     let rollback_service = CredentialIssuerService::new(
         rollback_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1368,7 +1392,9 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     let failing_commit_service = CredentialIssuerService::new(
         failing_commit_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1440,7 +1466,9 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     let deferred_failure_service = CredentialIssuerService::new(
         deferred_failure_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1498,7 +1526,9 @@ async fn doctype_is_used_when_vct_is_absent() {
     let service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![ValidatedProof {
-            holder_binding: json!({"jwk":{"kid":"holder"}}),
+            holder_binding: nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: json!({"kid":"holder"}),
+            },
         }]),
         Dataset,
         RecordingSigner::default(),

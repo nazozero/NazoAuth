@@ -61,29 +61,37 @@ impl AuthorizationRepository {
         };
         // The revocation fact and the refresh-family invalidation must commit
         // atomically under the shared family lock.
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<(), diesel::result::Error, _>(async |connection| {
-                lock_refresh_family(connection, family_id).await?;
-                if let Some(new_revocation) = new_revocation {
-                    upsert_access_token_revocations(connection, &[new_revocation]).await?;
-                }
-                diesel::update(
-                    oauth_refresh_families::table
-                        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-                        .filter(oauth_refresh_families::client_id.eq(client_id))
-                        .filter(oauth_refresh_families::token_family_id.eq(family_id))
-                        .filter(oauth_refresh_families::revoked_at.is_null()),
-                )
-                .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
-                .execute(connection)
-                .await?;
-                Ok(())
-            })
-            .await
-            .map_err(map_error)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<(), diesel::result::Error, _>(async |connection| {
+                    lock_refresh_family(connection, family_id).await?;
+                    if let Some(new_revocation) = new_revocation {
+                        upsert_access_token_revocations(connection, &[new_revocation]).await?;
+                    }
+                    diesel::update(
+                        oauth_refresh_families::table
+                            .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+                            .filter(oauth_refresh_families::client_id.eq(client_id))
+                            .filter(oauth_refresh_families::token_family_id.eq(family_id))
+                            .filter(oauth_refresh_families::revoked_at.is_null()),
+                    )
+                    .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
+                    .execute(connection)
+                    .await?;
+                    Ok(())
+                })
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(map_error)
     }
 }
 

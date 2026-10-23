@@ -1,9 +1,8 @@
 use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
-use nazo_digital_credentials::CredentialFormat;
+use nazo_digital_credentials::{CredentialFormat, HolderBinding};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{CredentialIdentifier, CredentialOfferGrants, NotificationEvent};
@@ -158,7 +157,7 @@ pub struct DeferredCredential {
     pub access: CredentialAccess,
     pub configuration_id: String,
     pub format: CredentialFormat,
-    pub holder_bindings: Vec<Value>,
+    pub holder_bindings: Vec<Option<HolderBinding>>,
     pub payload: crate::DeferredPayload,
     pub ready_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,

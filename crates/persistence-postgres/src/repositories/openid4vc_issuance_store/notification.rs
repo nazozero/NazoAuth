@@ -27,10 +27,12 @@ impl Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<Option<StoredCredentialResponse>, diesel::result::Error, _>(
                     async move |connection| {
                         let row = sql_query(
@@ -90,7 +92,12 @@ impl Openid4vciRepository {
                         }))
                     },
                 )
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(map_stored_credential_error)
         })
     }
@@ -107,7 +114,7 @@ impl Openid4vciRepository {
             let body_ciphertext =
                 protect_payload(&self.data_key, response.issuance_id, &response.body)?;
             let encoding = response_encoding_name(&response.encoding);
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
@@ -122,7 +129,9 @@ impl Openid4vciRepository {
             let notification_selection = serde_json::json!(handle.selection);
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                     insert_issuance_response(
                         connection,
@@ -163,7 +172,12 @@ impl Openid4vciRepository {
                     }
                     Ok(true)
                 })
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }
@@ -180,7 +194,7 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
@@ -193,7 +207,9 @@ impl Openid4vciRepository {
             let notification_selection = serde_json::json!(handle.selection);
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     insert_issuance_response(
                         connection,
@@ -222,7 +238,12 @@ impl Openid4vciRepository {
                     .await?;
                     Ok(())
                 })
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }
@@ -242,7 +263,7 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
@@ -255,7 +276,9 @@ impl Openid4vciRepository {
             let notification_selection = serde_json::json!(handle.selection);
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                     insert_issuance_response(
                         connection,
@@ -299,7 +322,12 @@ impl Openid4vciRepository {
                     }
                     Ok(true)
                 })
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }
@@ -309,10 +337,12 @@ impl Openid4vciRepository {
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                     let handle = sql_query(
                         "SELECT token_id, credential_selection FROM openid4vci_notifications \
@@ -353,7 +383,12 @@ impl Openid4vciRepository {
                     .await?;
                     Ok(changed == 1)
                 })
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }

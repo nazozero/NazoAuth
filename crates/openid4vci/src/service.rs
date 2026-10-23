@@ -1,7 +1,9 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use chrono::{DateTime, Utc};
-use nazo_digital_credentials::{CredentialPayload, CredentialSignInput, CredentialSignerPort};
+use nazo_digital_credentials::{
+    CredentialPayload, CredentialSignInput, CredentialSignerPort, HolderBinding,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -334,7 +336,7 @@ where
                     CredentialError::InvalidProof,
                 ));
             }
-            vec![Value::Null]
+            vec![None]
         } else {
             let proofs = request
                 .proofs
@@ -401,7 +403,7 @@ where
             });
             validated
                 .into_iter()
-                .map(|proof| proof.holder_binding)
+                .map(|proof| Some(proof.holder_binding))
                 .collect()
         };
         let result = self
@@ -511,7 +513,7 @@ where
         issuance: CredentialIssuance,
         configuration: &CredentialConfiguration,
         selection: crate::CredentialSelection,
-        holder_bindings: Vec<Value>,
+        holder_bindings: Vec<Option<HolderBinding>>,
         nonce_claim: &mut Option<IssuanceClaim>,
         now: DateTime<Utc>,
     ) -> Result<(CredentialResponse, IssuanceCommit), CredentialIssuanceError> {
@@ -540,7 +542,7 @@ where
                     status: issuance.status,
                 };
                 for holder_binding in holder_bindings {
-                    input.payload.holder_binding = serde_json::from_value(holder_binding).ok();
+                    input.payload.holder_binding = holder_binding;
                     let credential = self.signer.sign(&input).await?;
                     credentials.push(IssuedCredential {
                         credential: Value::String(credential),

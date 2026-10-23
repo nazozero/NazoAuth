@@ -122,13 +122,21 @@ impl EventStorePort for ScimEventRepository {
                     .await
                     .map_err(|_| EventStoreError::Unavailable);
             }
-            connection
-                .transaction::<EventPage, diesel::result::Error, _>(async move |connection| {
-                    Self::apply_dispositions(connection, receiver, request).await?;
-                    Self::page(connection, receiver, request.max_events).await
-                })
-                .await
-                .map_err(|_| EventStoreError::Unavailable)
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard
+                    .connection()
+                    .transaction::<EventPage, diesel::result::Error, _>(async move |connection| {
+                        Self::apply_dispositions(connection, receiver, request).await?;
+                        Self::page(connection, receiver, request.max_events).await
+                    })
+                    .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
+            .map_err(|_| EventStoreError::Unavailable)
         })
     }
 }

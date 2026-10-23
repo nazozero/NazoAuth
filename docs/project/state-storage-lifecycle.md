@@ -6,6 +6,13 @@ This guide describes PostgreSQL and Valkey state ownership. Storage choices foll
 
 ## PostgreSQL ownership
 
+A pooled connection used for an explicit transaction stays owned by
+`DiscardOnDrop` until its outcome is confirmed. Cancellation drops the physical
+connection so PostgreSQL can roll back and release locks without waiting for
+another pool checkout. Helpers borrowing a connection share the caller's guard;
+migration transactions own an unpooled connection. A single-statement write
+uses PostgreSQL's implicit transaction, without an extra BEGIN/COMMIT pair.
+
 |责任|模型|保留原因 / 回收边界|源码|
 |---|---|---|---|
 |身份与组织的权威事实|`tenants`, `realms`, `organizations`, `users`, `external_identity_links`, `oauth_subject_bindings`, `user_client_grants`, `oauth_clients`, `client_access_requests`|长期 PG；按业务变更或所有者删除，不因 TTL 自动丢失。|`crates/persistence-postgres/src/repositories/authorization.rs`|

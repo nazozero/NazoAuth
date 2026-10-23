@@ -52,10 +52,12 @@ impl MfaRepository {
         user_id: UserId,
         candidate_id: uuid::Uuid,
     ) -> Result<Option<uuid::Uuid>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard.connection()
             .transaction::<Option<uuid::Uuid>, MfaAuditError, _>(async |connection| {
                 #[derive(diesel::QueryableByName)]
                 struct Generation { #[diesel(sql_type = diesel::sql_types::Uuid)] id: uuid::Uuid }
@@ -85,7 +87,12 @@ impl MfaRepository {
                 .map_err(MfaAuditError::Repository)?;
                 Ok(generation)
             })
-            .await
+            .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
             .map_err(MfaAuditError::into_repository)
     }
 

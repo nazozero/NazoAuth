@@ -206,7 +206,7 @@ impl PostgresTenantResourceExecutor {
             TenantResourceAction::Apply => self.prepare_apply_payloads(&mut resources).await?,
             _ => Vec::new(),
         };
-        let mut connection = self
+        let connection = self
             .repository
             .connection()
             .await
@@ -215,64 +215,110 @@ impl PostgresTenantResourceExecutor {
         let configured_tenant = self.tenant;
         let data_key = self.data_key;
 
-        connection
-            .transaction::<ControlResultData, ExecutorTransactionError, _>(
-                async move |connection| {
-                    // Serialize replay/conflict decisions and the resource
-                    // transaction for one accepted operation identity.
-                    TenantResourceRepository::lock_operation_identity_on_connection(
-                        connection,
-                        deployment_id,
-                        tenant_uuid,
-                        jti,
-                    )
-                    .await
-                    .map_err(ExecutorTransactionError::Repository)?;
-                    if let Some(outcome) = control_outcome_on_connection(
-                        connection,
-                        operation_id,
-                        request_sha256,
-                        tenant_uuid,
-                        operation,
-                    )
-                    .await?
-                    {
-                        return Ok(outcome);
-                    }
-                    let current =
-                        TenantResourceRepository::state_on_connection(connection, tenant_uuid)
-                            .await
-                            .map_err(ExecutorTransactionError::Repository)?;
-                    let (current_revision, current_manifest) = match current {
-                        Some(state) => (state.revision, state.resource_manifest_sha256),
-                        None => (0, empty_manifest_sha256()),
-                    };
-
-                    let frame = match operation {
-                        TenantResourceAction::Apply => ResourceFrame::Apply {
-                            resources: &resources,
-                            payloads: &prepared_payloads,
-                        },
-                        TenantResourceAction::Revoke => ResourceFrame::Revoke {
-                            resources: &resources,
-                        },
-                        TenantResourceAction::Enumerate => ResourceFrame::Enumerate { selectors },
-                    };
-                    let frame = run_resource_frame(
-                        connection,
-                        tenant_uuid,
-                        configured_tenant,
-                        &data_key,
-                        frame,
-                    )
-                    .await?;
-
-                    if operation == TenantResourceAction::Enumerate {
-                        if frame.manifest_sha256 != current_manifest {
-                            return Err(ExecutorTransactionError::Executor(
-                                TenantResourceExecutorError::Conflict,
-                            ));
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<ControlResultData, ExecutorTransactionError, _>(
+                    async move |connection| {
+                        // Serialize replay/conflict decisions and the resource
+                        // transaction for one accepted operation identity.
+                        TenantResourceRepository::lock_operation_identity_on_connection(
+                            connection,
+                            deployment_id,
+                            tenant_uuid,
+                            jti,
+                        )
+                        .await
+                        .map_err(ExecutorTransactionError::Repository)?;
+                        if let Some(outcome) = control_outcome_on_connection(
+                            connection,
+                            operation_id,
+                            request_sha256,
+                            tenant_uuid,
+                            operation,
+                        )
+                        .await?
+                        {
+                            return Ok(outcome);
                         }
+                        let current =
+                            TenantResourceRepository::state_on_connection(connection, tenant_uuid)
+                                .await
+                                .map_err(ExecutorTransactionError::Repository)?;
+                        let (current_revision, current_manifest) = match current {
+                            Some(state) => (state.revision, state.resource_manifest_sha256),
+                            None => (0, empty_manifest_sha256()),
+                        };
+
+                        let frame = match operation {
+                            TenantResourceAction::Apply => ResourceFrame::Apply {
+                                resources: &resources,
+                                payloads: &prepared_payloads,
+                            },
+                            TenantResourceAction::Revoke => ResourceFrame::Revoke {
+                                resources: &resources,
+                            },
+                            TenantResourceAction::Enumerate => {
+                                ResourceFrame::Enumerate { selectors }
+                            }
+                        };
+                        let frame = run_resource_frame(
+                            connection,
+                            tenant_uuid,
+                            configured_tenant,
+                            &data_key,
+                            frame,
+                        )
+                        .await?;
+
+                        if operation == TenantResourceAction::Enumerate {
+                            if frame.manifest_sha256 != current_manifest {
+                                return Err(ExecutorTransactionError::Executor(
+                                    TenantResourceExecutorError::Conflict,
+                                ));
+                            }
+                            let audit_event = tenant_resource_audit_event(
+                                deployment_id,
+                                &tenant_uuid.to_string(),
+                                jti,
+                                request_sha256,
+                                actor,
+                                operation,
+                                current_revision,
+                                &frame.manifest_sha256,
+                                &frame.resources,
+                            );
+                            append_fresh_security_audit_on_connection(connection, &audit_event)
+                                .await
+                                .map_err(ExecutorTransactionError::Diesel)?;
+                            let outcome = StoredControlOutcome {
+                                revision: current_revision,
+                                resources: frame.resources,
+                                resource_mappings: frame.resource_mappings,
+                                resource_manifest_sha256: frame.manifest_sha256,
+                            };
+                            return record_control_outcome_on_connection(
+                                connection,
+                                operation_id,
+                                request_sha256,
+                                tenant_uuid,
+                                operation,
+                                outcome,
+                            )
+                            .await;
+                        }
+
+                        let next_revision =
+                            TenantResourceRepository::compare_and_set_state_on_connection(
+                                connection,
+                                tenant_uuid,
+                                current_revision,
+                                &frame.manifest_sha256,
+                            )
+                            .await
+                            .map_err(ExecutorTransactionError::Repository)?
+                            .ok_or_else(|| transaction_conflict("state_cas"))?;
                         let audit_event = tenant_resource_audit_event(
                             deployment_id,
                             &tenant_uuid.to_string(),
@@ -288,12 +334,12 @@ impl PostgresTenantResourceExecutor {
                             .await
                             .map_err(ExecutorTransactionError::Diesel)?;
                         let outcome = StoredControlOutcome {
-                            revision: current_revision,
+                            revision: next_revision,
                             resources: frame.resources,
                             resource_mappings: frame.resource_mappings,
                             resource_manifest_sha256: frame.manifest_sha256,
                         };
-                        return record_control_outcome_on_connection(
+                        record_control_outcome_on_connection(
                             connection,
                             operation_id,
                             request_sha256,
@@ -301,52 +347,16 @@ impl PostgresTenantResourceExecutor {
                             operation,
                             outcome,
                         )
-                        .await;
-                    }
-
-                    let next_revision =
-                        TenantResourceRepository::compare_and_set_state_on_connection(
-                            connection,
-                            tenant_uuid,
-                            current_revision,
-                            &frame.manifest_sha256,
-                        )
                         .await
-                        .map_err(ExecutorTransactionError::Repository)?
-                        .ok_or_else(|| transaction_conflict("state_cas"))?;
-                    let audit_event = tenant_resource_audit_event(
-                        deployment_id,
-                        &tenant_uuid.to_string(),
-                        jti,
-                        request_sha256,
-                        actor,
-                        operation,
-                        current_revision,
-                        &frame.manifest_sha256,
-                        &frame.resources,
-                    );
-                    append_fresh_security_audit_on_connection(connection, &audit_event)
-                        .await
-                        .map_err(ExecutorTransactionError::Diesel)?;
-                    let outcome = StoredControlOutcome {
-                        revision: next_revision,
-                        resources: frame.resources,
-                        resource_mappings: frame.resource_mappings,
-                        resource_manifest_sha256: frame.manifest_sha256,
-                    };
-                    record_control_outcome_on_connection(
-                        connection,
-                        operation_id,
-                        request_sha256,
-                        tenant_uuid,
-                        operation,
-                        outcome,
-                    )
-                    .await
-                },
-            )
-            .await
-            .map_err(map_transaction_error)
+                    },
+                )
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(map_transaction_error)
     }
 
     /// Read the authoritative exact receipt for an already accepted operation.
@@ -363,35 +373,43 @@ impl PostgresTenantResourceExecutor {
         if !is_lower_sha256(request_hash) {
             return Err(TenantResourceExecutorError::Rejected);
         }
-        let mut connection = repository
+        let connection = repository
             .connection()
             .await
             .map_err(map_repository_error)?;
         let tenant_id = tenant_id.as_uuid();
-        connection
-            .transaction::<Option<ControlResultData>, ExecutorTransactionError, _>(
-                async move |connection| {
-                    let operation_id_text = operation_id.to_string();
-                    TenantResourceRepository::lock_operation_identity_on_connection(
-                        connection,
-                        deployment_id,
-                        tenant_id,
-                        &operation_id_text,
-                    )
-                    .await
-                    .map_err(ExecutorTransactionError::Repository)?;
-                    control_outcome_on_connection(
-                        connection,
-                        operation_id,
-                        request_hash,
-                        tenant_id,
-                        operation,
-                    )
-                    .await
-                },
-            )
-            .await
-            .map_err(map_transaction_error)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<Option<ControlResultData>, ExecutorTransactionError, _>(
+                    async move |connection| {
+                        let operation_id_text = operation_id.to_string();
+                        TenantResourceRepository::lock_operation_identity_on_connection(
+                            connection,
+                            deployment_id,
+                            tenant_id,
+                            &operation_id_text,
+                        )
+                        .await
+                        .map_err(ExecutorTransactionError::Repository)?;
+                        control_outcome_on_connection(
+                            connection,
+                            operation_id,
+                            request_hash,
+                            tenant_id,
+                            operation,
+                        )
+                        .await
+                    },
+                )
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(map_transaction_error)
     }
 }
 

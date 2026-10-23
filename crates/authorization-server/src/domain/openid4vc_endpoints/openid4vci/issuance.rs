@@ -274,7 +274,7 @@ impl ServerCredentialIssuerOperations {
                     status: payload.status,
                 };
                 for holder_binding in deferred.holder_bindings {
-                    input.payload.holder_binding = serde_json::from_value(holder_binding).ok();
+                    input.payload.holder_binding = holder_binding;
                     let credential = self.crypto.sign(&input).await.map_err(|_| {
                         vci_error(503, "server_error", "Deferred credential signing failed.")
                     })?;

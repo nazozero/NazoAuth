@@ -106,6 +106,52 @@ fn assert_no_transaction(delta: QuerySnapshot) {
     assert_eq!(delta.commits, 0, "query-only reads must not commit");
 }
 
+#[tokio::test]
+async fn runtime_observation_is_one_atomic_insert_without_transaction_roundtrips() {
+    use nazo_runtime_modules::{
+        InstanceStateObservation, ModuleEventRecord, ModuleEventType, ModuleId, ModuleRevision,
+    };
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url).await.unwrap();
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = nazo_postgres::RuntimeModuleRepository::new(pool);
+    let event_id = Uuid::now_v7();
+    let observation = InstanceStateObservation {
+        event: ModuleEventRecord {
+            event_id: event_id.to_string(),
+            module_id: ModuleId::TokenExchange,
+            event_type: ModuleEventType::StaleTransitionDiscarded,
+            revision: ModuleRevision::new(1),
+            instance_id: Some("query-count-observation".to_owned()),
+            actor_id: None,
+            reason: None,
+            before: None,
+            after: None,
+            outcome_code: None,
+            occurred_at: std::time::SystemTime::now(),
+        },
+    };
+    let (result, delta) = measure(
+        &counter,
+        nazo_persistence::RuntimeModuleStore::record_instance_observation(&repository, observation),
+    )
+    .await;
+    result.unwrap();
+    println!("runtime observation: {delta:?}");
+    assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
+    assert_clean(delta);
+    let mut connection = connect(&database_url).await;
+    sql_query("DELETE FROM runtime_module_state_events WHERE event_id=$1")
+        .bind::<sql_types::Uuid, _>(event_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
@@ -1563,7 +1609,9 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
         access: access.clone(),
         configuration_id: "qc-config".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![json!({"key_type": "software", "kid": "qc-key"})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: json!({"kty": "EC", "kid": "qc-key"}),
+        })],
         payload: deferred_payload("deferred-payload"),
         ready_at,
         expires_at: ready_at + Duration::minutes(5),

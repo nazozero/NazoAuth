@@ -38,7 +38,8 @@ impl Openid4vciRepository {
             let token_id = credential.access.token_id;
             let configuration_id = &credential.configuration_id;
             let format = credential.format.as_str();
-            let holder_bindings = serde_json::Value::Array(credential.holder_bindings.clone());
+            let holder_bindings = serde_json::to_value(&credential.holder_bindings)
+                .map_err(|_| CredentialStoreError::Unavailable)?;
             let ready_at = credential.ready_at;
             let expires_at = credential.expires_at;
             let authorization_id = credential.access.authorization_id;
@@ -49,10 +50,12 @@ impl Openid4vciRepository {
             let response_selection = serde_json::json!(response.selection);
             let dpop_nonce = response.dpop_nonce.as_deref();
             let response_expires_at = response.expires_at;
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
                         "INSERT INTO openid4vci_deferred_transactions \
@@ -90,7 +93,12 @@ impl Openid4vciRepository {
                     .await?;
                     Ok(())
                 })
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }
@@ -120,7 +128,8 @@ impl Openid4vciRepository {
             let token_id = credential.access.token_id;
             let configuration_id = &credential.configuration_id;
             let format = credential.format.as_str();
-            let holder_bindings = serde_json::Value::Array(credential.holder_bindings.clone());
+            let holder_bindings = serde_json::to_value(&credential.holder_bindings)
+                .map_err(|_| CredentialStoreError::Unavailable)?;
             let ready_at = credential.ready_at;
             let expires_at = credential.expires_at;
             let authorization_id = credential.access.authorization_id;
@@ -131,10 +140,12 @@ impl Openid4vciRepository {
             let response_selection = serde_json::json!(response.selection);
             let dpop_nonce = response.dpop_nonce.as_deref();
             let response_expires_at = response.expires_at;
-            let mut connection = get_conn(&self.pool)
+            let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection
+            {
+                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let result = guard.connection()
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
                         "INSERT INTO openid4vci_deferred_transactions \
@@ -184,7 +195,12 @@ impl Openid4vciRepository {
                     }
                     Ok(())
                 })
-                .await
+                .await;
+                if result.is_ok() {
+                    guard.return_to_pool();
+                }
+                result
+            }
                 .map_err(|_| CredentialStoreError::Unavailable)
         })
     }

@@ -134,14 +134,16 @@ impl TenantDirectoryRepository {
         &self,
         binding: TenantDirectoryBinding,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = get_conn(&self.pool).await.map_err(|error| {
+        let connection = get_conn(&self.pool).await.map_err(|error| {
             if crate::unavailable::checkout_is_unavailable(&error) {
                 RepositoryError::Unavailable
             } else {
                 RepositoryError::Unexpected(error.to_string())
             }
         })?;
-        let result = connection
+        let result = {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard.connection()
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let tenant_id = binding.tenant.tenant_id.as_uuid();
                 let state = sql_query(
@@ -189,7 +191,12 @@ impl TenantDirectoryRepository {
                 ensure_runtime_module_defaults(connection, tenant_id).await?;
                 Ok(TenantDirectoryInitialization::Inserted)
             })
-            .await
+            .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
             .map_err(|error| {
                 if crate::unavailable::query_is_unavailable(&error) {
                     RepositoryError::Unavailable
@@ -503,17 +510,25 @@ impl TenantDirectoryRepository {
         expected_revision: u64,
         request: TenantProvisioningRequest,
     ) -> Result<u64, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<_, DirectoryMutationError, _>(async move |connection| {
-                provision_tenant_binding_on_connection(connection, expected_revision, &request)
-                    .await
-                    .map_err(DirectoryMutationError::from)
-            })
-            .await
-            .map_err(RepositoryError::from)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, DirectoryMutationError, _>(async move |connection| {
+                    provision_tenant_binding_on_connection(connection, expected_revision, &request)
+                        .await
+                        .map_err(DirectoryMutationError::from)
+                })
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(RepositoryError::from)
     }
 }
 
@@ -658,23 +673,31 @@ impl TenantDirectoryRepository {
         issuer: String,
         external_host: String,
     ) -> Result<u64, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<_, DirectoryMutationError, _>(async move |connection| {
-                update_tenant_binding_on_connection(
-                    connection,
-                    expected_revision,
-                    tenant_id,
-                    &issuer,
-                    &external_host,
-                )
-                .await
-                .map_err(DirectoryMutationError::from)
-            })
-            .await
-            .map_err(RepositoryError::from)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, DirectoryMutationError, _>(async move |connection| {
+                    update_tenant_binding_on_connection(
+                        connection,
+                        expected_revision,
+                        tenant_id,
+                        &issuer,
+                        &external_host,
+                    )
+                    .await
+                    .map_err(DirectoryMutationError::from)
+                })
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(RepositoryError::from)
     }
 
     /// Changes one routed tenant's lifecycle status under the revision fence.
@@ -687,22 +710,30 @@ impl TenantDirectoryRepository {
         tenant_id: TenantId,
         status: TenantRuntimeStatus,
     ) -> Result<u64, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<_, DirectoryMutationError, _>(async move |connection| {
-                set_tenant_runtime_status_on_connection(
-                    connection,
-                    expected_revision,
-                    tenant_id,
-                    status,
-                )
-                .await
-                .map_err(DirectoryMutationError::from)
-            })
-            .await
-            .map_err(RepositoryError::from)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, DirectoryMutationError, _>(async move |connection| {
+                    set_tenant_runtime_status_on_connection(
+                        connection,
+                        expected_revision,
+                        tenant_id,
+                        status,
+                    )
+                    .await
+                    .map_err(DirectoryMutationError::from)
+                })
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(RepositoryError::from)
     }
 
     /// Removes the binding of one routed tenant under the revision fence. A
@@ -713,17 +744,25 @@ impl TenantDirectoryRepository {
         expected_revision: u64,
         tenant_id: TenantId,
     ) -> Result<u64, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<_, DirectoryMutationError, _>(async move |connection| {
-                remove_tenant_binding_on_connection(connection, expected_revision, tenant_id)
-                    .await
-                    .map_err(DirectoryMutationError::from)
-            })
-            .await
-            .map_err(RepositoryError::from)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, DirectoryMutationError, _>(async move |connection| {
+                    remove_tenant_binding_on_connection(connection, expected_revision, tenant_id)
+                        .await
+                        .map_err(DirectoryMutationError::from)
+                })
+                .await;
+            if result.is_ok() {
+                guard.return_to_pool();
+            }
+            result
+        }
+        .map_err(RepositoryError::from)
     }
 }
 

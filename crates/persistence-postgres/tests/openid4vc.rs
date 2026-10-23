@@ -1477,7 +1477,9 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"holder"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"holder"}),
+        })],
         payload: deferred_payload("deferred-payload"),
         ready_at: deferred_ready_at,
         expires_at: deferred_ready_at + Duration::minutes(5),
@@ -1612,7 +1614,9 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"reclaim"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"reclaim"}),
+        })],
         payload: deferred_payload("reclaim-payload"),
         ready_at: reclaim_deferred_ready_at,
         expires_at: reclaim_deferred_ready_at + Duration::minutes(30),
@@ -1727,7 +1731,9 @@ async fn recoverable_issuance_leases_commit_responses_and_deferred_credentials_o
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"holder"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"holder"}),
+        })],
         payload: deferred_payload("atomic-payload"),
         ready_at: atomic_deferred_ready_at,
         expires_at: atomic_deferred_ready_at + Duration::minutes(5),
@@ -2537,7 +2543,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"boundary"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"boundary"}),
+        })],
         payload: deferred_payload("boundary-deferred-payload"),
         ready_at: deferred_ready_at,
         expires_at: deferred_ready_at + Duration::minutes(10),
@@ -2617,7 +2625,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"lease"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"lease"}),
+        })],
         payload: deferred_payload("lease-payload"),
         ready_at: lease_deferred_ready_at,
         expires_at: lease_deferred_ready_at + Duration::minutes(10),
@@ -2726,7 +2736,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"atomic"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"atomic"}),
+        })],
         payload: deferred_payload("atomic-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2807,7 +2819,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"atomic-response"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"atomic-response"}),
+        })],
         payload: deferred_payload("atomic-response-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2862,7 +2876,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"response"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"response"}),
+        })],
         payload: deferred_payload("response-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2912,7 +2928,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"notification"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"notification"}),
+        })],
         payload: deferred_payload("notification-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
@@ -2985,7 +3003,9 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid":"notification-response"}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid":"notification-response"}),
+        })],
         payload: deferred_payload("notification-response-payload"),
         ready_at: Utc::now() + Duration::seconds(10),
         expires_at: Utc::now() + Duration::minutes(10),
@@ -3138,7 +3158,9 @@ fn openid4vc_deferred_fixture(
         access: access.clone(),
         configuration_id: "pid".to_owned(),
         format: CredentialFormat::SdJwtVc,
-        holder_bindings: vec![serde_json::json!({"jwk":{"kid": format!("{tag}-holder")}})],
+        holder_bindings: vec![Some(nazo_digital_credentials::HolderBinding::Jwk {
+            jwk: serde_json::json!({"kid": format!("{tag}-holder")}),
+        })],
         payload: deferred_payload(&format!("{tag}-payload")),
         ready_at,
         expires_at: ready_at + lifetime,
@@ -6577,6 +6599,107 @@ async fn credential_persistence_rejects_binding_conflicts_and_accepts_exact_retr
     assert_eq!(after.xmin, before.xmin);
     assert_persisted_access_grant(&after, &hash, &legacy);
     delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_deferred_store_releases_locks_without_pool_reuse() {
+    assert_cancelled_deferred_store(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_deferred_nonce_store_releases_locks_without_pool_reuse() {
+    assert_cancelled_deferred_store(true).await;
+}
+
+async fn assert_cancelled_deferred_store(finalize_nonce: bool) {
+    let database_url = database_url().expect("isolated PostgreSQL is required");
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let observer_pool = create_pool(&database_url, 2).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&observer_pool, tenant_id, "deferred-cancel").await;
+    let owner_name = format!("deferred-owner-{}", Uuid::now_v7().simple());
+    let pool = create_pool(tagged_openid4vc_database_url(&database_url, &owner_name), 1).unwrap();
+    let issuer = Openid4vciRepository::new(
+        pool.clone(),
+        [0x76; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
+    let access = openid4vc_access_fixture(tenant_id, subject_id, "wallet", Duration::minutes(10));
+    issuer
+        .upsert_access(&Uuid::now_v7().to_string(), &access)
+        .await
+        .unwrap();
+    let mut setup = get_conn(&pool).await.unwrap();
+    setup
+        .batch_execute("SET client_connection_check_interval = '100ms'")
+        .await
+        .unwrap();
+    drop(setup);
+    let deferred = openid4vc_deferred_fixture(
+        &access,
+        "cancel",
+        Duration::seconds(1),
+        Duration::minutes(5),
+    );
+    let deferred_id = deferred.id;
+    let response = credential_response::response(access.token_id, None, deferred.expires_at, 202);
+    let gate_name = format!("deferred-gate-{}", Uuid::now_v7().simple());
+    let mut gate =
+        AsyncPgConnection::establish(&tagged_openid4vc_database_url(&database_url, &gate_name))
+            .await
+            .unwrap();
+    gate.batch_execute("BEGIN; LOCK TABLE openid4vci_issuance_responses IN ACCESS EXCLUSIVE MODE")
+        .await
+        .unwrap();
+    let mut commit = tokio::spawn(async move {
+        if finalize_nonce {
+            issuer
+                .store_deferred_and_finalize_nonce_with_response(
+                    &deferred,
+                    "unused-nonce",
+                    "unused-claim",
+                    &response,
+                    Utc::now(),
+                )
+                .await
+        } else {
+            issuer
+                .store_deferred_with_response(&deferred, &response, Utc::now())
+                .await
+        }
+    });
+    let mut observer = get_conn(&observer_pool).await.unwrap();
+    wait_for_openid4vc_blocked_by_or_task(&mut observer, &owner_name, &gate_name, &mut commit)
+        .await;
+    commit.abort();
+    assert!(commit.await.unwrap_err().is_cancelled());
+    observer
+        .batch_execute("SET lock_timeout = '3s'")
+        .await
+        .unwrap();
+    sql_query("SELECT token_id FROM openid4vci_access_grants WHERE token_id = $1 FOR UPDATE")
+        .bind::<SqlUuid, _>(access.token_id)
+        .execute(&mut observer)
+        .await
+        .expect("cancelled deferred store must release its grant lock without another checkout");
+    assert_eq!(
+        pool.status().size,
+        0,
+        "cancelled physical connection must be retired"
+    );
+    let rows = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_deferred_transactions WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(deferred_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(rows.count, 0, "partial deferred writes must roll back");
+    gate.batch_execute("ROLLBACK").await.unwrap();
+    drop(observer);
+    delete_openid4vc_subject_and_client(&observer_pool, subject_id, None).await;
 }
 
 fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
