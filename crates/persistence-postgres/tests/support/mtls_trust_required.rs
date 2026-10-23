@@ -426,7 +426,7 @@ async fn requested_trust_and_required_audit_share_one_commit() {
         return;
     };
     let f = fixture(&url, false).await;
-    let pool = create_pool(&url, 2).unwrap();
+    let pool = create_pool(&url, 1).unwrap();
     let repository = MtlsTrustAnchorRepository::new(pool.clone());
     let original = repository
         .by_id(f.tenant.tenant_id, f.id)
@@ -440,6 +440,7 @@ async fn requested_trust_and_required_audit_share_one_commit() {
     let failed = repository
         .create_for_owned_client(request(f.tenant, f.requester, &original.client_id, 'b'))
         .await;
+    let size_after_failure = pool.status().size;
     let mut connection = get_conn(&pool).await.unwrap();
     connection
         .batch_execute(&format!(
@@ -449,6 +450,10 @@ async fn requested_trust_and_required_audit_share_one_commit() {
         .unwrap();
     drop(connection);
     assert!(failed.is_err());
+    assert_eq!(
+        size_after_failure, 1,
+        "trust request rollback retains the connection"
+    );
     assert_eq!(
         repository
             .list_for_user(f.tenant.tenant_id, f.requester)

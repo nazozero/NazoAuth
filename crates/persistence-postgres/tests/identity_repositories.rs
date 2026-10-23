@@ -1466,7 +1466,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
 
 #[tokio::test]
 async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
-    let Some((pool, tenant, user_id)) = database_fixture().await else {
+    let Some((pool, tenant, user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
     let passkeys = PasskeyRepository::new(pool.clone());
@@ -1490,6 +1490,11 @@ async fn passkey_and_federation_uniqueness_are_typed_conflicts() {
             .await
             .unwrap_err(),
         RepositoryError::Conflict
+    );
+    assert_eq!(
+        pool.status().size,
+        1,
+        "a rolled-back duplicate must retain the connection"
     );
     let federation = FederationRepository::new(pool.clone());
     let new_link = NewFederationLink {
@@ -3915,7 +3920,7 @@ async fn administrative_disable_terminates_grants_across_reenable() {
 #[tokio::test]
 async fn credential_deletion_rolls_back_when_required_audit_fails() {
     use diesel_async::SimpleAsyncConnection;
-    let Some((pool, tenant, user)) = database_fixture().await else {
+    let Some((pool, tenant, user)) = database_fixture_with_pool_size(1).await else {
         return;
     };
     let passkeys = PasskeyRepository::new(pool.clone());
@@ -3946,7 +3951,9 @@ async fn credential_deletion_rolls_back_when_required_audit_fails() {
     connection.batch_execute(&format!("CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit failure'; END $$; CREATE TRIGGER {name} BEFORE INSERT ON security_audit_events FOR EACH ROW WHEN (NEW.event_type IN ('passkey_deleted','external_identity_unlinked') AND NEW.payload->>'user_id'='{}') EXECUTE FUNCTION {name}();", user.as_uuid())).await.unwrap();
     drop(connection);
     let key_failed = passkeys.delete(tenant.tenant_id, user, key.id).await;
+    let size_after_key_failure = pool.status().size;
     let link_failed = federation.delete(tenant.tenant_id, user, link.id).await;
+    let size_after_link_failure = pool.status().size;
     let mut connection = get_conn(&pool).await.unwrap();
     connection
         .batch_execute(&format!(
@@ -3957,6 +3964,14 @@ async fn credential_deletion_rolls_back_when_required_audit_fails() {
     drop(connection);
     assert!(key_failed.is_err());
     assert!(link_failed.is_err());
+    assert_eq!(
+        size_after_key_failure, 1,
+        "Passkey rollback retains the connection"
+    );
+    assert_eq!(
+        size_after_link_failure, 1,
+        "unlink rollback retains the connection"
+    );
     assert_eq!(
         passkeys
             .list_summaries(tenant.tenant_id, user)
