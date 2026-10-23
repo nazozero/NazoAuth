@@ -129,7 +129,11 @@ struct RecordingListener {
 
 impl RecordingListener {
     fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind recording listener");
+        Self::start_on("127.0.0.1")
+    }
+
+    fn start_on(host: &str) -> Self {
+        let listener = TcpListener::bind((host, 0)).expect("bind recording listener");
         listener
             .set_nonblocking(true)
             .expect("nonblocking recording listener");
@@ -168,6 +172,34 @@ impl RecordingListener {
         thread::sleep(Duration::from_millis(100));
         self.connections.load(Ordering::Relaxed)
     }
+}
+
+#[tokio::test]
+async fn ipv6_ciba_ping_resolves_literals_before_enforcing_network_policy() {
+    let listener = RecordingListener::start_on("::1");
+    let origin = format!("https://{}", listener.address);
+    let delivery = ciba_delivery(format!("{origin}/notify"));
+    let denied = super::CibaPingHttpSender::new(&[])
+        .unwrap()
+        .send(&delivery)
+        .await
+        .unwrap_err();
+    assert!(denied.to_string().contains("blocked network"), "{denied:#}");
+    assert_eq!(listener.settled_connection_count(), 0);
+    let error = super::CibaPingHttpSender::new(&[origin])
+        .unwrap()
+        .send(&delivery)
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("CIBA ping request failed"),
+        "{error:#}"
+    );
+    assert_eq!(
+        listener.settled_connection_count(),
+        1,
+        "allowlisted IPv6 reaches TLS without disabling certificate verification"
+    );
 }
 
 impl Drop for RecordingListener {

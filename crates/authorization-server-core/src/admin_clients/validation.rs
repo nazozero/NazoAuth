@@ -684,7 +684,7 @@ fn validate_logout_uri(field: &str, uri: &str) -> Result<url::Url, AdminClientEr
         "https" => Ok(parsed),
         "http"
             if parsed.host_str().is_some_and(|host| {
-                matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost")
+                matches!(host, "localhost" | "127.0.0.1" | "[::1]") || host.ends_with(".localhost")
             }) =>
         {
             Ok(parsed)

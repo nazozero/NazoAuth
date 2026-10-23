@@ -130,7 +130,7 @@ pub fn validate_backchannel_endpoint(raw: &str) -> Result<Url, &'static str> {
     match endpoint.scheme() {
         "https" => {}
         "http"
-            if matches!(host, "localhost" | "127.0.0.1" | "::1")
+            if matches!(host, "localhost" | "127.0.0.1" | "[::1]")
                 || host.ends_with(".localhost") => {}
         _ => return Err("back-channel logout endpoint must use HTTPS or loopback HTTP"),
     }

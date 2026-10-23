@@ -374,7 +374,11 @@ addresses for Back-Channel Logout delivery. Leave it empty in production unless
 a specific private RP is required. Each delivery is DNS-resolved before use,
 pinned to the resolved addresses, rejected if any address is private without an
 exact allowlist match, and sent with redirects disabled. HTTP remains limited to
-loopback endpoints.
+loopback endpoints. IPv6 literals use bracketed URL syntax, for example
+`http://[::1]:8080`; they require the same exact-origin allowlist as IPv4.
+Remote document and CIBA notification origins also accept IPv6 literals, but
+continue to require HTTPS. Sector identifier documents cannot use private
+destinations, even when the origin is allowlisted for other remote documents.
 - rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,

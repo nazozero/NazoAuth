@@ -486,6 +486,7 @@ fn client_metadata_rejects_backchannel_logout_uri_with_fragment_or_insecure_host
     for uri in [
         "http://localhost/backchannel",
         "http://127.0.0.1:8080/backchannel",
+        "http://[::1]:8080/backchannel",
         "http://app.localhost/backchannel",
     ] {
         let mut loopback_metadata = metadata(
@@ -558,6 +559,7 @@ fn client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_hos
             "https://client.example/logout",
         ),
         ("http://localhost/callback", "http://localhost/logout"),
+        ("http://[::1]:8080/callback", "http://[::1]:8080/logout"),
         (
             "http://127.0.0.1:8080/callback",
             "http://127.0.0.1:8080/logout",

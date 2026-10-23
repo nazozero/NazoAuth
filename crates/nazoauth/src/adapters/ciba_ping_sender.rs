@@ -44,7 +44,9 @@ impl CibaPingHttpSender {
             validate_ciba_notification_endpoint(&delivery.endpoint).map_err(anyhow::Error::msg)?;
         let host = endpoint
             .host_str()
-            .ok_or_else(|| anyhow::anyhow!("CIBA ping endpoint has no host"))?;
+            .ok_or_else(|| anyhow::anyhow!("CIBA ping endpoint has no host"))?
+            // URL syntax brackets are not part of an IPv6 DNS/socket host.
+            .trim_matches(['[', ']']);
         let port = endpoint.port_or_known_default().unwrap_or(443);
         let addresses = tokio::net::lookup_host((host, port))
             .await
