@@ -146,6 +146,11 @@ pub async fn register(
             StatusCode::CREATED,
             json!({"id": account.id, "email": account.email}),
         ),
+        Err(RegisterLocalAccountError::InvalidPasswordLength) => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "密码长度必须为 12 到 1024 字节.",
+        ),
         Err(RegisterLocalAccountError::InvalidVerificationCode) => oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",

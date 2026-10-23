@@ -209,7 +209,7 @@ async fn run_admin_provision(launcher: &dyn PersistenceLauncher) -> anyhow::Resu
     let credentials = read_admin_provision_credentials()?;
     let email = nazo_identity::email::normalize_email_address(&credentials.email)
         .map_err(|_| admin_provision_input_error())?;
-    if !(12..=1024).contains(&credentials.password.len()) {
+    if !nazo_identity::registration::valid_new_password_length(&credentials.password) {
         return Err(admin_provision_input_error());
     }
 

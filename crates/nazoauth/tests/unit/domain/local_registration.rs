@@ -178,6 +178,39 @@ impl LiveFixture {
 }
 
 #[actix_web::test]
+async fn invalid_registration_password_preserves_code_for_a_valid_retry() {
+    let Some(fixture) = LiveFixture::new().await else {
+        return;
+    };
+    let email = format!("registration-password-{}@example.test", Uuid::now_v7());
+    let verification_code = random_urlsafe_token();
+    fixture.store_code(&email, &verification_code).await;
+    let operations = fixture.operations();
+    for password in [String::new(), "x".repeat(11), "x".repeat(1025)] {
+        let result = operations
+            .register_local_account(RegisterLocalAccountInput {
+                email: email.clone(),
+                verification_code: verification_code.clone(),
+                password,
+            })
+            .await;
+        assert_eq!(
+            result,
+            Err(RegisterLocalAccountError::InvalidPasswordLength)
+        );
+    }
+    let registered = operations
+        .register_local_account(RegisterLocalAccountInput {
+            email: email.clone(),
+            verification_code,
+            password: random_urlsafe_token(),
+        })
+        .await
+        .expect("invalid passwords must leave the valid email code usable");
+    assert_eq!(registered.email, email);
+}
+
+#[actix_web::test]
 async fn concurrent_registration_consumes_once_and_keeps_valkey_key_contract() {
     let Some(fixture) = LiveFixture::new().await else {
         return;

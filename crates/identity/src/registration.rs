@@ -73,12 +73,19 @@ impl From<PublicAccount> for RegisteredAccount {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegisterLocalAccountError {
+    InvalidPasswordLength,
     VerificationUnavailable(RepositoryError),
     InvalidVerificationCode,
     AccountLookup(RepositoryError),
     Conflict,
     PasswordHash(RepositoryError),
     Create(RepositoryError),
+}
+
+/// Shared byte-length policy for newly registered and provisioned passwords.
+#[must_use]
+pub fn valid_new_password_length(password: &str) -> bool {
+    (12..=1024).contains(&password.len())
 }
 
 #[derive(Clone)]
@@ -243,6 +250,9 @@ where
         &self,
         input: RegisterLocalAccountInput,
     ) -> Result<PublicAccount, RegisterLocalAccountError> {
+        if !valid_new_password_length(&input.password) {
+            return Err(RegisterLocalAccountError::InvalidPasswordLength);
+        }
         let record = self
             .verification
             .reserve_code_attempt(self.tenant.tenant_id, &input.email, 5)

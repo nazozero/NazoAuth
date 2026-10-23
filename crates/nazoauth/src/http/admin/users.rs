@@ -225,7 +225,7 @@ pub(crate) async fn admin_create_user(
             return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
         }
     };
-    if !(12..=1024).contains(&payload.password.len()) {
+    if !nazo_identity::registration::valid_new_password_length(&payload.password) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
