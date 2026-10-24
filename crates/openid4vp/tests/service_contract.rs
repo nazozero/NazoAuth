@@ -852,7 +852,7 @@ async fn dcql_claim_modes_preserve_required_optional_and_wildcard_matching() {
                     issuer: "trusted-issuer".to_owned(),
                     issuer_chain_authority_key_identifiers: Vec::new(),
                     credential_type: "example".to_owned(),
-                    claims: json!({"name": "Ada", "people": [{"name":"Grace"}, {"name":"Ada"}]}),
+                    claims: json!({"name": "Ada", "people": [{"name":"Grace"}, {"name":"Ada"}], "mixed_objects": [{"name":"Ada"}, 1], "mixed_arrays": [["Ada"], {}], "missing_names": [{}, {"name":"Ada"}]}),
                     holder_key: Some(json!({"kty":"EC"})),
                     issued_at: None,
                     expires_at: None,
@@ -862,6 +862,21 @@ async fn dcql_claim_modes_preserve_required_optional_and_wildcard_matching() {
         }
     }
     for (claims, sets, accepted) in [
+        (
+            json!([{"path":["mixed_objects",null,"name"]}]),
+            json!(null),
+            false,
+        ),
+        (
+            json!([{"path":["mixed_arrays",null,0]}]),
+            json!(null),
+            false,
+        ),
+        (
+            json!([{"path":["missing_names",null,"name"]}]),
+            json!(null),
+            true,
+        ),
         (
             json!([{"path":["name"],"values":["Ada"]}]),
             json!(null),

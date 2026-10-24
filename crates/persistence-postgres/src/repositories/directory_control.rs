@@ -56,169 +56,184 @@ impl TenantDirectoryControlRepository {
             Uuid::parse_str(jti).map_err(|_| TenantDirectoryControlError::Rejected)?;
         let operation_name = directory_operation_name(&action);
 
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| TenantDirectoryControlError::Unavailable)?;
 
-        connection
-            .transaction::<_, DirectoryControlTransactionError, _>(async move |connection| {
-                lock_directory_operation_jti_on_connection(connection, deployment_id, operation_id)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, DirectoryControlTransactionError, _>(async move |connection| {
+                    lock_directory_operation_jti_on_connection(
+                        connection,
+                        deployment_id,
+                        operation_id,
+                    )
                     .await?;
-                if let Some(outcome) = recorded_outcome_on_connection(
-                    connection,
-                    operation_id,
-                    request_sha256,
-                    operation_name,
-                )
-                .await?
-                {
-                    return Ok(outcome);
-                }
-
-                // Every successful mutation proves expected_revision under
-                // the held directory lock; its returned revision is the actual
-                // trigger-produced after fact. A preread cannot prove before.
-                let outcome = match &action {
-                    DirectoryControlAction::Create {
-                        expected_revision,
-                        provisioning,
-                    } => {
-                        let revision = provision_tenant_binding_on_connection(
-                            connection,
-                            *expected_revision,
-                            provisioning,
-                        )
-                        .await?;
-                        DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.to_owned(),
-                            tenant_id: provisioning.binding.tenant.tenant_id.as_uuid().to_string(),
-                            previous_revision: *expected_revision,
-                            revision,
-                        })
+                    if let Some(outcome) = recorded_outcome_on_connection(
+                        connection,
+                        operation_id,
+                        request_sha256,
+                        operation_name,
+                    )
+                    .await?
+                    {
+                        return Ok(outcome);
                     }
-                    DirectoryControlAction::Update {
-                        expected_revision,
-                        tenant_id,
-                        issuer,
-                        external_host,
-                    } => {
-                        let revision = update_tenant_binding_on_connection(
-                            connection,
-                            *expected_revision,
-                            *tenant_id,
+
+                    // Every successful mutation proves expected_revision under
+                    // the held directory lock; its returned revision is the actual
+                    // trigger-produced after fact. A preread cannot prove before.
+                    let outcome = match &action {
+                        DirectoryControlAction::Create {
+                            expected_revision,
+                            provisioning,
+                        } => {
+                            let revision = provision_tenant_binding_on_connection(
+                                connection,
+                                *expected_revision,
+                                provisioning,
+                            )
+                            .await?;
+                            DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
+                                action: operation_name.to_owned(),
+                                tenant_id: provisioning
+                                    .binding
+                                    .tenant
+                                    .tenant_id
+                                    .as_uuid()
+                                    .to_string(),
+                                previous_revision: *expected_revision,
+                                revision,
+                            })
+                        }
+                        DirectoryControlAction::Update {
+                            expected_revision,
+                            tenant_id,
                             issuer,
                             external_host,
-                        )
-                        .await?;
-                        DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.to_owned(),
-                            tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision: *expected_revision,
-                            revision,
-                        })
-                    }
-                    DirectoryControlAction::Disable {
-                        expected_revision,
-                        tenant_id,
-                    } => {
-                        let revision = set_tenant_runtime_status_on_connection(
-                            connection,
-                            *expected_revision,
-                            *tenant_id,
-                            TenantRuntimeStatus::Suspended,
-                        )
-                        .await?;
-                        DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.to_owned(),
-                            tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision: *expected_revision,
-                            revision,
-                        })
-                    }
-                    DirectoryControlAction::Reload {
-                        expected_revision,
-                        tenant_id,
-                    } => {
-                        let revision = reload_tenant_runtime_on_connection(
-                            connection,
-                            *expected_revision,
-                            *tenant_id,
-                        )
-                        .await?;
-                        DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.to_owned(),
-                            tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision: *expected_revision,
-                            revision,
-                        })
-                    }
-                    DirectoryControlAction::Finalize {
-                        expected_revision,
-                        tenant_id,
-                    } => {
-                        let revision = remove_tenant_binding_on_connection(
-                            connection,
-                            *expected_revision,
-                            *tenant_id,
-                        )
-                        .await?;
-                        DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
-                            action: operation_name.to_owned(),
-                            tenant_id: tenant_id.as_uuid().to_string(),
-                            previous_revision: *expected_revision,
-                            revision,
-                        })
-                    }
-                    DirectoryControlAction::Describe => {
-                        let snapshot = load_active_on_connection(connection).await?;
-                        DirectoryControlOutcome::Describe(DirectoryDescribeOutcome {
-                            revision: snapshot.revision,
-                            tenants: snapshot.tenants,
-                        })
-                    }
-                };
+                        } => {
+                            let revision = update_tenant_binding_on_connection(
+                                connection,
+                                *expected_revision,
+                                *tenant_id,
+                                issuer,
+                                external_host,
+                            )
+                            .await?;
+                            DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
+                                action: operation_name.to_owned(),
+                                tenant_id: tenant_id.as_uuid().to_string(),
+                                previous_revision: *expected_revision,
+                                revision,
+                            })
+                        }
+                        DirectoryControlAction::Disable {
+                            expected_revision,
+                            tenant_id,
+                        } => {
+                            let revision = set_tenant_runtime_status_on_connection(
+                                connection,
+                                *expected_revision,
+                                *tenant_id,
+                                TenantRuntimeStatus::Suspended,
+                            )
+                            .await?;
+                            DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
+                                action: operation_name.to_owned(),
+                                tenant_id: tenant_id.as_uuid().to_string(),
+                                previous_revision: *expected_revision,
+                                revision,
+                            })
+                        }
+                        DirectoryControlAction::Reload {
+                            expected_revision,
+                            tenant_id,
+                        } => {
+                            let revision = reload_tenant_runtime_on_connection(
+                                connection,
+                                *expected_revision,
+                                *tenant_id,
+                            )
+                            .await?;
+                            DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
+                                action: operation_name.to_owned(),
+                                tenant_id: tenant_id.as_uuid().to_string(),
+                                previous_revision: *expected_revision,
+                                revision,
+                            })
+                        }
+                        DirectoryControlAction::Finalize {
+                            expected_revision,
+                            tenant_id,
+                        } => {
+                            let revision = remove_tenant_binding_on_connection(
+                                connection,
+                                *expected_revision,
+                                *tenant_id,
+                            )
+                            .await?;
+                            DirectoryControlOutcome::Mutation(DirectoryMutationOutcome {
+                                action: operation_name.to_owned(),
+                                tenant_id: tenant_id.as_uuid().to_string(),
+                                previous_revision: *expected_revision,
+                                revision,
+                            })
+                        }
+                        DirectoryControlAction::Describe => {
+                            let snapshot = load_active_on_connection(connection).await?;
+                            DirectoryControlOutcome::Describe(DirectoryDescribeOutcome {
+                                revision: snapshot.revision,
+                                tenants: snapshot.tenants,
+                            })
+                        }
+                    };
 
-                let previous_revision = match &outcome {
-                    DirectoryControlOutcome::Mutation(mutation) => mutation.previous_revision,
-                    DirectoryControlOutcome::Describe(snapshot) => snapshot.revision,
-                };
-                let audit_event = directory_audit_event(
-                    deployment_id,
-                    &operation_id.to_string(),
-                    request_sha256,
-                    actor,
-                    &action,
-                    previous_revision,
-                    &outcome,
-                );
-                append_fresh_security_audit_on_connection(connection, &audit_event)
-                    .await
-                    .map_err(DirectoryControlTransactionError::Diesel)?;
-
-                record_outcome_on_connection(
-                    connection,
-                    operation_id,
-                    request_sha256,
-                    tenant_id_of(&action),
-                    operation_name,
-                    &outcome,
-                )
-                .await?;
-                Ok(outcome)
-            })
-            .await
-            .map_err(|error| match error {
-                DirectoryControlTransactionError::Repository(repository) => {
-                    map_repository_error(repository)
-                }
-                DirectoryControlTransactionError::Diesel(diesel_error) => {
-                    tracing::warn!(
-                        %diesel_error,
-                        "tenant directory control transaction failed on storage"
+                    let previous_revision = match &outcome {
+                        DirectoryControlOutcome::Mutation(mutation) => mutation.previous_revision,
+                        DirectoryControlOutcome::Describe(snapshot) => snapshot.revision,
+                    };
+                    let audit_event = directory_audit_event(
+                        deployment_id,
+                        &operation_id.to_string(),
+                        request_sha256,
+                        actor,
+                        &action,
+                        previous_revision,
+                        &outcome,
                     );
-                    TenantDirectoryControlError::Unavailable
-                }
-            })
+                    append_fresh_security_audit_on_connection(connection, &audit_event)
+                        .await
+                        .map_err(DirectoryControlTransactionError::Diesel)?;
+
+                    record_outcome_on_connection(
+                        connection,
+                        operation_id,
+                        request_sha256,
+                        tenant_id_of(&action),
+                        operation_name,
+                        &outcome,
+                    )
+                    .await?;
+                    Ok(outcome)
+                })
+                .await;
+            guard.return_to_pool();
+            result
+        }
+        .map_err(|error| match error {
+            DirectoryControlTransactionError::Repository(repository) => {
+                map_repository_error(repository)
+            }
+            DirectoryControlTransactionError::Diesel(diesel_error) => {
+                tracing::warn!(
+                    %diesel_error,
+                    "tenant directory control transaction failed on storage"
+                );
+                TenantDirectoryControlError::Unavailable
+            }
+        })
     }
 }
 

@@ -726,22 +726,16 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             },
                         )
                         .await;
+                    guard.return_to_pool();
                     match transaction {
-                        Ok(result) => {
-                            guard.return_to_pool();
-                            Ok(result)
-                        }
+                        Ok(result) => Ok(result),
                         Err(CommitTransactionError::GrantExpired) => {
-                            // Rollback completed cleanly; the connection is healthy.
-                            guard.return_to_pool();
                             Ok(CommitTokenIssuanceResult::GrantExpired)
                         }
                         Err(CommitTransactionError::NativeSsoSourceUnavailable) => {
-                            guard.return_to_pool();
                             Ok(CommitTokenIssuanceResult::RefreshGrantUnavailable)
                         }
                         Err(CommitTransactionError::NativeSsoDependencyUnavailable) => {
-                            guard.return_to_pool();
                             Err(TokenPortError::Unavailable)
                         }
                         Err(CommitTransactionError::Repository(error)) => {

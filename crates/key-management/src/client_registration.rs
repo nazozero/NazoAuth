@@ -241,6 +241,14 @@ pub fn rfc4514_dn_matches(registered: &str, certificate_subject: &str) -> bool {
     registered == certificate_subject
 }
 
+/// Serializes the DER subject with the same RDN and escaping rules used at registration.
+#[must_use]
+pub fn rfc4514_dn_from_der(subject: &[u8]) -> Option<String> {
+    use x509_cert::der::Decode as _;
+    let name = x509_cert::name::Name::from_der(subject).ok()?;
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 fn parse_rfc4514_dn(value: &str) -> Option<String> {
     if value.is_empty() || value.trim() != value || value.len() > 2_048 {
         return None;

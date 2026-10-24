@@ -53,19 +53,19 @@ pub fn dpop_error_response(error: DpopError, context: DpopErrorContext) -> HttpR
         DpopError::BindingMismatch => "DPoP binding mismatch.",
         DpopError::TokenNotBound => "Token is not DPoP-bound.",
         DpopError::UseNonce(_) => "Authorization server requires nonce in DPoP proof.",
-        DpopError::NonceStoreUnavailable => "DPoP nonce validation is unavailable.",
+        DpopError::StateStoreUnavailable => "DPoP nonce validation is unavailable.",
     };
     let status = match (&error, context) {
         (DpopError::MissingProof, DpopErrorContext::TokenEndpoint) => StatusCode::BAD_REQUEST,
         (DpopError::MissingProof | DpopError::UseNonce(_), DpopErrorContext::ProtectedResource) => {
             StatusCode::UNAUTHORIZED
         }
-        (DpopError::NonceStoreUnavailable, _) => StatusCode::SERVICE_UNAVAILABLE,
+        (DpopError::StateStoreUnavailable, _) => StatusCode::SERVICE_UNAVAILABLE,
         _ => StatusCode::BAD_REQUEST,
     };
     let (error_code, challenge) = match &error {
         DpopError::UseNonce(_) => ("use_dpop_nonce", "DPoP error=\"use_dpop_nonce\""),
-        DpopError::NonceStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
+        DpopError::StateStoreUnavailable => ("server_error", "DPoP error=\"server_error\""),
         _ => ("invalid_dpop_proof", "DPoP error=\"invalid_dpop_proof\""),
     };
     let mut response = oauth_error(status, error_code, description);

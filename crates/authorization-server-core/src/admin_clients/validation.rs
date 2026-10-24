@@ -208,6 +208,13 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         return invalid("客户端类型无效");
     }
     validate_unique_non_empty("scope", metadata.scopes)?;
+    if !metadata
+        .scopes
+        .iter()
+        .all(|scope| crate::oauth_parameters::is_valid_scope_token(scope))
+    {
+        return invalid("scope 包含不允许的字符");
+    }
     validate_unique_non_empty("audience", metadata.allowed_audiences)?;
     validate_unique_non_empty("grant_type", metadata.grant_types)?;
     for grant in metadata.grant_types {
@@ -677,7 +684,7 @@ fn validate_logout_uri(field: &str, uri: &str) -> Result<url::Url, AdminClientEr
         "https" => Ok(parsed),
         "http"
             if parsed.host_str().is_some_and(|host| {
-                matches!(host, "localhost" | "127.0.0.1" | "::1") || host.ends_with(".localhost")
+                matches!(host, "localhost" | "127.0.0.1" | "[::1]") || host.ends_with(".localhost")
             }) =>
         {
             Ok(parsed)

@@ -3285,9 +3285,18 @@ async fn oidc_lost_response_refresh_keeps_late_claims_after_spent_snapshot() {
 
 #[actix_web::test]
 async fn native_sso_refresh_issues_missing_secret_reuses_valid_and_replaces_invalid() {
+    native_sso_refresh_secret_lifecycle(false).await;
+}
+
+#[actix_web::test]
+async fn native_sso_refresh_preserves_existing_sender_constrained_family() {
+    native_sso_refresh_secret_lifecycle(true).await;
+}
+
+async fn native_sso_refresh_secret_lifecycle(preserve: bool) {
     use fred::interfaces::ClientLike as _;
     use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
-    let mut state = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
+    let mut state = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
         .expect("real PostgreSQL required");
     let url = std::env::var("VALKEY_URL").expect("real Valkey required");
     state.valkey =
@@ -3299,6 +3308,7 @@ async fn native_sso_refresh_issues_missing_secret_reuses_valid_and_replaces_inva
         crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256);
     let mut client = client_row();
     client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = preserve;
     client.scopes = vec![
         "openid".into(),
         "offline_access".into(),
@@ -3341,9 +3351,14 @@ async fn native_sso_refresh_issues_missing_secret_reuses_valid_and_replaces_inva
         security_audit: crate::http::authorization::test_support::test_security_audit(),
         remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
-    let request = actix_web::test::TestRequest::post()
-        .uri("/oauth/token")
-        .to_http_request();
+    let certificate = crate::test_support::rfc9440_certificate_fixture("native-sso-refresh");
+    let request = if preserve {
+        mtls_refresh_request(&certificate)
+    } else {
+        actix_web::test::TestRequest::post()
+            .uri("/oauth/token")
+            .to_http_request()
+    };
     let facts =
         crate::http::token::issue::test_support::token_request_facts(&request, &state.settings);
     let mut form = refresh_form_without_token();
@@ -3383,6 +3398,13 @@ async fn native_sso_refresh_issues_missing_secret_reuses_valid_and_replaces_inva
             json!(token.token_family_id)
         );
         previous_secret = secret.to_owned();
-        form.refresh_token = Some(body["refresh_token"].as_str().unwrap().to_owned());
+        if preserve {
+            assert!(
+                body.get("refresh_token").is_none(),
+                "stable refresh must not rotate"
+            );
+        } else {
+            form.refresh_token = Some(body["refresh_token"].as_str().unwrap().to_owned());
+        }
     }
 }

@@ -18,8 +18,8 @@ pub mod test_support;
 
 pub use client_registration::{
     ClientRegistrationCrypto, SUPPORTED_CLIENT_JWT_SIGNING_ALGS, client_secret_digest,
-    client_secret_matches_digest, inspect_client_jwks, rfc4514_dn_matches, validate_client_jwks,
-    validate_rfc4514_dn,
+    client_secret_matches_digest, inspect_client_jwks, rfc4514_dn_from_der, rfc4514_dn_matches,
+    validate_client_jwks, validate_rfc4514_dn,
 };
 #[cfg(feature = "test-support")]
 pub use model::TestSigningBehavior;

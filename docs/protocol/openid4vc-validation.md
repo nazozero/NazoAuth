@@ -207,6 +207,12 @@ live; the borrowed family ID does not make family expiry/revocation an additiona
 AT validity rule. The lease records its exact current claimant token so a
 different AT cannot finalize or release that in-flight signing attempt.
 
+Validated proofs carry `HolderBinding` directly into immediate signing and
+deferred intents. The storage adapter alone decodes retained binding JSON:
+`null` still denotes an intentionally unbound credential, and `{"jwk": ...}`
+keeps its existing stored shape. Malformed binding records fail at that boundary
+instead of being silently treated as unbound during signing.
+
 NULL lineage or missing retained selector evidence preserves exact original
 token ownership and conservative legacy deadlines. Migration does not guess
 identity from client, subject, authorization details or contract digest, and does

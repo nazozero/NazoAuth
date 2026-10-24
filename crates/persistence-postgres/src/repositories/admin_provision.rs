@@ -69,92 +69,98 @@ impl AdminProvisionRepository {
             .map_err(|_| AdminProvisionError::InvalidInput)?;
         let tenant = request.tenant;
         let password_hash = request.password_hash.into_persistence_value();
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| AdminProvisionError::Unavailable)?;
 
-        connection
-            .transaction::<_, AdminProvisionError, _>(async move |connection| {
-                lock_operation(connection, &operation_id).await?;
-                if let Some(receipt) = admin_provision_receipts::table
-                    .find(&operation_id)
-                    .select(AdminProvisionReceiptRow::as_select())
-                    .for_update()
-                    .first::<AdminProvisionReceiptRow>(connection)
-                    .await
-                    .optional()?
-                {
-                    if receipt.deployment_id != deployment_id
-                        || receipt.tenant_id != tenant.tenant_id.as_uuid()
-                    {
-                        return Err(AdminProvisionError::OperationConflict);
-                    }
-                    let existing_email = users::table
-                        .find(receipt.user_id)
-                        .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
-                        .select(users::email)
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, AdminProvisionError, _>(async move |connection| {
+                    lock_operation(connection, &operation_id).await?;
+                    if let Some(receipt) = admin_provision_receipts::table
+                        .find(&operation_id)
+                        .select(AdminProvisionReceiptRow::as_select())
                         .for_update()
-                        .first::<String>(connection)
+                        .first::<AdminProvisionReceiptRow>(connection)
                         .await
                         .optional()?
-                        .ok_or(AdminProvisionError::Storage)?;
-                    if existing_email != email {
-                        return Err(AdminProvisionError::OperationConflict);
+                    {
+                        if receipt.deployment_id != deployment_id
+                            || receipt.tenant_id != tenant.tenant_id.as_uuid()
+                        {
+                            return Err(AdminProvisionError::OperationConflict);
+                        }
+                        let existing_email = users::table
+                            .find(receipt.user_id)
+                            .filter(users::tenant_id.eq(tenant.tenant_id.as_uuid()))
+                            .select(users::email)
+                            .for_update()
+                            .first::<String>(connection)
+                            .await
+                            .optional()?
+                            .ok_or(AdminProvisionError::Storage)?;
+                        if existing_email != email {
+                            return Err(AdminProvisionError::OperationConflict);
+                        }
+                        return Ok(receipt.into_receipt(existing_email));
                     }
-                    return Ok(receipt.into_receipt(existing_email));
-                }
 
-                let user_id = Uuid::now_v7();
-                let now = Utc::now();
-                let username = format!("admin_{}", user_id.simple());
-                diesel::insert_into(users::table)
-                    .values((
-                        users::id.eq(user_id),
-                        users::tenant_id.eq(tenant.tenant_id.as_uuid()),
-                        users::realm_id.eq(tenant.realm_id.as_uuid()),
-                        users::organization_id.eq(tenant.organization_id.as_uuid()),
-                        users::username.eq(username),
-                        users::email.eq(&email),
-                        users::password_hash.eq(password_hash),
-                        users::is_active.eq(true),
-                        users::email_verified.eq(true),
-                        users::role.eq("admin"),
-                        users::admin_level.eq(2),
-                    ))
-                    .execute(connection)
-                    .await?;
-                diesel::insert_into(admin_provision_receipts::table)
-                    .values((
-                        admin_provision_receipts::operation_id.eq(&operation_id),
-                        admin_provision_receipts::deployment_id.eq(&deployment_id),
-                        admin_provision_receipts::tenant_id.eq(tenant.tenant_id.as_uuid()),
-                        admin_provision_receipts::user_id.eq(user_id),
-                    ))
-                    .execute(connection)
-                    .await?;
-                diesel::insert_into(identity_security_events::table)
-                    .values((
-                        identity_security_events::tenant_id.eq(tenant.tenant_id.as_uuid()),
-                        identity_security_events::category.eq("admin"),
-                        identity_security_events::event_type.eq(ADMIN_PROVISION_EVENT_TYPE),
-                        identity_security_events::outcome.eq("success"),
-                        identity_security_events::actor_id.eq::<Option<Uuid>>(None),
-                        identity_security_events::target_user_id.eq(Some(user_id)),
-                        identity_security_events::reason_code.eq(ADMIN_PROVISION_REASON),
-                        identity_security_events::occurred_at.eq(now),
-                        identity_security_events::request_id.eq(Some(&operation_id)),
-                    ))
-                    .execute(connection)
-                    .await?;
+                    let user_id = Uuid::now_v7();
+                    let now = Utc::now();
+                    let username = format!("admin_{}", user_id.simple());
+                    diesel::insert_into(users::table)
+                        .values((
+                            users::id.eq(user_id),
+                            users::tenant_id.eq(tenant.tenant_id.as_uuid()),
+                            users::realm_id.eq(tenant.realm_id.as_uuid()),
+                            users::organization_id.eq(tenant.organization_id.as_uuid()),
+                            users::username.eq(username),
+                            users::email.eq(&email),
+                            users::password_hash.eq(password_hash),
+                            users::is_active.eq(true),
+                            users::email_verified.eq(true),
+                            users::role.eq("admin"),
+                            users::admin_level.eq(2),
+                        ))
+                        .execute(connection)
+                        .await?;
+                    diesel::insert_into(admin_provision_receipts::table)
+                        .values((
+                            admin_provision_receipts::operation_id.eq(&operation_id),
+                            admin_provision_receipts::deployment_id.eq(&deployment_id),
+                            admin_provision_receipts::tenant_id.eq(tenant.tenant_id.as_uuid()),
+                            admin_provision_receipts::user_id.eq(user_id),
+                        ))
+                        .execute(connection)
+                        .await?;
+                    diesel::insert_into(identity_security_events::table)
+                        .values((
+                            identity_security_events::tenant_id.eq(tenant.tenant_id.as_uuid()),
+                            identity_security_events::category.eq("admin"),
+                            identity_security_events::event_type.eq(ADMIN_PROVISION_EVENT_TYPE),
+                            identity_security_events::outcome.eq("success"),
+                            identity_security_events::actor_id.eq::<Option<Uuid>>(None),
+                            identity_security_events::target_user_id.eq(Some(user_id)),
+                            identity_security_events::reason_code.eq(ADMIN_PROVISION_REASON),
+                            identity_security_events::occurred_at.eq(now),
+                            identity_security_events::request_id.eq(Some(&operation_id)),
+                        ))
+                        .execute(connection)
+                        .await?;
 
-                Ok(AdminProvisionReceipt {
-                    operation_id,
-                    deployment_id,
-                    user_id,
-                    email,
+                    Ok(AdminProvisionReceipt {
+                        operation_id,
+                        deployment_id,
+                        user_id,
+                        email,
+                    })
                 })
-            })
-            .await
+                .await;
+            guard.return_to_pool();
+            result
+        }
     }
 }
 

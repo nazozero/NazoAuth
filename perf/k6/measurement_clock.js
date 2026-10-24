@@ -43,6 +43,7 @@ export const COHORT_POST = 'post';
 
 export const capIterBegin = new Counter('cap_iter_begin');
 export const capIterEnd = new Counter('cap_iter_end');
+const capTotalSuccess = new Counter('cap_total_success');
 export const capIterBeginMeasure = new Counter('cap_iter_begin_measure');
 export const capIterBeginLegacy = new Counter('cap_iter_begin_lw1');
 export const capIterBeginLateVu = new Counter('cap_iter_begin_late_vu');
@@ -203,6 +204,7 @@ export function createMeasurementClock(config) {
     // Record an observed iteration exit (every capRun branch must call this).
     end(cohort, legacyMeasured, outcome) {
       capIterEnd.add(1, { cohort, lw: legacyMeasured ? '1' : '0', outcome });
+      capTotalSuccess.add(outcome === 'success' ? 1 : 0);
       const counter = capOutcomeCounters[outcome];
       if (cohort === COHORT_MEASURE && counter) {
         counter.add(1);

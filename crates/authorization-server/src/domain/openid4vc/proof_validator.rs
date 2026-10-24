@@ -5,6 +5,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use chrono::{Duration, Utc};
 use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
+use nazo_digital_credentials::HolderBinding;
 use nazo_openid4vci::{
     CredentialProofOrigin, ProofError, ProofValidatorPort, Proofs, ValidatedProof,
 };
@@ -111,8 +112,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                 return Ok(keys
                     .into_iter()
                     .map(|key| ValidatedProof {
-                        holder_binding: serde_json::Map::from_iter([("jwk".to_owned(), key)])
-                            .into(),
+                        holder_binding: HolderBinding::Jwk { jwk: key },
                     })
                     .collect());
             }
@@ -185,7 +185,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     return Err(ProofError::InvalidKeyAttestation);
                 }
                 validated.push(ValidatedProof {
-                    holder_binding: serde_json::Map::from_iter([("jwk".to_owned(), jwk)]).into(),
+                    holder_binding: HolderBinding::Jwk { jwk },
                 });
             }
             Ok(validated)

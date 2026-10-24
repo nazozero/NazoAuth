@@ -265,6 +265,11 @@ async fn register_trims_only_code_whitespace_and_returns_public_identity() {
 async fn error_mapping_preserves_status_and_oauth_code() {
     let cases = [
         (
+            RegisterLocalAccountError::InvalidPasswordLength,
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+        ),
+        (
             RegisterLocalAccountError::InvalidVerificationCode,
             StatusCode::BAD_REQUEST,
             "invalid_grant",

@@ -89,7 +89,10 @@ fn credential_proof_binds_optional_attestation_and_requires_its_nonce() {
                 );
                 let result = validate_jwt_proof(&validator, proof, &metadata).await;
                 if nonce == Some("expected-nonce") {
-                    assert_eq!(result.unwrap()[0].holder_binding, json!({"jwk":jwk}));
+                    assert_eq!(
+                        result.unwrap()[0].holder_binding,
+                        nazo_digital_credentials::HolderBinding::Jwk { jwk: jwk.clone() }
+                    );
                 } else {
                     assert_eq!(result, Err(ProofError::InvalidKeyAttestation));
                 }
@@ -174,7 +177,10 @@ fn credential_attestation_is_one_jwt_with_multiple_attested_keys() {
                 let validated = result.expect("one JWT may attest multiple keys");
                 assert_eq!(validated.len(), keys.len());
                 for (proof, key) in validated.iter().zip(&keys) {
-                    assert_eq!(proof.holder_binding, json!({"jwk":key}));
+                    assert_eq!(
+                        proof.holder_binding,
+                        nazo_digital_credentials::HolderBinding::Jwk { jwk: key.clone() }
+                    );
                 }
             } else {
                 assert_eq!(result, Err(ProofError::InvalidKeyAttestation));

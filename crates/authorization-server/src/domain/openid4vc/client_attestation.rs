@@ -21,6 +21,21 @@ pub struct ValidatedClientAttestation {
     pub replay_window: nazo_auth::ClientAttestationProofWindow,
 }
 
+#[derive(Debug)]
+pub struct ClientAttestationTrustUnavailable(pub anyhow::Error);
+
+impl std::fmt::Display for ClientAttestationTrustUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("client attestation trust policy is unavailable")
+    }
+}
+
+impl std::error::Error for ClientAttestationTrustUnavailable {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.0.as_ref())
+    }
+}
+
 const CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS: i64 = 60;
 const CLIENT_ATTESTATION_POP_MAX_JTI_BYTES: usize = 128;
 
@@ -183,7 +198,11 @@ impl Openid4vcClientAttestationValidator {
     ) -> anyhow::Result<ValidatedClientAttestation> {
         let mut client_validator = None;
         if let Some((repository, tenant_id)) = &self.trust_policies {
-            match repository.for_client(*tenant_id, client_id).await? {
+            match repository
+                .for_client(*tenant_id, client_id)
+                .await
+                .map_err(|error| ClientAttestationTrustUnavailable(error.into()))?
+            {
                 ClientTrustPolicy::Unbound => {}
                 ClientTrustPolicy::BoundInactive => {
                     anyhow::bail!("client OpenID4VC trust policy binding is inactive");

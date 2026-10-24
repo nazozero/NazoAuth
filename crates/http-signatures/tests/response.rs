@@ -8,6 +8,93 @@ const CREATED: i64 = 1_720_000_000;
 const REQUEST_BODY: &[u8] = br#"{"amount":10}"#;
 const RESPONSE_BODY: &[u8] = br#"{"approved":true}"#;
 
+#[test]
+fn empty_response_and_request_digests_verify_with_an_arbitrary_matching_label() {
+    use ed25519_dalek::{Signer, Verifier};
+    let key = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+    let digest = content_digest(b"");
+    let headers = [
+        ("Authorization", "Bearer fixture"),
+        ("Content-Digest", digest.as_str()),
+    ];
+    let request_fields = request_fields();
+    let response = || ResponseInput {
+        status: 200,
+        headers: &headers,
+        body: b"",
+    };
+    let original = || OriginalRequest {
+        input: RequestInput {
+            method: "GET",
+            target_uri: "https://example.com/resource",
+            headers: &headers,
+            body: b"",
+        },
+        signature_fields: Some(&request_fields),
+    };
+    let prepared = prepare_response(
+        response(),
+        original(),
+        ResponsePolicy {
+            created: CREATED,
+            keyid: "fixture",
+            algorithm: "ed25519",
+            covered_headers: &[],
+            covered_request_headers: &[],
+        },
+    )
+    .unwrap();
+    let signature = key.sign(prepared.signature_base()).to_bytes();
+    let fields = prepared.finish(&signature);
+    let renamed = SignatureFields {
+        signature_input: fields.signature_input.replacen("nazo=", "res=", 1),
+        signature: fields.signature.replacen("nazo=", "res=", 1),
+    };
+    let parsed = parse_response_for_verification(
+        response(),
+        original(),
+        SignatureFields {
+            signature_input: renamed.signature_input.clone(),
+            signature: renamed.signature.clone(),
+        },
+        verification_policy(),
+    )
+    .unwrap();
+    key.verifying_key()
+        .verify(
+            parsed.signature_base(),
+            &ed25519_dalek::Signature::from_slice(parsed.signature()).unwrap(),
+        )
+        .unwrap();
+    let mismatched = SignatureFields {
+        signature: renamed.signature.replacen("res=", "other=", 1),
+        ..renamed
+    };
+    assert!(
+        parse_response_for_verification(response(), original(), mismatched, verification_policy())
+            .is_err()
+    );
+    let wrong_digest = content_digest(b"not empty");
+    let wrong_headers = [("Content-Digest", wrong_digest.as_str())];
+    assert!(
+        prepare_response(
+            ResponseInput {
+                headers: &wrong_headers,
+                ..response()
+            },
+            original(),
+            ResponsePolicy {
+                created: CREATED,
+                keyid: "fixture",
+                algorithm: "ed25519",
+                covered_headers: &[],
+                covered_request_headers: &[]
+            }
+        )
+        .is_err()
+    );
+}
+
 fn request_headers(body: &[u8]) -> Vec<(&'static str, String)> {
     vec![
         ("Authorization", "DPoP opaque".into()),

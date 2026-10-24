@@ -7,7 +7,18 @@ use serde_json::Value;
 /// Parses an OAuth space-delimited scope value without assigning policy to scope names.
 #[must_use]
 pub fn parse_scope(raw: &str) -> Vec<String> {
-    raw.split_whitespace().map(ToOwned::to_owned).collect()
+    raw.split(' ')
+        .filter(|scope| !scope.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+/// RFC 6749 scope-token: printable ASCII excluding quote and backslash.
+pub(crate) fn is_valid_scope_token(scope: &str) -> bool {
+    !scope.is_empty()
+        && scope
+            .bytes()
+            .all(|byte| matches!(byte, 0x21 | 0x23..=0x5b | 0x5d..=0x7e))
 }
 
 /// Returns the string members of a JSON array, ignoring malformed non-string members.

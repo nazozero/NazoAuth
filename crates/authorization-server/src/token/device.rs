@@ -93,10 +93,6 @@ impl DeviceDecisionHandles {
         source_ip: &str,
     ) -> Result<DeviceAuthorizationResponse, OAuthEndpointError> {
         let (form, has_basic) = prepared.into_parts();
-        let client_id = form
-            .client_id
-            .as_deref()
-            .expect("prepared request has client_id");
         let authorization_service = self.authorization_service.as_ref();
         let device_service = self.device_service.as_ref();
         let config = self.config.as_ref();
@@ -107,6 +103,21 @@ impl DeviceDecisionHandles {
                 "客户端认证失败.",
             ));
         }
+        let client_id = credentials
+            .client_id
+            .as_deref()
+            .filter(|id| {
+                form.client_id
+                    .as_deref()
+                    .is_none_or(|form_id| form_id == *id)
+            })
+            .ok_or_else(|| {
+                OAuthEndpointError::json(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client",
+                    "客户端认证失败.",
+                )
+            })?;
         let (mut client, secret_salt) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await

@@ -267,8 +267,14 @@ fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key()
             .expect("the attestation proof should validate");
 
         assert_eq!(validated.len(), 2);
-        assert_eq!(validated[0].holder_binding, json!({"jwk": first_key}));
-        assert_eq!(validated[1].holder_binding, json!({"jwk": second_key}));
+        assert_eq!(
+            validated[0].holder_binding,
+            nazo_digital_credentials::HolderBinding::Jwk { jwk: first_key }
+        );
+        assert_eq!(
+            validated[1].holder_binding,
+            nazo_digital_credentials::HolderBinding::Jwk { jwk: second_key }
+        );
     })
 }
 
@@ -301,7 +307,10 @@ fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
             .expect("batch_size bounds proof array entries, not attested keys");
         assert_eq!(validated.len(), keys.len());
         for (proof, key) in validated.iter().zip(keys) {
-            assert_eq!(proof.holder_binding, json!({"jwk": key}));
+            assert_eq!(
+                proof.holder_binding,
+                nazo_digital_credentials::HolderBinding::Jwk { jwk: key }
+            );
         }
     });
 }
@@ -961,7 +970,12 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
             .await
             .expect("matching key attestation");
         assert_eq!(validated.len(), 1);
-        assert_eq!(validated[0].holder_binding, json!({"jwk": wallet_jwk}));
+        assert_eq!(
+            validated[0].holder_binding,
+            nazo_digital_credentials::HolderBinding::Jwk {
+                jwk: wallet_jwk.clone()
+            }
+        );
 
         let (other_jwk, other_key) = es256_test_key(61);
         let mismatched_proof = signed_jwt_proof(

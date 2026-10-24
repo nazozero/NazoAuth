@@ -101,8 +101,10 @@ impl TokenRepository {
         let tenant_id = nazo_identity::TenantContext::default_system()
             .tenant_id
             .as_uuid();
-        let mut connection = self.connection().await?;
-        connection
+        let connection = self.connection().await?;
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard.connection()
             .transaction::<RecoveryInvalidation, RecoveryInvalidationFailure, _>(async |connection| {
                 lock_recovery_invalidation_scope(connection, tenant_id).await?;
                 if let Some((
@@ -177,7 +179,10 @@ impl TokenRepository {
                     revoked_refresh_tokens: revoked as u64,
                 })
             })
-            .await
+            .await;
+            guard.return_to_pool();
+            result
+        }
             .map_err(|error| match error {
                 RecoveryInvalidationFailure::Conflict => RepositoryError::Conflict,
                 RecoveryInvalidationFailure::UnsupportedCoverage => RepositoryError::Consistency(
@@ -427,9 +432,7 @@ impl TokenRepository {
             })
             .await
             .map_err(map_error);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 

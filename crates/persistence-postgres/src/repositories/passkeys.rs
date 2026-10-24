@@ -106,7 +106,7 @@ impl PasskeyRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let mut guard = crate::pool::DiscardOnDrop(Some(connection));
-        let row = guard
+        let result = guard
             .connection()
             .transaction::<_, Error, _>(async move |connection| {
                 let row: PasskeyCredentialRow =
@@ -141,9 +141,9 @@ impl PasskeyRepository {
                 .await?;
                 Ok(row)
             })
-            .await
-            .map_err(map_error)?;
+            .await;
         guard.return_to_pool();
+        let row = result.map_err(map_error)?;
         identity::passkey(row).map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn update_counter(
@@ -198,7 +198,7 @@ impl PasskeyRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let mut guard = crate::pool::DiscardOnDrop(Some(connection));
-        let deleted = guard
+        let result = guard
             .connection()
             .transaction::<_, Error, _>(async |connection| {
                 let count = diesel::delete(
@@ -223,10 +223,9 @@ impl PasskeyRepository {
                 }
                 Ok(count == 1)
             })
-            .await
-            .map_err(map_error)?;
+            .await;
         guard.return_to_pool();
-        Ok(deleted)
+        result.map_err(map_error)
     }
 }
 

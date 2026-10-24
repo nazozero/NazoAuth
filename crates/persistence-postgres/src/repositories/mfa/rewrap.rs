@@ -74,9 +74,7 @@ impl MfaRepository {
             }
             Ok(())
         }).await.map_err(MfaAuditError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -91,9 +89,7 @@ impl MfaRepository {
                 .map_err(|_| RepositoryError::Unavailable)?,
         ));
         let result = rewrap_batch(guard.connection(), keys).await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 }

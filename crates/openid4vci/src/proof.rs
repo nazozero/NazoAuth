@@ -1,12 +1,12 @@
 use std::{future::Future, pin::Pin};
 
-use serde_json::Value;
+use nazo_digital_credentials::HolderBinding;
 
 use crate::{CredentialProofOrigin, ProofTypeMetadata, Proofs};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ValidatedProof {
-    pub holder_binding: Value,
+    pub holder_binding: HolderBinding,
 }
 
 pub trait ProofValidatorPort: Send + Sync {

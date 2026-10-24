@@ -229,9 +229,7 @@ impl GrantRepository {
                     write.scopes, write.resource_indicators, write.authorization_details, true).await
             },
         ).await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result.map_err(|error| match error {
             diesel::result::Error::RollbackTransaction => RepositoryError::Conflict,
             error => map_error(error),
@@ -366,9 +364,7 @@ impl GrantRepository {
             )
             .await
             .map_err(Into::into);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 

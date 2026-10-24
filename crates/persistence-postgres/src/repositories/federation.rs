@@ -80,7 +80,7 @@ impl FederationRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let mut guard = crate::pool::DiscardOnDrop(Some(connection));
-        let row = guard.connection().transaction::<_, Error, _>(async |connection| {
+        let result = guard.connection().transaction::<_, Error, _>(async |connection| {
             let row = diesel::delete(external_identity_links::table.find(link_id)
                 .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(external_identity_links::user_id.eq(user_id.as_uuid())))
@@ -100,8 +100,9 @@ impl FederationRepository {
                     }).await?;
             }
             Ok(row)
-        }).await.map_err(map_error)?;
+        }).await;
         guard.return_to_pool();
+        let row = result.map_err(map_error)?;
         row.map(identity::federation_link_summary)
             .transpose()
             .map_err(|error| RepositoryError::Consistency(error.0))
@@ -110,49 +111,57 @@ impl FederationRepository {
         &self,
         login: &FederationLogin,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = get_conn(&self.pool)
+        let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        connection
-            .transaction::<_, diesel::result::Error, _>(async move |connection| {
-                let link = external_identity_links::table
-                    .inner_join(
-                        users::table.on(users::id
-                            .eq(external_identity_links::user_id)
-                            .and(users::tenant_id.eq(external_identity_links::tenant_id))),
-                    )
-                    .filter(external_identity_links::tenant_id.eq(login.tenant.tenant_id.as_uuid()))
-                    .filter(external_identity_links::provider_type.eq(&login.provider_type))
-                    .filter(external_identity_links::provider_id.eq(&login.provider_id))
-                    .filter(external_identity_links::subject.eq(&login.subject))
-                    .select((
-                        external_identity_links::id,
-                        external_identity_links::email,
-                        PublicAccountRow::as_select(),
-                    ))
-                    .first::<(uuid::Uuid, String, PublicAccountRow)>(connection)
-                    .await
-                    .optional()?;
-                let Some((link_id, previous_email, user)) = link else {
-                    return Ok(None);
-                };
-                let email = login.email.as_deref().unwrap_or(&previous_email);
-                diesel::update(external_identity_links::table.find(link_id))
-                    .set((
-                        external_identity_links::email.eq(email),
-                        external_identity_links::claims.eq(&login.claims),
-                        external_identity_links::last_login_at.eq(diesel::dsl::now),
-                        external_identity_links::updated_at.eq(diesel::dsl::now),
-                    ))
-                    .execute(connection)
-                    .await?;
-                Ok(Some(user))
-            })
-            .await
-            .map_err(map_error)?
-            .map(PublicAccount::try_from)
-            .transpose()
-            .map_err(|error| RepositoryError::Consistency(error.0))
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, diesel::result::Error, _>(async move |connection| {
+                    let link = external_identity_links::table
+                        .inner_join(
+                            users::table.on(users::id
+                                .eq(external_identity_links::user_id)
+                                .and(users::tenant_id.eq(external_identity_links::tenant_id))),
+                        )
+                        .filter(
+                            external_identity_links::tenant_id.eq(login.tenant.tenant_id.as_uuid()),
+                        )
+                        .filter(external_identity_links::provider_type.eq(&login.provider_type))
+                        .filter(external_identity_links::provider_id.eq(&login.provider_id))
+                        .filter(external_identity_links::subject.eq(&login.subject))
+                        .select((
+                            external_identity_links::id,
+                            external_identity_links::email,
+                            PublicAccountRow::as_select(),
+                        ))
+                        .first::<(uuid::Uuid, String, PublicAccountRow)>(connection)
+                        .await
+                        .optional()?;
+                    let Some((link_id, previous_email, user)) = link else {
+                        return Ok(None);
+                    };
+                    let email = login.email.as_deref().unwrap_or(&previous_email);
+                    diesel::update(external_identity_links::table.find(link_id))
+                        .set((
+                            external_identity_links::email.eq(email),
+                            external_identity_links::claims.eq(&login.claims),
+                            external_identity_links::last_login_at.eq(diesel::dsl::now),
+                            external_identity_links::updated_at.eq(diesel::dsl::now),
+                        ))
+                        .execute(connection)
+                        .await?;
+                    Ok(Some(user))
+                })
+                .await;
+            guard.return_to_pool();
+            result
+        }
+        .map_err(map_error)?
+        .map(PublicAccount::try_from)
+        .transpose()
+        .map_err(|error| RepositoryError::Consistency(error.0))
     }
     pub async fn create_federated(
         &self,
@@ -222,11 +231,7 @@ impl FederationRepository {
             })
             .await;
         // Conflict recovery borrows from this pool again after the transaction has ended.
-        if result.is_ok() {
-            guard.return_to_pool();
-        } else {
-            drop(guard);
-        }
+        guard.return_to_pool();
         match result {
             Ok(row) => row
                 .try_into()

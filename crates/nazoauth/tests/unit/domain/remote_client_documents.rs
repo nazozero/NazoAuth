@@ -71,8 +71,20 @@ fn tls_server_sequence_with_request_count(
     Vec<u8>,
     Arc<AtomicUsize>,
 ) {
+    tls_server_sequence_on(responses, "127.0.0.1")
+}
+
+fn tls_server_sequence_on(
+    responses: Vec<(u16, String, Vec<u8>, bool)>,
+    host: &str,
+) -> (
+    SocketAddr,
+    thread::JoinHandle<()>,
+    Vec<u8>,
+    Arc<AtomicUsize>,
+) {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("generate TLS test key");
-    let certificate = CertificateParams::new(vec!["localhost".to_owned()])
+    let certificate = CertificateParams::new(vec!["localhost".to_owned(), host.to_owned()])
         .expect("TLS certificate params")
         .self_signed(&key)
         .expect("self-sign TLS test certificate");
@@ -85,7 +97,7 @@ fn tls_server_sequence_with_request_count(
         .with_no_client_auth()
         .with_single_cert(vec![certificate.der().clone()], private_key.into())
         .expect("configure TLS test identity");
-    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind TLS test listener");
+    let listener = TcpListener::bind((host, 0)).expect("bind TLS test listener");
     let address = listener
         .local_addr()
         .expect("read TLS test listener address");
@@ -119,6 +131,39 @@ fn tls_server_sequence_with_request_count(
         }
     });
     (address, handle, certificate_der, request_count)
+}
+
+#[tokio::test]
+async fn ipv6_remote_documents_preserve_network_and_tls_policy() {
+    let (address, server, certificate_der, count) = tls_server_sequence_on(
+        vec![(
+            200,
+            "application/json".to_owned(),
+            br#"{"keys":[{"kid":"ipv6"}]}"#.to_vec(),
+            true,
+        )],
+        "::1",
+    );
+    let origin = format!("https://{address}");
+    let uri = format!("{origin}/jwks");
+    let denied = RemoteClientDocumentResolver::new(&[])
+        .unwrap()
+        .jwks_for_kid(&uri, None)
+        .await
+        .unwrap_err();
+    assert!(denied.contains("blocked network"), "{denied}");
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    let resolver = RemoteClientDocumentResolver::new_with_root_certificates(
+        &[origin],
+        vec![reqwest::Certificate::from_der(&certificate_der).unwrap()],
+    )
+    .unwrap();
+    let sector = resolver.sector_identifier_uris(&uri).await.unwrap_err();
+    assert!(sector.contains("blocked network"), "{sector}");
+    let document = resolver.jwks_for_kid(&uri, Some("ipv6")).await.unwrap();
+    assert_eq!(document["keys"][0]["kid"], "ipv6");
+    server.join().unwrap();
+    assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
 pub(crate) fn resolver_for(

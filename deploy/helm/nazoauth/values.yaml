@@ -7,6 +7,7 @@ image:
   pullPolicy: IfNotPresent
 
 publicBaseUrl: "https://auth.example.com"
+# This chart's HTTP probes require ingress TLS termination.
 transportMode: trusted-proxy
 # Required non-nil UUID. Rotate this before starting a candidate on restored
 # PostgreSQL or Valkey state.

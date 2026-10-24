@@ -296,11 +296,8 @@ fn validate_digest<'a>(
 ) -> Result<Option<&'a str>, VerifyError> {
     let supplied =
         unique_header(input.headers, "content-digest").map_err(|_| VerifyError::DigestMismatch)?;
-    if input.body.is_empty() {
-        return supplied
-            .is_none()
-            .then_some(None)
-            .ok_or(VerifyError::DigestMismatch);
+    if input.body.is_empty() && supplied.is_none() {
+        return Ok(None);
     }
     let supplied = supplied.ok_or(VerifyError::DigestMismatch)?;
     if !digest_matches(supplied, input.body, evidence) {

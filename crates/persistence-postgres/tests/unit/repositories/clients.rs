@@ -174,10 +174,6 @@ fn replace_registration_validates_the_record_before_audited_commit() {
         .expect("single connection is acquired");
     assert!(metadata < acquire && acquire < transaction);
     assert_eq!(body.matches("self.connection().await?").count(), 1);
-    assert!(
-        body.contains("if result.is_ok()") && body.contains("guard.return_to_pool()"),
-        "failed acknowledgements must discard the guarded connection"
-    );
 }
 
 use diesel::{sql_query, sql_types};

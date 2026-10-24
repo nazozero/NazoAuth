@@ -272,9 +272,7 @@ impl UserRepository {
                 Ok(written)
             },
         ).await.map_err(AdminAuthorizedUpdateError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -601,9 +599,7 @@ impl UserRepository {
             )
             .await
             .map_err(AdminAuthorizedUpdateError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -852,15 +848,6 @@ pub async fn disable_user_on_connection(
     tenant_id: TenantId,
     user_id: UserId,
 ) -> Result<bool, diesel::result::Error> {
-    sql_query(
-        "UPDATE openid4vci_offers
-         SET consumed_at = GREATEST(CURRENT_TIMESTAMP, created_at)
-         WHERE tenant_id = $1 AND subject_id = $2 AND consumed_at IS NULL",
-    )
-    .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
-    .bind::<sql_types::Uuid, _>(user_id.as_uuid())
-    .execute(connection)
-    .await?;
     let changed = diesel::update(
         users::table
             .filter(users::tenant_id.eq(tenant_id.as_uuid()))
@@ -876,6 +863,16 @@ pub async fn disable_user_on_connection(
     if changed != 1 {
         return Ok(false);
     }
+    // Offer redemption locks the subject before its grant and offer writes.
+    sql_query(
+        "UPDATE openid4vci_offers
+         SET consumed_at = GREATEST(CURRENT_TIMESTAMP, created_at)
+         WHERE tenant_id = $1 AND subject_id = $2 AND consumed_at IS NULL",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id.as_uuid())
+    .bind::<sql_types::Uuid, _>(user_id.as_uuid())
+    .execute(connection)
+    .await?;
     super::token_issuance::revoke_access_tokens_for_owner_on_connection(
         connection,
         tenant_id.as_uuid(),

@@ -582,9 +582,7 @@ impl RecoveryRootRepository {
                 Ok(written)
             })
             .await;
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -600,148 +598,154 @@ impl RecoveryRootRepository {
         challenge: NewRecoveryChallenge,
         now: DateTime<Utc>,
     ) -> Result<IssuedRecoveryChallenge, RecoveryRootError> {
-        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
-        connection
-            .transaction::<_, RecoveryRootError, _>(async move |connection| {
-                // Rotation, challenge allocation, and recovery commit share
-                // this lock.  The key verified below therefore remains the
-                // current root through the pending-row decision.
-                lock_deployment_recovery(connection, &challenge.deployment_id).await?;
-                let root = read_root_on_connection(connection, &challenge.deployment_id)
-                    .await?
-                    .ok_or(RecoveryRootError::RootMissing)?;
-                let root_public_key: [u8; 32] = root
-                    .recovery_public_key
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| {
-                        transport(anyhow::anyhow!(
-                            "stored recovery root holds invalid key length"
-                        ))
-                    })?;
-                if !recovery_proposal(&challenge).verify_allocation_signature(
-                    &challenge.allocation_nonce,
-                    &root_public_key,
-                    &challenge.allocation_signature,
-                ) {
-                    return Err(RecoveryRootError::InvalidAllocationProof);
-                }
+        let connection = get_conn(&self.pool).await.map_err(transport)?;
+        {
+            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let result = guard
+                .connection()
+                .transaction::<_, RecoveryRootError, _>(async move |connection| {
+                    // Rotation, challenge allocation, and recovery commit share
+                    // this lock.  The key verified below therefore remains the
+                    // current root through the pending-row decision.
+                    lock_deployment_recovery(connection, &challenge.deployment_id).await?;
+                    let root = read_root_on_connection(connection, &challenge.deployment_id)
+                        .await?
+                        .ok_or(RecoveryRootError::RootMissing)?;
+                    let root_public_key: [u8; 32] = root
+                        .recovery_public_key
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| {
+                            transport(anyhow::anyhow!(
+                                "stored recovery root holds invalid key length"
+                            ))
+                        })?;
+                    if !recovery_proposal(&challenge).verify_allocation_signature(
+                        &challenge.allocation_nonce,
+                        &root_public_key,
+                        &challenge.allocation_signature,
+                    ) {
+                        return Err(RecoveryRootError::InvalidAllocationProof);
+                    }
 
-                // Only a proven root holder may learn whether an ordinary
-                // controller is still admitted.  Recheck under the same lock
-                // so challenge allocation cannot race a controller bind.
-                let admitted = sql_query(
-                    "SELECT controller_id, kid, expires_at
+                    // Only a proven root holder may learn whether an ordinary
+                    // controller is still admitted.  Recheck under the same lock
+                    // so challenge allocation cannot race a controller bind.
+                    let admitted = sql_query(
+                        "SELECT controller_id, kid, expires_at
                      FROM controller_registry_slots
                      WHERE deployment_id = $1
                        AND status = 'active'
                        AND expires_at > $2
                      ORDER BY slot_index",
-                )
-                .bind::<Varchar, _>(&challenge.deployment_id)
-                .bind::<Timestamptz, _>(now)
-                .load::<AdmittedControllerSummary>(connection)
-                .await
-                .map_err(transport)?;
-                if !admitted.is_empty() {
-                    return Err(RecoveryRootError::ControllersStillAdmitted(admitted));
-                }
+                    )
+                    .bind::<Varchar, _>(&challenge.deployment_id)
+                    .bind::<Timestamptz, _>(now)
+                    .load::<AdmittedControllerSummary>(connection)
+                    .await
+                    .map_err(transport)?;
+                    if !admitted.is_empty() {
+                        return Err(RecoveryRootError::ControllersStillAdmitted(admitted));
+                    }
 
-                // Expiry releases the one-pending slot but preserves the
-                // allocation nonce as consumed evidence.  Deleting the row
-                // would let a captured proof allocate fresh state forever.
-                sql_query(
-                    "UPDATE controller_recovery_challenges
+                    // Expiry releases the one-pending slot but preserves the
+                    // allocation nonce as consumed evidence.  Deleting the row
+                    // would let a captured proof allocate fresh state forever.
+                    sql_query(
+                        "UPDATE controller_recovery_challenges
                      SET consumed_at = expires_at
                      WHERE deployment_id = $1
                        AND consumed_at IS NULL
                        AND expires_at <= $2",
-                )
-                .bind::<Varchar, _>(&challenge.deployment_id)
-                .bind::<Timestamptz, _>(now)
-                .execute(connection)
-                .await
-                .map_err(transport)?;
+                    )
+                    .bind::<Varchar, _>(&challenge.deployment_id)
+                    .bind::<Timestamptz, _>(now)
+                    .execute(connection)
+                    .await
+                    .map_err(transport)?;
 
-                let prior = sql_query(format!(
-                    "SELECT {CHALLENGE_COLUMNS}
+                    let prior = sql_query(format!(
+                        "SELECT {CHALLENGE_COLUMNS}
                      FROM controller_recovery_challenges
                      WHERE deployment_id = $1
                        AND (allocation_nonce = $2 OR consumed_at IS NULL)
                      ORDER BY (allocation_nonce = $2) DESC
                      LIMIT 1
                      FOR UPDATE"
-                ))
-                .bind::<Varchar, _>(&challenge.deployment_id)
-                .bind::<Binary, _>(&challenge.allocation_nonce[..])
-                .get_result::<ChallengeRow>(connection)
-                .await
-                .optional()
-                .map_err(transport)?;
-                if let Some(prior) = prior {
-                    if prior.consumed_at.is_some() {
-                        return Err(RecoveryRootError::AllocationProofReplayed);
+                    ))
+                    .bind::<Varchar, _>(&challenge.deployment_id)
+                    .bind::<Binary, _>(&challenge.allocation_nonce[..])
+                    .get_result::<ChallengeRow>(connection)
+                    .await
+                    .optional()
+                    .map_err(transport)?;
+                    if let Some(prior) = prior {
+                        if prior.consumed_at.is_some() {
+                            return Err(RecoveryRootError::AllocationProofReplayed);
+                        }
+                        if same_allocation(&prior, &challenge) {
+                            let nonce: [u8; 32] = prior.nonce.try_into().map_err(|_| {
+                                transport(anyhow::anyhow!(
+                                    "stored recovery challenge holds invalid nonce length"
+                                ))
+                            })?;
+                            return Ok(IssuedRecoveryChallenge {
+                                challenge_id: prior.challenge_id,
+                                deployment_id: prior.deployment_id,
+                                nonce,
+                                expires_at: prior.expires_at,
+                            });
+                        }
+                        return Err(RecoveryRootError::ChallengePending);
                     }
-                    if same_allocation(&prior, &challenge) {
-                        let nonce: [u8; 32] = prior.nonce.try_into().map_err(|_| {
-                            transport(anyhow::anyhow!(
-                                "stored recovery challenge holds invalid nonce length"
-                            ))
-                        })?;
-                        return Ok(IssuedRecoveryChallenge {
-                            challenge_id: prior.challenge_id,
-                            deployment_id: prior.deployment_id,
-                            nonce,
-                            expires_at: prior.expires_at,
-                        });
-                    }
-                    return Err(RecoveryRootError::ChallengePending);
-                }
 
-                let challenge_id = Uuid::now_v7();
-                let nonce = rand::random::<[u8; 32]>();
-                let expires_at = now + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS);
-                let inserted = sql_query(
-                    "INSERT INTO controller_recovery_challenges
+                    let challenge_id = Uuid::now_v7();
+                    let nonce = rand::random::<[u8; 32]>();
+                    let expires_at = now + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS);
+                    let inserted = sql_query(
+                        "INSERT INTO controller_recovery_challenges
                         (challenge_id, deployment_id, nonce, allocation_nonce,
                          controller_label, controller_kid, controller_public_key,
                          recovery_kid, recovery_public_key, attempts, expires_at,
                          consumed_at, created_at)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, $10, NULL, $11)",
-                )
-                .bind::<DieselUuid, _>(challenge_id)
-                .bind::<Varchar, _>(&challenge.deployment_id)
-                .bind::<Binary, _>(&nonce[..])
-                .bind::<Binary, _>(&challenge.allocation_nonce[..])
-                .bind::<Varchar, _>(&challenge.controller_label)
-                .bind::<Varchar, _>(&challenge.controller_kid)
-                .bind::<Binary, _>(&challenge.controller_public_key[..])
-                .bind::<Varchar, _>(&challenge.recovery_kid)
-                .bind::<Binary, _>(&challenge.recovery_public_key[..])
-                .bind::<Timestamptz, _>(expires_at)
-                .bind::<Timestamptz, _>(now)
-                .execute(connection)
-                .await;
-                if let Err(error) = inserted {
-                    if matches!(
-                        error,
-                        QueryError::DatabaseError(
-                            diesel::result::DatabaseErrorKind::UniqueViolation,
-                            _
-                        )
-                    ) {
-                        return Err(RecoveryRootError::ChallengePending);
+                    )
+                    .bind::<DieselUuid, _>(challenge_id)
+                    .bind::<Varchar, _>(&challenge.deployment_id)
+                    .bind::<Binary, _>(&nonce[..])
+                    .bind::<Binary, _>(&challenge.allocation_nonce[..])
+                    .bind::<Varchar, _>(&challenge.controller_label)
+                    .bind::<Varchar, _>(&challenge.controller_kid)
+                    .bind::<Binary, _>(&challenge.controller_public_key[..])
+                    .bind::<Varchar, _>(&challenge.recovery_kid)
+                    .bind::<Binary, _>(&challenge.recovery_public_key[..])
+                    .bind::<Timestamptz, _>(expires_at)
+                    .bind::<Timestamptz, _>(now)
+                    .execute(connection)
+                    .await;
+                    if let Err(error) = inserted {
+                        if matches!(
+                            error,
+                            QueryError::DatabaseError(
+                                diesel::result::DatabaseErrorKind::UniqueViolation,
+                                _
+                            )
+                        ) {
+                            return Err(RecoveryRootError::ChallengePending);
+                        }
+                        return Err(transport(error));
                     }
-                    return Err(transport(error));
-                }
-                Ok(IssuedRecoveryChallenge {
-                    challenge_id,
-                    deployment_id: challenge.deployment_id,
-                    nonce,
-                    expires_at,
+                    Ok(IssuedRecoveryChallenge {
+                        challenge_id,
+                        deployment_id: challenge.deployment_id,
+                        nonce,
+                        expires_at,
+                    })
                 })
-            })
-            .await
+                .await;
+            guard.return_to_pool();
+            result
+        }
     }
 
     /// Record one failed submission outside the accepting transaction so the
@@ -800,8 +804,9 @@ impl RecoveryRootRepository {
         let submission = &submission;
         validate_deployment_id(&submission.deployment_id)
             .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
-        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
-        let outcome = connection
+        let connection = get_conn(&self.pool).await.map_err(transport)?;
+        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let outcome = guard.connection()
             .transaction::<_, RecoveryRootError, _>(async move |connection| {
                 lock_deployment_recovery(connection, &submission.deployment_id).await?;
                 let challenge = sql_query(format!(
@@ -986,17 +991,21 @@ impl RecoveryRootRepository {
             })
             .await;
         match outcome {
-            Ok(commit) => Ok(commit),
+            Ok(commit) => {
+                guard.return_to_pool();
+                Ok(commit)
+            }
             Err(
                 error @ (RecoveryRootError::NonceMismatch | RecoveryRootError::InvalidSignature),
             ) => {
                 Self::record_failed_attempt(
-                    &mut connection,
+                    guard.connection(),
                     &submission.deployment_id,
                     submission.challenge_id,
                     now,
                 )
                 .await?;
+                guard.return_to_pool();
                 Err(error)
             }
             Err(error) => Err(error),

@@ -22,7 +22,7 @@
   "expected_file_markers": {
     "docs/protocol/rfc-compliance-matrix.md": ["draft-ietf-oauth-v2-1-16", "RFC 10017", "RFC 10027", "draft-ietf-oauth-rfc7523bis-11", "draft-ietf-oauth-status-list-21", "Not supported (planned)", "draft-aap-oauth-profile-01", "draft-parecki-oauth-global-token-revocation-06", "Watch only"],
     "docs/protocol/spec-freshness.md": ["draft-ietf-oauth-v2-1-16", "RFC 10017", "draft-ietf-oauth-attestation-based-client-auth-11", "draft-ietf-oauth-transaction-tokens-11", "draft-ietf-oauth-client-id-metadata-document-02", "draft-ietf-oauth-security-topics-update-03", "draft-ietf-oauth-refresh-token-expiration-03", "draft-ietf-oauth-first-party-apps-04", "draft-ietf-oauth-identity-chaining-17", "draft-ietf-oauth-status-list-21", "draft-ietf-oauth-rfc8725bis-10", "draft-ietf-oauth-spiffe-client-auth-02", "draft-ietf-oauth-identity-assertion-authz-grant-04", "draft-ietf-oauth-rfc7523bis-11", "RFC 10027", "draft-ietf-oauth-sd-jwt-vc-19", "draft-aap-oauth-profile-01", "draft-li-oauth-delegated-authorization-03", "draft-mcguinness-oauth-client-instance-id-00", "draft-parecki-oauth-global-token-revocation-06", "draft-ietf-httpbis-layered-cookies-02", "fapi-ciba-03", "oauth-v2-grant-management-03", "Second Implementer's Draft"],
-    "docs/conformance/README.md": ["Third-party validators are ordinary external clients"]
+    "docs/conformance/README.md": ["Third-party validators use the same public interfaces as ordinary clients."]
   },
   "forbidden_active_markers": {
     "fapi-grant-management-01": "oauth-v2-grant-management-03"

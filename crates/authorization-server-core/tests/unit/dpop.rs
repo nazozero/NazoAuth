@@ -541,7 +541,7 @@ async fn state_failures_are_fail_closed_with_compatible_error_categories_async()
             NOW,
         )
         .await,
-        Err(DpopError::NonceStoreUnavailable)
+        Err(DpopError::StateStoreUnavailable)
     );
 
     let proof_without_nonce = proof(public_jwk(), json!({}));
@@ -553,7 +553,7 @@ async fn state_failures_are_fail_closed_with_compatible_error_categories_async()
             NOW,
         )
         .await,
-        Err(DpopError::InvalidProof)
+        Err(DpopError::StateStoreUnavailable)
     );
 }
 

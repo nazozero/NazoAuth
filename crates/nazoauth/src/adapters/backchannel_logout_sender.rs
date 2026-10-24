@@ -66,7 +66,9 @@ async fn post_logout_token(
         .context("invalid stored back-channel logout endpoint")?;
     let host = endpoint
         .host_str()
-        .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no host"))?;
+        .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no host"))?
+        // URL syntax brackets are not part of an IPv6 DNS/socket host.
+        .trim_matches(['[', ']']);
     let port = endpoint
         .port_or_known_default()
         .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no port"))?;

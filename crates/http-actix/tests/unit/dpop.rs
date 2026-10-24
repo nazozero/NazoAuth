@@ -108,7 +108,7 @@ async fn token_endpoint_errors_preserve_status_headers_content_type_and_body() {
             StatusCode::BAD_REQUEST,
         ),
         (
-            DpopError::NonceStoreUnavailable,
+            DpopError::StateStoreUnavailable,
             StatusCode::SERVICE_UNAVAILABLE,
         ),
     ];

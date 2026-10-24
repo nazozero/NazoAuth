@@ -497,20 +497,42 @@ async fn registration_scopes_code_load_and_consumption_to_service_tenant() {
         },
     );
 
-    let result = service
-        .register_local_account(crate::RegisterLocalAccountInput {
-            email: "shared@example.test".to_owned(),
-            verification_code: "123456".to_owned(),
-            password: "correct horse battery staple".to_owned(),
-        })
-        .await;
-
-    assert!(matches!(result, Err(RegisterLocalAccountError::Create(_))));
-    assert_eq!(verification_calls.code_loads.load(Ordering::Relaxed), 1);
-    assert_eq!(verification_calls.code_consumes.load(Ordering::Relaxed), 1);
+    for password in [
+        String::new(),
+        "x".repeat(11),
+        "x".repeat(1025),
+        "密".repeat(3),
+        "密".repeat(342),
+    ] {
+        let result = service
+            .register_local_account(crate::RegisterLocalAccountInput {
+                email: "shared@example.test".to_owned(),
+                verification_code: "123456".to_owned(),
+                password,
+            })
+            .await;
+        assert_eq!(
+            result,
+            Err(RegisterLocalAccountError::InvalidPasswordLength)
+        );
+    }
+    assert_eq!(verification_calls.code_loads.load(Ordering::Relaxed), 0);
+    assert_eq!(verification_calls.code_consumes.load(Ordering::Relaxed), 0);
+    for password in ["x".repeat(12), "x".repeat(1024), "密".repeat(4)] {
+        let result = service
+            .register_local_account(crate::RegisterLocalAccountInput {
+                email: "shared@example.test".to_owned(),
+                verification_code: "123456".to_owned(),
+                password,
+            })
+            .await;
+        assert!(matches!(result, Err(RegisterLocalAccountError::Create(_))));
+    }
+    assert_eq!(verification_calls.code_loads.load(Ordering::Relaxed), 3);
+    assert_eq!(verification_calls.code_consumes.load(Ordering::Relaxed), 3);
     assert_eq!(
         *verification_calls.tenant_ids.lock().unwrap(),
-        vec![tenant.tenant_id; 2]
+        vec![tenant.tenant_id; 6]
     );
 }
 

@@ -842,6 +842,90 @@ async fn approved_device_code_has_one_consumption_identity_across_valid_sender_k
 }
 
 #[actix_web::test]
+async fn device_authorization_resolves_basic_identity_without_form_client_id() {
+    use base64::Engine as _;
+    let state = live_device_replay_state()
+        .await
+        .expect("isolated PostgreSQL and Valkey are required");
+    let mut client = device_client();
+    client.client_id = format!("device-basic-{}", Uuid::now_v7());
+    client.client_type = "confidential".into();
+    client.token_endpoint_auth_method = "client_secret_basic".into();
+    let secret = "device-basic-fixture-secret";
+    let digest = crate::test_support::hash_client_secret_fixture(
+        secret,
+        &state.settings.protocol.client_secret_pepper,
+    );
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, Some(&digest), None)
+        .await
+        .unwrap();
+    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+        state.diesel_db.clone(),
+        state.settings.as_ref(),
+    )
+    .unwrap();
+    let handles = decision_handles(
+        &state,
+        device_grant_service(&state).into_inner(),
+        runtime.snapshot_store(),
+    );
+    let basic = |secret: &str| {
+        format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD
+                .encode(format!("{}:{secret}", client.client_id))
+        )
+    };
+    for (authorization, body, expected) in [
+        (basic(secret), "scope=openid", StatusCode::OK),
+        (
+            basic("wrong-secret"),
+            "scope=openid",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "Basic invalid".into(),
+            "scope=openid",
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            basic(secret),
+            "scope=openid&client_id=another-client",
+            StatusCode::UNAUTHORIZED,
+        ),
+    ] {
+        let request = TestRequest::post()
+            .uri("/device/authorization")
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .insert_header((header::AUTHORIZATION, authorization))
+            .to_http_request();
+        let response = device_authorization(
+            handles.clone(),
+            Data::new(DeviceHttpConfig::from(state.settings.as_ref())),
+            request,
+            Bytes::from(body),
+        )
+        .await;
+        assert_eq!(response.status(), expected);
+        if expected == StatusCode::OK {
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .unwrap();
+            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            let pending = device_grant_service(&state)
+                .pending_request_for_user_code(body["user_code"].as_str().unwrap(), Utc::now)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(pending.client_id, client.client_id);
+        } else {
+            assert_eq!(oauth_error_code(response).await, "invalid_client");
+        }
+    }
+}
+
+#[actix_web::test]
 async fn protocol_grant_expired_dispatch_device_after_approved_poll() {
     use crate::http::token::issue::test_support::{
         assert_expired_grant_dispatch_response, token_with_expired_grant_commit,

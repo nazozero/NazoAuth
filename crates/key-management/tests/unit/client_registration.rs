@@ -7,6 +7,19 @@ use serde_json::json;
 use super::*;
 
 #[test]
+fn certificate_dn_preserves_multivalued_rdns_and_rfc4514_escaping() {
+    use x509_cert::der::Encode;
+    for text in [
+        r"CN=\#client\ +OU=Security,O=Example,C=US",
+        r"CN=client\, one,O=Example \+ Org",
+    ] {
+        let name = x509_cert::name::Name::from_str(text).unwrap();
+        let encoded = rfc4514_dn_from_der(&name.to_der().unwrap()).unwrap();
+        assert!(rfc4514_dn_matches(text, &encoded), "{encoded}");
+    }
+}
+
+#[test]
 fn policy_validation_crypto_has_no_keyset_and_exposes_compiled_algorithms() {
     let crypto = ClientRegistrationCrypto::for_policy_validation();
     assert_eq!(

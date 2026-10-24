@@ -98,7 +98,7 @@ fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -
 
 pub fn authorization_code_dpop_error_response(error: DpopError) -> OAuthEndpointError {
     match error {
-        DpopError::UseNonce(_) | DpopError::NonceStoreUnavailable => OAuthEndpointError::Dpop {
+        DpopError::UseNonce(_) | DpopError::StateStoreUnavailable => OAuthEndpointError::Dpop {
             error,
             context: DpopErrorContext::TokenEndpoint,
         },

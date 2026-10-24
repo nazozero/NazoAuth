@@ -2,8 +2,8 @@ use super::*;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use url::Url;
 
-async fn local_status_endpoint(status: u16) -> (String, tokio::task::JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+async fn local_status_endpoint(status: u16, host: &str) -> (String, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind((host, 0))
         .await
         .expect("loopback listener binds");
     let address = listener
@@ -61,7 +61,7 @@ async fn local_status_endpoint(status: u16) -> (String, tokio::task::JoinHandle<
 }
 
 async fn post_to_local_status(status: u16) -> anyhow::Result<http::StatusCode> {
-    let (logout_uri, server) = local_status_endpoint(status).await;
+    let (logout_uri, server) = local_status_endpoint(status, "127.0.0.1").await;
     let origin = Url::parse(&logout_uri)
         .expect("local endpoint is a URL")
         .origin()
@@ -75,8 +75,10 @@ async fn post_to_local_status(status: u16) -> anyhow::Result<http::StatusCode> {
 fn backchannel_endpoint_validation_rejects_unsafe_transport_shapes() {
     assert!(validate_backchannel_endpoint("https://rp.example/logout?tenant=a").is_ok());
     assert!(validate_backchannel_endpoint("http://localhost:8080/logout").is_ok());
+    assert!(validate_backchannel_endpoint("http://[::1]:8080/logout").is_ok());
     for endpoint in [
         "http://rp.example/logout",
+        "http://[2001:db8::1]/logout",
         "file:///tmp/logout",
         "https://user@rp.example/logout",
         "https://rp.example/logout#fragment",
@@ -87,6 +89,24 @@ fn backchannel_endpoint_validation_rejects_unsafe_transport_shapes() {
             "endpoint {endpoint}"
         );
     }
+}
+
+#[tokio::test]
+async fn ipv6_backchannel_post_obeys_the_exact_origin_allowlist() {
+    let (logout_uri, server) = local_status_endpoint(204, "::1").await;
+    let denied = post_logout_token(&HashSet::new(), &logout_uri, "logout-token")
+        .await
+        .expect_err("IPv6 loopback still requires an allowlist entry");
+    assert!(denied.to_string().contains("blocked network"), "{denied:#}");
+    let origin = Url::parse(&logout_uri)
+        .unwrap()
+        .origin()
+        .ascii_serialization();
+    let status = post_logout_token(&HashSet::from([origin]), &logout_uri, "logout-token")
+        .await
+        .expect("allowlisted IPv6 loopback endpoint must receive the logout");
+    assert_eq!(status, http::StatusCode::NO_CONTENT);
+    server.await.unwrap();
 }
 
 #[test]

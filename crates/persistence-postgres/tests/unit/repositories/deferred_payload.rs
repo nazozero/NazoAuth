@@ -66,3 +66,25 @@ fn retained_ciphertext_is_decoded_only_at_adapter_boundary() {
             .is_err()
     );
 }
+
+#[test]
+fn deferred_holder_bindings_preserve_legacy_shape_and_reject_malformed_records() {
+    let access = access();
+    let id = Uuid::now_v7();
+    let key = rand::random::<[u8; 32]>();
+    let payload = br#"{"dataset":{},"status":null,"issued_at":"2026-10-09T00:00:00Z","expires_at":"2026-10-10T00:00:00Z"}"#;
+    let ciphertext = protect_payload(&key, id, payload).unwrap();
+    let bindings = serde_json::json!([null, {"jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y"}}]);
+    let mut stored = row(&access, id, ciphertext.clone());
+    stored.holder_bindings = bindings.clone();
+    let decoded = stored.into_domain(access.clone(), None, &key).unwrap();
+    assert_eq!(
+        serde_json::to_value(decoded.holder_bindings).unwrap(),
+        bindings
+    );
+    for malformed in [serde_json::json!([{}]), serde_json::json!(["invalid"])] {
+        let mut stored = row(&access, id, ciphertext.clone());
+        stored.holder_bindings = malformed;
+        assert!(stored.into_domain(access.clone(), None, &key).is_err());
+    }
+}

@@ -94,7 +94,8 @@ pub fn prepare_request(
         .ok_or_else(|| RequestError::InvalidInput("missing Authorization header".into()))?;
     let dpop = unique_header(input.headers, "dpop")?;
     let supplied_digest = unique_header(input.headers, "content-digest")?;
-    let computed_digest = (!input.body.is_empty()).then(|| content_digest(input.body));
+    let computed_digest =
+        (!input.body.is_empty() || supplied_digest.is_some()).then(|| content_digest(input.body));
     if supplied_digest != computed_digest.as_deref() && supplied_digest.is_some() {
         return Err(RequestError::InvalidInput(
             "Content-Digest does not match the request body".into(),

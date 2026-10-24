@@ -61,7 +61,7 @@ where
             .await
         {
             tracing::error!(%error, "DPoP replay audit failed");
-            return Err(DpopError::NonceStoreUnavailable);
+            return Err(DpopError::StateStoreUnavailable);
         }
     }
     result

@@ -16,6 +16,9 @@ pub(crate) fn checkout_is_unavailable(error: &anyhow::Error) -> bool {
     match error.downcast_ref::<PoolError>() {
         Some(PoolError::Closed | PoolError::Timeout(_)) => true,
         Some(PoolError::Backend(BackendError::QueryError(error))) => query_is_unavailable(error),
+        Some(PoolError::Backend(BackendError::ConnectionError(
+            diesel::ConnectionError::CouldntSetupConfiguration(error),
+        ))) => query_is_unavailable(error),
         _ => false,
     }
 }

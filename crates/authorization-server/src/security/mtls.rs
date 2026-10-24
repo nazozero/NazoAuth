@@ -9,16 +9,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use x509_parser::{
-    certificate::X509Certificate,
-    extensions::GeneralName,
-    objects::{oid_registry, oid2sn},
-    oid_registry::{
-        OID_PKCS9_EMAIL_ADDRESS, OID_X509_COMMON_NAME, OID_X509_COUNTRY_NAME,
-        OID_X509_LOCALITY_NAME, OID_X509_ORGANIZATION_NAME, OID_X509_ORGANIZATIONAL_UNIT,
-        OID_X509_STATE_OR_PROVINCE_NAME,
-    },
-    parse_x509_certificate,
-    x509::X509Name,
+    certificate::X509Certificate, extensions::GeneralName, parse_x509_certificate, x509::X509Name,
 };
 pub fn certificate_chain_identity(
     chain: std::sync::Arc<Vec<nazo_crypto::certificate::CertificateDer<'static>>>,
@@ -191,41 +182,7 @@ fn parse_current_x509(der: &[u8]) -> Option<X509Certificate<'_>> {
 }
 
 fn subject_name_to_dn(name: &X509Name<'_>) -> Option<String> {
-    let mut parts = Vec::new();
-    for entry in name.iter_attributes() {
-        let oid = entry.attr_type();
-        let short_name = if oid == &OID_X509_COMMON_NAME {
-            "CN"
-        } else if oid == &OID_X509_COUNTRY_NAME {
-            "C"
-        } else if oid == &OID_X509_STATE_OR_PROVINCE_NAME {
-            "ST"
-        } else if oid == &OID_X509_LOCALITY_NAME {
-            "L"
-        } else if oid == &OID_X509_ORGANIZATION_NAME {
-            "O"
-        } else if oid == &OID_X509_ORGANIZATIONAL_UNIT {
-            "OU"
-        } else if oid == &OID_PKCS9_EMAIL_ADDRESS {
-            "emailAddress"
-        } else {
-            oid2sn(oid, oid_registry()).ok()?
-        };
-        let value = entry.as_str().ok()?;
-        parts.push(format!("{short_name}={}", escape_dn_value(value)));
-    }
-    (!parts.is_empty()).then(|| parts.join(","))
-}
-
-fn escape_dn_value(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
-    for ch in value.chars() {
-        if matches!(ch, ',' | '+' | '"' | '\\' | '<' | '>' | ';') {
-            escaped.push('\\');
-        }
-        escaped.push(ch);
-    }
-    escaped
+    nazo_key_management::rfc4514_dn_from_der(name.as_raw())
 }
 
 fn ipaddress_to_string(bytes: &[u8]) -> Option<String> {

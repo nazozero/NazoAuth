@@ -56,10 +56,10 @@ satisfies the existing MFA requirement without an additional OTP. Assertions
 without UV retain the existing pending-MFA or remembered-device flow; the
 `passkey` method alone is not evidence of user verification.
 
-The profile list selects only tenant/user-scoped display metadata, without loading
-the credential JSON. Login and registration still load and decode complete
-credentials; registration obtains exclusion IDs from that decoded material, so
-damaged credential data cannot silently turn into a usable exclusion list.
+The profile list selects only tenant/user-scoped display metadata. Registration
+begin reads the scoped credential IDs for its exclusion list without loading
+credential JSON. Login loads the complete credential needed for verification;
+registration finish verifies and persists the new credential.
 
 ## Credential Persistence
 

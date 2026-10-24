@@ -148,7 +148,9 @@ impl RemoteClientDocumentResolver {
     ) -> Result<Vec<u8>, String> {
         let host = parsed
             .host_str()
-            .ok_or_else(|| "remote document URI has no host".to_owned())?;
+            .ok_or_else(|| "remote document URI has no host".to_owned())?
+            // URL syntax brackets are not part of an IPv6 DNS/socket host.
+            .trim_matches(['[', ']']);
         let port = parsed.port_or_known_default().unwrap_or(443);
         let allow_private = kind != RemoteDocumentKind::SectorIdentifier
             && self

@@ -344,7 +344,7 @@ fn map_dpop_error(error: DpopError) -> UserinfoError {
         DpopError::BindingMismatch => UserinfoDpopError::BindingMismatch,
         DpopError::TokenNotBound => UserinfoDpopError::TokenNotBound,
         DpopError::UseNonce(nonce) => UserinfoDpopError::UseNonce(nonce),
-        DpopError::NonceStoreUnavailable => UserinfoDpopError::NonceStoreUnavailable,
+        DpopError::StateStoreUnavailable => UserinfoDpopError::StateStoreUnavailable,
     };
     UserinfoError::Dpop(error)
 }

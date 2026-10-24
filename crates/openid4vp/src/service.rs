@@ -383,10 +383,10 @@ fn claim_values<'a>(
         for value in current {
             match segment {
                 nazo_digital_credentials::ClaimPathSegment::Name(name) => {
-                    next.extend(value.get(name))
+                    next.extend(value.as_object()?.get(name))
                 }
                 nazo_digital_credentials::ClaimPathSegment::Index(index) => {
-                    next.extend(value.get(*index as usize))
+                    next.extend(value.as_array()?.get(*index as usize))
                 }
                 nazo_digital_credentials::ClaimPathSegment::Wildcard(_) => {
                     next.extend(value.as_array()?.iter())

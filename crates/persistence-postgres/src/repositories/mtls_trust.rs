@@ -167,7 +167,7 @@ impl MtlsTrustAnchorRepository {
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let id = Uuid::now_v7();
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
-        let outcome = guard.connection()
+        let result = guard.connection()
             .transaction::<CreateOutcomeRow, diesel::result::Error, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, request.tenant_id).await?;
                 let outcome = sql_query(format!(
@@ -254,9 +254,9 @@ impl MtlsTrustAnchorRepository {
                 }
                 Ok(outcome)
             })
-            .await
-            .map_err(map_error)?;
+            .await;
         guard.return_to_pool();
+        let outcome = result.map_err(map_error)?;
         match outcome.request {
             Some(row) => Ok(map_request_row(row)),
             None if outcome.eligible => Err(RepositoryError::Conflict),
@@ -495,9 +495,7 @@ impl MtlsTrustAnchorRepository {
             })
             .await
             .map_err(TrustMutationError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -560,9 +558,7 @@ impl MtlsTrustAnchorRepository {
             })
             .await
             .map_err(TrustMutationError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 

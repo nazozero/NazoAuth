@@ -5,6 +5,72 @@ use proptest::prelude::*;
 use sfv::{BareItem, Dictionary, ListEntry, Parser};
 
 #[test]
+fn empty_request_with_digest_round_trips_and_rejects_wrong_digest() {
+    use ed25519_dalek::{Signer, Verifier};
+    use nazo_http_signatures::{VerificationPolicy, parse_request_for_verification};
+    let key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+    let digest = content_digest(b"");
+    let headers = [
+        ("Authorization", "Bearer fixture"),
+        ("Content-Digest", digest.as_str()),
+    ];
+    let input = || RequestInput {
+        method: "GET",
+        target_uri: "https://example.com/resource",
+        headers: &headers,
+        body: b"",
+    };
+    let prepared = prepare_request(
+        input(),
+        RequestPolicy {
+            created: 100,
+            keyid: "fixture",
+            algorithm: "ed25519",
+            covered_headers: &[],
+        },
+    )
+    .unwrap();
+    let signature = key.sign(prepared.signature_base()).to_bytes();
+    let fields = prepared.finish(&signature);
+    let parsed = parse_request_for_verification(
+        input(),
+        fields,
+        VerificationPolicy {
+            now: 101,
+            max_age_seconds: 60,
+            future_skew_seconds: 5,
+        },
+    )
+    .unwrap();
+    key.verifying_key()
+        .verify(
+            parsed.signature_base(),
+            &ed25519_dalek::Signature::from_slice(parsed.signature()).unwrap(),
+        )
+        .unwrap();
+    let wrong = content_digest(b"not empty");
+    let wrong_headers = [
+        ("Authorization", "Bearer fixture"),
+        ("Content-Digest", wrong.as_str()),
+    ];
+    assert!(
+        prepare_request(
+            RequestInput {
+                headers: &wrong_headers,
+                ..input()
+            },
+            RequestPolicy {
+                created: 100,
+                keyid: "fixture",
+                algorithm: "ed25519",
+                covered_headers: &[]
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn content_digest_encodes_sha256_as_a_structured_field_byte_sequence() {
     assert_eq!(
         content_digest(b"hello"),

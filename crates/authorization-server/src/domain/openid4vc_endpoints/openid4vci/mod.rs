@@ -459,7 +459,7 @@ impl ServerCredentialIssuerOperations {
                     description: "Credential issuer requires nonce in DPoP proof.",
                     dpop_nonce: Some(nonce),
                 },
-                DpopError::NonceStoreUnavailable => {
+                DpopError::StateStoreUnavailable => {
                     vci_error(503, "server_error", "DPoP nonce validation is unavailable.")
                 }
                 _ => vci_error(401, "invalid_dpop_proof", "DPoP proof is invalid."),

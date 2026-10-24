@@ -14,6 +14,12 @@ route in this surface. Refactoring must not add either route implicitly.
 
 ## Authentication states
 
+New local passwords, whether set through public registration, administrative
+provisioning, or the CLI, must contain 12–1024 UTF-8 bytes. Public registration
+rejects an invalid length with `400 invalid_request` before accessing the email
+verification code, leaving that code available for a corrected request. This
+creation rule does not change verification of existing passwords.
+
 A fully authenticated session receives the public profile fields and
 `mfa_required: false`. A password-authenticated session that still requires MFA
 receives only `id`, `email`, `mfa_required: true`, and the CSRF token needed to

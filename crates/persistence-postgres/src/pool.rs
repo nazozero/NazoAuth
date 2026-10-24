@@ -2,8 +2,8 @@ use diesel::ConnectionError;
 use diesel_async::{
     AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, SimpleAsyncConnection,
     pooled_connection::{
-        AsyncDieselConnectionManager, ManagerConfig, RecyclingMethod, deadpool::Object,
-        deadpool::Pool,
+        AsyncDieselConnectionManager, ManagerConfig, PoolableConnection, RecyclingMethod,
+        deadpool::Object, deadpool::Pool,
     },
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
@@ -21,6 +21,10 @@ const MIGRATION_ADVISORY_LOCK: i64 = 564196923451771041;
 const MIGRATION_LOCK_TIMEOUT: Duration = Duration::from_secs(25);
 const MIGRATION_LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(100);
 const MIGRATION_STATEMENT_TIMEOUT: &str = "240s";
+
+#[cfg(test)]
+#[path = "../tests/unit/pool.rs"]
+mod tests;
 
 /// Shared connections and their transaction execution use one runtime owner.
 #[derive(Clone)]
@@ -78,7 +82,12 @@ impl DiscardOnDrop {
     }
 
     pub(crate) fn return_to_pool(mut self) {
-        let _ = self.0.take();
+        // A completed transaction can return a business error after a clean
+        // rollback. Reusability belongs to the connection, not that result.
+        // Keep incomplete/broken transactions armed for immediate disposal.
+        if !self.connection().is_broken() {
+            let _ = self.0.take();
+        }
     }
 }
 
@@ -161,7 +170,7 @@ async fn establish_configured_connection(
         let (client, connection) = config
             .connect(tokio_postgres::NoTls)
             .await
-            .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
+            .map_err(connection_setup_error)?;
         return AsyncPgConnection::try_from_client_and_connection(client, connection).await;
     }
 
@@ -184,11 +193,42 @@ async fn establish_configured_connection(
             tokio_postgres_rustls::MakeRustlsConnect::with_webpki_roots()
         }
     };
-    let (client, connection) = config
-        .connect(tls)
-        .await
-        .map_err(|error| ConnectionError::BadConnection(error.to_string()))?;
+    let (client, connection) = config.connect(tls).await.map_err(connection_setup_error)?;
     AsyncPgConnection::try_from_client_and_connection(client, connection).await
+}
+
+fn connection_setup_error(error: tokio_postgres::Error) -> ConnectionError {
+    use std::error::Error as _;
+    use std::io::ErrorKind;
+
+    let mut transport_unavailable = error.is_closed();
+    let mut cause = error.source();
+    while let Some(source) = cause {
+        if source.downcast_ref::<std::io::Error>().is_some_and(|io| {
+            matches!(
+                io.kind(),
+                ErrorKind::ConnectionRefused
+                    | ErrorKind::ConnectionReset
+                    | ErrorKind::ConnectionAborted
+                    | ErrorKind::NotConnected
+                    | ErrorKind::BrokenPipe
+                    | ErrorKind::TimedOut
+                    | ErrorKind::UnexpectedEof
+            )
+        }) {
+            transport_unavailable = true;
+            break;
+        }
+        cause = source.source();
+    }
+    if transport_unavailable {
+        ConnectionError::CouldntSetupConfiguration(diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::ClosedConnection,
+            Box::new(error.to_string()),
+        ))
+    } else {
+        ConnectionError::BadConnection(error.to_string())
+    }
 }
 
 pub async fn get_conn(pool: &DbPool) -> anyhow::Result<DbConnection> {

@@ -447,3 +447,15 @@ fn acr_values_reject_invalid_entries_even_after_a_supported_value() {
         Err(AuthorizationPolicyError::InvalidRequest)
     );
 }
+
+#[test]
+fn claims_parameter_requires_a_json_object() {
+    for raw in ["[]", "true", "42", "null"] {
+        let parameters = HashMap::from([("claims".to_owned(), raw.to_owned())]);
+        assert!(matches!(
+            requested_claims(&parameters),
+            Err(AuthorizationPolicyError::InvalidRequest)
+        ));
+    }
+    assert!(requested_claims(&HashMap::from([("claims".to_owned(), "{}".to_owned())])).is_ok());
+}

@@ -404,9 +404,7 @@ impl AccessRequestRepository {
             )
             .await
             .map_err(ApprovalError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 
@@ -485,9 +483,7 @@ impl AccessRequestRepository {
             })
             .await
             .map_err(ApprovalError::into_repository);
-        if result.is_ok() {
-            guard.return_to_pool();
-        }
+        guard.return_to_pool();
         result
     }
 

@@ -4,6 +4,7 @@ use actix_web::cookie::Cookie;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use nazo_oauth_server::crypto::random_urlsafe_token;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -264,7 +265,7 @@ async fn admin_create_user_rejects_missing_csrf_before_hashing_or_mutation() {
         req,
         Json(CreateUserRequest {
             email: "new-user@example.com".to_owned(),
-            password: "not-used-password".to_owned(),
+            password: random_urlsafe_token(),
         }),
     )
     .await;
