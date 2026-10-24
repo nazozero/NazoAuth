@@ -237,7 +237,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "nazo-crypto"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "ed25519-dalek",
  "thiserror",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "nazo-operator-protocol"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "base64",
  "hex",

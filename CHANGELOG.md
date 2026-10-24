@@ -5,6 +5,32 @@ rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 Release dates use UTC+8.
 
+## 0.3.6 - 2026-10-24
+
+### Fixed
+
+- Resolve Device client identity from authenticated credentials when the request
+  form omits `client_id`, preventing a panic for valid Basic authentication.
+- Give pooled PostgreSQL transactions explicit cancellation ownership, align
+  offer and user-disable lock ordering, and retain healthy connections after
+  completed rollbacks while discarding unfinished or broken transactions.
+- Enforce the shared 12–1024 byte password rule before public registration
+  consumes a verification code, matching administrator and CLI provisioning.
+- Handle IPv6 literals in logout URI validation and outbound JWKS, Request
+  Object, CIBA and logout requests while preserving network and TLS policy.
+- Correct Native SSO refresh-family handling, dependency-failure classification,
+  DPoP, client-attestation and mTLS parsing, HTTP signatures and SCIM responses.
+- Preserve typed credential holder bindings through immediate and deferred
+  issuance, and reject malformed stored bindings.
+
+### Maintenance
+
+- Remove redundant transaction and credential conversion work. Correct benchmark
+  worker isolation and credential reuse, and align client-registration, Passkey,
+  Helm and protocol documentation with the implemented contracts.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.5...v0.3.6)
+
 ## 0.3.5 - 2026-10-22
 
 ### Fixed
