@@ -12,6 +12,7 @@ on:
       - "rust-toolchain.toml"
       - "requirements/codecov.txt"
       - "crates/**"
+      - "vendor/**"
       - "src/**"
       - "scripts/generate_codecov_lcov.sh"
       - "scripts/merge_lcov.py"

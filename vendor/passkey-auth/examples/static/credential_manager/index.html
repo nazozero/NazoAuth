@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>passkey-auth: credential manager</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    button { font-size: 1rem; padding: 0.6rem 1rem; margin-right: 0.5rem; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 0.8rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; }
+    .ok  { color: #060; }
+    .err { color: #a00; }
+    .who { background: #efe; padding: 0.6rem 0.8rem; border-radius: 4px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 0.8rem; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; font-size: 0.9rem; }
+    .id { font-family: ui-monospace, monospace; font-size: 0.8rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>passkey-auth: credential manager</h1>
+  <p>
+    Single user (<code>alice@example.com</code>) with multiple
+    devices. Register your first passkey, then sign in. Once
+    signed in you can add MORE passkeys (one per device) and
+    remove them.
+  </p>
+
+  <div id="status"></div>
+
+  <!-- View when no credentials exist yet -->
+  <div id="view-empty" class="hidden">
+    <h2>Get started</h2>
+    <p>You have no passkeys yet. Register your first device:</p>
+    <button id="register">Register first passkey</button>
+  </div>
+
+  <!-- View when signed out but credentials exist -->
+  <div id="view-signin" class="hidden">
+    <h2>Sign in</h2>
+    <button id="signin">Sign in with passkey</button>
+  </div>
+
+  <!-- View when signed in -->
+  <div id="view-dashboard" class="hidden">
+    <h2>Your devices</h2>
+    <table id="creds-table">
+      <thead>
+        <tr><th>ID (b64)</th><th>AAGUID</th><th>Transports</th><th>Counter</th><th></th></tr>
+      </thead>
+      <tbody id="creds-body"></tbody>
+    </table>
+    <p style="margin-top:1rem">
+      <button id="add-device">Add another device</button>
+    </p>
+  </div>
+
+  <h2>Log</h2>
+  <pre id="log"></pre>
+
+  <script>
+  function b64urlEncode(buf) {
+    let s = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    return s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function b64urlDecode(str) {
+    str = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (str.length % 4) str += "=";
+    const bin = atob(str);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+
+  const logEl = document.getElementById("log");
+  function log(msg, cls) {
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    logEl.appendChild(line);
+  }
+
+  function show(id) {
+    for (const v of ["view-empty", "view-signin", "view-dashboard"]) {
+      document.getElementById(v).classList.toggle("hidden", v !== id);
+    }
+  }
+
+  // Decide which view to render: dashboard if signed-in,
+  // signin if any creds exist, else empty.
+  async function refresh() {
+    const whoamiResp = await fetch("/whoami");
+    if (whoamiResp.ok) {
+      const me = await whoamiResp.json();
+      document.getElementById("status").className = "who";
+      document.getElementById("status").textContent = `Signed in as ${me.username}`;
+      await renderCredentials();
+      show("view-dashboard");
+      return;
+    }
+    document.getElementById("status").className = "";
+    document.getElementById("status").textContent = "Not signed in.";
+    const creds = await fetch("/credentials").then(r => r.json());
+    show(creds.length === 0 ? "view-empty" : "view-signin");
+  }
+
+  async function renderCredentials() {
+    const creds = await fetch("/credentials").then(r => r.json());
+    const body = document.getElementById("creds-body");
+    body.textContent = "";
+    for (const c of creds) {
+      const tr = document.createElement("tr");
+      const isLast = creds.length === 1;
+      tr.innerHTML = `
+        <td class="id">${c.id.slice(0, 16)}…</td>
+        <td class="id">${c.aaguid_hex}</td>
+        <td>${c.transports.join(", ") || "(none)"}</td>
+        <td>${c.counter}</td>
+        <td>
+          <button data-id="${c.id}" class="del" ${isLast ? "disabled title='cannot remove last'" : ""}>
+            Remove
+          </button>
+        </td>`;
+      body.appendChild(tr);
+    }
+    body.querySelectorAll("button.del").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        try {
+          const id = btn.dataset.id;
+          const r = await fetch(`/credentials/${encodeURIComponent(id)}/delete`, { method: "POST" });
+          if (!r.ok) throw new Error(await r.text());
+          log(`✓ removed credential ${id.slice(0, 16)}…`, "ok");
+          await refresh();
+        } catch (e) {
+          log(`✗ ${e.message || e}`, "err");
+        }
+      });
+    });
+  }
+
+  // Shared registration flow. `path` is "/register" for first-time,
+  // "/credentials/add" for adding a device while signed in.
+  async function doRegister(pathPrefix) {
+    log(`→ POST ${pathPrefix}/start`);
+    const startResp = await fetch(`${pathPrefix}/start`, { method: "POST" });
+    if (!startResp.ok) throw new Error(await startResp.text());
+    const opts = await startResp.json();
+    opts.challenge = b64urlDecode(opts.challenge);
+    opts.user.id = b64urlDecode(opts.user.id);
+    if (opts.excludeCredentials) {
+      opts.excludeCredentials = opts.excludeCredentials.map(c => ({
+        ...c, id: b64urlDecode(c.id),
+      }));
+    }
+    log("→ navigator.credentials.create(...)");
+    const cred = await navigator.credentials.create({ publicKey: opts });
+    const body = {
+      id: cred.id,
+      attestationObject: b64urlEncode(cred.response.attestationObject),
+      clientDataJSON: b64urlEncode(cred.response.clientDataJSON),
+      transports: cred.response.getTransports ? cred.response.getTransports() : [],
+    };
+    log(`→ POST ${pathPrefix}/finish`);
+    const finishResp = await fetch(`${pathPrefix}/finish`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!finishResp.ok) throw new Error(await finishResp.text());
+    const result = await finishResp.json();
+    log(`✓ registered ${result.credential_id.slice(0, 16)}…`, "ok");
+  }
+
+  document.getElementById("register").addEventListener("click", async () => {
+    try { await doRegister("/register"); await refresh(); }
+    catch (e) { log(`✗ ${e.message || e}`, "err"); }
+  });
+
+  document.getElementById("add-device").addEventListener("click", async () => {
+    try { await doRegister("/credentials/add"); await refresh(); }
+    catch (e) { log(`✗ ${e.message || e}`, "err"); }
+  });
+
+  document.getElementById("signin").addEventListener("click", async () => {
+    try {
+      log("→ POST /authenticate/start");
+      const startResp = await fetch("/authenticate/start", { method: "POST" });
+      if (!startResp.ok) throw new Error(await startResp.text());
+      const opts = await startResp.json();
+      opts.challenge = b64urlDecode(opts.challenge);
+      if (opts.allowCredentials) {
+        opts.allowCredentials = opts.allowCredentials.map(c => ({
+          ...c, id: b64urlDecode(c.id),
+        }));
+      }
+      log("→ navigator.credentials.get(...)");
+      const assertion = await navigator.credentials.get({ publicKey: opts });
+      const body = {
+        id: assertion.id,
+        authenticatorData: b64urlEncode(assertion.response.authenticatorData),
+        signature: b64urlEncode(assertion.response.signature),
+        clientDataJSON: b64urlEncode(assertion.response.clientDataJSON),
+        userHandle: assertion.response.userHandle ? b64urlEncode(assertion.response.userHandle) : null,
+      };
+      log("→ POST /authenticate/finish");
+      const finishResp = await fetch("/authenticate/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!finishResp.ok) throw new Error(await finishResp.text());
+      const result = await finishResp.json();
+      log(`✓ signed in (counter ${result.new_counter}, UV=${result.user_verified})`, "ok");
+      await refresh();
+    } catch (e) {
+      log(`✗ ${e.message || e}`, "err");
+    }
+  });
+
+  refresh();
+  </script>
+</body>
+</html>

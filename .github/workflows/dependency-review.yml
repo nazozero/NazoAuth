@@ -9,6 +9,7 @@ on:
       - "rust-toolchain"
       - "rust-toolchain.toml"
       - "crates/**/Cargo.toml"
+      - "vendor/**/Cargo.toml"
       - "deny.toml"
       - "Containerfile"
       - ".github/e2e-runner.Containerfile"

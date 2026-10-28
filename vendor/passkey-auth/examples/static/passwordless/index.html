@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>passkey-auth: passwordless demo</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    input { font-size: 1rem; padding: 0.5rem; }
+    button { font-size: 1rem; padding: 0.6rem 1rem; margin-right: 0.5rem; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 0.8rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; }
+    .ok  { color: #060; }
+    .err { color: #a00; }
+    .who { background: #efe; padding: 0.6rem 0.8rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>passkey-auth: passwordless / discoverable credential demo</h1>
+  <p>
+    The Gmail-style "tap to sign in" flow.
+    Register multiple users with different usernames, then sign in
+    with a single click - the browser shows the account picker and
+    the server identifies you from the assertion's <code>userHandle</code>.
+  </p>
+
+  <div id="status"></div>
+
+  <h2>1. Register a new account</h2>
+  <p>
+    <input id="username" placeholder="alice@example.com" autocomplete="off">
+    <button id="register">Register passkey</button>
+  </p>
+
+  <h2>2. Sign in</h2>
+  <p>
+    <button id="authenticate">Sign in with passkey</button>
+    (no username needed - browser picks the account)
+  </p>
+
+  <h2>Log</h2>
+  <pre id="log"></pre>
+
+  <script>
+  // base64url helpers (browser ArrayBuffer <-> base64url)
+  function b64urlEncode(buf) {
+    let s = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    return s.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function b64urlDecode(str) {
+    str = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (str.length % 4) str += "=";
+    const bin = atob(str);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+
+  const logEl = document.getElementById("log");
+  function log(msg, cls) {
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = msg;
+    logEl.appendChild(line);
+  }
+
+  async function refreshWhoami() {
+    const r = await fetch("/whoami");
+    const el = document.getElementById("status");
+    if (r.ok) {
+      const data = await r.json();
+      el.className = "who";
+      el.textContent = `Signed in as ${data.username}`;
+    } else {
+      el.className = "";
+      el.textContent = "Not signed in.";
+    }
+  }
+  refreshWhoami();
+
+  // ---------- Register ----------
+  document.getElementById("register").addEventListener("click", async () => {
+    try {
+      const username = document.getElementById("username").value.trim();
+      if (!username) { log("✗ enter a username first", "err"); return; }
+
+      log(`→ POST /register/start (username=${username})`);
+      const startResp = await fetch("/register/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username }),
+      });
+      if (!startResp.ok) throw new Error(await startResp.text());
+      const opts = await startResp.json();
+
+      opts.challenge = b64urlDecode(opts.challenge);
+      opts.user.id = b64urlDecode(opts.user.id);
+      if (opts.excludeCredentials) {
+        opts.excludeCredentials = opts.excludeCredentials.map(c => ({
+          ...c, id: b64urlDecode(c.id),
+        }));
+      }
+      // Force the authenticator to store the credential locally so
+      // it can be discovered without an allow-list at sign-in time.
+      // The server's challenge JSON already requests preferred; we
+      // override to required for the demo.
+      if (opts.authenticatorSelection) {
+        opts.authenticatorSelection.residentKey = "required";
+        opts.authenticatorSelection.requireResidentKey = true;
+      }
+
+      log("→ navigator.credentials.create(...)");
+      const cred = await navigator.credentials.create({ publicKey: opts });
+
+      const body = {
+        id: cred.id,
+        attestationObject: b64urlEncode(cred.response.attestationObject),
+        clientDataJSON: b64urlEncode(cred.response.clientDataJSON),
+        transports: cred.response.getTransports ? cred.response.getTransports() : [],
+      };
+
+      log("→ POST /register/finish");
+      const finishResp = await fetch("/register/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!finishResp.ok) throw new Error(await finishResp.text());
+      const result = await finishResp.json();
+      log(`✓ registered ${result.username}`, "ok");
+    } catch (e) {
+      log(`✗ ${e.message || e}`, "err");
+    }
+  });
+
+  // ---------- Sign in (passwordless) ----------
+  document.getElementById("authenticate").addEventListener("click", async () => {
+    try {
+      log("→ POST /authenticate/start (empty allow-list)");
+      const startResp = await fetch("/authenticate/start", { method: "POST" });
+      if (!startResp.ok) throw new Error(await startResp.text());
+      const opts = await startResp.json();
+
+      opts.challenge = b64urlDecode(opts.challenge);
+      // allowCredentials is empty - that is the passwordless trigger.
+
+      log("→ navigator.credentials.get(...) - browser shows account picker");
+      const assertion = await navigator.credentials.get({ publicKey: opts });
+
+      const body = {
+        id: assertion.id,
+        authenticatorData: b64urlEncode(assertion.response.authenticatorData),
+        signature: b64urlEncode(assertion.response.signature),
+        clientDataJSON: b64urlEncode(assertion.response.clientDataJSON),
+        userHandle: assertion.response.userHandle
+          ? b64urlEncode(assertion.response.userHandle)
+          : null,
+      };
+
+      log("→ POST /authenticate/finish");
+      const finishResp = await fetch("/authenticate/finish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!finishResp.ok) throw new Error(await finishResp.text());
+      const result = await finishResp.json();
+      log(`✓ signed in as ${result.username} (UV=${result.user_verified})`, "ok");
+      refreshWhoami();
+    } catch (e) {
+      log(`✗ ${e.message || e}`, "err");
+    }
+  });
+  </script>
+</body>
+</html>
