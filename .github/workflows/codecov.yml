@@ -1,27 +1,10 @@
 name: codecov
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/codecov.yml"
-      - "codecov.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "requirements/codecov.txt"
-      - "crates/**"
-      - "vendor/**"
-      - "src/**"
-      - "scripts/generate_codecov_lcov.sh"
-      - "scripts/merge_lcov.py"
-      - "tests/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
+  workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        required: true
   workflow_dispatch:
 
 permissions:

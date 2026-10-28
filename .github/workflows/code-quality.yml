@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/code-quality.yml"
+      - ".github/workflows/codecov.yml"
+      - "codecov.yml"
+      - "requirements/codecov.txt"
       - ".github/workflows/release-policy.yml"
       - ".github/workflows/release-security.yml"
       - "Cargo.toml"
@@ -27,6 +30,9 @@ on:
   pull_request:
     paths:
       - ".github/workflows/code-quality.yml"
+      - ".github/workflows/codecov.yml"
+      - "codecov.yml"
+      - "requirements/codecov.txt"
       - ".github/workflows/release-policy.yml"
       - ".github/workflows/release-security.yml"
       - "Cargo.toml"
@@ -52,6 +58,14 @@ permissions:
   contents: read
 
 jobs:
+  coverage:
+    # Main/manual CI runs the functional suite once under coverage. PRs keep
+    # the ordinary suite and do not receive the coverage upload credential.
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/codecov.yml
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   rust-quality:
     name: Rust quality gate
     runs-on: ubuntu-latest
@@ -213,8 +227,22 @@ jobs:
           pending_migrations_create_all_runtime_module_state_tables
 
       - name: Test workspace with PostgreSQL and Valkey
+        if: github.event_name == 'pull_request'
         # Stream test progress so an interrupted job retains its actual wait boundary.
         run: cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture
+
+      - name: Test timing contracts excluded from coverage
+        if: github.event_name != 'pull_request'
+        # These four tests require the uninstrumented server's timing. All
+        # remaining lib/bin/integration tests belong to the coverage job.
+        run: |
+          cargo test --locked --all-features -p nazoauth --test tenant_directory_convergence \
+            two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures -- --nocapture
+          cargo test --locked --all-features -p nazoauth --test token_issuance_simplification -- --nocapture
+
+      - name: Test documentation examples outside coverage
+        if: github.event_name != 'pull_request'
+        run: cargo test --workspace --all-features --locked --doc
 
   python-quality:
     name: Python script syntax gate
@@ -244,6 +272,7 @@ jobs:
         run: |
           node --version
           python -m unittest \
+            tests.unit.test_ci_execution \
             perf.tests.test_blackbox_contract \
             perf.tests.test_capacity_window perf.tests.test_capacity_producer \
             perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \

@@ -370,7 +370,13 @@ class ReleaseGovernanceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("pull_request:", coverage)
         self.assertNotIn("check_patch_coverage", coverage)
-        self.assertIn("branches: [main]", coverage)
+        quality = (ROOT / ".github/workflows/code-quality.yml").read_text()
+        self.assertIn("branches: [main]", quality)
+        caller = quality.split("\n  coverage:", 1)[1].split("\n  rust-quality:", 1)[0]
+        self.assertIn("if: github.event_name != 'pull_request'", caller)
+        self.assertIn("uses: ./.github/workflows/codecov.yml", caller)
+        self.assertIn("  workflow_call:", coverage)
+        self.assertNotIn("  push:", coverage)
         upload = coverage.split("- name: Upload coverage to Codecov", 1)[1]
         self.assertIn("token: ${{ secrets.CODECOV_TOKEN }}", upload)
         self.assertNotIn("secrets.CODECOV_TOKEN", coverage.split("- name: Upload coverage to Codecov", 1)[0])
