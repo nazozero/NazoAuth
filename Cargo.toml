@@ -27,7 +27,7 @@ default-members = [
     "crates/nazoauth",
 ]
 resolver = "3"
-exclude = ["fuzz", "vendor/mdoc-rs", "vendor/passkey-auth"]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.3.6"
@@ -138,11 +138,12 @@ panic = "abort"
 # Reviewed Actix h2 0.4 port, pinned to an immutable upstream fork revision.
 [patch.crates-io]
 actix-http = { git = "https://github.com/nazozero/actix-web", rev = "ca32c7cfd1ea71cc43dbbdb9d2d7b4b1a90d40e2" }
-# Preserve the reviewed mdoc changes while moving off vulnerable RustCrypto 0.13.
-# TODO: remove these patches when upstream releases support patched crypto-bigint
-# and retain the mdoc coset 0.4 / borrowed-transcript contracts. See vendor/README.md.
-mdoc-rs = { path = "vendor/mdoc-rs" }
-passkey-auth = { path = "vendor/passkey-auth" }
+# TODO: replace this fork when a maintained release uses patched crypto-bigint
+# and preserves the coset 0.4 and borrowed-transcript contracts.
+mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }
+# TODO: replace this fork when a maintained release uses patched crypto-bigint
+# and passes the existing passkey and attestation tests.
+passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "d59b317998e56f4a16a69133d7a854c5c34f795b" }
 
 # Immutable certificate-chain sharing at the TLS-to-HTTP boundary.
 rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

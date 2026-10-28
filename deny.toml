@@ -34,4 +34,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/bymoye/rustls",
     "https://github.com/nazozero/actix-web",
+    "https://github.com/nazozero/mdoc-rs",
+    "https://github.com/nazozero/passkey-auth-rs",
 ]
