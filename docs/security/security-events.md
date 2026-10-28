@@ -151,6 +151,12 @@ unlisted or unknown event name is treated as required, never as telemetry.
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 
+
+`oidc_logout` records an authorized logout intent before back-channel delivery
+is enqueued and before the OP session is deleted. An outbox or session deletion
+failure may leave this intent without a completed logout; retries keep the same
+logout operation key.
+
 ## Repository-owned events and separate stores
 
 New refresh-family creation executes its scope lock, family lock, capacity retirement,

@@ -34,8 +34,8 @@ Directory mutation outcomes and audit events report the before revision proved
 by the mutation's held directory lock and the actual trigger-produced after
 revision. Describe audit reports its coherent snapshot revision.
 
-Terminal journal results remain recoverable for thirty days. After a successful
-one-shot command releases its business lock, cleanup visits one directory round
+Terminal journal results remain recoverable for thirty days. The long-lived
+server runs cleanup independently of one-shot command completion, visiting one directory round
 using the same iterator across batches of at most 64 checked entries and a
 25 ms elapsed budget between entries. Recent, non-terminal and unreadable files
 consume the same entry budget. Enumeration never holds `task.lock`; each old
@@ -44,10 +44,15 @@ contention or an unresolved temporary publication retains it for a later round.
 Static finite directories are covered even when a recent prefix precedes old
 records. Concurrent additions/removals follow filesystem directory-iteration
 semantics and may require another round; continuous churn has no snapshot or
-finite-round guarantee. Process interruption discards the in-memory cursor and
-the next one-shot command starts a new round. Batch budgets bound work between
-yields, not total round duration or one blocked filesystem call. Housekeeping
-errors never replace an executed operation's result.
+finite-round guarantee. Server interruption discards the in-memory cursor; the
+next server start begins a new round. Cleanup runs hourly while the server is
+running; records accumulate while it is stopped. Without an explicit override,
+the server scans DATA_DIR/operator-state for controller-managed deployments and
+the historical /var/lib/nazauth/operator-state used by default one-shot tasks.
+Deployments using NAZOAUTH_OPERATOR_STATE_DIRECTORY for one-shot tasks must set
+the same path on the server. Cleanup runs on a blocking worker and checks for
+server shutdown between batches; a filesystem call already in progress cannot
+be interrupted. Housekeeping errors never replace an operation result.
 
 `crates/operator-protocol` remains only in this repository. NazoAuthCtl pins a
 released package version by server tag. Tagged server Releases additionally

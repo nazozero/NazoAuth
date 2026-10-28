@@ -23,14 +23,6 @@ impl nazo_oauth_server::ports::transient_state::TransientStateHealthPort
 async fn lifecycle_documents_are_closed() {
     assert_eq!(live().await.into_inner(), json!({"status": "live"}));
     assert_eq!(startup().await.into_inner(), json!({"status": "started"}));
-    assert_eq!(
-        captcha_config().await.into_inner(),
-        json!({
-            "turnstile_enabled": false,
-            "turnstile_site_key": null,
-            "registration_enabled": true
-        })
-    );
 }
 
 #[actix_web::test]

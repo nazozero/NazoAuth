@@ -921,7 +921,7 @@ async fn retention_deletes_only_terminal_records_past_the_cutoff() {
     fs::write(&garbage, b"not-json").unwrap();
 
     assert_eq!(
-        cleanup_completed_before(&directory, CUTOFF).await.unwrap(),
+        cleanup_completed_before(&directory, CUTOFF, None).unwrap(),
         1
     );
     assert!(!terminal_old.exists());
@@ -932,8 +932,83 @@ async fn retention_deletes_only_terminal_records_past_the_cutoff() {
 
     // Cleanup before any journal exists is a no-op.
     let empty = temporary_directory();
-    assert_eq!(cleanup_completed_before(&empty, CUTOFF).await.unwrap(), 0);
+    assert_eq!(cleanup_completed_before(&empty, CUTOFF, None).unwrap(), 0);
     fs::remove_dir_all(empty).unwrap();
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn retention_keeps_locked_candidates_for_a_later_round() {
+    let directory = temporary_directory();
+    let lock = cleanup_task_lock(&directory);
+    let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
+    lock.lock_exclusive().unwrap();
+    assert_eq!(
+        cleanup_completed_before(&directory, 50_000, None).unwrap(),
+        0
+    );
+    assert!(expired.exists());
+    drop(lock);
+    assert_eq!(
+        cleanup_completed_before(&directory, 50_000, None).unwrap(),
+        1
+    );
+    assert!(!expired.exists());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn retention_stops_before_scanning_when_server_shuts_down() {
+    let directory = temporary_directory();
+    drop(cleanup_task_lock(&directory));
+    let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
+    let stop = std::sync::atomic::AtomicBool::new(true);
+    assert_eq!(
+        cleanup_completed_before(&directory, 50_000, Some(&stop)).unwrap(),
+        0
+    );
+    assert!(expired.exists());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn retention_worker_cleans_and_stops_with_its_owner() {
+    let directory = temporary_directory();
+    drop(cleanup_task_lock(&directory));
+    let expired = cleanup_record(&directory, OPERATION_ID, "completed", Some(1_000));
+    let pending = cleanup_record(&directory, OPERATION_ID_B, "accepted", None);
+    let later_directory = directory.join("later");
+    let worker = crate::operator_task::start_retention_worker(vec![
+        directory.clone(),
+        later_directory.clone(),
+    ]);
+
+    let expired_for_wait = expired.clone();
+    tokio::task::spawn_blocking(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while expired_for_wait.exists() && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+        }
+        assert!(
+            !expired_for_wait.exists(),
+            "retention worker did not finish"
+        );
+    })
+    .await
+    .unwrap();
+    assert!(pending.exists());
+
+    drop(worker);
+    fs::create_dir_all(&later_directory).unwrap();
+    drop(cleanup_task_lock(&later_directory));
+    let later = cleanup_record(&later_directory, OPERATION_ID, "completed", Some(1_000));
+    tokio::time::advance(Duration::from_secs(2 * 60 * 60)).await;
+    tokio::task::yield_now().await;
+    assert!(
+        later.exists(),
+        "dropped worker must not schedule another round"
+    );
+    assert!(pending.exists());
     fs::remove_dir_all(directory).unwrap();
 }
 #[test]

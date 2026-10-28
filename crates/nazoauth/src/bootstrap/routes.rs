@@ -85,7 +85,7 @@ use crate::http::token::{
     },
     dispatch::token,
 };
-use crate::http::well_known::{captcha_config, live, mdoc_crl, ready, startup};
+use crate::http::well_known::{live, mdoc_crl, ready, startup};
 use crate::settings::Settings;
 use nazo_http_actix::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
@@ -359,7 +359,6 @@ fn configure_with_cors(
         // /auth scope — NO CORS for UI routes, cors_auth_api for /auth/me
         .service(
             web::scope("/auth")
-                .route("/captcha-config", web::get().to(captcha_config))
                 .route("/send-code", web::post().to(send_code))
                 .route("/register", web::post().to(register))
                 .route("/login", web::post().to(login))

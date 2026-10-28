@@ -88,8 +88,8 @@ pub(crate) const CONTROL_JOURNAL_SCHEMA: u32 = 1;
 /// Terminal results stay recoverable for at least this long after their
 /// recorded completion time.  ctl response-loss recovery (E06) only has to
 /// outlive a controller restart, so thirty days bounds growth while never
-/// deleting anything that could plausibly still be fetched.  The one-shot
-/// operator entry runs the bounded cleanup at its tail (E04).
+/// deleting anything that could plausibly still be fetched. The server's
+/// retention worker cleans expired terminal records outside one-shot commands.
 pub(crate) const CONTROL_JOURNAL_COMPLETED_RETENTION_SECONDS: i64 = 30 * 24 * 60 * 60;
 
 /// Authorization snapshot persisted at accept time (05 §5).  After
@@ -726,13 +726,17 @@ where
 ///
 /// A completed round covers a static finite directory regardless of its recent
 /// prefix. Concurrent additions may need the next round; directory iteration
-/// is not a snapshot. This one-shot process retains its cursor across yields,
-/// not across process restarts. Total round duration still depends on directory
-/// size and filesystem latency; no whole-command deadline is claimed.
-pub(crate) async fn cleanup_completed_before(
+/// is not a snapshot. The server worker retains its cursor across batches,
+/// not across process restarts. Total round duration depends on directory size
+/// and filesystem latency, independently of one-shot command completion.
+pub(crate) fn cleanup_completed_before(
     state_directory: &Path,
     cutoff: i64,
+    stop: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<usize, JournalFlowError> {
+    if stop.is_some_and(|stop| stop.load(std::sync::atomic::Ordering::Relaxed)) {
+        return Ok(0);
+    }
     let directory = control_journal_directory(state_directory);
     if !state_path_present(&directory).map_err(transport)? {
         return Ok(0);
@@ -741,12 +745,14 @@ pub(crate) async fn cleanup_completed_before(
     let mut entries = fs::read_dir(&directory).map_err(transport)?;
     let mut deleted = 0usize;
     loop {
+        if stop.is_some_and(|stop| stop.load(std::sync::atomic::Ordering::Relaxed)) {
+            return Ok(deleted);
+        }
         let batch = cleanup_batch(state_directory, cutoff, &mut entries, CLEANUP_BATCH_BUDGET)?;
         deleted += batch.deleted;
         if batch.finished {
             return Ok(deleted);
         }
-        tokio::task::yield_now().await;
     }
 }
 

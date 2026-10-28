@@ -16,6 +16,20 @@ use sha2::{Digest as _, Sha256};
 
 use super::*;
 
+#[test]
+fn retention_uses_controller_managed_data_directory_or_explicit_override() {
+    let data = std::path::Path::new("/var/lib/nazo_oauth");
+    assert_eq!(
+        retention_state_directories(data, None),
+        vec![data.join("operator-state"), PathBuf::from(STATE_DIRECTORY)]
+    );
+    let override_path = PathBuf::from("/separate/operator-state");
+    assert_eq!(
+        retention_state_directories(data, Some(override_path.clone())),
+        vec![override_path]
+    );
+}
+
 fn temporary_directory() -> PathBuf {
     let path = std::env::temp_dir().join(format!(
         "nazoauth-operator-task-test-{}",

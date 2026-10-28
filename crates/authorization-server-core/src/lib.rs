@@ -176,7 +176,8 @@ pub use logout_service::{
     BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS, BackchannelLogoutOutboxPort,
     IdempotentBackchannelLogoutDelivery, LogoutClientRepositoryPort, LogoutDependencyError,
     LogoutExecution, LogoutFuture, LogoutInput, LogoutService, LogoutServiceError, LogoutSession,
-    LogoutTokenSignerPort, RegisteredLogoutClient, RpLogoutRequest, logout_operation_key,
+    LogoutTokenSignerPort, PreparedLogout, RegisteredLogoutClient, RpLogoutRequest,
+    logout_operation_key,
 };
 pub use metadata::{
     AuthorizationServerMetadataInput, CapabilityAdmission, CibaMetadataProfile,

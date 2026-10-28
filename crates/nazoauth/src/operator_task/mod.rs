@@ -161,18 +161,75 @@ pub async fn run(persistence: Arc<dyn OperatorPersistence>) -> anyhow::Result<()
 
     let outcome = execute_compact(&state_directory, compact, persistence.as_ref()).await;
     drop(task_lock);
-
-    // Retention walks one directory round in bounded batches after releasing
-    // the business lock. Each old terminal candidate is rechecked under its
-    // own non-blocking task lock before deletion. Housekeeping must never fail
-    // an executed operation, so its errors are swallowed here.
-    if outcome.is_ok() {
-        let cutoff =
-            Utc::now().timestamp() - control_journal::CONTROL_JOURNAL_COMPLETED_RETENTION_SECONDS;
-        let _ = control_journal::cleanup_completed_before(&state_directory, cutoff).await;
-    }
-
     outcome
+}
+
+/// Retention is owned by the long-lived server, never the one-shot response.
+pub(crate) struct RetentionWorker {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for RetentionWorker {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.task.abort();
+    }
+}
+
+pub(crate) fn start_retention_worker(state_directories: Vec<PathBuf>) -> RetentionWorker {
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_stop = stop.clone();
+    let task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60 * 60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            let cutoff = Utc::now().timestamp()
+                - control_journal::CONTROL_JOURNAL_COMPLETED_RETENTION_SECONDS;
+            let directories = state_directories.clone();
+            let stop = worker_stop.clone();
+            match tokio::task::spawn_blocking(move || {
+                for directory in directories {
+                    if let Err(error) =
+                        control_journal::cleanup_completed_before(&directory, cutoff, Some(&stop))
+                    {
+                        tracing::warn!(error = %error, "operator journal retention failed");
+                    }
+                    if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                }
+            })
+            .await
+            {
+                Ok(()) => {}
+                Err(error) => {
+                    tracing::warn!(error = %error, "operator journal retention worker failed")
+                }
+            }
+        }
+    });
+    RetentionWorker { stop, task }
+}
+
+pub(crate) fn retention_state_directories(
+    data_directory: &std::path::Path,
+    override_path: Option<PathBuf>,
+) -> Vec<PathBuf> {
+    if let Some(path) = override_path {
+        return vec![path];
+    }
+    let managed = data_directory.join("operator-state");
+    let legacy = PathBuf::from(STATE_DIRECTORY);
+    if managed == legacy {
+        vec![managed]
+    } else {
+        // TODO: retire the default-path compatibility scan only after all
+        // operators use an explicit shared path and its retained journals
+        // have expired or been deliberately retired.
+        vec![managed, legacy]
+    }
 }
 
 /// Full E04 pipeline for one presented compact JWS.  Prints the durable

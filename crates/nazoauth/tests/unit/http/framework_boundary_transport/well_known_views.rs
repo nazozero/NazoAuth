@@ -92,14 +92,6 @@ async fn framework_boundary_transport_well_known_endpoints_keep_contracts() {
         http::well_known::startup().await.into_inner(),
         serde_json::json!({"status": "started"})
     );
-    assert_eq!(
-        http::well_known::captcha_config().await.into_inner(),
-        serde_json::json!({
-            "turnstile_enabled": false,
-            "turnstile_site_key": Value::Null,
-            "registration_enabled": true
-        })
-    );
 }
 
 #[test]

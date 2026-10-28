@@ -68,6 +68,7 @@ impl LogoutClientRepositoryPort for Clients {
 
 #[derive(Default)]
 struct Outbox {
+    calls: std::sync::atomic::AtomicUsize,
     keys: Mutex<HashSet<(Uuid, String, Uuid)>>,
     deliveries: Mutex<Vec<IdempotentBackchannelLogoutDelivery>>,
 }
@@ -78,6 +79,7 @@ impl BackchannelLogoutOutboxPort for Outbox {
         deliveries: &'a [IdempotentBackchannelLogoutDelivery],
     ) -> LogoutFuture<'a, ()> {
         Box::pin(async move {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let mut keys = self.keys.lock().unwrap();
             let mut stored = self.deliveries.lock().unwrap();
             for delivery in deliveries {
@@ -109,6 +111,45 @@ impl LogoutTokenSignerPort for Signer {
     }
 }
 
+async fn execute(
+    service: &LogoutService,
+    input: LogoutInput,
+) -> Result<nazo_auth::LogoutExecution, LogoutServiceError> {
+    let prepared = service.prepare(input).await?;
+    service.commit(prepared).await
+}
+
+#[test]
+fn logout_without_session_does_not_call_the_outbox() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    let outbox = Arc::new(Outbox::default());
+    let service = service(clients, outbox.clone());
+    let mut request = input(tenant_id, None);
+    request.session = None;
+    futures_executor::block_on(execute(&service, request)).unwrap();
+    assert_eq!(outbox.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
+fn prepare_does_not_publish_backchannel_notifications() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    clients
+        .clients
+        .lock()
+        .unwrap()
+        .push(client(tenant_id, "client-a", true));
+    let outbox = Arc::new(Outbox::default());
+    let service = service(clients, outbox.clone());
+    let prepared = futures_executor::block_on(service.prepare(input(tenant_id, None))).unwrap();
+    assert!(outbox.deliveries.lock().unwrap().is_empty());
+    futures_executor::block_on(service.commit(prepared)).unwrap();
+    assert_eq!(outbox.deliveries.lock().unwrap().len(), 1);
+}
+
 #[test]
 fn no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel() {
     let tenant_id = Uuid::now_v7();
@@ -124,8 +165,8 @@ fn no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel() {
     let service = service(clients.clone(), outbox.clone());
 
     let input = input(tenant_id, None);
-    let first = futures_executor::block_on(service.execute(input.clone())).unwrap();
-    let second = futures_executor::block_on(service.execute(input)).unwrap();
+    let first = futures_executor::block_on(execute(&service, input.clone())).unwrap();
+    let second = futures_executor::block_on(execute(&service, input)).unwrap();
 
     assert_eq!(first.frontchannel_logout_urls.len(), 2);
     assert_eq!(
@@ -166,7 +207,7 @@ fn hinted_frontchannel_notifies_every_active_rp_in_the_session() {
             request.csrf_authorized = false;
             request.user_confirmed = false;
         }
-        let result = futures_executor::block_on(service.execute(request)).unwrap();
+        let result = futures_executor::block_on(execute(&service, request)).unwrap();
         assert_eq!(
             result.frontchannel_logout_urls,
             vec![
@@ -198,7 +239,8 @@ fn logout_batches_session_clients_and_reuses_the_validated_hint() {
         "inactive-client".into(),
         "foreign-client".into(),
     ];
-    futures_executor::block_on(service(clients.clone(), outbox.clone()).execute(request)).unwrap();
+    futures_executor::block_on(execute(&service(clients.clone(), outbox.clone()), request))
+        .unwrap();
     assert_eq!(*clients.single_reads.lock().unwrap(), vec!["client-a"]);
     assert_eq!(
         *clients.batch_reads.lock().unwrap(),
@@ -239,7 +281,7 @@ fn unrelated_hint_does_not_suppress_confirmed_current_session_notifications() {
         sid: Some("another-session".to_owned()),
     });
     let result =
-        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
+        futures_executor::block_on(execute(&service(clients, outbox.clone()), request)).unwrap();
     assert_eq!(result.frontchannel_logout_urls.len(), 2);
     let deliveries = outbox.deliveries.lock().unwrap();
     assert_eq!(deliveries.len(), 2);
@@ -271,11 +313,11 @@ fn expired_hint_is_accepted_only_when_bound_to_the_current_session() {
         aud: json!("client-a"),
         sid: Some(session.oidc_sid),
     });
-    assert!(futures_executor::block_on(service.execute(request.clone())).is_ok());
+    assert!(futures_executor::block_on(execute(&service, request.clone())).is_ok());
 
     request.session = None;
     assert_eq!(
-        futures_executor::block_on(service.execute(request)),
+        futures_executor::block_on(execute(&service, request)),
         Err(LogoutServiceError::InvalidIdTokenHint)
     );
 }
@@ -290,19 +332,19 @@ fn unbound_logout_requires_both_user_confirmation_and_csrf_authorization() {
 
     request.user_confirmed = false;
     assert_eq!(
-        futures_executor::block_on(service.execute(request.clone())),
+        futures_executor::block_on(execute(&service, request.clone())),
         Err(LogoutServiceError::ConfirmationRequired)
     );
 
     request.user_confirmed = true;
     request.csrf_authorized = false;
     assert_eq!(
-        futures_executor::block_on(service.execute(request.clone())),
+        futures_executor::block_on(execute(&service, request.clone())),
         Err(LogoutServiceError::ConfirmationRequired)
     );
 
     request.csrf_authorized = true;
-    assert!(futures_executor::block_on(service.execute(request)).is_ok());
+    assert!(futures_executor::block_on(execute(&service, request)).is_ok());
 }
 
 #[test]
@@ -324,7 +366,7 @@ fn client_id_only_does_not_fan_out_to_an_ungranted_client() {
         .logged_in_client_ids
         .clear();
     let result =
-        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
+        futures_executor::block_on(execute(&service(clients, outbox.clone()), request)).unwrap();
     assert!(result.frontchannel_logout_urls.is_empty());
     assert!(outbox.deliveries.lock().unwrap().is_empty());
 }
@@ -351,7 +393,7 @@ fn valid_hint_makes_an_ungranted_client_a_bound_fanout_target() {
         sid: Some(session.oidc_sid),
     });
     let result =
-        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
+        futures_executor::block_on(execute(&service(clients, outbox.clone()), request)).unwrap();
     assert_eq!(result.frontchannel_logout_urls.len(), 1);
     assert_eq!(outbox.deliveries.lock().unwrap().len(), 1);
 }
@@ -367,9 +409,10 @@ fn current_session_membership_allows_client_id_only_fanout() {
         .unwrap()
         .push(client(tenant_id, "client-a", true));
     let outbox = Arc::new(Outbox::default());
-    let result = futures_executor::block_on(
-        service(clients, outbox.clone()).execute(input(tenant_id, Some("client-a"))),
-    )
+    let result = futures_executor::block_on(execute(
+        &service(clients, outbox.clone()),
+        input(tenant_id, Some("client-a")),
+    ))
     .unwrap();
     assert_eq!(result.frontchannel_logout_urls.len(), 1);
     assert_eq!(outbox.deliveries.lock().unwrap().len(), 1);

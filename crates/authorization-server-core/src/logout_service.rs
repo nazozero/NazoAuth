@@ -92,6 +92,13 @@ pub struct LogoutExecution {
     pub operation_key: Option<String>,
 }
 
+/// A validated logout with signed notifications, not yet persisted or delivered.
+#[derive(Clone, Debug)]
+pub struct PreparedLogout {
+    pub execution: LogoutExecution,
+    deliveries: Vec<IdempotentBackchannelLogoutDelivery>,
+}
+
 #[derive(Clone, Debug)]
 pub struct LogoutInput {
     pub tenant_id: Uuid,
@@ -175,7 +182,7 @@ impl LogoutService {
         }
     }
 
-    pub async fn execute(&self, input: LogoutInput) -> Result<LogoutExecution, LogoutServiceError> {
+    pub async fn prepare(&self, input: LogoutInput) -> Result<PreparedLogout, LogoutServiceError> {
         if input.request.id_token_hint_present && input.id_token_hint.is_none() {
             return Err(LogoutServiceError::InvalidIdTokenHint);
         }
@@ -245,17 +252,35 @@ impl LogoutService {
             input.frontchannel_enabled,
         );
         let operation_key = input.session.as_ref().map(logout_operation_key);
-        if let (Some(session), Some(operation_key)) =
+        let deliveries = if let (Some(session), Some(operation_key)) =
             (input.session.as_ref(), operation_key.as_deref())
         {
-            self.enqueue_backchannel(session, &active_clients, operation_key, input.now)
-                .await?;
-        }
-        Ok(LogoutExecution {
-            redirect_uri,
-            frontchannel_logout_urls,
-            operation_key,
+            self.prepare_backchannel(session, &active_clients, operation_key, input.now)
+                .await?
+        } else {
+            Vec::new()
+        };
+        Ok(PreparedLogout {
+            execution: LogoutExecution {
+                redirect_uri,
+                frontchannel_logout_urls,
+                operation_key,
+            },
+            deliveries,
         })
+    }
+
+    pub async fn commit(
+        &self,
+        prepared: PreparedLogout,
+    ) -> Result<LogoutExecution, LogoutServiceError> {
+        if prepared.execution.operation_key.is_some() {
+            self.outbox
+                .enqueue_idempotent_batch(&prepared.deliveries)
+                .await
+                .map_err(|_| LogoutServiceError::OutboxUnavailable)?;
+        }
+        Ok(prepared.execution)
     }
 
     async fn lookup_client(
@@ -358,13 +383,13 @@ impl LogoutService {
             .collect()
     }
 
-    async fn enqueue_backchannel(
+    async fn prepare_backchannel(
         &self,
         session: &LogoutSession,
         active_clients: &[RegisteredLogoutClient],
         operation_key: &str,
         now: DateTime<Utc>,
-    ) -> Result<(), LogoutServiceError> {
+    ) -> Result<Vec<IdempotentBackchannelLogoutDelivery>, LogoutServiceError> {
         let mut deliveries = Vec::new();
         for client in active_clients {
             let Some(logout_uri) = client.backchannel_logout_uri.clone() else {
@@ -399,10 +424,7 @@ impl LogoutService {
                 expires_at: now + Duration::seconds(BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS),
             });
         }
-        self.outbox
-            .enqueue_idempotent_batch(&deliveries)
-            .await
-            .map_err(|_| LogoutServiceError::OutboxUnavailable)
+        Ok(deliveries)
     }
 }
 

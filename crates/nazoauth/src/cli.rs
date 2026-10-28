@@ -387,6 +387,13 @@ async fn run_server(
     }
     let config = ConfigSource::load()?;
     let bindings = persistence.server_bindings(&config).await?;
+    let data_directory =
+        config.persistent_path("DATA_DIR", Some(crate::config::DEFAULT_DATA_DIR))?;
+    let operator_states = crate::operator_task::retention_state_directories(
+        &data_directory,
+        std::env::var_os("NAZOAUTH_OPERATOR_STATE_DIRECTORY").map(PathBuf::from),
+    );
+    let _retention_worker = crate::operator_task::start_retention_worker(operator_states);
     crate::bootstrap::run(config, bindings, transient_state, avatar_object_store).await
 }
 

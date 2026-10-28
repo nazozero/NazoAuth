@@ -172,7 +172,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
             };
             let execution = self
                 .service
-                .execute(LogoutInput {
+                .prepare(LogoutInput {
                     tenant_id: self.sessions.tenant_id().as_uuid(),
                     request: RpLogoutRequest {
                         id_token_hint_present: command.request.id_token_hint.is_some(),
@@ -200,27 +200,33 @@ impl OidcLogoutOperations for OidcLogoutHandles {
             let operation_key = execution
                 .as_ref()
                 .ok()
-                .and_then(|execution| execution.operation_key.clone());
-            if execution.is_ok() {
-                // Durable required evidence for the authorized logout is
-                // persisted before the irreversible session delete: an
-                // append failure aborts the logout while the session can
-                // still be retried instead of completing unaudited.
-                let mut fields = audit_fields([
-                    ("operation_key", json!(operation_key)),
-                    ("client_id", json!(audit_client_id)),
-                ]);
-                if let Some(subject_hash) = subject_hash.as_ref() {
-                    fields.insert("subject_hash".to_owned(), json!(subject_hash));
+                .and_then(|prepared| prepared.execution.operation_key.clone());
+            let execution = match execution {
+                Ok(prepared) => {
+                    let mut fields = audit_fields([
+                        ("operation_key", json!(operation_key)),
+                        ("client_id", json!(audit_client_id)),
+                    ]);
+                    if let Some(subject_hash) = subject_hash.as_ref() {
+                        fields.insert("subject_hash".to_owned(), json!(subject_hash));
+                    }
+                    self.audit
+                        .ensure_transactional_ready()
+                        .await
+                        .map_err(|_| OidcLogoutError::AuditUnavailable)?;
+                    self.audit
+                        .record_required("oidc_logout", fields)
+                        .await
+                        .map_err(|_| OidcLogoutError::AuditUnavailable)?;
+                    let execution = self
+                        .service
+                        .commit(prepared)
+                        .await
+                        .map_err(map_logout_service_error)?;
+                    Ok(execution)
                 }
-                self.audit
-                    .record_required("oidc_logout", fields)
-                    .await
-                    .map_err(|error| {
-                        tracing::warn!(%error, "required oidc logout audit append failed");
-                        OidcLogoutError::AuditUnavailable
-                    })?;
-            }
+                Err(error) => Err(error),
+            };
             let success = finalize_logout_execution(execution, command.session_id, |session_id| {
                 let sessions = self.sessions.clone();
                 async move {

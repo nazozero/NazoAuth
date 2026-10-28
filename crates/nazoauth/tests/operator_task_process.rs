@@ -291,6 +291,22 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
     assert_eq!(first_result.operation_id, operation_id);
     assert_eq!(first_result.outcome, ControlOutcome::Succeeded);
 
+    // A completed old record is retention work for the server, not this
+    // one-shot response. Replaying must return without scanning it away.
+    let journal_dir = root.join("state").join("control-journal");
+    let mut old: serde_json::Value = serde_json::from_slice(
+        &fs::read(journal_dir.join(format!("{operation_id}.journal.json"))).unwrap(),
+    )
+    .unwrap();
+    let old_id = "019c8ca2-30a6-7000-8000-00000000b002";
+    old["operation_id"] = old_id.into();
+    old["accepted_at"] = 1_000.into();
+    old["result"]["operation_id"] = old_id.into();
+    old["result"]["accepted_at"] = 1_000.into();
+    old["result"]["completed_at"] = 1_001.into();
+    let old_path = journal_dir.join(format!("{old_id}.journal.json"));
+    fs::write(&old_path, serde_json::to_vec(&old).unwrap()).unwrap();
+
     // The journal owns recovery: rerun with a dead database URL — the resume
     // path must not consult the Controller Registry at all.
     let replay = run_operator_task(
@@ -300,6 +316,7 @@ async fn signed_control_operation_executes_once_and_recovers_from_the_journal() 
     );
     assert_success(&replay);
     assert_eq!(replay.stdout, first.stdout);
+    assert!(old_path.exists(), "one-shot replay must not run retention");
 
     // Same id, different canonical request: permanent conflict.
     let mut conflicting = op.clone();

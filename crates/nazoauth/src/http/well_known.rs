@@ -107,14 +107,6 @@ fn readiness_response(
     })
 }
 
-pub(crate) async fn captcha_config() -> Json<Value> {
-    Json(json!({
-        "turnstile_enabled": false,
-        "turnstile_site_key": null,
-        "registration_enabled": true
-    }))
-}
-
 pub(crate) async fn mdoc_crl(
     source: Option<Data<crate::keyctl::MdocCrlSource>>,
     issuer_id: actix_web::web::Path<String>,
