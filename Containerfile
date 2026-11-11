@@ -33,7 +33,7 @@ RUN --mount=type=cache,id=nazoauth-cargo-registry,target=/usr/local/cargo/regist
     && install -Dm755 target/release/nazoauth /out/nazoauth \
     && printf "%s" "${SOURCE_SHA}" > /out/source-sha
 
-FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime-base
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime-base
 
 # Security fixes not yet in the pinned base digest are installed at exact
 # versions (Renovate-managed); never blanket-upgrade the runtime image.
@@ -44,6 +44,7 @@ RUN apt-get update \
         libpcre2-8-0=10.46-1~deb13u3 \
         libsqlite3-0=3.46.1-7+deb13u2 \
         perl-base=5.40.1-6+deb13u1 \
+        zlib1g=1:1.3.dfsg+really1.3.1-1+deb13u1 \
     && groupadd --gid 10001 nazoauth \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nazoauth \
     && rm -rf /var/lib/apt/lists/*

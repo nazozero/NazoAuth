@@ -150,6 +150,52 @@ async fn refresh_token_rotation_failure_does_not_return_partial_credentials() {
 }
 
 #[actix_web::test]
+async fn public_refresh_rotation_never_extends_the_original_deadline() {
+    let state = issue_state_with_live_database()
+        .expect("refresh deadline regression requires PostgreSQL and Valkey");
+    state.valkey.init().await.expect("Valkey should connect");
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.client_id = format!("refresh-deadline-{}", Uuid::now_v7());
+    let user_id = Uuid::now_v7();
+    insert_issue_client(&state, &client).await;
+    insert_issue_user(&state, user_id).await;
+
+    let make_issue = || {
+        let mut issue = token_issue_with_sid(Vec::new());
+        issue.user_id = Some(user_id);
+        issue.subject = user_id.to_string();
+        issue.scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
+        issue.include_refresh = true;
+        issue
+    };
+    let mut initial = make_issue();
+    persist_refresh_authority_for_issue(&state, &client, &mut initial).await;
+    let mut source = initial.refresh_authority.take().unwrap();
+    let deadline = source.expires_at;
+    let repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
+
+    for _ in 0..2 {
+        let mut issue = make_issue();
+        issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+            family_id: source.family_id,
+            rotated_from_id: source.member_id,
+        };
+        issue.refresh_authority = Some(source);
+        let response = issue_token_response(&state, &client, issue).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+        let raw = body["refresh_token"].as_str().unwrap();
+        source = repository
+            .by_raw_refresh_token(client.tenant_id, raw)
+            .await
+            .unwrap()
+            .unwrap()
+            .authority();
+        assert_eq!(source.expires_at, deadline);
+    }
+}
+
+#[actix_web::test]
 async fn native_sso_issue_requires_a_refresh_session_before_persisting_device_state() {
     let Some(state) = issue_state_with_live_database() else {
         return;

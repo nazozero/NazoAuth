@@ -111,7 +111,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=nazo-oauth-service
       - name: Scan service image
         run: |
-          docker run --rm --entrypoint dpkg-query nazo-oauth-supply-chain:${{ github.sha }} -W libpcre2-8-0 libsqlite3-0 perl-base
+          docker run --rm --entrypoint dpkg-query nazo-oauth-supply-chain:${{ github.sha }} -W apt libpcre2-8-0 libsqlite3-0 perl-base zlib1g
           mkdir -p target/ci-service-image
           docker save nazo-oauth-supply-chain:${{ github.sha }} -o target/ci-service-image/nazo-oauth-service.tar
           docker run --rm \

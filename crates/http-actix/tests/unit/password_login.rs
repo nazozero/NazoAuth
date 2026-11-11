@@ -368,7 +368,8 @@ async fn route_methods_cors_and_security_headers_are_locked() {
                 .to_request(),
         )
         .await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(response.headers().get(header::ALLOW).unwrap(), "POST");
         assert!(
             response
                 .headers()

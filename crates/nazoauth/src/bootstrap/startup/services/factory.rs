@@ -226,6 +226,9 @@ pub(super) async fn run(
             app
         }
     })
+    // Keep the existing plaintext listener HTTP/1-only; Actix 4.19 otherwise
+    // enables cleartext HTTP/2 detection by default.
+    .auto_h2c(false)
     .client_request_timeout(HTTP_CLIENT_REQUEST_TIMEOUT)
     .max_connections(HTTP_MAX_CONNECTIONS_PER_WORKER)
     .on_connect(move |io, extensions| {

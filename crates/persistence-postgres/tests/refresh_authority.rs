@@ -14,6 +14,8 @@ use nazo_postgres::{TokenIssuanceRepository, TokenRepository, create_pool};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+mod support;
+
 const A: &str = "resource://a";
 const B: &str = "resource://b";
 
@@ -270,6 +272,103 @@ async fn assert_issuance_writes(connection: &mut AsyncPgConnection, id: Uuid, co
     assert_eq!(
         receipts.count, 0,
         "Fresh refresh commits never allocate a grant receipt"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn public_deadline_cutover_revokes_only_public_families_and_keeps_audit_on_rollback() {
+    let Some(base_url) = database_url() else {
+        return;
+    };
+    let database = support::database::OwnedDatabase::new(&base_url).await;
+    nazo_postgres::run_pending_migrations(&database.url)
+        .await
+        .unwrap();
+    let mut connection = AsyncPgConnection::establish(&database.url).await.unwrap();
+    let public = seed_fixture(&mut connection).await;
+    let confidential = seed_fixture(&mut connection).await;
+    sql_query("UPDATE oauth_clients SET client_type = 'public', token_endpoint_auth_method = 'none' WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(public.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let (_, public_source) = issue_at(&database.url, &public, Utc::now()).await;
+    let (_, confidential_source) = issue_at(&database.url, &confidential, Utc::now()).await;
+    let up = include_str!("../../../migrations/20261111000100_public_refresh_deadline/up.sql");
+    for _ in 0..2 {
+        connection
+            .batch_execute(&format!("BEGIN;\n{up}\nCOMMIT;"))
+            .await
+            .unwrap();
+    }
+    assert!(
+        !state(&mut connection, public_source.token_family_id)
+            .await
+            .family["revoked_at"]
+            .is_null()
+    );
+    assert!(
+        state(&mut connection, confidential_source.token_family_id)
+            .await
+            .family["revoked_at"]
+            .is_null()
+    );
+    let audits = sql_query(
+        "SELECT count(*) AS count FROM security_audit_events \
+         WHERE event_type = 'refresh_family_security_revoked' \
+         AND payload->>'reason' = 'public_refresh_deadline_cutover' \
+         AND payload->>'token_family_id' = $1",
+    )
+    .bind::<sql_types::Text, _>(public_source.token_family_id.to_string())
+    .get_result::<Count>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(audits.count, 1);
+    connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261111000100_public_refresh_deadline/down.sql"
+        ))
+        .await
+        .unwrap();
+    assert!(
+        !state(&mut connection, public_source.token_family_id)
+            .await
+            .family["revoked_at"]
+            .is_null()
+    );
+    let audits_after_rollback = sql_query(
+        "SELECT count(*) AS count FROM security_audit_events \
+         WHERE event_type = 'refresh_family_security_revoked' \
+         AND payload->>'reason' = 'public_refresh_deadline_cutover' \
+         AND payload->>'token_family_id' = $1",
+    )
+    .bind::<sql_types::Text, _>(public_source.token_family_id.to_string())
+    .get_result::<Count>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(audits_after_rollback.count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn changed_refresh_deadline_invalidates_a_prepared_source() {
+    let Some(url) = database_url() else { return };
+    let fixture = fixture(&url).await;
+    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let input = preserve(&fixture, &source);
+    let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
+    sql_query(
+        "UPDATE oauth_refresh_families SET current_expires_at = current_expires_at - interval '1 minute' \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<sql_types::Uuid, _>(tenant())
+    .bind::<sql_types::Uuid, _>(source.token_family_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
+    assert_eq!(
+        repository.commit_token_issuance(input).await.unwrap(),
+        CommitTokenIssuanceResult::RefreshGrantUnavailable
     );
 }
 

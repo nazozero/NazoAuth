@@ -1098,6 +1098,7 @@ async fn persist_refresh_token_inner(
             && family.contract_blake3 == authority.contract_key.as_slice()
             && contract == authority.contract
             && family.current_audience == serde_json::json!(authority.current_audiences)
+            && family.current_expires_at == authority.expires_at
             && family.current_id_token_sid == authority.id_token_sid
             && family.dpop_jkt == authority.dpop_jkt
             && family.mtls_x5t_s256 == authority.mtls_x5t_s256

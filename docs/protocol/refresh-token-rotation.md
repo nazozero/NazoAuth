@@ -164,14 +164,29 @@ the client UPDATE's old/new values and the existing client-first lock order;
 management audit behavior is preserved and the revocation evidence commits
 with the mutation.
 
-Rotation sets the new current member's expiry to `now + REFRESH_TOKEN_TTL_SECONDS`
-(default 30 days); it does not extend any spent proof's original expiry.
+For public clients, rotation sets the successor's expiry to the earlier of the
+current member's expiry and `now + REFRESH_TOKEN_TTL_SECONDS` (default 30 days).
+Thus the first issued deadline cannot be extended by later rotations. This
+also applies to native and sender-constrained public clients because the
+client model does not distinguish browser applications. Confidential-client
+rotation retains its existing sliding expiry. No rotation extends a spent
+proof's original expiry.
 Unbound public proof volume is consequently proportional to rotations during
 the token lifetime, plus cleanup lag, rather than bounded to 64 per family.
 Replay detection retains each proof through its original expiry. The indexed
 maintenance sweep reclaims expired proofs in bounded batches.
 
 ### Upgrade and Rollback Boundary
+
+Migration `20261111000100_public_refresh_deadline` retires existing public
+refresh families and writes a `refresh_family_security_revoked` audit event
+with reason `public_refresh_deadline_cutover`. Earlier writers did not retain
+the first deadline, so it cannot reliably be recovered from old families.
+Affected clients must obtain a fresh authorization grant. Stop all old token
+issuers before applying the migration; admit refresh traffic only after every
+writer enforces the new deadline. Rolling back the migration does not restore
+revoked credentials or delete their audit evidence. Old writers must not be
+reintroduced if the deadline guarantee is required.
 
 These historical cutovers must complete in v0.3.2 before adopting the current
 schema baseline. Baseline adoption preserves the resulting state without
@@ -189,7 +204,7 @@ traffic only through the new writer. Mixed-version writers could delete
 proofs the new writer must retain. An alternative gradual, no-forced-reauthorization
 transition would leave the old exposure until affected original tokens expire
 (up to the configured TTL); this release chooses an immediate guarantee instead.
-No token lifetime or benchmark workload is shortened to obtain it.
+That historical cutover did not shorten token lifetimes.
 
 The down migration removes the added downgrade guard only. It never restores
 `revoked_at`, reconstructs missing proofs, or deletes revocation evidence.

@@ -679,6 +679,7 @@ fn set_refresh_authority_for_issue(
         token_blake3: [0; 32],
         contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: issue.audiences.clone(),
+        expires_at: Utc::now() + chrono::Duration::hours(1),
         id_token_sid: issue
             .refresh_authority
             .as_ref()

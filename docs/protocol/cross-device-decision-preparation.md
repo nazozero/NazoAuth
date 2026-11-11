@@ -11,6 +11,20 @@ or unknown write outcome stops the request without claiming success.
 Prepared values must be consumed by their originating tenant-scoped service;
 their opaque handles do not authorize transferring them across stores or tenants.
 
+## Deployment risk assessment
+
+[RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) requires a risk
+assessment and mitigations appropriate to each cross-device deployment. The
+client grant allowlist and `allow_cross_device_flows` are authorization gates,
+not proof of device proximity or user intent. Operators must assess consent
+and session phishing, select suitable mitigations, and consider proximity
+when possible before enabling these flows. Device/CIBA expiry, polling limits,
+user decisions and client or sender binding are available controls, but do
+not establish proximity or guarantee that a user recognizes a phishing
+request. The relying application and deployment own the remaining context.
+Native SSO between apps on the same device is not inherently a cross-device
+flow; deployments that transfer its authority across devices must assess it.
+
 ## Device approval
 
 `DeviceGrantService::prepare_decision` returns `PreparedDeviceDecision<V>`.

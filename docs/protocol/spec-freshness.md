@@ -59,6 +59,8 @@ it does not replace the separately tracked current draft.
 | Source | Consequence for NazoAuth |
 | --- | --- |
 | OAuth 2.1, revision 17 | Authorization redirect URIs reject query parameters reserved for authorization responses, including for previously registered clients. The authorization endpoint is derived from the query-free issuer. Draft 17 also clarifies input validation and active resource-owner interaction; full draft conformance is not claimed. |
+| Browser-based applications, RFC 10017 | Compared the final text with draft 27; the server-side normative requirements did not materially change. The review found and corrected public refresh rotation extending the initial expiry. Existing public refresh families must reauthorize at the migration cutover. Browser application and deployment responsibilities remain separate. |
+| Cross-device security, RFC 10027 | Requires deployment-specific risk assessment and mitigations, with proximity considered where possible. Device and CIBA authorization gates and lifecycle protections are available controls, not proof of proximity or of a user's intent; see the cross-device deployment guidance. |
 | Client Attestation, revision 12 | Requires attestation `iat` and changes HTTP field syntax to Structured Fields. The OpenID4VCI Final profile still requires revision 07. |
 | Client ID Metadata, 02–03 | Adds client URL normalization guidance, exact server-side comparison, loopback redirect exceptions, and transient-fetch and rate-limit guidance. This profile is not implemented. |
 | SPIFFE Client Authentication, 02–03 | Revises client identification, trust-bundle discovery, and X.509 SVID validation. This profile is not implemented. |
@@ -80,8 +82,8 @@ consequences. Runtime behavior, metadata, and conformance claims are unchanged.
 | Source change | Consequence |
 | --- | --- |
 | [OAuth 2.1, 15 to 16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/16/) | Adds value-size, PKCE plain-method and consent-phishing guidance. Review request limits, client registration, consent and grant revocation against draft 16. |
-| [Browser-Based Applications, RFC 10017](https://www.rfc-editor.org/info/rfc10017) | Published August 2026. Retain the earlier draft-27 audit as historical evidence; final-RFC implementation review is pending. |
-| [Cross-Device Security, RFC 10027](https://www.rfc-editor.org/info/rfc10027) | Published August 2026. Device Grant, CIBA and Native SSO need review against the final BCP. |
+| [Browser-Based Applications, RFC 10017](https://www.rfc-editor.org/info/rfc10017) | Published August 2026. The November review above compares the final text and corrects the refresh-deadline gap in the earlier draft-27 audit. |
+| [Cross-Device Security, RFC 10027](https://www.rfc-editor.org/info/rfc10027) | Published August 2026. The November review above records the deployment-specific risk assessment and mitigation boundary. |
 | [Client Attestation, 10 to 11](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/11/) | Changes challenge/DPoP nonce handling and client metadata. Keep the OpenID4VCI Final profile pinned to draft 07; adopting draft 11 requires a separate protocol and metadata audit. |
 | [Transaction Tokens, 09 to 11](https://www.ietf.org/archive/id/draft-ietf-oauth-transaction-tokens-11.txt) | Document history identifies claim-text edits and a history typo fix. No TTS implementation or metadata is added. |
 | [JWT BCP bis, 07 to 10](https://www.ietf.org/archive/id/draft-ietf-oauth-rfc8725bis-10.txt) | Clarifies nested-JWT handling, decompression limits, and deprecated algorithms. Algorithm, key, token-confusion and resource-limit changes need review before adopting the bis draft. |

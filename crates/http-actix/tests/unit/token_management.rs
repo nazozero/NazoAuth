@@ -306,7 +306,8 @@ async fn introspection_route_has_no_browser_cors_and_rejects_get_and_options() {
             .to_request(),
     ] {
         let response = test::call_service(&service, request).await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_eq!(response.headers().get(header::ALLOW).unwrap(), "POST");
         assert!(
             response
                 .headers()

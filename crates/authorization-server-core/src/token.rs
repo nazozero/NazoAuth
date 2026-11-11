@@ -132,6 +132,8 @@ pub struct RefreshTokenAuthority {
     pub contract_key: [u8; 32],
     pub contract: RefreshContract,
     pub current_audiences: Vec<String>,
+    /// The current generation's expiry, which bounds public-client rotation.
+    pub expires_at: DateTime<Utc>,
     pub id_token_sid: Option<String>,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
@@ -151,6 +153,7 @@ impl RefreshToken {
             contract_key: self.contract_key,
             contract: self.contract.clone(),
             current_audiences: self.audience.clone(),
+            expires_at: self.expires_at,
             id_token_sid: self.id_token_sid.clone(),
             dpop_jkt: self.dpop_jkt.clone(),
             mtls_x5t_s256: self.mtls_x5t_s256.clone(),

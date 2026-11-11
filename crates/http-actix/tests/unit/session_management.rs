@@ -119,11 +119,16 @@ async fn disabled_enabled_and_draining_route_contracts_are_stable() {
                     response.status(),
                     if served {
                         StatusCode::OK
+                    } else if method != Method::GET {
+                        StatusCode::METHOD_NOT_ALLOWED
                     } else {
                         StatusCode::NOT_FOUND
                     },
                     "{availability:?} {method} {uri}"
                 );
+                if method != Method::GET {
+                    assert_eq!(response.headers().get(header::ALLOW).unwrap(), "GET");
+                }
                 assert!(
                     response
                         .headers()

@@ -387,7 +387,12 @@ async fn login_routes_preserve_post_only_no_cors_surface() {
                     .to_request(),
             )
             .await;
-            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+            assert_eq!(
+                response.status(),
+                StatusCode::METHOD_NOT_ALLOWED,
+                "{method} {path}"
+            );
+            assert_eq!(response.headers().get(header::ALLOW).unwrap(), "POST");
             assert!(response.headers().get(header::CONTENT_TYPE).is_none());
             assert!(
                 response
@@ -436,19 +441,22 @@ async fn profile_routes_preserve_wrong_method_cors_and_security_contract() {
     )
     .await;
 
-    for (method, path) in [
-        (actix_web::http::Method::POST, "/auth/me/passkeys"),
+    for (method, path, allowed_method) in [
+        (actix_web::http::Method::POST, "/auth/me/passkeys", "GET"),
         (
             actix_web::http::Method::GET,
             "/auth/me/passkeys/registration/begin",
+            "POST",
         ),
         (
             actix_web::http::Method::DELETE,
             "/auth/me/passkeys/registration/finish",
+            "POST",
         ),
         (
             actix_web::http::Method::POST,
             "/auth/me/passkeys/00000000-0000-0000-0000-000000000001",
+            "DELETE",
         ),
     ] {
         let response = test::call_service(
@@ -460,7 +468,15 @@ async fn profile_routes_preserve_wrong_method_cors_and_security_contract() {
                 .to_request(),
         )
         .await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method} {path}"
+        );
+        assert_eq!(
+            response.headers().get(header::ALLOW).unwrap(),
+            allowed_method
+        );
         assert_eq!(
             response
                 .headers()

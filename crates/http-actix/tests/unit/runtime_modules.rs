@@ -566,7 +566,8 @@ async fn static_routes_lock_cors_security_method_and_preflight_contracts() {
             .to_request(),
     )
     .await;
-    assert_eq!(post.status(), StatusCode::NOT_FOUND);
+    assert_eq!(post.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(post.headers().get(header::ALLOW).unwrap(), "GET");
     assert_eq!(
         post.headers().get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
         "nosniff"

@@ -333,6 +333,7 @@ async fn refresh_issuance(database_url: &str, fixture: RefreshFixture) -> Commit
                     .as_bytes()),
                 contract: contract.clone(),
                 current_audiences: token.audiences.clone(),
+                expires_at: token.expires_at,
                 id_token_sid: None,
                 dpop_jkt: token.dpop_jkt.clone(),
                 mtls_x5t_s256: token.mtls_x5t_s256.clone(),

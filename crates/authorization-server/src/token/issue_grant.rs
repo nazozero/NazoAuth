@@ -311,6 +311,19 @@ pub async fn issue_token_response(
         ));
     }
     let now = Utc::now();
+    if client.client_type == "public"
+        && issue
+            .refresh_authority
+            .as_ref()
+            .is_some_and(|source| source.expires_at <= now)
+    {
+        return Err(OAuthEndpointError::token(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "refresh_token 无效或已撤销.",
+            false,
+        ));
+    }
     // Select the owned lineage before signing. Only a checked refresh source
     // can inherit it; unrelated fresh exchanges get a new issuance root.
     let refresh_family = if will_issue_refresh {
@@ -566,6 +579,11 @@ pub async fn issue_token_response(
     let mut refresh_token_to_commit = None;
     if will_issue_refresh && let Some((family, rotated_from, lost_response_retry)) = refresh_family
     {
+        let expires_at = now + Duration::seconds(context.config.refresh_token_ttl_seconds);
+        let expires_at = match issue.refresh_authority.as_ref() {
+            Some(source) if client.client_type == "public" => expires_at.min(source.expires_at),
+            _ => expires_at,
+        };
         let refresh = PendingRefreshToken {
             raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
             member_id: Uuid::now_v7(),
@@ -573,7 +591,7 @@ pub async fn issue_token_response(
             rotated_from,
             lost_response_retry,
             issued_at: now,
-            expires_at: now + Duration::seconds(context.config.refresh_token_ttl_seconds),
+            expires_at,
         };
         let id_token_sid_for_refresh_persistence =
             persisted_id_token_sid(&issue, issued_id_token_sid);

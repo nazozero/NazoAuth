@@ -141,6 +141,7 @@ fn source_for_issue(issue: &TokenIssue, client: &ClientRow) -> nazo_auth::Refres
         token_blake3: [4; 32],
         contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: contract.audiences.clone(),
+        expires_at: Utc::now() + chrono::Duration::hours(1),
         id_token_sid: None,
         dpop_jkt: None,
         mtls_x5t_s256: None,

@@ -174,21 +174,12 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
     assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
     assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
 
-    for (path, expected_status) in [
-        ("/.well-known/openid-configuration", StatusCode::NOT_FOUND),
-        (
-            "/.well-known/oauth-authorization-server",
-            StatusCode::NOT_FOUND,
-        ),
-        (
-            "/.well-known/oauth-protected-resource",
-            StatusCode::NOT_FOUND,
-        ),
-        (
-            "/.well-known/oauth-protected-resource/fapi/resource",
-            StatusCode::NOT_FOUND,
-        ),
-        ("/jwks.json", StatusCode::METHOD_NOT_ALLOWED),
+    for path in [
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/fapi/resource",
+        "/jwks.json",
     ] {
         for method in [Method::POST, Method::OPTIONS] {
             let response = test::call_service(
@@ -199,7 +190,12 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
                     .to_request(),
             )
             .await;
-            assert_eq!(response.status(), expected_status, "{method} {path}");
+            assert_eq!(
+                response.status(),
+                StatusCode::METHOD_NOT_ALLOWED,
+                "{method} {path}"
+            );
+            assert_eq!(response.headers().get("allow").unwrap(), "GET");
         }
     }
     assert_eq!(source.calls.load(Ordering::Relaxed), 2);
