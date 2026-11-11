@@ -371,7 +371,7 @@ async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() 
         (
             actix_web::http::Method::OPTIONS,
             "/register",
-            StatusCode::NOT_FOUND,
+            StatusCode::METHOD_NOT_ALLOWED,
         ),
     ];
 
@@ -390,6 +390,9 @@ async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() 
         .await;
 
         assert_eq!(response.status(), expected_status, "{uri}");
+        if expected_status == StatusCode::METHOD_NOT_ALLOWED {
+            assert_eq!(response.headers().get(header::ALLOW).unwrap(), "POST");
+        }
         assert!(
             response.headers().get(header::CONTENT_TYPE).is_none(),
             "{uri}"
@@ -776,7 +779,10 @@ async fn production_profile_routes_keep_method_cors_cache_and_security_contracts
         .insert_header((header::ORIGIN, "https://app.example"))
         .to_request();
     let post = test::call_service(&app, post).await;
-    assert_eq!(post.status(), StatusCode::NOT_FOUND);
+    assert_eq!(post.status(), StatusCode::METHOD_NOT_ALLOWED);
+    let allowed = post.headers().get(header::ALLOW).unwrap().to_str().unwrap();
+    assert!(allowed.split(',').any(|method| method.trim() == "GET"));
+    assert!(allowed.split(',').any(|method| method.trim() == "PATCH"));
     assert!(post.headers().get(header::CONTENT_TYPE).is_none());
     assert!(post.headers().get(header::CACHE_CONTROL).is_none());
     assert_eq!(

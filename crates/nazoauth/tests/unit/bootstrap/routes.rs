@@ -33,9 +33,10 @@ async fn controller_slot_list_has_one_control_tenant_route_and_no_admin_get_alia
     .await;
     assert_eq!(
         old_admin_get.status(),
-        StatusCode::NOT_FOUND,
+        StatusCode::METHOD_NOT_ALLOWED,
         "the old GET path must not remain as a compatibility alias"
     );
+    assert_eq!(old_admin_get.headers().get("allow").unwrap(), "POST");
 }
 
 #[actix_web::test]
