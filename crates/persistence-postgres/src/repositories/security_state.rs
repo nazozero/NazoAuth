@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{
     CleanupBatchResult, SecurityStateMaintenanceFuture, SecurityStateMaintenancePort,
@@ -682,7 +682,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             // existing commit boundary. Requeueing between categories makes
             // reclamation compete repeatedly with every admitted request and
             // counts pool waiting time again in the worker's catch-up rest.
-            // Cancellation or a failed cleanup retires the lease.
+            // Cancellation or a failed post-error probe retires the lease.
             let mut guard = DiscardOnDrop(Some(self.connection().await?));
             let result = async {
                 let connection = &mut **guard.connection();
@@ -745,7 +745,13 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 })
             }
             .await;
-            guard.return_to_pool();
+            // A fatal server error can arrive before the driver observes EOF,
+            // so is_broken alone may briefly report a dead connection as
+            // reusable. Probe only failed batches; healthy rollbacks remain
+            // reusable without adding a round trip to successful cleanup.
+            if result.is_ok() || guard.connection().batch_execute("SELECT 1").await.is_ok() {
+                guard.return_to_pool();
+            }
             result
         })
     }

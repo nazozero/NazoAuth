@@ -1339,6 +1339,7 @@ impl KeyGeneration {
         Self::from_loaded_with_snapshot(loaded, snapshot)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn from_loaded(loaded: LoadedKeyset) -> anyhow::Result<Self> {
         Self::from_loaded_with_snapshot(loaded, None)
     }
