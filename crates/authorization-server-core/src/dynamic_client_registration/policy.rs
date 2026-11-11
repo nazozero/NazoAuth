@@ -287,9 +287,6 @@ pub fn prepare_dynamic_client_registration(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "Dynamic OAuth Client".to_owned());
 
-    // Preserve the dynamic-registration policy at the normalization boundary;
-    // later consumers use this same request rather than copying its metadata.
-    let allow_client_assertion_endpoint_audience = token_endpoint_auth_method == "private_key_jwt";
     Ok(PreparedDynamicClientRegistration {
         response_types,
         request: crate::CreateClientRequest {
@@ -349,7 +346,7 @@ pub fn prepare_dynamic_client_registration(
             authorization_encrypted_response_alg: request.authorization_encrypted_response_alg,
             authorization_encrypted_response_enc: request.authorization_encrypted_response_enc,
             allow_client_assertion_audience_array: false,
-            allow_client_assertion_endpoint_audience,
+            allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
             backchannel_user_code_parameter: false,
             security_policy: crate::ClientSecurityPolicy::default(),

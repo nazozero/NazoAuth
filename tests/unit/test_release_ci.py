@@ -25,6 +25,17 @@ class ReleaseCiTests(unittest.TestCase):
             run[key] = value
             self.assertFalse(gate.acceptable(run, "tested"))
 
+    @patch.dict(gate.os.environ, RELEASE_SHA="tested", GITHUB_REPOSITORY="example/repo")
+    @patch.object(gate, "is_ancestor", return_value=True)
+    def test_missing_conformance_evidence_blocks_release(self, _ancestor):
+        def workflow_runs(args, **_kwargs):
+            runs = [] if "conformance-security.yml/runs" in args[4] else [self.run_record(id=1)]
+            return gate.json.dumps({"workflow_runs": runs})
+
+        with patch.object(gate.subprocess, "check_output", side_effect=workflow_runs):
+            with self.assertRaisesRegex(SystemExit, "conformance-security"):
+                gate.main()
+
     @patch.object(gate, "git")
     @patch.object(gate, "is_ancestor", return_value=True)
     def test_only_documentation_changes_can_reuse_ancestor(self, ancestor, git):

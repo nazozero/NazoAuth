@@ -208,7 +208,8 @@ Targeted suites with their own entry points:
 - `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
   spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
 - `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path
-  benchmark: set `NAZO_PERF_HOTPATH=1`, `NAZO_PERF_OUTPUT`, an isolated
+  benchmark: run `cargo test -p nazoauth --test token_hotpath_perf -- --ignored`
+  with `NAZO_PERF_OUTPUT`, an isolated
   PostgreSQL with `pg_stat_statements` preloaded
   (`NAZO_TEST_DATABASE_URL`/`DATABASE_URL`), and `NAZO_TEST_VALKEY_URL`/
   `VALKEY_URL`. `NAZO_PERF_OPS` (default 2000 measured operations per

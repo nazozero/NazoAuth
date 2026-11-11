@@ -652,3 +652,37 @@ async fn protocol_request_object_replay_keeps_absolute_expiry_and_refuses_expire
         }
     }
 }
+
+#[tokio::test]
+async fn resource_dpop_store_refuses_consumption_at_an_elapsed_deadline() {
+    use nazo_resource_server::{DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey};
+
+    let url = explicit_valkey_url().expect("this regression requires real Valkey");
+    let connection = nazo_valkey::test_support::scoped_connect(&url, Duration::from_secs(1))
+        .await
+        .unwrap();
+    let store = ReplayStore::new(&connection);
+    let inspector = inspection_client(&url).await;
+    let id = uuid::Uuid::now_v7().to_string();
+    let key = DpopReplayKey {
+        jkt: &id,
+        jti: "absolute-deadline",
+        expires_at: replay_owner_time(&inspector).await,
+    };
+    assert_eq!(
+        store.consume(key).await.unwrap(),
+        DpopReplayConsumptionResult::Replay
+    );
+    let fresh = DpopReplayKey {
+        expires_at: key.expires_at + 60,
+        ..key
+    };
+    assert_eq!(
+        store.consume(fresh).await.unwrap(),
+        DpopReplayConsumptionResult::Accepted
+    );
+    assert_eq!(
+        store.consume(fresh).await.unwrap(),
+        DpopReplayConsumptionResult::Replay
+    );
+}

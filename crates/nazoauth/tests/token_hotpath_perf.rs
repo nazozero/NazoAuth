@@ -5,7 +5,7 @@
 //! throughput, error rate, and PostgreSQL statement counts
 //! (pg_stat_statements).
 //!
-//! The harness is gated on `NAZO_PERF_HOTPATH=1` and requires
+//! Run this ignored benchmark explicitly with `--test token_hotpath_perf -- --ignored`. It requires
 //! `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`, `NAZO_TEST_VALKEY_URL`/`VALKEY_URL`,
 //! plus `NAZO_PERF_OUTPUT` for the JSONL results file. Optional knobs:
 //! `NAZO_PERF_OPS` (default 2000 measured ops per E2E group-run),
@@ -125,10 +125,7 @@ struct BenchConfig {
 
 const SENSITIVITY_CONCURRENCY: usize = 8;
 
-fn bench_config() -> Option<BenchConfig> {
-    if std::env::var("NAZO_PERF_HOTPATH").as_deref() != Ok("1") {
-        return None;
-    }
+fn bench_config() -> BenchConfig {
     let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("perf benchmark requires NAZO_TEST_DATABASE_URL or DATABASE_URL");
@@ -147,7 +144,7 @@ fn bench_config() -> Option<BenchConfig> {
         !concurrencies.is_empty(),
         "NAZO_PERF_CONCURRENCIES must not be empty"
     );
-    Some(BenchConfig {
+    BenchConfig {
         database_url,
         valkey_url,
         output,
@@ -157,7 +154,7 @@ fn bench_config() -> Option<BenchConfig> {
         concurrencies,
         sens_ops: env_usize("NAZO_PERF_SENS_OPS", 3_000),
         sens_warmup: env_usize("NAZO_PERF_SENS_WARMUP", 300),
-    })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,11 +1248,9 @@ struct BenchPath {
 }
 
 #[test]
+#[ignore = "requires isolated PostgreSQL, Valkey and NAZO_PERF_OUTPUT"]
 fn token_hotpath_benchmark() {
-    let Some(bench) = bench_config() else {
-        eprintln!("NAZO_PERF_HOTPATH not set; skipping token hotpath benchmark");
-        return;
-    };
+    let bench = bench_config();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
         .enable_all()

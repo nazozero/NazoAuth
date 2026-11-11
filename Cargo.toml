@@ -38,8 +38,8 @@ repository = "https://github.com/nazozero/NazoAuth"
 [workspace.dependencies]
 hex = "0.4.3"
 actix-cors = "0.7.2"
-actix-files = "0.7.1"
-actix-web = "4.17.0"
+actix-files = "0.7.4"
+actix-web = "4.19.0"
 actix-tls = "3.6.1"
 anyhow = "1.0.104"
 aes-gcm = "0.11.1"
@@ -135,9 +135,9 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
-# Reviewed Actix h2 0.4 port, pinned to an immutable upstream fork revision.
+# Retire the Actix port once a stable upstream HTTP/2 configuration omits h2 0.3.
 [patch.crates-io]
-actix-http = { git = "https://github.com/nazozero/actix-web", rev = "ca32c7cfd1ea71cc43dbbdb9d2d7b4b1a90d40e2" }
+actix-http = { git = "https://github.com/nazozero/actix-web", rev = "38157c15d5391509d1d752f5304c3cb1eeb3d234" }
 # TODO: replace this fork when a maintained release uses patched crypto-bigint
 # and preserves the coset 0.4 and borrowed-transcript contracts.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }
@@ -145,5 +145,6 @@ mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427
 # and passes the existing passkey and attestation tests.
 passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "d59b317998e56f4a16a69133d7a854c5c34f795b" }
 
-# Immutable certificate-chain sharing at the TLS-to-HTTP boundary.
+# Direct mTLS shares the immutable peer chain across the TLS/HTTP boundary.
+# Retire when upstream provides shared ownership or a measured per-connection copy is acceptable.
 rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

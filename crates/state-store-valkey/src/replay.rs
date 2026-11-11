@@ -57,7 +57,7 @@ return 'rejected'
 "#;
 
 // The original JWT expiry is checked and installed in the same atomic owner operation.
-const REQUEST_OBJECT_REPLAY_SCRIPT: &str = r#"
+const ABSOLUTE_REPLAY_SCRIPT: &str = r#"
 local now = tonumber(redis.call('TIME')[1])
 local expires_at = tonumber(ARGV[1])
 if now >= expires_at then return 'rejected' end
@@ -82,8 +82,7 @@ impl DpopReplayConsumption for ReplayStore {
         Result<DpopReplayConsumptionResult, ProtectedResourceDependencyError>,
     > {
         Box::pin(async move {
-            let ttl_seconds = key.expires_at.saturating_sub(Utc::now().timestamp()).max(1) as u64;
-            self.consume_dpop(key.jkt, key.jti, ttl_seconds)
+            self.consume_key_until(keys::dpop_replay(key.jkt, key.jti), key.expires_at)
                 .await
                 .map(|accepted| {
                     if accepted {
@@ -221,7 +220,7 @@ impl ReplayStore {
         jti: &str,
         expires_at: i64,
     ) -> Result<bool, Error> {
-        self.consume_request_object_key(keys::jar_replay(client_id, jti), expires_at)
+        self.consume_key_until(keys::jar_replay(client_id, jti), expires_at)
             .await
     }
 
@@ -241,21 +240,14 @@ impl ReplayStore {
         jti: &str,
         expires_at: i64,
     ) -> Result<bool, Error> {
-        self.consume_request_object_key(
-            keys::ciba_request_object_replay(client_id, jti),
-            expires_at,
-        )
-        .await
+        self.consume_key_until(keys::ciba_request_object_replay(client_id, jti), expires_at)
+            .await
     }
 
-    async fn consume_request_object_key(
-        &self,
-        key: String,
-        expires_at: i64,
-    ) -> Result<bool, Error> {
+    async fn consume_key_until(&self, key: String, expires_at: i64) -> Result<bool, Error> {
         let reply = command::eval_string(
             &self.connection,
-            REQUEST_OBJECT_REPLAY_SCRIPT,
+            ABSOLUTE_REPLAY_SCRIPT,
             vec![key],
             vec![expires_at.to_string()],
         )
@@ -263,7 +255,7 @@ impl ReplayStore {
         match reply.as_str() {
             "accepted" => Ok(true),
             "rejected" => Ok(false),
-            _ => Err(Error::unexpected("invalid request object replay reply")),
+            _ => Err(Error::unexpected("invalid absolute replay reply")),
         }
     }
 

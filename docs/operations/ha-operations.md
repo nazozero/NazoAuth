@@ -172,9 +172,10 @@ least one healthy server process running so the worker can drain the backlog.
 
 ## Valkey High Availability
 
-Production Valkey uses a managed HA Redis-compatible service, Valkey Sentinel
-topology, or Valkey Cluster topology appropriate to the deployment. Required
-controls:
+Configure a single writable primary endpoint. A managed HA service or external
+failover layer must preserve this endpoint and support atomic multi-key
+operations on the same primary. The built-in client does not discover Sentinel
+primaries or route commands across Cluster shards. Required controls:
 
 - authenticated connections and network isolation from untrusted clients
 - TLS when traffic crosses a host or private-network boundary that is not otherwise encrypted

@@ -36,9 +36,9 @@ dependencies = [
 
 [[package]]
 name = "actix-files"
-version = "0.7.1"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e7a1a94c9351dcbdb2a8d3d0f016449824f3a657553f60f42e37420a5b4768a"
+checksum = "c6f3a6769c3bc1c7d8e04b5c15f0c87489924c93455d9820296c219475a9051a"
 dependencies = [
  "actix-http",
  "actix-service",
@@ -60,16 +60,17 @@ dependencies = [
 
 [[package]]
 name = "actix-http"
-version = "3.19.0"
-source = "git+https://github.com/nazozero/actix-web?rev=ca32c7cfd1ea71cc43dbbdb9d2d7b4b1a90d40e2#ca32c7cfd1ea71cc43dbbdb9d2d7b4b1a90d40e2"
+version = "3.21.0"
+source = "git+https://github.com/nazozero/actix-web?rev=38157c15d5391509d1d752f5304c3cb1eeb3d234#38157c15d5391509d1d752f5304c3cb1eeb3d234"
 dependencies = [
  "actix-codec",
  "actix-service",
  "actix-tls",
  "actix-utils",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bitflags 2.13.2",
  "brotli",
+ "brotli-decompressor",
  "bytes",
  "bytestring",
  "derive_more",
@@ -228,9 +229,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web"
-version = "4.17.0"
+version = "4.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67756b0fc99e07b8702b9a856e3d6ec036387243c2ce6310070d1e8f02680bb0"
+checksum = "acd6966acfcc7b66b37bdeea7d11665d5accac89333767e1784d2cecd33984e7"
 dependencies = [
  "actix-codec",
  "actix-http",
@@ -273,9 +274,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web-codegen"
-version = "4.4.0"
+version = "4.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b96b09c4878563f8ab4a5fd0c59f9f0d6e0e9f60eb9b748526a0b9604fd89c50"
+checksum = "f7c9f4c52b954a73c76757a3952d3437fca00a2fbcb49704f8a6ea9f767e73f0"
 dependencies = [
  "actix-router",
  "proc-macro2",
@@ -741,9 +742,9 @@ dependencies = [
 
 [[package]]
 name = "brotli"
-version = "9.0.0"
+version = "9.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8b851b75c23ca7873623d612fe49bd1989aeb03d08fb9432187eb253d3d4c6b"
+checksum = "627b7cfb0578f0eafce087a90fcd40add1231900b69e4d4de2d456260a4f5d81"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -752,9 +753,9 @@ dependencies = [
 
 [[package]]
 name = "brotli-decompressor"
-version = "6.0.1"
+version = "6.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "941cd9bd4ddab83cb46fa5a2d428f1c857b24ac78cb876cf7beb710840934bd7"
+checksum = "75c74c9c51b9140663e196b5fb88bc94c334d7a497c8311cb759d8557874747f"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
@@ -1638,7 +1639,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2090,9 +2091,9 @@ dependencies = [
 
 [[package]]
 name = "http-range"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21dec9db110f5f872ed9699c3ecf50cf16f423502706ba5c72462e28d3157573"
+checksum = "2149c4b4b83390c71fab669730347d578ec6bdf759f2160c581ad8b8819733b4"
 
 [[package]]
 name = "httparse"
@@ -3414,7 +3415,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4000,7 +4001,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror",
  "tokio",
  "tracing",
@@ -4039,9 +4040,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4371,7 +4372,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4428,7 +4429,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5053,10 +5054,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5792,7 +5793,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

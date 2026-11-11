@@ -1,5 +1,6 @@
 use chrono::Utc;
-use nazo_oauth_server::crypto::{jwt_decoding_key_from_jwk, pkce_s256};
+use nazo_auth::jwt_decoding_key_from_jwks;
+use nazo_oauth_server::crypto::pkce_s256;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -115,16 +116,8 @@ pub(super) fn verify_oidc_id_token(
         .kid
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("missing kid"))?;
-    let keys = jwks
-        .get("keys")
-        .and_then(Value::as_array)
-        .ok_or_else(|| anyhow::anyhow!("missing keys"))?;
-    let key = keys
-        .iter()
-        .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))
-        .ok_or_else(|| anyhow::anyhow!("kid not found"))?;
-    let decoding_key = jwt_decoding_key_from_jwk(key, header.alg)
-        .ok_or_else(|| anyhow::anyhow!("unsupported OIDC JWK"))?;
+    let decoding_key = jwt_decoding_key_from_jwks(jwks, kid, header.alg)
+        .ok_or_else(|| anyhow::anyhow!("no unique usable OIDC verification key for kid"))?;
     let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
     validation.set_issuer(&[provider.issuer.as_str()]);
     validation.set_audience(&[provider.client_id.as_str()]);

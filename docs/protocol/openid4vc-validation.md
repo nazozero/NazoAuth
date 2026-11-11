@@ -276,6 +276,9 @@ apply to the processed payload. SD-JWT VC control claims (`iss`, `nbf`, `exp`,
 remain plaintext; disclosure references within them are rejected. `iat` and
 `sub` may be selectively disclosed, as specified in
 [SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
+DCQL type selection accepts the signed `vct` and valid signed `aka_vcts`
+values. An empty or malformed `aka_vcts`, or one containing the primary
+`vct`, is rejected.
 
 The verifier accepts credentials without individual status references. A signed
 `status` in SD-JWT VC or mdoc is rejected with `InvalidStatus`: no individual

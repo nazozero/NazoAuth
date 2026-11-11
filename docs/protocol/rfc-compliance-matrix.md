@@ -1,10 +1,10 @@
 # OAuth, OAuth 2.1, OIDC, and FAPI Best-Practice Matrix — 10/10 Revision
 
-Implementation review: 2026-07-17. Official-source review: 2026-09-09.
+Implementation review: 2026-07-17. Official-source review: 2026-11-11.
 
 The source refresh updates specification versions and publication status.
 Implementation status and verification requirements are recorded in
-[the source delta review](spec-freshness.md#september-source-changes-and-implementation-boundaries).
+[the source delta review](spec-freshness.md#november-source-changes-and-implementation-boundaries).
 
 ## Scope
 
@@ -17,7 +17,7 @@ The matrix follows these source families:
 
 - RFC 9700, OAuth 2.0 Security Best Current Practice:
   <https://www.rfc-editor.org/info/rfc9700/>
-- OAuth 2.1 draft `draft-ietf-oauth-v2-1-16`:
+- OAuth 2.1 draft `draft-ietf-oauth-v2-1-17`:
   <https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/>
 - FAPI 2.0 Security Profile Final:
   <https://openid.net/specs/fapi-security-profile-2_0-final.html>
@@ -112,7 +112,7 @@ conditions:
 | Scope handling | Treat scopes as delegated privilege, not UI text. Reject unknown or unauthorized scopes and prevent silent privilege expansion. | RFC 6749, RFC 9700, OIDC Core | Required. | Authorization/token tests, prompt=none tests, and grant persistence | Continue binding granted scopes, resource indicators, authorization details, and refresh-token state. |
 | Consent reuse | Silent consent reuse must not expand scope, resource, audience, or authorization details. | RFC 9700, OIDC Core, FAPI2 | Required. | Consent and prompt=none tests; grant resource bindings in the schema baseline | High-risk RAR should require exact stored-detail matching. |
 | Client authentication | Public clients use `none` with PKCE. Confidential clients authenticate. FAPI clients are confidential and use `private_key_jwt` or mTLS only. Client secret methods are baseline compatibility and must not satisfy FAPI/high-value policy. | RFC 6749, RFC 7523, RFC 8705, RFC 9700, FAPI2 | Required. | `crates/authorization-server/src/token/client_auth.rs` and token dispatch tests | Keep per-client auth method allowlists, reject method confusion, and do not advertise methods unsupported by active profile. |
-| `private_key_jwt` | Validate signature, `iss`/`sub`/client binding, `aud` exactly equal to AS issuer identifier as a string for FAPI, expiry, `iat`/`nbf` clock skew, `jti`, key status, alg allowlist, and replay. | RFC 7523, RFC 9700, FAPI2, RFC 8725 | Required for JWT client auth. | Client assertion tests | Endpoint audience and array audience are explicit per-client compatibility exceptions; clock-skew tests accept small future values and reject values beyond 60 seconds. |
+| `private_key_jwt` | Validate signature, `iss`/`sub`/client binding, issuer-only `aud`, expiry, `iat`/`nbf` clock skew, `jti`, key status, alg allowlist, and replay. FAPI additionally requires the audience as a string. | RFC 7523, RFC 10070, RFC 9700, FAPI2, RFC 8725 | Required for JWT client auth. | Client assertion tests | Existing endpoint and multiple-audience exceptions are per-client legacy policy, excluded from RFC 10070 typed assertions and FAPI. Remove them when affected clients send issuer-only assertions. |
 | mTLS client auth | Support `tls_client_auth` and `self_signed_tls_client_auth` with fail-closed certificate metadata validation. | RFC 8705, FAPI2 | Required where mTLS is advertised. | mTLS support tests | TLS termination and certificate forwarding are deployment boundaries; trusted proxy CIDRs must gate certificate headers. |
 | Sender-constrained tokens | Prefer DPoP or mTLS for high-value access tokens; require one for FAPI profile. Reject bearer use of sender-constrained tokens. Access tokens must carry `cnf` data appropriate to the selected proof mechanism. | RFC 8705, RFC 9449, RFC 9700, FAPI2 | Required for FAPI; recommended for high-value clients. | DPoP/mTLS/resource tests | Do not relax sender binding merely to satisfy a conformance shortcut. For FAPI, treat refresh-token behavior according to profile and sender-constraint semantics rather than generic bearer rotation assumptions. |
 | DPoP proof validation | Validate proof type, alg, signature, embedded JWK thumbprint, `htu`, `htm`, `iat`, `jti`, optional `ath`, nonce if issued/required, authorization-code-to-DPoP-key binding where applicable, and replay. FAPI clients must support server-provided nonce; requiring nonce for all FAPI DPoP requests is project hardening and must be documented as such. | RFC 9449, RFC 9700, FAPI2 | Required where DPoP is accepted; nonce support required for FAPI DPoP clients; nonce enforcement is profile/project policy. | `crates/authorization-server-core/src/dpop.rs`, `crates/authorization-server/src/security/dpop.rs`, `crates/resource-server/src/dpop.rs`, DPoP support tests, and resource-server DPoP tests | Clustered AS/RS deployments need shared nonce/replay state or deterministic routing. |
@@ -202,24 +202,24 @@ Final/RFC conformance claim. Rows marked `Not supported (planned)` are roadmap
 candidates; they remain invisible in discovery metadata until fully implemented
 and tested.
 
-| Standard or draft | Source status on 2026-09-09 | Project decision | Planning boundary |
+| Standard or draft | Source status on 2026-11-11 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
-| `draft-ietf-oauth-v2-1-16` | OAuth WG active draft | Prior draft-15 alignment; draft-16 audit pending | Current behavior follows draft-15, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
+| `draft-ietf-oauth-v2-1-17` | OAuth WG active draft | Prior draft-15 alignment; draft-16/17 audit pending | Current behavior follows draft-15, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
 | `RFC 10017` | Published BCP (August 2026) | Prior draft-27 audit; final-RFC audit pending | Current behavior follows draft-27 secure browser guidance; audit RFC 10017 before claiming final BCP alignment. |
 | `RFC 10027` | Published BCP (August 2026) | Not supported (audit pending) | Device Grant, CIBA, Native SSO, and future cross-device flows must be audited against the BCP before claiming named support. |
 | `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 behavior is implemented; this update draft is not claimed until its delta is audited. |
 | `draft-ietf-oauth-rfc8725bis-10` | RFC Editor queue BCP | Not supported (audit pending) | RFC 8725 behavior is implemented; this bis draft is not claimed until JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion deltas are audited. |
-| `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | Not supported (audit pending) | RFC 7523 behavior is implemented/bounded; this bis draft is not claimed until `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key-binding deltas are audited. |
+| `RFC 10070` | Published Proposed Standard | Supported for issuer-only client authentication and the bounded JWT bearer grant | Typed client-authentication assertions are issuer-only. Explicit per-client legacy audience exceptions remain outside this profile until affected clients migrate. |
 | `draft-ietf-oauth-refresh-token-expiration-03` | OAuth WG active draft | Not supported (planned) | Add only after refresh-token and authorization-expiration state, metadata, revocation, and tests exist. |
 | `draft-ietf-oauth-first-party-apps-04` | OAuth WG active draft | Not supported (planned) | Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |
-| `draft-ietf-oauth-client-id-metadata-document-02` | OAuth WG active draft | Not supported (planned) | Consider only as a controlled public-client metadata bootstrap profile. |
-| `draft-ietf-oauth-attestation-based-client-auth-07` | Version fixed by OpenID4VCI 1.0 Final | Supported/profile-scoped for OpenID4VCI 1.0 and HAIP 1.0 | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Refresh tokens are bound to the Client Instance `cnf` public key. PoP uses a typed absolute iat window with atomic Valkey owner-clock acceptance and NX/EXAT consumption for token and PAR, including future tolerance and the inclusive final second. Unknown consumption fails closed. Replay-marker preservation, owner-clock continuity and a coordinated old-consumer cutover are deployment requirements; see [client-attestation replay](client-attestation-replay.md). The current `draft-ietf-oauth-attestation-based-client-auth-11` remains a separate freshness/delta-audit item. |
-| `draft-ietf-oauth-spiffe-client-auth-02` | OAuth WG active draft | Not supported (planned) | Requires a workload identity deployment and SPIFFE trust-domain boundary. |
-| `draft-ietf-oauth-identity-assertion-authz-grant-04` | OAuth WG active draft | Not supported (planned) | Requires trusted third-party assertion issuers, subject mapping, revocation, replay, and audit policy. |
+| `draft-ietf-oauth-client-id-metadata-document-03` | OAuth WG active draft | Not supported (planned) | Consider only as a controlled public-client metadata bootstrap profile. |
+| `draft-ietf-oauth-attestation-based-client-auth-07` | Version fixed by OpenID4VCI 1.0 Final | Supported/profile-scoped for OpenID4VCI 1.0 and HAIP 1.0 | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Refresh tokens are bound to the Client Instance `cnf` public key. PoP uses a typed absolute iat window with atomic Valkey owner-clock acceptance and NX/EXAT consumption for token and PAR, including future tolerance and the inclusive final second. Unknown consumption fails closed. Replay-marker preservation, owner-clock continuity and a coordinated old-consumer cutover are deployment requirements; see [client-attestation replay](client-attestation-replay.md). The current `draft-ietf-oauth-attestation-based-client-auth-12` remains a separate freshness/delta-audit item. |
+| `draft-ietf-oauth-spiffe-client-auth-03` | OAuth WG active draft | Not supported (planned) | Requires a workload identity deployment and SPIFFE trust-domain boundary. |
+| `draft-ietf-oauth-identity-assertion-authz-grant-06` | OAuth WG active draft | Not supported (planned) | Requires trusted third-party assertion issuers, subject mapping, revocation, replay, and audit policy. |
 | `draft-ietf-oauth-identity-chaining-17` | RFC Editor queue | Not supported (planned) | Requires cross-domain trust-chain, delegation, replay, and resource-server verification semantics. |
 | `draft-ietf-oauth-transaction-tokens-11` | OAuth WG active draft | Not supported (planned) | Requires a trusted-domain Transaction Token Service and workload call-chain model. |
 | `draft-ietf-oauth-status-list-21` | RFC Editor queue | Not supported (planned) | Add for OpenID4VC credential status only with privacy-preserving status, revocation, and verifier semantics. |
-| `draft-ietf-oauth-sd-jwt-vc-19` | In Last Call | Prior credential-profile support; draft-19 audit pending | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
+| `draft-ietf-oauth-sd-jwt-vc-26` | Tracked draft | Prior credential-profile support; audit through draft 26 pending | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | upstream specification publisher Final Specifications | Not supported (planned) | Requires trust anchors, trust-chain resolution, metadata policy, trust marks, federation endpoints, key rollover, and conformance evidence. |
 
 ### Exploratory OAuth Draft Watchlist
@@ -234,15 +234,15 @@ refer to them until they are promoted through the Review Gate for New Standards.
 | --- | --- | --- |
 | RFC 9635 / RFC 9767 GNAP | Watch only | Adjacent authorization protocol; useful design reference, not an OAuth/OIDC feature toggle. |
 | `draft-aap-oauth-profile-01` | Watch only; expired | Agent Authorization Profile may become relevant for AI-agent delegated access. |
-| `draft-li-oauth-delegated-authorization-03` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
-| `draft-mcguinness-oauth-mission-00` | Watch only | Mission-bound authorization can inform bounded-purpose grants. |
-| `draft-mcguinness-oauth-client-instance-id-00` | Watch only | Successor to Client Instance Assertion: an optional Client Attestation claims profile for continuity across verified key changes. Trusted attester selection, receiver-scope privacy, and continuity need a separate audit before implementation. |
-| Actor delegation drafts (`draft-mcguinness-oauth-actor-profile-00`, `draft-mcguinness-oauth-actor-proofs-00`, `draft-mcguinness-oauth-actor-receipts-00`, `draft-mw-oauth-actor-chain-01`) | Watch only | Relevant to auditable multi-agent or multi-hop delegation. |
-| `draft-liu-oauth-authorization-evidence-01` | Watch only | Could improve access-token audit evidence if privacy and minimization are solved. |
+| `draft-li-oauth-delegated-authorization-04` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
+| `draft-mcguinness-oauth-mission-02` | Watch only | Mission-bound authorization can inform bounded-purpose grants. |
+| `draft-mcguinness-oauth-client-instance-id-01` | Watch only | Successor to Client Instance Assertion: an optional Client Attestation claims profile for continuity across verified key changes. Trusted attester selection, receiver-scope privacy, and continuity need a separate audit before implementation. |
+| Actor delegation drafts (`draft-mcguinness-oauth-actor-profile-01`, `draft-mcguinness-oauth-actor-proofs-01`, `draft-mcguinness-oauth-actor-receipts-01`, `draft-mw-oauth-actor-chain-03`) | Watch only | Relevant to auditable multi-agent or multi-hop delegation. |
+| `draft-liu-oauth-authorization-evidence-02` | Watch only | Could improve access-token audit evidence if privacy and minimization are solved. |
 | `draft-parecki-oauth-global-token-revocation-06` | Watch only; expired | Operationally useful for compromise response; requires careful blast-radius controls. |
-| RAR/resource metadata drafts (`draft-ietf-oauth-rar-metadata-remediation-00`, `draft-skokan-oauth-resource-response-02`, `draft-mcguinness-oauth-rfc9728bis-01`) | RAR: WG draft, watch only; remaining two drafts expired | Could improve discovery of typed permissions and protected resource metadata. |
+| RAR/resource metadata drafts (`draft-ietf-oauth-rar-metadata-remediation-00`, `draft-skokan-oauth-resource-response-02`, `draft-mcguinness-oauth-rfc9728bis-02`) | Watch only; resource-response expired, rfc9728bis renewed | Could improve discovery of typed permissions and protected resource metadata. |
 | Sender-constraint drafts (`draft-mw-oauth-tls-session-bound-tokens-07`, `draft-richer-oauth-httpsig-03`) | Watch only | Potential future proof-of-possession alternatives; deployment feasibility remains unproven. |
-| `draft-moros-oauth-browser-session-handoff-00` | Watch only | Relevant to safe browser/native session handoff only if no-token-leakage guarantees hold. |
+| `draft-moros-oauth-browser-session-handoff-00`; expired 2026-10-19 | Watch only | Relevant to safe browser/native session handoff only if no-token-leakage guarantees hold. |
 
 ## Forbidden or Compatibility-Only Capabilities
 
@@ -275,7 +275,7 @@ These capabilities must not become default behavior:
 | --- | --- | --- | --- |
 | P1 | Dedicated OAuth 2.1 final audit | OAuth 2.1 is still a draft; final RFC may change requirements. | Requirement-by-requirement matrix after publication, discovery checks, grant/auth/PKCE/refresh tests. |
 | P1 | OAuth Security BCP delta audit | `draft-ietf-oauth-security-topics-update-03` may update the RFC 9700 baseline. | Requirement-by-requirement delta audit, metadata consequences, negative tests, and regression evidence before changing any public claim. |
-| P1 | JWT BCP and JWT assertion bis audits | `draft-ietf-oauth-rfc8725bis-10` and `draft-ietf-oauth-rfc7523bis-11` are the current successors for JWT best practice and assertion/client-auth profiles. | Update alg/key/confusion/replay/audience tests before adopting any new metadata or client-auth behavior. |
+| P1 | JWT BCP bis audit | `draft-ietf-oauth-rfc8725bis-10` remains a draft. | Review alg/key/confusion/replay/audience changes before claiming the new profile. |
 | P1 | Browser and cross-device BCP final audits | RFC 10017 and RFC 10027 were published in August 2026. | Audit browser clients, Device Grant, CIBA, Native SSO, and hosted UI flows against the published RFCs before claiming final-BCP alignment. |
 | P1 | FAPI precision regression pack | FAPI profile includes more than PAR, PKCE, and sender constraints; it also defines precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Keep code lifetime, PAR lifetime, PAR `redirect_uri`, outer parameter restriction, 303 redirect, JWT skew, duplicate `kid`, client auth, sender constraint, and non-PAR rejection tests green. |
 | P2 | Refresh-token and authorization-expiration metadata | `draft-ietf-oauth-refresh-token-expiration-03` can improve client visibility into authorization lifetime. | Add explicit state model, rotation/revocation semantics, metadata, and E2E tests before advertising. |

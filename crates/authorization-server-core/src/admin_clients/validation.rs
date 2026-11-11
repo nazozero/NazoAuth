@@ -2,7 +2,7 @@ use super::{AdminClientCryptoPort, AdminClientError, ClientJwksCapabilities, Cre
 use crate::{
     MAX_CIBA_LOGOUT_URI_BYTES, OAuthClient, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
     SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, normalize_sha256_thumbprint,
-    validate_oauth_redirect_uri,
+    validate_authorization_redirect_uri, validate_oauth_redirect_uri,
 };
 use serde_json::Value;
 
@@ -428,7 +428,7 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         return invalid("authorization_code 客户端必须注册 redirect_uri");
     }
     for uri in metadata.redirect_uris {
-        validate_oauth_redirect_uri(metadata.client_type, uri)
+        validate_authorization_redirect_uri(metadata.client_type, uri)
             .map_err(|error| AdminClientError::InvalidRequest(error.to_string()))?;
     }
     validate_unique_non_empty(

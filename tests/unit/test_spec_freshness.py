@@ -197,6 +197,31 @@ class SpecFreshnessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "official draft is expired"):
             self.module.check_entry(entry, opener)
 
+    def test_reviewed_expired_draft_still_checks_version_and_expiry(self):
+        entry = {
+            "id": "watch",
+            "kind": "ietf_draft",
+            "document": "draft-example",
+            "revision": "01",
+            "reviewed_expiration": "2000-01-01T00:00:00Z",
+        }
+
+        def response(**updates):
+            data = {
+                "name": "draft-example", "rev": "01", "rfc": None,
+                "rfc_number": None, "expires": "2000-01-01T00:00:00Z",
+            }
+            data.update(updates)
+            return lambda *_args, **_kwargs: FakeResponse(json.dumps(data).encode())
+
+        self.assertIn("reviewed watch entry", self.module.check_entry(entry, response()))
+        with self.assertRaisesRegex(RuntimeError, "expected revision"):
+            self.module.check_entry(entry, response(rev="02"))
+        with self.assertRaisesRegex(RuntimeError, "reviewed expiration changed"):
+            self.module.check_entry(entry, response(expires="2099-01-01T00:00:00Z"))
+        with self.assertRaisesRegex(RuntimeError, "published or replaced"):
+            self.module.check_entry(entry, response(rfc="rfc9999"))
+
     def test_ietf_terminal_states_fail_with_null_rfc_fields(self):
         entry = {
             "id": "draft",

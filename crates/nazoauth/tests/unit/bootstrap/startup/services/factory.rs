@@ -49,10 +49,24 @@ fn delayed_payload() -> actix_web::dev::Payload {
 
 #[actix_web::test]
 async fn request_timeout_covers_typed_json_extractor() {
-    let app = test::init_service(App::new().wrap(from_fn(test_request_timeout)).route(
-        "/json",
-        web::post().to(|_: web::Json<serde_json::Value>| async { HttpResponse::Ok().finish() }),
-    ))
+    let log = std::env::temp_dir().join(format!("http-metrics-{}.log", uuid::Uuid::now_v7()));
+    let writer = std::fs::File::create_new(&log).unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_writer(move || writer.try_clone().unwrap())
+        .finish();
+    let _subscriber = tracing::subscriber::set_default(subscriber);
+    let app = test::init_service(
+        App::new()
+            .wrap(from_fn(test_request_timeout))
+            .wrap(from_fn(observe_request))
+            .route(
+                "/json",
+                web::post()
+                    .to(|_: web::Json<serde_json::Value>| async { HttpResponse::Ok().finish() }),
+            ),
+    )
     .await;
 
     let request = test::TestRequest::post()
@@ -68,6 +82,17 @@ async fn request_timeout_covers_typed_json_extractor() {
         error.as_response_error().status_code(),
         actix_web::http::StatusCode::REQUEST_TIMEOUT
     );
+    drop(_subscriber);
+    let output = std::fs::read_to_string(&log).unwrap();
+    std::fs::remove_file(log).unwrap();
+    let mut events = output
+        .lines()
+        .filter(|line| line.contains("HTTP request completed"));
+    let event = events.next().expect("timeout completion metric");
+    assert!(event.contains("monotonic_counter.http_server_requests=1"));
+    assert!(event.contains("histogram.http_server_request_duration_ms="));
+    assert!(event.contains("http.response.status_code=408"));
+    assert!(events.next().is_none());
 }
 
 #[actix_web::test]

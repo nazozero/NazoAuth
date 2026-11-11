@@ -97,7 +97,8 @@ pub enum DpopReplayConsumptionResult {
 }
 
 /// Atomic DPoP replay-marker consumption. Implementations must perform one
-/// atomic insert-if-absent operation that expires no earlier than `expires_at`.
+/// atomic operation that rejects elapsed deadlines and inserts a missing marker
+/// until `expires_at`, using the store clock for both decisions.
 pub trait DpopReplayConsumption: Send + Sync {
     fn consume<'a>(
         &'a self,

@@ -72,6 +72,10 @@ fn validate_http_endpoint(label: &str, value: &str) -> anyhow::Result<Url> {
 }
 
 pub fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<()> {
+    parse_oauth_redirect_uri(client_type, value).map(|_| ())
+}
+
+fn parse_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<Url> {
     if value.contains('*') {
         bail!("redirect_uri 不支持通配符");
     }
@@ -82,16 +86,41 @@ pub fn validate_oauth_redirect_uri(client_type: &str, value: &str) -> anyhow::Re
     }
 
     match uri.scheme() {
-        "https" => Ok(()),
+        "https" => {}
         "http" => {
             if client_type != "public" || !is_loopback_host(&uri) {
                 bail!("http redirect_uri 只允许 public native client 使用 loopback 地址");
             }
-            Ok(())
         }
-        scheme if client_type == "public" && scheme.contains('.') => Ok(()),
+        scheme if client_type == "public" && scheme.contains('.') => {}
         _ => bail!("redirect_uri 必须使用 https、loopback http 或 public native 私有 scheme"),
     }
+    Ok(uri)
+}
+
+/// Authorization response fields must not already occur in the callback query.
+pub fn validate_authorization_redirect_uri(client_type: &str, value: &str) -> anyhow::Result<()> {
+    let uri = parse_oauth_redirect_uri(client_type, value)?;
+    if uri.query_pairs().any(|(name, _)| {
+        matches!(
+            name.as_ref(),
+            "code"
+                | "state"
+                | "iss"
+                | "error"
+                | "error_description"
+                | "error_uri"
+                | "response"
+                | "session_state"
+                | "access_token"
+                | "token_type"
+                | "expires_in"
+                | "id_token"
+        )
+    }) {
+        bail!("redirect_uri query 不能包含授权响应参数");
+    }
+    Ok(())
 }
 
 #[must_use]
@@ -126,6 +155,8 @@ pub fn resolve_registered_redirect_uri(
     requested_redirect_uri: Option<&str>,
 ) -> Result<String, RedirectUriError> {
     if let Some(value) = requested_redirect_uri {
+        validate_authorization_redirect_uri(client_type, value)
+            .map_err(|_| RedirectUriError::Invalid)?;
         return registered
             .iter()
             .any(|registered| oauth_redirect_uri_matches(client_type, registered, value))
@@ -133,7 +164,10 @@ pub fn resolve_registered_redirect_uri(
             .ok_or(RedirectUriError::Invalid);
     }
     match registered {
-        [only] => Ok(only.clone()),
+        [only] if validate_authorization_redirect_uri(client_type, only).is_ok() => {
+            Ok(only.clone())
+        }
+        [_] => Err(RedirectUriError::Invalid),
         _ => Err(RedirectUriError::Missing),
     }
 }

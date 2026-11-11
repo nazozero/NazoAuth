@@ -400,6 +400,18 @@ fn verify_oidc_id_token_requires_kid_and_matching_supported_jwk() {
     private_jwk["keys"][0]["d"] = json!("private-material");
     let valid_token = signed_id_token(&provider, "oidc-kid", &key, &nonce, json!({}));
     assert!(verify_oidc_id_token(&provider, &private_jwk, &valid_token, &nonce).is_err());
+    let duplicate = json!({"keys": [&jwks["keys"][0], &jwks["keys"][0]]});
+    assert!(verify_oidc_id_token(&provider, &duplicate, &valid_token, &nonce).is_err());
+    for (member, value) in [
+        ("key_ops", json!(["sign"])),
+        ("p", json!("private")),
+        ("use", json!(false)),
+        ("alg", json!(1)),
+    ] {
+        let mut invalid = jwks.clone();
+        invalid["keys"][0][member] = value;
+        assert!(verify_oidc_id_token(&provider, &invalid, &valid_token, &nonce).is_err());
+    }
 }
 
 #[actix_web::test]

@@ -115,8 +115,9 @@ pub use client::{ClientProfile, validate_token_request_profile};
 pub use client_assertion::{
     CLIENT_ASSERTION_MAX_TTL_SECONDS, CLIENT_ASSERTION_TYPE_JWT_BEARER,
     ClientAssertionValidationError, ClientAssertionVerificationInput, FAPI2_JWT_SIGNING_ALGS,
-    SUPPORTED_CLIENT_JWT_SIGNING_ALGS, ValidatedClientAssertion,
-    unverified_client_assertion_client_id, verify_private_key_jwt,
+    SUPPORTED_CLIENT_JWT_SIGNING_ALGS, ValidatedClientAssertion, client_jwt_decoding_key,
+    jwt_decoding_key_from_jwk, jwt_decoding_key_from_jwks, unverified_client_assertion_client_id,
+    verify_private_key_jwt,
 };
 pub use client_attestation::ClientAttestationProofWindow;
 pub use client_authentication::{
@@ -240,7 +241,7 @@ pub use transaction::{
 };
 pub use uri_policy::{
     RedirectUriError, is_loopback_http_url, is_valid_pkce_value, oauth_redirect_uri_matches,
-    resolve_registered_redirect_uri, validate_cors_origin, validate_frontend_base_url,
-    validate_http_endpoint_url, validate_issuer_url, validate_oauth_redirect_uri,
-    validate_protected_resource_identifier,
+    resolve_registered_redirect_uri, validate_authorization_redirect_uri, validate_cors_origin,
+    validate_frontend_base_url, validate_http_endpoint_url, validate_issuer_url,
+    validate_oauth_redirect_uri, validate_protected_resource_identifier,
 };

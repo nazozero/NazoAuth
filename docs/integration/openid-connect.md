@@ -69,17 +69,17 @@ no executable implementation or complete profile boundary is available yet.
 
 | Specification or draft | Current status | Why it is not a current advertised capability | Completion condition |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | Draft-15 implementation basis; draft-16 audit pending | [draft-ietf-oauth-v2-1-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is the current tracked draft. The implementation targets draft 15; draft-16 changes still need review. | Review the delta, including value limits, PKCE and consent guidance, before extending the claim. |
+| OAuth 2.1 Authorization Framework | Draft-15 implementation basis; selected draft-16/17 controls applied | [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is the current tracked draft. Authorization redirect URIs cannot prepopulate response parameters. | Full draft-16/17 conformance requires a requirement-by-requirement audit. |
 | OAuth 2.0 for Browser-Based Applications | Final-RFC audit pending | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) is published. The implementation targets draft 27; the final RFC still needs review. | Review SPA, BFF, browser-client and session guidance against the RFC; no separate runtime profile is implied. |
 | Cross-Device Flows: Security BCP | Audit pending | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) is published. Device Grant, CIBA, and Native SSO exist but have not completed a requirement-by-requirement audit against this BCP. | Review each applicable cross-device flow without expanding grant authority. |
 | OAuth Security BCP Update | Not supported (audit pending) | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) is an update track for [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html). RFC 9700 behavior is supported, but this update draft has not been audited requirement by requirement. | Treat it as an RFC 9700 delta audit; update behavior, metadata, tests, and documentation together. |
-| JWT BCP / JWT Assertion bis | Not supported (audit pending) | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) and [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) are not final yet. Current behavior supports RFC 8725/RFC 7523, not these bis drafts. | Re-audit algorithm allowlists, audience, replay, key binding, cross-JWT confusion, and `private_key_jwt`. |
+| JWT BCP / JWT Assertion | JWT BCP bis audit pending; RFC 10070 issuer-only client authentication supported | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) remains a draft. [RFC 10070](https://www.rfc-editor.org/info/rfc10070) narrows client-authentication audiences to the issuer. | Legacy per-client audience exceptions do not conform to RFC 10070. JWT bearer grant support is limited to client self-assertions and issuer audience. |
 | OAuth Client Attestation | Supports the draft-07 version fixed by OpenID4VCI 1.0; disabled by default | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) is the version explicitly fixed by OpenID4VCI 1.0 Final. The implementation supports `attest_jwt_client_auth` and binds refresh tokens to the Client Instance `cnf` key. It is advertised only when the module is enabled and client policy requires it. | Later drafts and the eventual RFC require a separate delta audit; breaking syntax changes are not mixed into the HAIP 1.0 / OpenID4VCI 1.0 profile. |
 | FAPI 2.0 HTTP Signatures | Experimental support; disabled by default; stable-spec audit pending | The [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) is not a Final Specification. The persisted `http_message_signatures` module controls `/fapi/resource`. | Decide whether to advertise only after the spec stabilizes or an adopter requires it; every newer draft or Final requires a delta audit. |
 | Refresh Token and Authorization Expiration | Not supported (planned) | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) requires explicit authorization and refresh-token lifetime modeling; current metadata omits these expiration fields. | Define authorization lifetime, refresh-family state, revocation semantics, metadata, and E2E tests. |
 | First-Party Applications | Not supported (planned) | [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) depends on same-party deployment assumptions that must not be generalized to third-party clients. | Define same-party/BFF boundaries and prove third-party client isolation remains intact. |
-| Client ID Metadata Document | Not supported (planned) | [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) implies remote public-client metadata retrieval; there is no trusted fetch, cache, or conflict model yet. | Define trusted sources, cache behavior, downgrade handling, conflicts, DCR interaction, and failure policy. |
-| SPIFFE Client Authentication | Not supported (planned) | [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) requires a deployed SPIFFE trust domain, which ordinary OAuth/OIDC deployments do not provide. | Add trust-bundle validation, certificate/identity lifecycle, resource-server verification, and metadata isolation. |
+| Client ID Metadata Document | Not supported (planned) | [draft-ietf-oauth-client-id-metadata-document-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) implies remote public-client metadata retrieval; there is no trusted fetch, cache, or conflict model yet. | Define trusted sources, cache behavior, downgrade handling, conflicts, DCR interaction, and failure policy. |
+| SPIFFE Client Authentication | Not supported (planned) | [draft-ietf-oauth-spiffe-client-auth-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) requires a deployed SPIFFE trust domain, which ordinary OAuth/OIDC deployments do not provide. | Add trust-bundle validation, certificate/identity lifecycle, resource-server verification, and metadata isolation. |
 | Identity Assertion / Identity Chaining / Transaction Tokens | Not supported (planned) | These drafts cover cross-domain identity assertions, chained authorization, and workload call chains; there is no issuer/trust-anchor, subject-mapping, Transaction Token Service, or resource-server verification model yet. | Complete trust-domain, replay, audit, revocation, resource-server verification, and least-privilege propagation design. |
 | Token Status List | Not supported (planned) | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) primarily fits OpenID4VC credential status; no credential status publication or privacy model is currently advertised. | Implement with the OpenID4VC issuer/verifier status model, not as a generic OAuth token-status endpoint. |
 
@@ -89,9 +89,9 @@ The following are watchlist items, not planned implementation commitments:
 | --- | --- | --- |
 | GNAP Core / GNAP Resource Server Connections | Watch only | [RFC 9635](https://www.rfc-editor.org/rfc/rfc9635.html) and [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767.html) are adjacent authorization protocols and useful design references, but they are not OAuth/OIDC switches. |
 | Agent Authorization Profile | Watch only | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) is relevant to AI-agent delegated access but is not stable enough for an implementation claim. |
-| Delegated Authorization / Actor Chain | Watch only | [draft-li-oauth-delegated-authorization-03](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) and [draft-mw-oauth-actor-chain-01](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) overlap with token exchange, actor delegation, and audit chains. |
+| Delegated Authorization / Actor Chain | Watch only | [draft-li-oauth-delegated-authorization-04](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) and [draft-mw-oauth-actor-chain-03](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) overlap with token exchange, actor delegation, and audit chains. |
 | Global Token Revocation | Watch only | [draft-parecki-oauth-global-token-revocation-06](https://datatracker.ietf.org/doc/draft-parecki-oauth-global-token-revocation/) is operationally useful for compromise response but needs strict blast-radius, audit, and multi-client policy. |
-| RAR / Resource Metadata extensions | Watch only | [draft-ietf-oauth-rar-metadata-remediation-00](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/), [draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/), and [draft-mcguinness-oauth-rfc9728bis-01](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) may improve typed permissions and protected-resource metadata. |
+| RAR / Resource Metadata extensions | Watch only | [draft-ietf-oauth-rar-metadata-remediation-00](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/), [draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/), and [draft-mcguinness-oauth-rfc9728bis-02](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) may improve typed permissions and protected-resource metadata. |
 
 ## Discoverable endpoints
 
@@ -399,8 +399,13 @@ browser transport for supported authorization responses.
 High-assurance integrations should prefer asymmetric or sender-constrained
 client authentication. FAPI profiles exclude shared-secret POST authentication.
 
-For `private_key_jwt`, use the issuer or token endpoint audience accepted by
-the deployment profile and keep assertion lifetimes short. For mTLS, register
+For `private_key_jwt`, use the issuer identifier as the sole audience and keep
+assertion lifetimes short. Newly dynamically registered clients use this rule.
+Existing clients with administrator-enabled endpoint or multiple-audience
+compatibility settings retain their prior behavior outside FAPI profiles. A
+`client-authentication+jwt` typed assertion always uses the issuer-only rule.
+Retire those compatibility settings after all affected clients use the issuer
+as their sole audience. For mTLS, register
 the correct certificate-bound client metadata and make sure the deployment's
 trusted proxy/mTLS termination boundary is configured before advertising mTLS
 metadata.
@@ -444,9 +449,8 @@ Approval samples database time once after acquiring the tenant serialization loc
   pin. Self-signed clients remain bound to their registered certificate key.
   Trusting a CA at the TLS layer therefore does not authorize every certificate
   issued by it at the OAuth layer.
-- Subject DNs must be valid RFC 4514 values and are compared with OpenSSL's
-  canonical X.509 name comparison, following the RFC 4517
-  `distinguishedNameMatch` requirement. DNS and email domains are
+- Subject DNs must be valid RFC 4514 values and are parsed with
+  `x509_cert::Name`; their RFC 4514 display forms are lowercased and compared. DNS and email domains are
   case-insensitive, URI SANs are exact strings, and IP SANs are compared as
   parsed binary addresses. Malformed or ambiguous selector data fails closed.
 

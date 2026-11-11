@@ -67,6 +67,12 @@ def validate_manifest(manifest: dict, root: Path = ROOT) -> None:
             revision = _required_text(entry.get("revision"), "revision", entry_id)
             if not re.fullmatch(r"\d{2}", revision):
                 raise ValueError(f"{entry_id}: revision must contain two digits")
+            reviewed_expiration = entry.get("reviewed_expiration")
+            if reviewed_expiration is not None and (
+                not isinstance(reviewed_expiration, str)
+                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", reviewed_expiration)
+            ):
+                raise ValueError(f"{entry_id}: reviewed expiration must be a UTC timestamp")
             current_drafts[document] = revision
         elif kind in {"rfc", "openid_document"}:
             markers = entry.get("markers")
@@ -279,14 +285,21 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
                 f"{entry['id']}: draft was replaced; review the successor document"
             )
         expires = data.get("expires")
+        reviewed_expiration = entry.get("reviewed_expiration")
+        if reviewed_expiration is not None and expires != reviewed_expiration:
+            raise RuntimeError(f"{entry['id']}: reviewed expiration changed; review current status")
         if isinstance(expires, str):
             expires_at = datetime.fromisoformat(expires.replace("Z", "+00:00"))
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at <= datetime.now(timezone.utc):
+                if reviewed_expiration == expires:
+                    return f"{entry['id']}: {document}-{expected} expired {expires}; reviewed watch entry"
                 raise RuntimeError(
                     f"{entry['id']}: official draft is expired; review its current status"
                 )
+            if reviewed_expiration is not None:
+                raise RuntimeError(f"{entry['id']}: reviewed expiration is no longer in the past")
         return f"{entry['id']}: {document}-{expected}"
 
     if kind in {"rfc", "openid_document"}:

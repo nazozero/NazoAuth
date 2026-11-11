@@ -32,8 +32,9 @@ GitHub Actions、容器/Compose 输入、锁定的 Python 输入、精确 Rust s
   `[workspace.package].version`，并且 `cargo metadata --locked` 解析出的每一个
   workspace member 都必须是同一版本。任何不一致都会在构建或发布制品之前终止
   policy 任务
-- tag commit 必须可达 `main`，并具有精确 SHA 的成功 `main` push 质量门。任意其他
-  子分支以及未经精确门禁验证的 tag 都会失败
+- tag 提交必须可从 `main` 到达。发布要求 `code-quality`、`release-policy`、
+  `operator-fuzz` 和 `conformance-security` 均有成功的主分支推送或手动运行记录。
+  若与祖先提交之间只有 `scripts/check_release_ci.py` 允许的文档差异，可复用其结果
 - 对可达 `main` 的提交执行 `workflow_dispatch` 是不发布的原生矩阵演练：它执行
   policy、原生测试、二进制构建和 OCI 组装，同时跳过所有仅限 tag 的证明与发布任务
 - 在原生 x86-64 和 Arm64 Linux、Windows、macOS runner 上使用固定 Rust

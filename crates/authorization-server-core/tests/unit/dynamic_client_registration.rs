@@ -228,7 +228,7 @@ fn public_and_confidential_code_clients_share_one_registration_path() {
 }
 
 #[test]
-fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience() {
+fn dynamic_registration_requires_issuer_audience_for_client_authentication() {
     let private_key_jwt = prepare_dynamic_client_registration(
         DynamicClientRegistrationRequest {
             token_endpoint_auth_method: Some("private_key_jwt".to_owned()),
@@ -239,7 +239,7 @@ fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience() 
     )
     .expect("private_key_jwt registration")
     .request;
-    assert!(private_key_jwt.allow_client_assertion_endpoint_audience);
+    assert!(!private_key_jwt.allow_client_assertion_endpoint_audience);
 
     let client_secret_basic = prepare_dynamic_client_registration(
         DynamicClientRegistrationRequest {

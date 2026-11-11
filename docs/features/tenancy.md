@@ -29,10 +29,10 @@ An unknown or invalid Host returns `404`; a Direct TLS SNI/Host mismatch returns
 Valkey directory lookup on the request path, and no default-tenant fallback.
 The resolved `TenantContext` also scopes request audit data.
 
-A directory update first validates and builds every changed candidate graph.
-Only then does the process atomically replace the host index; an invalid
-candidate leaves the last good index in place. The refresher also retires
-replaced lifecycle work after the new snapshot is visible. The directory cache
+After validating the directory snapshot, the refresher withdraws removed or
+reassigned host bindings before building replacements. It publishes the new
+revision once all candidate graphs are ready and retires replaced lifecycle
+work after publication. The directory cache
 can accelerate convergence, but PostgreSQL remains authoritative and is read
 on startup and during reconciliation.
 
@@ -152,5 +152,6 @@ physically erase tenant business data.
 PostgreSQL owns revisions and mutation decisions. The Valkey directory snapshot
 is derived state: missing, corrupt, or ahead-of-database cache data is corrected
 from PostgreSQL. Periodic database reconciliation provides convergence when the
-cache is unavailable. An invalid candidate leaves the complete last valid index
-and its workers serving until a valid replacement can be published.
+cache is unavailable. If a replacement fails, bindings with unchanged routing identity can keep
+serving their last valid graph. Withdrawn bindings stay unavailable and the
+revision remains eligible for retry.

@@ -1,7 +1,7 @@
 use super::super::tenant_runtime::{ProcessRuntime, TenantHostIndex, TenantRuntimeRegistry};
 use super::*;
 use actix_web::body::{EitherBody, MessageBody};
-use actix_web::dev::{Extensions, Service, ServiceRequest, ServiceResponse};
+use actix_web::dev::{Extensions, ServiceRequest, ServiceResponse};
 use actix_web::error::ErrorRequestTimeout;
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{App, Error, HttpResponse, HttpServer, web};
@@ -131,6 +131,41 @@ where
         .map_err(|_| ErrorRequestTimeout("request exceeded the configured time limit"))?
 }
 
+async fn observe_request<B>(req: ServiceRequest, next: Next<B>) -> Result<ServiceResponse<B>, Error>
+where
+    B: MessageBody + 'static,
+{
+    let method = req.method().clone();
+    let started = std::time::Instant::now();
+    let span = tracing::info_span!(
+        "http.request",
+        "otel.kind" = "server",
+        "http.request.method" = %method,
+        "http.route" = tracing::field::Empty
+    );
+    let future = next.call(req);
+    async move {
+        let result = future.await;
+        let (route, status) = match &result {
+            Ok(response) => (response.request().match_pattern(), response.status()),
+            Err(error) => (None, error.as_response_error().status_code()),
+        };
+        let route = route.as_deref().unwrap_or("unmatched");
+        tracing::Span::current().record("http.route", route);
+        tracing::info!(
+            monotonic_counter.http_server_requests = 1_u64,
+            histogram.http_server_request_duration_ms = started.elapsed().as_secs_f64() * 1_000.0,
+            "http.request.method" = %method,
+            "http.response.status_code" = i64::from(status.as_u16()),
+            "http.route" = route,
+            "HTTP request completed"
+        );
+        result
+    }
+    .instrument(span)
+    .await
+}
+
 /// Owns the Actix worker factory, middleware, route registration, and
 /// listener setup.  All application data is assembled before entering this
 /// function so worker creation cannot repeat persistence/provider initialization.
@@ -179,39 +214,7 @@ pub(super) async fn run(
 
         let app = App::new()
             .wrap(from_fn(request_timeout))
-            .wrap_fn(|req, service| {
-                let method = req.method().clone();
-                let started = std::time::Instant::now();
-                let span = tracing::info_span!(
-                    "http.request",
-                    "otel.kind" = "server",
-                    "http.request.method" = %method,
-                    "http.route" = tracing::field::Empty
-                );
-                let future = service.call(req);
-                async move {
-                    let result = future.await;
-                    if let Ok(response) = &result {
-                        let route = response
-                            .request()
-                            .match_pattern()
-                            .unwrap_or_else(|| "unmatched".to_owned());
-                        tracing::Span::current().record("http.route", route.as_str());
-                        let status = response.status().as_u16();
-                        let elapsed_ms = started.elapsed().as_secs_f64() * 1_000.0;
-                        tracing::info!(
-                            monotonic_counter.http_server_requests = 1_u64,
-                            histogram.http_server_request_duration_ms = elapsed_ms,
-                            "http.request.method" = %method,
-                            "http.response.status_code" = status as i64,
-                            "http.route" = %route,
-                            "HTTP request completed"
-                        );
-                    }
-                    result
-                }
-                .instrument(span)
-            })
+            .wrap(from_fn(observe_request))
             .wrap(from_fn(security_headers))
             .app_data(control_discovery.clone())
             .app_data(control_tenant_id.clone())

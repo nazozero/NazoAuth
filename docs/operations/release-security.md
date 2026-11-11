@@ -37,8 +37,10 @@ The `release-security` workflow runs for `v*` tags and manual dispatch:
   `cargo metadata --locked` must resolve every workspace member to that same
   version. A mismatch stops the policy job before artifacts are built or
   published
-- the tag commit must be reachable from `main` with successful exact-SHA `main`
-  push quality gates. Arbitrary branches and unverified tags fail closed
+- the tag commit must be reachable from `main`. Release checks reuse successful
+  `main` push or manual runs of `code-quality`, `release-policy`, `operator-fuzz`
+  and `conformance-security` at that commit or an ancestor differing only in
+  documentation accepted by `scripts/check_release_ci.py`
 - a `workflow_dispatch` for a commit reachable from `main` remains a
   non-publishing native-matrix rehearsal. It runs the policy, native tests,
   binary builds, and OCI assembly, and skips every tag-only attestation and

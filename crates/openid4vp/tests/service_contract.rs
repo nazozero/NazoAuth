@@ -785,6 +785,86 @@ async fn dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings() {
 }
 
 #[tokio::test]
+async fn dcql_matches_verified_sd_jwt_alternative_types() {
+    struct AliasVerifier(serde_json::Value);
+    impl CredentialVerifierPort for AliasVerifier {
+        fn verify<'a>(
+            &'a self,
+            _: &'a PresentedCredential<'_>,
+        ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
+            Box::pin(async {
+                Ok(VerifiedCredential {
+                    format: CredentialFormat::SdJwtVc,
+                    issuer: "trusted-issuer".to_owned(),
+                    issuer_chain_authority_key_identifiers: Vec::new(),
+                    credential_type: "urn:example:specific".to_owned(),
+                    claims: self.0.clone(),
+                    holder_key: Some(json!({"kty":"EC"})),
+                    issued_at: None,
+                    expires_at: None,
+                    status: None,
+                })
+            })
+        }
+    }
+
+    for (claims, requested, accepted) in [
+        (
+            json!({"aka_vcts":["urn:example:base"]}),
+            "urn:example:base",
+            true,
+        ),
+        (
+            json!({"aka_vcts":["urn:example:base"]}),
+            "urn:example:specific",
+            true,
+        ),
+        (
+            json!({"aka_vcts":["urn:example:base"]}),
+            "urn:example:other",
+            false,
+        ),
+        (json!({"aka_vcts":[]}), "urn:example:specific", false),
+        (
+            json!({"aka_vcts":["urn:example:specific"]}),
+            "urn:example:specific",
+            false,
+        ),
+        (
+            json!({"aka_vcts":["urn:example:base", 1]}),
+            "urn:example:base",
+            false,
+        ),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credentials = vec![
+            serde_json::from_value(json!({
+                "id":"first", "format":"dc+sd-jwt", "meta":{"vct_values":[requested]}
+            }))
+            .unwrap(),
+        ];
+        let result = PresentationService::new(RecordingStore::default(), AliasVerifier(claims))
+            .verify_response(
+                &transaction,
+                &AuthorizationResponse {
+                    vp_token: Some(json!({"first":["signed-credential"]})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                Utc::now(),
+            )
+            .await;
+        assert_eq!(
+            result.is_ok(),
+            accepted,
+            "requested={requested}, result={result:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response() {
     for query in [
         json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]}}],"credential_sets":[]}),

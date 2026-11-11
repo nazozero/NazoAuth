@@ -100,6 +100,15 @@ fn assertion(claim_overrides: Value, kid: Option<&str>) -> String {
 }
 
 fn assertion_with_algorithm(claim_overrides: Value, kid: Option<&str>, algorithm: &str) -> String {
+    assertion_with_type(claim_overrides, kid, algorithm, "JWT")
+}
+
+fn assertion_with_type(
+    claim_overrides: Value,
+    kid: Option<&str>,
+    algorithm: &str,
+    typ: &str,
+) -> String {
     let mut claims = json!({
         "iss": "client-1",
         "sub": "client-1",
@@ -112,7 +121,7 @@ fn assertion_with_algorithm(claim_overrides: Value, kid: Option<&str>, algorithm
     for (key, value) in claim_overrides.as_object().expect("claim overrides object") {
         claims[key] = value.clone();
     }
-    let mut header = json!({"alg": algorithm, "typ": "JWT"});
+    let mut header = json!({"alg": algorithm, "typ": typ});
     if let Some(kid) = kid {
         header["kid"] = json!(kid);
     }
@@ -243,6 +252,37 @@ fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
         verify(&client, &nested).unwrap_err(),
         ClientAssertionValidationError::Audience
     );
+}
+
+#[test]
+fn rfc10070_typed_assertions_require_only_the_issuer_even_for_legacy_clients() {
+    let mut client = client(json!({"keys": [public_jwk(Some("kid"))]}));
+    client.allow_client_assertion_audience_array = true;
+    client.allow_client_assertion_endpoint_audience = true;
+    for (aud, accepted) in [
+        (json!("https://issuer.example"), true),
+        (json!(["https://issuer.example"]), true),
+        (json!("https://issuer.example/token"), false),
+        (
+            json!(["https://issuer.example", "https://other.example"]),
+            false,
+        ),
+    ] {
+        let signed = assertion_with_type(
+            json!({"aud": aud}),
+            Some("kid"),
+            "EdDSA",
+            "client-authentication+jwt",
+        );
+        assert_eq!(verify(&client, &signed).is_ok(), accepted, "aud={aud}");
+    }
+}
+
+#[test]
+fn single_issuer_audience_array_is_accepted_without_legacy_exceptions() {
+    let client = client(json!({"keys": [public_jwk(Some("kid"))]}));
+    let signed = assertion(json!({"aud": ["https://issuer.example"]}), Some("kid"));
+    assert!(verify(&client, &signed).is_ok());
 }
 
 #[test]

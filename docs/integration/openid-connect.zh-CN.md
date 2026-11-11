@@ -63,17 +63,17 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 
 | 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | draft-15 实现基础；draft-16 待审计 | 当前跟踪 [draft-ietf-oauth-v2-1-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。当前实现基于 draft-15，draft-16 差异待核对。 | 复审输入大小、PKCE 和同意流程等差异，再更新支持声明。 |
+| OAuth 2.1 Authorization Framework | draft-15 实现基础；已应用部分 draft-16/17 控制 | 当前跟踪 [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。授权 redirect URI 不得预先包含响应参数。 | 完整 draft-16/17 合规声明需要逐条审核。 |
 | OAuth 2.0 for Browser-Based Applications | 最终 RFC 待审计 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 已发布；当前实现基于 draft-27，最终 RFC 差异待核对。 | 按 RFC 复审 SPA、BFF、浏览器客户端和会话要求；不新增 runtime profile。 |
 | Cross-Device Flows: Security BCP | 待审计 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 已发布。Device Grant、CIBA 和 Native SSO 已存在，但尚未完成该 BCP 的逐条审计。 | 复审各适用跨设备流程，不自动扩大 grant 权限。 |
 | OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
-| JWT BCP / JWT Assertion bis | 不支持（待审计） | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布。当前支持 RFC 8725/RFC 7523，两个 bis 草案暂不支持。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
+| JWT BCP / JWT Assertion | JWT BCP bis 待审计；支持 RFC 10070 的 issuer-only 客户端认证 | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 仍是草案。[RFC 10070](https://www.rfc-editor.org/info/rfc10070) 将客户端认证 audience 限定为 issuer。 | 旧客户端的 audience 兼容例外不符合 RFC 10070。JWT bearer grant 限于客户端自断言和 issuer audience。 |
 | OAuth Client Attestation | 支持 OpenID4VCI 1.0 固定引用的 draft-07；默认关闭 | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) 是 OpenID4VCI 1.0 Final 明确固定的版本；当前实现支持 `attest_jwt_client_auth`，并将 refresh token 绑定到 Client Instance `cnf` 公钥。只有模块启用且客户端策略要求时才宣告。 | 后续草案及最终 RFC 必须作为独立 delta audit；不能把更新草案的破坏性语法变化混入 HAIP 1.0 / OpenID4VCI 1.0 profile。 |
 | FAPI 2.0 HTTP Signatures | 实验性支持；默认关闭；待稳定规范审计 | [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) 不是 Final Specification；持久化 `http_message_signatures` 模块控制 `/fapi/resource`。 | 规范稳定或有 adopter 后再决定是否宣告；每个新草案/Final 都必须做 delta audit。 |
 | Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |
 | First-Party Applications | 不支持（待实现） | [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) 依赖同方/同源部署假设；当前不能把它泛化到第三方客户端。 | 明确 same-party/BFF 边界，并证明不会削弱第三方客户端隔离。 |
-| Client ID Metadata Document | 不支持（待实现） | [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) 涉及 public client 元数据远程获取；当前没有可信获取、缓存和冲突处理模型。 | 定义可信来源、缓存、降级、冲突、动态注册交互和失败策略。 |
-| SPIFFE Client Authentication | 不支持（待实现） | [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) 需要部署方提供 SPIFFE trust domain；普通 OAuth/OIDC 部署不具备该前提。 | 建立 trust bundle 验证、证书/身份生命周期、资源服务器验证和 metadata 隔离。 |
+| Client ID Metadata Document | 不支持（待实现） | [draft-ietf-oauth-client-id-metadata-document-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) 涉及 public client 元数据远程获取；当前没有可信获取、缓存和冲突处理模型。 | 定义可信来源、缓存、降级、冲突、动态注册交互和失败策略。 |
+| SPIFFE Client Authentication | 不支持（待实现） | [draft-ietf-oauth-spiffe-client-auth-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) 需要部署方提供 SPIFFE trust domain；普通 OAuth/OIDC 部署不具备该前提。 | 建立 trust bundle 验证、证书/身份生命周期、资源服务器验证和 metadata 隔离。 |
 | Identity Assertion / Identity Chaining / Transaction Tokens | 不支持（待实现） | 这些草案覆盖跨域身份断言、链式授权和工作负载调用链；当前缺少 issuer/trust anchor、subject mapping、Transaction Token Service 和资源服务器验证模型。 | 完成信任域、replay、审计、撤销、资源服务器验证和最小权限传播设计。 |
 | Token Status List | 不支持（待实现） | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) 更适合 OpenID4VC 凭证状态；当前没有凭证状态发布和隐私模型。 | 随 OpenID4VC issuer/verifier 状态模型实现，不作为通用 OAuth token status endpoint。 |
 
@@ -83,9 +83,9 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | --- | --- | --- |
 | GNAP Core / GNAP Resource Server Connections | 观察中 | [RFC 9635](https://www.rfc-editor.org/rfc/rfc9635.html) 和 [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767.html) 是相邻授权协议；可作为后续 grant negotiation 设计参考，但不是 OAuth/OIDC 开关。 |
 | Agent Authorization Profile | 观察中 | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) 对 AI agent delegated access 有参考价值；尚不能作为实现承诺。 |
-| Delegated Authorization / Actor Chain | 观察中 | [draft-li-oauth-delegated-authorization-03](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) 和 [draft-mw-oauth-actor-chain-01](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) 与 token exchange、actor delegation、审计链相关。 |
+| Delegated Authorization / Actor Chain | 观察中 | [draft-li-oauth-delegated-authorization-04](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) 和 [draft-mw-oauth-actor-chain-03](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) 与 token exchange、actor delegation、审计链相关。 |
 | Global Token Revocation | 观察中 | [draft-parecki-oauth-global-token-revocation-06](https://datatracker.ietf.org/doc/draft-parecki-oauth-global-token-revocation/) 对账号失陷和事故响应有价值，但需要严格 blast-radius、审计和多客户端策略。 |
-| RAR / Resource Metadata 扩展 | 观察中 | [draft-ietf-oauth-rar-metadata-remediation-00](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/)、[draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/) 和 [draft-mcguinness-oauth-rfc9728bis-01](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) 可能改善 typed permissions 与 protected-resource metadata。 |
+| RAR / Resource Metadata 扩展 | 观察中 | [draft-ietf-oauth-rar-metadata-remediation-00](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/)、[draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/) 和 [draft-mcguinness-oauth-rfc9728bis-02](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) 可能改善 typed permissions 与 protected-resource metadata。 |
 
 ## 可发现端点
 
@@ -356,7 +356,7 @@ Content encryption algorithms：
 
 高保障集成应优先使用非对称或 sender-constrained 客户端认证。FAPI profile 排除 shared-secret POST 认证。
 
-`private_key_jwt` 应使用部署 profile 接受的 issuer 或 token endpoint audience，并保持 assertion lifetime 较短。mTLS 需要注册正确的证书绑定客户端元数据，并在宣告 mTLS 元数据之前完成可信 proxy/mTLS termination 边界配置。
+`private_key_jwt` 应以 issuer 标识符作为唯一 audience，并保持 assertion lifetime 较短。新动态注册客户端遵循此规则。管理员为现有客户端启用的端点或多 audience 兼容设置，在非 FAPI profile 中继续生效；`client-authentication+jwt` 类型的断言始终只接受 issuer。所有受影响的客户端都改为使用唯一 issuer audience 后，移除兼容设置。mTLS 需要注册正确的证书绑定客户端元数据，并在宣告 mTLS 元数据之前完成可信 proxy/mTLS termination 边界配置。
 
 ### 部署 mTLS 信任生命周期
 
@@ -372,7 +372,7 @@ RFC 8705 第 7.4 节还指出：如果授权服务器信任多个 CA，攻击者
 
 - 单客户端最多保留 8 个当前有效信任锚和 4 个待审批申请，单用户在每个租户最多保留 16 个待审批申请，单租户最多保留 128 个不同的当前有效信任锚；创建和审批按租户串行化。
 - 反向代理只能安装从控制面导出的已批准 bundle。应用认证仍校验客户端唯一登记的 RFC 8705 subject selector；经公网审批的 PKI 信任还必须匹配叶证书 pin。self-signed 客户端继续绑定其登记证书 key。OAuth 授权仍按客户端登记的证书身份检查。
-- subject DN 必须是合法 RFC 4514 值，并通过 OpenSSL 的 X.509 名称规范比较满足 RFC 4517 `distinguishedNameMatch` 要求。DNS 和邮件域名不区分大小写，URI SAN 精确匹配，IP SAN 解析后按二进制地址比较；非法或歧义 selector 一律拒绝。
+- subject DN 必须是合法 RFC 4514 值，使用 `x509_cert::Name` 解析后，将 RFC 4514 显示形式转为小写再比较。DNS 和邮件域名不区分大小写，URI SAN 精确匹配，IP SAN 解析后按二进制地址比较；非法或歧义 selector 一律拒绝。
 
 ## Logout 与 Session
 

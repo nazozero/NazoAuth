@@ -136,6 +136,8 @@ pub fn verify_private_key_jwt(
         input.require_fapi2 || input.client.security_policy.requires_fapi2_security();
     let header =
         decode_header(input.assertion).map_err(|_| ClientAssertionValidationError::DecodeHeader)?;
+    let strict_audience =
+        require_fapi2 || header.typ.as_deref() == Some("client-authentication+jwt");
     let Some((algorithm_name, _)) = supported_client_jwt_algorithm(header.alg) else {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     };
@@ -163,11 +165,13 @@ pub fn verify_private_key_jwt(
     if claims.iss != input.client.client_id || claims.sub != input.client.client_id {
         return Err(ClientAssertionValidationError::IssuerSubject);
     }
+    // TODO: retire the per-client legacy exceptions once all registered clients
+    // send issuer-only audiences. RFC 10070 typed assertions always use strict policy.
     if !audience_matches(
         &claims.aud,
         |audience| {
             audience == input.issuer
-                || (!require_fapi2
+                || (!strict_audience
                     && input.client.allow_client_assertion_endpoint_audience
                     && std::iter::once(input.issuer)
                         .chain(input.endpoint_audience_aliases.iter().copied())
@@ -178,7 +182,8 @@ pub fn verify_private_key_jwt(
                                     && path == Some("/token"))
                         }))
         },
-        !require_fapi2 && input.client.allow_client_assertion_audience_array,
+        !require_fapi2,
+        !strict_audience && input.client.allow_client_assertion_audience_array,
     ) {
         return Err(ClientAssertionValidationError::Audience);
     }
@@ -211,10 +216,15 @@ fn client_assertion_decode_error(
     }
 }
 
-fn audience_matches(audience: &Value, expected: impl Fn(&str) -> bool, allow_array: bool) -> bool {
+fn audience_matches(
+    audience: &Value,
+    expected: impl Fn(&str) -> bool,
+    allow_single_array: bool,
+    allow_multiple: bool,
+) -> bool {
     match audience {
         Value::String(value) => expected(value),
-        Value::Array(values) if allow_array => {
+        Value::Array(values) if allow_multiple || (allow_single_array && values.len() == 1) => {
             let mut matches = false;
             for value in values {
                 let Some(value) = value.as_str() else {
@@ -268,12 +278,20 @@ fn client_assertion_decoding_key(
     matching.next().is_none().then_some(selected)
 }
 
-pub(crate) fn client_jwt_decoding_key(
+pub fn client_jwt_decoding_key(
     client: &OAuthClient,
     kid: &str,
     algorithm: Algorithm,
 ) -> Option<JwtVerificationKey> {
-    let keys = client.jwks.as_deref()?.get("keys")?.as_array()?;
+    jwt_decoding_key_from_jwks(client.jwks.as_deref()?, kid, algorithm)
+}
+
+pub fn jwt_decoding_key_from_jwks(
+    jwks: &Value,
+    kid: &str,
+    algorithm: Algorithm,
+) -> Option<JwtVerificationKey> {
+    let keys = jwks.get("keys")?.as_array()?;
     let mut matching = keys
         .iter()
         .filter(|key| key.get("kid").and_then(Value::as_str) == Some(kid));
@@ -284,7 +302,7 @@ pub(crate) fn client_jwt_decoding_key(
     jwt_decoding_key_from_jwk(selected, algorithm)
 }
 
-fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVerificationKey> {
+pub fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVerificationKey> {
     let (expected_algorithm, key_type) = supported_client_jwt_algorithm(algorithm)?;
     if key
         .get("alg")

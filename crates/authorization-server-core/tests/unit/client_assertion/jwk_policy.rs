@@ -121,3 +121,22 @@ fn fixed_curve_components_require_exactly_32_decoded_bytes() {
         }
     }
 }
+
+proptest::proptest! {
+    #[test]
+    fn jwks_selection_requires_one_matching_id_in_any_position(
+        ids in proptest::collection::vec(0u8..5, 0..16),
+        wanted in 0u8..5,
+    ) {
+        let public = URL_SAFE_NO_PAD.encode([7; 32]);
+        let keys: Vec<_> = ids.iter().map(|id| json!({
+            "kid": id.to_string(), "kty": "OKP", "crv": "Ed25519", "x": public
+        })).collect();
+        let jwks = json!({ "keys": keys });
+        let expected = ids.iter().filter(|id| **id == wanted).count() == 1;
+        proptest::prop_assert_eq!(
+            jwt_decoding_key_from_jwks(&jwks, &wanted.to_string(), Algorithm::EdDSA).is_some(),
+            expected
+        );
+    }
+}

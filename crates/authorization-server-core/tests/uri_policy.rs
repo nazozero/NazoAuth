@@ -60,6 +60,34 @@ fn redirect_uri_policy_allows_only_oauth_bcp_exceptions() {
 }
 
 #[test]
+fn authorization_redirect_query_cannot_prepopulate_response_parameters() {
+    use nazo_auth::validate_authorization_redirect_uri;
+
+    assert!(
+        validate_authorization_redirect_uri("confidential", "https://client.example/cb?tenant=1")
+            .is_ok()
+    );
+    for query in [
+        "code=old",
+        "st%61te=old",
+        "iss=old",
+        "error=old",
+        "response=old",
+    ] {
+        let uri = format!("https://client.example/cb?{query}");
+        assert!(validate_authorization_redirect_uri("confidential", &uri).is_err());
+        assert_eq!(
+            resolve_registered_redirect_uri("confidential", std::slice::from_ref(&uri), Some(&uri)),
+            Err(RedirectUriError::Invalid)
+        );
+        assert_eq!(
+            resolve_registered_redirect_uri("confidential", &[uri], None),
+            Err(RedirectUriError::Invalid)
+        );
+    }
+}
+
+#[test]
 fn loopback_redirect_matching_ignores_only_port() {
     assert!(oauth_redirect_uri_matches(
         "public",
