@@ -439,6 +439,74 @@ fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
 }
 
 #[test]
+fn legacy_assertion_audience_flags_are_rejected_but_can_be_cleared() {
+    let resolver = StaticSectorIdentifier(Vec::new());
+    let crypto = TestCrypto;
+    for field in [
+        "allow_client_assertion_audience_array",
+        "allow_client_assertion_endpoint_audience",
+    ] {
+        let mut payload = json!({
+            "client_name": "Client", "client_type": "public",
+            "redirect_uris": ["https://client.example/callback"], "scopes": ["openid"],
+            "allowed_audiences": ["resource://default"], "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none"
+        });
+        payload[field] = json!(true);
+        let request = serde_json::from_value(payload).unwrap();
+        assert!(matches!(
+            futures_executor::block_on(nazo_auth::prepare_client_registration(
+                request,
+                &policy(None),
+                &resolver,
+                &crypto
+            )),
+            Err(AdminClientError::InvalidRequest(_))
+        ));
+        let patch = serde_json::from_value(json!({field: true})).unwrap();
+        assert!(matches!(
+            futures_executor::block_on(prepare_client_patch(
+                oauth_client(),
+                patch,
+                &policy(None),
+                &resolver,
+                &crypto
+            )),
+            Err(AdminClientError::InvalidRequest(_))
+        ));
+        let mut existing = oauth_client();
+        existing.allow_client_assertion_audience_array = true;
+        existing.allow_client_assertion_endpoint_audience = true;
+        let untouched = futures_executor::block_on(prepare_client_patch(
+            existing.clone(),
+            PatchClientRequest::default(),
+            &policy(None),
+            &resolver,
+            &crypto,
+        ))
+        .unwrap();
+        assert!(
+            untouched.allow_client_assertion_audience_array
+                && untouched.allow_client_assertion_endpoint_audience
+        );
+        let patch = serde_json::from_value(json!({field: false})).unwrap();
+        let updated = futures_executor::block_on(prepare_client_patch(
+            existing,
+            patch,
+            &policy(None),
+            &resolver,
+            &crypto,
+        ))
+        .unwrap();
+        assert!(!if field == "allow_client_assertion_audience_array" {
+            updated.allow_client_assertion_audience_array
+        } else {
+            updated.allow_client_assertion_endpoint_audience
+        });
+    }
+}
+
+#[test]
 fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
     let prepared = prepared();
     let registration_allocation = prepared.registration.redirect_uris.as_ptr();

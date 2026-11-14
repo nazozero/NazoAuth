@@ -198,6 +198,32 @@ fn registered_client_assertion_algorithm_is_enforced_before_key_selection() {
 }
 
 #[test]
+fn legacy_flags_do_not_weaken_rfc10070_audiences() {
+    let mut client = client(json!({"keys": [public_jwk(Some("kid"))]}));
+    client.allow_client_assertion_endpoint_audience = true;
+    client.allow_client_assertion_audience_array = true;
+    for endpoint in [
+        "/token",
+        "/par",
+        "/bc-authorize",
+        "/introspect",
+        "/revoke",
+        "/device_authorization",
+    ] {
+        for aud in [
+            json!(format!("https://issuer.example{endpoint}")),
+            json!(["https://issuer.example", "https://other.example"]),
+        ] {
+            let signed = assertion(json!({"aud": aud}), Some("kid"));
+            assert_eq!(
+                verify_at(&client, &signed, endpoint).unwrap_err(),
+                ClientAssertionValidationError::Audience
+            );
+        }
+    }
+}
+
+#[test]
 fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
     let mut client = client(json!({"keys": [public_jwk(Some("kid"))]}));
     let issuer_assertion = assertion(json!({"aud": "https://issuer.example"}), Some("kid"));
@@ -215,7 +241,7 @@ fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
         assert_eq!(
             verify_at(&client, &endpoint_assertion, endpoint_path).unwrap_err(),
             ClientAssertionValidationError::Audience,
-            "endpoint audiences must be rejected unless the client explicitly opts in"
+            "endpoint audiences must be rejected"
         );
     }
 
@@ -229,8 +255,8 @@ fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
     ] {
         let endpoint_assertion = assertion(json!({"aud": audience}), Some("kid"));
         assert!(
-            verify_at(&client, &endpoint_assertion, endpoint_path).is_ok(),
-            "the compatibility policy must admit the endpoint audience it names"
+            verify_at(&client, &endpoint_assertion, endpoint_path).is_err(),
+            "legacy settings must not admit endpoint audiences"
         );
     }
 
@@ -243,7 +269,7 @@ fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
         ClientAssertionValidationError::Audience
     );
     client.allow_client_assertion_audience_array = true;
-    assert!(verify(&client, &array_assertion).is_ok());
+    assert!(verify(&client, &array_assertion).is_err());
     let nested = assertion(
         json!({"aud": [["https://issuer.example/token"]]}),
         Some("kid"),
@@ -286,7 +312,7 @@ fn single_issuer_audience_array_is_accepted_without_legacy_exceptions() {
 }
 
 #[test]
-fn configured_mtls_endpoint_alias_is_only_accepted_for_opted_in_endpoint_audiences() {
+fn configured_mtls_endpoint_alias_is_rejected_even_for_legacy_clients() {
     let mut client = client(json!({"keys": [public_jwk(Some("kid"))]}));
     let assertion = assertion(
         json!({"aud": "https://mtls.issuer.example:8443/token"}),
@@ -320,7 +346,7 @@ fn configured_mtls_endpoint_alias_is_only_accepted_for_opted_in_endpoint_audienc
             expected_signing_algorithm: None,
             require_fapi2: false,
         })
-        .is_ok()
+        .is_err()
     );
 }
 
