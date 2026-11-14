@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn ciba_backchannel_invalid_basic_client_includes_basic_challenge() {
+    for basic in [false, true] {
+        assert!(matches!(
+            backchannel_invalid_client(basic),
+            OAuthEndpointError::Token { fields, basic_challenge }
+                if fields.status == StatusCode::UNAUTHORIZED
+                    && fields.error == "invalid_client"
+                    && basic_challenge == basic
+        ));
+    }
+}
+
+#[test]
 fn ciba_backchannel_preserves_its_invalid_client_status() {
     let token_error = OAuthEndpointError::invalid_client("failed", false);
     assert!(matches!(

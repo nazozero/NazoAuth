@@ -72,11 +72,7 @@ impl CibaApplication {
         );
         let authorization_service = &self.authorization;
         let Some(client_id) = credentials.client_id.as_deref() else {
-            return Err(OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            ));
+            return Err(backchannel_invalid_client(transport.basic_challenge()));
         };
         let (client, secret_salt) = match authorization_service
             .client_authentication_snapshot(client_id)
@@ -86,11 +82,7 @@ impl CibaApplication {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
-                    "客户端认证失败.",
-                ));
+                return Err(backchannel_invalid_client(transport.basic_challenge()));
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to query CIBA client");
@@ -149,11 +141,17 @@ impl CibaApplication {
         .await
         {
             Ok(assertion) => assertion,
-            Err(error) => return Err(token_management_auth_error(error)),
+            Err(error) => {
+                return Err(token_management_auth_error(
+                    error,
+                    credentials.method == "client_secret_basic",
+                ));
+            }
         };
         if !ciba_client_assertion_algorithm_supported(assertion.as_ref()) {
             return Err(token_management_auth_error(
                 TokenManagementClientAuthError::InvalidClient,
+                credentials.method == "client_secret_basic",
             ));
         }
         if !client_supports_grant(&client, CIBA_GRANT_TYPE) {
@@ -313,7 +311,9 @@ impl CibaApplication {
             security_audit,
         )
         .await
-        .map_err(token_management_auth_error)?;
+        .map_err(|error| {
+            token_management_auth_error(error, credentials.method == "client_secret_basic")
+        })?;
         if let Some(replay) = request_object_replay {
             match authorization_service
                 .consume_ciba_request_object(&client.client_id, &replay.jti, replay.expires_at)
@@ -409,15 +409,23 @@ fn backchannel_profile_error(error: OAuthEndpointError) -> OAuthEndpointError {
     }
 }
 
-fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEndpointError {
+fn backchannel_invalid_client(basic_challenge: bool) -> OAuthEndpointError {
+    OAuthEndpointError::token(
+        StatusCode::UNAUTHORIZED,
+        "invalid_client",
+        "客户端认证失败.",
+        basic_challenge,
+    )
+}
+
+fn token_management_auth_error(
+    error: TokenManagementClientAuthError,
+    basic_challenge: bool,
+) -> OAuthEndpointError {
     match error {
         TokenManagementClientAuthError::InvalidClient
         | TokenManagementClientAuthError::PublicClientCredentialsForbidden => {
-            OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            )
+            backchannel_invalid_client(basic_challenge)
         }
         TokenManagementClientAuthError::StoreUnavailable => OAuthEndpointError::json(
             StatusCode::SERVICE_UNAVAILABLE,

@@ -389,6 +389,8 @@ At the token, PAR, and device authorization endpoints, `invalid_client`
 responses use HTTP 401 with a Basic challenge when Basic authentication was
 attempted. Other client-authentication failures use HTTP 400 without a Basic
 challenge.
+The CIBA backchannel authentication endpoint uses HTTP 401 for `invalid_client`;
+when Basic authentication was attempted it includes the Basic challenge.
 
 | Method | Status | References | Client type / conditions | Notes |
 | --- | --- | --- | --- | --- |
