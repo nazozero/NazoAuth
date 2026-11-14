@@ -244,7 +244,7 @@ async fn token_dispatch_preserves_grant_validation_and_unconfigured_issuer_error
         false,
     )
     .await;
-    assert_token_error(token(state, token_request("application/x-www-form-urlencoded"), Bytes::from(format!("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code&pre-authorized_code=unused&client_id={inactive_id}&client_secret={secret}"))).await, StatusCode::UNAUTHORIZED, "invalid_client", false).await;
+    assert_token_error(token(state, token_request("application/x-www-form-urlencoded"), Bytes::from(format!("grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code&pre-authorized_code=unused&client_id={inactive_id}&client_secret={secret}"))).await, StatusCode::BAD_REQUEST, "invalid_client", false).await;
 }
 
 #[actix_web::test]

@@ -343,6 +343,9 @@ Content encryption algorithms：
 
 ## 客户端认证
 
+Token endpoint 的 `invalid_client` 响应在尝试 Basic 认证时使用 HTTP 401 和
+Basic challenge；其他客户端认证失败使用 HTTP 400，不附加 Basic challenge。
+
 | Method | 状态 | 引用 | 客户端类型 / 条件 | 说明 |
 | --- | --- | --- | --- | --- |
 | `none` | 支持 | [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html), [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) | public client；必须使用 S256 PKCE | 不允许用于 confidential-client grant。 |

@@ -733,7 +733,7 @@ fn fapi_ciba_id1_accepts_both_private_key_jwt_and_mtls_client_authentication() {
     let response =
         validate_ciba_security_profile_client_with_config(&settings, &client, "client_secret_post")
             .expect_err("FAPI-CIBA ID1 must reject shared-secret client authentication");
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[test]
@@ -855,6 +855,13 @@ fn fapi2_ciba_client_policy_rejects_public_weak_auth_and_bearer_tokens() {
         "client_secret_basic",
     )
     .expect_err("Fapi2Ciba must reject shared-secret client authentication");
+    assert!(matches!(
+        &response,
+        OAuthEndpointError::Token {
+            fields,
+            basic_challenge: true,
+        } if fields.status == StatusCode::UNAUTHORIZED
+    ));
     assert_eq!(
         Some(oauth_error_code(response).as_str()),
         Some("invalid_client")

@@ -385,6 +385,10 @@ browser transport for supported authorization responses.
 
 ## Client authentication
 
+At the token endpoint, `invalid_client` responses use HTTP 401 with a Basic
+challenge when Basic authentication was attempted. Other client-authentication
+failures use HTTP 400 without a Basic challenge.
+
 | Method | Status | References | Client type / conditions | Notes |
 | --- | --- | --- | --- | --- |
 | `none` | Supported | [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html), [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) | Public clients only; S256 PKCE required | Not allowed for confidential-client grants. |
