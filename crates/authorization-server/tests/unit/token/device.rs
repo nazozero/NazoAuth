@@ -173,7 +173,7 @@ fn device_client_authentication_accepts_registered_public_none_and_rejects_secre
         .await
         .expect_err("public clients cannot present a secret");
         assert!(
-            matches!(response, OAuthEndpointError::Json(fields) if fields.status == StatusCode::UNAUTHORIZED)
+            matches!(response, OAuthEndpointError::Token { fields, basic_challenge: false } if fields.status == StatusCode::BAD_REQUEST)
         );
     });
 }

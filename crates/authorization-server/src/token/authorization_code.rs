@@ -824,7 +824,7 @@ pub fn validate_pending_authorization_code_request(
             if form.code_verifier.is_some() {
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
-                    "invalid_grant",
+                    "invalid_request",
                     "原授权请求未包含 code_challenge.",
                     false,
                 ));

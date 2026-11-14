@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.27.1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-FROM docker.io/library/rust:1.99.0-slim@sha256:2752b332db73fdbb7dc576f06c82ed1f312005784ef913d7e04a28f5f55dc581 AS build-base
+FROM docker.io/library/rust:1.100.0-slim@sha256:e9d95b74296f7126a83ae3d041aeaba1ff4c478f13abc5cc034fcf7c131c3d4a AS build-base
 
-ENV RUSTUP_TOOLCHAIN=1.99.0
+ENV RUSTUP_TOOLCHAIN=1.100.0
 
 WORKDIR /app
 

@@ -172,8 +172,8 @@ fn par_rejects_two_token_bindings_but_allows_mtls_authentication_with_dpop() {
 fn par_client_lookup_and_attestation_errors_do_not_persist() {
     block_on(async {
         for (value, status) in [
-            (Ok(None), StatusCode::UNAUTHORIZED),
-            (Ok(Some(client(false))), StatusCode::UNAUTHORIZED),
+            (Ok(None), StatusCode::BAD_REQUEST),
+            (Ok(Some(client(false))), StatusCode::BAD_REQUEST),
             (
                 Err(AuthorizationPortError::Unavailable),
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -191,15 +191,14 @@ fn par_client_lookup_and_attestation_errors_do_not_persist() {
                 .await
                 .err()
                 .unwrap();
-            assert_json_error(
-                error,
-                status,
-                if status == StatusCode::UNAUTHORIZED {
-                    "invalid_client"
-                } else {
-                    "server_error"
-                },
-            );
+            if status == StatusCode::BAD_REQUEST {
+                assert!(
+                    matches!(error, OAuthEndpointError::Token { fields, basic_challenge: false }
+                    if fields.status == status && fields.error == "invalid_client")
+                );
+            } else {
+                assert_json_error(error, status, "server_error");
+            }
             assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
         }
         for registered in [false, true] {
@@ -230,6 +229,38 @@ fn par_client_lookup_and_attestation_errors_do_not_persist() {
             );
             assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
         }
+    });
+}
+
+#[test]
+fn par_invalid_basic_client_requires_basic_challenge() {
+    block_on(async {
+        let fixture = par_fixture(Ok(None));
+        let app = fixture.make_application();
+        let transport = TokenClientAuthTransportFacts::from_parts(
+            BasicAuthorizationCredentials::Present {
+                client_id: "client-1".into(),
+                client_secret: "wrong".into(),
+            },
+            None,
+            None,
+            None,
+            None,
+        );
+        let error = app
+            .begin_par("ip")
+            .await
+            .unwrap()
+            .prepare_parameters(params(), true, None)
+            .unwrap()
+            .prepare_client(&transport, false, false)
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            matches!(error, OAuthEndpointError::Token { fields, basic_challenge: true }
+            if fields.status == StatusCode::UNAUTHORIZED && fields.error == "invalid_client")
+        );
     });
 }
 #[test]

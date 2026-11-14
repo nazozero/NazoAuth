@@ -81,7 +81,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
                     .map_err(nazo_http_actix::oauth_endpoint_error_response)
                     .expect_err("a verifier must never be accepted without an original challenge");
             assert_eq!(downgrade.status(), StatusCode::BAD_REQUEST);
-            assert_eq!(oauth_error_code(downgrade).await, "invalid_grant");
+            assert_eq!(oauth_error_code(downgrade).await, "invalid_request");
         }
         form.code_verifier = None;
         let no_pkce = validate_pending_authorization_code_request(
@@ -304,7 +304,7 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
         form.code_verifier = Some(verifier.to_owned());
         let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(oauth_error_code(response).await, "invalid_grant");
+        assert_eq!(oauth_error_code(response).await, "invalid_request");
         assert!(matches!(
             fixture.code_state(&no_challenge_code).await,
             AuthorizationCodeState::Pending { .. }

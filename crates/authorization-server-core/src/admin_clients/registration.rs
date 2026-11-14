@@ -45,6 +45,11 @@ where
     S: SectorIdentifierResolverPort + ?Sized,
     C: AdminClientCryptoPort + ?Sized,
 {
+    if request.allow_client_assertion_audience_array
+        || request.allow_client_assertion_endpoint_audience
+    {
+        return Err(AdminClientError::InvalidRequest("Legacy client assertion audience options are no longer supported; use the issuer as the sole audience".into()));
+    }
     request
         .security_policy
         .validate()

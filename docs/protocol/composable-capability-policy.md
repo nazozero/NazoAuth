@@ -135,7 +135,9 @@ and requires a single string `aud` equal to the issuer identifier. Client
 compatibility flags cannot permit endpoint, mTLS alias, or array audiences in
 this mode. The same policy reaches token, PAR, introspection, revocation,
 Device Authorization and CIBA authentication; CIBA FAPI2 hardening also enables
-these constraints. Baseline clients retain their explicit compatibility settings.
+these constraints. All other clients also require the issuer as the sole audience; a single-element array is accepted outside FAPI2.
+
+The former `allow_client_assertion_endpoint_audience` and `allow_client_assertion_audience_array` settings no longer relax validation. Existing stored values remain visible for migration, but setting either to true through the admin API is rejected; setting it to false is allowed. Before upgrading, change affected clients to send only the issuer identifier as `aud`. Endpoint and multi-audience assertions will otherwise fail authentication.
 
 A client can introspect its own tokens within its tenant. Inspecting another
 client's access token requires an exact match between a token audience and the

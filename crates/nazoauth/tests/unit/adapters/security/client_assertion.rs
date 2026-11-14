@@ -3,7 +3,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_oauth_server::crypto::{client_jwt_decoding_key, jwt_decoding_key_from_jwk};
 
 #[test]
-fn par_private_key_jwt_endpoint_audiences_require_explicit_client_opt_in() {
+fn par_private_key_jwt_rejects_endpoint_audiences_even_with_legacy_flag() {
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let public_jwk = private_key.public_jwk("client-kid");
     let mut client = private_key_jwt_client(json!({"keys": [public_jwk]}));
@@ -39,7 +39,7 @@ fn par_private_key_jwt_endpoint_audiences_require_explicit_client_opt_in() {
         assert!(
             verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion)
                 .is_err(),
-            "PAR client assertion audience {audience} must require explicit opt-in"
+            "PAR client assertion audience {audience} must be rejected"
         );
     }
 
@@ -54,14 +54,14 @@ fn par_private_key_jwt_endpoint_audiences_require_explicit_client_opt_in() {
         );
         assert!(
             verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion)
-                .is_ok(),
-            "the explicit compatibility policy must admit {audience}"
+                .is_err(),
+            "the legacy flag must not admit {audience}"
         );
     }
 }
 
 #[test]
-fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowed() {
+fn ciba_backchannel_client_assertion_rejects_token_endpoint_audience_with_legacy_flag() {
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let public_jwk = private_key.public_jwk("client-kid");
     let mut client = private_key_jwt_client(json!({"keys": [public_jwk]}));
@@ -78,7 +78,7 @@ fn ciba_backchannel_client_assertion_accepts_token_endpoint_audience_when_allowe
 
     let result = verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion);
 
-    assert!(result.is_ok());
+    assert!(result.is_err());
 }
 
 #[test]

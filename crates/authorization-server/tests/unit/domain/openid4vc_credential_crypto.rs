@@ -648,6 +648,14 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
             )));
         }
 
+        let empty = crypto
+            .sign(&sd_input(None, json!({}), None))
+            .await
+            .expect("SD-JWT without disclosures");
+        let (jwt, suffix) = empty.split_once('~').unwrap();
+        assert_eq!(jwt.split('.').count(), 3);
+        assert_eq!(suffix, "");
+
         let malformed = sd_input(None, json!("not an object"), None);
         assert_eq!(
             crypto.sign(&malformed).await,
@@ -1049,6 +1057,31 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
             Err(CredentialTrustError::InvalidEncoding)
         );
     })
+}
+
+#[test]
+fn sd_jwt_rejects_empty_vct_even_with_a_valid_alias() {
+    let (crypto, original, _, certs) = sd_presentation_fixture();
+    let jwt = original.encoded.split('~').next().unwrap();
+    let mut claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(jwt.split('.').nth(1).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    claims["vct"] = json!("");
+    claims["aka_vcts"] = json!(["urn:example:base"]);
+    let presentation = resign_sd_fixture_with_claims(
+        &original,
+        &certs,
+        vec![STANDARD.encode(&certs.leaf_der)],
+        &original.expected_nonce,
+        &claims,
+    );
+    assert_eq!(
+        crypto.verify_sd_jwt(&presentation),
+        Err(CredentialTrustError::InvalidEncoding)
+    );
 }
 
 #[test]

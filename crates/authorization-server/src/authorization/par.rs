@@ -211,11 +211,7 @@ impl<'a> PreparedParParameters<'a> {
             )
         };
         if has_basic && credentials.method != "client_secret_basic" {
-            return Err(OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            ));
+            return Err(OAuthEndpointError::invalid_client("客户端认证失败.", true));
         }
         let (client, secret_salt) = match context
             .service
@@ -226,10 +222,9 @@ impl<'a> PreparedParParameters<'a> {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
+                return Err(OAuthEndpointError::invalid_client(
                     "客户端认证失败.",
+                    has_basic,
                 ));
             }
             Err(error) => {
@@ -363,7 +358,12 @@ impl PreparedParClient<'_> {
             .await
             {
                 Ok(assertion) => assertion,
-                Err(error) => return Err(token_management_auth_error(error)),
+                Err(error) => {
+                    return Err(token_management_auth_error(
+                        error,
+                        credentials.method == "client_secret_basic",
+                    ));
+                }
             }
         };
         params.remove("client_secret");
@@ -383,7 +383,10 @@ impl PreparedParClient<'_> {
                 fapi2_security,
             },
         ) {
-            return Err(par_admission_error(error));
+            return Err(par_admission_error(
+                error,
+                credentials.method == "client_secret_basic",
+            ));
         }
         let request_object_replay = apply_request_object_with_context(
             context,
@@ -435,7 +438,10 @@ impl PreparedParClient<'_> {
                 fapi2_requires_explicit_redirect_uri: fapi2_security,
             },
         ) {
-            return Err(par_admission_error(error));
+            return Err(par_admission_error(
+                error,
+                credentials.method == "client_secret_basic",
+            ));
         }
         let request_dpop_jkt = params.get("dpop_jkt").cloned();
         let header_dpop_jkt = match crate::security::dpop::validate_dpop_proof(
@@ -475,7 +481,10 @@ impl PreparedParClient<'_> {
         )
         .await
         {
-            return Err(token_management_auth_error(error));
+            return Err(token_management_auth_error(
+                error,
+                credentials.method == "client_secret_basic",
+            ));
         }
         let dpop_jkt = request_dpop_jkt.or(header_dpop_jkt);
         let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
@@ -542,7 +551,13 @@ impl PreparedParClient<'_> {
         }))
     }
 }
-fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
+fn par_admission_error(error: ParAdmissionError, basic_challenge: bool) -> OAuthEndpointError {
+    if matches!(error, ParAdmissionError::StrongClientAuthenticationRequired) {
+        return OAuthEndpointError::invalid_client(
+            "FAPI2 profiles require private_key_jwt or mTLS client authentication.",
+            basic_challenge,
+        );
+    }
     let (status, description) = match error {
         ParAdmissionError::RequestUriNotAllowed => (
             StatusCode::BAD_REQUEST,
@@ -581,15 +596,14 @@ fn par_admission_error(error: ParAdmissionError) -> OAuthEndpointError {
     OAuthEndpointError::json(status, error.oauth_error(), description)
 }
 
-fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEndpointError {
+fn token_management_auth_error(
+    error: TokenManagementClientAuthError,
+    basic_challenge: bool,
+) -> OAuthEndpointError {
     match error {
         TokenManagementClientAuthError::InvalidClient
         | TokenManagementClientAuthError::PublicClientCredentialsForbidden => {
-            OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            )
+            OAuthEndpointError::invalid_client("客户端认证失败.", basic_challenge)
         }
         TokenManagementClientAuthError::StoreUnavailable => OAuthEndpointError::json(
             StatusCode::SERVICE_UNAVAILABLE,

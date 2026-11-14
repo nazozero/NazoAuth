@@ -566,7 +566,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn(
-            "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2",
+            "Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3",
             quality,
         )
         self.assertIn("cargo clippy --workspace --all-targets", quality)

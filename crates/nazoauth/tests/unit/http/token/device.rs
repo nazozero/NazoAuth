@@ -920,6 +920,7 @@ async fn device_authorization_resolves_basic_identity_without_form_client_id() {
                 .unwrap();
             assert_eq!(pending.client_id, client.client_id);
         } else {
+            assert!(response.headers().contains_key(header::WWW_AUTHENTICATE));
             assert_eq!(oauth_error_code(response).await, "invalid_client");
         }
     }

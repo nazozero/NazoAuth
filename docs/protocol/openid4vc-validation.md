@@ -261,6 +261,12 @@ regression are supplied in source.
 
 ### SD-JWT processed claims and credential status
 
+Managed SD-JWT VC datasets reject `vct#integrity`, `aka_vcts`, and `...`
+as subject claim names: these names belong to credential control or SD-JWT
+processing and cannot be emitted as selectively disclosed subject claims.
+The signer also supports an empty subject-claims object: an SD-JWT with no
+Disclosures is serialized as the issuer JWT followed by one `~`.
+
 The verifier reconstructs the RFC 9901 processed payload from the authenticated
 issuer payload. Signed plaintext claims remain present; disclosures may populate
 nested object properties and array elements. Undisclosed array placeholders are
@@ -277,8 +283,12 @@ remain plaintext; disclosure references within them are rejected. `iat` and
 `sub` may be selectively disclosed, as specified in
 [SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
 DCQL type selection accepts the signed `vct` and valid signed `aka_vcts`
-values. An empty or malformed `aka_vcts`, or one containing the primary
+values. The primary `vct` must be a non-empty string, even when an alias
+matches the query. An empty or malformed `aka_vcts`, or one containing the primary
 `vct`, is rejected.
+The verifier does not retrieve or process Type Metadata. It does not verify
+`vct#integrity` against a referenced document and cannot enforce policies that
+require Type Metadata processing.
 
 The verifier accepts credentials without individual status references. A signed
 `status` in SD-JWT VC or mdoc is rejected with `InvalidStatus`: no individual

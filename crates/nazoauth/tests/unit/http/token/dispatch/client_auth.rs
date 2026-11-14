@@ -253,7 +253,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
     .await;
     assert_token_error(
         token_response,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -327,7 +327,7 @@ async fn token_endpoint_reports_holder_key_requirement_before_generic_client_aut
 }
 
 #[actix_web::test]
-async fn token_endpoint_without_client_auth_material_uses_invalid_client_challenge() {
+async fn token_endpoint_without_client_auth_material_has_no_basic_challenge() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
@@ -336,7 +336,7 @@ async fn token_endpoint_without_client_auth_material_uses_invalid_client_challen
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -465,7 +465,7 @@ async fn token_endpoint_ignores_non_pending_code_state_during_missing_client_hol
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -506,7 +506,7 @@ async fn token_endpoint_reports_unknown_client_after_extracting_client_secret_po
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -535,7 +535,7 @@ async fn token_endpoint_rejects_mtls_client_without_verified_certificate() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -577,7 +577,7 @@ async fn token_endpoint_rejects_mtls_client_with_mismatched_verified_certificate
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -652,7 +652,7 @@ async fn token_endpoint_applies_fapi_profile_checks_after_successful_client_secr
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -683,7 +683,7 @@ async fn token_endpoint_rejects_confidential_client_auth_method_mismatch() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -718,7 +718,7 @@ async fn token_endpoint_rejects_wrong_client_secret_before_grant_dispatch() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -750,7 +750,7 @@ async fn token_endpoint_rejects_public_client_credentials_material() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -862,7 +862,7 @@ async fn token_endpoint_private_key_jwt_without_kid_obeys_jwks_uri() {
             .unwrap();
             assert!(value["access_token"].as_str().is_some());
         } else {
-            assert_token_error(response, StatusCode::UNAUTHORIZED, "invalid_client", false).await;
+            assert_token_error(response, StatusCode::BAD_REQUEST, "invalid_client", false).await;
         }
     }
     // A cold cache forces a real failing fetch; stale registration A is not
@@ -933,7 +933,7 @@ async fn token_endpoint_rejects_private_key_jwt_without_client_assertion() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -972,7 +972,7 @@ async fn token_endpoint_rejects_private_key_jwt_with_invalid_assertion() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -1000,7 +1000,7 @@ async fn token_endpoint_rejects_mtls_without_client_id_without_client_lookup() {
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -1087,7 +1087,7 @@ async fn token_endpoint_rejects_confidential_client_without_required_client_secr
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -1121,7 +1121,7 @@ async fn token_endpoint_rejects_confidential_clients_with_unsupported_auth_metho
 
     assert_token_error(
         token(state, req, body).await,
-        StatusCode::UNAUTHORIZED,
+        StatusCode::BAD_REQUEST,
         "invalid_client",
         false,
     )
@@ -1185,6 +1185,7 @@ async fn fapi2_client_policy_requires_confidential_client_auth_and_sender_constr
     let weak_auth = validate_token_request_profile(&valid_client, "client_secret_basic")
         .expect_err("client_secret_basic is not a FAPI2 client auth method");
     assert_eq!(weak_auth.status(), StatusCode::UNAUTHORIZED);
+    assert!(weak_auth.headers().contains_key(header::WWW_AUTHENTICATE));
     assert_eq!(oauth_error_code(weak_auth).await, "invalid_client");
 
     let mut bearer_client = client();
