@@ -283,7 +283,8 @@ remain plaintext; disclosure references within them are rejected. `iat` and
 `sub` may be selectively disclosed, as specified in
 [SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
 DCQL type selection accepts the signed `vct` and valid signed `aka_vcts`
-values. An empty or malformed `aka_vcts`, or one containing the primary
+values. The primary `vct` must be a non-empty string, even when an alias
+matches the query. An empty or malformed `aka_vcts`, or one containing the primary
 `vct`, is rejected.
 
 The verifier accepts credentials without individual status references. A signed

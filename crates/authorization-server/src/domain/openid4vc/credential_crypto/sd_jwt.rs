@@ -222,6 +222,7 @@ pub(super) fn verify(
         credential_type: credential
             .get("vct")
             .and_then(Value::as_str)
+            .filter(|vct| !vct.is_empty())
             .ok_or(CredentialTrustError::InvalidEncoding)?
             .to_owned(),
         holder_key: Some(holder_jwk),
