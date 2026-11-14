@@ -157,12 +157,19 @@ pub(crate) fn validate_ciba_token_request_profile(
         },
     )
     .map_err(|error| {
-        let status = if error.code == ProtocolErrorCode::InvalidClient {
-            StatusCode::UNAUTHORIZED
+        if error.code == ProtocolErrorCode::InvalidClient {
+            OAuthEndpointError::invalid_client(
+                error.description,
+                auth_method == "client_secret_basic",
+            )
         } else {
-            StatusCode::BAD_REQUEST
-        };
-        OAuthEndpointError::token(status, error.code.as_str(), error.description, false)
+            OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                error.code.as_str(),
+                error.description,
+                false,
+            )
+        }
     })
 }
 

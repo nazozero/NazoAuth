@@ -343,8 +343,9 @@ Content encryption algorithms：
 
 ## 客户端认证
 
-Token endpoint 的 `invalid_client` 响应在尝试 Basic 认证时使用 HTTP 401 和
-Basic challenge；其他客户端认证失败使用 HTTP 400，不附加 Basic challenge。
+Token、PAR 与设备授权 endpoint 的 `invalid_client` 响应在尝试 Basic 认证时
+使用 HTTP 401 和 Basic challenge；其他客户端认证失败使用 HTTP 400，不附加
+Basic challenge。
 
 | Method | 状态 | 引用 | 客户端类型 / 条件 | 说明 |
 | --- | --- | --- | --- | --- |

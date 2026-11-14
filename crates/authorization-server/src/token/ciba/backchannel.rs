@@ -183,12 +183,14 @@ impl CibaApplication {
                 "CIBA request object key source is unavailable.",
             ));
         }
-        validate_ciba_token_request_profile(&client, client.token_endpoint_auth_method.as_str())?;
+        validate_ciba_token_request_profile(&client, client.token_endpoint_auth_method.as_str())
+            .map_err(backchannel_profile_error)?;
         validate_ciba_security_profile_client_with_config(
             config,
             &client,
             client.token_endpoint_auth_method.as_str(),
-        )?;
+        )
+        .map_err(backchannel_profile_error)?;
         validate_ciba_request_object_presence_with_config(config, &client, &form)?;
         let request_object_replay = match validate_and_apply_ciba_request_object_claims_with_config(
             config, &client, &mut form,
@@ -391,6 +393,22 @@ impl CibaApplication {
         })
     }
 }
+fn backchannel_profile_error(error: OAuthEndpointError) -> OAuthEndpointError {
+    match error {
+        OAuthEndpointError::Token {
+            mut fields,
+            basic_challenge,
+        } if fields.error == "invalid_client" => {
+            fields.status = StatusCode::UNAUTHORIZED;
+            OAuthEndpointError::Token {
+                fields,
+                basic_challenge,
+            }
+        }
+        error => error,
+    }
+}
+
 fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEndpointError {
     match error {
         TokenManagementClientAuthError::InvalidClient
@@ -406,5 +424,28 @@ fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEn
             "server_error",
             "客户端认证状态存储不可用.",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ciba_backchannel_preserves_its_invalid_client_status() {
+        let token_error = OAuthEndpointError::invalid_client("failed", false);
+        assert!(matches!(
+            backchannel_profile_error(token_error),
+            OAuthEndpointError::Token { fields, basic_challenge: false }
+                if fields.status == StatusCode::UNAUTHORIZED && fields.error == "invalid_client"
+        ));
+        assert!(matches!(
+            backchannel_profile_error(OAuthEndpointError::invalid_client("failed", true)),
+            OAuthEndpointError::Token { fields, basic_challenge: true }
+                if fields.status == StatusCode::UNAUTHORIZED && fields.error == "invalid_client"
+        ));
+        let other =
+            OAuthEndpointError::token(StatusCode::BAD_REQUEST, "invalid_request", "bad", false);
+        assert_eq!(backchannel_profile_error(other.clone()), other);
     }
 }
