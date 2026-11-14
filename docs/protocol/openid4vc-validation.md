@@ -286,6 +286,9 @@ DCQL type selection accepts the signed `vct` and valid signed `aka_vcts`
 values. The primary `vct` must be a non-empty string, even when an alias
 matches the query. An empty or malformed `aka_vcts`, or one containing the primary
 `vct`, is rejected.
+The verifier does not retrieve or process Type Metadata. It does not verify
+`vct#integrity` against a referenced document and cannot enforce policies that
+require Type Metadata processing.
 
 The verifier accepts credentials without individual status references. A signed
 `status` in SD-JWT VC or mdoc is rejected with `InvalidStatus`: no individual
