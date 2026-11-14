@@ -212,7 +212,18 @@ pub(crate) fn validate_managed_dataset(
     match configuration.format {
         nazo_digital_credentials::CredentialFormat::SdJwtVc => {
             const RESERVED: &[&str] = &[
-                "iss", "iat", "nbf", "exp", "vct", "_sd", "_sd_alg", "cnf", "status",
+                "iss",
+                "iat",
+                "nbf",
+                "exp",
+                "vct",
+                "vct#integrity",
+                "aka_vcts",
+                "_sd",
+                "_sd_alg",
+                "...",
+                "cnf",
+                "status",
             ];
             if claims.keys().any(|name| {
                 name.is_empty() || name.len() > 128 || RESERVED.contains(&name.as_str())

@@ -261,6 +261,10 @@ regression are supplied in source.
 
 ### SD-JWT processed claims and credential status
 
+Managed SD-JWT VC datasets reject `vct#integrity`, `aka_vcts`, and `...`
+as subject claim names: these names belong to credential control or SD-JWT
+processing and cannot be emitted as selectively disclosed subject claims.
+
 The verifier reconstructs the RFC 9901 processed payload from the authenticated
 issuer payload. Signed plaintext claims remain present; disclosures may populate
 nested object properties and array elements. Undisclosed array placeholders are
