@@ -648,6 +648,14 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
             )));
         }
 
+        let empty = crypto
+            .sign(&sd_input(None, json!({}), None))
+            .await
+            .expect("SD-JWT without disclosures");
+        let (jwt, suffix) = empty.split_once('~').unwrap();
+        assert_eq!(jwt.split('.').count(), 3);
+        assert_eq!(suffix, "");
+
         let malformed = sd_input(None, json!("not an object"), None);
         assert_eq!(
             crypto.sign(&malformed).await,

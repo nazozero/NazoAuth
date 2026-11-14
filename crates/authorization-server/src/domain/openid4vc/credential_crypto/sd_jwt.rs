@@ -79,13 +79,10 @@ pub(super) async fn sign(
         .await
         .map_err(|_| CredentialTrustError::Unavailable)?;
     jwt.push('~');
-    for (index, disclosure) in disclosures.iter().enumerate() {
-        if index != 0 {
-            jwt.push('~');
-        }
+    for disclosure in &disclosures {
         jwt.push_str(disclosure);
+        jwt.push('~');
     }
-    jwt.push('~');
     Ok(jwt)
 }
 
