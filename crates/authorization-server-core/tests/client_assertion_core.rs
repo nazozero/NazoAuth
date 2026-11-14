@@ -121,7 +121,10 @@ fn assertion_with_type(
     for (key, value) in claim_overrides.as_object().expect("claim overrides object") {
         claims[key] = value.clone();
     }
-    let mut header = json!({"alg": algorithm, "typ": typ});
+    let mut header = json!({"alg": algorithm});
+    if !typ.is_empty() {
+        header["typ"] = json!(typ);
+    }
     if let Some(kid) = kid {
         header["kid"] = json!(kid);
     }
@@ -302,6 +305,18 @@ fn rfc10070_typed_assertions_require_only_the_issuer_even_for_legacy_clients() {
         );
         assert_eq!(verify(&client, &signed).is_ok(), accepted, "aud={aud}");
     }
+}
+
+#[test]
+fn issuer_only_client_assertion_without_typ_is_accepted() {
+    let client = client(json!({"keys": [public_jwk(Some("kid"))]}));
+    let signed = assertion_with_type(
+        json!({"aud": "https://issuer.example"}),
+        Some("kid"),
+        "EdDSA",
+        "",
+    );
+    assert!(verify(&client, &signed).is_ok());
 }
 
 #[test]
