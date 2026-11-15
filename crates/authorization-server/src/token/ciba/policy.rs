@@ -9,17 +9,11 @@ pub fn ciba_client_assertion_algorithm_supported(
 }
 
 pub fn ciba_jwt_signing_algorithm_supported(alg: nazo_crypto::jwt::Algorithm) -> bool {
-    matches!(
-        alg,
-        nazo_crypto::jwt::Algorithm::EdDSA
-            | nazo_crypto::jwt::Algorithm::ES256
-            | nazo_crypto::jwt::Algorithm::PS256
-    )
+    ciba_algorithm_name(alg).is_some()
 }
 
 pub fn ciba_algorithm_name(alg: nazo_crypto::jwt::Algorithm) -> Option<&'static str> {
     match alg {
-        nazo_crypto::jwt::Algorithm::EdDSA => Some("EdDSA"),
         nazo_crypto::jwt::Algorithm::ES256 => Some("ES256"),
         nazo_crypto::jwt::Algorithm::PS256 => Some("PS256"),
         _ => None,
@@ -39,6 +33,18 @@ pub fn validate_ciba_security_profile_client_with_config(
             http::StatusCode::BAD_REQUEST,
             "unauthorized_client",
             "FAPI-CIBA requires confidential clients.",
+            false,
+        ));
+    }
+    if !client
+        .id_token_signed_response_alg
+        .as_deref()
+        .is_some_and(|algorithm| nazo_auth::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
+    {
+        return Err(OAuthEndpointError::token(
+            http::StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "FAPI-CIBA requires an explicit ES256 or PS256 ID token signing algorithm.",
             false,
         ));
     }

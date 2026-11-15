@@ -55,7 +55,7 @@ Registered HTTPS callbacks retain the existing session and consent checks.
 | Token Introspection | Complete | Available through the introspection endpoint when client policy permits it | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profiles can use protected introspection responses. |
 | Token Revocation | Complete | Available through the revocation endpoint | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | Revokes tokens according to token type and client policy. |
 | Device Authorization Grant | Supported | Server support is active by default on new databases; use requires the client device-code grant and `allow_cross_device_flows=true` | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Runtime module state controls advertisement; client policy controls authority. |
-| OpenID CIBA / FAPI-CIBA | Supported; ID1-compatible | Server poll/ping support is active by default on new databases; use requires CIBA client grant/metadata and `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | The FAPI-CIBA ID1 `private_key_jwt / mTLS` x `poll / ping` combinations are supported; the newer `fapi-ciba-03` working draft still requires a separate delta audit. Push is never supported. |
+| OpenID CIBA / FAPI-CIBA | Supported; ID1-compatible | Server poll/ping support is active by default on new databases; use requires CIBA client grant/metadata and `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | The FAPI-CIBA ID1 `private_key_jwt / mTLS` x `poll / ping` combinations are supported; the reviewed `fapi-ciba-03` authorization-server requirements retain explicit transaction binding and ES256/PS256 JWT signatures. Optional `request_context` and `login_hint_token` extensions are not advertised. Push is never supported. |
 | FAPI 2.0 Security Profile | Complete | Enabled per client with `security_policy.assurance=fapi2` | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | Requires confidential clients, PAR, sender constraints, and strong client authentication. |
 | FAPI 2.0 Message Signing | Complete | Independent client-policy fields enable signed authorization requests, JARM, and signed introspection | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | Compatible options may be enabled together and coexist with FAPI2 assurance. |
 | OpenID4VCI 1.0 Final | Complete | Disabled by default; advertised through OpenID4VCI issuer metadata after enabling the Credential Issuer role and complete credential/trust configuration | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | Not part of ordinary OIDC RP login. |
@@ -399,6 +399,13 @@ At the token, PAR, and device authorization endpoints, `invalid_client`
 responses use HTTP 401 with a Basic challenge when Basic authentication was
 attempted. Other client-authentication failures use HTTP 400 without a Basic
 challenge.
+CIBA registration requires an explicit `id_token_signed_response_alg` of
+`ES256` or `PS256` and a corresponding active server signing key. Its signed
+backchannel requests and client assertions also accept only these algorithms.
+Existing clients using the general OIDC default (`RS256`) or `EdDSA` must update
+their registration; the server does not silently change their algorithm.
+Because the supported email `login_hint` does not identify a unique transaction,
+FAPI-CIBA requests must include a nonempty `binding_message` for user confirmation.
 The CIBA backchannel authentication endpoint uses HTTP 401 for `invalid_client`;
 when Basic authentication was attempted it includes the Basic challenge.
 For non-Basic failures it currently sends no `WWW-Authenticate` challenge.

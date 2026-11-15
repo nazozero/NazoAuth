@@ -50,7 +50,7 @@ OAuth 2.1 draft-17 授权码客户端由管理员设置
 | Token Introspection | 完整支持 | introspection endpoint 可用，受客户端策略限制 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profile 可使用受保护 introspection 响应。 |
 | Token Revocation | 完整支持 | revocation endpoint 可用 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | 按 token 类型和客户端策略撤销 token。 |
 | Device Authorization Grant | 支持 | 新数据库默认开启服务端支持；客户端还必须登记 device-code grant 并设置 `allow_cross_device_flows=true` | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | 运行时模块决定是否宣告，客户端策略决定是否有权使用。 |
-| OpenID CIBA / FAPI-CIBA | 支持；ID1 兼容 | 新数据库默认开启 poll/ping 服务端支持；客户端还必须具备 CIBA grant/元数据并设置 `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | FAPI-CIBA ID1 的 `private_key_jwt / mTLS` × `poll / ping` 组合已支持；更新的 `fapi-ciba-03` working draft 仍需单独 delta audit。push 永不支持。 |
+| OpenID CIBA / FAPI-CIBA | 支持；ID1 兼容 | 新数据库默认开启 poll/ping 服务端支持；客户端还必须具备 CIBA grant/元数据并设置 `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | FAPI-CIBA ID1 的 `private_key_jwt / mTLS` × `poll / ping` 组合已支持；已核对的 `fapi-ciba-03` 授权服务器要求继续执行明确的交易绑定与 ES256/PS256 JWT 签名。可选的 `request_context` 和 `login_hint_token` 扩展未对外声明支持。push 永不支持。 |
 | FAPI 2.0 Security Profile | 完整支持 | 按客户端设置 `security_policy.assurance=fapi2` | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | 要求 confidential client、PAR、sender constraint 和强客户端认证。 |
 | FAPI 2.0 Message Signing | 完整支持 | 由独立客户端策略字段启用签名授权请求、JARM 与签名 introspection | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | 兼容选项可以同时启用，并与 FAPI2 assurance 共存。 |
 | OpenID4VCI 1.0 Final | 完整支持 | 默认关闭；启用 Credential Issuer 角色并完成 credential/trust 配置后，通过 OpenID4VCI issuer metadata 宣告 | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | 不属于普通 OIDC RP 登录。 |
@@ -355,6 +355,12 @@ Content encryption algorithms：
 Token、PAR 与设备授权 endpoint 的 `invalid_client` 响应在尝试 Basic 认证时
 使用 HTTP 401 和 Basic challenge；其他客户端认证失败使用 HTTP 400，不附加
 Basic challenge。
+CIBA 注册必须显式设置 `id_token_signed_response_alg=ES256` 或 `PS256`，
+且服务端必须有对应的活跃签名密钥。签名后端认证请求与客户端断言也只接受这两种算法。
+沿用通用 OIDC 默认算法 `RS256` 或使用 `EdDSA` 的现有客户端必须更新注册；
+服务端不会静默替换客户端所选算法。
+当前支持的邮箱 `login_hint` 不能唯一标识交易，因此 FAPI-CIBA 请求必须包含非空
+`binding_message`，供用户确认交易绑定。
 CIBA 后端认证 endpoint 的 `invalid_client` 使用 HTTP 401；尝试 Basic 认证时
 附带 Basic challenge。
 非 Basic 认证失败目前不返回 `WWW-Authenticate` challenge。CIBA Core 第 13 节

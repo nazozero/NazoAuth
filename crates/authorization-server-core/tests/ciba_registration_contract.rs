@@ -58,9 +58,11 @@ fn ciba_user_code_and_weak_request_signing_are_not_supported() {
     user_code.backchannel_user_code_parameter = Some(true);
     assert!(prepare_dynamic_client_registration(user_code, POLICY).is_err());
 
-    let mut none_alg = ciba_request("poll");
-    none_alg.backchannel_authentication_request_signing_alg = Some("none".to_owned());
-    assert!(prepare_dynamic_client_registration(none_alg, POLICY).is_err());
+    for algorithm in ["none", "RS256", "EdDSA"] {
+        let mut request = ciba_request("poll");
+        request.backchannel_authentication_request_signing_alg = Some(algorithm.to_owned());
+        assert!(prepare_dynamic_client_registration(request, POLICY).is_err());
+    }
 }
 
 #[test]

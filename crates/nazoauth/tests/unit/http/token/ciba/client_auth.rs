@@ -329,6 +329,10 @@ async fn ciba_backchannel_rejects_invalid_request_object_claims_before_user_look
     let client_assertion = signed_ciba_client_assertion(&client.client_id, kid, &key);
     let cases = [
         (
+            json!({"scope": "openid", "login_hint": login_hint.clone(), "binding_message": null}),
+            "invalid_request",
+        ),
+        (
             json!({"scope": "profile", "login_hint": login_hint.clone()}),
             "invalid_scope",
         ),

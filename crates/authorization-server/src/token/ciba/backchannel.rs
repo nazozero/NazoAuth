@@ -199,6 +199,11 @@ impl CibaApplication {
         if request_object_replay.is_none() {
             validate_ciba_binding_message(&form)?;
         }
+        // The supported login_hint is an email address, not a unique transaction
+        // context. FAPI-CIBA therefore requires a user-visible binding message.
+        if config.ciba_fapi_profile && form.binding_message.is_none() {
+            return Err(ciba_invalid_request("FAPI-CIBA requires binding_message."));
+        }
         validate_ciba_delivery_request(&client, &form)?;
         let audiences = vec![config.default_audience.to_string()];
         if !audiences_allowed(&client, &audiences) {

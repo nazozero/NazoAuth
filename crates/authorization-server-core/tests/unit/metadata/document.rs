@@ -372,7 +372,7 @@ fn ciba_metadata_is_complete_and_profile_scoped() {
     );
     assert_eq!(
         baseline["backchannel_authentication_request_signing_alg_values_supported"],
-        json!(["EdDSA", "ES256", "PS256"])
+        json!(["ES256", "PS256"])
     );
 
     let hardened = authorization_server_metadata(

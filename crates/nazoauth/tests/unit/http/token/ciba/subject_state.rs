@@ -405,7 +405,7 @@ async fn ciba_approved_poll_reads_subject_claims_once_for_oidc_and_never_for_pla
             Some("ciba-pairwise-count-secret-at-least-32-bytes".to_owned());
         state.settings = Arc::new(settings);
         state.keyset =
-            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
+            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
         let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
         let mut client = ciba_private_key_jwt_client("claims-count-kid", &key);
         client.client_id = format!("ciba-claims-count-{}", Uuid::now_v7());

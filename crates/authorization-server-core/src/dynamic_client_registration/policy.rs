@@ -93,7 +93,7 @@ pub fn prepare_dynamic_client_registration(
         "backchannel_authentication_request_signing_alg",
         request.backchannel_authentication_request_signing_alg,
         request.backchannel_authentication_request_signing_alg_values_supported,
-        &["EdDSA", "ES256", "PS256"],
+        crate::CIBA_JWT_SIGNING_ALGS,
     )?;
     request.userinfo_signed_response_alg = negotiate_metadata_choice(
         "userinfo_signed_response_alg",
@@ -215,10 +215,10 @@ pub fn prepare_dynamic_client_registration(
     if request
         .backchannel_authentication_request_signing_alg
         .as_deref()
-        .is_some_and(|algorithm| !matches!(algorithm, "EdDSA" | "ES256" | "PS256"))
+        .is_some_and(|algorithm| !crate::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
     {
         return Err(DynamicRegistrationError::invalid_client_metadata(
-            "backchannel_authentication_request_signing_alg must be EdDSA, ES256, or PS256.",
+            "backchannel_authentication_request_signing_alg must be ES256 or PS256.",
         ));
     }
     if request

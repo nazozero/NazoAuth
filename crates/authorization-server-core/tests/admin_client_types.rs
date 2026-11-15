@@ -322,6 +322,7 @@ fn client_patch_applies_optional_registration_metadata_as_one_update() {
                 " https://client.example/ciba/notify ".to_owned(),
             ),
             backchannel_authentication_request_signing_alg: Some("PS256".to_owned()),
+            id_token_signed_response_alg: Some("PS256".to_owned()),
             backchannel_user_code_parameter: Some(false),
             backchannel_logout_uri: Some(" https://client.example/backchannel ".to_owned()),
             backchannel_logout_session_required: Some(true),
@@ -353,6 +354,34 @@ fn client_patch_applies_optional_registration_metadata_as_one_update() {
     );
     assert_eq!(updated.tls_client_auth_san_ip, ["127.0.0.1"]);
     assert!(!updated.is_active);
+}
+
+#[test]
+fn ciba_registration_requires_an_explicit_profile_compatible_id_token_algorithm() {
+    for algorithm in [
+        None,
+        Some("RS256"),
+        Some("EdDSA"),
+        Some("ES256"),
+        Some("PS256"),
+    ] {
+        let result = futures_executor::block_on(prepare_client_patch(
+            oauth_client(),
+            PatchClientRequest {
+                grant_types: Some(vec!["urn:openid:params:grant-type:ciba".to_owned()]),
+                id_token_signed_response_alg: algorithm.map(ToOwned::to_owned),
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &StaticSectorIdentifier(vec![]),
+            &TestCrypto,
+        ));
+        assert_eq!(
+            result.is_ok(),
+            matches!(algorithm, Some("ES256" | "PS256")),
+            "{algorithm:?}"
+        );
+    }
 }
 
 #[test]

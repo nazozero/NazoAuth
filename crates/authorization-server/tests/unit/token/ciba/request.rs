@@ -129,7 +129,7 @@ fn base_client() -> ClientRow {
             request_uris: Vec::new(),
             initiate_login_uri: None,
             presentation: nazo_auth::ClientPresentationMetadata::default(),
-            id_token_signed_response_alg: None,
+            id_token_signed_response_alg: Some("PS256".to_owned()),
             id_token_encrypted_response_alg: None,
             id_token_encrypted_response_enc: None,
             request_object_signing_alg: None,
@@ -1038,6 +1038,9 @@ fn ciba_rejects_rs256_request_object_signing_algorithm() {
 #[test]
 fn ciba_rejects_rs256_client_assertion_algorithm() {
     assert!(!ciba_jwt_signing_algorithm_supported(
+        jsonwebtoken::Algorithm::EdDSA
+    ));
+    assert!(!ciba_jwt_signing_algorithm_supported(
         jsonwebtoken::Algorithm::RS256
     ));
     assert!(ciba_jwt_signing_algorithm_supported(
@@ -1046,11 +1049,30 @@ fn ciba_rejects_rs256_client_assertion_algorithm() {
 }
 
 #[test]
+fn ciba_rejects_incompatible_id_token_registration_before_issuing() {
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("response-policy", &key);
+    client.require_mtls_bound_tokens = true;
+    for algorithm in [None, Some("RS256"), Some("EdDSA")] {
+        client.id_token_signed_response_alg = algorithm.map(ToOwned::to_owned);
+        let error = validate_ciba_security_profile_client_with_config(
+            &config(),
+            &client,
+            "private_key_jwt",
+        )
+        .expect_err("CIBA must not issue an ID token outside its signing profile");
+        assert_eq!(oauth_error_code(error), "unauthorized_client");
+    }
+    for algorithm in ["ES256", "PS256"] {
+        client.id_token_signed_response_alg = Some(algorithm.to_owned());
+        validate_ciba_security_profile_client_with_config(&config(), &client, "private_key_jwt")
+            .unwrap();
+    }
+}
+
+#[test]
 fn ciba_policy_covers_algorithm_names_and_delivery_rejections() {
-    assert_eq!(
-        ciba_algorithm_name(jsonwebtoken::Algorithm::EdDSA),
-        Some("EdDSA")
-    );
+    assert_eq!(ciba_algorithm_name(jsonwebtoken::Algorithm::EdDSA), None);
     assert_eq!(
         ciba_algorithm_name(jsonwebtoken::Algorithm::ES256),
         Some("ES256")

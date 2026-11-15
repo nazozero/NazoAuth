@@ -235,6 +235,15 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         .grant_types
         .iter()
         .any(|grant| grant == "urn:openid:params:grant-type:ciba");
+    if ciba_enabled
+        && !metadata
+            .id_token_signed_response_alg
+            .is_some_and(|algorithm| crate::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
+    {
+        return invalid(
+            "FAPI-CIBA requires an explicit ES256 or PS256 id_token_signed_response_alg",
+        );
+    }
     if !matches!(metadata.backchannel_token_delivery_mode, "poll" | "ping") {
         return invalid("backchannel_token_delivery_mode 必须是 poll 或 ping；push 不受支持");
     }
@@ -261,11 +270,9 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
     }
     if metadata
         .backchannel_authentication_request_signing_alg
-        .is_some_and(|algorithm| !matches!(algorithm, "EdDSA" | "ES256" | "PS256"))
+        .is_some_and(|algorithm| !crate::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
     {
-        return invalid(
-            "backchannel_authentication_request_signing_alg 必须是 EdDSA、ES256 或 PS256",
-        );
+        return invalid("backchannel_authentication_request_signing_alg 必须是 ES256 或 PS256");
     }
     if !ciba_enabled
         && metadata

@@ -114,7 +114,7 @@ fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> TestInfrastruc
             .expect("valkey client construction should not connect"),
         settings: Arc::new(settings),
         keyset: crate::test_support::test_key_manager_with_auxiliary(
-            jsonwebtoken::Algorithm::RS256,
+            jsonwebtoken::Algorithm::PS256,
         ),
     }
 }
@@ -134,7 +134,7 @@ async fn live_ciba_replay_state() -> Option<TestInfrastructure> {
         valkey,
         settings: Arc::new(settings),
         keyset: crate::test_support::test_key_manager_with_auxiliary(
-            jsonwebtoken::Algorithm::RS256,
+            jsonwebtoken::Algorithm::PS256,
         ),
     })
 }
@@ -478,6 +478,7 @@ fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixtur
         sector_identifier_host: None,
     };
     client.security_policy.allow_cross_device_flows = true;
+    client.id_token_signed_response_alg = Some("PS256".to_owned());
     client
 }
 
