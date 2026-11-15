@@ -208,11 +208,13 @@ fn verify_cwt(
         _ => return Err(INVALID),
     };
     let key = status_key(crypto, presentation, issuer_chain, &chain, None)?;
-    sign1
-        .verify_signature(&[], |signature, data| {
-            nazo_crypto::signature::verify(Algorithm::ES256, &key, data, signature)
-        })
-        .map_err(|_| INVALID)?;
+    nazo_crypto::signature::verify(
+        Algorithm::ES256,
+        &key,
+        &sign1.tbs_data(&[]),
+        &sign1.signature,
+    )
+    .map_err(|_| INVALID)?;
     let mut payload = sign1.payload.as_deref().ok_or(INVALID)?;
     let claims: Cbor = ciborium::from_reader(&mut payload).map_err(|_| INVALID)?;
     if !payload.is_empty() {
