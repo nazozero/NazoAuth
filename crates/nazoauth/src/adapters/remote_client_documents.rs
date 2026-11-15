@@ -186,7 +186,11 @@ impl RemoteClientDocumentResolver {
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|_| "remote document HTTP client could not be built".to_owned())?;
-        let response = timeout_at(deadline, client.get(parsed).send())
+        let mut request = client.get(parsed);
+        if let Some(accept) = kind.status_media_type() {
+            request = request.header(header::ACCEPT, accept);
+        }
+        let response = timeout_at(deadline, request.send())
             .await
             .map_err(|_| "remote document request timed out".to_owned())?
             .map_err(|error| {
@@ -250,9 +254,19 @@ enum RemoteDocumentKind {
     Jwks,
     RequestObject,
     SectorIdentifier,
+    StatusJwt,
+    StatusCwt,
 }
 
 impl RemoteDocumentKind {
+    fn status_media_type(self) -> Option<&'static str> {
+        match self {
+            Self::StatusJwt => Some("application/statuslist+jwt"),
+            Self::StatusCwt => Some("application/statuslist+cwt"),
+            _ => None,
+        }
+    }
+
     fn accepts_content_type(self, content_type: &str) -> bool {
         let media_type = content_type.split(';').next().unwrap_or_default().trim();
         match self {
@@ -265,7 +279,39 @@ impl RemoteDocumentKind {
                     || media_type.eq_ignore_ascii_case("application/oauth-authz-req+jwt")
             }
             Self::SectorIdentifier => media_type.eq_ignore_ascii_case("application/json"),
+            Self::StatusJwt | Self::StatusCwt => {
+                media_type.eq_ignore_ascii_case(self.status_media_type().expect("status kind"))
+            }
         }
+    }
+}
+
+impl nazo_oauth_server::ports::credential_status::CredentialStatusResolver
+    for RemoteClientDocumentResolver
+{
+    fn fetch<'a>(
+        &'a self,
+        uri: &'a str,
+        format: nazo_digital_credentials::CredentialFormat,
+    ) -> nazo_digital_credentials::CredentialFuture<
+        'a,
+        Result<Vec<u8>, nazo_digital_credentials::CredentialTrustError>,
+    > {
+        Box::pin(async move {
+            let kind = match format {
+                nazo_digital_credentials::CredentialFormat::SdJwtVc => {
+                    RemoteDocumentKind::StatusJwt
+                }
+                nazo_digital_credentials::CredentialFormat::MsoMdoc => {
+                    RemoteDocumentKind::StatusCwt
+                }
+            };
+            let parsed = validate_https_url(uri, false)
+                .map_err(|_| nazo_digital_credentials::CredentialTrustError::InvalidStatus)?;
+            self.fetch(parsed, kind, Instant::now() + REMOTE_DOCUMENT_DEADLINE)
+                .await
+                .map_err(|_| nazo_digital_credentials::CredentialTrustError::Unavailable)
+        })
     }
 }
 

@@ -26,6 +26,10 @@ fn private_origin_allowlist_is_exact_and_https_only() {
 
 #[test]
 fn content_types_are_narrowly_accepted() {
+    assert!(RemoteDocumentKind::StatusJwt.accepts_content_type("application/statuslist+jwt"));
+    assert!(RemoteDocumentKind::StatusCwt.accepts_content_type("application/statuslist+cwt"));
+    assert!(!RemoteDocumentKind::StatusJwt.accepts_content_type("application/jwt"));
+    assert!(!RemoteDocumentKind::StatusCwt.accepts_content_type("application/statuslist+jwt"));
     assert!(RemoteDocumentKind::Jwks.accepts_content_type("application/jwk-set+json"));
     assert!(RemoteDocumentKind::Jwks.accepts_content_type("Application/Jwk-Set+Json"));
     assert!(!RemoteDocumentKind::SectorIdentifier.accepts_content_type("text/plain"));
@@ -40,6 +44,57 @@ fn content_types_are_narrowly_accepted() {
             .accepts_content_type("application/json; charset=utf-8")
     );
     assert!(!RemoteDocumentKind::SectorIdentifier.accepts_content_type("application/jwk-set+json"));
+}
+
+#[tokio::test]
+async fn credential_status_fetch_preserves_transport_limits_and_returns_fresh_bytes() {
+    use nazo_digital_credentials::CredentialFormat;
+    use nazo_oauth_server::ports::credential_status::CredentialStatusResolver;
+    for (format, content_type) in [
+        (CredentialFormat::SdJwtVc, "application/statuslist+jwt"),
+        (CredentialFormat::MsoMdoc, "application/statuslist+cwt"),
+    ] {
+        let (address, server, certificate_der) = tls_server_sequence(vec![
+            (200, content_type.into(), vec![1, 2, 3], true),
+            (200, content_type.into(), vec![4, 5, 6], false),
+            (302, content_type.into(), vec![], true),
+            (200, "application/json".into(), vec![0], true),
+            (
+                200,
+                content_type.into(),
+                vec![0; MAX_RESPONSE_BYTES as usize + 1],
+                false,
+            ),
+        ]);
+        let uri = format!("https://localhost:{}/status", address.port());
+        let blocked = RemoteClientDocumentResolver::new(&[]).unwrap();
+        assert!(
+            CredentialStatusResolver::fetch(&blocked, &uri, format)
+                .await
+                .is_err()
+        );
+        let resolver = resolver_for(address, &certificate_der);
+        assert_eq!(
+            CredentialStatusResolver::fetch(&resolver, &uri, format)
+                .await
+                .unwrap(),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            CredentialStatusResolver::fetch(&resolver, &uri, format)
+                .await
+                .unwrap(),
+            vec![4, 5, 6]
+        );
+        for _ in 0..3 {
+            assert!(
+                CredentialStatusResolver::fetch(&resolver, &uri, format)
+                    .await
+                    .is_err()
+            );
+        }
+        server.join().unwrap();
+    }
 }
 
 fn tls_server(
@@ -128,6 +183,8 @@ fn tls_server_sequence_on(
             let _ = stream
                 .write_all(response.as_bytes())
                 .and_then(|()| stream.write_all(&body));
+            stream.conn.send_close_notify();
+            let _ = stream.flush();
         }
     });
     (address, handle, certificate_der, request_count)

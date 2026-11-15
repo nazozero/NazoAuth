@@ -84,7 +84,7 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | Client ID Metadata Document | 不支持（待实现） | [draft-ietf-oauth-client-id-metadata-document-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) 涉及 public client 元数据远程获取；当前没有可信获取、缓存和冲突处理模型。 | 定义可信来源、缓存、降级、冲突、动态注册交互和失败策略。 |
 | SPIFFE Client Authentication | 不支持（待实现） | [draft-ietf-oauth-spiffe-client-auth-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) 需要部署方提供 SPIFFE trust domain；普通 OAuth/OIDC 部署不具备该前提。 | 建立 trust bundle 验证、证书/身份生命周期、资源服务器验证和 metadata 隔离。 |
 | Identity Assertion / Identity Chaining / Transaction Tokens | 不支持（待实现） | 这些草案覆盖跨域身份断言、链式授权和工作负载调用链；当前缺少 issuer/trust anchor、subject mapping、Transaction Token Service 和资源服务器验证模型。 | 完成信任域、replay、审计、撤销、资源服务器验证和最小权限传播设计。 |
-| Token Status List | 不支持（待实现） | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) 更适合 OpenID4VC 凭证状态；当前没有凭证状态发布和隐私模型。 | 随 OpenID4VC issuer/verifier 状态模型实现，不作为通用 OAuth token status endpoint。 |
+| Token Status List | 有边界的 verifier 支持 | 已实现 [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) JWT/CWT 凭证状态校验；尚未实现状态发布。 | [信任、传输与隐私边界](../protocol/openid4vc-validation.md#sd-jwt-processed-claims-and-credential-status)；不是通用 OAuth token status endpoint。 |
 
 以下方向目前只是观察项，不属于“待实现”：
 

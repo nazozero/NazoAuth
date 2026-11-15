@@ -10,6 +10,7 @@ mod certificates;
 pub(super) mod mdoc;
 mod sd_jwt;
 mod signer;
+mod status;
 
 pub(crate) use certificates::Openid4vcSigningMaterial;
 pub use certificates::parse_scoped_credential_trust_anchors;
@@ -20,6 +21,7 @@ pub struct Openid4vcCredentialCrypto {
     mdoc_signer: Arc<dyn MdocDocumentSigner>,
     issuer_trust_policy: VcIssuerTrustPolicy,
     revocation_policy: crate::policy::Openid4vcRevocationPolicy,
+    status_resolver: Option<Arc<dyn crate::ports::credential_status::CredentialStatusResolver>>,
 }
 
 impl CredentialVerifierPort for Openid4vcCredentialCrypto {
@@ -28,17 +30,32 @@ impl CredentialVerifierPort for Openid4vcCredentialCrypto {
         presentation: &'a PresentedCredential<'_>,
     ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
         Box::pin(async move {
-            let credential = match presentation.format {
+            let (credential, issuer_chain) = match presentation.format {
                 CredentialFormat::SdJwtVc => sd_jwt::verify(self, presentation),
                 CredentialFormat::MsoMdoc => mdoc::verify(self, presentation),
             }?;
-            // Certificate revocation does not establish the individual
-            // credential's status. No credential status mechanism is supported.
-            if credential.status.is_some() {
-                return Err(CredentialTrustError::InvalidStatus);
+            if let Some(reference) = &credential.status {
+                status::verify(
+                    self,
+                    presentation,
+                    reference,
+                    &credential.issuer,
+                    &issuer_chain,
+                )
+                .await?;
             }
             Ok(credential)
         })
+    }
+}
+
+impl Openid4vcCredentialCrypto {
+    pub fn with_status_resolver(
+        mut self,
+        resolver: Arc<dyn crate::ports::credential_status::CredentialStatusResolver>,
+    ) -> Self {
+        self.status_resolver = Some(resolver);
+        self
     }
 }
 

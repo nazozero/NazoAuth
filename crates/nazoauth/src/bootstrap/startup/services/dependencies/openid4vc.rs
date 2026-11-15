@@ -37,7 +37,8 @@ pub(super) async fn build(
                 settings.openid4vc.revocation_policy,
                 Arc::new(crate::adapters::mdoc_signer::TokioMdocDocumentSigner),
             )
-            .context("failed to initialize OpenID4VC credential crypto from managed material")?,
+            .context("failed to initialize OpenID4VC credential crypto from managed material")?
+            .with_status_resolver(startup.remote_client_documents.clone()),
         )
     } else {
         None

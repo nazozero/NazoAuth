@@ -80,7 +80,7 @@ impl CredentialCryptoTestExt for Openid4vcCredentialCrypto {
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
     > {
-        super::sd_jwt::verify(self, presentation)
+        super::sd_jwt::verify(self, presentation).map(|(credential, _)| credential)
     }
 
     fn validate_sd_jwt_chain(
@@ -99,19 +99,19 @@ impl CredentialCryptoTestExt for Openid4vcCredentialCrypto {
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
     > {
-        super::mdoc::verify(self, presentation)
+        super::mdoc::verify(self, presentation).map(|(credential, _)| credential)
     }
 }
 
-struct CertificateFixture {
-    ca_der: Vec<u8>,
-    ca_pem: String,
-    leaf_der: Vec<u8>,
-    leaf_pem: String,
-    leaf_key: KeyPair,
+pub(super) struct CertificateFixture {
+    pub(super) ca_der: Vec<u8>,
+    pub(super) ca_pem: String,
+    pub(super) leaf_der: Vec<u8>,
+    pub(super) leaf_pem: String,
+    pub(super) leaf_key: KeyPair,
 }
 
-fn certificate_fixture(host: &str) -> CertificateFixture {
+pub(super) fn certificate_fixture(host: &str) -> CertificateFixture {
     let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("leaf key");
     certificate_fixture_with_key(host, leaf_key)
 }
@@ -164,7 +164,8 @@ fn certificate_fixture_with_key_and_aki(
     }
 }
 
-async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture, String) {
+pub(super) async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture, String)
+{
     let settings = KeySettings {
         rotation_interval: chrono::Duration::days(1),
         prepublish_window: chrono::Duration::hours(1),
@@ -250,7 +251,7 @@ impl CoseSigner for TestMdocIssuerSigner {
     }
 }
 
-fn valid_mdoc_presentation(
+pub(super) fn valid_mdoc_presentation(
     certs: &CertificateFixture,
     signed_at: chrono::DateTime<Utc>,
     status: Option<ciborium::Value>,
@@ -399,7 +400,7 @@ fn es256_jwk(seed: u8) -> (Value, EncodingKey) {
     (jwk, EncodingKey::from_ec_der(der.as_bytes()))
 }
 
-fn sd_presentation_fixture() -> (
+pub(super) fn sd_presentation_fixture() -> (
     Openid4vcCredentialCrypto,
     PresentedCredential<'static>,
     Value,
@@ -2112,7 +2113,7 @@ fn resign_sd_fixture(
     resign_sd_fixture_with_claims(presentation, certs, x5c, nonce, &claims)
 }
 
-fn resign_sd_fixture_with_claims(
+pub(super) fn resign_sd_fixture_with_claims(
     presentation: &PresentedCredential<'static>,
     certs: &CertificateFixture,
     x5c: Vec<String>,
@@ -2553,7 +2554,7 @@ fn sd_jwt_checks_validity_after_disclosures_with_valid_issuer_and_holder_signatu
 }
 
 #[test]
-fn verifier_rejects_unimplemented_credential_status_after_holder_authentication() {
+fn verifier_requires_status_resolver_after_holder_authentication() {
     futures_executor::block_on(async {
         let (crypto, presentation, _, certs) = sd_presentation_fixture();
         let parts: Vec<_> = presentation.encoded.split('~').collect();
@@ -2593,7 +2594,7 @@ fn verifier_rejects_unimplemented_credential_status_after_holder_authentication(
 }
 
 #[test]
-fn verifier_rejects_mdoc_with_unimplemented_credential_status() {
+fn verifier_requires_status_resolver_for_mdoc() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
         let status = ciborium::Value::Map(vec![(

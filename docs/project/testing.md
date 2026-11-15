@@ -86,6 +86,34 @@ Run the structure check before the Rust quality gate below.
 
 ## Verification
 
+### Audit backlog scale checks
+
+The ordinary workspace suite checks audit claims at zero and 10,000 pending
+rows, including cross-connection claim/ACK behavior. The unchanged one-million
+and fifteen-million row SQL plan assertions run as the explicitly ignored
+`audit_claim_is_bounded_at_million_row_backlogs` test. The separate
+[audit-scale workflow](../../.github/workflows/audit-scale.yml) owns that test:
+it runs only on manual dispatch. Ordinary functional/security checks remain
+in automatic CI, including the zero/10,000-row claim and cross-connection ACK
+regressions. The million-row test is reported as ignored in the ordinary suite;
+that result does not claim scale validation.
+
+The manual workflow uses its own PostgreSQL database and the shared Cargo cache.
+It always executes the selected scale test. Maintainers can run it for changes
+to audit queries/indexes, PostgreSQL versions, or an observed backlog regression.
+It does not block unrelated PRs or releases and is not a coverage measurement.
+
+```sh
+gh workflow run audit-scale.yml --repo nazozero/NazoAuth --ref main
+```
+
+To execute the scale test explicitly against an isolated audit database:
+
+```sh
+cargo test --locked --all-features -p nazo-postgres --test audit_ledger \
+  audit_claim_is_bounded_at_million_row_backlogs -- --ignored --exact --nocapture
+```
+
 ### CI selection and reuse
 
 Rust workspace checks cover changes to Rust sources, manifests, toolchains,
