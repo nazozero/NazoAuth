@@ -79,7 +79,7 @@ impl FederationRepository {
         let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard.connection().transaction::<_, Error, _>(async |connection| {
             let row = diesel::delete(external_identity_links::table.find(link_id)
                 .filter(external_identity_links::tenant_id.eq(tenant_id.as_uuid()))
@@ -115,7 +115,7 @@ impl FederationRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, diesel::result::Error, _>(async move |connection| {
@@ -177,7 +177,7 @@ impl FederationRepository {
         let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<_, diesel::result::Error, _>(async move |connection| {

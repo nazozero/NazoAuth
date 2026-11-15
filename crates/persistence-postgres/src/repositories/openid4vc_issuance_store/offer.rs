@@ -133,11 +133,11 @@ impl Openid4vciRepository {
             {
                 return Err(CredentialStoreError::InvalidTransition);
             }
-            let mut guard = crate::pool::DiscardOnDrop(Some(
+            let mut guard = crate::pool::DiscardOnDrop::new(
                 get_conn(&self.pool)
                     .await
                     .map_err(|_| CredentialStoreError::Unavailable)?,
-            ));
+            );
             let result = guard.connection().transaction::<(), OfferCommitError, _>(async move |connection| {
                 // Follow the revocation lock order: subject, client/grant, offer.
                 let active = sql_query("SELECT id FROM users WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE FOR SHARE")

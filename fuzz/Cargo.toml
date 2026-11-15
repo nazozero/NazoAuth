@@ -3,9 +3,13 @@ name = "nazoauth-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+rust-version = "1.100.0"
 
 [package.metadata]
 cargo-fuzz = true
+
+[lints.cargo]
+unused_dependencies = "warn"
 
 [dependencies]
 nazo-crypto = { path = "../crates/crypto", features = ["ed25519"] }

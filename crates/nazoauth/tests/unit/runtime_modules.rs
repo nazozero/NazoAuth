@@ -76,6 +76,7 @@ fn vp_drain_horizon_uses_the_constructed_transaction_ttl_instead_of_session_ttl(
 mod scheduler {
     use super::*;
     use std::collections::BTreeMap;
+    use std::mem::DropGuard;
     use std::sync::{
         Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -90,16 +91,6 @@ mod scheduler {
         max_live: AtomicUsize,
         starts: Mutex<BTreeMap<ModuleId, usize>>,
         writes: AtomicUsize,
-    }
-    struct LiveGuard(Arc<Counts>, bool);
-    impl Drop for LiveGuard {
-        fn drop(&mut self) {
-            if self.1 {
-                self.0.planners_live.fetch_sub(1, Ordering::SeqCst);
-            } else {
-                self.0.live.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
     }
     fn start_loop(
         counts: Arc<Counts>,
@@ -116,7 +107,9 @@ mod scheduler {
                 Box::pin(async move {
                     let read = counts.reads.fetch_add(1, Ordering::SeqCst);
                     counts.planners_live.fetch_add(1, Ordering::SeqCst);
-                    let _guard = LiveGuard(counts, true);
+                    let _guard = DropGuard::new(&counts.planners_live, |live| {
+                        live.fetch_sub(1, Ordering::SeqCst);
+                    });
                     if read == 0 {
                         first_plan.acquire().await.unwrap().forget();
                     }
@@ -130,7 +123,9 @@ mod scheduler {
                     *counts.starts.lock().unwrap().entry(id).or_default() += 1;
                     let live = counts.live.fetch_add(1, Ordering::SeqCst) + 1;
                     counts.max_live.fetch_max(live, Ordering::SeqCst);
-                    let _guard = LiveGuard(counts.clone(), false);
+                    let _guard = DropGuard::new(&counts.live, |live| {
+                        live.fetch_sub(1, Ordering::SeqCst);
+                    });
                     if let Some(hold) = hold {
                         hold.acquire().await.unwrap().forget();
                     }
@@ -252,7 +247,9 @@ mod scheduler {
                 Box::pin(async move {
                     let read = counts.reads.fetch_add(1, Ordering::SeqCst);
                     counts.planners_live.fetch_add(1, Ordering::SeqCst);
-                    let _guard = LiveGuard(counts, true);
+                    let _guard = DropGuard::new(&counts.planners_live, |live| {
+                        live.fetch_sub(1, Ordering::SeqCst);
+                    });
                     if read != 0 {
                         hold.acquire().await.unwrap().forget();
                     }
@@ -268,7 +265,9 @@ mod scheduler {
                 Box::pin(async move {
                     *counts.starts.lock().unwrap().entry(id).or_default() += 1;
                     counts.live.fetch_add(1, Ordering::SeqCst);
-                    let _guard = LiveGuard(counts.clone(), false);
+                    let _guard = DropGuard::new(&counts.live, |live| {
+                        live.fetch_sub(1, Ordering::SeqCst);
+                    });
                     hold.acquire().await.unwrap().forget();
                     counts.writes.fetch_add(1, Ordering::SeqCst);
                     Ok(ReconcileOutcome::NoChange)

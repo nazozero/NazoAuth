@@ -103,7 +103,7 @@ impl TokenRepository {
             .as_uuid();
         let connection = self.connection().await?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard.connection()
             .transaction::<RecoveryInvalidation, RecoveryInvalidationFailure, _>(async |connection| {
                 lock_recovery_invalidation_scope(connection, tenant_id).await?;
@@ -378,7 +378,7 @@ impl TokenRepository {
                     revoked_at: Utc::now(),
                     expires_at: deadline,
                 });
-        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<usize, diesel::result::Error, _>(async |connection| {

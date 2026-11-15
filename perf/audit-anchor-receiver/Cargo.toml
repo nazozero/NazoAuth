@@ -2,6 +2,7 @@
 name = "nazo-audit-anchor-receiver"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.100.0"
 description = "Reference audit-anchor receiver for benchmark and failure-injection runs"
 license = "MIT OR Apache-2.0"
 publish = false
@@ -25,3 +26,6 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring
 uuid = { version = "1.28.0", features = ["serde", "v4"] }
 
 [workspace]
+
+[lints.cargo]
+unused_dependencies = "warn"

@@ -74,12 +74,10 @@ async fn live_http_attestation_holder_limit_precedes_nonce_claim_for_immediate_a
         };
         let token = credential_access_token(&fixture, &configuration_id).await;
         let nonce = fixture.issuer.nonce(None).await.unwrap();
-        let keys: Vec<Value> = (0..11)
-            .map(|_| {
-                crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256)
-                    .public_jwk("holder")
-            })
-            .collect();
+        let keys = Vec::from_fn(11, |_| {
+            crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256)
+                .public_jwk("holder")
+        });
         let attest = |keys: &[Value]| {
             let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
             header.typ = Some("key-attestation+jwt".to_owned());

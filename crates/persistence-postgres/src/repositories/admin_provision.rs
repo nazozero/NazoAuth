@@ -74,7 +74,7 @@ impl AdminProvisionRepository {
             .map_err(|_| AdminProvisionError::Unavailable)?;
 
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, AdminProvisionError, _>(async move |connection| {

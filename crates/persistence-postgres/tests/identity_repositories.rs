@@ -909,9 +909,9 @@ async fn failed_totp_enrollment_confirmation_is_durably_audited_without_state_ch
                 user_id,
                 "invalid",
                 1_234_567 * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
-                (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
-                    .map(|index| format!("unused-invalid-attempt-hash-{index}"))
-                    .collect(),
+                Vec::from_fn(nazo_identity::mfa::MFA_BACKUP_CODE_COUNT, |index| {
+                    format!("unused-invalid-attempt-hash-{index}")
+                }),
             )
             .await
             .unwrap(),
@@ -947,9 +947,9 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
     let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step).unwrap();
     let hashes = |prefix: &str| {
-        (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
-            .map(|index| format!("{prefix}-backup-hash-{index}"))
-            .collect::<Vec<_>>()
+        Vec::from_fn(nazo_identity::mfa::MFA_BACKUP_CODE_COUNT, |index| {
+            format!("{prefix}-backup-hash-{index}")
+        })
     };
 
     let (left, right) = tokio::join!(
@@ -1181,9 +1181,9 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         TotpEnrollmentCheck::ValidCode
     );
 
-    let invalid_hashes = (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
-        .map(|index| EncodedSecretHash::new(format!("invalid-{index}")).unwrap())
-        .collect();
+    let invalid_hashes = Vec::from_fn(nazo_identity::mfa::MFA_BACKUP_CODE_COUNT, |index| {
+        EncodedSecretHash::new(format!("invalid-{index}")).unwrap()
+    });
     assert_eq!(
         trait_repository
             .verify_and_confirm_totp(
@@ -1203,9 +1203,9 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .unwrap();
 
     let code = nazo_identity::mfa::totp_for_step(&secret, step).unwrap();
-    let hashes = (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
-        .map(|index| EncodedSecretHash::new(format!("backup-{index}")).unwrap())
-        .collect();
+    let hashes = Vec::from_fn(nazo_identity::mfa::MFA_BACKUP_CODE_COUNT, |index| {
+        EncodedSecretHash::new(format!("backup-{index}")).unwrap()
+    });
     assert_eq!(
         trait_repository
             .verify_and_confirm_totp(tenant.tenant_id, user_id, &code, timestamp, hashes)
@@ -1236,9 +1236,9 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
                 user_id,
                 &code,
                 timestamp,
-                (0..nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
-                    .map(|index| EncodedSecretHash::new(format!("replay-{index}")).unwrap())
-                    .collect(),
+                Vec::from_fn(nazo_identity::mfa::MFA_BACKUP_CODE_COUNT, |index| {
+                    EncodedSecretHash::new(format!("replay-{index}")).unwrap()
+                }),
             )
             .await
             .unwrap(),
@@ -1878,9 +1878,9 @@ async fn mfa_backup_code_bounds_and_enrollment_conflict_are_explicit() {
                 tenant.tenant_id,
                 user_id,
                 fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
-                (0..=nazo_identity::mfa::MFA_BACKUP_CODE_COUNT)
-                    .map(|index| format!("hash-{index}"))
-                    .collect(),
+                Vec::from_fn(nazo_identity::mfa::MFA_BACKUP_CODE_COUNT + 1, |index| {
+                    format!("hash-{index}")
+                }),
             )
             .await
             .unwrap_err(),
@@ -2624,8 +2624,7 @@ impl<'ast> syn::visit::Visit<'ast> for OAuthClientTableVisitor {
     fn visit_ident(&mut self, ident: &'ast syn::Ident) {
         let ident = ident.to_string();
         if ident
-            .strip_prefix("r#")
-            .unwrap_or(&ident)
+            .trim_prefix("r#")
             .eq_ignore_ascii_case("oauth_clients")
         {
             self.found = true;

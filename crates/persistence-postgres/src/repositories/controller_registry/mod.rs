@@ -170,11 +170,11 @@ impl ControllerRegistryRepository {
         let approval_token = approval_token.as_str();
 
         let token_hash = approval_token_digest(approval_token);
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(CommitWithApprovalError::transport)?,
-        ));
+        );
         let result = guard
             .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
@@ -234,11 +234,11 @@ impl ControllerRegistryRepository {
         let expected_action_sha256 = action_sha256;
 
         let token_hash = approval_token_digest(approval_token);
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(CommitWithApprovalError::transport)?,
-        ));
+        );
         let result = guard
             .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {
@@ -289,11 +289,11 @@ impl ControllerRegistryRepository {
         let expected_action_sha256 = action_sha256;
 
         let token_hash = approval_token_digest(approval_token);
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(CommitWithApprovalError::transport)?,
-        ));
+        );
         let result = guard
             .connection()
             .transaction::<_, CommitWithApprovalError, _>(async move |connection| {

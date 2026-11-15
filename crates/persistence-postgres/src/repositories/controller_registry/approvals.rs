@@ -150,9 +150,9 @@ impl ControllerRegistryRepository {
         let token_hash = approval_token_digest(&token);
         let approval_id = Uuid::now_v7();
         let expires_at = now + Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool).await.map_err(approval_transport)?,
-        ));
+        );
         let result = guard
             .connection()
             .transaction::<_, IdentityApprovalError, _>(async move |connection| {

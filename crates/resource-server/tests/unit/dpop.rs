@@ -120,16 +120,14 @@ fn replay_cache_expires_only_due_entries_after_clock_rollback() {
 fn cloned_replay_verifiers_have_one_atomic_winner() {
     let verifier = DpopProofVerifier::new(DpopProofVerifierConfig::default());
     let barrier = Arc::new(std::sync::Barrier::new(2));
-    let handles: Vec<_> = (0..2)
-        .map(|_| {
-            let verifier = verifier.clone();
-            let barrier = Arc::clone(&barrier);
-            std::thread::spawn(move || {
-                barrier.wait();
-                verifier.check_replay("key", "shared", 100, 110)
-            })
+    let handles = Vec::from_fn(2, |_| {
+        let verifier = verifier.clone();
+        let barrier = Arc::clone(&barrier);
+        std::thread::spawn(move || {
+            barrier.wait();
+            verifier.check_replay("key", "shared", 100, 110)
         })
-        .collect();
+    });
     let outcomes: Vec<_> = handles
         .into_iter()
         .map(|handle| handle.join().unwrap())

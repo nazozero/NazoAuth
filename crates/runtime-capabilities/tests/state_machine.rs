@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::convert::Infallible;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Barrier, Mutex};
@@ -319,7 +318,7 @@ impl InMemoryRepository {
 }
 
 impl ModuleStateRepository for InMemoryRepository {
-    type Error = Infallible;
+    type Error = !;
 
     async fn read_desired(
         &self,

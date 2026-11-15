@@ -978,6 +978,7 @@ def stop_samplers(run_id: str) -> None:
 WORKSPACE_FILES = (
     "docker-compose.perf.yml",
     "Containerfile",
+    ".cargo/config.toml",
     "perf/env.yaml",
     "perf/runner.py",
     "perf/seed.py",

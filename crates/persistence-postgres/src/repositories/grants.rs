@@ -194,7 +194,7 @@ impl GrantRepository {
         write: nazo_auth::DeviceGrantWrite<'_>,
     ) -> Result<(), RepositoryError> {
         let connection = self.connection().await?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard.connection().transaction::<_, diesel::result::Error, _>(
             async |connection| {
                 oauth_clients::table
@@ -261,7 +261,7 @@ impl GrantRepository {
         let connection = get_conn(&self.pool).await.map_err(|_| {
             AdminGrantRevokeError::ClientLookup(AuthorizationPortError::Unavailable)
         })?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<AdminGrantRevocation, GrantRevokeTransactionError, _>(

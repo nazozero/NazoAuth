@@ -20,6 +20,7 @@ use std::{
     borrow::Cow,
     future::Future,
     io::{Error, ErrorKind},
+    mem::DropGuard,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     sync::{Arc, LazyLock},
@@ -32,8 +33,6 @@ const EXTERNAL_SIGNER_REAP_TIMEOUT: std::time::Duration = std::time::Duration::f
 
 static EXTERNAL_SIGNER_SLOTS: LazyLock<Semaphore> =
     LazyLock::new(|| Semaphore::new(MAX_CONCURRENT_EXTERNAL_SIGNERS));
-
-struct AbortTasksOnDrop([tokio::task::AbortHandle; 2]);
 
 #[derive(Serialize)]
 struct SignerRequest<'a> {
@@ -54,14 +53,6 @@ struct SignerResponse<'a> {
 enum ExternalSignerRequestWriteError {
     Io(std::io::Error),
     TimedOut,
-}
-
-impl Drop for AbortTasksOnDrop {
-    fn drop(&mut self) {
-        for task in &self.0 {
-            task.abort();
-        }
-    }
 }
 
 async fn write_external_signer_request(
@@ -264,8 +255,14 @@ async fn sign_external_jwt_input(
         .ok_or_else(|| anyhow::anyhow!("external signer stderr unavailable"))?;
     let mut stdout_task = tokio::spawn(read_limited(stdout, MAX_EXTERNAL_SIGNER_STDOUT_BYTES));
     let mut stderr_task = tokio::spawn(read_limited(stderr, MAX_EXTERNAL_SIGNER_STDERR_BYTES));
-    let _reader_abort_guard =
-        AbortTasksOnDrop([stdout_task.abort_handle(), stderr_task.abort_handle()]);
+    let _reader_abort_guard = DropGuard::new(
+        [stdout_task.abort_handle(), stderr_task.abort_handle()],
+        |tasks| {
+            for task in tasks {
+                task.abort();
+            }
+        },
+    );
     let request_body = serde_json::to_vec(&request)?;
     match write_external_signer_request(&mut stdin, &request_body, deadline).await {
         Ok(()) => {}

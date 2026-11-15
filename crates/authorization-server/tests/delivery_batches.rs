@@ -185,7 +185,7 @@ fn ping(id: usize) -> CibaPingDelivery {
 
 #[test]
 fn ciba_batch_bounds_claim_and_concurrency_and_drains_before_first_error() {
-    let originals = (0..12).map(ping).collect::<Vec<_>>();
+    let originals = Vec::from_fn(12, ping);
     let mut store = PingStore::new(originals.clone());
     store
         .results
@@ -389,7 +389,7 @@ fn logout(id: usize) -> BackchannelLogoutDelivery {
 
 #[test]
 fn logout_batch_keeps_twenty_claims_eight_senders_and_drains_before_first_error() {
-    let mut deliveries = (0..25).map(logout).collect::<Vec<_>>();
+    let mut deliveries = Vec::from_fn(25, logout);
     for (index, delivery) in deliveries.iter_mut().enumerate() {
         delivery.attempts = i32::try_from(index + 3).unwrap();
     }

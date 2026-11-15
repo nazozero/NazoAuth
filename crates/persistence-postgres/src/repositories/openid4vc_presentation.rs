@@ -224,11 +224,11 @@ impl PresentationStorePort for Openid4vpRepository {
                 transaction_id,
                 &encoded,
             )?;
-            let mut guard = crate::pool::DiscardOnDrop(Some(
+            let mut guard = crate::pool::DiscardOnDrop::new(
                 get_conn(&self.pool)
                     .await
                     .map_err(|_| PresentationStoreError::Unavailable)?,
-            ));
+            );
             let completed = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async |connection| {
                     // Finish the potentially blocking record lock before the

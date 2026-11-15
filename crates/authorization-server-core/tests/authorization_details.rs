@@ -31,16 +31,12 @@ fn authorization_details_enforce_rar_size_and_cardinality_limits() {
     let oversized = " ".repeat(16 * 1024 + 1);
     assert!(parse_authorization_details(Some(&oversized)).is_err());
 
-    let too_many_items = json!(
-        (0..33)
-            .map(|_| json!({"type": "account_information"}))
-            .collect::<Vec<_>>()
-    );
+    let too_many_items = json!(Vec::from_fn(33, |_| json!({"type": "account_information"})));
     assert!(normalize_authorization_details(too_many_items).is_err());
 
     let too_many_actions = json!([{
         "type": "account_information",
-        "actions": (0..33).map(|_| json!("read")).collect::<Vec<_>>()
+        "actions": Vec::from_fn(33, |_| json!("read"))
     }]);
     assert!(normalize_authorization_details(too_many_actions).is_err());
 }

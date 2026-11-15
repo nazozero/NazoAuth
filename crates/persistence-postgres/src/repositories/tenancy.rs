@@ -142,7 +142,7 @@ impl TenantDirectoryRepository {
             }
         })?;
         let result = {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard.connection()
             .transaction::<_, diesel::result::Error, _>(async move |connection| {
                 let tenant_id = binding.tenant.tenant_id.as_uuid();
@@ -512,7 +512,7 @@ impl TenantDirectoryRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, DirectoryMutationError, _>(async move |connection| {
@@ -673,7 +673,7 @@ impl TenantDirectoryRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, DirectoryMutationError, _>(async move |connection| {
@@ -708,7 +708,7 @@ impl TenantDirectoryRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, DirectoryMutationError, _>(async move |connection| {
@@ -740,7 +740,7 @@ impl TenantDirectoryRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, DirectoryMutationError, _>(async move |connection| {

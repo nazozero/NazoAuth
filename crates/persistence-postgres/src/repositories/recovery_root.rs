@@ -540,11 +540,11 @@ impl RecoveryRootRepository {
         let approval_token = approval_token.as_str();
         let token_hash = blake3::hash(approval_token.as_bytes()).to_hex().to_string();
         let expected_action_sha256 = action_sha256;
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(RecoveryRotationError::Transport)?,
-        ));
+        );
         let result = guard
             .connection()
             .transaction::<_, RecoveryRotationError, _>(async move |connection| {
@@ -600,7 +600,7 @@ impl RecoveryRootRepository {
     ) -> Result<IssuedRecoveryChallenge, RecoveryRootError> {
         let connection = get_conn(&self.pool).await.map_err(transport)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<_, RecoveryRootError, _>(async move |connection| {
@@ -805,7 +805,7 @@ impl RecoveryRootRepository {
         validate_deployment_id(&submission.deployment_id)
             .map_err(|_| RecoveryRootError::InvalidIdentity("deployment_id is invalid"))?;
         let connection = get_conn(&self.pool).await.map_err(transport)?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let outcome = guard.connection()
             .transaction::<_, RecoveryRootError, _>(async move |connection| {
                 lock_deployment_recovery(connection, &submission.deployment_id).await?;

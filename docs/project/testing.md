@@ -158,7 +158,8 @@ cannot share compiled workspace artifacts. Release checks consume successful gov
 | Release | Require successful governed main CI, then build, scan and verify the release artifacts. Do not dispatch another complete functional CI run. |
 | Weekly or manual checks | Execute selected checks even with matching prior inputs; coverage uses its own instrumented build. |
 
-Use Rust 1.100.0, pinned in `rust-toolchain.toml` and the build images. The
+Rust 1.100.0 is the minimum supported version, declared in every package's
+manifest and pinned in `rust-toolchain.toml` and the build images. The
 workflow toolchain actions use the same release at an immutable revision. The executable CI definition
 is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
 service versions, fixtures, and complete environment. Python tools use
@@ -167,6 +168,29 @@ separate system interpreter for OS tools. The S3 fixture builds the pinned
 latest public MinIO and mc releases; see [its source and license details](../../tests/fixtures/minio/README.md).
 Do not point these tests
 at a deployment database or state store.
+
+The workspace treats Cargo's native unused-dependency diagnostics as errors;
+the standalone fuzz and benchmark packages report them as warnings.
+When reviewing dependency scope, check production targets separately from tests:
+
+```sh
+cargo check --workspace --lib --bins --all-features --locked
+```
+
+The all-target Clippy check below also builds tests, whose imports can conceal a
+dependency that belongs only in `[dev-dependencies]`. Cargo does not check unused
+development dependencies, even with `--all-targets`; a dependency used only to
+enable a transitive feature also needs manual review before removal.
+
+The repository's `.cargo/config.toml` requires registry releases to be at least
+three days old before Cargo selects them during dependency resolution. Versions
+already in `Cargo.lock` remain usable with `--locked`. Registries without publish
+timestamps and `cargo install` are outside this policy. For a reviewed urgent
+fix, override the policy for that update and commit the resulting lockfile:
+
+```sh
+CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow cargo update <crate> --precise <version>
+```
 
 Construct PostgreSQL pools inside a Tokio runtime that lives at least as long
 as the pool. Test-local pools can use the test runtime; a process-lifetime

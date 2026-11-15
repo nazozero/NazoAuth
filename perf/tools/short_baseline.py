@@ -26,7 +26,7 @@ BASE_RATES = {"cap_client_credentials": 1000, "cap_mixed": 400,
 FINAL_RESERVE = 240
 COMMAND_DEADLINE = None
 CONFIRM_WINDOW = 570  # 360-second retention + 210 seconds of mature samples
-APP_INPUTS = ("crates", "migrations", "Cargo.toml", "Cargo.lock",
+APP_INPUTS = ("crates", "migrations", ".cargo", "Cargo.toml", "Cargo.lock",
               "rust-toolchain.toml", "Containerfile", ".env.yaml.example", "perf/env.yaml")
 
 

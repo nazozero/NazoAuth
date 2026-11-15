@@ -850,9 +850,7 @@ async fn ciba_creation_stops_after_four_collisions() {
     let connection = nazo_valkey::test_support::scoped_connection(valkey.clone());
     let now = valkey_server_time(&valkey).await;
     let state = pending_state(now);
-    let ids = (0..4)
-        .map(|index| format!("collision-{index}-{}", Uuid::now_v7()))
-        .collect::<Vec<_>>();
+    let ids = Vec::from_fn(4, |index| format!("collision-{index}-{}", Uuid::now_v7()));
     for auth_req_id in &ids {
         assert_eq!(
             CibaStore::new(&connection)

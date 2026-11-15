@@ -326,7 +326,7 @@ impl AccessRequestRepository {
                 "prepared client tenant does not match the approving administrator".to_owned(),
             ));
         }
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let result = guard.connection()
             .transaction::<nazo_persistence::AdminAccessRequestApproval, ApprovalError, _>(
                 async |connection| {
@@ -416,7 +416,7 @@ impl AccessRequestRepository {
         admin_note: String,
     ) -> Result<AccessRequest, RepositoryError> {
         let tenant_id = tenant.tenant_id;
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<AccessRequest, ApprovalError, _>(async move |connection| {

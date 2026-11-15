@@ -6,6 +6,7 @@ on:
       - ".github/workflows/dependency-review.yml"
       - "Cargo.toml"
       - "Cargo.lock"
+      - ".cargo/**"
       - "rust-toolchain"
       - "rust-toolchain.toml"
       - "crates/**/Cargo.toml"

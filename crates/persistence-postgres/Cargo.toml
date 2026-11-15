@@ -2,6 +2,7 @@
 name = "nazo-postgres"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
@@ -38,7 +39,6 @@ tokio-postgres.workspace = true
 tokio-postgres-rustls.workspace = true
 tracing.workspace = true
 zeroize.workspace = true
-url.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
 
 [dev-dependencies]
@@ -49,6 +49,7 @@ jsonwebtoken.workspace = true
 rcgen.workspace = true
 syn = { version = "3.0.9", features = ["full", "visit"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync"] }
+url.workspace = true
 
 [lints]
 workspace = true

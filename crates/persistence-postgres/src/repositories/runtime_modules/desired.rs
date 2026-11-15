@@ -94,7 +94,7 @@ pub(super) async fn compare_and_set_desired(
     let expected_next = next_desired_revision(change.expected_revision)?;
     let connection = repository.connection().await?;
     {
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<CasOutcome<DesiredStateRecord>, RuntimeTransactionError, _>(

@@ -564,15 +564,13 @@ async fn audit_ledger_append_batch_commits_atomically() {
         .await
         .expect("a repeated identical single-event batch should be idempotent");
 
-    let mut batch: Vec<SecurityAuditEvent> = (0..64)
-        .map(|index| SecurityAuditEvent {
-            event_id: Uuid::now_v7(),
-            event_type: "token_issued".to_owned(),
-            event_category: "token_lifecycle".to_owned(),
-            payload: json!({"subject_hash": format!("batch-{index}")}),
-            occurred_at: Utc::now(),
-        })
-        .collect();
+    let mut batch = Vec::from_fn(64, |index| SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "token_issued".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: json!({"subject_hash": format!("batch-{index}")}),
+        occurred_at: Utc::now(),
+    });
     repository
         .append_batch(&batch)
         .await
@@ -610,15 +608,13 @@ async fn audit_ledger_append_batch_commits_atomically() {
     // A payload collision part-way through the batch must roll the whole
     // transaction back: none of the preceding events may survive.
     let collided_id = batch[10].event_id;
-    let mut failing: Vec<SecurityAuditEvent> = (0..8)
-        .map(|index| SecurityAuditEvent {
-            event_id: Uuid::now_v7(),
-            event_type: "token_issued".to_owned(),
-            event_category: "token_lifecycle".to_owned(),
-            payload: json!({"subject_hash": format!("failing-{index}")}),
-            occurred_at: Utc::now(),
-        })
-        .collect();
+    let mut failing = Vec::from_fn(8, |index| SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "token_issued".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: json!({"subject_hash": format!("failing-{index}")}),
+        occurred_at: Utc::now(),
+    });
     failing.push(SecurityAuditEvent {
         event_id: collided_id,
         event_type: "token_issued".to_owned(),
@@ -1163,15 +1159,13 @@ async fn audit_claim_survives_dead_prefix_and_autovacuum_recovers() {
     // vacuum threshold, so the natural autovacuum must fire on its own once
     // re-enabled.
     for round in 0..12 {
-        let events: Vec<SecurityAuditEvent> = (0..256)
-            .map(|i| SecurityAuditEvent {
-                event_id: Uuid::now_v7(),
-                event_type: "token_issued".to_owned(),
-                event_category: "token_lifecycle".to_owned(),
-                payload: json!({"fixture": "dead_prefix", "round": round, "i": i}),
-                occurred_at: Utc::now(),
-            })
-            .collect();
+        let events = Vec::from_fn(256, |i| SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: "token_issued".to_owned(),
+            event_category: "token_lifecycle".to_owned(),
+            payload: json!({"fixture": "dead_prefix", "round": round, "i": i}),
+            occurred_at: Utc::now(),
+        });
         repository
             .append_batch(&events)
             .await
@@ -1193,15 +1187,13 @@ async fn audit_claim_survives_dead_prefix_and_autovacuum_recovers() {
 
     // Fresh pending rows behind the dead prefix; the re-claim must still
     // return the correct bounded prefix and its measured cost is recorded.
-    let live: Vec<SecurityAuditEvent> = (0..512)
-        .map(|i| SecurityAuditEvent {
-            event_id: Uuid::now_v7(),
-            event_type: "token_issued".to_owned(),
-            event_category: "token_lifecycle".to_owned(),
-            payload: json!({"fixture": "dead_prefix_live", "i": i}),
-            occurred_at: Utc::now(),
-        })
-        .collect();
+    let live = Vec::from_fn(512, |i| SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "token_issued".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: json!({"fixture": "dead_prefix_live", "i": i}),
+        occurred_at: Utc::now(),
+    });
     repository
         .append_batch(&live)
         .await

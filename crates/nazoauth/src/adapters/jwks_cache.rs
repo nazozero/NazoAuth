@@ -47,18 +47,16 @@ impl JwksCache {
         // keep one shard; the production capacity of 256 uses eight of 32.
         let count = (capacity.get() / 32).clamp(1, 8);
         Self {
-            states: (0..count)
-                .map(|index| {
-                    let slots =
-                        capacity.get() / count + usize::from(index < capacity.get() % count);
-                    RwLock::new(State {
-                        entries: LruCache::new(
-                            NonZeroUsize::new(slots).expect("nonzero shard capacity"),
-                        ),
-                        pending: HashMap::new(),
-                    })
+            states: Vec::from_fn(count, |index| {
+                let slots = capacity.get() / count + usize::from(index < capacity.get() % count);
+                RwLock::new(State {
+                    entries: LruCache::new(
+                        NonZeroUsize::new(slots).expect("nonzero shard capacity"),
+                    ),
+                    pending: HashMap::new(),
                 })
-                .collect(),
+            })
+            .into_boxed_slice(),
             hasher: RandomState::new(),
             ttl,
         }

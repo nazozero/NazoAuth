@@ -31,7 +31,7 @@ impl Openid4vciRepository {
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<Option<StoredCredentialResponse>, diesel::result::Error, _>(
                     async move |connection| {
@@ -128,7 +128,7 @@ impl Openid4vciRepository {
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                     insert_issuance_response(
@@ -204,7 +204,7 @@ impl Openid4vciRepository {
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     insert_issuance_response(
@@ -271,7 +271,7 @@ impl Openid4vciRepository {
             let notification_token_id = handle.token_id;
             let notification_expires_at = handle.expires_at;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                     insert_issuance_response(
@@ -333,7 +333,7 @@ impl Openid4vciRepository {
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                     let handle = sql_query(

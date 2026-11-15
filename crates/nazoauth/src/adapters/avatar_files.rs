@@ -45,11 +45,7 @@ impl LocalAvatarStorage {
     pub(crate) fn new(root: PathBuf) -> Self {
         Self {
             root: Arc::new(root),
-            locks: Arc::new(
-                (0..LOCK_STRIPES)
-                    .map(|_| Arc::new(Mutex::new(())))
-                    .collect(),
-            ),
+            locks: Arc::new(Vec::from_fn(LOCK_STRIPES, |_| Arc::new(Mutex::new(())))),
         }
     }
 

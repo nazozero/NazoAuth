@@ -93,13 +93,13 @@ fn enumerate_result_data() -> ControlResultData {
 fn result_data_wire_validation_includes_the_complete_result_envelope() {
     validate_control_result_data_for_wire(&enumerate_result_data()).unwrap();
 
-    let resources = (0..MAX_TENANT_RESOURCE_IDENTITIES)
-        .map(|index| TenantResourceIdentity {
+    let resources = Vec::from_fn(MAX_TENANT_RESOURCE_IDENTITIES, |index| {
+        TenantResourceIdentity {
             kind: TenantResourceKind::User,
             resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
             digest: "f".repeat(64),
-        })
-        .collect::<Vec<_>>();
+        }
+    });
     let resource_mappings = resources
         .iter()
         .map(|resource| TenantResourceMapping {
@@ -495,9 +495,9 @@ fn tenant_resource_payloads_are_bounded_typed_and_unique() {
     });
 
     // Over-large sets are refused.
-    let flood = (0..=MAX_TENANT_RESOURCE_IDENTITIES)
-        .map(|index| resource(TenantResourceKind::User, format!("user-{index}").as_str()))
-        .collect::<Vec<_>>();
+    let flood = Vec::from_fn(MAX_TENANT_RESOURCE_IDENTITIES + 1, |index| {
+        resource(TenantResourceKind::User, format!("user-{index}").as_str())
+    });
     assert_eq!(flood.len(), MAX_TENANT_RESOURCE_IDENTITIES + 1);
     expect_policy_error(ControlOperationPayload::TenantResourceApply {
         tenant_id: TENANT_ID.to_owned(),
@@ -846,9 +846,9 @@ fn typed_result_data_is_closed_and_outcome_coupled() {
     let mut flooded = result_entry();
     flooded.result = ControlResultData::TenantResourceEnumerate {
         revision: 1,
-        resources: (0..=MAX_TENANT_RESOURCE_IDENTITIES)
-            .map(|index| resource(TenantResourceKind::User, format!("user-{index}").as_str()))
-            .collect(),
+        resources: Vec::from_fn(MAX_TENANT_RESOURCE_IDENTITIES + 1, |index| {
+            resource(TenantResourceKind::User, format!("user-{index}").as_str())
+        }),
         resource_manifest_sha256: "f".repeat(64),
     }
     .into();
@@ -879,14 +879,12 @@ fn oversize_canonical_payloads_are_refused() {
     let mut operation = operation();
     operation.operation = ControlOperationPayload::TenantResourceApply {
         tenant_id: TENANT_ID.to_owned(),
-        resources: (0..MAX_TENANT_RESOURCE_IDENTITIES)
-            .map(|index| {
-                resource(
-                    TenantResourceKind::Openid4vcTrustPolicy,
-                    &format!("{index:03}-{}", "x".repeat(124)),
-                )
-            })
-            .collect(),
+        resources: Vec::from_fn(MAX_TENANT_RESOURCE_IDENTITIES, |index| {
+            resource(
+                TenantResourceKind::Openid4vcTrustPolicy,
+                &format!("{index:03}-{}", "x".repeat(124)),
+            )
+        }),
     };
     validate_control_operation(&operation).unwrap();
     assert!(matches!(

@@ -55,11 +55,11 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
                 async move {
-                    let mut guard = DiscardOnDrop(Some(
+                    let mut guard = DiscardOnDrop::new(
                         get_conn(&pool)
                             .await
                             .map_err(|_| AuthorizationPortError::Unavailable)?,
-                    ));
+                    );
                     let result = if input.decision != AuthorizationDecisionKind::PromptNone {
                         // Drain the complete result stream before publishing an outcome.
                         // ReadyForQuery confirms the implicit commit; the first row alone
