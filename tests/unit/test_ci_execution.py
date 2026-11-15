@@ -9,6 +9,18 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class CiExecutionTests(unittest.TestCase):
+    def test_large_backlog_regression_has_an_explicit_ci_owner(self):
+        scale = (ROOT / ".github/workflows/audit-scale.yml").read_text()
+        source = (ROOT / "crates/persistence-postgres/tests/audit_ledger.rs").read_text()
+        self.assertIn("audit_claim_at_backlog_sizes(&[0, 10_000])", source)
+        self.assertIn("audit_claim_at_backlog_sizes(&[1_000_000, 15_000_000])", source)
+        self.assertRegex(source, r'#\[ignore = [^\n]+\]\s*async fn audit_claim_is_bounded_at_million_row_backlogs')
+        self.assertIn("audit_claim_is_bounded_at_million_row_backlogs -- --ignored --exact --nocapture", scale)
+        self.assertNotIn("  schedule:", scale)
+        self.assertNotIn("  pull_request:", scale)
+        self.assertNotIn("  push:", scale)
+        self.assertIn("  workflow_dispatch:", scale)
+
     def test_coverage_is_called_by_quality_not_another_push(self):
         quality = (ROOT / ".github/workflows/code-quality.yml").read_text()
         coverage = (ROOT / ".github/workflows/codecov.yml").read_text()

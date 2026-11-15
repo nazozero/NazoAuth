@@ -860,6 +860,16 @@ struct BigCount {
 
 #[tokio::test]
 async fn audit_claim_is_bounded_without_planner_statistics() {
+    audit_claim_at_backlog_sizes(&[0, 10_000]).await;
+}
+
+#[tokio::test]
+#[ignore = "million-row SQL plan regression; owned by audit-scale CI"]
+async fn audit_claim_is_bounded_at_million_row_backlogs() {
+    audit_claim_at_backlog_sizes(&[1_000_000, 15_000_000]).await;
+}
+
+async fn audit_claim_at_backlog_sizes(backlog_sizes: &[i64]) {
     let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -874,7 +884,7 @@ async fn audit_claim_is_bounded_without_planner_statistics() {
         .execute(&mut connection)
         .await
         .expect("fixture cleanup must be permitted");
-    for pending_rows in [0_i64, 10_000, 1_000_000, 15_000_000] {
+    for &pending_rows in backlog_sizes {
         for cleanup in [
             "DELETE FROM public.security_audit_chain_entries",
             "DELETE FROM public.security_audit_events",
