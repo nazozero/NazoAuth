@@ -14,7 +14,7 @@ from pathlib import Path
 
 RUST = ("Cargo.*", "rust-toolchain*", "build.rs", ".cargo/*", "crates/*",
         "src/*", "tests/*", "fuzz/*", "benches/*", "examples/*", "migrations/*",
-        "proptest-regressions/*")
+        "proptest-regressions/*", "clippy.toml", "rustfmt.toml", ".rustfmt.toml")
 WORKFLOWS = {
     "rust": "code-quality.yml",
     "codeql": "codeql.yml",
@@ -24,12 +24,12 @@ WORKFLOWS = {
 }
 INPUTS = {
     "rust": RUST + ("scripts/*.sh", ".github/workflows/codecov.yml", "codecov.yml",
-                    "requirements/codecov.txt", "Containerfile", ".env.yaml.example"),
+                    "requirements/codecov.txt", "Containerfile", ".dockerignore", ".env.yaml.example"),
     "codeql": RUST + ("Containerfile", ".dockerignore"),
     # Image construction, HTTP fixtures and source-policy checks are one contract.
     "security": RUST + ("scripts/*", "deploy/*", "Containerfile", "Dockerfile",
                         ".dockerignore", "compose*.yml", ".env.yaml.example", "deny.toml",
-                        ".github/e2e-*"),
+                        ".github/e2e-*", "LICENSE*"),
     "fuzz": ("Cargo.*", "rust-toolchain*", ".cargo/*", "crates/crypto/*",
              "crates/operator-protocol/*", "fuzz/*"),
     "perf": ("perf/*", ".dockerignore"),
@@ -56,13 +56,12 @@ def api(path: str) -> dict:
     return json.loads(subprocess.check_output(["gh", "api", path], text=True))
 
 
-def reusable(run: dict, current: dict, now: datetime) -> bool:
+def reusable(run: dict, current: dict, now: datetime, *, merged_pr: bool = False) -> bool:
     if (run["id"] == current["id"] or run["workflow_id"] != current["workflow_id"]
             or run["status"] != "completed" or run["conclusion"] != "success"
             or run["head_repository"]["full_name"] != current["head_repository"]["full_name"]):
         return False
-    # Do not transfer untrusted PR evidence into main/release, or between PRs.
-    if run["event"] != current["event"] or run["head_branch"] != current["head_branch"]:
+    if not merged_pr and (run["event"] != current["event"] or run["head_branch"] != current["head_branch"]):
         return False
     if current["event"] == "pull_request":
         old_prs = {pr["number"] for pr in run["pull_requests"]}
@@ -75,9 +74,36 @@ def reusable(run: dict, current: dict, now: datetime) -> bool:
     return timedelta(0) <= now - created < timedelta(days=1)
 
 
+def merged_pr_inputs_match(run: dict, current: dict, scope: str, expected: str) -> bool:
+    """Transfer ordinary PR tests to main only when Git proves identical inputs.
+
+    If the tested base was not already in the PR head, its synthetic merge could
+    differ from that head. Run main tests in that case instead of guessing a merge.
+    """
+    if scope != "rust" or current["event"] != "push" or current["head_branch"] != "main" or run["event"] != "pull_request":
+        return False
+    if run["head_repository"]["full_name"] != current["head_repository"]["full_name"]:
+        return False
+    for pr in run["pull_requests"]:
+        if pr["base"]["ref"] != "main" or pr["head"]["sha"] != run["head_sha"]:
+            continue
+        head, base = run["head_sha"], pr["base"]["sha"]
+        subprocess.run(["git", "fetch", "--no-tags", "origin", head, base], check=True,
+                       stdout=subprocess.DEVNULL)
+        ancestor = subprocess.run(["git", "merge-base", "--is-ancestor", base, head])
+        if ancestor.returncode == 1:
+            continue
+        ancestor.check_returncode()
+        prior = subprocess.check_output(["git", "ls-tree", "-r", "-z", head])
+        if fingerprint(scope, prior) == expected:
+            return True
+    return False
+
+
 def decide(scope: str) -> tuple[str, bool, str]:
     tree = subprocess.check_output(["git", "ls-tree", "-r", "-z", "HEAD"])
-    name = f"ci-inputs-{scope}-{fingerprint(scope, tree)}"
+    digest = fingerprint(scope, tree)
+    name = f"ci-inputs-{scope}-{digest}"
     if os.environ["GITHUB_EVENT_NAME"] not in ("push", "pull_request"):
         return name, True, "Manual/scheduled check: execute all selected checks."
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -88,7 +114,10 @@ def decide(scope: str) -> tuple[str, bool, str]:
         if artifact["expired"] or artifact["name"] != name:
             continue
         run = api(f"repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
-        if reusable(run, current, now):
+        if reusable(run, current, now) or (
+            reusable(run, current, now, merged_pr=True)
+            and merged_pr_inputs_match(run, current, scope, digest)
+        ):
             return name, False, f"Identical {scope} inputs passed: {run['html_url']}"
     return name, True, f"No successful run with identical {scope} inputs: execute checks."
 

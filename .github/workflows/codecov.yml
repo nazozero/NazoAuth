@@ -6,6 +6,8 @@ on:
       CODECOV_TOKEN:
         required: true
   workflow_dispatch:
+  schedule:
+    - cron: "41 2 * * 1"
 
 permissions:
   contents: read

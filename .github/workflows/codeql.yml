@@ -24,7 +24,7 @@ jobs:
 
   analyze:
     needs: inputs
-    if: needs.inputs.outputs.run == 'true'
+    if: "!cancelled() && (needs.inputs.result != 'success' || needs.inputs.outputs.run != 'false')"
     name: CodeQL Rust analysis
     runs-on: ubuntu-latest
     timeout-minutes: 60

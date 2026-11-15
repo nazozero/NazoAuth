@@ -24,7 +24,7 @@ jobs:
 
   operator-parser-fuzz:
     needs: inputs
-    if: needs.inputs.outputs.run == 'true'
+    if: "!cancelled() && (needs.inputs.result != 'success' || needs.inputs.outputs.run != 'false')"
     name: Operator JWS parser fuzz gate
     runs-on: ubuntu-latest
     timeout-minutes: 10

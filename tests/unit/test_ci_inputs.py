@@ -24,7 +24,8 @@ class CiInputTests(unittest.TestCase):
 
     def test_source_fixtures_configuration_and_workflow_changes_invalidate(self):
         for path in ("crates/app/src/lib.rs", "crates/app/Cargo.toml", "Cargo.lock",
-                     ".cargo/config.toml", "tests/fixtures/data.json", "migrations/a/up.sql",
+                     ".cargo/config.toml", "clippy.toml", ".dockerignore", "proptest-regressions/support/uri_policy.txt",
+                     "tests/fixtures/data.json", "migrations/a/up.sql",
                      "scripts/generate_codecov_lcov.sh", ".github/workflows/code-quality.yml",
                      ".github/workflows/codecov.yml", "scripts/ci_inputs.py"):
             with self.subTest(path=path):
@@ -83,6 +84,26 @@ class CiInputTests(unittest.TestCase):
         for event in ("workflow_dispatch", "schedule"):
             with patch.dict(gate.os.environ, GITHUB_EVENT_NAME=event):
                 self.assertTrue(gate.decide("rust")[1])
+
+    @patch.object(gate.subprocess, "run")
+    @patch.object(gate.subprocess, "check_output")
+    def test_main_reuses_pr_only_when_its_tested_base_and_inputs_match(self, output, run):
+        prior = self.record(head_sha="tested", pull_requests=[{
+            "number": 272, "base": {"ref": "main", "sha": "base"},
+            "head": {"sha": "tested"},
+        }])
+        current = self.record(id=2, event="push", head_branch="main")
+        output.return_value = tree(("crates/app/src/lib.rs", "tested-blob"))
+        expected = gate.fingerprint("rust", output.return_value)
+        run.return_value.returncode = 0
+        self.assertTrue(gate.merged_pr_inputs_match(prior, current, "rust", expected))
+        run.return_value.returncode = 1
+        self.assertFalse(gate.merged_pr_inputs_match(prior, current, "rust", expected))
+        run.return_value.returncode = 0
+        self.assertFalse(gate.merged_pr_inputs_match(prior, current, "rust", "changed-inputs"))
+        self.assertFalse(gate.merged_pr_inputs_match(prior, current, "security", expected))
+        prior["head_repository"]["full_name"] = "untrusted/fork"
+        self.assertFalse(gate.merged_pr_inputs_match(prior, current, "rust", expected))
 
 
 if __name__ == "__main__":

@@ -364,7 +364,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn("python3 scripts/check_release_ci.py", policy)
         self.assertIn("persist-credentials: false", policy)
 
-    def test_coverage_is_a_main_branch_signal_not_a_pull_request_gate(self) -> None:
+    def test_coverage_is_scheduled_or_manual_not_a_merge_retest(self) -> None:
         coverage = (
             ROOT / ".github" / "workflows" / "codecov.yml"
         ).read_text(encoding="utf-8")
@@ -373,10 +373,11 @@ class ReleaseGovernanceTests(unittest.TestCase):
         quality = (ROOT / ".github/workflows/code-quality.yml").read_text()
         self.assertIn("branches: [main]", quality)
         caller = quality.split("\n  coverage:", 1)[1].split("\n  rust-quality:", 1)[0]
-        self.assertIn("if: github.event_name != 'pull_request'", caller)
+        self.assertIn("if: github.event_name == 'workflow_dispatch'", caller)
         self.assertIn("uses: ./.github/workflows/codecov.yml", caller)
         self.assertIn("  workflow_call:", coverage)
         self.assertNotIn("  push:", coverage)
+        self.assertIn("  schedule:", coverage)
         upload = coverage.split("- name: Upload coverage to Codecov", 1)[1]
         self.assertIn("token: ${{ secrets.CODECOV_TOKEN }}", upload)
         self.assertNotIn("secrets.CODECOV_TOKEN", coverage.split("- name: Upload coverage to Codecov", 1)[0])
@@ -617,7 +618,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             source = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
             self.assertIn("uses: ./.github/workflows/ci-inputs.yml", source, name)
             self.assertIn("needs: inputs", source, name)
-            self.assertIn("if: needs.inputs.outputs.run == 'true'", source, name)
+            self.assertIn("needs.inputs.outputs.run != 'false'", source, name)
 
     def test_operator_fuzz_is_scoped_to_operator_parser_inputs(self) -> None:
         source = (ROOT / ".github" / "workflows" / "operator-fuzz.yml").read_text(

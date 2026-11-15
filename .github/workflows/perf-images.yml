@@ -22,7 +22,7 @@ jobs:
 
   build-and-smoke:
     needs: inputs
-    if: needs.inputs.outputs.run == 'true'
+    if: "!cancelled() && (needs.inputs.result != 'success' || needs.inputs.outputs.run != 'false')"
     name: ${{ matrix.name }} image
     runs-on: ubuntu-latest
     timeout-minutes: 15

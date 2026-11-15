@@ -104,10 +104,16 @@ in-progress runs; main runs remain independent.
 
 This avoids rebuilding and retesting an unchanged service after documentation or
 specification-inventory edits. Changing test or workflow inputs invalidates that
-evidence. PR functional tests and main coverage have different instrumentation and
-are not interchangeable. Main runs the full suite under coverage plus the explicit
-uninstrumented timing/documentation exclusions; it does not also rerun the same
-ordinary full suite. Release checks consume successful governed main CI through
+evidence. Ordinary functional tests can also transfer from a successful same-repo
+PR to main when its tested base is an ancestor of its head and Git proves its
+inputs equal the current main inputs. Otherwise main runs the full ordinary suite.
+This covers direct pushes, changed merge inputs and missing evidence without
+guessing a merge result. Other workflows retain their separate main checks.
+
+Coverage runs weekly and on manual dispatch; it is not repeated on every merge.
+Manual `code-quality` runs coverage plus the uninstrumented timing/documentation
+exclusions. Coverage and ordinary binaries have different instrumentation and
+cannot share compiled workspace artifacts. Release checks consume successful governed main CI through
 `scripts/check_release_ci.py`, then build and verify release artifacts.
 
 Use Rust 1.100.0, pinned in `rust-toolchain.toml` and the build images. The
