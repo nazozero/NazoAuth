@@ -26,7 +26,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
-jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+jsonwebtoken.workspace = true
 futures-executor.workspace = true
 futures-util.workspace = true
 proptest.workspace = true

@@ -17,9 +17,9 @@ from pathlib import Path
 import verify_static_contracts as contracts
 
 BACKEND_PACKAGES = {
-    "aes", "aes-gcm", "aes-gcm-siv", "argon2", "aws-lc-rs",
+    "aes", "aes-kw", "aes-gcm", "aes-gcm-siv", "argon2", "aws-lc-rs",
     "curve25519-dalek", "ed25519-dalek", "jsonwebtoken", "js-sys",
-    "k256", "openssl", "openssl-sys", "p256", "p384", "p521",
+    "k256", "ml-dsa", "openssl", "openssl-sys", "p256", "p384", "p521",
     "pbkdf2", "rcgen", "ring", "rsa", "rscrypto", "scrypt",
     "web-sys", "wolfssl", "wolfssl-sys",
 }
@@ -52,9 +52,9 @@ DTO_EXPORTS = {
     },
 }
 
-# The six capability features are the architectural contract consumers select;
+# The capability features are the architectural contract consumers select;
 # their internal member lists are implementation detail and are not frozen.
-_CRYPTO_FEATURES = {"aead", "ecdh", "ed25519", "jose", "password", "x509"}
+_CRYPTO_FEATURES = {"aead", "ecdh", "ed25519", "jose", "password", "x509", "certificate-issuance"}
 # Types wrapping secret/backend key material: their fields must never be public.
 _CRYPTO_OPAQUE_TYPES = {"VerificationKey", "P256SecretKey", "SigningKey", "VerifyingKey"}
 _PROVIDER_PREFIX = "rustls::crypto::"

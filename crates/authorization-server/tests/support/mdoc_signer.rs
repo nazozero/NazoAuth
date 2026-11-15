@@ -5,7 +5,7 @@ use mdoc_rs::builder::{CoseSigner, DocumentBuilder};
 use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{CredentialFuture, CredentialTrustError};
 use nazo_key_management::Openid4vcSigningLease;
-use rustls::pki_types::{CertificateDer, pem::PemObject as _};
+use rustls_pki_types::{CertificateDer, pem::PemObject as _};
 
 pub(crate) struct LocalTestMdocDocumentSigner;
 

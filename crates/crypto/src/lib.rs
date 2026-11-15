@@ -5,6 +5,19 @@
 //! error translation live inside this crate; no backend type, provider, or
 //! error escapes the public surface.
 
+// Select the platform CSPRNG implementations for both supported dependency generations.
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use {getrandom as _, getrandom02 as _};
+
+#[cfg(all(
+    target_arch = "wasm32",
+    target_os = "unknown",
+    feature = "certificate-issuance"
+))]
+compile_error!(
+    "certificate-issuance is a native keyctl capability; WASM hosts supply provisioned certificate material"
+);
+
 #[cfg(feature = "aead")]
 pub mod aead;
 #[cfg(feature = "x509")]

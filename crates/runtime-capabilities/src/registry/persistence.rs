@@ -1,5 +1,5 @@
-use std::time::SystemTime;
 use uuid::Uuid;
+use web_time::SystemTime;
 
 use crate::{
     CasOutcome, InstanceStateChange, InstanceStateMutation, InstanceStateObservation,

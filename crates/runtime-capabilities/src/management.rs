@@ -1,4 +1,5 @@
-use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
+use std::{collections::BTreeMap, sync::Arc};
+use web_time::SystemTime;
 
 use crate::{
     CasOutcome, DesiredMode, DesiredStateRecord, DisablePolicy, InstanceStateRecord, ModuleCatalog,

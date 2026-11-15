@@ -48,16 +48,16 @@ class CoveragePhaseIsolationTests(unittest.TestCase):
         self.assertLess(switch_database, migrate_workspace)
         self.assertLess(migrate_workspace, run_workspace)
 
-    def test_live_protocol_coverage_uses_an_explicit_local_service_allowlist(self) -> None:
+    def test_workspace_coverage_includes_live_protocol_tests(self) -> None:
         workspace_tests = self.source.index(
             "cargo test --locked --workspace --all-features --lib --bins --tests --"
         )
-        live_tests = self.source.index("COVERAGE_LIVE_TESTS=(", workspace_tests)
-        coverage_export = self.source.index("test_objects=()", live_tests)
+        coverage_export = self.source.index("# Export exactly", workspace_tests)
+        workspace_command = self.source[workspace_tests:coverage_export]
 
         self.assertIn(
             "--skip two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures",
-            self.source[workspace_tests:live_tests],
+            workspace_command,
         )
 
         for test_name in (
@@ -67,13 +67,8 @@ class CoveragePhaseIsolationTests(unittest.TestCase):
             "live_offer_enforces_subject_dataset_lifetime_and_transaction_code_policy",
             "par_fapi2_rejects_shared_secret_client_auth_after_authentication",
         ):
-            self.assertIn(test_name, self.source[live_tests:coverage_export])
-        self.assertIn(
-            'cargo test --locked -p nazoauth --lib "$test_name" -- --ignored',
-            self.source[live_tests:coverage_export],
-        )
-        self.assertLess(workspace_tests, live_tests)
-        self.assertLess(live_tests, coverage_export)
+            self.assertNotIn(f"--skip {test_name}", workspace_command)
+        self.assertNotIn("--ignored", workspace_command)
 
     def test_coverage_exports_cargo_artifacts_and_uses_the_host_executable_suffix(self) -> None:
         self.assertIn('*-windows-*) EXECUTABLE_SUFFIX=".exe" ;;', self.source)

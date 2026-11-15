@@ -301,10 +301,10 @@ fn normalize_profile_patch(patch: ProfilePatch) -> Result<ProfilePatch, ProfileV
         return Err(ProfileValidationError::InvalidFormat("birthdate"));
     }
     let zoneinfo = profile_text(patch.zoneinfo, 64, "zoneinfo")?;
-    if zoneinfo
-        .as_deref()
-        .is_some_and(|value| jiff::tz::TimeZone::get(value).is_err())
-    {
+    if zoneinfo.as_deref().is_some_and(|value| {
+        // Preserve Jiff's existing CLDR unknown-zone spelling as well as IANA names.
+        !value.eq_ignore_ascii_case("Etc/Unknown") && jiff_tzdb::get(value).is_none()
+    }) {
         return Err(ProfileValidationError::InvalidFormat("zoneinfo"));
     }
     let locale = profile_text(patch.locale, 35, "locale")?;

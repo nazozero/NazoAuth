@@ -319,8 +319,7 @@ fn resp_command(address: SocketAddr, payload: String) -> String {
 /// Resolves the host:port of a `redis://host:port/db` style URL.
 fn valkey_socket_address(valkey_url: &str) -> SocketAddr {
     let rest = valkey_url
-        .strip_prefix("redis://")
-        .unwrap_or(valkey_url)
+        .trim_prefix("redis://")
         .split('/')
         .next()
         .expect("valkey URL has a host portion");

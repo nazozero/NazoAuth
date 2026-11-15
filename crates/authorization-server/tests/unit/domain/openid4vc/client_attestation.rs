@@ -226,7 +226,7 @@ fn client_attestation_rejects_header_key_claim_and_replay_contract_violations() 
 
     let wrong_algorithm = signed_client_attestation_jwt(
         &attestation_claims,
-        &EncodingKey::from_secret(b"attester-secret"),
+        &EncodingKey::from_secret(b"attester-secret").unwrap(),
         "oauth-client-attestation+jwt",
         Algorithm::HS256,
         Some("attester-key"),
@@ -334,7 +334,7 @@ fn client_attestation_rejects_header_key_claim_and_replay_contract_violations() 
             "iat": now,
             "jti": "fresh-proof",
         }),
-        &EncodingKey::from_secret(b"proof-secret"),
+        &EncodingKey::from_secret(b"proof-secret").unwrap(),
         "oauth-client-attestation-pop+jwt",
         Algorithm::HS256,
         None,

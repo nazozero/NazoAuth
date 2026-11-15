@@ -93,7 +93,11 @@ impl LoginSessionPort for Ports {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn linked_federation_obeys_local_mfa_and_uses_pending_session_lifetime() {
     for enabled in [false, true] {
         for method in ["oidc", "social", "saml"] {

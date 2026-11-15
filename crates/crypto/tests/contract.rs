@@ -1096,7 +1096,7 @@ mod password {
     }
 }
 
-#[cfg(feature = "x509")]
+#[cfg(feature = "certificate-issuance")]
 mod certificate {
     use nazo_crypto::{CryptoError, certificate as certs};
     use x509_parser::extensions::ParsedExtension;
@@ -1400,6 +1400,7 @@ mod certificate {
     }
 }
 
+#[cfg(feature = "certificate-issuance")]
 #[test]
 fn crl_signer_rejects_certificate_private_key_mismatch() {
     use nazo_crypto::certificate as certs;

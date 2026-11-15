@@ -13,7 +13,7 @@ blake3.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 hmac.workspace = true
 image.workspace = true
-jiff = "0.2.38"
+jiff-tzdb = "0.1.9"
 language-tags = "0.3.2"
 lettre.workspace = true
 nazo-crypto = { workspace = true, features = ["password"] }
@@ -35,3 +35,6 @@ workspace = true
 [dev-dependencies]
 argon2.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test.workspace = true

@@ -65,7 +65,7 @@ hmac = "0.13.0"
 hkdf = "0.13.0"
 http = "1.5.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
-jsonwebtoken = { version = "11.1.0", default-features = false }
+jsonwebtoken = { version = "12.0.0", default-features = false }
 mdoc-rs = { version = "0.2.0", default-features = false, features = ["issue"] }
 lru = "0.19.0"
 futures-channel = "0.3.34"
@@ -102,6 +102,7 @@ proptest = "1.12.0"
 rand = "0.10.3"
 rustix = { version = "1.1.5", features = ["fs", "process"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
+rustls-pki-types = "1.15.1"
 webpki = { package = "rustls-webpki", version = "0.103.16" }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem", "x509-parser"] }
 semver = "1.0.28"
@@ -118,7 +119,9 @@ tokio-postgres-rustls = { version = "0.14.0", default-features = false, features
 tracing = "0.1.44"
 url = "2.5.8"
 urlencoding = "2.1.3"
-uuid = "1.28.0"
+uuid = { version = "1.28.0", features = ["js"] }
+wasm-bindgen-test = "0.3.79"
+web-time = "1.1.0"
 x509-cert = "0.3.0"
 x509-parser = "0.18.1"
 yasna = "0.6.0"

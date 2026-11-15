@@ -19,7 +19,7 @@ where
         expected_revision: Option<ModuleRevision>,
         actor_id: Option<String>,
         reason: Option<String>,
-        changed_at: std::time::SystemTime,
+        changed_at: web_time::SystemTime,
     ) -> Result<CasOutcome<DesiredStateRecord>, RegistryError<R::Error>> {
         let _policy_guard = self.desired_policy_lock.lock().await;
         let spec = self.catalog.spec(module_id);

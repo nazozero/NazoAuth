@@ -5,8 +5,10 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
+
+use web_time::Instant;
 
 use crate::ExternalKeySigner;
 use arc_swap::ArcSwap;

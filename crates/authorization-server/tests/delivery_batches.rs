@@ -183,7 +183,11 @@ fn ping(id: usize) -> CibaPingDelivery {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn ciba_batch_bounds_claim_and_concurrency_and_drains_before_first_error() {
     let originals = Vec::from_fn(12, ping);
     let mut store = PingStore::new(originals.clone());
@@ -226,7 +230,11 @@ fn ciba_batch_bounds_claim_and_concurrency_and_drains_before_first_error() {
     assert_eq!(store.pending.lock().unwrap().len(), 4);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn ciba_finish_missing_and_conflict_preserve_fencing_and_are_nonfatal() {
     let mut deliveries = vec![ping(0), ping(1), ping(2)];
     deliveries[0].attempts = 7;
@@ -256,7 +264,11 @@ fn ciba_finish_missing_and_conflict_preserve_fencing_and_are_nonfatal() {
     assert_eq!(block_on(worker.process_due_batch()).unwrap(), 0);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn ciba_sender_status_and_transport_errors_reach_retry_and_terminal_finishes() {
     for (reply, attempts, delay) in [
         (Reply::Status(200), 1, None),
@@ -387,7 +399,11 @@ fn logout(id: usize) -> BackchannelLogoutDelivery {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn logout_batch_keeps_twenty_claims_eight_senders_and_drains_before_first_error() {
     let mut deliveries = Vec::from_fn(25, logout);
     for (index, delivery) in deliveries.iter_mut().enumerate() {
@@ -437,7 +453,11 @@ fn logout_batch_keeps_twenty_claims_eight_senders_and_drains_before_first_error(
     assert_eq!(store.pending.lock().unwrap().len(), 5);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn logout_worker_routes_statuses_and_preserves_retry_fences_and_error_bounds() {
     for (reply, attempts, delay) in [
         (Reply::Status(200), 1, None),
@@ -491,7 +511,11 @@ fn logout_worker_routes_statuses_and_preserves_retry_fences_and_error_bounds() {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn logout_retry_cannot_be_scheduled_at_or_after_expiry() {
     let mut delivery = logout(0);
     delivery.expires_at = Utc::now() + Duration::seconds(5);

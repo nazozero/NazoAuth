@@ -8,6 +8,15 @@ use p256::pkcs8::EncodePrivateKey as _;
 use crate::CryptoError;
 use crate::jwt::{Algorithm, VerificationKey};
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use aws_lc_rs::rsa::KeyPair as RsaKeyPair;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER as JWT_PROVIDER;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER as JWT_PROVIDER;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+use rsa::PrivateKey as RsaKeyPair;
+
 /// Local signing material prepared once per key generation.
 ///
 /// RSA algorithms retain the provider's parsed `RsaKeyPair`: DER parsing and
@@ -22,9 +31,8 @@ pub struct PreparedSigningKey {
 }
 
 enum PreparedKey {
-    /// Parsed native RSA key pair shared immutably across all signatures of
-    /// this generation. `aws_lc_rs::rsa::KeyPair` is `Send + Sync` upstream.
-    Rsa(aws_lc_rs::rsa::KeyPair),
+    /// Parsed RSA key pair shared immutably across all signatures of this generation.
+    Rsa(RsaKeyPair),
     /// Byte-wrapping key for algorithms still on the provider path.
     Provider(jsonwebtoken::EncodingKey),
 }
@@ -38,13 +46,10 @@ impl PreparedSigningKey {
     /// this material can produce a signer before it is retained.
     pub fn new(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<Self> {
         let key = match algorithm {
-            Algorithm::RS256 | Algorithm::PS256 => PreparedKey::Rsa(
-                aws_lc_rs::rsa::KeyPair::from_der(private_der)
-                    .map_err(|_| CryptoError::InvalidKey)?,
-            ),
+            Algorithm::RS256 | Algorithm::PS256 => PreparedKey::Rsa(prepare_rsa(private_der)?),
             Algorithm::EdDSA | Algorithm::ES256 => {
                 let key = encoding_key(algorithm, private_der)?;
-                (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(&algorithm, &key)
+                (JWT_PROVIDER.signer_factory)(&algorithm, &key)
                     .map_err(|_| CryptoError::InvalidKey)?;
                 PreparedKey::Provider(key)
             }
@@ -59,28 +64,10 @@ impl PreparedSigningKey {
     /// point; raw-signature consumers keep the `Vec<u8>`.
     pub fn sign(&self, message: &[u8]) -> crate::Result<Vec<u8>> {
         match &self.key {
-            PreparedKey::Rsa(pair) => {
-                let padding: &'static dyn aws_lc_rs::signature::RsaEncoding = match self.algorithm {
-                    Algorithm::RS256 => &aws_lc_rs::signature::RSA_PKCS1_SHA256,
-                    Algorithm::PS256 => &aws_lc_rs::signature::RSA_PSS_SHA256,
-                    _ => unreachable!("RSA key is only stored for RSA algorithms"),
-                };
-                let mut signature = vec![0; pair.public_modulus_len()];
-                pair.sign(
-                    padding,
-                    &aws_lc_rs::rand::SystemRandom::new(),
-                    message,
-                    &mut signature,
-                )
-                .map_err(|_| CryptoError::OperationFailed)?;
-                Ok(signature)
-            }
+            PreparedKey::Rsa(pair) => sign_rsa(pair, self.algorithm, message),
             PreparedKey::Provider(key) => {
-                let signer = (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(
-                    &self.algorithm,
-                    key,
-                )
-                .map_err(|_| CryptoError::InvalidKey)?;
+                let signer = (JWT_PROVIDER.signer_factory)(&self.algorithm, key)
+                    .map_err(|_| CryptoError::InvalidKey)?;
                 signer
                     .try_sign(message)
                     .map_err(|_| CryptoError::OperationFailed)
@@ -98,6 +85,66 @@ impl std::fmt::Debug for PreparedSigningKey {
     }
 }
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn prepare_rsa(private_der: &[u8]) -> crate::Result<RsaKeyPair> {
+    RsaKeyPair::from_der(private_der).map_err(|_| CryptoError::InvalidKey)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn prepare_rsa(private_der: &[u8]) -> crate::Result<RsaKeyPair> {
+    use rsa::{
+        pkcs1::{DecodeRsaPrivateKey as _, EncodeRsaPrivateKey as _},
+        traits::PublicKeyParts as _,
+    };
+
+    let pair = RsaKeyPair::from_pkcs1_der(private_der).map_err(|_| CryptoError::InvalidKey)?;
+    if !(2048..=8192).contains(&pair.n().bit_width_vartime()) {
+        return Err(CryptoError::InvalidKey);
+    }
+    // RustCrypto recomputes the CRT coefficients on import. Preserve AWS-LC's
+    // rejection of inconsistent encoded coefficients before publishing a key.
+    if pair
+        .to_pkcs1_der()
+        .map_err(|_| CryptoError::InvalidKey)?
+        .as_bytes()
+        != private_der
+    {
+        return Err(CryptoError::InvalidKey);
+    }
+    Ok(pair)
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn sign_rsa(pair: &RsaKeyPair, algorithm: Algorithm, message: &[u8]) -> crate::Result<Vec<u8>> {
+    let padding: &'static dyn aws_lc_rs::signature::RsaEncoding = match algorithm {
+        Algorithm::RS256 => &aws_lc_rs::signature::RSA_PKCS1_SHA256,
+        Algorithm::PS256 => &aws_lc_rs::signature::RSA_PSS_SHA256,
+        _ => unreachable!("RSA key is only stored for RSA algorithms"),
+    };
+    let mut signature = vec![0; pair.public_modulus_len()];
+    pair.sign(
+        padding,
+        &aws_lc_rs::rand::SystemRandom::new(),
+        message,
+        &mut signature,
+    )
+    .map_err(|_| CryptoError::OperationFailed)?;
+    Ok(signature)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn sign_rsa(pair: &RsaKeyPair, algorithm: Algorithm, message: &[u8]) -> crate::Result<Vec<u8>> {
+    // The maintained RSA backend uses secure blinding for both private operations;
+    // PSS uses a SHA-256-sized salt, matching the JWA/AWS-LC signature semantics.
+    match algorithm {
+        Algorithm::RS256 => pair.pkcs1v15_sign::<sha2::Sha256>(message),
+        Algorithm::PS256 => pair.pss_sign::<sha2::Sha256>(message),
+        _ => unreachable!("RSA key is only stored for RSA algorithms"),
+    }
+    .map_err(|_| CryptoError::OperationFailed)
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub fn verify(
     algorithm: Algorithm,
     key: &VerificationKey,
@@ -145,6 +192,91 @@ pub fn verify(
         _ => unreachable!("unsupported algorithms were rejected above"),
     };
     result.map_err(|_| CryptoError::InvalidSignature)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub fn verify(
+    algorithm: Algorithm,
+    key: &VerificationKey,
+    message: &[u8],
+    signature: &[u8],
+) -> crate::Result<()> {
+    use p256::ecdsa::signature::Verifier as _;
+
+    match algorithm {
+        Algorithm::EdDSA | Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 => {}
+        _ => return Err(CryptoError::UnsupportedAlgorithm),
+    }
+    if key.inner.family() != algorithm.family() {
+        return Err(CryptoError::InvalidInput);
+    }
+    match algorithm {
+        Algorithm::EdDSA => {
+            let bytes = key
+                .inner
+                .try_get_as_bytes()
+                .map_err(|_| CryptoError::InvalidInput)?;
+            let bytes = bytes.as_array().ok_or(CryptoError::InvalidSignature)?;
+            let verifier = ed25519_dalek::VerifyingKey::from_bytes(bytes)
+                .map_err(|_| CryptoError::InvalidSignature)?;
+            let signature = ed25519_dalek::Signature::from_slice(signature)
+                .map_err(|_| CryptoError::InvalidSignature)?;
+            verifier
+                .verify(message, &signature)
+                .map_err(|_| CryptoError::InvalidSignature)
+        }
+        Algorithm::ES256 => {
+            let bytes = key
+                .inner
+                .try_get_as_bytes()
+                .map_err(|_| CryptoError::InvalidInput)?;
+            let verifier = p256::ecdsa::VerifyingKey::from_sec1_bytes(bytes)
+                .map_err(|_| CryptoError::InvalidSignature)?;
+            let signature = p256::ecdsa::Signature::from_slice(signature)
+                .map_err(|_| CryptoError::InvalidSignature)?;
+            verifier
+                .verify(message, &signature)
+                .map_err(|_| CryptoError::InvalidSignature)
+        }
+        Algorithm::RS256 | Algorithm::PS256 => {
+            let public = rsa_verification_key(&key.inner)?;
+            match algorithm {
+                Algorithm::RS256 => public.pkcs1v15_verify::<sha2::Sha256>(message, signature),
+                _ => public.pss_verify::<sha2::Sha256>(message, signature),
+            }
+            .map_err(|_| CryptoError::InvalidSignature)
+        }
+        _ => unreachable!("unsupported algorithms were rejected above"),
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+pub(crate) fn rsa_verification_key(
+    key: &jsonwebtoken::DecodingKey,
+) -> crate::Result<rsa::PublicKey> {
+    use jsonwebtoken::DecodingKeyKind;
+    use rsa::{BoxedUint, pkcs1::DecodeRsaPublicKey as _, traits::PublicKeyParts as _};
+
+    let public = match key.kind() {
+        DecodingKeyKind::SecretOrDer(bytes) => {
+            rsa::PublicKey::from_pkcs1_der(bytes).map_err(|_| CryptoError::InvalidSignature)
+        }
+        DecodingKeyKind::RsaModulusExponent { n, e } => {
+            if n.first().is_none_or(|byte| *byte == 0) || e.first().is_none_or(|byte| *byte == 0) {
+                return Err(CryptoError::InvalidSignature);
+            }
+            rsa::PublicKey::new_with_size_limits(
+                BoxedUint::from_be_slice_vartime(n),
+                BoxedUint::from_be_slice_vartime(e),
+                2048..=8192,
+            )
+            .map_err(|_| CryptoError::InvalidSignature)
+        }
+    }?;
+    if !(2048..=8192).contains(&public.n().bit_width_vartime()) {
+        return Err(CryptoError::InvalidSignature);
+    }
+    Ok(public)
 }
 
 pub fn generate_private_key(algorithm: Algorithm) -> crate::Result<Vec<u8>> {
@@ -231,10 +363,5 @@ fn ed25519_seed_from_pkcs8(der: &[u8]) -> Option<[u8; 32]> {
         0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04,
         0x20,
     ];
-    if der.len() != PREFIX.len() + 32 || !der.starts_with(PREFIX) {
-        return None;
-    }
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(&der[PREFIX.len()..]);
-    Some(seed)
+    der.strip_prefix(PREFIX)?.as_array().copied()
 }

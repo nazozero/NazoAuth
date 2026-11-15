@@ -1,4 +1,4 @@
-#![cfg(feature = "x509")]
+#![cfg(feature = "certificate-issuance")]
 
 use nazo_crypto::certificate::{self as certs, CertificateDer};
 

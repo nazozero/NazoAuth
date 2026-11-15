@@ -86,6 +86,62 @@ Run the structure check before the Rust quality gate below.
 
 ## Verification
 
+### Portable inner packages and runtime behavior
+
+The [WASM portability workflow](../../.github/workflows/wasm-portability.yml)
+checks the domain/application package set owned by
+`scripts/verify_static_contracts.py`. It runs on pull requests, main pushes and
+manual dispatch without a database, cache, HTTP server, or native task scheduler.
+
+```sh
+rustup target add wasm32-unknown-unknown
+python scripts/check_wasm_portability.py --list
+python scripts/check_wasm_portability.py
+python -m unittest tests.unit.test_application_dependency_boundaries tests.unit.test_wasm_portability
+```
+
+The checker uses each package's production features in isolation, then checks
+the combined graph with all six portable cryptographic capabilities enabled.
+The native host's `nazo-crypto/certificate-issuance` feature is excluded from this
+contract and rejected if an inner dependency activates it. `--all-features`
+continues to apply to native workspace validation. Test fixture features are
+activated only by the corresponding test consumers.
+
+Target compilation is followed by executing the same application contracts in
+Node with `wasm-bindgen-test`. Install `wasm-bindgen-cli` at the exact
+`wasm-bindgen` version recorded in `Cargo.lock`; the workflow derives this
+version and installs it with its own locked dependency graph. The test profile
+uses optimization for RSA key generation, matching the workflow:
+
+```sh
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner
+export CARGO_PROFILE_TEST_OPT_LEVEL=2
+export CARGO_PROFILE_TEST_DEBUG=0
+cargo test --target wasm32-unknown-unknown --locked \
+  -p nazo-oauth-server -p nazo-identity -p nazo-openid4vci -p nazo-openid4vp \
+  -p nazo-runtime-modules -p nazo-crypto \
+  --features nazo-crypto/jose,nazo-crypto/ecdh,nazo-crypto/aead,nazo-crypto/password,nazo-crypto/ed25519,nazo-crypto/x509 \
+  --test application_boundaries --test authorization_application \
+  --test security_facts --test host_replacement_contract \
+  --test delivery_batches --test token_outcome --test federation_authentication \
+  --test service_contract --test revision_races --test portable_jose --test certificate_paths
+cargo test --target wasm32-unknown-unknown --locked -p nazo-identity \
+  --lib oidc_profile_fields_validate_their_declared_syntax
+```
+
+These targets exercise authorization and PAR, token signing and validation,
+UserInfo, DPoP signature/target/replay decisions, one-shot delivery batches,
+federated identity/MFA, credential issuance and presentation verification through
+their production APIs and semantic port fixtures. Runtime-module tests exercise
+persisted clock deadlines and enable/disable discovery publication. The filtered
+profile unit test checks UTC, IANA names, aliases and case handling against the
+bundled timezone index. Integration targets share one feature closure to avoid
+recompiling common dependencies; the separate library invocation runs only the
+named profile test. The native and WASM harnesses
+execute the same assertions. Signature tampering and token revocation must
+remain failures on both platforms. This gate supplements the native workspace
+and HTTP/security suites; it does not certify a concrete WASM host deployment.
+
 ### Audit backlog scale checks
 
 The ordinary workspace suite checks audit claims at zero and 10,000 pending
@@ -122,7 +178,7 @@ architecture checks run separately and do not compile the service. CodeQL,
 operator parser fuzzing, service-image/HTTP security checks and performance-runner
 images each have their own inputs in `scripts/ci_inputs.py`.
 
-Every automatic run compares the actual checkout's Git file identities, including
+Input-selected automatic runs compare the actual checkout's Git file identities, including
 the PR merge result, with a successful run of the same workflow and event in the
 same repository/branch/PR context, or from successful main checks when opening a
 same-repository PR. Identical inputs can reuse evidence for seven
@@ -153,6 +209,7 @@ cannot share compiled workspace artifacts. Release checks consume successful gov
 | --- | --- |
 | Documentation or specification inventory only | Source/reference, Python and workflow-policy checks; reuse successful unchanged Rust, CodeQL, fuzz and image checks. Without reusable evidence, execute the selected checks. |
 | Rust, dependencies, toolchain, fixtures or migrations | Workspace formatting, Clippy and PostgreSQL/Valkey tests; CodeQL and service security checks. Operator fuzzing runs when its parser, crypto, manifest, corpus or workflow inputs change. |
+| Every PR or main push | WASM production dependency/feature checks and portable runtime contracts; compiled artifacts use the separate WASM cache. |
 | Performance runner or its workflow | Build and smoke-test the runner and execute native k6 JSON regressions. BuildKit reuses unchanged k6 and Python dependency layers. |
 | Main after merge | Reuse ordinary PR tests only with identical proven inputs; retain main CodeQL/security roles and run missing or expired checks. |
 | Release | Require successful governed main CI, then build, scan and verify the release artifacts. Do not dispatch another complete functional CI run. |
@@ -224,8 +281,9 @@ CI. The full suite collects failures across test targets in one run; any failed
 target still fails the gate. For a focused change, run the owning package/test
 target first; broaden
 validation when the change crosses boundaries or leaves an unresolved risk.
-Documentation-only changes need source/example/reference checks, not a Rust
-build. A passed unit suite does not replace required HTTP, migration, recovery,
+Documentation-only changes need source/example/reference checks; native Rust
+builds can reuse unchanged evidence, while the portability gate retains its
+independent checks. A passed unit suite does not replace required HTTP, migration, recovery,
 conformance, deployment, or performance evidence.
 
 CI budgets Cargo build concurrency from the runner's available logical CPUs

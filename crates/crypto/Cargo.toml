@@ -10,7 +10,6 @@ repository.workspace = true
 default = []
 jose = [
     "dep:jsonwebtoken",
-    "jsonwebtoken/aws_lc_rs",
     "dep:aws-lc-rs",
     "dep:p256",
     "p256/pkcs8",
@@ -20,6 +19,9 @@ jose = [
     "dep:x509-cert",
     "dep:base64",
     "dep:rand",
+    "dep:rsa",
+    "dep:aes-kw",
+    "dep:sha2",
     "dep:serde",
     "dep:serde_json",
 ]
@@ -27,28 +29,65 @@ ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize", "dep:base64", "dep:serde"]
 aead = ["dep:aes-gcm"]
 password = ["dep:argon2"]
 ed25519 = ["dep:ed25519-dalek"]
-x509 = ["dep:rcgen", "dep:rustls", "dep:webpki", "dep:x509-parser", "x509-parser/verify-aws"]
+x509 = [
+    "dep:rustls-pki-types", "dep:webpki", "dep:x509-parser",
+    "dep:p256", "dep:p384", "dep:p521", "dep:rsa", "dep:sha1", "dep:sha2",
+    "dep:ed25519-dalek", "dep:ml-dsa",
+]
+# Local CA/CRL provisioning is owned by the native host's keyctl composition.
+certificate-issuance = ["x509", "dep:rcgen"]
 
 [dependencies]
 aes-gcm = { workspace = true, optional = true }
 argon2 = { workspace = true, optional = true }
-aws-lc-rs = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
-der = { workspace = true, optional = true }
 ed25519-dalek = { workspace = true, optional = true }
-jsonwebtoken = { workspace = true, optional = true }
 p256 = { workspace = true, optional = true }
 pkcs8 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-rcgen = { workspace = true, optional = true }
-rustls = { workspace = true, optional = true }
 serde = { workspace = true, optional = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
+rustls-pki-types = { workspace = true, optional = true }
 thiserror.workspace = true
-x509-cert = { workspace = true, optional = true }
 x509-parser = { workspace = true, optional = true }
 webpki = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+x509-cert = { workspace = true, optional = true }
+der = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true, optional = true }
+jsonwebtoken = { workspace = true, optional = true, features = ["aws_lc_rs"] }
+rcgen = { workspace = true, optional = true }
+webpki = { workspace = true, optional = true, features = ["aws-lc-rs"] }
+x509-parser = { workspace = true, optional = true, features = ["verify-aws"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+aes-kw = { version = "0.3.1", optional = true, features = ["zeroize"] }
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
+# passkey-auth and mdoc-rs still consume the rand 0.8 / getrandom 0.2 API.
+getrandom02 = { package = "getrandom", version = "0.2.17", features = ["js"] }
+jsonwebtoken = { workspace = true, optional = true, features = ["rust_crypto"] }
+ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc"], optional = true }
+p384 = { version = "0.14.0", features = ["ecdsa"], optional = true }
+p521 = { version = "0.14.0", features = ["ecdsa"], optional = true }
+rsa = { version = "0.10.0", features = ["pkcs1v15", "encoding"], optional = true }
+sha1 = { workspace = true, features = ["oid"], optional = true }
+sha2 = { workspace = true, features = ["oid"], optional = true }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
+aws-lc-rs.workspace = true
+rcgen.workspace = true
+rustls.workspace = true
+ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc"] }
+p384 = { version = "0.14.0", features = ["ecdsa"] }
+p521 = { version = "0.14.0", features = ["ecdsa"] }
+rsa = { version = "0.10.0", features = ["pkcs1v15", "encoding"] }
+sha1 = { workspace = true, features = ["oid"] }
+sha2 = { workspace = true, features = ["oid"] }
+
 [lints]
 workspace = true
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test.workspace = true

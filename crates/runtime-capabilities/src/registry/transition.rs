@@ -1,4 +1,5 @@
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use web_time::SystemTime;
 
 use crate::{
     CasOutcome, DisablePolicy, InstanceStateRecord, LifecycleFailure, ModuleEventType, ModuleId,

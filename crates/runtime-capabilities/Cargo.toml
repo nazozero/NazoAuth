@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+web-time.workspace = true
 arc-swap.workspace = true
 futures-util.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -15,3 +16,6 @@ uuid = { workspace = true, features = ["v7"] }
 
 [lints]
 workspace = true
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test.workspace = true

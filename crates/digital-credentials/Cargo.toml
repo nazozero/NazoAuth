@@ -23,4 +23,6 @@ x509-parser.workspace = true
 workspace = true
 
 [dev-dependencies]
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 rcgen.workspace = true

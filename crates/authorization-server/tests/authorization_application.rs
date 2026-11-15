@@ -40,7 +40,11 @@ fn assert_json_error(error: OAuthEndpointError, status: StatusCode, code: &str) 
     assert_eq!(error, code);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn authorize_unverified_client_never_returns_redirect() {
     block_on(async {
         for (client, status, code) in [
@@ -79,7 +83,11 @@ fn authorize_unverified_client_never_returns_redirect() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn authorize_unregistered_redirect_fails_before_session_or_state_access() {
     block_on(async {
         let (app, ports) = application(Ok(Some(client(true))), Ok(Some(session())));
@@ -112,7 +120,11 @@ fn authorize_unregistered_redirect_fails_before_session_or_state_access() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn client_presentation_distinguishes_absence_and_repository_failure() {
     block_on(async {
         for (client, expected) in [
@@ -130,7 +142,11 @@ fn client_presentation_distinguishes_absence_and_repository_failure() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn consent_checks_session_before_missing_request_id() {
     block_on(async {
         let (app, ports) = application(Ok(None), Ok(None));
@@ -170,7 +186,11 @@ fn consent_checks_session_before_missing_request_id() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn consent_reads_request_only_after_valid_session() {
     block_on(async {
         let (app, ports) = application(Ok(None), Ok(Some(session())));

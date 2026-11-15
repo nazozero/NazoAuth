@@ -747,7 +747,7 @@ impl Fixture {
             reauth_ttls: Mutex::new(Vec::new()),
             remote_jwks: Mutex::new(Err("remote JWKS unavailable".into())),
         });
-        let keys = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+        let keys = KeyManager::for_test(nazo_crypto::jwt::Algorithm::EdDSA);
         let service = Arc::new(ServerAuthorizationService::from_port(
             ports.clone(),
             ports.clone(),
@@ -784,7 +784,7 @@ impl Fixture {
             ports,
         }
     }
-    pub fn with_algorithm(mut self, algorithm: jsonwebtoken::Algorithm) -> Self {
+    pub fn with_algorithm(mut self, algorithm: nazo_crypto::jwt::Algorithm) -> Self {
         self.keys = KeyManager::for_test(algorithm);
         self.service = Arc::new(ServerAuthorizationService::from_port(
             self.ports.clone(),

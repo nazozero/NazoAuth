@@ -82,6 +82,8 @@ pub fn decode<T: serde::de::DeserializeOwned>(
     key: &VerificationKey,
     validation: &Validation,
 ) -> crate::Result<TokenData<T>> {
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    validate_portable_key(&key.inner)?;
     let decoded = jsonwebtoken::decode(token, &key.inner, validation).map_err(token_error)?;
     reject_unsupported_extensions(&decoded.header)?;
     Ok(decoded)
@@ -109,5 +111,36 @@ fn token_error(error: jsonwebtoken::errors::Error) -> CryptoError {
         jsonwebtoken::errors::ErrorKind::InvalidKeyFormat => CryptoError::InvalidKey,
         jsonwebtoken::errors::ErrorKind::Provider(_) => CryptoError::OperationFailed,
         _ => CryptoError::InvalidToken,
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn validate_portable_key(key: &jsonwebtoken::DecodingKey) -> crate::Result<()> {
+    use jsonwebtoken::{AlgorithmFamily, DecodingKeyKind};
+
+    match (key.family(), key.kind()) {
+        (AlgorithmFamily::Ed, DecodingKeyKind::SecretOrDer(bytes)) if bytes.len() != 32 => {
+            // The upstream portable provider expects a complete Ed25519 key.
+            // Reject malformed lengths before its fixed-size slice operation.
+            Err(CryptoError::InvalidKey)
+        }
+        (AlgorithmFamily::Rsa, DecodingKeyKind::RsaModulusExponent { n, e }) => {
+            // Match the native provider's canonical unsigned representation and
+            // modulus limits. The provider owns the remaining RSA validation.
+            let first = n
+                .first()
+                .copied()
+                .filter(|byte| *byte != 0)
+                .ok_or(CryptoError::InvalidSignature)?;
+            let bits = n.len() * 8 - first.leading_zeros() as usize;
+            if !(2048..=8192).contains(&bits) || e.first().is_none_or(|byte| *byte == 0) {
+                return Err(CryptoError::InvalidSignature);
+            }
+            Ok(())
+        }
+        (AlgorithmFamily::Rsa, DecodingKeyKind::SecretOrDer(_)) => {
+            crate::signature::rsa_verification_key(key).map(|_| ())
+        }
+        _ => Ok(()),
     }
 }

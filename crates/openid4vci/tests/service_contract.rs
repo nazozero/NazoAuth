@@ -509,7 +509,11 @@ fn response_for_pending(
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
     #[derive(Clone)]
     struct MovingDataset(Arc<Mutex<usize>>);
@@ -611,7 +615,11 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
     );
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_failure() {
     let now = Utc::now();
     let store = RecordingStore::default();
@@ -646,7 +654,11 @@ async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_f
     assert_eq!(*store.nonce_released.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs() {
     let now = Utc::now();
     let service = CredentialIssuerService::new(
@@ -809,7 +821,11 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
     );
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn unbound_issuance_requires_a_proof_free_configuration() {
     let now = Utc::now();
     let service = CredentialIssuerService::new(
@@ -877,7 +893,11 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
     );
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() {
     let now = Utc::now();
     let (access, configuration, issuance, request) = fixture(now);
@@ -1077,7 +1097,11 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     );
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollback() {
     let now = Utc::now();
     let (access, configuration, issuance, request) = fixture(now);
@@ -1517,7 +1541,11 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     assert_eq!(*deferred_failure_store.nonce_finalized.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn doctype_is_used_when_vct_is_absent() {
     let now = Utc::now();
     let (access, mut configuration, issuance, request) = fixture(now);
@@ -1552,7 +1580,11 @@ async fn doctype_is_used_when_vct_is_absent() {
 // Contract coverage: the port records and forwards
 // persist_pre_authorized_access arguments — including the optional registered
 // client id — and the Arc<T> blanket impl propagates store errors unchanged.
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
     let store = Arc::new(RecordingStore::default());
     let access = CredentialAccess {

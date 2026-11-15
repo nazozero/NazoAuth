@@ -38,7 +38,11 @@ fn parsed(grant: &str, audience: bool, conflicting: bool) -> ParsedTokenForm {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn audience_error_precedes_authentication_source_conflict() {
     let Err(OAuthEndpointError::Token {
         fields,
@@ -59,7 +63,11 @@ fn audience_error_precedes_authentication_source_conflict() {
     assert!(!basic_challenge);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn allowed_audience_still_rejects_conflicting_authentication_sources() {
     let Err(OAuthEndpointError::Token {
         fields,
@@ -84,7 +92,11 @@ fn allowed_audience_still_rejects_conflicting_authentication_sources() {
     assert!(!basic_challenge);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn preflight_leaves_credential_validation_to_execution() {
     assert!(
         prepare_token_request(
@@ -106,7 +118,11 @@ fn preflight_leaves_credential_validation_to_execution() {
     );
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn token_results_are_send_without_a_framework_response_wrapper() {
     fn assert_send<T: Send>() {}
     assert_send::<Result<TokenEndpointSuccess, OAuthEndpointError>>();

@@ -56,7 +56,11 @@ fn facts() -> ParRequestFacts<'static> {
         attestation: None,
     }
 }
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_persists_bound_request_and_reports_write_failure() {
     block_on(async {
         let fixture = par_fixture(Ok(Some(client(true))));
@@ -101,7 +105,11 @@ fn par_persists_bound_request_and_reports_write_failure() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_defers_required_token_binding_until_token_issuance() {
     block_on(async {
         for (require_dpop, require_mtls) in [(true, false), (false, true), (true, true)] {
@@ -129,7 +137,11 @@ fn par_defers_required_token_binding_until_token_issuance() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_rejects_two_token_bindings_but_allows_mtls_authentication_with_dpop() {
     block_on(async {
         for require_mtls in [false, true] {
@@ -168,7 +180,11 @@ fn par_rejects_two_token_bindings_but_allows_mtls_authentication_with_dpop() {
         }
     });
 }
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_client_lookup_and_attestation_errors_do_not_persist() {
     block_on(async {
         for (value, status) in [
@@ -232,7 +248,11 @@ fn par_client_lookup_and_attestation_errors_do_not_persist() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_invalid_basic_client_requires_basic_challenge() {
     block_on(async {
         let fixture = par_fixture(Ok(None));
@@ -263,7 +283,11 @@ fn par_invalid_basic_client_requires_basic_challenge() {
         );
     });
 }
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_parameter_and_rate_errors_fail_before_client_lookup() {
     block_on(async {
         for (key, value, basic) in [
@@ -312,7 +336,11 @@ fn par_parameter_and_rate_errors_fail_before_client_lookup() {
         );
     });
 }
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_rejects_invalid_redirect_pkce_and_dpop_before_storage() {
     block_on(async {
         for (key, value, expected) in [
@@ -370,7 +398,11 @@ fn par_rejects_invalid_redirect_pkce_and_dpop_before_storage() {
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn par_attestation_requires_valid_proof_and_available_single_use_replay_state() {
     use app::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -458,7 +490,11 @@ fn par_attestation_requires_valid_proof_and_available_single_use_replay_state() 
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn protocol_par_rejects_non_executable_authorization_parameters_before_persistence() {
     block_on(async {
         for (key, value, error) in [
@@ -500,7 +536,11 @@ fn protocol_par_rejects_non_executable_authorization_parameters_before_persisten
     });
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn protocol_par_dpop_header_requires_pkce_even_for_confidential_oidc_compatibility() {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use p256::ecdsa::{Signature, SigningKey, signature::Signer};

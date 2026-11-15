@@ -1,0 +1,81 @@
+name: wasm-portability
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  portable-inner-boundary:
+    name: Portable inner packages and operations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+      CARGO_PROFILE_TEST_OPT_LEVEL: "2"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_BUILD_JOBS: "4"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15.0"
+
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.0"
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: wasm-portability
+
+      - name: Reject native execution at the architecture boundary
+        run: |
+          python scripts/verify_static_contracts.py --check
+          python -m unittest tests.unit.test_application_dependency_boundaries tests.unit.test_wasm_portability
+
+      - name: Check every inner package and their combined production graph
+        run: python scripts/check_wasm_portability.py
+
+      - name: Install the test runner matching the locked WASM ABI
+        run: |
+          python - <<'PY'
+          import subprocess
+          import tomllib
+          from pathlib import Path
+          packages = tomllib.loads(Path("Cargo.lock").read_text())["package"]
+          version = next(package["version"] for package in packages if package["name"] == "wasm-bindgen")
+          subprocess.run(["cargo", "install", "wasm-bindgen-cli", "--version", version, "--locked"], check=True)
+          PY
+
+      - name: Execute portable operations and cryptography inside WASM
+        run: >-
+          cargo test --target wasm32-unknown-unknown --locked
+          -p nazo-oauth-server -p nazo-identity -p nazo-openid4vci -p nazo-openid4vp
+          -p nazo-runtime-modules -p nazo-crypto
+          --features nazo-crypto/jose,nazo-crypto/ecdh,nazo-crypto/aead,nazo-crypto/password,nazo-crypto/ed25519,nazo-crypto/x509
+          --test application_boundaries --test authorization_application
+          --test security_facts --test host_replacement_contract --test delivery_batches --test token_outcome
+          --test federation_authentication --test service_contract --test revision_races
+          --test portable_jose --test certificate_paths
+
+      - name: Validate OIDC profile timezone syntax inside WASM
+        run: >-
+          cargo test --target wasm32-unknown-unknown --locked -p nazo-identity
+          --lib oidc_profile_fields_validate_their_declared_syntax
