@@ -10,6 +10,8 @@ Release dates use UTC+8.
 - Renew controller keys through signed local/SSH operator requests when seven
   days or less remain, including expired keys. Preserve revocation, atomic
   replacement, audit and exact-request recovery without periodic administrator MFA.
+- Treat expiry as a rotation deadline on that privileged host channel. Terminate
+  controller authority by revocation, not by waiting for expiry.
 - Publish operator protocol 4 with successor proposals and durable renewal
   receipts; continue reading existing operation journals.
 - Stop reporting expired controller keys as approaching expiry.

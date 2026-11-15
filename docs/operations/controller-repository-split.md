@@ -8,9 +8,9 @@ container orchestration, Release/OCI verification, task issuance and receipt
 verification, controller audit state, backup lifecycle, recovery, diagnostics,
 the administrator-provisioning client, and controller self-update/rollback.
 
-Controller registry `active` means not revoked; new-operation admission also
-requires an unexpired key. The list includes revoked history, so its `total` is
-not the occupied-slot count. Only non-revoked controllers consume the three-slot
+Controller registry `active` means not revoked; new-operation admission requires
+an unexpired key or the host-authorized renewal described below. The list includes
+revoked history, so its `total` is not the occupied-slot count. Only non-revoked controllers consume the three-slot
 limit, including expired keys. Pre-expiry warnings apply only before expiry;
 clients render expired keys from `expires_at` separately.
 

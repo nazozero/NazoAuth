@@ -279,8 +279,32 @@ async fn expired_controller_renews_during_migration_and_recovers_after_commit() 
         &kid,
         ControlOperationPayload::MigrateApply,
     );
+    // Expiry is never bypassed by an ordinary request without a successor.
+    let unrenewed = sign_control_operation(&op, &old).unwrap().0;
+    assert_rejection(
+        &run_operator_task(
+            &root,
+            &unrenewed,
+            vec![("DATABASE_URL", database_url.clone())],
+        ),
+        "authorization",
+    );
     op.renewal_public_key = Some(URL_SAFE_NO_PAD.encode(next.verifying_key().to_bytes()));
     let compact = sign_control_operation(&op, &old).unwrap().0;
+    // A proposal does not authenticate its signer. Keep the registered kid
+    // but forge the signature with the proposed successor's private key.
+    let signing_input = compact.rsplit_once('.').unwrap().0;
+    let forged = format!(
+        "{signing_input}.{}",
+        URL_SAFE_NO_PAD.encode(next.sign(signing_input.as_bytes()))
+    );
+    assert_rejection(
+        &run_operator_task(&root, &forged, vec![("DATABASE_URL", database_url.clone())]),
+        "authorization",
+    );
+    let unchanged = registry.list_slots(DEPLOYMENT).await.unwrap().remove(0);
+    assert_eq!(unchanged.kid, kid);
+    assert_eq!(unchanged.expires_at, slot.expires_at);
     let marker = root.join("after-renewal");
     let child = spawn_operator_task(
         &root,

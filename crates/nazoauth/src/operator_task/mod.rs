@@ -9,8 +9,8 @@
 //! 2. look up the controller kid/public key BY deployment_id in the
 //!    Controller Registry repository (D01/D02 authority)
 //! 3. verify the Ed25519 signature over the canonical bytes
-//! 4. key expiry/revocation at first admission (the registry lookup only
-//!    returns active, unexpired slots)
+//! 4. key revocation and expiry at first admission (expired current keys
+//!    require a signed successor proposal through this privileged host channel)
 //! 5. deployment binding and config_revision fencing
 //! 6. enter the operation journal accept checkpoint (E03)
 //! 7. execute strictly per journal checkpoints; internal steps never

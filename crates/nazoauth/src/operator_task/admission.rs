@@ -10,8 +10,9 @@
 //! Stage 2 resolves the controller kid/public key **by deployment_id** from
 //! the D01/D02 Controller Registry persistence port. NazoAuth is the only
 //! authority that answers whether this controller key is currently admitted.
-//! Stage 4 falls out of the same lookup, because admission requires an
-//! `active` slot with `expires_at > now`.
+//! Stage 4 requires an active current key. Expired keys require a signed
+//! successor proposal through the privileged local operator channel; expiry
+//! alone is not revocation of that host administrator's controller identity.
 
 use anyhow::Context as _;
 use chrono::{DateTime, Utc};
