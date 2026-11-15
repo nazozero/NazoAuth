@@ -52,7 +52,7 @@ def fingerprint(scope: str, tree: bytes) -> str:
     return hashlib.sha256(b"\0".join(records)).hexdigest()
 
 
-def api(path: str) -> dict:
+def api(path: str) -> dict | list[dict]:
     return json.loads(subprocess.check_output(["gh", "api", path], text=True))
 
 
@@ -90,8 +90,14 @@ def merged_pr_inputs_match(run: dict, current: dict, scope: str, expected: str) 
         return False
     if run["head_repository"]["full_name"] != current["head_repository"]["full_name"]:
         return False
-    for pr in run["pull_requests"]:
-        if pr["base"]["ref"] != "main" or pr["head"]["sha"] != run["head_sha"]:
+    # Actions drops run.pull_requests after merge. The commit association keeps
+    # the merged PR's original head/base, including after a squash merge.
+    repo = current["head_repository"]["full_name"]
+    for pr in api(f"repos/{repo}/commits/{run['head_sha']}/pulls?per_page=100"):
+        if (not pr["merged_at"] or pr["base"]["ref"] != "main"
+                or pr["base"]["repo"]["full_name"] != repo
+                or pr["head"]["repo"]["full_name"] != repo
+                or pr["head"]["sha"] != run["head_sha"]):
             continue
         head, base = run["head_sha"], pr["base"]["sha"]
         subprocess.run(["git", "fetch", "--no-tags", "origin", head, base], check=True,

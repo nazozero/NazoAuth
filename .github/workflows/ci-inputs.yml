@@ -10,10 +10,6 @@ on:
       run:
         value: ${{ jobs.inputs.outputs.run }}
 
-permissions:
-  contents: read
-  actions: read
-
 jobs:
   inputs:
     runs-on: ubuntu-latest
