@@ -108,7 +108,10 @@ This avoids rebuilding and retesting an unchanged service after documentation or
 specification-inventory edits. Changing test or workflow inputs invalidates that
 evidence. Ordinary functional tests can also transfer from a successful same-repo
 PR to main when its tested base is an ancestor of its head and Git proves its
-inputs equal the current main inputs. Otherwise main runs the full ordinary suite.
+inputs equal the current main inputs. The merged PR head/base are read from the
+commit-to-PR association: Actions can clear a historical run's `pull_requests`
+list after merge. Only the Rust input-selection job receives PR read permission.
+Otherwise main runs the full ordinary suite.
 This covers direct pushes, changed merge inputs and missing evidence without
 guessing a merge result. Other workflows retain their separate main checks.
 
