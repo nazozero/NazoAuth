@@ -176,7 +176,7 @@ pub(super) fn mdoc_element_to_cbor(
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
     presentation: &PresentedCredential<'_>,
-) -> Result<VerifiedCredential, CredentialTrustError> {
+) -> Result<(VerifiedCredential, Vec<Vec<u8>>), CredentialTrustError> {
     let bytes = URL_SAFE_NO_PAD
         .decode(presentation.encoded.as_bytes())
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
@@ -270,21 +270,24 @@ pub(super) fn verify(
         }
         namespaces.insert(namespace, Value::Object(claims));
     }
-    Ok(VerifiedCredential {
-        format: CredentialFormat::MsoMdoc,
-        issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(&certificates[0])),
-        issuer_chain_authority_key_identifiers:
-            super::certificates::issuer_authority_key_identifiers(&certificates)?,
-        credential_type: mso.doc_type,
-        claims: Value::Object(namespaces),
-        holder_key: Some(holder_key),
-        issued_at: Some(mso.validity_info.signed),
-        expires_at: Some(mso.validity_info.valid_until),
-        status: mso
-            .status
-            .map(|status| cbor_to_json(status.raw))
-            .transpose()?,
-    })
+    Ok((
+        VerifiedCredential {
+            format: CredentialFormat::MsoMdoc,
+            issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(&certificates[0])),
+            issuer_chain_authority_key_identifiers:
+                super::certificates::issuer_authority_key_identifiers(&certificates)?,
+            credential_type: mso.doc_type,
+            claims: Value::Object(namespaces),
+            holder_key: Some(holder_key),
+            issued_at: Some(mso.validity_info.signed),
+            expires_at: Some(mso.validity_info.valid_until),
+            status: mso
+                .status
+                .map(|status| cbor_to_json(status.raw))
+                .transpose()?,
+        },
+        certificates,
+    ))
 }
 
 pub(crate) fn standard_device_authentication_bytes(

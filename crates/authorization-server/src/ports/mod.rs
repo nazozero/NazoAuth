@@ -1,6 +1,7 @@
 //! Backend-neutral application ports.
 
 pub mod audit;
+pub mod credential_status;
 pub mod fapi_replay;
 pub mod mdoc;
 pub mod persistence;

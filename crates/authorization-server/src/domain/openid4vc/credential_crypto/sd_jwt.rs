@@ -94,7 +94,7 @@ pub(super) async fn sign(
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
     presentation: &PresentedCredential<'_>,
-) -> Result<VerifiedCredential, CredentialTrustError> {
+) -> Result<(VerifiedCredential, Vec<Vec<u8>>), CredentialTrustError> {
     let parts = presentation.encoded.split('~').collect::<Vec<_>>();
     if parts.len() < 2 || parts[0].is_empty() || parts.last().is_some_and(|part| part.is_empty()) {
         return Err(CredentialTrustError::InvalidEncoding);
@@ -233,18 +233,21 @@ pub(super) fn verify(
             return Err(CredentialTrustError::InvalidEncoding);
         }
     }
-    Ok(VerifiedCredential {
-        format: CredentialFormat::SdJwtVc,
-        issuer: issuer.to_owned(),
-        issuer_chain_authority_key_identifiers:
-            super::certificates::issuer_authority_key_identifiers(&certificates)?,
-        credential_type: credential_type.to_owned(),
-        holder_key: Some(holder_jwk),
-        issued_at: timestamp_claim(&credential, "iat"),
-        expires_at: timestamp_claim(&credential, "exp"),
-        status: credential.get("status").cloned(),
-        claims: credential,
-    })
+    Ok((
+        VerifiedCredential {
+            format: CredentialFormat::SdJwtVc,
+            issuer: issuer.to_owned(),
+            issuer_chain_authority_key_identifiers:
+                super::certificates::issuer_authority_key_identifiers(&certificates)?,
+            credential_type: credential_type.to_owned(),
+            holder_key: Some(holder_jwk),
+            issued_at: timestamp_claim(&credential, "iat"),
+            expires_at: timestamp_claim(&credential, "exp"),
+            status: credential.get("status").cloned(),
+            claims: credential,
+        },
+        certificates,
+    ))
 }
 
 fn numeric_date(payload: &Value, name: &str) -> Result<u64, CredentialTrustError> {

@@ -85,6 +85,7 @@ impl Openid4vcCredentialCrypto {
             mdoc_signer,
             issuer_trust_policy,
             revocation_policy,
+            status_resolver: None,
         })
     }
 

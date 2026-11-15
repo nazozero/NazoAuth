@@ -99,7 +99,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `MFA_TOTP_ENCRYPTION_KEY` / `MFA_TOTP_ENCRYPTION_KEY_ID` | generated under `DATA_DIR/secrets` | Current 32-byte base64url key and derived version id for TOTP seed envelope encryption. Prefer `MFA_TOTP_ENCRYPTION_KEY_FILE` when importing a controlled existing key. |
 | `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY` / `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID` | unset | Optional prior key during a controlled key transition. The PostgreSQL adapter checks retained key references before activation; bounded background maintenance re-wraps old envelopes. |
 
-| `OPENID4VC_REVOCATION_POLICY` | `disabled` | `disabled`, `optional`, or `required`. The VP verifier requires `required`. Certificate, trust-anchor, and revocation facts are read from the managed shared signing-key generation, so VP verification performs no network or file I/O. |
+| `OPENID4VC_REVOCATION_POLICY` | `disabled` | `disabled`, `optional`, or `required`. The VP verifier requires `required`. Certificate, trust-anchor, and revocation facts are read from the managed shared signing-key generation, so certificate checks require no network or file I/O. Individual credential status lists are fetched over bounded HTTPS separately. |
 | `OPENID4VC_MDOC_ISSUING_COUNTRY` | unset | Required only when local keyctl generates a certificate for an enabled `mso_mdoc` configuration. Two uppercase ASCII letters, and the generated DS/IACA Subject `C` uses this value. It is not required for externally issued certificate chains. |
 | `SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE` | `true` | Reject startup and high-impact administration when the server role is a superuser, can assume a ledger owner/privileged role, has direct ledger table capabilities, or lacks the writer function grants. |
 | `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
@@ -363,7 +363,7 @@ deployment path. They are candidates for the administrator UI:
 
 `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` is a comma-separated list of exact
 HTTPS origins allowed to resolve to private/loopback addresses for remote
-dynamic-client JWKS and Request Objects. Leave it empty in production unless a
+dynamic-client JWKS, Request Objects and credential status lists. Leave it empty in production unless a
 specific private client-document service is required. Public destinations are
 always DNS-resolved and blocked when any result is loopback, link-local,
 private, unspecified, or multicast; redirects are disabled.

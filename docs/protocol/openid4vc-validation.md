@@ -302,12 +302,30 @@ The verifier does not retrieve or process Type Metadata. It does not verify
 `vct#integrity` against a referenced document and cannot enforce policies that
 require Type Metadata processing.
 
-The verifier accepts credentials without individual status references. A signed
-`status` in SD-JWT VC or mdoc is rejected with `InvalidStatus`: no individual
-credential status mechanism, including Token Status Lists, is currently supported.
-Issuer certificate revocation remains a separate check. Deployments that require
-individual credential revocation need a supported status evaluator before they can
-accept those credentials; the verifier does not make online status requests.
+The verifier accepts credentials without individual status references. When a
+signed credential carries `status.status_list`, it retrieves and verifies the
+list according to [Token Status List draft-21](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-status-list-21).
+SD-JWT VC uses an ES256 `statuslist+jwt` with an authenticated `x5c` chain and
+the same public key as the credential issuer. mdoc uses an ES256/ESP256
+COSE_Sign1 CWT with protected `application/statuslist+cwt` type and `x5chain`;
+its signer must be issued directly by the credential's authenticated IACA.
+Embedded JWKs do not create trust. Certificate revocation remains a separate check.
+
+The verifier binds `sub` to the exact status URI, validates required `iat`,
+optional `exp`/`nbf` and positive `ttl` (mdoc requires `exp`), and accepts only
+status zero. Revoked, suspended, unknown, missing, out-of-range and malformed
+states fail closed. Lists use zlib and 1/2/4/8 bits per entry, least significant
+bits first. Unsupported status mechanisms and explicit delegated-certificate
+references remain rejected; status-list publication is not implemented.
+
+Fetching uses the existing bounded HTTPS resolver: validated TLS and DNS-pinned
+addresses, no redirects or ambient proxy, 10-second deadline, shared 16-request
+limit, and 128 KiB response bound. Decompression streams at most 16 MiB without
+allocating the complete list. Each verification fetches a fresh complete list;
+there is no status cache or stale fallback. The request sends no credential,
+index, authorization token or cookie, but its timing and the verifier's network
+address remain observable to the list host. Private origins require the existing
+explicit `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` allowlist.
 
 ### DCQL known-shape admission
 
