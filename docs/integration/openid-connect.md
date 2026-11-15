@@ -402,8 +402,9 @@ challenge.
 CIBA registration requires an explicit `id_token_signed_response_alg` of
 `ES256` or `PS256` and a corresponding active server signing key. Its signed
 backchannel requests and client assertions also accept only these algorithms.
-Registration algorithm choices are intersected with the CIBA profile and available
-server keys before selection.
+ID Token algorithm choices are intersected with the CIBA profile and available
+server signing keys before selection; client-assertion choices use the CIBA
+algorithm set, and registration validates the selected client key.
 Existing clients using the general OIDC default (`RS256`) or `EdDSA` must update
 their registration; the server does not silently change their algorithm.
 Because the supported email `login_hint` does not identify a unique transaction,

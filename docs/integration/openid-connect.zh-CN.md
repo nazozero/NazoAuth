@@ -357,7 +357,8 @@ Token、PAR 与设备授权 endpoint 的 `invalid_client` 响应在尝试 Basic 
 Basic challenge。
 CIBA 注册必须显式设置 `id_token_signed_response_alg=ES256` 或 `PS256`，
 且服务端必须有对应的活跃签名密钥。签名后端认证请求与客户端断言也只接受这两种算法。
-注册算法候选项先与 CIBA profile 及服务端可用密钥能力取交集，再选择算法。
+ID Token 算法候选项先与 CIBA profile 及服务端可用签名密钥取交集，再选择算法；
+客户端断言候选项使用 CIBA 算法集合，注册时校验所选客户端密钥。
 沿用通用 OIDC 默认算法 `RS256` 或使用 `EdDSA` 的现有客户端必须更新注册；
 服务端不会静默替换客户端所选算法。
 当前支持的邮箱 `login_hint` 不能唯一标识交易，因此 FAPI-CIBA 请求必须包含非空
