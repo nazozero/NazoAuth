@@ -327,7 +327,9 @@ pub(crate) async fn authorize_request_with_context(
         },
         AuthorizationProfilePolicy {
             signed_authorization_response_required: signed_response_required,
-            pkce_required: !client_policy.allow_confidential_oidc_without_pkce
+            pkce_required: client_policy.authorization_code_profile
+                == nazo_auth::AuthorizationCodeProfile::Oauth21
+                || !client_policy.allow_confidential_oidc_without_pkce
                 || fapi2_security
                 || client.require_dpop_bound_tokens
                 || client.require_mtls_bound_tokens

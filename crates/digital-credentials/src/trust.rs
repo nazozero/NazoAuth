@@ -528,6 +528,8 @@ impl VcIssuerTrustPolicy {
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+/// A verifier result with authenticated format-level claims, including SD-JWT
+/// credential type aliases. Query matching consumes these validated claims.
 pub struct VerifiedCredential {
     pub format: CredentialFormat,
     pub issuer: String,

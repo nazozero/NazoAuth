@@ -669,6 +669,26 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
             crypto.sign(&malformed).await,
             Err(CredentialTrustError::InvalidEncoding)
         );
+        for name in [
+            "iss",
+            "nbf",
+            "exp",
+            "cnf",
+            "vct",
+            "vct#integrity",
+            "aka_vcts",
+            "status",
+            "_sd",
+            "_sd_alg",
+            "...",
+        ] {
+            let forbidden = sd_input(None, json!({name: "subject-controlled"}), None);
+            assert_eq!(
+                crypto.sign(&forbidden).await,
+                Err(CredentialTrustError::InvalidEncoding),
+                "{name}"
+            );
+        }
     })
 }
 
@@ -1090,6 +1110,38 @@ fn sd_jwt_rejects_empty_vct_even_with_a_valid_alias() {
         crypto.verify_sd_jwt(&presentation),
         Err(CredentialTrustError::InvalidEncoding)
     );
+}
+
+#[test]
+fn sd_jwt_rejects_invalid_aliases_before_query_matching() {
+    let (crypto, original, _, certs) = sd_presentation_fixture();
+    let jwt = original.encoded.split('~').next().unwrap();
+    let mut claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(jwt.split('.').nth(1).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    for aliases in [
+        json!([]),
+        json!([""]),
+        json!([claims["vct"]]),
+        json!(["urn:example:base", 1]),
+        json!("urn:example:base"),
+    ] {
+        claims["aka_vcts"] = aliases;
+        let presentation = resign_sd_fixture_with_claims(
+            &original,
+            &certs,
+            vec![STANDARD.encode(&certs.leaf_der)],
+            &original.expected_nonce,
+            &claims,
+        );
+        assert_eq!(
+            crypto.verify_sd_jwt(&presentation),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    }
 }
 
 #[test]

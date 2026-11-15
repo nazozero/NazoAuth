@@ -18,6 +18,13 @@ Support status:
 
 Clients should use the deployment's actual discovery and registration metadata.
 
+For OAuth 2.1 draft-17 authorization-code clients, an administrator selects
+`security_policy.authorization_code_profile=oauth21`. This requires S256 PKCE
+and permits omission of `redirect_uri` at the token endpoint. Supplied values
+still require an exact match. Existing registrations default to `oauth20`;
+OIDC compatibility and FAPI retain their redirect contract. See the
+[client policy](../protocol/composable-capability-policy.md) for rollout constraints.
+
 ## Standards and profile support
 
 | Capability | Status | Enablement / advertisement condition | References | Notes |
@@ -69,11 +76,11 @@ no executable implementation or complete profile boundary is available yet.
 
 | Specification or draft | Current status | Why it is not a current advertised capability | Completion condition |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | Draft-15 implementation basis; selected draft-16/17 controls applied | [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is the current tracked draft. Authorization redirect URIs cannot prepopulate response parameters. | Full draft-16/17 conformance requires a requirement-by-requirement audit. |
+| OAuth 2.1 Authorization Framework | Explicit draft-17 authorization-code profile | [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is the current tracked draft. Authorization redirect URIs cannot prepopulate response parameters. | Select `security_policy.authorization_code_profile=oauth21`; its S256 PKCE requirement replaces token redirect repetition. This draft profile is separate from OAuth 2.0/OIDC and FAPI registration contracts. |
 | OAuth 2.0 for Browser-Based Applications | Server-side guidance reviewed | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) preserves the relevant draft-27 requirements. Public refresh rotation cannot extend its original deadline. | The hosted frontend is not a BFF; third-party browser clients and their deployment remain responsible for their own BCP requirements. |
 | Cross-Device Flows: Security BCP | Deployment assessment required | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) requires a risk assessment and suitable mitigations. Existing Device and CIBA gates are controls, not proof of proximity or user intent. | Assess each deployment and select mitigations before allowing cross-device grants; see [cross-device deployment guidance](../protocol/cross-device-decision-preparation.md). |
 | OAuth Security BCP Update | Not supported (audit pending) | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) is an update track for [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html). RFC 9700 behavior is supported, but this update draft has not been audited requirement by requirement. | Treat it as an RFC 9700 delta audit; update behavior, metadata, tests, and documentation together. |
-| JWT BCP / JWT Assertion | JWT BCP bis audit pending; RFC 10070 issuer-only client authentication supported | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) remains a draft. [RFC 10070](https://www.rfc-editor.org/info/rfc10070) narrows client-authentication audiences to the issuer. | Legacy per-client audience exceptions do not conform to RFC 10070. JWT bearer grant support is limited to client self-assertions and issuer audience. |
+| JWT BCP / JWT Assertion | JWT BCP bis audit pending; RFC 10070 issuer-only client authentication supported | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) remains a draft. [RFC 10070](https://www.rfc-editor.org/info/rfc10070) narrows client-authentication audiences to the issuer. | Retained legacy audience settings no longer relax this rule. JWT bearer grant support is limited to client self-assertions and issuer audience. |
 | OAuth Client Attestation | Supports the draft-07 version fixed by OpenID4VCI 1.0; disabled by default | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) is the version explicitly fixed by OpenID4VCI 1.0 Final. The implementation supports `attest_jwt_client_auth` and binds refresh tokens to the Client Instance `cnf` key. It is advertised only when the module is enabled and client policy requires it. | Later drafts and the eventual RFC require a separate delta audit; breaking syntax changes are not mixed into the HAIP 1.0 / OpenID4VCI 1.0 profile. |
 | FAPI 2.0 HTTP Signatures | Experimental support; disabled by default; stable-spec audit pending | The [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) is not a Final Specification. The persisted `http_message_signatures` module controls `/fapi/resource`. | Decide whether to advertise only after the spec stabilizes or an adopter requires it; every newer draft or Final requires a delta audit. |
 | Refresh Token and Authorization Expiration | Not supported (planned) | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) requires explicit authorization and refresh-token lifetime modeling; current metadata omits these expiration fields. | Define authorization lifetime, refresh-family state, revocation semantics, metadata, and E2E tests. |
@@ -412,12 +419,9 @@ High-assurance integrations should prefer asymmetric or sender-constrained
 client authentication. FAPI profiles exclude shared-secret POST authentication.
 
 For `private_key_jwt`, use the issuer identifier as the sole audience and keep
-assertion lifetimes short. Newly dynamically registered clients use this rule.
-Existing clients with administrator-enabled endpoint or multiple-audience
-compatibility settings retain their prior behavior outside FAPI profiles. A
-`client-authentication+jwt` typed assertion always uses the issuer-only rule.
-Retire those compatibility settings after all affected clients use the issuer
-as their sole audience. For mTLS, register
+assertion lifetimes short. This applies to all clients and assertion types;
+retained endpoint/multiple-audience settings no longer relax validation.
+For mTLS, register
 the correct certificate-bound client metadata and make sure the deployment's
 trusted proxy/mTLS termination boundary is configured before advertising mTLS
 metadata.

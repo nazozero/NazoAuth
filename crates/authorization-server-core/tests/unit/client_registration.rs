@@ -64,3 +64,29 @@ fn pushed_requests_are_independent_of_fapi_client_authentication() {
         .expect("existing policy remains readable");
     assert!(!previous.require_pushed_authorization_requests);
 }
+
+#[test]
+fn oauth21_code_profile_is_explicit_and_cannot_disable_pkce() {
+    let legacy: ClientSecurityPolicy =
+        serde_json::from_value(serde_json::json!({"version": 1})).unwrap();
+    assert!(
+        serde_json::to_value(&legacy)
+            .unwrap()
+            .get("authorization_code_profile")
+            .is_none()
+    );
+    assert_eq!(
+        legacy.authorization_code_profile,
+        AuthorizationCodeProfile::Oauth20
+    );
+    let mut modern: ClientSecurityPolicy = serde_json::from_value(serde_json::json!({
+        "version": 1, "authorization_code_profile": "oauth21"
+    }))
+    .unwrap();
+    assert_eq!(modern.validate(), Ok(()));
+    modern.allow_confidential_oidc_without_pkce = true;
+    assert!(modern.validate().is_err());
+    modern.allow_confidential_oidc_without_pkce = false;
+    modern.assurance = ClientAssuranceLevel::Fapi2;
+    assert!(modern.validate().is_err());
+}

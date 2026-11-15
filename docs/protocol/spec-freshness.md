@@ -54,11 +54,25 @@ protocol and integration documentation, including both integration translations.
 The fixed OpenID4VCI draft-07 contract is an explicit profile pin in each guide;
 it does not replace the separately tracked current draft.
 
+## Maintaining implementation alignment
+
+For an implemented protocol, adopting a new version includes comparing its
+normative changes with the endpoint, state and validation owners, changing the
+affected implementation, and exercising both accepted and rejected requests.
+Update the integration guides and supported profile together with those changes.
+An inventory-only version change is not completion of that work.
+
+Apply requirements to the selected role and profile. Optional Type Metadata
+retrieval is not a prerequisite for the certificate-based SD-JWT VC verifier.
+OpenID4VCI Final's normative client-attestation draft-07 dependency remains part
+of that Final contract; a newer standalone draft does not replace it silently.
+Watch-only drafts are adoption candidates, not advertised capabilities.
+
 ## November source changes and implementation boundaries
 
 | Source | Consequence for NazoAuth |
 | --- | --- |
-| OAuth 2.1, revision 17 | Authorization redirect URIs reject query parameters reserved for authorization responses, including for previously registered clients. The authorization endpoint is derived from the query-free issuer. When an authorization request includes `redirect_uri`, the token request must repeat it; OAuth 2.1-only clients that omit it cannot use this flow. A token request containing a verifier without an original challenge is rejected as `invalid_request`. Draft 17 also clarifies input validation and active resource-owner interaction; full draft conformance is not claimed. |
+| OAuth 2.1, revision 17 | Authorization redirect URIs reject query parameters reserved for authorization responses, including for previously registered clients. The authorization endpoint is derived from the query-free issuer. An explicit per-client `authorization_code_profile=oauth21` requires S256 PKCE and permits token requests without `redirect_uri`; retained `oauth20` and FAPI profiles enforce the older redirect contract. A token request containing a verifier without an original challenge is rejected as `invalid_request`. Draft 17 also clarifies input validation and active resource-owner interaction; full draft conformance is not claimed. |
 | Browser-based applications, RFC 10017 | Compared the final text with draft 27; the server-side normative requirements did not materially change. The review found and corrected public refresh rotation extending the initial expiry. Existing public refresh families must reauthorize at the migration cutover. Browser application and deployment responsibilities remain separate. |
 | Cross-device security, RFC 10027 | Requires deployment-specific risk assessment and mitigations, with proximity considered where possible. Device and CIBA authorization gates and lifecycle protections are available controls, not proof of proximity or of a user's intent; see the cross-device deployment guidance. |
 | Client Attestation, revision 12 | Requires attestation `iat` and changes HTTP field syntax to Structured Fields. The OpenID4VCI Final profile still requires revision 07. |
@@ -66,7 +80,7 @@ it does not replace the separately tracked current draft.
 | SPIFFE Client Authentication, 02–03 | Revises client identification, trust-bundle discovery, and X.509 SVID validation. This profile is not implemented. |
 | Identity Assertion JWT Authorization Grant, 04–06 | Adds resource governance, target authorization and metadata-validation guidance and changes the invalid subject-token error. Third-party assertion issuers and subject mapping are not implemented. |
 | [JWT assertion updates](https://www.rfc-editor.org/info/rfc10070) | Client authentication requires issuer-only audiences, including untyped assertions and clients with legacy compatibility settings. Existing clients using endpoint or multiple audiences must migrate to the issuer. JWT bearer grants have separate audience rules. |
-| SD-JWT VC, revisions 20–26 | DCQL type matching includes authenticated `aka_vcts` values. Issuer verification uses a configured certificate trust anchor and issuer binding; it does not perform issuer or type-metadata URL retrieval. The verifier requires `iss`, `exp`, and holder binding under its current policy. |
+| SD-JWT VC, revisions 20–26 | The verifier validates `aka_vcts` independently of DCQL constraints; DCQL matches the authenticated primary type and aliases. Issuance omits empty `_sd`, rejects reserved subject-claim names, and holder binding requires a scalar audience. Issuer verification uses a configured certificate trust anchor and issuer binding; it does not perform issuer or type-metadata URL retrieval. The verifier requires `iss`, `exp`, and holder binding under its current policy. |
 | Delegated Authorization, 03–04 | Describes key-bound root and delegated tokens, restriction inheritance and per-hop proof. This delegated-token profile is not implemented. |
 | Mission, 00–02 | Changes the mission lifecycle and approval governance, including standing consent and recorded activation. Mission records are not implemented. |
 | Client Instance Identification, 00–01 | Aligns instance claims, required attestation `iat`, error handling, and temporal-claim privacy with client-attestation draft 12. The OpenID4VCI Final draft 07 profile remains separate. |

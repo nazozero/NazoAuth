@@ -429,7 +429,9 @@ impl PreparedParClient<'_> {
                     .config
                     .requires_signed_authorization_response(&client.security_policy),
                 allowed_audiences: &client.allowed_audiences,
-                pkce_required: !client.security_policy.allow_confidential_oidc_without_pkce
+                pkce_required: client.security_policy.authorization_code_profile
+                    == nazo_auth::AuthorizationCodeProfile::Oauth21
+                    || !client.security_policy.allow_confidential_oidc_without_pkce
                     || fapi2_security
                     || client.require_dpop_bound_tokens
                     || client.require_mtls_bound_tokens

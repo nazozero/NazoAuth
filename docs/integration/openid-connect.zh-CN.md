@@ -14,6 +14,12 @@
 
 客户端应以部署实际返回的 discovery 和 registration metadata 为准。
 
+OAuth 2.1 draft-17 授权码客户端由管理员设置
+`security_policy.authorization_code_profile=oauth21`，强制使用 S256 PKCE，
+并允许令牌请求省略 `redirect_uri`；若提供该参数，仍须精确匹配。现有注册
+默认为 `oauth20`，OIDC 兼容和 FAPI 保留原有 redirect 契约。更新顺序及限制见
+[客户端策略](../protocol/composable-capability-policy.md)。
+
 ## 规范与 Profile 支持
 
 | 能力 | 状态 | 启用 / 宣告条件 | 规范依据 | 说明 |
@@ -63,11 +69,11 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 
 | 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | draft-15 实现基础；已应用部分 draft-16/17 控制 | 当前跟踪 [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。授权 redirect URI 不得预先包含响应参数。 | 完整 draft-16/17 合规声明需要逐条审核。 |
+| OAuth 2.1 Authorization Framework | 显式 draft-17 授权码 profile | 当前跟踪 [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。授权 redirect URI 不得预先包含响应参数。 | 设置 `security_policy.authorization_code_profile=oauth21`，以强制 S256 PKCE 替代令牌请求重复 redirect URI。该草案 profile 与 OAuth 2.0/OIDC、FAPI 注册契约分开。 |
 | OAuth 2.0 for Browser-Based Applications | 已复核服务端要求 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 保留相关 draft-27 要求；公共客户端的刷新令牌轮换不能延长初始期限。 | 托管前端不是 BFF；第三方浏览器客户端及其部署仍须负责自身适用的 BCP 要求。 |
 | Cross-Device Flows: Security BCP | 需要部署方评估 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 要求风险评估和适当的缓解措施。现有 Device 和 CIBA 授权门禁不能证明设备邻近或用户意图。 | 启用跨设备授权前按部署场景评估并选择缓解措施；参见[跨设备部署说明](../protocol/cross-device-decision-preparation.md)。 |
 | OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
-| JWT BCP / JWT Assertion | JWT BCP bis 待审计；支持 RFC 10070 的 issuer-only 客户端认证 | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 仍是草案。[RFC 10070](https://www.rfc-editor.org/info/rfc10070) 将客户端认证 audience 限定为 issuer。 | 旧客户端的 audience 兼容例外不符合 RFC 10070。JWT bearer grant 限于客户端自断言和 issuer audience。 |
+| JWT BCP / JWT Assertion | JWT BCP bis 待审计；支持 RFC 10070 的 issuer-only 客户端认证 | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 仍是草案。[RFC 10070](https://www.rfc-editor.org/info/rfc10070) 将客户端认证 audience 限定为 issuer。 | 保留的旧 audience 配置不再放宽此规则。JWT bearer grant 限于客户端自断言和 issuer audience。 |
 | OAuth Client Attestation | 支持 OpenID4VCI 1.0 固定引用的 draft-07；默认关闭 | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) 是 OpenID4VCI 1.0 Final 明确固定的版本；当前实现支持 `attest_jwt_client_auth`，并将 refresh token 绑定到 Client Instance `cnf` 公钥。只有模块启用且客户端策略要求时才宣告。 | 后续草案及最终 RFC 必须作为独立 delta audit；不能把更新草案的破坏性语法变化混入 HAIP 1.0 / OpenID4VCI 1.0 profile。 |
 | FAPI 2.0 HTTP Signatures | 实验性支持；默认关闭；待稳定规范审计 | [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) 不是 Final Specification；持久化 `http_message_signatures` 模块控制 `/fapi/resource`。 | 规范稳定或有 adopter 后再决定是否宣告；每个新草案/Final 都必须做 delta audit。 |
 | Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |

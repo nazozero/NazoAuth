@@ -307,20 +307,7 @@ fn credential_matches_query(
     if let Some(meta) = query.meta.as_ref() {
         match query.format {
             nazo_digital_credentials::CredentialFormat::SdJwtVc => {
-                let aliases = match credential.claims.get("aka_vcts") {
-                    None => None,
-                    Some(Value::Array(values))
-                        if !values.is_empty()
-                            && values.iter().all(|value| {
-                                value.as_str().is_some_and(|value| {
-                                    !value.is_empty() && value != credential.credential_type
-                                })
-                            }) =>
-                    {
-                        Some(values)
-                    }
-                    Some(_) => return false,
-                };
+                let aliases = credential.claims.get("aka_vcts").and_then(Value::as_array);
                 let values = meta.get("vct_values").and_then(Value::as_array);
                 if values.is_some_and(|values| {
                     !values.iter().any(|value| {

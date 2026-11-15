@@ -100,6 +100,13 @@ trailing `~`, as required by SD-JWT VC draft-26 section 2.2.2.5. Holder
 KB-JWT audiences must be a single string matching the transaction's audience
 (RFC 9901 section 4.3); arrays, including single-element arrays, are rejected.
 
+The credential verifier validates `aka_vcts` before returning a verified
+credential: it must be a nonempty string array, with no empty string or primary
+`vct` value. This applies even without a DCQL type constraint. DCQL only matches
+the authenticated primary type and aliases; it does not repeat format validation.
+The issuer rejects subject-claim names reserved for non-disclosable VC control
+claims and SD-JWT encoding, rather than issuing a credential its verifier rejects.
+
 Signed proof regressions use actual ES256 signatures and trusted attestation
 keys. Encryption regressions encrypt and decrypt real compact JWE, retain
 the status through storage/replay helpers, and assert the HTTP presenter uses

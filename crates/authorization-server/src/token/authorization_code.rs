@@ -76,19 +76,22 @@ pub async fn load_pending_authorization_code_payload_with_service(
 }
 
 pub fn redirect_uri_matches_authorization_request(
+    profile: nazo_auth::AuthorizationCodeProfile,
     payload: &CodePayload,
     token_redirect_uri: Option<&str>,
 ) -> bool {
     match (payload.redirect_uri_was_supplied, token_redirect_uri) {
         (true, Some(value)) => value == payload.redirect_uri.as_str(),
-        (true, None) => false,
+        (true, None) => profile == nazo_auth::AuthorizationCodeProfile::Oauth21,
         (false, Some(value)) => value == payload.redirect_uri.as_str(),
         (false, None) => true,
     }
 }
 
 fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -> bool {
-    client.client_type != "confidential"
+    client.security_policy.authorization_code_profile
+        == nazo_auth::AuthorizationCodeProfile::Oauth21
+        || client.client_type != "confidential"
         || client.require_dpop_bound_tokens
         || client.require_mtls_bound_tokens
         || payload.dpop_jkt.is_some()
@@ -798,7 +801,16 @@ pub fn validate_pending_authorization_code_request(
             false,
         ));
     }
-    if !redirect_uri_matches_authorization_request(payload, form.redirect_uri.as_deref()) {
+    let code_profile = if issuance.config.profile.requires_fapi2_security() {
+        nazo_auth::AuthorizationCodeProfile::Oauth20
+    } else {
+        client.security_policy.authorization_code_profile
+    };
+    if !redirect_uri_matches_authorization_request(
+        code_profile,
+        payload,
+        form.redirect_uri.as_deref(),
+    ) {
         return Err(authorization_code_client_mismatch_response());
     }
     match payload.pkce.challenge() {

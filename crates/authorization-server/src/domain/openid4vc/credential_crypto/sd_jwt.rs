@@ -38,6 +38,9 @@ pub(super) async fn sign(
     let mut disclosures = Vec::with_capacity(claims.len());
     let mut digests = Vec::with_capacity(claims.len());
     for (name, value) in claims {
+        if always_disclosed_vc_claim(name) || matches!(name.as_str(), "_sd" | "_sd_alg" | "...") {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
         let mut salt = [0_u8; 16];
         rand::rng().fill_bytes(&mut salt);
         let disclosure = URL_SAFE_NO_PAD.encode(
@@ -209,17 +212,33 @@ pub(super) fn verify(
     {
         return Err(CredentialTrustError::InvalidHolderBinding);
     }
+    let credential_type = credential
+        .get("vct")
+        .and_then(Value::as_str)
+        .filter(|vct| !vct.is_empty())
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    // Type validity belongs to credential verification, regardless of whether
+    // the presentation query happens to include a type constraint.
+    if let Some(aliases) = credential.get("aka_vcts") {
+        let aliases = aliases
+            .as_array()
+            .ok_or(CredentialTrustError::InvalidEncoding)?;
+        if aliases.is_empty()
+            || aliases.iter().any(|alias| {
+                !alias
+                    .as_str()
+                    .is_some_and(|alias| !alias.is_empty() && alias != credential_type)
+            })
+        {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
+    }
     Ok(VerifiedCredential {
         format: CredentialFormat::SdJwtVc,
         issuer: issuer.to_owned(),
         issuer_chain_authority_key_identifiers:
             super::certificates::issuer_authority_key_identifiers(&certificates)?,
-        credential_type: credential
-            .get("vct")
-            .and_then(Value::as_str)
-            .filter(|vct| !vct.is_empty())
-            .ok_or(CredentialTrustError::InvalidEncoding)?
-            .to_owned(),
+        credential_type: credential_type.to_owned(),
         holder_key: Some(holder_jwk),
         issued_at: timestamp_claim(&credential, "iat"),
         expires_at: timestamp_claim(&credential, "exp"),

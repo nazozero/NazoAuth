@@ -17,6 +17,17 @@ and `security_policy` continue to deny use by default.
 Every client carries an explicit versioned `security_policy`. A missing policy
 is rejected; no global process setting reconstructs or substitutes one.
 
+`security_policy.authorization_code_profile` selects the authorization-code
+wire contract. Its default, `oauth20`, preserves RFC 6749/OIDC redirect binding
+for existing registrations. Set `oauth21` for clients using OAuth 2.1 draft-17:
+S256 PKCE is required, and the token request may omit `redirect_uri`. A supplied
+value still has to match the authorized redirect URI exactly. The choice is
+administrator-owned; PKCE presence does not infer a client's protocol version.
+It cannot be combined with the confidential-OIDC PKCE exception or per-client
+FAPI assurance. Server FAPI profiles retain their OAuth 2.0 redirect contract.
+Update all readers before selecting the new profile; older binaries reject the
+new policy field instead of silently weakening the contract.
+
 ## New-install server defaults
 
 The following stable runtime modules are enabled on a new database:
