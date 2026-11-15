@@ -72,7 +72,10 @@ impl CibaApplication {
         );
         let authorization_service = &self.authorization;
         let Some(client_id) = credentials.client_id.as_deref() else {
-            return Err(backchannel_invalid_client(transport.basic_challenge()));
+            return Err(OAuthEndpointError::invalid_client(
+                "客户端认证失败.",
+                transport.basic_challenge(),
+            ));
         };
         let (client, secret_salt) = match authorization_service
             .client_authentication_snapshot(client_id)
@@ -82,7 +85,10 @@ impl CibaApplication {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                return Err(backchannel_invalid_client(transport.basic_challenge()));
+                return Err(OAuthEndpointError::invalid_client(
+                    "客户端认证失败.",
+                    transport.basic_challenge(),
+                ));
             }
             Err(error) => {
                 tracing::warn!(%error, "failed to query CIBA client");
@@ -181,14 +187,12 @@ impl CibaApplication {
                 "CIBA request object key source is unavailable.",
             ));
         }
-        validate_ciba_token_request_profile(&client, client.token_endpoint_auth_method.as_str())
-            .map_err(backchannel_profile_error)?;
+        validate_ciba_token_request_profile(&client, client.token_endpoint_auth_method.as_str())?;
         validate_ciba_security_profile_client_with_config(
             config,
             &client,
             client.token_endpoint_auth_method.as_str(),
-        )
-        .map_err(backchannel_profile_error)?;
+        )?;
         validate_ciba_request_object_presence_with_config(config, &client, &form)?;
         let request_object_replay = match validate_and_apply_ciba_request_object_claims_with_config(
             config, &client, &mut form,
@@ -398,31 +402,6 @@ impl CibaApplication {
         })
     }
 }
-fn backchannel_profile_error(error: OAuthEndpointError) -> OAuthEndpointError {
-    match error {
-        OAuthEndpointError::Token {
-            mut fields,
-            basic_challenge,
-        } if fields.error == "invalid_client" => {
-            fields.status = StatusCode::UNAUTHORIZED;
-            OAuthEndpointError::Token {
-                fields,
-                basic_challenge,
-            }
-        }
-        error => error,
-    }
-}
-
-fn backchannel_invalid_client(basic_challenge: bool) -> OAuthEndpointError {
-    OAuthEndpointError::token(
-        StatusCode::UNAUTHORIZED,
-        "invalid_client",
-        "客户端认证失败.",
-        basic_challenge,
-    )
-}
-
 fn token_management_auth_error(
     error: TokenManagementClientAuthError,
     basic_challenge: bool,
@@ -430,7 +409,9 @@ fn token_management_auth_error(
     match error {
         TokenManagementClientAuthError::InvalidClient
         | TokenManagementClientAuthError::PublicClientCredentialsForbidden => {
-            backchannel_invalid_client(basic_challenge)
+            // Non-HTTP authentication has no applicable 401 challenge. Follow
+            // OAuth and the OIDF suite: https://github.com/openid/modrna/issues/213.
+            OAuthEndpointError::invalid_client("客户端认证失败.", basic_challenge)
         }
         TokenManagementClientAuthError::StoreUnavailable => OAuthEndpointError::json(
             StatusCode::SERVICE_UNAVAILABLE,

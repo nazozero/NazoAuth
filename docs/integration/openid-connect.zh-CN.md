@@ -363,12 +363,14 @@ ID Token 算法候选项先与 CIBA profile 及服务端可用签名密钥取交
 服务端不会静默替换客户端所选算法。
 当前支持的邮箱 `login_hint` 不能唯一标识交易，因此 FAPI-CIBA 请求必须包含非空
 `binding_message`，供用户确认交易绑定。
-CIBA 后端认证 endpoint 的 `invalid_client` 使用 HTTP 401；尝试 Basic 认证时
-附带 Basic challenge。
-非 Basic 认证失败目前不返回 `WWW-Authenticate` challenge。CIBA Core 第 13 节
-要求使用 401，而 RFC 9110 第 15.5.2 节要求提供适用的 challenge；JWT 断言和
-mTLS 没有为该端点定义相应 challenge，因此此处仍存在 HTTP 符合性限制。
-为禁止 Basic 的客户端或 profile 宣告 Basic 不能解决这一限制。
+CIBA 后端认证 endpoint 复用 OAuth 错误处理：Basic 认证失败返回 HTTP 401，
+附带 Basic `WWW-Authenticate` challenge；其他 `invalid_client` 返回 HTTP 400，
+不附带 challenge。JWT 断言和 mTLS 没有定义适用的 HTTP 认证 challenge。
+该行为遵循 [RFC 6749 第 5.2 节](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2)，
+并与[官方 OIDF 一致性测试接受的 400/401 响应](https://gitlab.com/openid/conformance-suite/-/blob/daca6ad2068468d42557ea1152f899cc3ac01a10/src/main/java/net/openid/conformance/condition/client/CheckBackchannelAuthenticationEndpointErrorHttpStatus.java)一致。
+CIBA Core 1.0 第 13 节仍只列出 401，相关勘误由尚未关闭的
+[MODRNA #213](https://github.com/openid/modrna/issues/213) 跟踪。
+这里不宣称正式规范已修订，也不为 JWT/mTLS 失败宣告无关的 challenge。
 
 | Method | 状态 | 引用 | 客户端类型 / 条件 | 说明 |
 | --- | --- | --- | --- | --- |

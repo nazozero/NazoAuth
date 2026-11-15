@@ -1,31 +1,27 @@
 use super::*;
 
 #[test]
-fn ciba_backchannel_invalid_basic_client_includes_basic_challenge() {
+fn ciba_client_authentication_errors_preserve_http_method_and_store_failure() {
     for basic in [false, true] {
-        assert!(matches!(
-            backchannel_invalid_client(basic),
-            OAuthEndpointError::Token { fields, basic_challenge }
-                if fields.status == StatusCode::UNAUTHORIZED
-                    && fields.error == "invalid_client"
-                    && basic_challenge == basic
-        ));
+        for error in [
+            TokenManagementClientAuthError::InvalidClient,
+            TokenManagementClientAuthError::PublicClientCredentialsForbidden,
+        ] {
+            assert!(matches!(
+                token_management_auth_error(error, basic),
+                OAuthEndpointError::Token { fields, basic_challenge }
+                    if fields.status == if basic { StatusCode::UNAUTHORIZED } else { StatusCode::BAD_REQUEST }
+                        && fields.error == "invalid_client"
+                        && basic_challenge == basic
+            ));
+        }
+        assert_eq!(
+            token_management_auth_error(TokenManagementClientAuthError::StoreUnavailable, basic),
+            OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端认证状态存储不可用.",
+            )
+        );
     }
-}
-
-#[test]
-fn ciba_backchannel_preserves_its_invalid_client_status() {
-    let token_error = OAuthEndpointError::invalid_client("failed", false);
-    assert!(matches!(
-        backchannel_profile_error(token_error),
-        OAuthEndpointError::Token { fields, basic_challenge: false }
-            if fields.status == StatusCode::UNAUTHORIZED && fields.error == "invalid_client"
-    ));
-    assert!(matches!(
-        backchannel_profile_error(OAuthEndpointError::invalid_client("failed", true)),
-        OAuthEndpointError::Token { fields, basic_challenge: true }
-            if fields.status == StatusCode::UNAUTHORIZED && fields.error == "invalid_client"
-    ));
-    let other = OAuthEndpointError::token(StatusCode::BAD_REQUEST, "invalid_request", "bad", false);
-    assert_eq!(backchannel_profile_error(other.clone()), other);
 }

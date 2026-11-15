@@ -409,13 +409,16 @@ Existing clients using the general OIDC default (`RS256`) or `EdDSA` must update
 their registration; the server does not silently change their algorithm.
 Because the supported email `login_hint` does not identify a unique transaction,
 FAPI-CIBA requests must include a nonempty `binding_message` for user confirmation.
-The CIBA backchannel authentication endpoint uses HTTP 401 for `invalid_client`;
-when Basic authentication was attempted it includes the Basic challenge.
-For non-Basic failures it currently sends no `WWW-Authenticate` challenge.
-CIBA Core section 13 requires the 401 status, while RFC 9110 section 15.5.2
-requires an applicable challenge. JWT assertions and mTLS do not define one
-for this endpoint; this remains an HTTP conformance limitation. Advertising
-Basic for a client/profile that forbids it would not resolve that limitation.
+The CIBA backchannel authentication endpoint uses the shared OAuth error policy:
+failed Basic authentication returns HTTP 401 with a Basic `WWW-Authenticate`
+challenge; other `invalid_client` failures return HTTP 400 without a challenge.
+JWT assertions and mTLS define no applicable HTTP authentication challenge.
+This follows [RFC 6749 section 5.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2)
+and the [official OIDF suite's accepted 400/401 responses](https://gitlab.com/openid/conformance-suite/-/blob/daca6ad2068468d42557ea1152f899cc3ac01a10/src/main/java/net/openid/conformance/condition/client/CheckBackchannelAuthenticationEndpointErrorHttpStatus.java).
+CIBA Core 1.0 section 13 still lists only 401; its correction is tracked in
+[MODRNA #213](https://github.com/openid/modrna/issues/213), an open errata issue.
+This implementation does not claim that the published specification has already
+been amended or advertise an unrelated challenge for JWT/mTLS failures.
 
 | Method | Status | References | Client type / conditions | Notes |
 | --- | --- | --- | --- | --- |

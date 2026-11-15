@@ -182,7 +182,8 @@ async fn ciba_backchannel_fails_closed_before_client_state_access() {
         .set_payload("scope=openid&login_hint=subject%40example.test")
         .to_request();
     let response = actix_web::test::call_service(&app, missing_credentials).await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(!response.headers().contains_key(header::WWW_AUTHENTICATE));
     assert_eq!(
         oauth_error_code(response.into_parts().1).await,
         "invalid_client"
@@ -213,6 +214,134 @@ async fn ciba_backchannel_fails_closed_before_client_state_access() {
         oauth_error_code(response.into_parts().1).await,
         "server_error"
     );
+}
+
+#[actix_web::test]
+async fn ciba_backchannel_authentication_errors_use_applicable_http_challenges() {
+    let Some(mut state) = live_ciba_replay_state().await else {
+        return;
+    };
+    configure_ciba_test_mtls_proxy(&mut state);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let kid = "backchannel-auth-error-kid";
+    let mut client = ciba_private_key_jwt_client(kid, &key);
+    client.client_id = format!("ciba-auth-error-client-{}", Uuid::now_v7());
+    client.require_mtls_bound_tokens = true;
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, None, None)
+        .await
+        .expect("CIBA client should be stored");
+    let mut mtls_client = client.clone();
+    mtls_client.id = Uuid::now_v7();
+    mtls_client.client_id = format!("ciba-mtls-error-client-{}", Uuid::now_v7());
+    mtls_client.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    mtls_client.tls_client_auth_subject_dn = Some("CN=registered-other-client".to_owned());
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&mtls_client, None, None)
+        .await
+        .expect("CIBA mTLS client should be stored");
+    let settings = Arc::clone(&state.settings);
+    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+        state.diesel_db.clone(),
+        &settings,
+    )
+    .expect("CIBA runtime registry should initialize");
+    let app = actix_web::test::init_service(
+        actix_web::App::new()
+            .app_data(actix_web::web::Data::new(
+                crate::http::mtls::MtlsCertificateSource::new(
+                    crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+                ),
+            ))
+            .configure(|cfg| configure_ciba_test_app(cfg, &state, &runtime))
+            .configure(|cfg| crate::bootstrap::routes::configure(cfg, &settings)),
+    )
+    .await;
+
+    let assertion = signed_ciba_client_assertion(&client.client_id, kid, &key);
+    let (signed, signature) = assertion.rsplit_once('.').unwrap();
+    let invalid_signature = format!(
+        "{signed}.{}{}",
+        if signature.starts_with('A') { 'B' } else { 'A' },
+        &signature[1..]
+    );
+    let unknown_client = format!("unknown-ciba-client-{}", Uuid::now_v7());
+    let unknown_assertion = signed_ciba_client_assertion(&unknown_client, kid, &key);
+    for (case, body, basic, certificate) in [
+        (
+            "invalid JWT signature",
+            ciba_backchannel_body(
+                &client.client_id,
+                None,
+                Some(&invalid_signature),
+                None,
+                None,
+            ),
+            false,
+            false,
+        ),
+        (
+            "unknown JWT client",
+            ciba_backchannel_body(&unknown_client, None, Some(&unknown_assertion), None, None),
+            false,
+            false,
+        ),
+        (
+            "missing mTLS certificate",
+            format!("client_id={}", mtls_client.client_id),
+            false,
+            false,
+        ),
+        (
+            "mismatched mTLS certificate",
+            format!("client_id={}", mtls_client.client_id),
+            false,
+            true,
+        ),
+        ("invalid Basic credentials", String::new(), true, false),
+    ] {
+        let mut request = actix_web::test::TestRequest::post()
+            .uri("/bc-authorize")
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+            .set_payload(body);
+        if basic {
+            request = request.insert_header((header::AUTHORIZATION, "Basic dW5rbm93bjpiYWQ="));
+        }
+        if certificate {
+            request = request
+                .peer_addr("127.0.0.1:12345".parse().unwrap())
+                .insert_header(("client-cert", ciba_test_mtls_certificate().header.as_str()));
+        }
+        let response = actix_web::test::call_service(&app, request.to_request()).await;
+        assert_eq!(
+            response.status(),
+            if basic {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            "{case}"
+        );
+        let challenge = response.headers().get(header::WWW_AUTHENTICATE);
+        if basic {
+            assert!(
+                challenge.unwrap().to_str().unwrap().starts_with("Basic "),
+                "{case}"
+            );
+        } else {
+            assert!(challenge.is_none(), "{case}");
+        }
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store",
+            "{case}"
+        );
+        assert_eq!(
+            oauth_error_code(response.into_parts().1).await,
+            "invalid_client",
+            "{case}"
+        );
+    }
 }
 
 #[actix_web::test]
