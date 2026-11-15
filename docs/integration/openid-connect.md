@@ -391,6 +391,11 @@ attempted. Other client-authentication failures use HTTP 400 without a Basic
 challenge.
 The CIBA backchannel authentication endpoint uses HTTP 401 for `invalid_client`;
 when Basic authentication was attempted it includes the Basic challenge.
+For non-Basic failures it currently sends no `WWW-Authenticate` challenge.
+CIBA Core section 13 requires the 401 status, while RFC 9110 section 15.5.2
+requires an applicable challenge. JWT assertions and mTLS do not define one
+for this endpoint; this remains an HTTP conformance limitation. Advertising
+Basic for a client/profile that forbids it would not resolve that limitation.
 
 | Method | Status | References | Client type / conditions | Notes |
 | --- | --- | --- | --- | --- |

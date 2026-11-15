@@ -348,6 +348,10 @@ Token、PAR 与设备授权 endpoint 的 `invalid_client` 响应在尝试 Basic 
 Basic challenge。
 CIBA 后端认证 endpoint 的 `invalid_client` 使用 HTTP 401；尝试 Basic 认证时
 附带 Basic challenge。
+非 Basic 认证失败目前不返回 `WWW-Authenticate` challenge。CIBA Core 第 13 节
+要求使用 401，而 RFC 9110 第 15.5.2 节要求提供适用的 challenge；JWT 断言和
+mTLS 没有为该端点定义相应 challenge，因此此处仍存在 HTTP 符合性限制。
+为禁止 Basic 的客户端或 profile 宣告 Basic 不能解决这一限制。
 
 | Method | 状态 | 引用 | 客户端类型 / 条件 | 说明 |
 | --- | --- | --- | --- | --- |

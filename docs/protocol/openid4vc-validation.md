@@ -286,7 +286,7 @@ apply to the processed payload. SD-JWT VC control claims (`iss`, `nbf`, `exp`,
 `cnf`, `vct`, `vct#integrity`, `aka_vcts`, `status`) and their subclaims must
 remain plaintext; disclosure references within them are rejected. `iat` and
 `sub` may be selectively disclosed, as specified in
-[SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
+[SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-26#section-2.2.2.3).
 DCQL type selection accepts the signed `vct` and valid signed `aka_vcts`
 values. The primary `vct` must be a non-empty string, even when an alias
 matches the query. An empty or malformed `aka_vcts`, or one containing the primary
