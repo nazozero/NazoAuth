@@ -212,6 +212,8 @@ jobs:
           python-version: "3.15.0"
 
       - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+        with:
+          components: rustfmt, clippy
 
       - name: Install streaming evidence decoder
         run: |
