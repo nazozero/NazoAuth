@@ -244,6 +244,13 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
             "FAPI-CIBA requires an explicit ES256 or PS256 id_token_signed_response_alg",
         );
     }
+    if ciba_enabled
+        && metadata
+            .token_endpoint_auth_signing_alg
+            .is_some_and(|algorithm| !crate::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
+    {
+        return invalid("FAPI-CIBA token_endpoint_auth_signing_alg must be ES256 or PS256");
+    }
     if !matches!(metadata.backchannel_token_delivery_mode, "poll" | "ping") {
         return invalid("backchannel_token_delivery_mode 必须是 poll 或 ping；push 不受支持");
     }

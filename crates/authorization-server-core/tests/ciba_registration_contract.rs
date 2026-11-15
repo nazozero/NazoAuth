@@ -74,3 +74,26 @@ fn omitted_and_false_ciba_user_code_metadata_have_the_same_public_value() {
         assert!(!prepared.request.backchannel_user_code_parameter);
     }
 }
+
+#[test]
+fn ciba_choices_select_an_algorithm_supported_by_both_profile_and_keys() {
+    let mut request = ciba_request("poll");
+    request.id_token_signing_alg_values_supported =
+        Some(vec!["RS256".to_owned(), "PS256".to_owned()]);
+    request.token_endpoint_auth_signing_alg_values_supported =
+        Some(vec!["EdDSA".to_owned(), "PS256".to_owned()]);
+    let prepared = prepare_dynamic_client_registration(request.clone(), POLICY).unwrap();
+    assert_eq!(
+        prepared.request.id_token_signed_response_alg.as_deref(),
+        Some("PS256")
+    );
+    assert_eq!(
+        prepared.request.token_endpoint_auth_signing_alg.as_deref(),
+        Some("PS256")
+    );
+    let policy = DynamicRegistrationPolicy {
+        id_token_signing_algs: &["RS256"],
+        ..POLICY
+    };
+    assert!(prepare_dynamic_client_registration(request, policy).is_err());
+}

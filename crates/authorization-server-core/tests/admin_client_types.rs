@@ -554,3 +554,30 @@ fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
     );
     assert!(write.issued_secret.is_none());
 }
+
+#[test]
+fn ciba_registration_rejects_incompatible_assertion_algorithm() {
+    for algorithm in ["RS256", "EdDSA", "ES256", "PS256"] {
+        let mut client = oauth_client();
+        client.client_type = "confidential".to_owned();
+        client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+        client.jwks = Some(json!({"keys": []}).into());
+        let result = futures_executor::block_on(prepare_client_patch(
+            client,
+            PatchClientRequest {
+                grant_types: Some(vec!["urn:openid:params:grant-type:ciba".to_owned()]),
+                id_token_signed_response_alg: Some("PS256".to_owned()),
+                token_endpoint_auth_signing_alg: Some(algorithm.to_owned()),
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &StaticSectorIdentifier(vec![]),
+            &TestCrypto,
+        ));
+        assert_eq!(
+            result.is_ok(),
+            matches!(algorithm, "ES256" | "PS256"),
+            "{algorithm}"
+        );
+    }
+}
