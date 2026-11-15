@@ -110,6 +110,7 @@ fn status(
 
 fn operation(operation_id: &str) -> ControlOperation {
     ControlOperation {
+        renewal_public_key: None,
         schema: CONTROL_OPERATION_SCHEMA,
         operation_id: operation_id.to_owned(),
         kid: "kid-controller-test-key-0000000000000000000000000".to_owned(),
@@ -133,6 +134,7 @@ fn hash(seed: char) -> String {
 
 fn succeeded_result(operation_id: &str, request_hash: &str) -> ControlResult {
     ControlResult {
+        renewed_controller_kid: None,
         schema: CONTROL_RESULT_SCHEMA,
         operation_id: operation_id.to_owned(),
         request_hash: request_hash.to_owned(),
@@ -678,6 +680,7 @@ fn torn_publication_windows_recover_monotonically_or_fail_closed() {
     let path = journal.join(format!("{OPERATION_ID}.journal.json"));
     let temporary = path.with_extension("journal.json.tmp");
     let accepted = OperationJournalRecord {
+        renewed_controller_kid: None,
         schema: CONTROL_JOURNAL_SCHEMA,
         recovery_coverage_version: None,
         migration_baseline: None,
@@ -710,6 +713,7 @@ fn torn_publication_windows_recover_monotonically_or_fail_closed() {
     // rename was lost.
     begin_execution(&directory, OPERATION_ID, &hash('a')).unwrap();
     let completed = OperationJournalRecord {
+        renewed_controller_kid: None,
         phase: "completed".to_owned(),
         result: Some(succeeded_result(OPERATION_ID, &hash('a'))),
         ..accepted.clone()
@@ -760,6 +764,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
     let corrupt = |mutate: fn(&mut OperationJournalRecord)| {
         let scratch = temporary_directory();
         let mut record = OperationJournalRecord {
+            renewed_controller_kid: None,
             schema: CONTROL_JOURNAL_SCHEMA,
             recovery_coverage_version: None,
             migration_baseline: None,
@@ -833,6 +838,7 @@ fn journal_records_fail_closed_on_unknown_fields_schema_drift_and_binding_mismat
         let mut result = succeeded_result(OPERATION_ID, &hash('a'));
         mutate(&mut result);
         let record = OperationJournalRecord {
+            renewed_controller_kid: None,
             schema: CONTROL_JOURNAL_SCHEMA,
             recovery_coverage_version: None,
             migration_baseline: None,
@@ -873,6 +879,7 @@ fn cleanup_record(directory: &Path, id: &str, phase: &str, completed_at: Option<
     result.completed_at = completed_at;
     result.accepted_at = 900;
     let record = OperationJournalRecord {
+        renewed_controller_kid: None,
         schema: CONTROL_JOURNAL_SCHEMA,
         recovery_coverage_version: None,
         migration_baseline: None,

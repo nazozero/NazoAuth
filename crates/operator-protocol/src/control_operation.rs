@@ -77,6 +77,10 @@ const CONTROLLER_KID_LENGTH: usize = 43;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlOperation {
+    /// Proposed successor, authorized by this signature over the host-only
+    /// operator channel. The server decides whether renewal is due.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewal_public_key: Option<String>,
     pub schema: u32,
     /// UUIDv7 (RFC 9562), canonical lowercase form; also the journal jti.
     pub operation_id: String,
@@ -378,6 +382,10 @@ fn take_member<T: serde::de::DeserializeOwned>(
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlResult {
+    /// Confirmed successor installed before business execution. Also returned
+    /// for failed business operations, so key activation survives their failure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renewed_controller_kid: Option<String>,
     pub schema: u32,
     /// Echo of the accepted operation's id.
     pub operation_id: String,
@@ -504,6 +512,20 @@ pub fn validate_control_operation(operation: &ControlOperation) -> Result<(), Pr
     }
     validate_uuidv7(&operation.operation_id)?;
     validate_controller_kid(&operation.kid)?;
+    if let Some(key) = &operation.renewal_public_key {
+        let bytes: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(key)
+            .map_err(|_| ProtocolError::Policy("invalid renewal public key"))?
+            .try_into()
+            .map_err(|_| ProtocolError::Policy("invalid renewal public key"))?;
+        let key = VerifyingKey::from_bytes(&bytes)
+            .map_err(|_| ProtocolError::Policy("invalid renewal public key"))?;
+        if controller_key_id(&key) == operation.kid {
+            return Err(ProtocolError::Policy(
+                "renewal must replace the signing key",
+            ));
+        }
+    }
     validate_file_identifier(&operation.deployment_id)?;
     validate_identifier(&operation.config_revision)?;
     validate_control_payload(&operation.operation)
@@ -993,6 +1015,7 @@ pub fn validate_control_result_data_for_wire(
     }
     validate_control_result_data(data)?;
     let envelope = ControlResult {
+        renewed_controller_kid: Some("a".repeat(CONTROLLER_KID_LENGTH)),
         schema: CONTROL_RESULT_SCHEMA,
         operation_id: "00000000-0000-7000-8000-000000000000".to_owned(),
         request_hash: "0".repeat(64),
@@ -1026,6 +1049,9 @@ pub fn decode_control_result(bytes: &[u8]) -> Result<ControlResult, ProtocolErro
 /// Validate journal-entry invariants: error presence matches the outcome and
 /// timestamps are ordered.
 pub fn validate_control_result(result: &ControlResult) -> Result<(), ProtocolError> {
+    if let Some(kid) = &result.renewed_controller_kid {
+        validate_controller_kid(kid)?;
+    }
     if result.schema != CONTROL_RESULT_SCHEMA {
         return Err(ProtocolError::Policy("unsupported control result schema"));
     }

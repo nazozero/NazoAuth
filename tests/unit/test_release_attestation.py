@@ -91,7 +91,7 @@ class ReleaseAttestationBuilderTests(unittest.TestCase):
             value["artifacts"]["binary"]["sha256"],
             hashlib.sha256(b"server-binary").hexdigest(),
         )
-        self.assertEqual(value["operator_protocol"], 3)
+        self.assertEqual(value["operator_protocol"], 4)
         self.assertEqual(set(value["oci"]["platform_manifests"]), {"linux/amd64", "linux/arm64"})
 
     def test_accepts_exactly_the_declared_release_targets(self) -> None:

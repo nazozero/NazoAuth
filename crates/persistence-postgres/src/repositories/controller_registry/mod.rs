@@ -7,8 +7,9 @@
 //! operation journal — which deliberately lives outside the database because
 //! `migrate-apply` must work before any database exists — enrollment state is
 //! written through the admin plane, whose approval flow already requires the
-//! application database, and every lifecycle mutation must consume its fresh
-//! 2FA approval in the *same* transaction that mutates the registry.
+//! application database. Admin-plane lifecycle mutations consume fresh MFA
+//! approval in the same transaction. Host-operator renewal instead uses the
+//! accepted signed request and atomically compares the current key and status.
 //!
 //! Hard invariants enforced here (mirrored by CHECK/unique constraints in the
 //! migration):
@@ -347,6 +348,29 @@ fn contract_commit_error(error: CommitWithApprovalError) -> contract::CommitWith
 }
 
 impl contract::ControllerRegistryPort for ControllerRegistryRepository {
+    fn renew_controller_key(
+        &self,
+        deployment_id: String,
+        controller_id: String,
+        previous_kid: String,
+        public_key: [u8; 32],
+        now: DateTime<Utc>,
+    ) -> futures_util::future::BoxFuture<
+        '_,
+        Result<Option<String>, contract::ControllerRegistryError>,
+    > {
+        Box::pin(async move {
+            self.renew_host_controller_key(
+                deployment_id,
+                controller_id,
+                previous_kid,
+                public_key,
+                now,
+            )
+            .await
+            .map_err(contract_registry_error)
+        })
+    }
     fn issue_identity_approval_with_required_audit(
         &self,
         command: contract::IdentityApprovalCommand,

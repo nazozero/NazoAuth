@@ -41,6 +41,7 @@ fn temporary_directory() -> PathBuf {
 
 fn operation(operation_id: &str) -> ControlOperation {
     ControlOperation {
+        renewal_public_key: None,
         schema: CONTROL_OPERATION_SCHEMA,
         operation_id: operation_id.to_owned(),
         // Unpadded base64url SHA-256 shape: exactly 43 characters.

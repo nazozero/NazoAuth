@@ -7,7 +7,7 @@ use diesel::result::Error as QueryError;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Binary, Nullable, SmallInt, Timestamptz, Varchar};
 use diesel::{ExpressionMethods as _, OptionalExtension, QueryDsl as _};
-use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
 use uuid::Uuid;
 
 use nazo_persistence::control_plane as contract;
@@ -368,6 +368,72 @@ pub(super) async fn revoke_slot_on_connection(
 }
 
 impl ControllerRegistryRepository {
+    pub(super) async fn renew_host_controller_key(
+        &self,
+        deployment_id: String,
+        controller_id: String,
+        previous_kid: String,
+        public_key: [u8; 32],
+        now: DateTime<Utc>,
+    ) -> Result<Option<String>, ControllerRegistryError> {
+        validate_deployment_id(&deployment_id)?;
+        validate_kid(&previous_kid)?;
+        let key = nazo_crypto::ed25519::VerifyingKey::from_bytes(&public_key)
+            .map_err(|_| ControllerRegistryError::InvalidIdentity("invalid renewal public key"))?;
+        let kid = nazo_operator_protocol::controller_key_id(&key);
+        if kid == previous_kid {
+            return Err(ControllerRegistryError::InvalidIdentity(
+                "renewal must replace the signing key",
+            ));
+        }
+        let mut connection = get_conn(&self.pool).await.map_err(transport)?;
+        connection
+            .transaction::<_, ControllerRegistryError, _>(async move |connection| {
+                lock_deployment_slots(connection, &deployment_id).await?;
+                let slots = active_slots_on_connection(connection, &deployment_id).await?;
+                let Some(slot) = slots
+                    .into_iter()
+                    .find(|slot| slot.controller_id == controller_id)
+                else {
+                    return Ok(None);
+                };
+                // Resolve a lost commit response without extending the deadline again.
+                if slot.kid == kid {
+                    return Ok(Some(kid));
+                }
+                if slot.kid != previous_kid || slot.expires_at > now + Duration::days(7) {
+                    return Ok(None);
+                }
+                let rotation = RotateControllerKey {
+                    deployment_id: deployment_id.clone(),
+                    controller_id: controller_id.clone(),
+                    label: slot.label,
+                    kid: kid.clone(),
+                    public_key,
+                };
+                rotate_slot_on_connection(connection, &rotation, now).await?;
+                let event = nazo_persistence::SecurityAuditEvent {
+                    event_id: Uuid::now_v7(),
+                    event_type: "controller_key_renewed".to_owned(),
+                    event_category: "administration".to_owned(),
+                    occurred_at: now,
+                    payload: serde_json::json!({
+                        "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
+                        "deployment_id": deployment_id, "controller_id": controller_id,
+                        "previous_kid": previous_kid, "kid": kid, "authority": "host_operator",
+                        "outcome": "success",
+                    }),
+                };
+                crate::repositories::audit_ledger::append_fresh_security_audit_on_connection(
+                    connection, &event,
+                )
+                .await
+                .map_err(transport)?;
+                Ok(Some(kid))
+            })
+            .await
+    }
+
     /// Every slot of one deployment ordered by assignment, including revoked
     /// rows: history is part of the authority answer ("does this key exist and
     /// what happened to it").

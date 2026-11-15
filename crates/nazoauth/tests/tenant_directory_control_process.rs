@@ -169,6 +169,7 @@ fn directory_operation(
     payload: ControlOperationPayload,
 ) -> ControlOperation {
     ControlOperation {
+        renewal_public_key: None,
         schema: CONTROL_OPERATION_SCHEMA,
         operation_id: operation_id.to_owned(),
         kid: kid.to_owned(),

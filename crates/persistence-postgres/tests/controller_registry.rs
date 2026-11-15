@@ -38,6 +38,109 @@ fn kid_of(public_key: &[u8; 32]) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(public_key))
 }
 
+#[tokio::test]
+async fn host_renewal_is_due_once_and_never_revives_revoked_or_superseded_keys() {
+    let Some((_url, repository)) = isolated_repository("host-renewal").await else {
+        return;
+    };
+    let deployment = "deployment-renewal";
+    let slot = repository
+        .create_slot(slot_input(deployment, "primary", 1), at(0))
+        .await
+        .unwrap();
+    let next = nazo_crypto::ed25519::SigningKey::from_bytes(&[19; 32])
+        .verifying_key()
+        .to_bytes();
+    let next_kid = kid_of(&next);
+    assert_eq!(
+        repository
+            .renew_controller_key(
+                deployment.into(),
+                slot.controller_id.clone(),
+                slot.kid.clone(),
+                next,
+                at(1)
+            )
+            .await
+            .unwrap(),
+        None
+    );
+    let due = slot.expires_at + Duration::days(5);
+    assert_eq!(
+        repository
+            .renew_controller_key(
+                deployment.into(),
+                slot.controller_id.clone(),
+                slot.kid.clone(),
+                next,
+                due
+            )
+            .await
+            .unwrap(),
+        Some(next_kid.clone())
+    );
+    let renewed = repository.list_slots(deployment).await.unwrap().remove(0);
+    assert_eq!(
+        renewed.expires_at,
+        due + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS)
+    );
+    assert_eq!(renewed.controller_id, slot.controller_id);
+    assert_eq!(
+        repository
+            .renew_controller_key(
+                deployment.into(),
+                slot.controller_id.clone(),
+                slot.kid.clone(),
+                next,
+                due + Duration::hours(1)
+            )
+            .await
+            .unwrap(),
+        Some(next_kid.clone())
+    );
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap()[0].expires_at,
+        renewed.expires_at
+    );
+    let other = nazo_crypto::ed25519::SigningKey::from_bytes(&[20; 32])
+        .verifying_key()
+        .to_bytes();
+    assert_eq!(
+        repository
+            .renew_controller_key(
+                deployment.into(),
+                slot.controller_id.clone(),
+                slot.kid.clone(),
+                other,
+                due
+            )
+            .await
+            .unwrap(),
+        None
+    );
+    repository
+        .revoke_slot(deployment, &slot.controller_id, due)
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .renew_controller_key(
+                deployment.into(),
+                slot.controller_id.clone(),
+                next_kid,
+                other,
+                due + Duration::days(40)
+            )
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        repository.list_slots(deployment).await.unwrap()[0].status,
+        ControllerSlotStatus::Revoked
+    );
+}
+
 fn slot_input(deployment: &str, label: &str, key_seed: u8) -> NewControllerSlot {
     let public_key = [key_seed; 32];
     NewControllerSlot {

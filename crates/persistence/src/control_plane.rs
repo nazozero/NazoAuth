@@ -409,6 +409,16 @@ pub struct RecoveryRotationCommand {
 /// Stores identity commands validated by the application service. The adapter
 /// owns current actor admission, approval consumption, mutation and audit commit.
 pub trait ControllerRegistryPort: Send + Sync {
+    /// Host-operator-only successor installation after durable acceptance of
+    /// the signed request. None means not due or no longer the current slot.
+    fn renew_controller_key(
+        &self,
+        deployment_id: String,
+        controller_id: String,
+        previous_kid: String,
+        public_key: [u8; 32],
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'_, Result<Option<String>, ControllerRegistryError>>;
     fn issue_identity_approval_with_required_audit(
         &self,
         command: IdentityApprovalCommand,
