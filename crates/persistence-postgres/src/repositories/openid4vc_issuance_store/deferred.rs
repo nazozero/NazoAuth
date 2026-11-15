@@ -54,7 +54,7 @@ impl Openid4vciRepository {
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
@@ -142,7 +142,7 @@ impl Openid4vciRepository {
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard.connection()
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
@@ -215,7 +215,7 @@ impl Openid4vciRepository {
             let connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            let mut guarded = DiscardOnDrop(Some(connection));
+            let mut guarded = DiscardOnDrop::new(connection);
             let result = guarded.connection()
                 .transaction::<nazo_openid4vci::DeferredClaimOutcome, diesel::result::Error, _>(
                     async move |connection| {

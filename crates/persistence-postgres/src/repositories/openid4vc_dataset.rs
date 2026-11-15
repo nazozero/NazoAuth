@@ -285,7 +285,7 @@ impl Openid4vciDatasetRepository {
         let connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
-        let mut guard = DiscardOnDrop(Some(connection));
+        let mut guard = DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<Option<ManagedCredentialDataset>, diesel::result::Error, _>(
@@ -398,7 +398,7 @@ impl Openid4vciDatasetRepository {
         let connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
-        let mut guard = DiscardOnDrop(Some(connection));
+        let mut guard = DiscardOnDrop::new(connection);
         let result = guard.connection()
             .transaction::<bool, diesel::result::Error, _>(async move |connection| {
                 let mut rows = sql_query(

@@ -123,7 +123,7 @@ impl EventStorePort for ScimEventRepository {
                     .map_err(|_| EventStoreError::Unavailable);
             }
             {
-                let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+                let mut guard = crate::pool::DiscardOnDrop::new(connection);
                 let result = guard
                     .connection()
                     .transaction::<EventPage, diesel::result::Error, _>(async move |connection| {

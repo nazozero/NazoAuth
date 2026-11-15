@@ -1,4 +1,5 @@
 use super::*;
+use std::mem::DropGuard;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
@@ -29,13 +30,9 @@ impl Store {
         self.claims.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
         self.claimed.add_permits(1);
-        struct Active<'a>(&'a AtomicUsize);
-        impl Drop for Active<'_> {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let _active = Active(&self.active);
+        let _active = DropGuard::new(&self.active, |active| {
+            active.fetch_sub(1, Ordering::SeqCst);
+        });
         self.release.acquire().await.unwrap().forget();
     }
 }
@@ -159,15 +156,13 @@ impl BackchannelLogoutDeliveryStore for Store {
             }
             let size = self.batch_size.load(Ordering::SeqCst);
             assert!(size <= usize::try_from(limit).unwrap());
-            Ok((0..size)
-                .map(|id| BackchannelLogoutDelivery {
-                    id: uuid::Uuid::from_u128(id as u128 + 1),
-                    logout_uri: "https://client.example/logout".to_owned(),
-                    logout_token: "test-logout-token".to_owned(),
-                    attempts: 1,
-                    expires_at: chrono::Utc::now() + chrono::Duration::seconds(60),
-                })
-                .collect())
+            Ok(Vec::from_fn(size, |id| BackchannelLogoutDelivery {
+                id: uuid::Uuid::from_u128(id as u128 + 1),
+                logout_uri: "https://client.example/logout".to_owned(),
+                logout_token: "test-logout-token".to_owned(),
+                attempts: 1,
+                expires_at: chrono::Utc::now() + chrono::Duration::seconds(60),
+            }))
         })
     }
     fn complete(&self, _: uuid::Uuid, _: i32) -> BoxFuture<'_, Result<(), RepositoryError>> {

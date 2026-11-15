@@ -65,7 +65,7 @@ impl AuthorizationRepository {
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<(), diesel::result::Error, _>(async |connection| {

@@ -167,20 +167,22 @@ fn replay_outcome_json_is_closed() {
 fn executor_rejects_an_outcome_that_the_journal_cannot_publish() {
     let outcome = StoredControlOutcome {
         revision: u64::MAX,
-        resources: (0..nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES)
-            .map(|index| TenantResourceIdentity {
+        resources: Vec::from_fn(
+            nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES,
+            |index| TenantResourceIdentity {
                 kind: TenantResourceKind::User,
                 resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
                 digest: "f".repeat(64),
-            })
-            .collect(),
-        resource_mappings: (0..nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES)
-            .map(|index| TenantResourceMapping {
+            },
+        ),
+        resource_mappings: Vec::from_fn(
+            nazo_operator_protocol::MAX_TENANT_RESOURCE_IDENTITIES,
+            |index| TenantResourceMapping {
                 kind: TenantResourceKind::User,
                 resource_id: format!("resource-{index:03}-{}", "x".repeat(115)),
                 public_id: "00000000-0000-0000-0000-000000000001".to_owned(),
-            })
-            .collect(),
+            },
+        ),
         resource_manifest_sha256: "a".repeat(64),
     };
 

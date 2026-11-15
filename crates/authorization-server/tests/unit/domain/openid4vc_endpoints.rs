@@ -170,7 +170,7 @@ fn managed_dataset_rejects_claim_names_and_json_shape_at_every_boundary() {
         .is_err()
     );
 
-    let too_many_nodes = Value::Array((0..513).map(|_| json!(true)).collect());
+    let too_many_nodes = Value::Array(Vec::from_fn(513, |_| json!(true)));
     assert!(
         validate_managed_dataset(&sd_jwt, &dataset_request(json!({"values": too_many_nodes})),)
             .is_err()

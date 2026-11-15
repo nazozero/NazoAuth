@@ -98,7 +98,7 @@ impl OAuthClientRepository {
         registration_access_token_blake3: Option<&str>,
         audit: Option<ClientInsertAudit<'_>>,
     ) -> Result<OAuthClient, RepositoryError> {
-        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<OAuthClient, MetadataUpdateError, _>(async move |connection| {
@@ -302,7 +302,7 @@ impl OAuthClientRepository {
                 "client patch changed its authority identity".to_owned(),
             ));
         }
-        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<OAuthClient, MetadataUpdateError, _>(async |connection| {
@@ -573,7 +573,7 @@ impl OAuthClientRepository {
             "backchannel_authentication_request_signing_alg".to_owned(),
             serde_json::json!(client.backchannel_authentication_request_signing_alg),
         );
-        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
         let result = guard.connection().transaction::<OAuthClient, MetadataUpdateError, _>(async |connection| {
         let mut records = diesel::sql_query(
                     r#"
@@ -761,7 +761,7 @@ impl OAuthClientRepository {
         expected_registration_access_token_blake3: &str,
         source_ip_hash: Option<&str>,
     ) -> Result<bool, RepositoryError> {
-        let mut guard = crate::pool::DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<bool, MetadataUpdateError, _>(async |connection| {

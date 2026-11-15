@@ -1,4 +1,5 @@
 use super::*;
+use std::mem::DropGuard;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
@@ -31,13 +32,9 @@ impl Store {
         self.claims.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
         self.claimed.add_permits(1);
-        struct Active<'a>(&'a AtomicUsize);
-        impl Drop for Active<'_> {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let _active = Active(&self.active);
+        let _active = DropGuard::new(&self.active, |active| {
+            active.fetch_sub(1, Ordering::SeqCst);
+        });
         self.release.acquire().await.unwrap().forget();
     }
 }
@@ -200,16 +197,14 @@ impl CibaPingDeliveryPort for Store {
             assert!(size + stale <= limit);
             Ok(CibaPingClaimBatch {
                 scanned: size + stale,
-                deliveries: (0..size)
-                    .map(|id| CibaPingDelivery {
-                        auth_req_id_hash: id.to_string(),
-                        auth_req_id: format!("request-{id}"),
-                        endpoint: "https://client.example/ping".to_owned(),
-                        client_notification_token: "test-notification-token".to_owned(),
-                        attempts: 1,
-                        expires_at: chrono::Utc::now().timestamp() + 60,
-                    })
-                    .collect(),
+                deliveries: Vec::from_fn(size, |id| CibaPingDelivery {
+                    auth_req_id_hash: id.to_string(),
+                    auth_req_id: format!("request-{id}"),
+                    endpoint: "https://client.example/ping".to_owned(),
+                    client_notification_token: "test-notification-token".to_owned(),
+                    attempts: 1,
+                    expires_at: chrono::Utc::now().timestamp() + 60,
+                }),
             })
         })
     }

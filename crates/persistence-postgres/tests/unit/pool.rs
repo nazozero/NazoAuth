@@ -30,7 +30,7 @@ async fn backend_pid(connection: &mut AsyncPgConnection) -> i32 {
 #[tokio::test]
 async fn completed_transactions_reuse_connections_after_commit_and_rollback() {
     let Some(pool) = database_pool() else { return };
-    let mut guard = DiscardOnDrop(Some(get_conn(&pool).await.unwrap()));
+    let mut guard = DiscardOnDrop::new(get_conn(&pool).await.unwrap());
     let original = backend_pid(guard.connection()).await;
     guard
         .connection()
@@ -39,7 +39,7 @@ async fn completed_transactions_reuse_connections_after_commit_and_rollback() {
         .unwrap();
     guard.return_to_pool();
     for outcome in ["commit", "business_error", "sql_error"] {
-        let mut guard = DiscardOnDrop(Some(get_conn(&pool).await.unwrap()));
+        let mut guard = DiscardOnDrop::new(get_conn(&pool).await.unwrap());
         assert_eq!(backend_pid(guard.connection()).await, original);
         let result = guard
             .connection()
@@ -72,7 +72,7 @@ async fn completed_transactions_reuse_connections_after_commit_and_rollback() {
 #[tokio::test]
 async fn completed_guard_discards_an_open_transaction() {
     let Some(pool) = database_pool() else { return };
-    let mut guard = DiscardOnDrop(Some(get_conn(&pool).await.unwrap()));
+    let mut guard = DiscardOnDrop::new(get_conn(&pool).await.unwrap());
     AnsiTransactionManager::begin_transaction(&mut **guard.connection())
         .await
         .unwrap();
@@ -85,7 +85,7 @@ async fn failed_rollback_discards_the_connection() {
     let Some(pool) = database_pool() else { return };
     let observer_pool = database_pool().unwrap();
     let mut observer = get_conn(&observer_pool).await.unwrap();
-    let mut guard = DiscardOnDrop(Some(get_conn(&pool).await.unwrap()));
+    let mut guard = DiscardOnDrop::new(get_conn(&pool).await.unwrap());
     let pid = backend_pid(guard.connection()).await;
     let result = guard
         .connection()
@@ -101,6 +101,60 @@ async fn failed_rollback_discards_the_connection() {
         .await;
     assert!(result.is_err());
     guard.return_to_pool();
+    assert_eq!(pool.status().size, 0);
+    assert_ne!(backend_pid(&mut get_conn(&pool).await.unwrap()).await, pid);
+}
+
+#[tokio::test]
+async fn unconfirmed_guard_discards_even_a_healthy_connection() {
+    let Some(pool) = database_pool() else { return };
+    let mut guard = DiscardOnDrop::new(get_conn(&pool).await.unwrap());
+    let pid = backend_pid(guard.connection()).await;
+    // An early return must not implicitly confirm a connection, even if the
+    // driver has not entered a transaction or reported a transport failure.
+    drop(guard);
+    assert_eq!(pool.status().size, 0);
+    assert_ne!(backend_pid(&mut get_conn(&pool).await.unwrap()).await, pid);
+}
+
+#[tokio::test]
+async fn panicking_owner_discards_the_open_transaction() {
+    let Some(pool) = database_pool() else { return };
+    let mut guard = DiscardOnDrop::new(get_conn(&pool).await.unwrap());
+    let pid = backend_pid(guard.connection()).await;
+    AnsiTransactionManager::begin_transaction(&mut **guard.connection())
+        .await
+        .unwrap();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        let _guard = guard;
+        panic!("transaction owner panicked before confirmation");
+    }));
+    assert!(result.is_err());
+    assert_eq!(pool.status().size, 0);
+    assert_ne!(backend_pid(&mut get_conn(&pool).await.unwrap()).await, pid);
+}
+
+#[tokio::test]
+async fn cancelled_owner_discards_the_open_transaction() {
+    let Some(pool) = database_pool() else { return };
+    let owner_pool = pool.clone();
+    let (ready, started) = tokio::sync::oneshot::channel();
+    let operation = tokio::spawn(async move {
+        let mut guard = DiscardOnDrop::new(get_conn(&owner_pool).await.unwrap());
+        let pid = backend_pid(guard.connection()).await;
+        AnsiTransactionManager::begin_transaction(&mut **guard.connection())
+            .await
+            .unwrap();
+        ready.send(pid).unwrap();
+        std::future::pending::<()>().await;
+        guard.return_to_pool();
+    });
+    let pid = tokio::time::timeout(Duration::from_secs(5), started)
+        .await
+        .expect("owner must begin its real transaction")
+        .unwrap();
+    operation.abort();
+    assert!(operation.await.unwrap_err().is_cancelled());
     assert_eq!(pool.status().size, 0);
     assert_ne!(backend_pid(&mut get_conn(&pool).await.unwrap()).await, pid);
 }

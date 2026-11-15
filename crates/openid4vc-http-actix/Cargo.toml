@@ -2,12 +2,12 @@
 name = "nazo-openid4vc-http-actix"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
 actix-web.workspace = true
-chrono.workspace = true
 nazo-openid4vci.workspace = true
 nazo-openid4vp.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -16,6 +16,7 @@ url.workspace = true
 uuid = { workspace = true, features = ["serde", "v7"] }
 
 [dev-dependencies]
+chrono.workspace = true
 nazo-operator-protocol.workspace = true
 
 [lints]

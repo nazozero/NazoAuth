@@ -2,6 +2,7 @@
 name = "nazoauth"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
@@ -25,8 +26,6 @@ atomicwrites = { workspace = true }
 base64 = { workspace = true }
 blake3 = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
-ciborium = { workspace = true }
-coset = { workspace = true }
 flate2 = { workspace = true }
 fs2 = { workspace = true }
 futures-channel = { workspace = true }
@@ -39,7 +38,6 @@ nazo-auth = { workspace = true }
 nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509"] }
 nazo-digital-credentials = { workspace = true }
 nazo-http-actix = { workspace = true }
-nazo-http-signatures = { workspace = true }
 nazo-identity = { workspace = true }
 nazo-key-management = { workspace = true }
 nazo-oauth-server = { workspace = true }
@@ -48,11 +46,9 @@ nazo-oauth-server-postgres = { workspace = true }
 nazo-oauth-server-valkey = { workspace = true }
 nazo-openid4vc-http-actix = { workspace = true }
 nazo-openid4vci = { workspace = true }
-nazo-openid4vp = { workspace = true }
 nazo-operator-protocol = { workspace = true }
 nazo-persistence = { workspace = true }
 nazo-postgres = { workspace = true }
-nazo-resource-server = { workspace = true }
 nazo-runtime-modules = { workspace = true }
 nazo-scim-events = { workspace = true }
 nazo-valkey = { workspace = true }
@@ -60,7 +56,6 @@ opentelemetry = "0.33.1"
 opentelemetry-appender-tracing = "0.33.1"
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
 opentelemetry_sdk = { version = "0.33.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
-passkey-auth = { workspace = true }
 process-wrap = { workspace = true }
 rand = { workspace = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json", "stream", "query", "form"] }
@@ -88,6 +83,12 @@ yasna = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+ciborium = { workspace = true }
+coset = { workspace = true }
+nazo-http-signatures = { workspace = true }
+nazo-openid4vp = { workspace = true }
+nazo-resource-server = { workspace = true }
+passkey-auth = { workspace = true }
 nazo-valkey = { workspace = true, features = ["test-support"] }
 argon2 = { workspace = true }
 aws-lc-rs = { workspace = true }

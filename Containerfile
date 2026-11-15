@@ -13,6 +13,7 @@ RUN mkdir -p /usr/local/cargo \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./
+COPY .cargo/config.toml ./.cargo/config.toml
 COPY crates ./crates
 COPY migrations ./migrations
 COPY tests/contracts/migrations.sha256 ./tests/contracts/migrations.sha256

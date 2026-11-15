@@ -1023,28 +1023,26 @@ fn concurrent_offers_have_exactly_one_creator_and_conflicts_are_deterministic() 
     let directory = temporary_directory();
     let directory = Arc::new(directory);
     let creators = Arc::new(AtomicUsize::new(0));
-    let threads = (0..16)
-        .map(|_| {
-            let directory = Arc::clone(&directory);
-            let creators = Arc::clone(&creators);
-            std::thread::spawn(move || {
-                let lock = cleanup_task_lock(&directory);
-                lock.lock_exclusive().unwrap();
-                match accept(
-                    &directory,
-                    &operation(OPERATION_ID),
-                    &hash('a'),
-                    &snapshot(),
-                ) {
-                    Ok(AcceptOutcome::Created) => {
-                        creators.fetch_add(1, AtomicOrdering::SeqCst);
-                    }
-                    Ok(AcceptOutcome::Resumed(_)) => {}
-                    Err(error) => panic!("same id + same hash must never conflict: {error}"),
+    let threads = Vec::from_fn(16, |_| {
+        let directory = Arc::clone(&directory);
+        let creators = Arc::clone(&creators);
+        std::thread::spawn(move || {
+            let lock = cleanup_task_lock(&directory);
+            lock.lock_exclusive().unwrap();
+            match accept(
+                &directory,
+                &operation(OPERATION_ID),
+                &hash('a'),
+                &snapshot(),
+            ) {
+                Ok(AcceptOutcome::Created) => {
+                    creators.fetch_add(1, AtomicOrdering::SeqCst);
                 }
-            })
+                Ok(AcceptOutcome::Resumed(_)) => {}
+                Err(error) => panic!("same id + same hash must never conflict: {error}"),
+            }
         })
-        .collect::<Vec<_>>();
+    });
     for thread in threads {
         thread.join().unwrap();
     }

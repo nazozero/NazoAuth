@@ -870,7 +870,7 @@ async fn verify_audit_lifetime(
     // Synthetic historical facts exercise the bounded cleanup budget without
     // sleeping through real business-retention windows. Above tests already
     // exercised commit -> actual ACK -> expiry for a genuine decision.
-    let historical: Vec<Uuid> = (0..257).map(|_| Uuid::now_v7()).collect();
+    let historical = Vec::from_fn(257, |_| Uuid::now_v7());
     sql_query(
         "INSERT INTO public.security_audit_events (event_id,event_type,event_category,payload,occurred_at, \
          authorization_tenant_id,authorization_request_id,authorization_decision, \

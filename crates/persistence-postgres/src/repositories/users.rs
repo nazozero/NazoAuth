@@ -244,11 +244,11 @@ impl UserRepository {
         actor_id: UserId,
         source_ip_hash: String,
     ) -> Result<PublicAccount, RepositoryError> {
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(|_| RepositoryError::Unavailable)?,
-        ));
+        );
         let result = diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
             guard.connection(), async move |connection| {
                 let tenant = new_user.tenant;
@@ -433,11 +433,11 @@ impl UserRepository {
         source_ip_hash: String,
     ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
         let tenant_id = tenant.tenant_id;
-        let mut guard = crate::pool::DiscardOnDrop(Some(
+        let mut guard = crate::pool::DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(|_| RepositoryError::Unavailable)?,
-        ));
+        );
         let result =
             diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
                 guard.connection(),

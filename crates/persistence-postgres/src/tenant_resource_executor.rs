@@ -216,7 +216,7 @@ impl PostgresTenantResourceExecutor {
         let data_key = self.data_key;
 
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<ControlResultData, ExecutorTransactionError, _>(
@@ -377,7 +377,7 @@ impl PostgresTenantResourceExecutor {
             .map_err(map_repository_error)?;
         let tenant_id = tenant_id.as_uuid();
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<Option<ControlResultData>, ExecutorTransactionError, _>(

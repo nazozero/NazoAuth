@@ -427,13 +427,12 @@ impl MfaService {
 }
 
 fn generate_backup_codes() -> (Vec<String>, Vec<String>) {
-    let mut codes = Vec::with_capacity(MFA_BACKUP_CODE_COUNT);
     let mut normalized = Vec::with_capacity(MFA_BACKUP_CODE_COUNT);
-    for _ in 0..MFA_BACKUP_CODE_COUNT {
+    let codes = Vec::from_fn(MFA_BACKUP_CODE_COUNT, |_| {
         let code = generate_backup_code();
         normalized.push(normalize_backup_code(&code).expect("generated backup code is valid"));
-        codes.push(code);
-    }
+        code
+    });
     (codes, normalized)
 }
 

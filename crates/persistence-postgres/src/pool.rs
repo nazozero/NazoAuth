@@ -8,7 +8,7 @@ use diesel_async::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use futures_util::FutureExt as _;
-use std::{str::FromStr as _, sync::Arc, time::Duration};
+use std::{mem::DropGuard, str::FromStr as _, sync::Arc, time::Duration};
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../../migrations");
 
@@ -49,7 +49,7 @@ impl DbPool {
         let mut operation = tokio::task::JoinSet::new();
         operation.spawn_on(
             async move {
-                let mut guard = DiscardOnDrop(Some(get_conn(&pool).await?));
+                let mut guard = DiscardOnDrop::new(get_conn(&pool).await?);
                 let result = query(guard.connection()).await;
                 guard.return_to_pool();
                 Ok::<T, anyhow::Error>(result)
@@ -74,11 +74,17 @@ pub type DbConnection = Object<AsyncPgConnection>;
 
 /// Discard the physical connection unless its transaction outcome is confirmed.
 /// Dropping a transaction future alone does not end a diesel-async transaction.
-pub(crate) struct DiscardOnDrop(pub(crate) Option<DbConnection>);
+pub(crate) struct DiscardOnDrop(DropGuard<DbConnection, fn(DbConnection)>);
 
 impl DiscardOnDrop {
+    pub(crate) fn new(connection: DbConnection) -> Self {
+        Self(DropGuard::new(connection, |connection| {
+            drop(DbConnection::take(connection));
+        }))
+    }
+
     pub(crate) fn connection(&mut self) -> &mut DbConnection {
-        self.0.as_mut().expect("connection guard is armed")
+        &mut self.0
     }
 
     pub(crate) fn return_to_pool(mut self) {
@@ -86,15 +92,7 @@ impl DiscardOnDrop {
         // rollback. Reusability belongs to the connection, not that result.
         // Keep incomplete/broken transactions armed for immediate disposal.
         if !self.connection().is_broken() {
-            let _ = self.0.take();
-        }
-    }
-}
-
-impl Drop for DiscardOnDrop {
-    fn drop(&mut self) {
-        if let Some(connection) = self.0.take() {
-            drop(DbConnection::take(connection));
+            drop(DropGuard::dismiss(self.0));
         }
     }
 }

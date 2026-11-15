@@ -572,17 +572,15 @@ fn generated_secret_creation_is_concurrency_safe() {
     let path = temp_config_dir("generated_secret_concurrency");
     std::fs::write(path.join(CONFIG_FILE), "DATA_DIR: state\n").unwrap();
 
-    let handles = (0..8)
-        .map(|_| {
-            let path = path.clone();
-            std::thread::spawn(move || {
-                ConfigSource::load_from_dir(path)
-                    .unwrap()
-                    .required_string("CLIENT_SECRET_PEPPER")
-                    .unwrap()
-            })
+    let handles = Vec::from_fn(8, |_| {
+        let path = path.clone();
+        std::thread::spawn(move || {
+            ConfigSource::load_from_dir(path)
+                .unwrap()
+                .required_string("CLIENT_SECRET_PEPPER")
+                .unwrap()
         })
-        .collect::<Vec<_>>();
+    });
     let values = handles
         .into_iter()
         .map(|handle| handle.join().unwrap())

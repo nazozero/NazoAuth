@@ -105,7 +105,7 @@ impl PasskeyRepository {
         let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<_, Error, _>(async move |connection| {
@@ -197,7 +197,7 @@ impl PasskeyRepository {
         let connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<_, Error, _>(async |connection| {

@@ -133,7 +133,7 @@ impl ScimRepository {
         let mutation = new_user.mutation;
         let event_retention = self.event_retention;
         let row = {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<PublicAccountRow, Error, _>(async move |connection| {
@@ -201,7 +201,7 @@ impl ScimRepository {
             .map_err(|_| RepositoryError::Unavailable)?;
         let event_retention = self.event_retention;
         let row = {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<PublicAccountRow, Error, _>(async move |connection| {
@@ -295,7 +295,7 @@ impl ScimRepository {
         };
         let event_retention = self.event_retention;
         let row = {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<PublicAccountRow, Error, _>(async move |connection| {
@@ -386,7 +386,7 @@ impl ScimRepository {
             .map_err(|_| RepositoryError::Unavailable)?;
         let event_retention = self.event_retention;
         {
-            let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+            let mut guard = crate::pool::DiscardOnDrop::new(connection);
             let result = guard
                 .connection()
                 .transaction::<bool, Error, _>(async move |connection| {

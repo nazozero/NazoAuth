@@ -59,7 +59,7 @@ pub(super) async fn compare_and_set_instance(
     validate_instance_mutation(&mutation)?;
     let connection = repository.connection().await?;
     {
-        let mut guard = crate::pool::DiscardOnDrop(Some(connection));
+        let mut guard = crate::pool::DiscardOnDrop::new(connection);
         let result = guard
             .connection()
             .transaction::<CasOutcome<InstanceStateRecord>, RuntimeTransactionError, _>(

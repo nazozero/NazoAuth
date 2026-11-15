@@ -48,11 +48,11 @@ impl MfaRepository {
         let Some(keys) = &self.totp_keys else {
             return Ok(());
         };
-        let mut guard = DiscardOnDrop(Some(
+        let mut guard = DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(|_| RepositoryError::Unavailable)?,
-        ));
+        );
         let result = guard.connection().transaction::<_, MfaAuditError, _>(async move |connection| {
             sql_query("INSERT INTO mfa_totp_key_state (current_key_id) VALUES ($1) ON CONFLICT DO NOTHING")
                 .bind::<Text,_>(keys.current().id()).execute(connection).await.map_err(error)?;
@@ -83,11 +83,11 @@ impl MfaRepository {
         let Some(keys) = &self.totp_keys else {
             return Ok(0);
         };
-        let mut guard = DiscardOnDrop(Some(
+        let mut guard = DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(|_| RepositoryError::Unavailable)?,
-        ));
+        );
         let result = rewrap_batch(guard.connection(), keys).await;
         guard.return_to_pool();
         result

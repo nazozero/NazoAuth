@@ -1,6 +1,7 @@
 use super::*;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{CleanupBatchResult, SecurityStateMaintenanceFuture};
+use std::mem::DropGuard;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Semaphore;
 
@@ -24,13 +25,9 @@ impl Store {
     async fn cleanup(&self) {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.active.fetch_add(1, Ordering::SeqCst);
-        struct Active<'a>(&'a AtomicUsize);
-        impl Drop for Active<'_> {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, Ordering::SeqCst);
-            }
-        }
-        let _active = Active(&self.active);
+        let _active = DropGuard::new(&self.active, |active| {
+            active.fetch_sub(1, Ordering::SeqCst);
+        });
         self.release.acquire().await.unwrap().forget();
     }
 }

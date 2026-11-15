@@ -683,7 +683,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             // reclamation compete repeatedly with every admitted request and
             // counts pool waiting time again in the worker's catch-up rest.
             // Cancellation or a failed post-error probe retires the lease.
-            let mut guard = DiscardOnDrop(Some(self.connection().await?));
+            let mut guard = DiscardOnDrop::new(self.connection().await?);
             let result = async {
                 let connection = &mut **guard.connection();
                 let totp_rewrapped = match self.totp_keys.as_ref() {

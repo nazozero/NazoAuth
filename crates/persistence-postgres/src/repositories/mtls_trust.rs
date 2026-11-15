@@ -166,7 +166,7 @@ impl MtlsTrustAnchorRepository {
         request: NewMtlsTrustAnchorRequest,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
         let id = Uuid::now_v7();
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let result = guard.connection()
             .transaction::<CreateOutcomeRow, diesel::result::Error, _>(async |connection| {
                 acquire_tenant_trust_lock(connection, request.tenant_id).await?;
@@ -385,7 +385,7 @@ impl MtlsTrustAnchorRepository {
         status: MtlsTrustAnchorStatus,
         note: Option<String>,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<MtlsTrustAnchorRequest, TrustMutationError, _>(async |connection| {
@@ -506,7 +506,7 @@ impl MtlsTrustAnchorRepository {
         actor: UserId,
         note: String,
     ) -> Result<MtlsTrustAnchorRequest, RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<MtlsTrustAnchorRequest, TrustMutationError, _>(async |connection| {

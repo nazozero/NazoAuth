@@ -64,11 +64,11 @@ impl MfaRepository {
         credential_id: uuid::Uuid,
         source_ip_hash: Option<String>,
     ) -> Result<bool, RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(
+        let mut guard = DiscardOnDrop::new(
             get_conn(&self.pool)
                 .await
                 .map_err(|_| RepositoryError::Unavailable)?,
-        ));
+        );
         let result = guard
             .connection()
             .build_transaction()

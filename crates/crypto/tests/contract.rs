@@ -481,19 +481,15 @@ mod jose {
             );
 
             let results: Vec<Vec<Vec<u8>>> = std::thread::scope(|scope| {
-                let handles: Vec<_> = (0..8)
-                    .map(|thread| {
-                        let key = std::sync::Arc::clone(&key);
-                        scope.spawn(move || {
-                            (0..8)
-                                .map(|i| {
-                                    key.sign(format!("thread-{thread}-message-{i}").as_bytes())
-                                        .unwrap()
-                                })
-                                .collect::<Vec<_>>()
+                let handles = Vec::from_fn(8, |thread| {
+                    let key = std::sync::Arc::clone(&key);
+                    scope.spawn(move || {
+                        Vec::from_fn(8, |i| {
+                            key.sign(format!("thread-{thread}-message-{i}").as_bytes())
+                                .unwrap()
                         })
                     })
-                    .collect();
+                });
                 handles.into_iter().map(|h| h.join().unwrap()).collect()
             });
 

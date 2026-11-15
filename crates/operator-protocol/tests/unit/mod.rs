@@ -498,9 +498,8 @@ fn openid4vc_trust_policy_rejects_ambiguous_origins_certificates_and_jwks() {
         );
     }
     let mut too_many_origins = policy.clone();
-    too_many_origins.wallet_authorization_origins = (0..17)
-        .map(|index| format!("https://wallet-{index}.example"))
-        .collect();
+    too_many_origins.wallet_authorization_origins =
+        Vec::from_fn(17, |index| format!("https://wallet-{index}.example"));
     assert!(validate_openid4vc_trust_policy(&too_many_origins).is_err());
     let mut long_origin = policy.clone();
     long_origin.wallet_authorization_origins = vec![format!("https://{}", "a".repeat(2048))];

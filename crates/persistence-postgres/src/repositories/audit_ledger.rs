@@ -113,7 +113,7 @@ impl AuditLedgerRepository {
     }
 
     pub async fn observe_anchor(&self, deployment_id: &str) -> Result<(), RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let changed = sql_query("SELECT public.nazo_observe_security_audit_anchor($1) AS changed")
             .bind::<diesel::sql_types::Text, _>(deployment_id)
             .load::<AuditMutationRow>(guard.connection())
@@ -129,7 +129,7 @@ impl AuditLedgerRepository {
         deployment_id: &str,
         head_hash: &[u8],
     ) -> Result<(), RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let changed =
             sql_query("SELECT public.nazo_record_security_audit_genesis($1, $2) AS changed")
                 .bind::<diesel::sql_types::Text, _>(deployment_id)
@@ -161,7 +161,7 @@ impl AuditLedgerRepository {
             // A singleton still uses one statement, but must consume its
             // complete result stream before acknowledging the implicit commit.
             1 => {
-                let mut guard = DiscardOnDrop(Some(self.connection().await?));
+                let mut guard = DiscardOnDrop::new(self.connection().await?);
                 append_on_connection(guard.connection(), &events[0])
                     .await
                     .map_err(map_error)?;
@@ -187,7 +187,7 @@ impl AuditLedgerRepository {
         let payloads: Vec<&serde_json::Value> = events.iter().map(|event| &event.payload).collect();
         let occurred_ats: Vec<DateTime<Utc>> =
             events.iter().map(|event| event.occurred_at).collect();
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         // The single statement already commits or rolls back every function
         // call together. Separate BEGIN/COMMIT round trips add no atomicity.
         // Keep the guard armed until the complete statement outcome is known.
@@ -241,7 +241,7 @@ impl AuditLedgerRepository {
                 "audit batch claim arguments are outside their safe bounds".to_owned(),
             ));
         }
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let result = guard
             .connection()
             .transaction::<_, diesel::result::Error, _>(async |connection| {
@@ -316,7 +316,7 @@ impl AuditLedgerRepository {
     /// proofs, deleting ordinary events, marking retained decisions exported,
     /// and advancing the anchor in one transaction.
     pub async fn ack_batch(&self, ack: SecurityAuditBatchAck) -> Result<(), RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let changed = sql_query(
             "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
         )
@@ -345,7 +345,7 @@ impl AuditLedgerRepository {
         last_error: &str,
         blocked: bool,
     ) -> Result<(), RepositoryError> {
-        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let mut guard = DiscardOnDrop::new(self.connection().await?);
         let changed =
             sql_query("SELECT public.nazo_fail_security_audit_batch($1, $2, $3, $4) AS changed")
                 .bind::<diesel::sql_types::BigInt, _>(generation)

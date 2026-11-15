@@ -603,11 +603,11 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let mut operation = tokio::task::JoinSet::new();
             operation.spawn_on(
                 async move {
-                    let mut guard = DiscardOnDrop(Some(
+                    let mut guard = DiscardOnDrop::new(
                         get_conn(&pool)
                             .await
                             .map_err(|_| TokenPortError::Unavailable)?,
-                    ));
+                    );
                     let transaction = guard
                         .connection()
                         .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(

@@ -2075,7 +2075,7 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
 
     // Two events claimed and acknowledged: both delivery copies leave in
     // the ack transaction, and the anchor lands on the batch tail.
-    let acked_ids: Vec<Uuid> = (0..2).map(|_| Uuid::now_v7()).collect();
+    let acked_ids = Vec::from_fn(2, |_| Uuid::now_v7());
     for event_id in &acked_ids {
         insert_audit_event(&mut connection, *event_id).await;
     }

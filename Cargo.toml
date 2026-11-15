@@ -32,6 +32,7 @@ exclude = ["fuzz"]
 [workspace.package]
 version = "0.3.8"
 edition = "2024"
+rust-version = "1.100.0"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/nazozero/NazoAuth"
 
@@ -128,6 +129,10 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+
+[workspace.lints.cargo]
+unused_dependencies = "deny"
+unused_workspace_dependencies = "deny"
 
 [profile.release]
 lto = "thin"
