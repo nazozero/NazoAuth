@@ -183,11 +183,9 @@ fn expiry_warnings_fire_at_seven_days_and_twenty_four_hours() {
         expiry_warning(expires - Duration::hours(24), expires),
         Some(ControllerKeyWarning::Urgent)
     );
-    // Already expired remains urgent (status surfaces still render).
-    assert_eq!(
-        expiry_warning(expires + Duration::hours(1), expires),
-        Some(ControllerKeyWarning::Urgent)
-    );
+    // Expired keys must not be described as approaching expiry.
+    assert_eq!(expiry_warning(expires, expires), None);
+    assert_eq!(expiry_warning(expires + Duration::hours(1), expires), None);
 }
 
 #[test]

@@ -18,7 +18,7 @@ diesel = { workspace = true, features = ["postgres_backend", "uuid", "chrono", "
 diesel-async = { workspace = true, features = ["postgres", "deadpool", "migrations"] }
 diesel_migrations.workspace = true
 futures-util.workspace = true
-nazo-crypto = { workspace = true, features = ["aead", "password"] }
+nazo-crypto = { workspace = true, features = ["aead", "password", "ed25519"] }
 nazo-identity.workspace = true
 nazo-key-management.workspace = true
 nazo-auth.workspace = true

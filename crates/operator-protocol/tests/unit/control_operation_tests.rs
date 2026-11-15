@@ -22,6 +22,7 @@ const TENANT_ID: &str = "019c8ca2-30a6-7000-8000-000000000001";
 
 fn operation() -> ControlOperation {
     ControlOperation {
+        renewal_public_key: None,
         schema: CONTROL_OPERATION_SCHEMA,
         operation_id: OPERATION_ID.to_owned(),
         kid: controller_key_id(&controller_key().verifying_key()),
@@ -29,6 +30,33 @@ fn operation() -> ControlOperation {
         config_revision: "config-revision-1".to_owned(),
         operation: ControlOperationPayload::MigrateApply,
     }
+}
+
+#[test]
+fn successor_proposal_is_signature_bound_and_must_replace_the_key() {
+    let key = controller_key();
+    let mut request = operation();
+    request.renewal_public_key = Some(URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes()));
+    assert!(sign_control_operation(&request, &key).is_err());
+    let next = SigningKey::from_bytes(&[73; 32]);
+    request.renewal_public_key = Some(URL_SAFE_NO_PAD.encode(next.verifying_key().to_bytes()));
+    let (compact, _) = sign_control_operation(&request, &key).unwrap();
+    assert!(
+        verify_control_operation_signature(&compact, &request.kid, &key.verifying_key()).is_ok()
+    );
+    request.renewal_public_key = Some("invalid".into());
+    assert!(sign_control_operation(&request, &key).is_err());
+    request.renewal_public_key = None;
+    let parts: Vec<_> = compact.split('.').collect();
+    let tampered = format!(
+        "{}.{}.{}",
+        parts[0],
+        URL_SAFE_NO_PAD.encode(canonical_control_operation_bytes(&request).unwrap()),
+        parts[2]
+    );
+    assert!(
+        verify_control_operation_signature(&tampered, &request.kid, &key.verifying_key()).is_err()
+    );
 }
 
 fn resource(kind: TenantResourceKind, id: &str) -> TenantResourceIdentity {
@@ -41,6 +69,7 @@ fn resource(kind: TenantResourceKind, id: &str) -> TenantResourceIdentity {
 
 fn result_entry() -> ControlResult {
     ControlResult {
+        renewed_controller_kid: None,
         schema: CONTROL_RESULT_SCHEMA,
         operation_id: OPERATION_ID.to_owned(),
         request_hash: "a".repeat(64),

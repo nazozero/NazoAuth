@@ -23,6 +23,7 @@ const DIRECTORY_ORGANIZATION_ID: &str = "019c8ca2-30a6-7000-8000-0000000000ac";
 
 fn directory_operation() -> ControlOperation {
     ControlOperation {
+        renewal_public_key: None,
         schema: CONTROL_OPERATION_SCHEMA,
         operation_id: DIRECTORY_OPERATION_ID.to_owned(),
         kid: controller_key_id(&directory_controller_key().verifying_key()),
@@ -218,6 +219,7 @@ fn tenant_directory_result_data_is_wire_valid_and_replay_decodable() {
         revision: 5,
     };
     let mut entry = ControlResult {
+        renewed_controller_kid: None,
         schema: CONTROL_RESULT_SCHEMA,
         operation_id: DIRECTORY_OPERATION_ID.to_owned(),
         request_hash: "a".repeat(64),

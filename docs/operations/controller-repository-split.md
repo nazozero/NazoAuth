@@ -8,6 +8,31 @@ container orchestration, Release/OCI verification, task issuance and receipt
 verification, controller audit state, backup lifecycle, recovery, diagnostics,
 the administrator-provisioning client, and controller self-update/rollback.
 
+Controller registry `active` means not revoked; new-operation admission requires
+an unexpired key or the host-authorized renewal described below. The list includes
+revoked history, so its `total` is not the occupied-slot count. Only non-revoked controllers consume the three-slot
+limit, including expired keys. Pre-expiry warnings apply only before expiry;
+clients render expired keys from `expires_at` separately.
+
+Operator protocol 4 carries an optional successor public key inside the signed
+operation and returns the confirmed successor key ID in its durable receipt.
+Only the local/SSH one-shot operator accepts this proposal; HTTP identity changes
+retain administrator approval. The server renews non-revoked, current keys when
+seven days or less remain, including expired keys. The registry transaction
+checks the previous key, retains the controller ID and slot, and commits the new
+30-day deadline with its audit event. Replays cannot extend that deadline again.
+Revocation and replacement by another key prevent renewal. Already accepted
+operations retain their journal-owned authorization.
+
+The controller preserves the signing key and candidate until the operation's
+receipt is settled. It activates a confirmed successor even if the business
+operation failed, and replays retain the original signed bytes after retirement.
+Protocol 3 identity statements remain readable for retained backup artifacts;
+new renewal requests require protocol 4. Recovery invalidation retains the old
+request form so older backups keep their existing offline-secret recovery path.
+Updates run the verified candidate server's operator, so upgrading from an older
+server can renew an expired key without an HTTP renewal endpoint or manual MFA.
+
 The signed `keys-list` and `keys-validate` operations diagnose one existing
 authoritative key generation. They validate its sealed public/private material
 and lifecycle timestamps without creating missing keys, advancing rotation, or resealing wrapping keys.

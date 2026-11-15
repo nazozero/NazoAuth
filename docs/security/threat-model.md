@@ -39,7 +39,7 @@ Update this model when one of those invariants or its implementation changes.
 | Encrypted keysets to wrapping roots | Tenant-bound authenticated encryption protects persisted keysets. Wrapping roots are backed up and held separately from the database. Missing roots fail closed; generating a replacement root does not recover old keys. External signer results are checked against the expected public key. |
 | AS to resource server | Exact issuer/audience, algorithm/key and sender-binding validation, with revocation or introspection according to the resource policy. Successful signature verification alone is insufficient authorization. |
 | Release producer to deployment | Verified workflow identity, signed manifest, exact binary/OCI digest, accepted release state, anti-downgrade policy, and operator-protocol/schema checks. Mutable image names are not artifact identity. |
-| Controller to runtime task | Signed closed ControlOperation claims bind deployment, target, operation ID, and request hash. First admission requires an active valid Controller key; the durable journal owns retries of an already accepted exact request. Key retirement does not erase that accepted operation. |
+| Controller to runtime task | Signed closed ControlOperation claims bind deployment, target, operation ID, and request hash. First admission requires a current non-revoked Controller key; expired keys additionally require a signed successor proposal through the privileged host operator channel. The durable journal owns retries of an already accepted exact request. Key retirement does not erase that accepted operation. |
 | Controller to host or container engine | Typed lifecycle operations, verified artifacts, bounded mounts/network and secret delivery, protected host configuration, and restricted task execution. Host root, kernel, and a compromised engine remain privileged over the task. |
 | Recovery Secret to Controller Registry | Explicit challenge, derived proof, bounded attempts, and atomic replacement of the Controller slot with Recovery Root rotation. This does not rotate independent database, wrapping-root, or TLS credentials. |
 | Security event to ledger and external receiver | Queueing, required append, transactional append, and external delivery have different durability guarantees. Writer/exporter role separation and an independently retained receiver checkpoint are required for external evidence; see [Security Events](security-events.md) and [audit anchoring](audit-anchor.md). |
@@ -72,6 +72,25 @@ entry point for mutations. The runtime database role has no DDL or temporary
 table privilege. Source-tree Compose is a development sandbox with an ephemeral
 operator identity. External dependency owners retain backup/PITR and network
 policy responsibility.
+
+Controller key expiry is a rotation deadline, not an absolute end to the host
+administrator's authority. Protocol 4 allows the current non-revoked key to
+propose a successor within seven days of expiry or after expiry, including
+after a long idle period. The supported execution path independently requires
+local/SSH host authentication and systemd or container-engine management access;
+the operator has no public renewal endpoint. Possession of an expired private
+key alone does not provide that execution access. This is not a time-limited
+delegation service: do not expose operator-task or a privileged helper to
+untrusted callers using the Controller key as their only authorization.
+
+An attacker who obtains both the current Controller private key and that host
+execution authority can renew it; the 30-day deadline does not contain that
+combined compromise. Revoke the Controller slot and the compromised host/SSH
+access to terminate it, rather than waiting for expiry. Replacement also makes
+the old key ineligible for new requests. Renewal cannot restore a revoked slot,
+and existing MFA-approved identity changes and independent Recovery Secret
+recovery remain available. Already accepted operations retain their exact
+journal-owned authorization even after revocation.
 
 Controller signing keys, Recovery Secrets, wrapping roots, TLS identities, and
 exporter credentials are separate authorities. Losing one is not repaired by

@@ -1,6 +1,12 @@
 //! Closed, non-secret wire protocol for privileged NazoAuth operator tasks.
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
+/// Protocol 3 artifacts remain valid restore/rollback inputs; they do not
+/// support successor proposals. TODO: remove 3 when their backups and recovery
+/// journals have been retired, not merely when a newer server is released.
+pub fn supports_operator_protocol(version: u32) -> bool {
+    matches!(version, 3 | PROTOCOL_VERSION)
+}
 pub const CONTROL_DISCOVERY_JWS_TYPE: &str = "nazoauth-control-discovery+jwt";
 pub const DEPLOYMENT_STATEMENT_JWS_TYPE: &str = "nazoauth-deployment-statement+jwt";
 pub const CONTROL_DISCOVERY_SCHEMA: u32 = 1;

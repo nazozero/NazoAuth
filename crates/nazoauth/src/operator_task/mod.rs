@@ -9,8 +9,8 @@
 //! 2. look up the controller kid/public key BY deployment_id in the
 //!    Controller Registry repository (D01/D02 authority)
 //! 3. verify the Ed25519 signature over the canonical bytes
-//! 4. key expiry/revocation at first admission (the registry lookup only
-//!    returns active, unexpired slots)
+//! 4. key revocation and expiry at first admission (expired current keys
+//!    require a signed successor proposal through this privileged host channel)
 //! 5. deployment binding and config_revision fencing
 //! 6. enter the operation journal accept checkpoint (E03)
 //! 7. execute strictly per journal checkpoints; internal steps never
@@ -258,13 +258,15 @@ async fn execute_compact(
     }
 
     // (2)+(4) Registry authority: find the controller key for this deployment
-    // and admit it only while it is active and unexpired at admission time.
+    // and admit it only while active. Expired keys additionally require a
+    // signed successor proposal on this host-only execution channel.
     let repository = persistence.controller_registry();
     let admitted = match admission::admit_controller(
         repository.as_ref(),
         &operation.deployment_id,
         &operation.kid,
         Utc::now(),
+        operation.renewal_public_key.is_some(),
     )
     .await
     {
@@ -329,6 +331,25 @@ async fn journaled_execution(
     mut record: control_journal::OperationJournalRecord,
     persistence: &dyn OperatorPersistence,
 ) -> anyhow::Result<()> {
+    if !record.is_completed()
+        && let Some(public_key) = &operation.renewal_public_key
+    {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+        let public_key: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(public_key)?
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("invalid renewal public key"))?;
+        record.renewed_controller_kid = persistence
+            .controller_registry()
+            .renew_controller_key(
+                operation.deployment_id.clone(),
+                record.controller_id.clone(),
+                record.kid.clone(),
+                public_key,
+                Utc::now(),
+            )
+            .await?;
+    }
     if matches!(operation.operation, ControlOperationPayload::MigrateApply)
         && record.needs_migration_baseline()
     {

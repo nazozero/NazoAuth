@@ -173,6 +173,10 @@ where
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(super) struct OperationJournalRecord {
+    // Derived from the registry on each non-terminal resume; the terminal
+    // receipt below durably owns the confirmed result.
+    #[serde(skip)]
+    pub(super) renewed_controller_kid: Option<String>,
     schema: u32,
     operation_id: String,
     pub(super) request_hash: String,
@@ -191,6 +195,9 @@ pub(super) struct OperationJournalRecord {
 }
 
 impl OperationJournalRecord {
+    pub(super) fn is_completed(&self) -> bool {
+        self.phase == PHASE_COMPLETED
+    }
     pub(super) fn needs_migration_baseline(&self) -> bool {
         self.phase == PHASE_ACCEPTED && self.migration_baseline.is_none()
     }
@@ -500,6 +507,7 @@ pub(super) fn accept(
     let path = record_path(&directory, &operation.operation_id);
 
     let record = OperationJournalRecord {
+        renewed_controller_kid: None,
         schema: CONTROL_JOURNAL_SCHEMA,
         recovery_coverage_version: None,
         migration_baseline: None,
@@ -824,6 +832,7 @@ where
     pause("control-journal-after-side-effect");
 
     let result = ControlResult {
+        renewed_controller_kid: record.renewed_controller_kid.clone(),
         schema: CONTROL_RESULT_SCHEMA,
         operation_id: record.operation_id.clone(),
         request_hash: record.request_hash.clone(),

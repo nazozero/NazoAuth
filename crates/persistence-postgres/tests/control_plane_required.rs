@@ -579,6 +579,22 @@ struct HiddenAck {
 }
 
 impl ControllerRegistryPort for HiddenAck {
+    fn renew_controller_key(
+        &self,
+        deployment_id: String,
+        controller_id: String,
+        previous_kid: String,
+        public_key: [u8; 32],
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'_, Result<Option<String>, ControllerRegistryError>> {
+        self.registry.renew_controller_key(
+            deployment_id,
+            controller_id,
+            previous_kid,
+            public_key,
+            now,
+        )
+    }
     fn list_slots<'a>(
         &'a self,
         _deployment_id: &'a str,

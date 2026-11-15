@@ -44,7 +44,9 @@ pub fn expiry_warning(
     expires_at: DateTime<Utc>,
 ) -> Option<ControllerKeyWarning> {
     let remaining = expires_at - now;
-    if remaining <= Duration::hours(EXPIRY_URGENT_HOURS) {
+    if remaining <= Duration::zero() {
+        None
+    } else if remaining <= Duration::hours(EXPIRY_URGENT_HOURS) {
         Some(ControllerKeyWarning::Urgent)
     } else if remaining <= Duration::days(EXPIRY_WARNING_DAYS) {
         Some(ControllerKeyWarning::Expiring)

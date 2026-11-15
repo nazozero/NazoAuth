@@ -215,6 +215,7 @@ fn wait_for_marker(mut child: Child, path: &Path) -> Child {
 
 fn operation(operation_id: &str, kid: &str, payload: ControlOperationPayload) -> ControlOperation {
     ControlOperation {
+        renewal_public_key: None,
         schema: CONTROL_OPERATION_SCHEMA,
         operation_id: operation_id.to_owned(),
         kid: kid.to_owned(),
@@ -247,6 +248,116 @@ fn assert_rejection(output: &Output, class: &str) {
         stderr.contains(&format!("nazoauth-operator-rejection={class}")),
         "expected rejection class {class} in stderr: {stderr}"
     );
+}
+
+#[tokio::test]
+async fn expired_controller_renews_during_migration_and_recovers_after_commit() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let Some((database_url, registry)) = isolated_registry("renewal").await else {
+        return;
+    };
+    let old = SigningKey::from_bytes(&[71; 32]);
+    let next = SigningKey::from_bytes(&[72; 32]);
+    let kid = controller_key_id(&old.verifying_key());
+    let next_kid = controller_key_id(&next.verifying_key());
+    let slot = registry
+        .create_slot(
+            nazo_postgres::NewControllerSlot {
+                deployment_id: DEPLOYMENT.into(),
+                label: "expired".into(),
+                kid: kid.clone(),
+                public_key: old.verifying_key().to_bytes(),
+            },
+            Utc::now() - ChronoDuration::days(35),
+        )
+        .await
+        .unwrap();
+    let root = temporary_directory("renewal");
+    write_runtime_fixtures(&root);
+    let mut op = operation(
+        "019c8ca2-30a6-7000-8000-00000000d001",
+        &kid,
+        ControlOperationPayload::MigrateApply,
+    );
+    // Expiry is never bypassed by an ordinary request without a successor.
+    let unrenewed = sign_control_operation(&op, &old).unwrap().0;
+    assert_rejection(
+        &run_operator_task(
+            &root,
+            &unrenewed,
+            vec![("DATABASE_URL", database_url.clone())],
+        ),
+        "authorization",
+    );
+    op.renewal_public_key = Some(URL_SAFE_NO_PAD.encode(next.verifying_key().to_bytes()));
+    let compact = sign_control_operation(&op, &old).unwrap().0;
+    // A proposal does not authenticate its signer. Keep the registered kid
+    // but forge the signature with the proposed successor's private key.
+    let signing_input = compact.rsplit_once('.').unwrap().0;
+    let forged = format!(
+        "{signing_input}.{}",
+        URL_SAFE_NO_PAD.encode(next.sign(signing_input.as_bytes()))
+    );
+    assert_rejection(
+        &run_operator_task(&root, &forged, vec![("DATABASE_URL", database_url.clone())]),
+        "authorization",
+    );
+    let unchanged = registry.list_slots(DEPLOYMENT).await.unwrap().remove(0);
+    assert_eq!(unchanged.kid, kid);
+    assert_eq!(unchanged.expires_at, slot.expires_at);
+    let marker = root.join("after-renewal");
+    let child = spawn_operator_task(
+        &root,
+        &compact,
+        SpawnOptions {
+            extra_env: vec![("DATABASE_URL", database_url.clone())],
+            failpoint: Some(("control-journal-before-side-effect", marker.clone())),
+        },
+    );
+    let mut child = wait_for_marker(child, &marker);
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let renewed = registry.list_slots(DEPLOYMENT).await.unwrap().remove(0);
+    assert_eq!(renewed.kid, next_kid);
+    let first = run_operator_task(
+        &root,
+        &compact,
+        vec![("DATABASE_URL", database_url.clone())],
+    );
+    assert_success(&first);
+    let result = decode_control_result(&first.stdout).unwrap();
+    assert_eq!(result.outcome, ControlOutcome::Succeeded);
+    assert_eq!(
+        result.renewed_controller_kid.as_deref(),
+        Some(next_kid.as_str())
+    );
+    assert_eq!(
+        registry.list_slots(DEPLOYMENT).await.unwrap()[0].expires_at,
+        renewed.expires_at
+    );
+    let replay = run_operator_task(
+        &root,
+        &compact,
+        vec![("DATABASE_URL", "postgres://127.0.0.1:1/none".into())],
+    );
+    assert_success(&replay);
+    assert_eq!(first.stdout, replay.stdout);
+    registry
+        .revoke_slot(DEPLOYMENT, &slot.controller_id, Utc::now())
+        .await
+        .unwrap();
+    let mut revoked = operation(
+        "019c8ca2-30a6-7000-8000-00000000d002",
+        &next_kid,
+        ControlOperationPayload::MigrateApply,
+    );
+    revoked.renewal_public_key = Some(URL_SAFE_NO_PAD.encode(old.verifying_key().to_bytes()));
+    let compact = sign_control_operation(&revoked, &next).unwrap().0;
+    assert_rejection(
+        &run_operator_task(&root, &compact, vec![("DATABASE_URL", database_url)]),
+        "authorization",
+    );
+    fs::remove_dir_all(root).unwrap();
 }
 
 /// Happy path plus the journal guarantees that matter most at process level:

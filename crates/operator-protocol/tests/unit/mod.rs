@@ -46,12 +46,33 @@ fn deployment_statement() -> DeploymentStatement {
 }
 
 #[test]
+fn protocol_three_identity_remains_readable_for_existing_backups() {
+    let key = SigningKey::from_bytes(&[17; 32]);
+    let mut legacy = discovery_statement();
+    legacy.operator_protocol_versions = vec![3];
+    let compact = sign_discovery_statement(&legacy, "instance-1", &key).unwrap();
+    assert_eq!(
+        verify_discovery_statement(
+            &compact,
+            "instance-1",
+            &key.verifying_key(),
+            &legacy.nonce,
+            1_030
+        )
+        .unwrap(),
+        legacy
+    );
+    legacy.operator_protocol_versions = vec![5];
+    assert!(sign_discovery_statement(&legacy, "instance-1", &key).is_err());
+}
+
+#[test]
 fn golden_control_discovery_vector_is_stable_and_nonce_bound() {
     let key = SigningKey::from_bytes(&[17; 32]);
     let compact = sign_discovery_statement(&discovery_statement(), "instance-1", &key).unwrap();
     assert_eq!(
         compact,
-        "eyJhbGciOiJFZERTQSIsImtpZCI6Imluc3RhbmNlLTEiLCJ0eXAiOiJuYXpvYXV0aC1jb250cm9sLWRpc2NvdmVyeStqd3QifQ.eyJzY2hlbWEiOjEsInByb2R1Y3QiOiJuYXpvYXV0aCIsImRlcGxveW1lbnRfaWQiOiJkZXBsb3ltZW50LTEiLCJydW50aW1lX2luc3RhbmNlX2lkIjoicnVudGltZS0xIiwiaXNzdWVyIjoiaHR0cHM6Ly9hdXRoLmV4YW1wbGUiLCJyZWxlYXNlIjoidjAuMi4wIiwiY29udHJvbF9wcm90b2NvbF92ZXJzaW9ucyI6WzFdLCJvcGVyYXRvcl9wcm90b2NvbF92ZXJzaW9ucyI6WzNdLCJpbnN0YW5jZV9rZXlfaWQiOiJpbnN0YW5jZS0xIiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R4QVJFaE1VRlJZWEdCa2FHeHdkSGg4IiwiaXNzdWVkX2F0IjoxMDAwLCJleHBpcmVzX2F0IjoxMDYwfQ.u7a6Zn89VAuWukazjCsMLGct5k1yXV7UzHM-QWb_kpuZAK3XMvPWXvn5vduXgtpUnutSeRYJEOIZKDRvYQWXCg"
+        "eyJhbGciOiJFZERTQSIsImtpZCI6Imluc3RhbmNlLTEiLCJ0eXAiOiJuYXpvYXV0aC1jb250cm9sLWRpc2NvdmVyeStqd3QifQ.eyJzY2hlbWEiOjEsInByb2R1Y3QiOiJuYXpvYXV0aCIsImRlcGxveW1lbnRfaWQiOiJkZXBsb3ltZW50LTEiLCJydW50aW1lX2luc3RhbmNlX2lkIjoicnVudGltZS0xIiwiaXNzdWVyIjoiaHR0cHM6Ly9hdXRoLmV4YW1wbGUiLCJyZWxlYXNlIjoidjAuMi4wIiwiY29udHJvbF9wcm90b2NvbF92ZXJzaW9ucyI6WzFdLCJvcGVyYXRvcl9wcm90b2NvbF92ZXJzaW9ucyI6WzRdLCJpbnN0YW5jZV9rZXlfaWQiOiJpbnN0YW5jZS0xIiwibm9uY2UiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R4QVJFaE1VRlJZWEdCa2FHeHdkSGg4IiwiaXNzdWVkX2F0IjoxMDAwLCJleHBpcmVzX2F0IjoxMDYwfQ.Np90SaG7fMwvmuqbBIfQPrSuF6GMDoG-Ypl4P2msEbz9wBuCbSosUpFsF5ZvpHKUjI0o_jlRyEqF1nS3Mfb2Dw"
     );
     assert_eq!(
         verify_discovery_statement(
