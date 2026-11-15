@@ -824,17 +824,8 @@ async fn dcql_matches_verified_sd_jwt_alternative_types() {
             "urn:example:other",
             false,
         ),
-        (json!({"aka_vcts":[]}), "urn:example:specific", false),
-        (
-            json!({"aka_vcts":["urn:example:specific"]}),
-            "urn:example:specific",
-            false,
-        ),
-        (
-            json!({"aka_vcts":["urn:example:base", 1]}),
-            "urn:example:base",
-            false,
-        ),
+        (json!({}), "urn:example:specific", true),
+        (json!({}), "urn:example:base", false),
     ] {
         let mut transaction = cardinality_transaction();
         transaction.request.dcql_query.credentials = vec![

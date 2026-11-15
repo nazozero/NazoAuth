@@ -30,6 +30,19 @@ pub enum OAuthEndpointError {
 }
 
 impl OAuthEndpointError {
+    pub fn invalid_client(description: impl Into<String>, basic_challenge: bool) -> Self {
+        Self::token(
+            if basic_challenge {
+                StatusCode::UNAUTHORIZED
+            } else {
+                StatusCode::BAD_REQUEST
+            },
+            "invalid_client",
+            description,
+            basic_challenge,
+        )
+    }
+
     pub fn json(
         status: StatusCode,
         error: impl Into<String>,

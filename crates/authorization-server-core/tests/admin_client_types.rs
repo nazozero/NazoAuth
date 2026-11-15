@@ -322,6 +322,7 @@ fn client_patch_applies_optional_registration_metadata_as_one_update() {
                 " https://client.example/ciba/notify ".to_owned(),
             ),
             backchannel_authentication_request_signing_alg: Some("PS256".to_owned()),
+            id_token_signed_response_alg: Some("PS256".to_owned()),
             backchannel_user_code_parameter: Some(false),
             backchannel_logout_uri: Some(" https://client.example/backchannel ".to_owned()),
             backchannel_logout_session_required: Some(true),
@@ -353,6 +354,34 @@ fn client_patch_applies_optional_registration_metadata_as_one_update() {
     );
     assert_eq!(updated.tls_client_auth_san_ip, ["127.0.0.1"]);
     assert!(!updated.is_active);
+}
+
+#[test]
+fn ciba_registration_requires_an_explicit_profile_compatible_id_token_algorithm() {
+    for algorithm in [
+        None,
+        Some("RS256"),
+        Some("EdDSA"),
+        Some("ES256"),
+        Some("PS256"),
+    ] {
+        let result = futures_executor::block_on(prepare_client_patch(
+            oauth_client(),
+            PatchClientRequest {
+                grant_types: Some(vec!["urn:openid:params:grant-type:ciba".to_owned()]),
+                id_token_signed_response_alg: algorithm.map(ToOwned::to_owned),
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &StaticSectorIdentifier(vec![]),
+            &TestCrypto,
+        ));
+        assert_eq!(
+            result.is_ok(),
+            matches!(algorithm, Some("ES256" | "PS256")),
+            "{algorithm:?}"
+        );
+    }
 }
 
 #[test]
@@ -439,6 +468,74 @@ fn admin_create_and_patch_keep_ciba_user_code_disabled_without_stored_state() {
 }
 
 #[test]
+fn legacy_assertion_audience_flags_are_rejected_but_can_be_cleared() {
+    let resolver = StaticSectorIdentifier(Vec::new());
+    let crypto = TestCrypto;
+    for field in [
+        "allow_client_assertion_audience_array",
+        "allow_client_assertion_endpoint_audience",
+    ] {
+        let mut payload = json!({
+            "client_name": "Client", "client_type": "public",
+            "redirect_uris": ["https://client.example/callback"], "scopes": ["openid"],
+            "allowed_audiences": ["resource://default"], "grant_types": ["authorization_code"],
+            "token_endpoint_auth_method": "none"
+        });
+        payload[field] = json!(true);
+        let request = serde_json::from_value(payload).unwrap();
+        assert!(matches!(
+            futures_executor::block_on(nazo_auth::prepare_client_registration(
+                request,
+                &policy(None),
+                &resolver,
+                &crypto
+            )),
+            Err(AdminClientError::InvalidRequest(_))
+        ));
+        let patch = serde_json::from_value(json!({field: true})).unwrap();
+        assert!(matches!(
+            futures_executor::block_on(prepare_client_patch(
+                oauth_client(),
+                patch,
+                &policy(None),
+                &resolver,
+                &crypto
+            )),
+            Err(AdminClientError::InvalidRequest(_))
+        ));
+        let mut existing = oauth_client();
+        existing.allow_client_assertion_audience_array = true;
+        existing.allow_client_assertion_endpoint_audience = true;
+        let untouched = futures_executor::block_on(prepare_client_patch(
+            existing.clone(),
+            PatchClientRequest::default(),
+            &policy(None),
+            &resolver,
+            &crypto,
+        ))
+        .unwrap();
+        assert!(
+            untouched.allow_client_assertion_audience_array
+                && untouched.allow_client_assertion_endpoint_audience
+        );
+        let patch = serde_json::from_value(json!({field: false})).unwrap();
+        let updated = futures_executor::block_on(prepare_client_patch(
+            existing,
+            patch,
+            &policy(None),
+            &resolver,
+            &crypto,
+        ))
+        .unwrap();
+        assert!(!if field == "allow_client_assertion_audience_array" {
+            updated.allow_client_assertion_audience_array
+        } else {
+            updated.allow_client_assertion_endpoint_audience
+        });
+    }
+}
+
+#[test]
 fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
     let prepared = prepared();
     let registration_allocation = prepared.registration.redirect_uris.as_ptr();
@@ -456,4 +553,31 @@ fn prepared_write_moves_registration_and_holds_undisclosed_secret() {
         Some("issued-secret")
     );
     assert!(write.issued_secret.is_none());
+}
+
+#[test]
+fn ciba_registration_rejects_incompatible_assertion_algorithm() {
+    for algorithm in ["RS256", "EdDSA", "ES256", "PS256"] {
+        let mut client = oauth_client();
+        client.client_type = "confidential".to_owned();
+        client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+        client.jwks = Some(json!({"keys": []}).into());
+        let result = futures_executor::block_on(prepare_client_patch(
+            client,
+            PatchClientRequest {
+                grant_types: Some(vec!["urn:openid:params:grant-type:ciba".to_owned()]),
+                id_token_signed_response_alg: Some("PS256".to_owned()),
+                token_endpoint_auth_signing_alg: Some(algorithm.to_owned()),
+                ..PatchClientRequest::default()
+            },
+            &policy(None),
+            &StaticSectorIdentifier(vec![]),
+            &TestCrypto,
+        ));
+        assert_eq!(
+            result.is_ok(),
+            matches!(algorithm, "ES256" | "PS256"),
+            "{algorithm}"
+        );
+    }
 }

@@ -97,11 +97,7 @@ impl DeviceDecisionHandles {
         let device_service = self.device_service.as_ref();
         let config = self.config.as_ref();
         if has_basic && credentials.method != "client_secret_basic" {
-            return Err(OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            ));
+            return Err(OAuthEndpointError::invalid_client("客户端认证失败.", true));
         }
         let client_id = credentials
             .client_id
@@ -111,13 +107,7 @@ impl DeviceDecisionHandles {
                     .as_deref()
                     .is_none_or(|form_id| form_id == *id)
             })
-            .ok_or_else(|| {
-                OAuthEndpointError::json(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
-                    "客户端认证失败.",
-                )
-            })?;
+            .ok_or_else(|| OAuthEndpointError::invalid_client("客户端认证失败.", has_basic))?;
         let (mut client, secret_salt) = match authorization_service
             .client_authentication_snapshot(client_id)
             .await
@@ -126,10 +116,9 @@ impl DeviceDecisionHandles {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
+                return Err(OAuthEndpointError::invalid_client(
                     "客户端认证失败.",
+                    has_basic,
                 ));
             }
             Err(error) => {
@@ -472,7 +461,9 @@ async fn authenticate_device_authorization_client(
         secret_salt,
     )
     .await
-    .map_err(token_management_auth_error)?;
+    .map_err(|error| {
+        token_management_auth_error(error, credentials.method == "client_secret_basic")
+    })?;
     consume_token_client_assertion_with_authorization_service(
         authorization_service,
         client,
@@ -480,7 +471,9 @@ async fn authenticate_device_authorization_client(
         security_audit,
     )
     .await
-    .map_err(token_management_auth_error)
+    .map_err(|error| {
+        token_management_auth_error(error, credentials.method == "client_secret_basic")
+    })
 }
 
 fn device_authorization_request_error(
@@ -552,15 +545,14 @@ fn random_device_user_code() -> String {
     out
 }
 
-fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEndpointError {
+fn token_management_auth_error(
+    error: TokenManagementClientAuthError,
+    basic_challenge: bool,
+) -> OAuthEndpointError {
     match error {
         TokenManagementClientAuthError::InvalidClient
         | TokenManagementClientAuthError::PublicClientCredentialsForbidden => {
-            OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            )
+            OAuthEndpointError::invalid_client("客户端认证失败.", basic_challenge)
         }
         TokenManagementClientAuthError::StoreUnavailable => OAuthEndpointError::json(
             StatusCode::SERVICE_UNAVAILABLE,

@@ -43,6 +43,57 @@ async fn load_pending_authorization_code_payload(
 }
 
 #[actix_web::test]
+async fn oauth21_code_redemption_omits_redirect_uri_but_preserves_holder_checks() {
+    let state = test_state();
+    let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
+    let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
+    let modules = nazo_runtime_modules::SnapshotStore::new(state.active_module_snapshot());
+    let issuance = TokenIssuanceContext {
+        grant_type: Some(nazo_auth::GrantType::AuthorizationCode),
+        client_epoch: 0,
+        config: &config,
+        modules: &modules.request(),
+        authorization: &authorization,
+        security_audit: crate::http::authorization::test_support::test_security_audit(),
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
+    };
+    let mut client = pkce_policy_client();
+    let mut payload = payload_for_client(&client);
+    payload.redirect_uri_was_supplied = true;
+    payload.pkce = Some(pkce_s256(VALID_CODE_VERIFIER)).into();
+    let mut form = form_for_code("oauth21-code");
+    form.redirect_uri = None;
+    assert!(
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload).is_err()
+    );
+
+    client.security_policy.authorization_code_profile =
+        nazo_auth::AuthorizationCodeProfile::Oauth21;
+    assert!(
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload).is_ok()
+    );
+    form.code_verifier = None;
+    assert!(
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload).is_err()
+    );
+    form.code_verifier = Some("wrong-verifier".to_owned());
+    assert!(
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload).is_err()
+    );
+    form.code_verifier = Some(VALID_CODE_VERIFIER.to_owned());
+    form.redirect_uri = Some("https://attacker.example/callback".to_owned());
+    assert!(
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload).is_err()
+    );
+    form.redirect_uri = None;
+    payload.pkce = None.into();
+    form.code_verifier = None;
+    assert!(
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload).is_err()
+    );
+}
+
+#[actix_web::test]
 async fn pending_authorization_code_validation_covers_non_consuming_policy_boundaries() {
     let state = test_state();
     let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
@@ -81,7 +132,7 @@ async fn pending_authorization_code_validation_covers_non_consuming_policy_bound
                     .map_err(nazo_http_actix::oauth_endpoint_error_response)
                     .expect_err("a verifier must never be accepted without an original challenge");
             assert_eq!(downgrade.status(), StatusCode::BAD_REQUEST);
-            assert_eq!(oauth_error_code(downgrade).await, "invalid_grant");
+            assert_eq!(oauth_error_code(downgrade).await, "invalid_request");
         }
         form.code_verifier = None;
         let no_pkce = validate_pending_authorization_code_request(
@@ -304,7 +355,7 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
         form.code_verifier = Some(verifier.to_owned());
         let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert_eq!(oauth_error_code(response).await, "invalid_grant");
+        assert_eq!(oauth_error_code(response).await, "invalid_request");
         assert!(matches!(
             fixture.code_state(&no_challenge_code).await,
             AuthorizationCodeState::Pending { .. }

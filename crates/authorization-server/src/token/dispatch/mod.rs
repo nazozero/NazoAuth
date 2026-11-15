@@ -225,9 +225,7 @@ impl TokenEndpointHandles {
                     return Err(response);
                 }
             }
-            return Err(OAuthEndpointError::token(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
+            return Err(OAuthEndpointError::invalid_client(
                 "客户端认证失败.",
                 has_basic,
             ));
@@ -238,9 +236,7 @@ impl TokenEndpointHandles {
         {
             Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt, snapshot.client_epoch),
             Ok(None) => {
-                return Err(OAuthEndpointError::token(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
+                return Err(OAuthEndpointError::invalid_client(
                     "客户端不存在或已停用.",
                     has_basic,
                 ));
@@ -257,9 +253,7 @@ impl TokenEndpointHandles {
         };
         if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
             if !client.is_active {
-                return Err(OAuthEndpointError::token(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
+                return Err(OAuthEndpointError::invalid_client(
                     "客户端不存在或已停用.",
                     has_basic,
                 ));
@@ -319,9 +313,7 @@ impl TokenEndpointHandles {
                 auth_facts.form_client_id(),
                 &validated.client_id,
             ) {
-                return Err(OAuthEndpointError::token(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
+                return Err(OAuthEndpointError::invalid_client(
                     "Token request client_id does not match the client attestation.",
                     false,
                 ));
@@ -376,17 +368,13 @@ impl TokenEndpointHandles {
             {
                 Ok(assertion) => assertion,
                 Err(TokenManagementClientAuthError::PublicClientCredentialsForbidden) => {
-                    return Err(OAuthEndpointError::token(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
+                    return Err(OAuthEndpointError::invalid_client(
                         "public 客户端不能使用 client_secret.",
                         has_basic,
                     ));
                 }
                 Err(TokenManagementClientAuthError::InvalidClient) => {
-                    return Err(OAuthEndpointError::token(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
+                    return Err(OAuthEndpointError::invalid_client(
                         "客户端认证失败.",
                         has_basic && credentials.method != "private_key_jwt",
                     ));

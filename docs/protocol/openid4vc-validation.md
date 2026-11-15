@@ -95,6 +95,18 @@ rotation, historical CRLs and import preservation. Store external conformance re
 
 ## Regression coverage
 
+SD-JWT VC issuance with no subject claims omits `_sd` and emits exactly one
+trailing `~`, as required by SD-JWT VC draft-26 section 2.2.2.5. Holder
+KB-JWT audiences must be a single string matching the transaction's audience
+(RFC 9901 section 4.3); arrays, including single-element arrays, are rejected.
+
+The credential verifier validates `aka_vcts` before returning a verified
+credential: it must be a nonempty string array, with no empty string or primary
+`vct` value. This applies even without a DCQL type constraint. DCQL only matches
+the authenticated primary type and aliases; it does not repeat format validation.
+The issuer rejects subject-claim names reserved for non-disclosable VC control
+claims and SD-JWT encoding, rather than issuing a credential its verifier rejects.
+
 Signed proof regressions use actual ES256 signatures and trusted attestation
 keys. Encryption regressions encrypt and decrypt real compact JWE, retain
 the status through storage/replay helpers, and assert the HTTP presenter uses
@@ -261,6 +273,12 @@ regression are supplied in source.
 
 ### SD-JWT processed claims and credential status
 
+Managed SD-JWT VC datasets reject `vct#integrity`, `aka_vcts`, and `...`
+as subject claim names: these names belong to credential control or SD-JWT
+processing and cannot be emitted as selectively disclosed subject claims.
+The signer also supports an empty subject-claims object: an SD-JWT with no
+Disclosures is serialized as the issuer JWT followed by one `~`.
+
 The verifier reconstructs the RFC 9901 processed payload from the authenticated
 issuer payload. Signed plaintext claims remain present; disclosures may populate
 nested object properties and array elements. Undisclosed array placeholders are
@@ -275,10 +293,14 @@ apply to the processed payload. SD-JWT VC control claims (`iss`, `nbf`, `exp`,
 `cnf`, `vct`, `vct#integrity`, `aka_vcts`, `status`) and their subclaims must
 remain plaintext; disclosure references within them are rejected. `iat` and
 `sub` may be selectively disclosed, as specified in
-[SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19#section-2.2.2.3).
+[SD-JWT VC section 2.2.2.3](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-26#section-2.2.2.3).
 DCQL type selection accepts the signed `vct` and valid signed `aka_vcts`
-values. An empty or malformed `aka_vcts`, or one containing the primary
+values. The primary `vct` must be a non-empty string, even when an alias
+matches the query. An empty or malformed `aka_vcts`, or one containing the primary
 `vct`, is rejected.
+The verifier does not retrieve or process Type Metadata. It does not verify
+`vct#integrity` against a referenced document and cannot enforce policies that
+require Type Metadata processing.
 
 The verifier accepts credentials without individual status references. A signed
 `status` in SD-JWT VC or mdoc is rejected with `InvalidStatus`: no individual

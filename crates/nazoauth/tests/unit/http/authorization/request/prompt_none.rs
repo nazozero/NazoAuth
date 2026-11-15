@@ -557,6 +557,56 @@ async fn prompt_none_final_coverage_fails_closed_when_query_fails() {
     );
 }
 #[actix_web::test]
+async fn oauth21_native_redirects_require_interaction_while_https_keeps_silent_sso() {
+    for redirect in [
+        "com.example.app:/callback",
+        "http://127.0.0.1:49152/callback",
+        "https://client.example/callback",
+    ] {
+        let Some(mut fixture) = PromptNoneFixture::new(Fault::None, None).await else {
+            return;
+        };
+        let mut conn = get_conn(&fixture.live.state.diesel_db).await.unwrap();
+        sql_query("UPDATE oauth_clients SET client_type = 'public', token_endpoint_auth_method = 'none', redirect_uris = $1, security_policy = security_policy || '{\"authorization_code_profile\":\"oauth21\"}'::jsonb WHERE tenant_id = $2 AND client_id = $3")
+            .bind::<diesel::sql_types::Jsonb, _>(json!([redirect]))
+            .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+            .bind::<diesel::sql_types::Text, _>(&fixture.client_id)
+            .execute(&mut conn)
+            .await
+            .unwrap();
+        drop(conn);
+        fixture
+            .q
+            .insert("redirect_uri".to_owned(), redirect.to_owned());
+        let response = fixture.authorize().await;
+        assert_eq!(response.status(), StatusCode::FOUND);
+        let query = redirect_query(&response);
+        assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
+        if redirect.starts_with("https:") {
+            assert!(query.contains_key("code"));
+            assert!(!query.contains_key("error"));
+        } else {
+            assert_eq!(
+                query.get("error").map(String::as_str),
+                Some("interaction_required")
+            );
+            assert!(!query.contains_key("code"));
+            assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 0);
+            fixture.q.remove("prompt");
+            let interactive = fixture.authorize().await;
+            assert_eq!(interactive.status(), StatusCode::FOUND);
+            let location = interactive
+                .headers()
+                .get(header::LOCATION)
+                .unwrap()
+                .to_str()
+                .unwrap();
+            assert!(location.contains("consent"), "{location}");
+        }
+    }
+}
+
+#[actix_web::test]
 async fn prompt_none_issues_single_use_authorization_code_without_user_interaction() {
     let Some(mut fixture) = PromptNoneFixture::new(Fault::None, None).await else {
         return;

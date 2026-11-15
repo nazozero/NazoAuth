@@ -1,0 +1,41 @@
+name: CI input selection
+
+on:
+  workflow_call:
+    inputs:
+      scope:
+        type: string
+        required: true
+    outputs:
+      run:
+        value: ${{ jobs.inputs.outputs.run }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inputs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SCOPE: ${{ inputs.scope }}
+        run: python3 scripts/ci_inputs.py "$INPUT_SCOPE"
+      # Only an executed run publishes an identity. Reused checks cannot extend
+      # the evidence lifetime, and failed/cancelled runs are never reusable.
+      - if: steps.select.outputs.run == 'true' && steps.select.outputs.artifact != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.select.outputs.artifact }}
+          path: target/ci-inputs/evidence.txt
+          retention-days: 7
+          overwrite: true

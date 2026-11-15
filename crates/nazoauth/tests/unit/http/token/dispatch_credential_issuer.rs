@@ -232,8 +232,7 @@ async fn attested_token_dispatch_checks_identity_and_consumes_proof_once() {
                 .await
             }
             2 => {
-                assert_token_error(response, StatusCode::UNAUTHORIZED, "invalid_client", false)
-                    .await
+                assert_token_error(response, StatusCode::BAD_REQUEST, "invalid_client", false).await
             }
             3 => {
                 assert_token_error(response, StatusCode::BAD_REQUEST, "invalid_request", false)

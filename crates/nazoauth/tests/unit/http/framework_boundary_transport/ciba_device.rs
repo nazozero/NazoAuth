@@ -231,6 +231,7 @@ mod ciba_device_contract {
             sector_identifier_uri: None,
             sector_identifier_host: None,
         };
+        client.id_token_signed_response_alg = Some("PS256".to_owned());
         client.security_policy.allow_cross_device_flows = true;
         client
     }
@@ -396,7 +397,7 @@ mod ciba_device_contract {
         let mut state = super::live_transport_state().await;
         configure_ciba_test_mtls_proxy(&mut state);
         state.keyset =
-            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
+            crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
         let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
         let mut client = ciba_private_key_jwt_client_with_alg("golden-ciba", &key);
         client.client_id = format!("golden-ciba-{}", client.id);

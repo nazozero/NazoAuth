@@ -1,5 +1,5 @@
 use diesel::{sql_query, sql_types::Uuid as SqlUuid};
-use diesel_async::{AsyncConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     DynamicRegistrationClientStore, DynamicRegistrationDependencyError, OAuthClient,
     PreparedClientRegistration, ValidatedClientRegistration,
@@ -946,6 +946,66 @@ async fn client_credential_state(pool: &DbPool, id: Uuid) -> serde_json::Value {
     .await
     .unwrap()
     .state
+}
+
+#[tokio::test]
+async fn oauth21_policy_round_trips_and_prevents_silent_migration_rollback() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let mut original = client(TenantContext::default_system());
+    original.security_policy.authorization_code_profile =
+        nazo_auth::AuthorizationCodeProfile::Oauth21;
+    repository.insert(&original, None, None).await.unwrap();
+    let current = repository
+        .by_id(original.tenant_id, original.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        current.security_policy.authorization_code_profile,
+        nazo_auth::AuthorizationCodeProfile::Oauth21
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    connection.batch_execute("BEGIN").await.unwrap();
+    let rollback = connection
+        .batch_execute(include_str!(
+            "../../../migrations/20261115000100_oauth21_client_profile/down.sql"
+        ))
+        .await;
+    assert!(
+        rollback
+            .unwrap_err()
+            .to_string()
+            .contains("Reset OAuth 2.1 client profiles")
+    );
+    connection.batch_execute("ROLLBACK").await.unwrap();
+
+    for patch in [
+        serde_json::json!({"authorization_code_profile": "unknown"}),
+        serde_json::json!({"authorization_code_profile": null}),
+        serde_json::json!({"allow_confidential_oidc_without_pkce": true}),
+        serde_json::json!({"assurance": "fapi2"}),
+    ] {
+        assert!(
+            sql_query(
+                "UPDATE oauth_clients SET security_policy = security_policy || $1 WHERE id = $2"
+            )
+            .bind::<diesel::sql_types::Jsonb, _>(patch)
+            .bind::<SqlUuid, _>(original.id)
+            .execute(&mut connection)
+            .await
+            .is_err()
+        );
+    }
+    let current = repository
+        .by_id(original.tenant_id, original.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.security_policy, original.security_policy);
 }
 
 #[tokio::test]

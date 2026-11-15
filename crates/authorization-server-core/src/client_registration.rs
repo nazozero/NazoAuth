@@ -12,12 +12,30 @@ pub enum ClientAssuranceLevel {
     Fapi2,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorizationCodeProfile {
+    #[default]
+    Oauth20,
+    Oauth21,
+}
+
+impl AuthorizationCodeProfile {
+    fn is_oauth20(&self) -> bool {
+        *self == Self::Oauth20
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClientSecurityPolicy {
     pub version: u16,
     #[serde(default)]
     pub assurance: ClientAssuranceLevel,
+    /// OAuth 2.1 omits token redirect_uri and requires S256 PKCE. Retained
+    /// registrations default to OAuth 2.0's explicit redirect binding.
+    #[serde(default, skip_serializing_if = "AuthorizationCodeProfile::is_oauth20")]
+    pub authorization_code_profile: AuthorizationCodeProfile,
     #[serde(default)]
     pub require_pushed_authorization_requests: bool,
     #[serde(default)]
@@ -46,6 +64,7 @@ impl Default for ClientSecurityPolicy {
         Self {
             version: CLIENT_SECURITY_POLICY_VERSION,
             assurance: ClientAssuranceLevel::Baseline,
+            authorization_code_profile: AuthorizationCodeProfile::Oauth20,
             require_pushed_authorization_requests: false,
             require_signed_authorization_request: false,
             require_signed_authorization_response: false,
@@ -62,6 +81,11 @@ impl ClientSecurityPolicy {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.version != CLIENT_SECURITY_POLICY_VERSION {
             return Err("unsupported client security policy version");
+        }
+        if self.authorization_code_profile == AuthorizationCodeProfile::Oauth21
+            && (self.allow_confidential_oidc_without_pkce || self.requires_fapi2_security())
+        {
+            return Err("OAuth 2.1 authorization code requires PKCE and a baseline client profile");
         }
         Ok(())
     }

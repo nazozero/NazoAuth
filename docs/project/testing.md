@@ -86,7 +86,48 @@ Run the structure check before the Rust quality gate below.
 
 ## Verification
 
-Use Rust 1.99.0, pinned in `rust-toolchain.toml` and the build images. The
+### CI selection and reuse
+
+Rust workspace checks cover changes to Rust sources, manifests, toolchains,
+fixtures, migrations, build/coverage scripts and their workflow. Python and
+architecture checks run separately and do not compile the service. CodeQL,
+operator parser fuzzing, service-image/HTTP security checks and performance-runner
+images each have their own inputs in `scripts/ci_inputs.py`.
+
+Every automatic run compares the actual checkout's Git file identities, including
+the PR merge result, with a successful run of the same workflow and event in the
+same repository/branch/PR context, or from successful main checks when opening a
+same-repository PR. Identical inputs can reuse evidence for seven
+days; security scans use a 24-hour limit because advisory data can change without
+a source edit. The job summary links that run. Failed, cancelled, running or missing
+results never permit reuse. Reuse does not renew evidence age. Manual and scheduled
+runs execute their checks regardless of prior results. Updated PRs cancel obsolete
+in-progress runs; main runs remain independent.
+
+This avoids rebuilding and retesting an unchanged service after documentation or
+specification-inventory edits. Changing test or workflow inputs invalidates that
+evidence. Ordinary functional tests can also transfer from a successful same-repo
+PR to main when its tested base is an ancestor of its head and Git proves its
+inputs equal the current main inputs. Otherwise main runs the full ordinary suite.
+This covers direct pushes, changed merge inputs and missing evidence without
+guessing a merge result. Other workflows retain their separate main checks.
+
+Coverage runs weekly and on manual dispatch; it is not repeated on every merge.
+Manual `code-quality` runs coverage plus the uninstrumented timing/documentation
+exclusions. Coverage and ordinary binaries have different instrumentation and
+cannot share compiled workspace artifacts. Release checks consume successful governed main CI through
+`scripts/check_release_ci.py`, then build and verify release artifacts.
+
+| Stage or changed inputs | Checks to execute |
+| --- | --- |
+| Documentation or specification inventory only | Source/reference, Python and workflow-policy checks; reuse successful unchanged Rust, CodeQL, fuzz and image checks. Without reusable evidence, execute the selected checks. |
+| Rust, dependencies, toolchain, fixtures or migrations | Workspace formatting, Clippy and PostgreSQL/Valkey tests; CodeQL and service security checks. Operator fuzzing runs when its parser, crypto, manifest, corpus or workflow inputs change. |
+| Performance runner or its workflow | Build and smoke-test the runner and execute native k6 JSON regressions. BuildKit reuses unchanged k6 and Python dependency layers. |
+| Main after merge | Reuse ordinary PR tests only with identical proven inputs; retain main CodeQL/security roles and run missing or expired checks. |
+| Release | Require successful governed main CI, then build, scan and verify the release artifacts. Do not dispatch another complete functional CI run. |
+| Weekly or manual checks | Execute selected checks even with matching prior inputs; coverage uses its own instrumented build. |
+
+Use Rust 1.100.0, pinned in `rust-toolchain.toml` and the build images. The
 workflow toolchain actions use the same release at an immutable revision. The executable CI definition
 is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
 service versions, fixtures, and complete environment. Python tools use
@@ -250,7 +291,8 @@ scripts, and workflow changes require fresh checks. PR runs, failed checks,
 unrelated commits, and later commits do not qualify. Accepted run IDs and
 commits are printed in the policy job log.
 
-Documentation-only pushes retain the existing quality-workflow path filter.
+Documentation-only pushes run the input-selection gate and lightweight checks;
+unchanged heavy jobs reuse successful evidence as described above.
 If suitable evidence is missing, run the required workflow manually on `main`
 and wait for success before retrying a release from that commit. Rerunning an
 old tag still uses the workflow stored at that tag; this policy change takes

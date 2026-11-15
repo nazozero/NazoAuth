@@ -648,11 +648,47 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
             )));
         }
 
+        let empty = crypto
+            .sign(&sd_input(None, json!({}), None))
+            .await
+            .expect("SD-JWT without disclosures");
+        let (jwt, suffix) = empty.split_once('~').unwrap();
+        assert_eq!(jwt.split('.').count(), 3);
+        assert_eq!(suffix, "");
+        let empty_claims: Value = nazo_crypto::jwt::decode(
+            jwt,
+            &decoding_key,
+            &jsonwebtoken::Validation::new(Algorithm::ES256),
+        )
+        .expect("decode SD-JWT without disclosures")
+        .claims;
+        assert!(empty_claims.get("_sd").is_none());
+
         let malformed = sd_input(None, json!("not an object"), None);
         assert_eq!(
             crypto.sign(&malformed).await,
             Err(CredentialTrustError::InvalidEncoding)
         );
+        for name in [
+            "iss",
+            "nbf",
+            "exp",
+            "cnf",
+            "vct",
+            "vct#integrity",
+            "aka_vcts",
+            "status",
+            "_sd",
+            "_sd_alg",
+            "...",
+        ] {
+            let forbidden = sd_input(None, json!({name: "subject-controlled"}), None);
+            assert_eq!(
+                crypto.sign(&forbidden).await,
+                Err(CredentialTrustError::InvalidEncoding),
+                "{name}"
+            );
+        }
     })
 }
 
@@ -1052,6 +1088,63 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
 }
 
 #[test]
+fn sd_jwt_rejects_empty_vct_even_with_a_valid_alias() {
+    let (crypto, original, _, certs) = sd_presentation_fixture();
+    let jwt = original.encoded.split('~').next().unwrap();
+    let mut claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(jwt.split('.').nth(1).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    claims["vct"] = json!("");
+    claims["aka_vcts"] = json!(["urn:example:base"]);
+    let presentation = resign_sd_fixture_with_claims(
+        &original,
+        &certs,
+        vec![STANDARD.encode(&certs.leaf_der)],
+        &original.expected_nonce,
+        &claims,
+    );
+    assert_eq!(
+        crypto.verify_sd_jwt(&presentation),
+        Err(CredentialTrustError::InvalidEncoding)
+    );
+}
+
+#[test]
+fn sd_jwt_rejects_invalid_aliases_before_query_matching() {
+    let (crypto, original, _, certs) = sd_presentation_fixture();
+    let jwt = original.encoded.split('~').next().unwrap();
+    let mut claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD
+            .decode(jwt.split('.').nth(1).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    for aliases in [
+        json!([]),
+        json!([""]),
+        json!([claims["vct"]]),
+        json!(["urn:example:base", 1]),
+        json!("urn:example:base"),
+    ] {
+        claims["aka_vcts"] = aliases;
+        let presentation = resign_sd_fixture_with_claims(
+            &original,
+            &certs,
+            vec![STANDARD.encode(&certs.leaf_der)],
+            &original.expected_nonce,
+            &claims,
+        );
+        assert_eq!(
+            crypto.verify_sd_jwt(&presentation),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    }
+}
+
+#[test]
 fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     let (crypto, presentation, _, certs) = sd_presentation_fixture();
     let parts = presentation.encoded.split('~').collect::<Vec<_>>();
@@ -1124,6 +1217,31 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     assert_eq!(verified.claims["cnf"]["jwk"], holder_jwk);
     assert!(verified.claims.get("_sd").is_none());
     assert!(verified.claims.get("_sd_alg").is_none());
+
+    for audience in [
+        json!([presentation.expected_audience]),
+        json!([presentation.expected_audience, "https://other.example"]),
+    ] {
+        let binding = encode(
+            &kb_header,
+            &json!({
+                "nonce": presentation.expected_nonce,
+                "aud": audience,
+                "iat": Utc::now().timestamp(),
+                "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(no_disclosure_input.as_bytes())),
+            }),
+            &holder_key,
+        )
+        .expect("signed array audience");
+        let invalid = PresentedCredential {
+            encoded: format!("{credential_jwt}~{binding}").into(),
+            ..presentation.clone()
+        };
+        assert_eq!(
+            crypto.verify_sd_jwt(&invalid),
+            Err(CredentialTrustError::InvalidHolderBinding)
+        );
+    }
 
     let wrong_hash_kb = encode(
         &kb_header,

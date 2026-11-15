@@ -93,12 +93,12 @@ pub use authorization_service::{
     pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
-    CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision, CibaCreateFailure,
-    CibaDecision, CibaDecisionEvaluation, CibaDecisionFailure, CibaPingNotification,
-    CibaPingNotificationStatus, CibaPollCommit, CibaPollFailure, CibaPollTransition,
-    CibaRequestState, CibaService, CibaStateFuture, CibaStatePortError, CibaStateStorePort,
-    CibaStateVersion, CibaStatus, CibaStoredRequest, PreparedCibaDecision, ciba_retention_deadline,
-    evaluate_ciba_decision, evaluate_ciba_poll,
+    CIBA_JWT_SIGNING_ALGS, CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision,
+    CibaCreateFailure, CibaDecision, CibaDecisionEvaluation, CibaDecisionFailure,
+    CibaPingNotification, CibaPingNotificationStatus, CibaPollCommit, CibaPollFailure,
+    CibaPollTransition, CibaRequestState, CibaService, CibaStateFuture, CibaStatePortError,
+    CibaStateStorePort, CibaStateVersion, CibaStatus, CibaStoredRequest, PreparedCibaDecision,
+    ciba_retention_deadline, evaluate_ciba_decision, evaluate_ciba_poll,
 };
 pub use ciba_ping::{
     CibaPingClaimBatch, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult,
@@ -134,8 +134,8 @@ pub use client_jwe_policy::{
     RSA_PUBLIC_KEY_MAX_BITS, RSA_PUBLIC_KEY_MIN_BITS, rsa_public_key_components_are_safe,
 };
 pub use client_registration::{
-    ApprovedClient, ClientAssuranceLevel, ClientPresentation, ClientPresentationMetadata,
-    ClientSecurityPolicy, OAuthClient, ValidatedClientRegistration,
+    ApprovedClient, AuthorizationCodeProfile, ClientAssuranceLevel, ClientPresentation,
+    ClientPresentationMetadata, ClientSecurityPolicy, OAuthClient, ValidatedClientRegistration,
 };
 pub use device::{
     ApprovedDeviceAuthorization, DeviceAtomicResult, DeviceAuthorizationApproval,

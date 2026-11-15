@@ -373,6 +373,7 @@ fn ciba_missing_credentials_fail_before_client_or_state_access() {
             Err(error) => error,
             Ok(_) => panic!("missing credentials must fail"),
         };
+        assert_eq!(fields(&error).status, StatusCode::BAD_REQUEST);
         assert_eq!(fields(&error).error, "invalid_client");
         assert!(authorization.ports.calls().is_empty());
         assert!(ports.calls().is_empty());

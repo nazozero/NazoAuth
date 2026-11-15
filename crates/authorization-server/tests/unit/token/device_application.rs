@@ -347,8 +347,13 @@ fn credentials() -> ClientCredentials {
     }
 }
 fn assert_error(error: OAuthEndpointError, status: StatusCode, code: &str) {
-    let OAuthEndpointError::Json(fields) = error else {
-        panic!("device errors must be JSON")
+    let fields = match error {
+        OAuthEndpointError::Json(fields) => fields,
+        OAuthEndpointError::Token {
+            fields,
+            basic_challenge: false,
+        } => fields,
+        _ => panic!("unexpected device error"),
     };
     assert_eq!(fields.status, status);
     assert_eq!(fields.error, code);
@@ -399,10 +404,10 @@ fn create_rejects_client_and_storage_failures_before_issuing_codes() {
         let mut forbidden = device_client();
         forbidden.security_policy.allow_cross_device_flows = false;
         for (client, status, code) in [
-            (Ok(None), StatusCode::UNAUTHORIZED, "invalid_client"),
+            (Ok(None), StatusCode::BAD_REQUEST, "invalid_client"),
             (
                 Ok(Some(inactive)),
-                StatusCode::UNAUTHORIZED,
+                StatusCode::BAD_REQUEST,
                 "invalid_client",
             ),
             (

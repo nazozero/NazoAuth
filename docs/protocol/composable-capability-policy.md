@@ -17,6 +17,26 @@ and `security_policy` continue to deny use by default.
 Every client carries an explicit versioned `security_policy`. A missing policy
 is rejected; no global process setting reconstructs or substitutes one.
 
+`security_policy.authorization_code_profile` selects the authorization-code
+wire contract. Its default, `oauth20`, preserves RFC 6749/OIDC redirect binding
+for existing registrations. Set `oauth21` for clients using OAuth 2.1 draft-17:
+S256 PKCE is required, and the token request may omit `redirect_uri`. A supplied
+value still has to match the authorized redirect URI exactly. The choice is
+administrator-owned; PKCE presence does not infer a client's protocol version.
+It cannot be combined with the confidential-OIDC PKCE exception or per-client
+FAPI assurance. Server FAPI profiles retain their OAuth 2.0 redirect contract.
+Apply migration `20261115000100_oauth21_client_profile` and update all readers
+before selecting the new profile; older binaries reject the new policy field.
+Before rolling back the migration, explicitly reset OAuth 2.1 registrations to
+the older client contract. The rollback refuses to change that contract silently.
+
+The OAuth 2.1 profile requires user interaction for native private-use and
+loopback redirects. `prompt=none` returns `interaction_required` even with prior
+consent; the client must restart an interactive authorization request. Registered
+HTTPS callbacks retain silent SSO subject to the existing session and grant
+checks. This is the selected policy for draft-17 section 7.3.1, not a claim that
+prior consent or PKCE authenticates a native application.
+
 ## New-install server defaults
 
 The following stable runtime modules are enabled on a new database:
@@ -135,7 +155,9 @@ and requires a single string `aud` equal to the issuer identifier. Client
 compatibility flags cannot permit endpoint, mTLS alias, or array audiences in
 this mode. The same policy reaches token, PAR, introspection, revocation,
 Device Authorization and CIBA authentication; CIBA FAPI2 hardening also enables
-these constraints. Baseline clients retain their explicit compatibility settings.
+these constraints. All other clients also require the issuer as the sole audience; a single-element array is accepted outside FAPI2.
+
+The former `allow_client_assertion_endpoint_audience` and `allow_client_assertion_audience_array` settings no longer relax validation. Existing stored values remain visible for migration, but setting either to true through the admin API is rejected; setting it to false is allowed. Before upgrading, change affected clients to send only the issuer identifier as `aud`. Endpoint and multi-audience assertions will otherwise fail authentication.
 
 A client can introspect its own tokens within its tenant. Inspecting another
 client's access token requires an exact match between a token audience and the

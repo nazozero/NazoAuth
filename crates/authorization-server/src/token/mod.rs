@@ -126,12 +126,7 @@ pub fn token_client_assertion_error(error: TokenManagementClientAuthError) -> OA
     match error {
         TokenManagementClientAuthError::InvalidClient
         | TokenManagementClientAuthError::PublicClientCredentialsForbidden => {
-            OAuthEndpointError::token(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-                false,
-            )
+            OAuthEndpointError::invalid_client("客户端认证失败.", false)
         }
         TokenManagementClientAuthError::StoreUnavailable => OAuthEndpointError::token(
             StatusCode::SERVICE_UNAVAILABLE,

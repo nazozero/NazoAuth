@@ -57,7 +57,14 @@ fn vci_authorization_detail_contains_final_credential_identifier() {
 #[test]
 fn managed_sd_jwt_dataset_rejects_reserved_claims_and_structural_abuse() {
     let configuration = dataset_configuration(CredentialFormat::SdJwtVc);
-    for claims in [json!({}), json!({"iss":"attacker"}), json!({"cnf":{}})] {
+    for claims in [
+        json!({}),
+        json!({"iss":"attacker"}),
+        json!({"cnf":{}}),
+        json!({"vct#integrity":"sha256-example"}),
+        json!({"aka_vcts":["ExampleCredential"]}),
+        json!({"...":"digest"}),
+    ] {
         assert!(validate_managed_dataset(&configuration, &dataset_request(claims)).is_err());
     }
 

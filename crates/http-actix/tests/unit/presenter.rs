@@ -2,6 +2,23 @@ use actix_web::http::{StatusCode, header};
 
 use super::*;
 
+#[test]
+fn invalid_client_challenges_only_http_basic() {
+    use nazo_oauth_server::contracts::oauth_error::OAuthEndpointError;
+
+    let non_basic =
+        oauth_endpoint_error_response(OAuthEndpointError::invalid_client("failed", false));
+    assert_eq!(non_basic.status(), StatusCode::BAD_REQUEST);
+    assert!(!non_basic.headers().contains_key(header::WWW_AUTHENTICATE));
+
+    let basic = oauth_endpoint_error_response(OAuthEndpointError::invalid_client("failed", true));
+    assert_eq!(basic.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        basic.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+        r#"Basic realm="nazo-oauth""#
+    );
+}
+
 #[actix_web::test]
 async fn token_error_preserves_cache_and_challenge_contract() {
     let response = oauth_token_error(

@@ -841,7 +841,7 @@ async fn pki_client_auth_rejects_matching_subject_without_an_active_client_ancho
 }
 
 #[actix_web::test]
-async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
+async fn token_endpoint_audience_is_rejected_even_with_legacy_client_flag() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
@@ -888,13 +888,13 @@ async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
             &credentials("oidc-token-endpoint-audience"),
         )
         .await
-        .is_ok(),
-        "ordinary OIDC DCR clients must accept the registered token endpoint audience"
+        .is_err(),
+        "the legacy flag must not admit a token endpoint audience"
     );
 }
 
 #[actix_web::test]
-async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
+async fn ciba_private_key_jwt_accepts_only_ps256_issuer_audience() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
@@ -926,11 +926,13 @@ async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
             jsonwebtoken::Algorithm::PS256,
         ));
 
-        assert!(
+        let result =
             verify_confidential_client(&state, &request_facts(&state, &req), &client, &credentials)
-                .await
-                .is_ok(),
-            "CIBA private_key_jwt should accept {audience} as client assertion audience"
+                .await;
+        assert_eq!(
+            result.is_ok(),
+            audience == "https://issuer.example",
+            "CIBA private_key_jwt audience {audience}"
         );
     }
 
@@ -952,6 +954,6 @@ async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
         )
         .await
         .is_err(),
-        "private_key_jwt audience must use the exact current endpoint path"
+        "private_key_jwt audience must be the issuer"
     );
 }

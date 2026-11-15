@@ -14,6 +14,15 @@
 
 客户端应以部署实际返回的 discovery 和 registration metadata 为准。
 
+OAuth 2.1 draft-17 授权码客户端由管理员设置
+`security_policy.authorization_code_profile=oauth21`，强制使用 S256 PKCE，
+并允许令牌请求省略 `redirect_uri`；若提供该参数，仍须精确匹配。现有注册
+默认为 `oauth20`，OIDC 兼容和 FAPI 保留原有 redirect 契约。更新顺序及限制见
+[客户端策略](../protocol/composable-capability-policy.md)。
+该 OAuth 2.1 配置要求原生应用的私有 URI 和 loopback 回调经过用户交互；
+即使已有历史同意，`prompt=none` 也返回 `interaction_required`。
+注册的 HTTPS 回调保留现有会话和授权同意检查。
+
 ## 规范与 Profile 支持
 
 | 能力 | 状态 | 启用 / 宣告条件 | 规范依据 | 说明 |
@@ -41,7 +50,7 @@
 | Token Introspection | 完整支持 | introspection endpoint 可用，受客户端策略限制 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profile 可使用受保护 introspection 响应。 |
 | Token Revocation | 完整支持 | revocation endpoint 可用 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | 按 token 类型和客户端策略撤销 token。 |
 | Device Authorization Grant | 支持 | 新数据库默认开启服务端支持；客户端还必须登记 device-code grant 并设置 `allow_cross_device_flows=true` | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | 运行时模块决定是否宣告，客户端策略决定是否有权使用。 |
-| OpenID CIBA / FAPI-CIBA | 支持；ID1 兼容 | 新数据库默认开启 poll/ping 服务端支持；客户端还必须具备 CIBA grant/元数据并设置 `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | FAPI-CIBA ID1 的 `private_key_jwt / mTLS` × `poll / ping` 组合已支持；更新的 `fapi-ciba-03` working draft 仍需单独 delta audit。push 永不支持。 |
+| OpenID CIBA / FAPI-CIBA | 支持；ID1 兼容 | 新数据库默认开启 poll/ping 服务端支持；客户端还必须具备 CIBA grant/元数据并设置 `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | FAPI-CIBA ID1 的 `private_key_jwt / mTLS` × `poll / ping` 组合已支持；已核对的 `fapi-ciba-03` 授权服务器要求继续执行明确的交易绑定与 ES256/PS256 JWT 签名。可选的 `request_context` 和 `login_hint_token` 扩展未对外声明支持。push 永不支持。 |
 | FAPI 2.0 Security Profile | 完整支持 | 按客户端设置 `security_policy.assurance=fapi2` | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | 要求 confidential client、PAR、sender constraint 和强客户端认证。 |
 | FAPI 2.0 Message Signing | 完整支持 | 由独立客户端策略字段启用签名授权请求、JARM 与签名 introspection | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | 兼容选项可以同时启用，并与 FAPI2 assurance 共存。 |
 | OpenID4VCI 1.0 Final | 完整支持 | 默认关闭；启用 Credential Issuer 角色并完成 credential/trust 配置后，通过 OpenID4VCI issuer metadata 宣告 | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | 不属于普通 OIDC RP 登录。 |
@@ -63,11 +72,11 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 
 | 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | draft-15 实现基础；已应用部分 draft-16/17 控制 | 当前跟踪 [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。授权 redirect URI 不得预先包含响应参数。 | 完整 draft-16/17 合规声明需要逐条审核。 |
+| OAuth 2.1 Authorization Framework | 显式 draft-17 授权码 profile | 当前跟踪 [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。授权 redirect URI 不得预先包含响应参数。 | 设置 `security_policy.authorization_code_profile=oauth21`，以强制 S256 PKCE 替代令牌请求重复 redirect URI。该草案 profile 与 OAuth 2.0/OIDC、FAPI 注册契约分开。 |
 | OAuth 2.0 for Browser-Based Applications | 已复核服务端要求 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 保留相关 draft-27 要求；公共客户端的刷新令牌轮换不能延长初始期限。 | 托管前端不是 BFF；第三方浏览器客户端及其部署仍须负责自身适用的 BCP 要求。 |
 | Cross-Device Flows: Security BCP | 需要部署方评估 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 要求风险评估和适当的缓解措施。现有 Device 和 CIBA 授权门禁不能证明设备邻近或用户意图。 | 启用跨设备授权前按部署场景评估并选择缓解措施；参见[跨设备部署说明](../protocol/cross-device-decision-preparation.md)。 |
 | OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
-| JWT BCP / JWT Assertion | JWT BCP bis 待审计；支持 RFC 10070 的 issuer-only 客户端认证 | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 仍是草案。[RFC 10070](https://www.rfc-editor.org/info/rfc10070) 将客户端认证 audience 限定为 issuer。 | 旧客户端的 audience 兼容例外不符合 RFC 10070。JWT bearer grant 限于客户端自断言和 issuer audience。 |
+| JWT BCP / JWT Assertion | JWT BCP bis 待审计；支持 RFC 10070 的 issuer-only 客户端认证 | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 仍是草案。[RFC 10070](https://www.rfc-editor.org/info/rfc10070) 将客户端认证 audience 限定为 issuer。 | 保留的旧 audience 配置不再放宽此规则。JWT bearer grant 限于客户端自断言和 issuer audience。 |
 | OAuth Client Attestation | 支持 OpenID4VCI 1.0 固定引用的 draft-07；默认关闭 | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) 是 OpenID4VCI 1.0 Final 明确固定的版本；当前实现支持 `attest_jwt_client_auth`，并将 refresh token 绑定到 Client Instance `cnf` 公钥。只有模块启用且客户端策略要求时才宣告。 | 后续草案及最终 RFC 必须作为独立 delta audit；不能把更新草案的破坏性语法变化混入 HAIP 1.0 / OpenID4VCI 1.0 profile。 |
 | FAPI 2.0 HTTP Signatures | 实验性支持；默认关闭；待稳定规范审计 | [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) 不是 Final Specification；持久化 `http_message_signatures` 模块控制 `/fapi/resource`。 | 规范稳定或有 adopter 后再决定是否宣告；每个新草案/Final 都必须做 delta audit。 |
 | Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |
@@ -342,6 +351,26 @@ Content encryption algorithms：
 | `implicit` | 永不支持 | [RFC 6749 Section 4.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | N/A | OAuth Security BCP 已弃用 implicit 前通道 token 交付。 |
 
 ## 客户端认证
+
+Token、PAR 与设备授权 endpoint 的 `invalid_client` 响应在尝试 Basic 认证时
+使用 HTTP 401 和 Basic challenge；其他客户端认证失败使用 HTTP 400，不附加
+Basic challenge。
+CIBA 注册必须显式设置 `id_token_signed_response_alg=ES256` 或 `PS256`，
+且服务端必须有对应的活跃签名密钥。签名后端认证请求与客户端断言也只接受这两种算法。
+ID Token 算法候选项先与 CIBA profile 及服务端可用签名密钥取交集，再选择算法；
+客户端断言候选项使用 CIBA 算法集合，注册时校验所选客户端密钥。
+沿用通用 OIDC 默认算法 `RS256` 或使用 `EdDSA` 的现有客户端必须更新注册；
+服务端不会静默替换客户端所选算法。
+当前支持的邮箱 `login_hint` 不能唯一标识交易，因此 FAPI-CIBA 请求必须包含非空
+`binding_message`，供用户确认交易绑定。
+CIBA 后端认证 endpoint 复用 OAuth 错误处理：Basic 认证失败返回 HTTP 401，
+附带 Basic `WWW-Authenticate` challenge；其他 `invalid_client` 返回 HTTP 400，
+不附带 challenge。JWT 断言和 mTLS 没有定义适用的 HTTP 认证 challenge。
+该行为遵循 [RFC 6749 第 5.2 节](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2)，
+并与[官方 OIDF 一致性测试接受的 400/401 响应](https://gitlab.com/openid/conformance-suite/-/blob/daca6ad2068468d42557ea1152f899cc3ac01a10/src/main/java/net/openid/conformance/condition/client/CheckBackchannelAuthenticationEndpointErrorHttpStatus.java)一致。
+CIBA Core 1.0 第 13 节仍只列出 401，相关勘误由尚未关闭的
+[MODRNA #213](https://github.com/openid/modrna/issues/213) 跟踪。
+这里不宣称正式规范已修订，也不为 JWT/mTLS 失败宣告无关的 challenge。
 
 | Method | 状态 | 引用 | 客户端类型 / 条件 | 说明 |
 | --- | --- | --- | --- | --- |

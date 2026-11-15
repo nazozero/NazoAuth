@@ -140,14 +140,10 @@ pub fn client_self_signed_mtls_certificate_matches(
     let Some(thumbprint) = certificate.thumbprint.as_deref() else {
         return false;
     };
-    if client
+    client
         .jwks
         .as_ref()
         .is_some_and(|jwks| jwks_contains_current_x5c_thumbprint(jwks, thumbprint))
-    {
-        return true;
-    }
-    false
 }
 
 pub fn jwks_contains_current_x5c_thumbprint(jwks: &Value, thumbprint: &str) -> bool {

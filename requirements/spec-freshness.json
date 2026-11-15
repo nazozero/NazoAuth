@@ -10,7 +10,6 @@
     "docs/conformance/README.md"
   ],
   "allowed_profile_draft_pins": [
-    {"path":"docs/protocol/openid4vc-validation.md","document":"draft-ietf-oauth-sd-jwt-vc","revision":"19","basis":"The verifier contract cites the edition used for its implemented disclosure rules."},
     {"path":"docs/integration/openid-connect.md","document":"draft-ietf-oauth-attestation-based-client-auth","revision":"07","basis":"OpenID4VCI 1.0 Final section 14.7 normatively fixes draft-07; draft-12 remains the separately tracked mutable baseline."},
     {"path":"docs/integration/openid-connect.zh-CN.md","document":"draft-ietf-oauth-attestation-based-client-auth","revision":"07","basis":"OpenID4VCI 1.0 Final section 14.7 normatively fixes draft-07; draft-12 remains the separately tracked mutable baseline."},
     {
@@ -29,6 +28,7 @@
     "fapi-grant-management-01": "oauth-v2-grant-management-03"
   },
   "sources": [
+    {"id":"rfc9110","title":"HTTP Semantics","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9110","number":9110,"markers":["RFC 9110","HTTP Semantics"]},
     {"id":"oauth-v2-1","title":"The OAuth 2.1 Authorization Framework","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/","document":"draft-ietf-oauth-v2-1","revision":"17"},
     {"id":"oauth-browser-based-apps","title":"OAuth 2.0 for Browser-Based Applications","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc10017","number":10017,"markers":["RFC 10017","OAuth 2.0 for Browser-Based Applications"]},
     {"id":"oauth-attestation-client-auth","title":"OAuth 2.0 Attestation-Based Client Authentication","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/","document":"draft-ietf-oauth-attestation-based-client-auth","revision":"12"},

@@ -5,6 +5,49 @@ rapidly and version updates do not preserve compatibility with historical
 releases. Entries below describe their respective releases, not current support.
 Release dates use UTC+8.
 
+## 0.3.7 - 2026-11-15
+
+### Fixed
+
+- Use the shared OAuth client-authentication error contract at Token, PAR,
+  Device and CIBA endpoints. Basic failures return 401 with a Basic challenge;
+  non-Basic failures return 400. CIBA follows the official OIDF suite's accepted
+  responses and MODRNA #213 while the CIBA Core errata issue remains open.
+- Persist explicit OAuth 2.1 client profiles, enforce their PKCE and token
+  `redirect_uri` contracts, require native authorization interaction, and classify
+  PKCE downgrade attempts as `invalid_request`. Existing OAuth 2.0 clients retain
+  their selected profile.
+- Enforce CIBA signing-algorithm and transaction-binding requirements, including
+  negotiation against available signing keys. Client authentication assertions
+  require the issuer audience, including clients with legacy compatibility flags.
+- Correct SD-JWT VC reserved claims, type identifiers, empty disclosure output
+  and holder audience validation. Type Metadata processing remains unsupported.
+- Enforce public-client refresh deadlines, preserve logout audit ordering, and
+  discard disconnected PostgreSQL cleanup connections. Shorten operator control
+  task completion without weakening recovery ownership.
+
+### Upgrade notes
+
+- Apply the public refresh deadline and OAuth 2.1 policy migrations. Review the
+  [refresh cutover](docs/protocol/refresh-token-rotation.md#upgrade-and-rollback-boundary) before upgrading;
+  migrated databases require the documented recovery procedure for downgrade.
+  Existing public-client refresh families are revoked by the migration; users
+  must authorize again. Do not mix old and new writers during this cutover.
+- Existing CIBA clients must explicitly select `ES256` or `PS256`, with matching
+  keys, and include `binding_message` for the supported email login hint.
+- Non-Basic CIBA clients must accept HTTP 400 `invalid_client` responses.
+
+### Maintenance
+
+- Upgrade to Rust 1.100 and update runtime, signing and cryptographic dependencies.
+  Reviewed dependency forks are pinned outside the application repository.
+- Reuse successful CI checks for unchanged inputs, preserve separate main and
+  release gates, schedule coverage separately, and cache performance image stages.
+  Release publication reuses governed main checks and still validates the exact
+  binaries and OCI artifacts it publishes.
+
+[Source changes](https://github.com/nazozero/NazoAuth/compare/v0.3.6...v0.3.7)
+
 ## 0.3.6 - 2026-10-24
 
 ### Fixed

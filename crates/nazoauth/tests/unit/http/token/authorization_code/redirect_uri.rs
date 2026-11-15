@@ -4,12 +4,18 @@ use super::*;
 fn token_redirect_uri_is_required_when_authorize_request_supplied_it() {
     let payload = code_payload(true);
 
-    assert!(!redirect_uri_matches_authorization_request(&payload, None));
+    assert!(!redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
+        &payload,
+        None
+    ));
     assert!(redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &payload,
         Some("https://client.example/callback")
     ));
     assert!(!redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &payload,
         Some("https://client.example/callback/")
     ));
@@ -19,12 +25,18 @@ fn token_redirect_uri_is_required_when_authorize_request_supplied_it() {
 fn token_redirect_uri_may_be_omitted_when_authorize_request_used_single_registered_uri() {
     let payload = code_payload(false);
 
-    assert!(redirect_uri_matches_authorization_request(&payload, None));
     assert!(redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
+        &payload,
+        None
+    ));
+    assert!(redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &payload,
         Some("https://client.example/callback")
     ));
     assert!(!redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &payload,
         Some("https://client.example/callback/")
     ));
@@ -41,7 +53,11 @@ fn token_redirect_uri_is_still_bound_when_authorization_request_omitted_it() {
         "https://client.example/callback?next=https://evil.example",
     ] {
         assert!(
-            !redirect_uri_matches_authorization_request(&payload, Some(attacker_redirect_uri)),
+            !redirect_uri_matches_authorization_request(
+                nazo_auth::AuthorizationCodeProfile::Oauth20,
+                &payload,
+                Some(attacker_redirect_uri)
+            ),
             "authorization code exchange must not accept a different redirect_uri: {attacker_redirect_uri}"
         );
     }
@@ -51,22 +67,34 @@ fn token_redirect_uri_is_still_bound_when_authorization_request_omitted_it() {
 fn authorization_code_redirect_uri_matching_preserves_oauth_binding_rules() {
     let mut supplied = code_payload(true);
     assert!(redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &supplied,
         Some("https://client.example/callback")
     ));
-    assert!(!redirect_uri_matches_authorization_request(&supplied, None));
     assert!(!redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
+        &supplied,
+        None
+    ));
+    assert!(!redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &supplied,
         Some("https://client.example/other")
     ));
 
     supplied.redirect_uri_was_supplied = false;
-    assert!(redirect_uri_matches_authorization_request(&supplied, None));
     assert!(redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
+        &supplied,
+        None
+    ));
+    assert!(redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &supplied,
         Some("https://client.example/callback")
     ));
     assert!(!redirect_uri_matches_authorization_request(
+        nazo_auth::AuthorizationCodeProfile::Oauth20,
         &supplied,
         Some("https://client.example/other")
     ));

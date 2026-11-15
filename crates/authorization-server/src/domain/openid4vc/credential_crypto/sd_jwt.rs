@@ -38,6 +38,9 @@ pub(super) async fn sign(
     let mut disclosures = Vec::with_capacity(claims.len());
     let mut digests = Vec::with_capacity(claims.len());
     for (name, value) in claims {
+        if always_disclosed_vc_claim(name) || matches!(name.as_str(), "_sd" | "_sd_alg" | "...") {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
         let mut salt = [0_u8; 16];
         rand::rng().fill_bytes(&mut salt);
         let disclosure = URL_SAFE_NO_PAD.encode(
@@ -56,8 +59,10 @@ pub(super) async fn sign(
         ("exp".to_owned(), json!(input.expires_at.timestamp())),
         ("vct".to_owned(), json!(input.payload.credential_type)),
         ("_sd_alg".to_owned(), json!("sha-256")),
-        ("_sd".to_owned(), Value::Array(digests)),
     ]);
+    if !digests.is_empty() {
+        credential.insert("_sd".to_owned(), Value::Array(digests));
+    }
     if let Some(HolderBinding::Jwk { jwk }) = &input.payload.holder_binding {
         credential.insert("cnf".to_owned(), json!({"jwk": jwk}));
     }
@@ -79,13 +84,10 @@ pub(super) async fn sign(
         .await
         .map_err(|_| CredentialTrustError::Unavailable)?;
     jwt.push('~');
-    for (index, disclosure) in disclosures.iter().enumerate() {
-        if index != 0 {
-            jwt.push('~');
-        }
+    for disclosure in &disclosures {
         jwt.push_str(disclosure);
+        jwt.push('~');
     }
-    jwt.push('~');
     Ok(jwt)
 }
 
@@ -196,15 +198,8 @@ pub(super) fn verify(
             Utc::now(),
             scoped_anchor_authenticated,
         )?;
-    let audience_matches = binding.get("aud").is_some_and(|audience| {
-        audience.as_str() == Some(&presentation.expected_audience)
-            || audience.as_array().is_some_and(|audiences| {
-                audiences.iter().all(Value::is_string)
-                    && audiences
-                        .iter()
-                        .any(|value| value.as_str() == Some(&presentation.expected_audience))
-            })
-    });
+    let audience_matches =
+        binding.get("aud").and_then(Value::as_str) == Some(&presentation.expected_audience);
     let now = Utc::now();
     if !audience_matches
         || binding
@@ -217,16 +212,33 @@ pub(super) fn verify(
     {
         return Err(CredentialTrustError::InvalidHolderBinding);
     }
+    let credential_type = credential
+        .get("vct")
+        .and_then(Value::as_str)
+        .filter(|vct| !vct.is_empty())
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    // Type validity belongs to credential verification, regardless of whether
+    // the presentation query happens to include a type constraint.
+    if let Some(aliases) = credential.get("aka_vcts") {
+        let aliases = aliases
+            .as_array()
+            .ok_or(CredentialTrustError::InvalidEncoding)?;
+        if aliases.is_empty()
+            || aliases.iter().any(|alias| {
+                !alias
+                    .as_str()
+                    .is_some_and(|alias| !alias.is_empty() && alias != credential_type)
+            })
+        {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
+    }
     Ok(VerifiedCredential {
         format: CredentialFormat::SdJwtVc,
         issuer: issuer.to_owned(),
         issuer_chain_authority_key_identifiers:
             super::certificates::issuer_authority_key_identifiers(&certificates)?,
-        credential_type: credential
-            .get("vct")
-            .and_then(Value::as_str)
-            .ok_or(CredentialTrustError::InvalidEncoding)?
-            .to_owned(),
+        credential_type: credential_type.to_owned(),
         holder_key: Some(holder_jwk),
         issued_at: timestamp_claim(&credential, "iat"),
         expires_at: timestamp_claim(&credential, "exp"),

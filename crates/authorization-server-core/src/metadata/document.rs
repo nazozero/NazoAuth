@@ -8,7 +8,6 @@ use crate::{
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
-const FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS: [&str; 3] = ["EdDSA", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
 const CLAIMS_SUPPORTED: [&str; 24] = [
     "sub",
@@ -283,7 +282,7 @@ pub fn authorization_server_metadata(
         metadata["backchannel_token_delivery_modes_supported"] = json!(["poll", "ping"]);
         metadata["backchannel_user_code_parameter_supported"] = json!(false);
         metadata["backchannel_authentication_request_signing_alg_values_supported"] =
-            json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
+            json!(crate::CIBA_JWT_SIGNING_ALGS);
     }
     if capabilities.request_objects {
         metadata["request_parameter_supported"] = json!(true);

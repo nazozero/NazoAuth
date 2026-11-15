@@ -3,68 +3,35 @@ name: code-quality
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/code-quality.yml"
-      - ".github/workflows/codecov.yml"
-      - "codecov.yml"
-      - "requirements/codecov.txt"
-      - ".github/workflows/release-policy.yml"
-      - ".github/workflows/release-security.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "src/**"
-      - "tests/**"
-      - "fuzz/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-      - "scripts/**/*.py"
-      - "scripts/**/*.sh"
-      - "perf/**"
   pull_request:
-    paths:
-      - ".github/workflows/code-quality.yml"
-      - ".github/workflows/codecov.yml"
-      - "codecov.yml"
-      - "requirements/codecov.txt"
-      - ".github/workflows/release-policy.yml"
-      - ".github/workflows/release-security.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "src/**"
-      - "tests/**"
-      - "fuzz/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-      - "scripts/**/*.py"
-      - "scripts/**/*.sh"
-      - "perf/**"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  inputs:
+    uses: ./.github/workflows/ci-inputs.yml
+    with:
+      scope: rust
+
   coverage:
-    # Main/manual CI runs the functional suite once under coverage. PRs keep
-    # the ordinary suite and do not receive the coverage upload credential.
-    if: github.event_name != 'pull_request'
+    needs: inputs
+    # Coverage is a scheduled/manual measurement, not a second test suite on
+    # every merge. Manual full CI also runs the uninstrumented exclusions below.
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/codecov.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   rust-quality:
+    needs: inputs
+    if: "!cancelled() && (needs.inputs.result != 'success' || needs.inputs.outputs.run != 'false')"
     name: Rust quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -126,7 +93,7 @@ jobs:
       CARGO_TERM_COLOR: never
       RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.15.0"
 
@@ -134,7 +101,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
         with:
           components: rustfmt, clippy
 
@@ -144,7 +111,7 @@ jobs:
           chmod +x scripts/pg_dump_test_container.sh
           echo "PG_DUMP=$GITHUB_WORKSPACE/scripts/pg_dump_test_container.sh" >> "$GITHUB_ENV"
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: workspace-quality
 
@@ -179,7 +146,7 @@ jobs:
             nazoauth-test-minio:ci \
             server /data
           ready=false
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl --fail --silent "$NAZO_TEST_S3_ENDPOINT/minio/health/live"; then
               ready=true
               break
@@ -198,6 +165,54 @@ jobs:
           -v ON_ERROR_STOP=1
           -c 'CREATE DATABASE nazo_audit_test'
 
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy all targets
+        run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
+
+      - name: Materialize the isolated CI schema through the persistence owner
+        run: >-
+          cargo test --all-features --locked -p nazo-postgres --test migrations
+          pending_migrations_create_all_runtime_module_state_tables
+
+      - name: Test workspace with PostgreSQL and Valkey
+        if: github.event_name != 'workflow_dispatch'
+        # Stream test progress so an interrupted job retains its actual wait boundary.
+        run: cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture
+
+      - name: Test timing contracts excluded from coverage
+        if: github.event_name == 'workflow_dispatch'
+        # These four tests require the uninstrumented server's timing. All
+        # remaining lib/bin/integration tests belong to the coverage job.
+        run: |
+          cargo test --locked --all-features -p nazoauth --test tenant_directory_convergence \
+            two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures -- --nocapture
+          cargo test --locked --all-features -p nazoauth --test token_issuance_simplification -- --nocapture
+
+      - name: Test documentation examples outside coverage
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo test --workspace --all-features --locked --doc
+
+  python-quality:
+    name: Python script syntax gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15.0"
+
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+
+      - name: Install streaming evidence decoder
+        run: |
+          python -m pip install --only-binary=:all: orjson==3.13.0
+
       - name: Verify compatibility contracts
         run: python scripts/verify_static_contracts.py --check
 
@@ -213,52 +228,6 @@ jobs:
       - name: Verify perf results layout
         run: python scripts/check_perf_results_layout.py
 
-      - name: Format
-        run: cargo fmt --check
-
-      - name: Clippy all targets
-        run: cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
-
-      - name: Materialize the isolated CI schema through the persistence owner
-        run: >-
-          cargo test --all-features --locked -p nazo-postgres --test migrations
-          pending_migrations_create_all_runtime_module_state_tables
-
-      - name: Test workspace with PostgreSQL and Valkey
-        if: github.event_name == 'pull_request'
-        # Stream test progress so an interrupted job retains its actual wait boundary.
-        run: cargo test --workspace --all-features --locked --no-fail-fast -- --nocapture
-
-      - name: Test timing contracts excluded from coverage
-        if: github.event_name != 'pull_request'
-        # These four tests require the uninstrumented server's timing. All
-        # remaining lib/bin/integration tests belong to the coverage job.
-        run: |
-          cargo test --locked --all-features -p nazoauth --test tenant_directory_convergence \
-            two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures -- --nocapture
-          cargo test --locked --all-features -p nazoauth --test token_issuance_simplification -- --nocapture
-
-      - name: Test documentation examples outside coverage
-        if: github.event_name != 'pull_request'
-        run: cargo test --workspace --all-features --locked --doc
-
-  python-quality:
-    name: Python script syntax gate
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.15.0"
-
-      - name: Install streaming evidence decoder
-        run: |
-          python -m pip install --only-binary=:all: orjson==3.13.0
-
       - name: Compile Python scripts
         run: python -m compileall -q scripts perf
 
@@ -270,7 +239,7 @@ jobs:
         run: |
           node --version
           python -m unittest \
-            tests.unit.test_ci_execution \
+            tests.unit.test_ci_execution tests.unit.test_ci_inputs \
             perf.tests.test_blackbox_contract \
             perf.tests.test_capacity_window perf.tests.test_capacity_producer \
             perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \

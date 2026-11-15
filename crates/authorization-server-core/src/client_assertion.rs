@@ -136,8 +136,6 @@ pub fn verify_private_key_jwt(
         input.require_fapi2 || input.client.security_policy.requires_fapi2_security();
     let header =
         decode_header(input.assertion).map_err(|_| ClientAssertionValidationError::DecodeHeader)?;
-    let strict_audience =
-        require_fapi2 || header.typ.as_deref() == Some("client-authentication+jwt");
     let Some((algorithm_name, _)) = supported_client_jwt_algorithm(header.alg) else {
         return Err(ClientAssertionValidationError::InvalidAlgorithm);
     };
@@ -165,25 +163,10 @@ pub fn verify_private_key_jwt(
     if claims.iss != input.client.client_id || claims.sub != input.client.client_id {
         return Err(ClientAssertionValidationError::IssuerSubject);
     }
-    // TODO: retire the per-client legacy exceptions once all registered clients
-    // send issuer-only audiences. RFC 10070 typed assertions always use strict policy.
     if !audience_matches(
         &claims.aud,
-        |audience| {
-            audience == input.issuer
-                || (!strict_audience
-                    && input.client.allow_client_assertion_endpoint_audience
-                    && std::iter::once(input.issuer)
-                        .chain(input.endpoint_audience_aliases.iter().copied())
-                        .any(|origin| {
-                            let path = audience.strip_prefix(origin);
-                            path == Some(input.endpoint_path)
-                                || (matches!(input.endpoint_path, "/par" | "/bc-authorize")
-                                    && path == Some("/token"))
-                        }))
-        },
+        |audience| audience == input.issuer,
         !require_fapi2,
-        !strict_audience && input.client.allow_client_assertion_audience_array,
     ) {
         return Err(ClientAssertionValidationError::Audience);
     }
@@ -220,11 +203,10 @@ fn audience_matches(
     audience: &Value,
     expected: impl Fn(&str) -> bool,
     allow_single_array: bool,
-    allow_multiple: bool,
 ) -> bool {
     match audience {
         Value::String(value) => expected(value),
-        Value::Array(values) if allow_multiple || (allow_single_array && values.len() == 1) => {
+        Value::Array(values) if allow_single_array && values.len() == 1 => {
             let mut matches = false;
             for value in values {
                 let Some(value) = value.as_str() else {

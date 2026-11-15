@@ -3,6 +3,9 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// FAPI-CIBA ID1 section 7.10 and draft-03 section 5.10.
+pub const CIBA_JWT_SIGNING_ALGS: &[&str] = &["ES256", "PS256"];
+
 const CIBA_TRANSITION_MAX_ATTEMPTS: usize = 4;
 const CIBA_EXPIRED_STATE_RETENTION_SECONDS: i64 = 120;
 const CIBA_SLOW_DOWN_INCREMENT_SECONDS: u64 = 5;

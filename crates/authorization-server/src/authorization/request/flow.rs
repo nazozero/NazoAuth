@@ -327,7 +327,9 @@ pub(crate) async fn authorize_request_with_context(
         },
         AuthorizationProfilePolicy {
             signed_authorization_response_required: signed_response_required,
-            pkce_required: !client_policy.allow_confidential_oidc_without_pkce
+            pkce_required: client_policy.authorization_code_profile
+                == nazo_auth::AuthorizationCodeProfile::Oauth21
+                || !client_policy.allow_confidential_oidc_without_pkce
                 || fapi2_security
                 || client.require_dpop_bound_tokens
                 || client.require_mtls_bound_tokens
@@ -570,6 +572,21 @@ pub(crate) async fn authorize_request_with_context(
         expires_at: consent_expires_at,
     };
     if normalized.prompt.none {
+        // OAuth 2.1 section 7.3.1: prior consent does not establish a native
+        // caller's identity. This profile requires interaction for private-use
+        // and loopback redirects; registered HTTPS delivery retains silent SSO.
+        if client_policy.authorization_code_profile == nazo_auth::AuthorizationCodeProfile::Oauth21
+            && !url::Url::parse(&redirect_uri).is_ok_and(|uri| uri.scheme() == "https")
+        {
+            return authorization_oauth_error_redirect(
+                context,
+                &mut client,
+                &redirect_uri,
+                "interaction_required",
+                q,
+            )
+            .await;
+        }
         if !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
             &payload.scopes,
             &payload.userinfo_claim_requests,

@@ -72,10 +72,9 @@ impl CibaApplication {
         );
         let authorization_service = &self.authorization;
         let Some(client_id) = credentials.client_id.as_deref() else {
-            return Err(OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
+            return Err(OAuthEndpointError::invalid_client(
                 "客户端认证失败.",
+                transport.basic_challenge(),
             ));
         };
         let (client, secret_salt) = match authorization_service
@@ -86,10 +85,9 @@ impl CibaApplication {
                 (snapshot.client, snapshot.secret_salt)
             }
             Ok(_) => {
-                return Err(OAuthEndpointError::json(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
+                return Err(OAuthEndpointError::invalid_client(
                     "客户端认证失败.",
+                    transport.basic_challenge(),
                 ));
             }
             Err(error) => {
@@ -149,11 +147,17 @@ impl CibaApplication {
         .await
         {
             Ok(assertion) => assertion,
-            Err(error) => return Err(token_management_auth_error(error)),
+            Err(error) => {
+                return Err(token_management_auth_error(
+                    error,
+                    credentials.method == "client_secret_basic",
+                ));
+            }
         };
         if !ciba_client_assertion_algorithm_supported(assertion.as_ref()) {
             return Err(token_management_auth_error(
                 TokenManagementClientAuthError::InvalidClient,
+                credentials.method == "client_secret_basic",
             ));
         }
         if !client_supports_grant(&client, CIBA_GRANT_TYPE) {
@@ -198,6 +202,11 @@ impl CibaApplication {
         };
         if request_object_replay.is_none() {
             validate_ciba_binding_message(&form)?;
+        }
+        // The supported login_hint is an email address, not a unique transaction
+        // context. FAPI-CIBA therefore requires a user-visible binding message.
+        if config.ciba_fapi_profile && form.binding_message.is_none() {
+            return Err(ciba_invalid_request("FAPI-CIBA requires binding_message."));
         }
         validate_ciba_delivery_request(&client, &form)?;
         let audiences = vec![config.default_audience.to_string()];
@@ -311,7 +320,9 @@ impl CibaApplication {
             security_audit,
         )
         .await
-        .map_err(token_management_auth_error)?;
+        .map_err(|error| {
+            token_management_auth_error(error, credentials.method == "client_secret_basic")
+        })?;
         if let Some(replay) = request_object_replay {
             match authorization_service
                 .consume_ciba_request_object(&client.client_id, &replay.jti, replay.expires_at)
@@ -391,15 +402,16 @@ impl CibaApplication {
         })
     }
 }
-fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEndpointError {
+fn token_management_auth_error(
+    error: TokenManagementClientAuthError,
+    basic_challenge: bool,
+) -> OAuthEndpointError {
     match error {
         TokenManagementClientAuthError::InvalidClient
         | TokenManagementClientAuthError::PublicClientCredentialsForbidden => {
-            OAuthEndpointError::json(
-                StatusCode::UNAUTHORIZED,
-                "invalid_client",
-                "客户端认证失败.",
-            )
+            // Non-HTTP authentication has no applicable 401 challenge. Follow
+            // OAuth and the OIDF suite: https://github.com/openid/modrna/issues/213.
+            OAuthEndpointError::invalid_client("客户端认证失败.", basic_challenge)
         }
         TokenManagementClientAuthError::StoreUnavailable => OAuthEndpointError::json(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -408,3 +420,7 @@ fn token_management_auth_error(error: TokenManagementClientAuthError) -> OAuthEn
         ),
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/token/ciba/backchannel.rs"]
+mod tests;

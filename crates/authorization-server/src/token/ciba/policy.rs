@@ -9,17 +9,11 @@ pub fn ciba_client_assertion_algorithm_supported(
 }
 
 pub fn ciba_jwt_signing_algorithm_supported(alg: nazo_crypto::jwt::Algorithm) -> bool {
-    matches!(
-        alg,
-        nazo_crypto::jwt::Algorithm::EdDSA
-            | nazo_crypto::jwt::Algorithm::ES256
-            | nazo_crypto::jwt::Algorithm::PS256
-    )
+    ciba_algorithm_name(alg).is_some()
 }
 
 pub fn ciba_algorithm_name(alg: nazo_crypto::jwt::Algorithm) -> Option<&'static str> {
     match alg {
-        nazo_crypto::jwt::Algorithm::EdDSA => Some("EdDSA"),
         nazo_crypto::jwt::Algorithm::ES256 => Some("ES256"),
         nazo_crypto::jwt::Algorithm::PS256 => Some("PS256"),
         _ => None,
@@ -42,15 +36,25 @@ pub fn validate_ciba_security_profile_client_with_config(
             false,
         ));
     }
+    if !client
+        .id_token_signed_response_alg
+        .as_deref()
+        .is_some_and(|algorithm| nazo_auth::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
+    {
+        return Err(OAuthEndpointError::token(
+            http::StatusCode::BAD_REQUEST,
+            "unauthorized_client",
+            "FAPI-CIBA requires an explicit ES256 or PS256 ID token signing algorithm.",
+            false,
+        ));
+    }
     if !matches!(
         auth_method,
         "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
     ) {
-        return Err(OAuthEndpointError::token(
-            http::StatusCode::UNAUTHORIZED,
-            "invalid_client",
+        return Err(OAuthEndpointError::invalid_client(
             "FAPI-CIBA requires private_key_jwt or mTLS client authentication.",
-            false,
+            auth_method == "client_secret_basic",
         ));
     }
     let sender_constraint_valid = if config.ciba_fapi2_hardening {
@@ -71,9 +75,7 @@ pub fn validate_ciba_security_profile_client_with_config(
         && (client.allow_client_assertion_audience_array
             || client.allow_client_assertion_endpoint_audience)
     {
-        return Err(OAuthEndpointError::token(
-            http::StatusCode::UNAUTHORIZED,
-            "invalid_client",
+        return Err(OAuthEndpointError::invalid_client(
             "Fapi2Ciba requires private_key_jwt audience to match the authorization server issuer exactly.",
             false,
         ));
@@ -161,12 +163,19 @@ pub(crate) fn validate_ciba_token_request_profile(
         },
     )
     .map_err(|error| {
-        let status = if error.code == ProtocolErrorCode::InvalidClient {
-            StatusCode::UNAUTHORIZED
+        if error.code == ProtocolErrorCode::InvalidClient {
+            OAuthEndpointError::invalid_client(
+                error.description,
+                auth_method == "client_secret_basic",
+            )
         } else {
-            StatusCode::BAD_REQUEST
-        };
-        OAuthEndpointError::token(status, error.code.as_str(), error.description, false)
+            OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                error.code.as_str(),
+                error.description,
+                false,
+            )
+        }
     })
 }
 

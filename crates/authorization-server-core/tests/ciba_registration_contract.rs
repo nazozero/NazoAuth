@@ -58,9 +58,11 @@ fn ciba_user_code_and_weak_request_signing_are_not_supported() {
     user_code.backchannel_user_code_parameter = Some(true);
     assert!(prepare_dynamic_client_registration(user_code, POLICY).is_err());
 
-    let mut none_alg = ciba_request("poll");
-    none_alg.backchannel_authentication_request_signing_alg = Some("none".to_owned());
-    assert!(prepare_dynamic_client_registration(none_alg, POLICY).is_err());
+    for algorithm in ["none", "RS256", "EdDSA"] {
+        let mut request = ciba_request("poll");
+        request.backchannel_authentication_request_signing_alg = Some(algorithm.to_owned());
+        assert!(prepare_dynamic_client_registration(request, POLICY).is_err());
+    }
 }
 
 #[test]
@@ -71,4 +73,27 @@ fn omitted_and_false_ciba_user_code_metadata_have_the_same_public_value() {
         let prepared = prepare_dynamic_client_registration(request, POLICY).unwrap();
         assert!(!prepared.request.backchannel_user_code_parameter);
     }
+}
+
+#[test]
+fn ciba_choices_select_an_algorithm_supported_by_both_profile_and_keys() {
+    let mut request = ciba_request("poll");
+    request.id_token_signing_alg_values_supported =
+        Some(vec!["RS256".to_owned(), "PS256".to_owned()]);
+    request.token_endpoint_auth_signing_alg_values_supported =
+        Some(vec!["EdDSA".to_owned(), "PS256".to_owned()]);
+    let prepared = prepare_dynamic_client_registration(request.clone(), POLICY).unwrap();
+    assert_eq!(
+        prepared.request.id_token_signed_response_alg.as_deref(),
+        Some("PS256")
+    );
+    assert_eq!(
+        prepared.request.token_endpoint_auth_signing_alg.as_deref(),
+        Some("PS256")
+    );
+    let policy = DynamicRegistrationPolicy {
+        id_token_signing_algs: &["RS256"],
+        ..POLICY
+    };
+    assert!(prepare_dynamic_client_registration(request, policy).is_err());
 }

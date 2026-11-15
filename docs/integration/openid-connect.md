@@ -18,6 +18,16 @@ Support status:
 
 Clients should use the deployment's actual discovery and registration metadata.
 
+For OAuth 2.1 draft-17 authorization-code clients, an administrator selects
+`security_policy.authorization_code_profile=oauth21`. This requires S256 PKCE
+and permits omission of `redirect_uri` at the token endpoint. Supplied values
+still require an exact match. Existing registrations default to `oauth20`;
+OIDC compatibility and FAPI retain their redirect contract. See the
+[client policy](../protocol/composable-capability-policy.md) for rollout constraints.
+For this OAuth 2.1 profile, native private-use and loopback callbacks require
+interaction: `prompt=none` returns `interaction_required` even with prior consent.
+Registered HTTPS callbacks retain the existing session and consent checks.
+
 ## Standards and profile support
 
 | Capability | Status | Enablement / advertisement condition | References | Notes |
@@ -45,7 +55,7 @@ Clients should use the deployment's actual discovery and registration metadata.
 | Token Introspection | Complete | Available through the introspection endpoint when client policy permits it | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profiles can use protected introspection responses. |
 | Token Revocation | Complete | Available through the revocation endpoint | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | Revokes tokens according to token type and client policy. |
 | Device Authorization Grant | Supported | Server support is active by default on new databases; use requires the client device-code grant and `allow_cross_device_flows=true` | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Runtime module state controls advertisement; client policy controls authority. |
-| OpenID CIBA / FAPI-CIBA | Supported; ID1-compatible | Server poll/ping support is active by default on new databases; use requires CIBA client grant/metadata and `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | The FAPI-CIBA ID1 `private_key_jwt / mTLS` x `poll / ping` combinations are supported; the newer `fapi-ciba-03` working draft still requires a separate delta audit. Push is never supported. |
+| OpenID CIBA / FAPI-CIBA | Supported; ID1-compatible | Server poll/ping support is active by default on new databases; use requires CIBA client grant/metadata and `allow_cross_device_flows=true` | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | The FAPI-CIBA ID1 `private_key_jwt / mTLS` x `poll / ping` combinations are supported; the reviewed `fapi-ciba-03` authorization-server requirements retain explicit transaction binding and ES256/PS256 JWT signatures. Optional `request_context` and `login_hint_token` extensions are not advertised. Push is never supported. |
 | FAPI 2.0 Security Profile | Complete | Enabled per client with `security_policy.assurance=fapi2` | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | Requires confidential clients, PAR, sender constraints, and strong client authentication. |
 | FAPI 2.0 Message Signing | Complete | Independent client-policy fields enable signed authorization requests, JARM, and signed introspection | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | Compatible options may be enabled together and coexist with FAPI2 assurance. |
 | OpenID4VCI 1.0 Final | Complete | Disabled by default; advertised through OpenID4VCI issuer metadata after enabling the Credential Issuer role and complete credential/trust configuration | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | Not part of ordinary OIDC RP login. |
@@ -69,11 +79,11 @@ no executable implementation or complete profile boundary is available yet.
 
 | Specification or draft | Current status | Why it is not a current advertised capability | Completion condition |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | Draft-15 implementation basis; selected draft-16/17 controls applied | [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is the current tracked draft. Authorization redirect URIs cannot prepopulate response parameters. | Full draft-16/17 conformance requires a requirement-by-requirement audit. |
+| OAuth 2.1 Authorization Framework | Explicit draft-17 authorization-code profile | [draft-ietf-oauth-v2-1-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is the current tracked draft. Authorization redirect URIs cannot prepopulate response parameters. | Select `security_policy.authorization_code_profile=oauth21`; its S256 PKCE requirement replaces token redirect repetition. This draft profile is separate from OAuth 2.0/OIDC and FAPI registration contracts. |
 | OAuth 2.0 for Browser-Based Applications | Server-side guidance reviewed | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) preserves the relevant draft-27 requirements. Public refresh rotation cannot extend its original deadline. | The hosted frontend is not a BFF; third-party browser clients and their deployment remain responsible for their own BCP requirements. |
 | Cross-Device Flows: Security BCP | Deployment assessment required | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) requires a risk assessment and suitable mitigations. Existing Device and CIBA gates are controls, not proof of proximity or user intent. | Assess each deployment and select mitigations before allowing cross-device grants; see [cross-device deployment guidance](../protocol/cross-device-decision-preparation.md). |
 | OAuth Security BCP Update | Not supported (audit pending) | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) is an update track for [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html). RFC 9700 behavior is supported, but this update draft has not been audited requirement by requirement. | Treat it as an RFC 9700 delta audit; update behavior, metadata, tests, and documentation together. |
-| JWT BCP / JWT Assertion | JWT BCP bis audit pending; RFC 10070 issuer-only client authentication supported | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) remains a draft. [RFC 10070](https://www.rfc-editor.org/info/rfc10070) narrows client-authentication audiences to the issuer. | Legacy per-client audience exceptions do not conform to RFC 10070. JWT bearer grant support is limited to client self-assertions and issuer audience. |
+| JWT BCP / JWT Assertion | JWT BCP bis audit pending; RFC 10070 issuer-only client authentication supported | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) remains a draft. [RFC 10070](https://www.rfc-editor.org/info/rfc10070) narrows client-authentication audiences to the issuer. | Retained legacy audience settings no longer relax this rule. JWT bearer grant support is limited to client self-assertions and issuer audience. |
 | OAuth Client Attestation | Supports the draft-07 version fixed by OpenID4VCI 1.0; disabled by default | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) is the version explicitly fixed by OpenID4VCI 1.0 Final. The implementation supports `attest_jwt_client_auth` and binds refresh tokens to the Client Instance `cnf` key. It is advertised only when the module is enabled and client policy requires it. | Later drafts and the eventual RFC require a separate delta audit; breaking syntax changes are not mixed into the HAIP 1.0 / OpenID4VCI 1.0 profile. |
 | FAPI 2.0 HTTP Signatures | Experimental support; disabled by default; stable-spec audit pending | The [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) is not a Final Specification. The persisted `http_message_signatures` module controls `/fapi/resource`. | Decide whether to advertise only after the spec stabilizes or an adopter requires it; every newer draft or Final requires a delta audit. |
 | Refresh Token and Authorization Expiration | Not supported (planned) | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) requires explicit authorization and refresh-token lifetime modeling; current metadata omits these expiration fields. | Define authorization lifetime, refresh-family state, revocation semantics, metadata, and E2E tests. |
@@ -385,6 +395,31 @@ browser transport for supported authorization responses.
 
 ## Client authentication
 
+At the token, PAR, and device authorization endpoints, `invalid_client`
+responses use HTTP 401 with a Basic challenge when Basic authentication was
+attempted. Other client-authentication failures use HTTP 400 without a Basic
+challenge.
+CIBA registration requires an explicit `id_token_signed_response_alg` of
+`ES256` or `PS256` and a corresponding active server signing key. Its signed
+backchannel requests and client assertions also accept only these algorithms.
+ID Token algorithm choices are intersected with the CIBA profile and available
+server signing keys before selection; client-assertion choices use the CIBA
+algorithm set, and registration validates the selected client key.
+Existing clients using the general OIDC default (`RS256`) or `EdDSA` must update
+their registration; the server does not silently change their algorithm.
+Because the supported email `login_hint` does not identify a unique transaction,
+FAPI-CIBA requests must include a nonempty `binding_message` for user confirmation.
+The CIBA backchannel authentication endpoint uses the shared OAuth error policy:
+failed Basic authentication returns HTTP 401 with a Basic `WWW-Authenticate`
+challenge; other `invalid_client` failures return HTTP 400 without a challenge.
+JWT assertions and mTLS define no applicable HTTP authentication challenge.
+This follows [RFC 6749 section 5.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2)
+and the [official OIDF suite's accepted 400/401 responses](https://gitlab.com/openid/conformance-suite/-/blob/daca6ad2068468d42557ea1152f899cc3ac01a10/src/main/java/net/openid/conformance/condition/client/CheckBackchannelAuthenticationEndpointErrorHttpStatus.java).
+CIBA Core 1.0 section 13 still lists only 401; its correction is tracked in
+[MODRNA #213](https://github.com/openid/modrna/issues/213), an open errata issue.
+This implementation does not claim that the published specification has already
+been amended or advertise an unrelated challenge for JWT/mTLS failures.
+
 | Method | Status | References | Client type / conditions | Notes |
 | --- | --- | --- | --- | --- |
 | `none` | Supported | [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html), [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) | Public clients only; S256 PKCE required | Not allowed for confidential-client grants. |
@@ -400,12 +435,9 @@ High-assurance integrations should prefer asymmetric or sender-constrained
 client authentication. FAPI profiles exclude shared-secret POST authentication.
 
 For `private_key_jwt`, use the issuer identifier as the sole audience and keep
-assertion lifetimes short. Newly dynamically registered clients use this rule.
-Existing clients with administrator-enabled endpoint or multiple-audience
-compatibility settings retain their prior behavior outside FAPI profiles. A
-`client-authentication+jwt` typed assertion always uses the issuer-only rule.
-Retire those compatibility settings after all affected clients use the issuer
-as their sole audience. For mTLS, register
+assertion lifetimes short. This applies to all clients and assertion types;
+retained endpoint/multiple-audience settings no longer relax validation.
+For mTLS, register
 the correct certificate-bound client metadata and make sure the deployment's
 trusted proxy/mTLS termination boundary is configured before advertising mTLS
 metadata.

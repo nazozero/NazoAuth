@@ -23,6 +23,24 @@ pub fn prepare_dynamic_client_registration(
     mut request: DynamicClientRegistrationRequest,
     policy: DynamicRegistrationPolicy<'_>,
 ) -> Result<PreparedDynamicClientRegistration, DynamicRegistrationError> {
+    let grant_types = request
+        .grant_types
+        .take()
+        .unwrap_or_else(default_dynamic_client_grant_types);
+    let ciba_enabled = grant_types
+        .iter()
+        .any(|grant| grant == "urn:openid:params:grant-type:ciba");
+    let id_token_signing_algs: Vec<_> = policy
+        .id_token_signing_algs
+        .iter()
+        .copied()
+        .filter(|algorithm| !ciba_enabled || crate::CIBA_JWT_SIGNING_ALGS.contains(algorithm))
+        .collect();
+    let assertion_signing_algs = if ciba_enabled {
+        crate::CIBA_JWT_SIGNING_ALGS
+    } else {
+        SUPPORTED_CLIENT_JWT_SIGNING_ALGS
+    };
     let subject_types = if policy.pairwise_subject_supported {
         &["public", "pairwise"][..]
     } else {
@@ -51,7 +69,7 @@ pub fn prepare_dynamic_client_registration(
         "id_token_signed_response_alg",
         request.id_token_signed_response_alg,
         request.id_token_signing_alg_values_supported,
-        policy.id_token_signing_algs,
+        &id_token_signing_algs,
     )?;
     request.id_token_encrypted_response_alg = negotiate_metadata_choice(
         "id_token_encrypted_response_alg",
@@ -87,13 +105,13 @@ pub fn prepare_dynamic_client_registration(
         "token_endpoint_auth_signing_alg",
         request.token_endpoint_auth_signing_alg,
         request.token_endpoint_auth_signing_alg_values_supported,
-        SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+        assertion_signing_algs,
     )?;
     request.backchannel_authentication_request_signing_alg = negotiate_metadata_choice(
         "backchannel_authentication_request_signing_alg",
         request.backchannel_authentication_request_signing_alg,
         request.backchannel_authentication_request_signing_alg_values_supported,
-        &["EdDSA", "ES256", "PS256"],
+        crate::CIBA_JWT_SIGNING_ALGS,
     )?;
     request.userinfo_signed_response_alg = negotiate_metadata_choice(
         "userinfo_signed_response_alg",
@@ -215,10 +233,10 @@ pub fn prepare_dynamic_client_registration(
     if request
         .backchannel_authentication_request_signing_alg
         .as_deref()
-        .is_some_and(|algorithm| !matches!(algorithm, "EdDSA" | "ES256" | "PS256"))
+        .is_some_and(|algorithm| !crate::CIBA_JWT_SIGNING_ALGS.contains(&algorithm))
     {
         return Err(DynamicRegistrationError::invalid_client_metadata(
-            "backchannel_authentication_request_signing_alg must be EdDSA, ES256, or PS256.",
+            "backchannel_authentication_request_signing_alg must be ES256 or PS256.",
         ));
     }
     if request
@@ -231,12 +249,6 @@ pub fn prepare_dynamic_client_registration(
         ));
     }
 
-    let grant_types = request
-        .grant_types
-        .unwrap_or_else(default_dynamic_client_grant_types);
-    let ciba_enabled = grant_types
-        .iter()
-        .any(|grant| grant == "urn:openid:params:grant-type:ciba");
     if backchannel_token_delivery_mode == "ping" && !ciba_enabled {
         return Err(DynamicRegistrationError::invalid_client_metadata(
             "ping delivery mode requires the CIBA grant type.",

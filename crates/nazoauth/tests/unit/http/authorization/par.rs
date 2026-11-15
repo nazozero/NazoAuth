@@ -956,7 +956,7 @@ async fn par_returns_invalid_client_for_unknown_or_inactive_client() {
 
     let response = par_after_rate_limit(&fixture.par, par_form_request(), unknown).await;
     let (status, value) = par_json_body(response).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(value.get("error"), Some(&json!("invalid_client")));
     assert!(value.get("request_uri").is_none());
 
@@ -979,7 +979,7 @@ async fn par_returns_invalid_client_for_unknown_or_inactive_client() {
 
     let response = par_after_rate_limit(&fixture.par, par_form_request(), inactive).await;
     let (status, value) = par_json_body(response).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(value.get("error"), Some(&json!("invalid_client")));
     assert!(value.get("request_uri").is_none());
 }
@@ -1079,7 +1079,7 @@ async fn par_fapi2_rejects_shared_secret_client_auth_after_authentication() {
     let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(value.get("error"), Some(&json!("invalid_client")));
     assert!(value.get("request_uri").is_none());
 }
@@ -1122,7 +1122,7 @@ async fn par_rejects_endpoint_url_client_assertion_audiences_as_oauth_errors() {
         )
         .await;
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(
             response
                 .headers()

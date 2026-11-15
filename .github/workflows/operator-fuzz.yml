@@ -4,24 +4,27 @@ on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - ".github/workflows/operator-fuzz.yml"
-      - "crates/crypto/**"
-      - "crates/operator-protocol/**"
-      - "fuzz/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-  schedule:
-    - cron: "23 5 * * 1"
   workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  inputs:
+    uses: ./.github/workflows/ci-inputs.yml
+    with:
+      scope: fuzz
+
   operator-parser-fuzz:
+    needs: inputs
+    if: "!cancelled() && (needs.inputs.result != 'success' || needs.inputs.outputs.run != 'false')"
     name: Operator JWS parser fuzz gate
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -30,7 +33,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@70dec6087f2cb6bab9fbac4da23160afbe848e91 # 1.99.0
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
 
       - name: Install pinned nightly and cargo-fuzz
         run: |

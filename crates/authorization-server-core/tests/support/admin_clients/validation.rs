@@ -86,7 +86,11 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         request_uris: Vec::new(),
         initiate_login_uri: None,
         presentation: crate::ClientPresentationMetadata::default(),
-        id_token_signed_response_alg: None,
+        id_token_signed_response_alg: metadata
+            .grant_types
+            .iter()
+            .any(|grant| grant == "urn:openid:params:grant-type:ciba")
+            .then(|| "PS256".to_owned()),
         id_token_encrypted_response_alg: None,
         id_token_encrypted_response_enc: None,
         request_object_signing_alg: None,

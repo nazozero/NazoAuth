@@ -89,9 +89,7 @@ pub async fn token_ciba(
         ));
     };
     if !ciba_client_assertion_algorithm_supported(client_assertion) {
-        return Err(OAuthEndpointError::token(
-            ProtocolStatusCode::UNAUTHORIZED,
-            "invalid_client",
+        return Err(OAuthEndpointError::invalid_client(
             "CIBA private_key_jwt signing algorithm is unsupported.",
             false,
         ));

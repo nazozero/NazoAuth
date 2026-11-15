@@ -109,6 +109,49 @@ fn creation_persists_pending_state_and_audit_before_returning_poll_or_ping_handl
         }
     });
 }
+
+#[test]
+fn ciba_creation_rejects_wrong_basic_with_challenge() {
+    block_on(async {
+        let mut client = client();
+        client.token_endpoint_auth_method = "client_secret_basic".into();
+        let (application, _, _, _) = creation_fixture(AuditFailure::None, client);
+        let mut request = form();
+        request.client_id = None;
+        request.client_secret = None;
+        let transport = TokenClientAuthTransportFacts::from_parts(
+            BasicAuthorizationCredentials::Present {
+                client_id: "client-1".into(),
+                client_secret: "wrong".into(),
+            },
+            None,
+            None,
+            None,
+            None,
+        );
+        let prepared = application
+            .prepare_client(
+                prepare_ciba_creation(request, true).unwrap(),
+                &transport,
+                false,
+            )
+            .await
+            .unwrap();
+        let error = application
+            .create(
+                prepared,
+                ClientAuthRequestFacts::new("/backchannel", None),
+                "192.0.2.1",
+            )
+            .await
+            .err()
+            .expect("invalid client must fail");
+        assert!(
+            matches!(error, OAuthEndpointError::Token { fields, basic_challenge: true }
+            if fields.status == StatusCode::UNAUTHORIZED && fields.error == "invalid_client")
+        );
+    });
+}
 #[test]
 fn invalid_creation_is_rejected_before_audit_and_state_mutation() {
     block_on(async {
