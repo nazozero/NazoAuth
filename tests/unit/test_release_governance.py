@@ -426,7 +426,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             ROOT / "crates" / "operator-protocol" / "src" / "lib.rs"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "pub const PROTOCOL_VERSION: u32 = 3;",
+            "pub const PROTOCOL_VERSION: u32 = 4;",
             protocol_source,
         )
         self.assertIn(
