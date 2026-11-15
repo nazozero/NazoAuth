@@ -62,9 +62,15 @@ class CiInputTests(unittest.TestCase):
                         dict(head_repository={"full_name": "fork/repo"}),
                         dict(event="push"), dict(head_branch="another"),
                         dict(pull_requests=[]), dict(pull_requests=[{"number": 273}]),
-                        dict(created_at="2026-11-14T09:59:59Z")):
+                        dict(created_at="2026-11-08T09:59:59Z")):
             with self.subTest(changes=changes):
                 self.assertFalse(gate.reusable(self.record(**changes), current, NOW))
+
+    def test_security_freshness_does_not_force_daily_functional_retests(self):
+        current = self.record(id=2)
+        prior = self.record(created_at="2026-11-14T09:59:59Z")
+        self.assertTrue(gate.reusable(prior, current, NOW, scope="rust"))
+        self.assertFalse(gate.reusable(prior, current, NOW, scope="security"))
 
     @patch.dict(gate.os.environ, GITHUB_EVENT_NAME="pull_request", GITHUB_REPOSITORY="owner/repo", GITHUB_RUN_ID="2")
     @patch.object(gate.subprocess, "check_output", return_value=tree(("crates/a/src/lib.rs", "a")))

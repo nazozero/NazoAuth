@@ -96,8 +96,9 @@ images each have their own inputs in `scripts/ci_inputs.py`.
 
 Every automatic run compares the actual checkout's Git file identities, including
 the PR merge result, with a successful run of the same workflow and event in the
-same repository/branch/PR context. Identical inputs can reuse evidence less than
-24 hours old; the job summary links that run. Failed, cancelled, running or missing
+same repository/branch/PR context. Identical inputs can reuse evidence for seven
+days; security scans use a 24-hour limit because advisory data can change without
+a source edit. The job summary links that run. Failed, cancelled, running or missing
 results never permit reuse. Reuse does not renew evidence age. Manual and scheduled
 runs execute their checks regardless of prior results. Updated PRs cancel obsolete
 in-progress runs; main runs remain independent.

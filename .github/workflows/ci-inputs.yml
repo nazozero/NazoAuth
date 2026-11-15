@@ -37,4 +37,5 @@ jobs:
         with:
           name: ${{ steps.select.outputs.artifact }}
           path: target/ci-inputs/evidence.txt
-          retention-days: 2
+          retention-days: 7
+          overwrite: true

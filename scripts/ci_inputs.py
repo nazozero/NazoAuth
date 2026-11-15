@@ -56,7 +56,7 @@ def api(path: str) -> dict:
     return json.loads(subprocess.check_output(["gh", "api", path], text=True))
 
 
-def reusable(run: dict, current: dict, now: datetime, *, merged_pr: bool = False) -> bool:
+def reusable(run: dict, current: dict, now: datetime, *, scope: str = "rust", merged_pr: bool = False) -> bool:
     if (run["id"] == current["id"] or run["workflow_id"] != current["workflow_id"]
             or run["status"] != "completed" or run["conclusion"] != "success"
             or run["head_repository"]["full_name"] != current["head_repository"]["full_name"]):
@@ -69,9 +69,11 @@ def reusable(run: dict, current: dict, now: datetime, *, merged_pr: bool = False
         if not old_prs or old_prs != new_prs:
             return False
     created = datetime.fromisoformat(run["created_at"].replace("Z", "+00:00"))
-    # External advisory databases and runner images can change with identical
-    # source inputs. Manual/scheduled checks always run; automatic reuse is daily.
-    return timedelta(0) <= now - created < timedelta(days=1)
+    # Security scans depend on external advisory databases; ordinary deterministic
+    # checks can use the full artifact retention window. Scheduled/manual runs
+    # refresh tools/environments even when source inputs remain unchanged.
+    lifetime = timedelta(days=1 if scope == "security" else 7)
+    return timedelta(0) <= now - created < lifetime
 
 
 def merged_pr_inputs_match(run: dict, current: dict, scope: str, expected: str) -> bool:
@@ -114,8 +116,8 @@ def decide(scope: str) -> tuple[str, bool, str]:
         if artifact["expired"] or artifact["name"] != name:
             continue
         run = api(f"repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
-        if reusable(run, current, now) or (
-            reusable(run, current, now, merged_pr=True)
+        if reusable(run, current, now, scope=scope) or (
+            reusable(run, current, now, scope=scope, merged_pr=True)
             and merged_pr_inputs_match(run, current, scope, digest)
         ):
             return name, False, f"Identical {scope} inputs passed: {run['html_url']}"
