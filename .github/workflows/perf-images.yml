@@ -1,22 +1,28 @@
 name: performance-images
 
 on:
-  pull_request:
-    paths:
-      - "perf/**"
-      - ".github/workflows/perf-images.yml"
   push:
     branches: [main]
-    paths:
-      - "perf/**"
-      - ".github/workflows/perf-images.yml"
+  pull_request:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  inputs:
+    uses: ./.github/workflows/ci-inputs.yml
+    with:
+      scope: perf
+
   build-and-smoke:
+    needs: inputs
+    if: needs.inputs.outputs.run == 'true'
     name: ${{ matrix.name }} image
     runs-on: ubuntu-latest
     timeout-minutes: 15

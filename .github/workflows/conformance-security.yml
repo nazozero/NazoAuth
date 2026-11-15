@@ -3,68 +3,26 @@ name: conformance-security
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/conformance-security.yml"
-      - ".github/e2e-runner.Containerfile"
-      - ".github/e2e-requirements.in"
-      - ".github/e2e-requirements.txt"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "build.rs"
-      - "deny.toml"
-      - ".cargo/**"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "src/**"
-      - "tests/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-      - "scripts/**"
-      - "deploy/**"
-      - "Containerfile"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "compose*.yml"
-      - ".env.yaml.example"
   pull_request:
-    paths:
-      - ".github/workflows/conformance-security.yml"
-      - ".github/e2e-runner.Containerfile"
-      - ".github/e2e-requirements.in"
-      - ".github/e2e-requirements.txt"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "build.rs"
-      - "deny.toml"
-      - ".cargo/**"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "src/**"
-      - "tests/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-      - "scripts/**"
-      - "deploy/**"
-      - "Containerfile"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "compose*.yml"
-      - ".env.yaml.example"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  inputs:
+    uses: ./.github/workflows/ci-inputs.yml
+    with:
+      scope: security
+
   source-policy-gate:
+    needs: inputs
+    if: needs.inputs.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -79,6 +37,8 @@ jobs:
           python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
 
   supply-chain-gate:
+    needs: inputs
+    if: needs.inputs.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

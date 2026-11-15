@@ -19,8 +19,10 @@ class CiExecutionTests(unittest.TestCase):
         self.assertIn("if: github.event_name == 'pull_request'", full)
         self.assertIn("cargo test --workspace --all-features --locked --no-fail-fast", full)
         self.assertIn("cargo test --workspace --all-features --locked --doc", quality)
+        from scripts.ci_inputs import INPUTS
         for path in (".github/workflows/codecov.yml", "codecov.yml", "requirements/codecov.txt"):
-            self.assertIn(f'      - "{path}"', quality)
+            self.assertIn(path, INPUTS["rust"])
+        self.assertIn("needs.inputs.outputs.run == 'true'", quality)
 
     def test_every_coverage_exclusion_has_an_uninstrumented_owner(self):
         script = (ROOT / "scripts/generate_codecov_lcov.sh").read_text()

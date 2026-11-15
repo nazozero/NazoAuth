@@ -86,6 +86,30 @@ Run the structure check before the Rust quality gate below.
 
 ## Verification
 
+### CI selection and reuse
+
+Rust workspace checks cover changes to Rust sources, manifests, toolchains,
+fixtures, migrations, build/coverage scripts and their workflow. Python and
+architecture checks run separately and do not compile the service. CodeQL,
+operator parser fuzzing, service-image/HTTP security checks and performance-runner
+images each have their own inputs in `scripts/ci_inputs.py`.
+
+Every automatic run compares the actual checkout's Git file identities, including
+the PR merge result, with a successful run of the same workflow and event in the
+same repository/branch/PR context. Identical inputs can reuse evidence less than
+24 hours old; the job summary links that run. Failed, cancelled, running or missing
+results never permit reuse. Reuse does not renew evidence age. Manual and scheduled
+runs execute their checks regardless of prior results. Updated PRs cancel obsolete
+in-progress runs; main runs remain independent.
+
+This avoids rebuilding and retesting an unchanged service after documentation or
+specification-inventory edits. Changing test or workflow inputs invalidates that
+evidence. PR functional tests and main coverage have different instrumentation and
+are not interchangeable. Main runs the full suite under coverage plus the explicit
+uninstrumented timing/documentation exclusions; it does not also rerun the same
+ordinary full suite. Release checks consume successful governed main CI through
+`scripts/check_release_ci.py`, then build and verify release artifacts.
+
 Use Rust 1.100.0, pinned in `rust-toolchain.toml` and the build images. The
 workflow toolchain actions use the same release at an immutable revision. The executable CI definition
 is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the

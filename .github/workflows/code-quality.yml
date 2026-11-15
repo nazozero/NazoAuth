@@ -3,68 +3,35 @@ name: code-quality
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/code-quality.yml"
-      - ".github/workflows/codecov.yml"
-      - "codecov.yml"
-      - "requirements/codecov.txt"
-      - ".github/workflows/release-policy.yml"
-      - ".github/workflows/release-security.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "src/**"
-      - "tests/**"
-      - "fuzz/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-      - "scripts/**/*.py"
-      - "scripts/**/*.sh"
-      - "perf/**"
   pull_request:
-    paths:
-      - ".github/workflows/code-quality.yml"
-      - ".github/workflows/codecov.yml"
-      - "codecov.yml"
-      - "requirements/codecov.txt"
-      - ".github/workflows/release-policy.yml"
-      - ".github/workflows/release-security.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "crates/**"
-      - "src/**"
-      - "tests/**"
-      - "fuzz/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-      - "scripts/**/*.py"
-      - "scripts/**/*.sh"
-      - "perf/**"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  inputs:
+    uses: ./.github/workflows/ci-inputs.yml
+    with:
+      scope: rust
+
   coverage:
+    needs: inputs
     # Main/manual CI runs the functional suite once under coverage. PRs keep
     # the ordinary suite and do not receive the coverage upload credential.
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.inputs.outputs.run == 'true'
     uses: ./.github/workflows/codecov.yml
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   rust-quality:
+    needs: inputs
+    if: needs.inputs.outputs.run == 'true'
     name: Rust quality gate
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -179,7 +146,7 @@ jobs:
             nazoauth-test-minio:ci \
             server /data
           ready=false
-          for attempt in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl --fail --silent "$NAZO_TEST_S3_ENDPOINT/minio/health/live"; then
               ready=true
               break
@@ -197,21 +164,6 @@ jobs:
           -h 127.0.0.1 -U postgres -d postgres
           -v ON_ERROR_STOP=1
           -c 'CREATE DATABASE nazo_audit_test'
-
-      - name: Verify compatibility contracts
-        run: python scripts/verify_static_contracts.py --check
-
-      - name: Verify persistence dependency isolation
-        run: python scripts/check_persistence_dependency_graph.py
-
-      - name: Verify crypto boundary
-        run: python scripts/check_crypto_boundary.py
-
-      - name: Test crypto boundary guard
-        run: python -m unittest discover -s scripts -p 'test_crypto_boundary.py'
-
-      - name: Verify perf results layout
-        run: python scripts/check_perf_results_layout.py
 
       - name: Format
         run: cargo fmt --check
@@ -255,9 +207,26 @@ jobs:
         with:
           python-version: "3.15.0"
 
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
+
       - name: Install streaming evidence decoder
         run: |
           python -m pip install --only-binary=:all: orjson==3.13.0
+
+      - name: Verify compatibility contracts
+        run: python scripts/verify_static_contracts.py --check
+
+      - name: Verify persistence dependency isolation
+        run: python scripts/check_persistence_dependency_graph.py
+
+      - name: Verify crypto boundary
+        run: python scripts/check_crypto_boundary.py
+
+      - name: Test crypto boundary guard
+        run: python -m unittest discover -s scripts -p 'test_crypto_boundary.py'
+
+      - name: Verify perf results layout
+        run: python scripts/check_perf_results_layout.py
 
       - name: Compile Python scripts
         run: python -m compileall -q scripts perf
@@ -270,7 +239,7 @@ jobs:
         run: |
           node --version
           python -m unittest \
-            tests.unit.test_ci_execution \
+            tests.unit.test_ci_execution tests.unit.test_ci_inputs \
             perf.tests.test_blackbox_contract \
             perf.tests.test_capacity_window perf.tests.test_capacity_producer \
             perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \

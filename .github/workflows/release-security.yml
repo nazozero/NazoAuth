@@ -117,7 +117,7 @@ jobs:
           for name in nazo-crypto nazo-operator-protocol; do
             cp -- "target/package/${name}-${version}.crate" target/release-protocol/
           done
-          (cd target/release-protocol && sha256sum *.crate > SHA256SUMS)
+          (cd target/release-protocol && sha256sum ./*.crate > SHA256SUMS)
       - name: Upload immutable operator protocol package input
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

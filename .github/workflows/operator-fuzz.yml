@@ -4,24 +4,27 @@ on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - ".github/workflows/operator-fuzz.yml"
-      - "crates/crypto/**"
-      - "crates/operator-protocol/**"
-      - "fuzz/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-  schedule:
-    - cron: "23 5 * * 1"
   workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  inputs:
+    uses: ./.github/workflows/ci-inputs.yml
+    with:
+      scope: fuzz
+
   operator-parser-fuzz:
+    needs: inputs
+    if: needs.inputs.outputs.run == 'true'
     name: Operator JWS parser fuzz gate
     runs-on: ubuntu-latest
     timeout-minutes: 10

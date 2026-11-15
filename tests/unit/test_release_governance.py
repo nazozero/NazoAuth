@@ -607,18 +607,17 @@ class ReleaseGovernanceTests(unittest.TestCase):
             runtime_config,
         )
 
-    def test_heavy_pull_request_workflows_do_not_match_docs_only_changes(self) -> None:
+    def test_heavy_workflows_require_input_evidence_before_skipping(self) -> None:
         for name in (
             "code-quality.yml",
             "codeql.yml",
             "conformance-security.yml",
-            "dependency-review.yml",
             "operator-fuzz.yml",
         ):
             source = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
-            pull_request = source.split("pull_request:", 1)[1].split("workflow_dispatch:", 1)[0]
-            self.assertIn("paths:", pull_request, name)
-            self.assertNotRegex(pull_request, r'(?m)^\s+-\s+"?(?:README\.md|docs/\*\*)"?\s*$')
+            self.assertIn("uses: ./.github/workflows/ci-inputs.yml", source, name)
+            self.assertIn("needs: inputs", source, name)
+            self.assertIn("if: needs.inputs.outputs.run == 'true'", source, name)
 
     def test_operator_fuzz_is_scoped_to_operator_parser_inputs(self) -> None:
         source = (ROOT / ".github" / "workflows" / "operator-fuzz.yml").read_text(
@@ -632,22 +631,16 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertNotIn("cargo-fuzz", quality)
         self.assertIn("fuzz run operator_jws_parser", source)
         self.assertIn("schedule:", source)
-        # Every main push fuzzes the parser so releases can require the gate.
+        # Every main push establishes current or reusable evidence for release.
         push = source.split("push:", 1)[1].split("pull_request:", 1)[0]
         self.assertIn("branches: [main]", push)
         self.assertNotIn("paths:", push)
         # PRs fuzz only when parser inputs changed; the target also exercises
         # nazo_crypto, so crypto changes must trigger the gate too.
-        pull_request = source.split("pull_request:", 1)[1].split(
-            "  workflow_dispatch:", 1
-        )[0]
-        for path in (
-            '"crates/crypto/**"',
-            '"crates/operator-protocol/**"',
-            '"fuzz/**"',
-        ):
-            self.assertIn(path, pull_request)
-        self.assertNotIn('"crates/**"', pull_request)
+        from scripts.ci_inputs import INPUTS
+        for path in ("crates/crypto/*", "crates/operator-protocol/*", "fuzz/*"):
+            self.assertIn(path, INPUTS["fuzz"])
+        self.assertNotIn("crates/*", INPUTS["fuzz"])
         self.assertIn('"operator-fuzz.yml"', release_ci)
 
     def test_codeql_security_page_excludes_quality_only_queries(self) -> None:
@@ -661,8 +654,9 @@ class ReleaseGovernanceTests(unittest.TestCase):
         source = (ROOT / ".github" / "workflows" / "perf-images.yml").read_text(
             encoding="utf-8"
         )
-        pull_request = source.split("pull_request:", 1)[1].split("push:", 1)[0]
-        self.assertIn('"perf/**"', pull_request)
+        from scripts.ci_inputs import INPUTS
+        self.assertIn("perf/*", INPUTS["perf"])
+        self.assertIn("scope: perf", source)
         self.assertIn("perf/runner/Containerfile", source)
         self.assertIn("performance dependencies import successfully", source)
 
