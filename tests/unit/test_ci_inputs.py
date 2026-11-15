@@ -72,6 +72,18 @@ class CiInputTests(unittest.TestCase):
         self.assertTrue(gate.reusable(prior, current, NOW, scope="rust"))
         self.assertFalse(gate.reusable(prior, current, NOW, scope="security"))
 
+    def test_new_pr_can_reuse_same_repository_main_but_not_another_feature_branch(self):
+        current = self.record(id=2)
+        prior = self.record(event="push", head_branch="main", pull_requests=[])
+        self.assertTrue(gate.reusable(prior, current, NOW))
+        prior["event"] = "workflow_dispatch"
+        self.assertTrue(gate.reusable(prior, current, NOW))
+        prior["head_branch"] = "another-feature"
+        self.assertFalse(gate.reusable(prior, current, NOW))
+        prior["head_branch"] = "main"
+        current["head_repository"] = {"full_name": "fork/repo"}
+        self.assertFalse(gate.reusable(prior, current, NOW))
+
     @patch.dict(gate.os.environ, GITHUB_EVENT_NAME="pull_request", GITHUB_REPOSITORY="owner/repo", GITHUB_RUN_ID="2")
     @patch.object(gate.subprocess, "check_output", return_value=tree(("crates/a/src/lib.rs", "a")))
     def test_matches_actual_checkout_and_never_reuses_failed_run(self, _tree):

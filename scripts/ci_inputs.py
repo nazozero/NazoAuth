@@ -61,9 +61,13 @@ def reusable(run: dict, current: dict, now: datetime, *, scope: str = "rust", me
             or run["status"] != "completed" or run["conclusion"] != "success"
             or run["head_repository"]["full_name"] != current["head_repository"]["full_name"]):
         return False
-    if not merged_pr and (run["event"] != current["event"] or run["head_branch"] != current["head_branch"]):
+    # A same-repository PR may start from already tested main inputs. This also
+    # avoids a full service rebuild for the first commit of a documentation PR.
+    from_main = (current["event"] == "pull_request" and run["head_branch"] == "main"
+                 and run["event"] in ("push", "workflow_dispatch"))
+    if not merged_pr and not from_main and (run["event"] != current["event"] or run["head_branch"] != current["head_branch"]):
         return False
-    if current["event"] == "pull_request":
+    if current["event"] == "pull_request" and not from_main:
         old_prs = {pr["number"] for pr in run["pull_requests"]}
         new_prs = {pr["number"] for pr in current["pull_requests"]}
         if not old_prs or old_prs != new_prs:
