@@ -11,7 +11,7 @@ use crate::signing::{compact_segments, decode_json, decode_protected_header};
 use crate::wire::*;
 use crate::{
     CONTROL_DISCOVERY_JWS_TYPE, CONTROL_DISCOVERY_PRODUCT, CONTROL_DISCOVERY_SCHEMA,
-    DEPLOYMENT_STATEMENT_JWS_TYPE, MAX_DISCOVERY_LIFETIME_SECONDS, PROTOCOL_VERSION, ProtocolError,
+    DEPLOYMENT_STATEMENT_JWS_TYPE, MAX_DISCOVERY_LIFETIME_SECONDS, ProtocolError,
 };
 
 pub fn validate_discovery_request(request: &DiscoveryRequest) -> Result<(), ProtocolError> {
@@ -202,9 +202,14 @@ fn validate_discovery_identity(
         CONTROL_DISCOVERY_SCHEMA,
         "unsupported control discovery protocol",
     )?;
+    let supported_operator = operator_protocol_versions
+        .iter()
+        .copied()
+        .find(|version| crate::supports_operator_protocol(*version))
+        .ok_or(ProtocolError::Policy("unsupported operator protocol"))?;
     validate_protocol_versions(
         operator_protocol_versions,
-        PROTOCOL_VERSION,
+        supported_operator,
         "unsupported operator protocol",
     )
 }

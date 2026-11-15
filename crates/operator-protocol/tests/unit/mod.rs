@@ -46,6 +46,27 @@ fn deployment_statement() -> DeploymentStatement {
 }
 
 #[test]
+fn protocol_three_identity_remains_readable_for_existing_backups() {
+    let key = SigningKey::from_bytes(&[17; 32]);
+    let mut legacy = discovery_statement();
+    legacy.operator_protocol_versions = vec![3];
+    let compact = sign_discovery_statement(&legacy, "instance-1", &key).unwrap();
+    assert_eq!(
+        verify_discovery_statement(
+            &compact,
+            "instance-1",
+            &key.verifying_key(),
+            &legacy.nonce,
+            1_030
+        )
+        .unwrap(),
+        legacy
+    );
+    legacy.operator_protocol_versions = vec![5];
+    assert!(sign_discovery_statement(&legacy, "instance-1", &key).is_err());
+}
+
+#[test]
 fn golden_control_discovery_vector_is_stable_and_nonce_bound() {
     let key = SigningKey::from_bytes(&[17; 32]);
     let compact = sign_discovery_statement(&discovery_statement(), "instance-1", &key).unwrap();

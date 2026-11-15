@@ -27,6 +27,9 @@ operations retain their journal-owned authorization.
 The controller preserves the signing key and candidate until the operation's
 receipt is settled. It activates a confirmed successor even if the business
 operation failed, and replays retain the original signed bytes after retirement.
+Protocol 3 identity statements remain readable for retained backup artifacts;
+new renewal requests require protocol 4. Recovery invalidation retains the old
+request form so older backups keep their existing offline-secret recovery path.
 Updates run the verified candidate server's operator, so upgrading from an older
 server can renew an expired key without an HTTP renewal endpoint or manual MFA.
 
