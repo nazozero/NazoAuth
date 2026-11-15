@@ -56,8 +56,10 @@ pub(super) async fn sign(
         ("exp".to_owned(), json!(input.expires_at.timestamp())),
         ("vct".to_owned(), json!(input.payload.credential_type)),
         ("_sd_alg".to_owned(), json!("sha-256")),
-        ("_sd".to_owned(), Value::Array(digests)),
     ]);
+    if !digests.is_empty() {
+        credential.insert("_sd".to_owned(), Value::Array(digests));
+    }
     if let Some(HolderBinding::Jwk { jwk }) = &input.payload.holder_binding {
         credential.insert("cnf".to_owned(), json!({"jwk": jwk}));
     }
@@ -193,15 +195,8 @@ pub(super) fn verify(
             Utc::now(),
             scoped_anchor_authenticated,
         )?;
-    let audience_matches = binding.get("aud").is_some_and(|audience| {
-        audience.as_str() == Some(&presentation.expected_audience)
-            || audience.as_array().is_some_and(|audiences| {
-                audiences.iter().all(Value::is_string)
-                    && audiences
-                        .iter()
-                        .any(|value| value.as_str() == Some(&presentation.expected_audience))
-            })
-    });
+    let audience_matches =
+        binding.get("aud").and_then(Value::as_str) == Some(&presentation.expected_audience);
     let now = Utc::now();
     if !audience_matches
         || binding

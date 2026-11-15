@@ -655,6 +655,14 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         let (jwt, suffix) = empty.split_once('~').unwrap();
         assert_eq!(jwt.split('.').count(), 3);
         assert_eq!(suffix, "");
+        let empty_claims: Value = nazo_crypto::jwt::decode(
+            jwt,
+            &decoding_key,
+            &jsonwebtoken::Validation::new(Algorithm::ES256),
+        )
+        .expect("decode SD-JWT without disclosures")
+        .claims;
+        assert!(empty_claims.get("_sd").is_none());
 
         let malformed = sd_input(None, json!("not an object"), None);
         assert_eq!(
@@ -1157,6 +1165,31 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     assert_eq!(verified.claims["cnf"]["jwk"], holder_jwk);
     assert!(verified.claims.get("_sd").is_none());
     assert!(verified.claims.get("_sd_alg").is_none());
+
+    for audience in [
+        json!([presentation.expected_audience]),
+        json!([presentation.expected_audience, "https://other.example"]),
+    ] {
+        let binding = encode(
+            &kb_header,
+            &json!({
+                "nonce": presentation.expected_nonce,
+                "aud": audience,
+                "iat": Utc::now().timestamp(),
+                "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(no_disclosure_input.as_bytes())),
+            }),
+            &holder_key,
+        )
+        .expect("signed array audience");
+        let invalid = PresentedCredential {
+            encoded: format!("{credential_jwt}~{binding}").into(),
+            ..presentation.clone()
+        };
+        assert_eq!(
+            crypto.verify_sd_jwt(&invalid),
+            Err(CredentialTrustError::InvalidHolderBinding)
+        );
+    }
 
     let wrong_hash_kb = encode(
         &kb_header,
