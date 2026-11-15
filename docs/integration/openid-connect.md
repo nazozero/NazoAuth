@@ -24,6 +24,9 @@ and permits omission of `redirect_uri` at the token endpoint. Supplied values
 still require an exact match. Existing registrations default to `oauth20`;
 OIDC compatibility and FAPI retain their redirect contract. See the
 [client policy](../protocol/composable-capability-policy.md) for rollout constraints.
+For this OAuth 2.1 profile, native private-use and loopback callbacks require
+interaction: `prompt=none` returns `interaction_required` even with prior consent.
+Registered HTTPS callbacks retain the existing session and consent checks.
 
 ## Standards and profile support
 

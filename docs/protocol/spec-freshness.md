@@ -1,6 +1,6 @@
 # Protocol Source Freshness
 
-Mutable-source review: 2026-11-11. Four expired watch entries remain in the
+Mutable-source review: 2026-11-15. Four expired watch entries remain in the
 inventory: AAP, Global Token Revocation, Resource Response and Browser Session
 Handoff. The online gate reports their reviewed expiry and fails if the
 revision, expiry or publication status changes. Implementation support is
@@ -72,7 +72,7 @@ Watch-only drafts are adoption candidates, not advertised capabilities.
 
 | Source | Consequence for NazoAuth |
 | --- | --- |
-| OAuth 2.1, revision 17 | Authorization redirect URIs reject query parameters reserved for authorization responses, including for previously registered clients. The authorization endpoint is derived from the query-free issuer. An explicit per-client `authorization_code_profile=oauth21` requires S256 PKCE and permits token requests without `redirect_uri`; retained `oauth20` and FAPI profiles enforce the older redirect contract. A token request containing a verifier without an original challenge is rejected as `invalid_request`. Draft 17 also clarifies input validation and active resource-owner interaction; full draft conformance is not claimed. |
+| OAuth 2.1, revision 17 | Authorization redirect URIs reject query parameters reserved for authorization responses, including for previously registered clients. The authorization endpoint is derived from the query-free issuer. An explicit per-client `authorization_code_profile=oauth21` requires S256 PKCE and permits token requests without `redirect_uri`; retained `oauth20` and FAPI profiles enforce the older redirect contract. A token request containing a verifier without an original challenge is rejected as `invalid_request`. Private-use and loopback redirects require active interaction in the OAuth 2.1 profile: silent requests return `interaction_required` even with prior consent. HTTPS delivery retains existing grant/session checks. These changes cover the reviewed authorization-server deltas; client application and deployment requirements remain with their respective owners. |
 | Browser-based applications, RFC 10017 | Compared the final text with draft 27; the server-side normative requirements did not materially change. The review found and corrected public refresh rotation extending the initial expiry. Existing public refresh families must reauthorize at the migration cutover. Browser application and deployment responsibilities remain separate. |
 | Cross-device security, RFC 10027 | Requires deployment-specific risk assessment and mitigations, with proximity considered where possible. Device and CIBA authorization gates and lifecycle protections are available controls, not proof of proximity or of a user's intent; see the cross-device deployment guidance. |
 | Client Attestation, revision 12 | Requires attestation `iat` and changes HTTP field syntax to Structured Fields. The OpenID4VCI Final profile still requires revision 07. |
@@ -90,8 +90,8 @@ Watch-only drafts are adoption candidates, not advertised capabilities.
 
 ## September source changes and implementation boundaries
 
-The official draft texts and document histories were reviewed for adoption
-consequences. Runtime behavior, metadata, and conformance claims are unchanged.
+The following table records the September review. Implementation follow-up for
+subsequently adopted versions is recorded in the November table above.
 
 | Source change | Consequence |
 | --- | --- |

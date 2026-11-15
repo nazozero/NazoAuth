@@ -19,6 +19,9 @@ OAuth 2.1 draft-17 授权码客户端由管理员设置
 并允许令牌请求省略 `redirect_uri`；若提供该参数，仍须精确匹配。现有注册
 默认为 `oauth20`，OIDC 兼容和 FAPI 保留原有 redirect 契约。更新顺序及限制见
 [客户端策略](../protocol/composable-capability-policy.md)。
+该 OAuth 2.1 配置要求原生应用的私有 URI 和 loopback 回调经过用户交互；
+即使已有历史同意，`prompt=none` 也返回 `interaction_required`。
+注册的 HTTPS 回调保留现有会话和授权同意检查。
 
 ## 规范与 Profile 支持
 
