@@ -24,7 +24,7 @@ fn request(
 }
 
 fn json_body(response: &http::Response<Bytes>) -> Value {
-    assert_eq!(response.status(), StatusCode::OK, "{response:?}");
+    assert_eq!(response.status(), StatusCode::OK);
     serde_json::from_slice(response.body()).unwrap()
 }
 
@@ -206,7 +206,7 @@ async fn enabled_credential_issuer_replays_original_json_and_encrypted_bytes_thr
             .headers_mut()
             .insert(header::AUTHORIZATION, authorization.parse().unwrap());
         let issued = application.handle(credential_request.clone()).await;
-        assert_eq!(issued.status(), StatusCode::OK, "{issued:?}");
+        assert_eq!(issued.status(), StatusCode::OK);
         assert_eq!(issued.headers()[header::CONTENT_TYPE], content_type);
         assert_eq!(issued.headers()[header::CACHE_CONTROL], "no-store");
         let credential = if encrypted {
