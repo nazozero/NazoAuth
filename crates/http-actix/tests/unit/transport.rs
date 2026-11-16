@@ -65,6 +65,95 @@ fn raw_request_targets_duplicate_values_and_body_storage_are_preserved() {
 }
 
 #[actix_web::test]
+async fn registered_request_conversion_obeys_resource_connection_requirements() {
+    let app = awtest::init_service(App::new().configure(configure)).await;
+    for (method, path, expected_facts) in [
+        (
+            http::Method::GET,
+            "/.well-known/openid-configuration",
+            false,
+        ),
+        (
+            http::Method::GET,
+            "/.well-known/oauth-authorization-server",
+            false,
+        ),
+        (
+            http::Method::GET,
+            "/.well-known/oauth-protected-resource",
+            false,
+        ),
+        (
+            http::Method::GET,
+            "/.well-known/oauth-protected-resource/",
+            false,
+        ),
+        (
+            http::Method::GET,
+            "/.well-known/oauth-protected-resource/api/child",
+            false,
+        ),
+        (http::Method::GET, "/jwks.json", false),
+        (http::Method::HEAD, "/jwks.json", false),
+        (http::Method::POST, "/openid4vci/nonce", true),
+        (http::Method::GET, "/openid4vci/nonce", true),
+        (http::Method::GET, "/userinfo", true),
+        (http::Method::GET, "/not-a-route", true),
+        (http::Method::GET, "/.well-known/not-a-route", true),
+    ] {
+        let mut private = http::HeaderValue::from_static("private");
+        private.set_sensitive(true);
+        let mut expected = http::Request::builder()
+            .method(method)
+            .uri(format!("{path}?state=%2F&state=%252F"))
+            .header("x-context", private)
+            .header("x-context", "public")
+            .body(Bytes::from(vec![0, 255, b'=', b'&']))
+            .unwrap();
+        expected.extensions_mut().insert(ConnectionFacts {
+            peer_addr: Some("192.0.2.20:43125".parse().unwrap()),
+            ..ConnectionFacts::default()
+        });
+        let response = awtest::call_service(&app, framework_request(&expected).to_request()).await;
+        let original = response.request();
+        // The public conversion always preserves facts, including metadata.
+        let complete = forward_request(original, expected.body().clone());
+        conformance::assert_request(&expected, &complete);
+
+        let needs_facts = original
+            .app_data::<&'static Route>()
+            .is_none_or(|route| route.needs_connection_facts());
+        let actual =
+            forward_request_with_connection_facts(original, expected.body().clone(), needs_facts);
+        assert_eq!(
+            actual.extensions().get::<ConnectionFacts>().is_some(),
+            expected_facts,
+            "{path}"
+        );
+        if !expected_facts {
+            expected.extensions_mut().remove::<ConnectionFacts>();
+            assert!(actual.extensions().is_empty());
+        }
+        conformance::assert_request(&expected, &actual);
+        assert_eq!(actual.body().as_ptr(), expected.body().as_ptr());
+        assert_eq!(
+            actual.uri().path_and_query().unwrap().as_str().as_ptr(),
+            original.uri().path_and_query().unwrap().as_str().as_ptr(),
+        );
+        for name in original.headers().keys() {
+            for (source, target) in original
+                .headers()
+                .get_all(name)
+                .zip(actual.headers().get_all(name.as_str()).iter())
+            {
+                assert_eq!(source.as_bytes().as_ptr(), target.as_bytes().as_ptr());
+                assert_eq!(source.is_sensitive(), target.is_sensitive());
+            }
+        }
+    }
+}
+
+#[actix_web::test]
 async fn production_response_presenters_survive_conversion_without_body_copy() {
     for (name, mut expected) in conformance::response_cases() {
         let mut private = http::HeaderValue::from_static("private");
@@ -268,6 +357,9 @@ async fn connection_facts_come_from_the_connection_and_ignore_proxy_claims() {
             web::to(move |request: HttpRequest| {
                 let mut expected = expected.clone();
                 async move {
+                    let omitted =
+                        forward_request_with_connection_facts(&request, Bytes::new(), false);
+                    assert!(omitted.extensions().is_empty());
                     let forwarded = forward_request(&request, Bytes::new());
                     expected.peer_addr = request.peer_addr();
                     assert_eq!(

@@ -229,6 +229,20 @@ impl Route {
             .find(|entry| entry.method == *method)
             .map_or(BodyMode::None, |entry| entry.body)
     }
+
+    /// Whether this resource consumes connection facts, including admission
+    /// checks that run before method resolution.
+    pub fn needs_connection_facts(&self) -> bool {
+        self.methods.iter().any(|method| {
+            !matches!(
+                method.endpoint,
+                Endpoint::Discovery
+                    | Endpoint::OauthAuthorizationServerMetadata
+                    | Endpoint::OauthProtectedResourceMetadata
+                    | Endpoint::Jwks
+            )
+        })
+    }
 }
 
 /// Captures borrow the URI path; unescaped parameters do not need an allocation.

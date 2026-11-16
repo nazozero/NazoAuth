@@ -78,14 +78,19 @@ pub async fn serve(
     request: HttpRequest,
     payload: web::Payload,
 ) -> HttpResponse {
-    let body_mode = request
-        .app_data::<&'static Route>()
+    let route = request.app_data::<&'static Route>();
+    let body_mode = route
         .map(|route| route.body(request.method()))
         .unwrap_or(nazoauth::integration::BodyMode::None);
+    let needs_connection_facts = route.is_none_or(|route| route.needs_connection_facts());
     let body = forward_payload(&request, payload.into_inner(), body_mode);
     forward_response(
         application
-            .handle_stream(forward_request(&request, body))
+            .handle_stream(forward_request_with_connection_facts(
+                &request,
+                body,
+                needs_connection_facts,
+            ))
             .await,
     )
 }
@@ -117,6 +122,14 @@ fn payload_error(error: PayloadError) -> io::Error {
 /// Share standard HTTP metadata and body storage. Trust decisions stay in the
 /// facade.
 pub fn forward_request<B>(request: &HttpRequest, body: B) -> http::Request<B> {
+    forward_request_with_connection_facts(request, body, true)
+}
+
+fn forward_request_with_connection_facts<B>(
+    request: &HttpRequest,
+    body: B,
+    needs_connection_facts: bool,
+) -> http::Request<B> {
     let mut forwarded = http::Request::new(body);
     *forwarded.method_mut() = request.method().clone();
     *forwarded.uri_mut() = request.uri().clone();
@@ -127,12 +140,14 @@ pub fn forward_request<B>(request: &HttpRequest, body: B) -> http::Request<B> {
     for (name, value) in request.headers() {
         forwarded.headers_mut().append(name.clone(), value.clone());
     }
-    let mut facts = request
-        .conn_data::<ConnectionFacts>()
-        .cloned()
-        .unwrap_or_default();
-    facts.peer_addr = request.peer_addr();
-    forwarded.extensions_mut().insert(facts);
+    if needs_connection_facts {
+        let mut facts = request
+            .conn_data::<ConnectionFacts>()
+            .cloned()
+            .unwrap_or_default();
+        facts.peer_addr = request.peer_addr();
+        forwarded.extensions_mut().insert(facts);
+    }
     forwarded
 }
 

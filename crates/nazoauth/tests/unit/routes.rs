@@ -196,6 +196,35 @@ fn body_budgets_follow_the_actual_extractor_and_stream_contracts() {
 }
 
 #[test]
+fn only_public_metadata_resources_can_omit_connection_facts() {
+    let without_facts = routes()
+        .iter()
+        .filter(|route| !route.needs_connection_facts())
+        .map(|route| route.path)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        without_facts,
+        [
+            "/.well-known/openid-configuration",
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/",
+            "/.well-known/oauth-protected-resource/{*tail}",
+            "/jwks.json",
+        ]
+    );
+
+    // This resource has no body, but its IP budget precedes method rejection.
+    let nonce = match_path("/openid4vci/nonce").unwrap().0;
+    assert_eq!(nonce.body(&Method::GET), BodyMode::None);
+    assert_eq!(
+        nonce.resolve_method(&Method::GET).unwrap_err().status(),
+        StatusCode::METHOD_NOT_ALLOWED
+    );
+    assert!(nonce.needs_connection_facts());
+}
+
+#[test]
 fn optional_protocols_keep_independent_registration_guards() {
     for path in [
         "/.well-known/openid-credential-issuer",

@@ -66,10 +66,13 @@ framework or runtime trait to implement.
 2. Preserve the original method, URI and repeated header values. In particular,
    do not rebuild a URL from forwarded headers, decode the raw target, collapse
    duplicate headers, parse form fields, or deserialize JSON in framework glue.
-3. Put `ConnectionFacts` in the standard request extensions. `peer_addr` is the
-   actual socket peer. Supply the actual TLS server name and client certificate
-   facts captured from the connection. Trusted-proxy interpretation and token
-   binding remain inside NazoAuth.
+3. Use the matched resource's `Route::needs_connection_facts()` declaration to
+   decide whether to put `ConnectionFacts` in the standard request extensions;
+   retain facts for unknown paths. `peer_addr` is the actual socket peer. Supply
+   the actual TLS server name and client certificate facts captured from the
+   connection. Trusted-proxy interpretation and token binding remain inside
+   NazoAuth. The declaration applies to the whole resource, including unsupported
+   methods, because admission checks may precede method resolution.
 4. Forward the body with `NazoAuth::handle_stream`. Its input is an ordinary
    `Request<S>` where `S: Stream<Item = Result<Bytes, E>>` and
    `E: Error + Send + Sync + 'static`. The stream may be local and need not be
@@ -102,6 +105,13 @@ header names and header values share their byte storage; owned response headers
 and bodies move into Actix. Header maps still allocate entry storage, and shared
 values retain their reference counts. No per-value ownership wrapper or URI text
 conversion is needed.
+
+The four public discovery/authorization-server/protected-resource/JWKS metadata
+endpoints do not consume connection facts. Their manifest resources let adapters
+omit the unused extension allocation. All other resources retain facts, including
+the credential nonce resource's IP budget for unsupported methods. The standalone
+`nazo_http_actix::forward_request` conversion always preserves complete facts;
+the registered forwarding handler consumes the resource declaration.
 
 Uncompressed `Bytes` chunks and completed response bodies retain their storage.
 The collector reuses a single chunk and combines chunks only when the endpoint
