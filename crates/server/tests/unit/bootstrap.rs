@@ -1360,7 +1360,7 @@ async fn fapi_resource_static_route_rejects_options_without_cors_and_keeps_secur
 }
 
 #[actix_web::test]
-async fn openid4vci_dataset_route_is_nested_inside_the_admin_scope() {
+async fn openid4vci_dataset_route_reaches_the_canonical_forwarder() {
     let config = crate::config::ConfigSource::from_pairs_for_test([
         ("ENABLE_OPENID4VCI_ISSUER", "true"),
         (
@@ -1394,7 +1394,8 @@ async fn openid4vci_dataset_route_is_nested_inside_the_admin_scope() {
         "the generic /admin scope must not shadow the OpenID4VCI dataset route",
     );
     assert_eq!(
-        response.request().match_pattern().as_deref(),
+        nazoauth::integration::route_for_path(response.request().uri().path())
+            .map(|route| route.path),
         Some("/admin/openid4vci/credential-datasets/{subject_id}/{configuration_id}")
     );
 }
