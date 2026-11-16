@@ -132,10 +132,13 @@ the host's filesystem or constructing a timezone runtime.
 
 `nazo-crypto` retains the six portable capabilities `jose`, `ecdh`, `aead`,
 `password`, `ed25519`, and `x509`. Backend selection stays inside that crate and
-preserves the same accepted algorithms, key formats, certificate checks and
-signature rules. Native JOSE and RSA paths retain AWS-LC and prepared key
-objects; WASM uses the RustCrypto JWT provider and portable RSA-OAEP/AES key-wrap
-implementations. Cargo selects the backend without a runtime dispatch layer.
+applies the same algorithm, key-format, certificate and signature policy across
+targets. Native JOSE and RSA paths retain AWS-LC; WASM uses the RustCrypto JWT
+provider and portable RSA-OAEP/AES key-wrap implementations. Local signing
+generations retain parsed Ed25519, P-256 and RSA key pairs for signatures and
+public JWK projection. The backend validates standard Ed25519 PKCS#8 v1 and v2
+inputs; generated storage encodings are unchanged. Cargo selects the backend
+without a runtime dispatch layer.
 Local CA/certificate/CRL provisioning is the separate
 `certificate-issuance` native-host feature. Certificate verification and
 OpenID4VC credential issuance remain in the portable graph; enabling native

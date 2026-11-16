@@ -77,8 +77,9 @@ def main() -> None:
     if args.list:
         print("\n".join(contracts.PORTABLE_PACKAGES))
         return
-    contracts.check_package_roles(contracts.manifest_reader())
-    contracts.check_inner_source_boundaries(contracts.manifest_reader())
+    read_manifest = contracts.manifest_reader()
+    contracts.check_package_roles(read_manifest)
+    contracts.check_inner_source_boundaries(read_manifest)
     # Separate checks catch accidental feature-unification dependencies. The
     # combined check covers all portable crypto capabilities together. Local
     # certificate provisioning is an explicit native-host capability, excluded

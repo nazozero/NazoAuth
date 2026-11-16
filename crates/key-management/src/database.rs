@@ -18,8 +18,8 @@ use crate::{
     },
     serialization::{
         KEYSET_SCHEMA_VERSION, der_to_pem, generate_key_material, key_entry_algorithm,
-        key_entry_created_at, key_entry_purposes, key_entry_retire_at, public_jwk_from_private_der,
-        signing_algorithm_name, validate_external_public_jwk,
+        key_entry_created_at, key_entry_purposes, key_entry_retire_at, signing_algorithm_name,
+        signing_public_jwk, validate_external_public_jwk,
     },
 };
 
@@ -349,8 +349,12 @@ pub(crate) async fn commit_openid4vc(
         }
         let private = crate::serialization::pem_to_der(&private_pem)
             .ok_or_else(|| anyhow!("OpenID4VC signing key must be a PKCS#8 PEM"))?;
-        let public =
-            public_jwk_from_private_der(kid, nazo_crypto::jwt::Algorithm::ES256, &private)?;
+        let algorithm = nazo_crypto::jwt::Algorithm::ES256;
+        let public = signing_public_jwk(
+            kid,
+            algorithm,
+            nazo_crypto::signature::public_jwk(algorithm, &private)?,
+        )?;
         let keys = payload["keys"]
             .as_array_mut()
             .ok_or_else(|| anyhow!("keyset missing keys"))?;
@@ -578,7 +582,11 @@ fn local_entry(
         signing_algorithm_name(algorithm).ok_or_else(|| anyhow!("unsupported signing alg"))?;
     let private = generate_key_material(algorithm)?.private_pkcs8_der;
     let kid = format!("{}-{}", name.to_ascii_lowercase(), Uuid::now_v7());
-    let public_jwk = public_jwk_from_private_der(&kid, algorithm, &private)?;
+    let public_jwk = signing_public_jwk(
+        &kid,
+        algorithm,
+        nazo_crypto::signature::public_jwk(algorithm, &private)?,
+    )?;
     let mut entry = json!({"kid":kid,"alg":name,"backend":"local-db","public_jwk":public_jwk,"private_pkcs8_der":URL_SAFE_NO_PAD.encode(private),"created_at":created_at,"retire_at":null});
     if let Some(purposes) = purposes {
         entry["purposes"] = json!(
@@ -1014,17 +1022,16 @@ fn load_payload(
                     URL_SAFE_NO_PAD.decode(entry["private_pkcs8_der"].as_str().ok_or_else(
                         || anyhow!("local database key {kid} missing private material"),
                     )?)?;
-                let public = public_jwk_from_private_der(kid, algorithm, &private)?;
+                let material = LocalSigningMaterial::new(algorithm, private).map_err(|error| {
+                    anyhow!("local database key {kid} signing material is unusable: {error}")
+                })?;
+                let public = signing_public_jwk(kid, algorithm, material.prepared.public_jwk())?;
                 if entry.get("public_jwk") != Some(&public) {
                     anyhow::bail!(
                         "local database key {kid} public metadata does not match private material"
                     );
                 }
-                let material = Arc::new(LocalSigningMaterial::new(algorithm, private).map_err(
-                    |error| {
-                        anyhow!("local database key {kid} signing material is unusable: {error}")
-                    },
-                )?);
+                let material = Arc::new(material);
                 (
                     public,
                     KeyHandle::Local(Arc::clone(&material)),

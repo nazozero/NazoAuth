@@ -45,6 +45,3 @@ time.workspace = true
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 aws-lc-rs.workspace = true
 rcgen.workspace = true
-
-[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
-wasm-bindgen-test.workspace = true

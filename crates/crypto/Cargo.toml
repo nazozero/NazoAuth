@@ -14,9 +14,8 @@ jose = [
     "dep:p256",
     "p256/pkcs8",
     "dep:ed25519-dalek",
+    "ed25519-dalek/pkcs8",
     "dep:pkcs8",
-    "dep:der",
-    "dep:x509-cert",
     "dep:base64",
     "dep:rand",
     "dep:rsa",
@@ -54,8 +53,6 @@ webpki = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-x509-cert = { workspace = true, optional = true }
-der = { workspace = true, optional = true }
 aws-lc-rs = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true, features = ["aws_lc_rs"] }
 rcgen = { workspace = true, optional = true }
@@ -77,8 +74,10 @@ sha2 = { workspace = true, features = ["oid"], optional = true }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 aws-lc-rs.workspace = true
+der.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
+x509-cert.workspace = true
 ml-dsa = { version = "0.1.2", default-features = false, features = ["alloc"] }
 p384 = { version = "0.14.0", features = ["ecdsa"] }
 p521 = { version = "0.14.0", features = ["ecdsa"] }

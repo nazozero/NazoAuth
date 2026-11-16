@@ -33,9 +33,17 @@ impl VerificationKey {
     }
 
     pub fn from_ed_components(x: &str) -> crate::Result<Self> {
-        jsonwebtoken::DecodingKey::from_ed_components(x)
-            .map(|inner| Self { inner })
-            .map_err(|_| CryptoError::InvalidKey)
+        let inner = jsonwebtoken::DecodingKey::from_ed_components(x)
+            .map_err(|_| CryptoError::InvalidKey)?;
+        if inner
+            .try_get_as_bytes()
+            .map_err(|_| CryptoError::InvalidKey)?
+            .len()
+            != 32
+        {
+            return Err(CryptoError::InvalidKey);
+        }
+        Ok(Self { inner })
     }
 
     /// Reuses RSA components already decoded for the caller's key policy.
@@ -116,15 +124,8 @@ fn token_error(error: jsonwebtoken::errors::Error) -> CryptoError {
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn validate_portable_key(key: &jsonwebtoken::DecodingKey) -> crate::Result<()> {
-    use jsonwebtoken::{AlgorithmFamily, DecodingKeyKind};
-
-    match (key.family(), key.kind()) {
-        (AlgorithmFamily::Ed, DecodingKeyKind::SecretOrDer(bytes)) if bytes.len() != 32 => {
-            // The upstream portable provider expects a complete Ed25519 key.
-            // Reject malformed lengths before its fixed-size slice operation.
-            Err(CryptoError::InvalidKey)
-        }
-        (AlgorithmFamily::Rsa, DecodingKeyKind::RsaModulusExponent { n, e }) => {
+    match key.kind() {
+        jsonwebtoken::DecodingKeyKind::RsaModulusExponent { n, e } => {
             // Match the native provider's canonical unsigned representation and
             // modulus limits. The provider owns the remaining RSA validation.
             let first = n
@@ -138,9 +139,6 @@ fn validate_portable_key(key: &jsonwebtoken::DecodingKey) -> crate::Result<()> {
             }
             Ok(())
         }
-        (AlgorithmFamily::Rsa, DecodingKeyKind::SecretOrDer(_)) => {
-            crate::signature::rsa_verification_key(key).map(|_| ())
-        }
-        _ => Ok(()),
+        jsonwebtoken::DecodingKeyKind::SecretOrDer(_) => Ok(()),
     }
 }

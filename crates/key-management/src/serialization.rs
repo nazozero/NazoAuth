@@ -47,14 +47,13 @@ pub(crate) fn generate_key_material(alg: Algorithm) -> anyhow::Result<GeneratedK
     })
 }
 
-pub(crate) fn public_jwk_from_private_der(
+pub(crate) fn signing_public_jwk(
     kid: &str,
     alg: Algorithm,
-    private_pkcs8_der: &[u8],
+    mut jwk: Value,
 ) -> anyhow::Result<Value> {
     let name =
         signing_algorithm_name(alg).ok_or_else(|| anyhow!("unsupported server signing alg"))?;
-    let mut jwk = nazo_crypto::signature::public_jwk(alg, private_pkcs8_der)?;
     jwk["kid"] = json!(kid);
     jwk["use"] = json!("sig");
     jwk["alg"] = json!(name);

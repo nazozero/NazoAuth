@@ -9,50 +9,42 @@ use crate::CryptoError;
 use crate::jwt::{Algorithm, VerificationKey};
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-use aws_lc_rs::rsa::KeyPair as RsaKeyPair;
-#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-use jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER as JWT_PROVIDER;
+use aws_lc_rs::{
+    rsa::KeyPair as RsaKeyPair,
+    signature::{EcdsaKeyPair, Ed25519KeyPair, KeyPair as _},
+};
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use jsonwebtoken::crypto::rust_crypto::DEFAULT_PROVIDER as JWT_PROVIDER;
-#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-use rsa::PrivateKey as RsaKeyPair;
+use {
+    ed25519_dalek::SigningKey as Ed25519KeyPair, p256::ecdsa::SigningKey as EcdsaKeyPair,
+    rsa::PrivateKey as RsaKeyPair,
+};
 
 /// Local signing material prepared once per key generation.
 ///
-/// RSA algorithms retain the provider's parsed `RsaKeyPair`: DER parsing and
-/// private-key validation happen once at construction, so the request-time
-/// `sign` path never re-parses the key. Other algorithms keep the byte
-/// `EncodingKey` — their provider signer is created inside the synchronous
-/// `sign` call and dropped before it returns, so it never crosses an `await`
-/// and is never shared or cached.
+/// Each algorithm retains its backend's parsed key pair. DER parsing and
+/// private-key validation happen at construction; every request borrows the
+/// same immutable material without recreating a provider signer.
 pub struct PreparedSigningKey {
     algorithm: Algorithm,
     key: PreparedKey,
 }
 
 enum PreparedKey {
-    /// Parsed RSA key pair shared immutably across all signatures of this generation.
+    Ed25519(Ed25519KeyPair),
+    Ec(EcdsaKeyPair),
     Rsa(RsaKeyPair),
-    /// Byte-wrapping key for algorithms still on the provider path.
-    Provider(jsonwebtoken::EncodingKey),
 }
 
 impl PreparedSigningKey {
     /// Prepares signing material from the existing private-key DER bytes.
     ///
-    /// For RS256/PS256 this performs the real parse once: invalid DER fails
-    /// here with `InvalidKey`, so an unusable generation cannot be published.
-    /// Other algorithms keep the provider factory probe, which validates that
-    /// this material can produce a signer before it is retained.
+    /// Invalid DER fails here with `InvalidKey`, so an unusable generation
+    /// cannot be published.
     pub fn new(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<Self> {
         let key = match algorithm {
+            Algorithm::EdDSA => PreparedKey::Ed25519(prepare_ed25519(private_der)?),
+            Algorithm::ES256 => PreparedKey::Ec(prepare_ec(private_der)?),
             Algorithm::RS256 | Algorithm::PS256 => PreparedKey::Rsa(prepare_rsa(private_der)?),
-            Algorithm::EdDSA | Algorithm::ES256 => {
-                let key = encoding_key(algorithm, private_der)?;
-                (JWT_PROVIDER.signer_factory)(&algorithm, &key)
-                    .map_err(|_| CryptoError::InvalidKey)?;
-                PreparedKey::Provider(key)
-            }
             _ => return Err(CryptoError::UnsupportedAlgorithm),
         };
         Ok(Self { algorithm, key })
@@ -64,13 +56,60 @@ impl PreparedSigningKey {
     /// point; raw-signature consumers keep the `Vec<u8>`.
     pub fn sign(&self, message: &[u8]) -> crate::Result<Vec<u8>> {
         match &self.key {
+            PreparedKey::Ed25519(pair) => Ok(sign_ed25519(pair, message)),
+            PreparedKey::Ec(pair) => sign_ec(pair, message),
             PreparedKey::Rsa(pair) => sign_rsa(pair, self.algorithm, message),
-            PreparedKey::Provider(key) => {
-                let signer = (JWT_PROVIDER.signer_factory)(&self.algorithm, key)
-                    .map_err(|_| CryptoError::InvalidKey)?;
-                signer
-                    .try_sign(message)
-                    .map_err(|_| CryptoError::OperationFailed)
+        }
+    }
+
+    /// Exports the mathematical public JWK members from the retained key pair.
+    #[must_use]
+    pub fn public_jwk(&self) -> serde_json::Value {
+        match &self.key {
+            PreparedKey::Ed25519(pair) => {
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                let public = pair.public_key().as_ref();
+                #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                let public = pair.verifying_key().to_bytes();
+                serde_json::json!({
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode(public),
+                })
+            }
+            PreparedKey::Ec(pair) => {
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                let public = pair.public_key();
+                #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                let public = pair.verifying_key().to_sec1_point(false);
+                let point: &[u8] = public.as_ref();
+                serde_json::json!({
+                    "kty": "EC",
+                    "crv": "P-256",
+                    "x": URL_SAFE_NO_PAD.encode(&point[1..33]),
+                    "y": URL_SAFE_NO_PAD.encode(&point[33..]),
+                })
+            }
+            PreparedKey::Rsa(pair) => {
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                let (n, e) = (
+                    pair.public_key()
+                        .modulus()
+                        .big_endian_without_leading_zero(),
+                    pair.public_key()
+                        .exponent()
+                        .big_endian_without_leading_zero(),
+                );
+                #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                let (n, e) = {
+                    use rsa::traits::PublicKeyParts as _;
+                    (pair.n_bytes(), pair.e_bytes())
+                };
+                serde_json::json!({
+                    "kty": "RSA",
+                    "n": URL_SAFE_NO_PAD.encode(n),
+                    "e": URL_SAFE_NO_PAD.encode(e),
+                })
             }
         }
     }
@@ -83,6 +122,58 @@ impl std::fmt::Debug for PreparedSigningKey {
             .field("algorithm", &self.algorithm)
             .finish_non_exhaustive()
     }
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn prepare_ed25519(private_der: &[u8]) -> crate::Result<Ed25519KeyPair> {
+    Ed25519KeyPair::from_pkcs8(private_der).map_err(|_| CryptoError::InvalidKey)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn prepare_ed25519(private_der: &[u8]) -> crate::Result<Ed25519KeyPair> {
+    use ed25519_dalek::pkcs8::DecodePrivateKey as _;
+
+    Ed25519KeyPair::from_pkcs8_der(private_der).map_err(|_| CryptoError::InvalidKey)
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn sign_ed25519(pair: &Ed25519KeyPair, message: &[u8]) -> Vec<u8> {
+    pair.sign(message).as_ref().to_vec()
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn sign_ed25519(pair: &Ed25519KeyPair, message: &[u8]) -> Vec<u8> {
+    use ed25519_dalek::Signer as _;
+
+    pair.sign(message).to_bytes().to_vec()
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn prepare_ec(private_der: &[u8]) -> crate::Result<EcdsaKeyPair> {
+    EcdsaKeyPair::from_pkcs8(
+        &aws_lc_rs::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+        private_der,
+    )
+    .map_err(|_| CryptoError::InvalidKey)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn prepare_ec(private_der: &[u8]) -> crate::Result<EcdsaKeyPair> {
+    use p256::pkcs8::DecodePrivateKey as _;
+
+    EcdsaKeyPair::from_pkcs8_der(private_der).map_err(|_| CryptoError::InvalidKey)
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn sign_ec(pair: &EcdsaKeyPair, message: &[u8]) -> crate::Result<Vec<u8>> {
+    pair.sign(&aws_lc_rs::rand::SystemRandom::new(), message)
+        .map(|signature| signature.as_ref().to_vec())
+        .map_err(|_| CryptoError::OperationFailed)
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn sign_ec(pair: &EcdsaKeyPair, message: &[u8]) -> crate::Result<Vec<u8>> {
+    Ok(pair.sign_recoverable(message).0.to_vec())
 }
 
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -251,16 +342,12 @@ pub fn verify(
 }
 
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-pub(crate) fn rsa_verification_key(
-    key: &jsonwebtoken::DecodingKey,
-) -> crate::Result<rsa::PublicKey> {
+fn rsa_verification_key(key: &jsonwebtoken::DecodingKey) -> crate::Result<rsa::PublicKey> {
     use jsonwebtoken::DecodingKeyKind;
-    use rsa::{BoxedUint, pkcs1::DecodeRsaPublicKey as _, traits::PublicKeyParts as _};
+    use rsa::BoxedUint;
 
-    let public = match key.kind() {
-        DecodingKeyKind::SecretOrDer(bytes) => {
-            rsa::PublicKey::from_pkcs1_der(bytes).map_err(|_| CryptoError::InvalidSignature)
-        }
+    match key.kind() {
+        DecodingKeyKind::SecretOrDer(_) => Err(CryptoError::InvalidSignature),
         DecodingKeyKind::RsaModulusExponent { n, e } => {
             if n.first().is_none_or(|byte| *byte == 0) || e.first().is_none_or(|byte| *byte == 0) {
                 return Err(CryptoError::InvalidSignature);
@@ -272,11 +359,7 @@ pub(crate) fn rsa_verification_key(
             )
             .map_err(|_| CryptoError::InvalidSignature)
         }
-    }?;
-    if !(2048..=8192).contains(&public.n().bit_width_vartime()) {
-        return Err(CryptoError::InvalidSignature);
     }
-    Ok(public)
 }
 
 pub fn generate_private_key(algorithm: Algorithm) -> crate::Result<Vec<u8>> {
@@ -305,47 +388,7 @@ pub fn generate_private_key(algorithm: Algorithm) -> crate::Result<Vec<u8>> {
 }
 
 pub fn public_jwk(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<serde_json::Value> {
-    match algorithm {
-        Algorithm::EdDSA => {
-            let seed = ed25519_seed_from_pkcs8(private_der).ok_or(CryptoError::InvalidKey)?;
-            let public_key = ed25519_dalek::SigningKey::from_bytes(&seed)
-                .verifying_key()
-                .to_bytes();
-            Ok(serde_json::json!({
-                "kty": "OKP",
-                "crv": "Ed25519",
-                "x": URL_SAFE_NO_PAD.encode(public_key),
-            }))
-        }
-        Algorithm::RS256 | Algorithm::PS256 | Algorithm::ES256 => {
-            let key = encoding_key(algorithm, private_der)?;
-            let jwk = jsonwebtoken::jwk::Jwk::from_encoding_key(&key, algorithm)
-                .map_err(|_| CryptoError::InvalidKey)?;
-            let value = serde_json::to_value(jwk).map_err(|_| CryptoError::OperationFailed)?;
-            let serde_json::Value::Object(mut public) = value else {
-                return Err(CryptoError::OperationFailed);
-            };
-            public.retain(|member, _| {
-                matches!(member.as_str(), "kty" | "n" | "e" | "crv" | "x" | "y")
-            });
-            Ok(serde_json::Value::Object(public))
-        }
-        _ => Err(CryptoError::UnsupportedAlgorithm),
-    }
-}
-
-fn encoding_key(
-    algorithm: Algorithm,
-    private_der: &[u8],
-) -> crate::Result<jsonwebtoken::EncodingKey> {
-    match algorithm {
-        Algorithm::EdDSA => Ok(jsonwebtoken::EncodingKey::from_ed_der(private_der)),
-        Algorithm::RS256 | Algorithm::PS256 => {
-            Ok(jsonwebtoken::EncodingKey::from_rsa_der(private_der))
-        }
-        Algorithm::ES256 => Ok(jsonwebtoken::EncodingKey::from_ec_der(private_der)),
-        _ => Err(CryptoError::UnsupportedAlgorithm),
-    }
+    Ok(PreparedSigningKey::new(algorithm, private_der)?.public_jwk())
 }
 
 fn ed25519_pkcs8_private_der(seed: &[u8; 32]) -> Vec<u8> {
@@ -356,12 +399,4 @@ fn ed25519_pkcs8_private_der(seed: &[u8; 32]) -> Vec<u8> {
     ]);
     der.extend_from_slice(seed);
     der
-}
-
-fn ed25519_seed_from_pkcs8(der: &[u8]) -> Option<[u8; 32]> {
-    const PREFIX: &[u8] = &[
-        0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04,
-        0x20,
-    ];
-    der.strip_prefix(PREFIX)?.as_array().copied()
 }

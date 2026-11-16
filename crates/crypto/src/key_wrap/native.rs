@@ -1,43 +1,13 @@
+use crate::CryptoError;
 use aws_lc_rs::{
     encoding::{AsDer, Pkcs8V1Der},
     key_wrap::{AES_128, AES_256, AesKek, KeyWrap as _},
     rsa::{
         KeyPair, KeySize, OAEP_SHA256_MGF1SHA256, OaepPrivateDecryptingKey,
-        OaepPublicEncryptingKey, PrivateDecryptingKey, PublicEncryptingKey,
+        OaepPublicEncryptingKey, PrivateDecryptingKey, PublicEncryptingKey, PublicKeyComponents,
     },
     signature::KeyPair as _,
 };
-use der::{
-    Encode as _,
-    asn1::{Any, BitString, UintRef},
-};
-use x509_cert::spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned};
-
-use crate::CryptoError;
-
-#[derive(der::Sequence)]
-struct RsaPublicKey<'a> {
-    modulus: UintRef<'a>,
-    public_exponent: UintRef<'a>,
-}
-
-fn rsa_public_spki(n: &[u8], e: &[u8]) -> crate::Result<Vec<u8>> {
-    let pkcs1 = RsaPublicKey {
-        modulus: UintRef::new(n).map_err(|_| CryptoError::InvalidKey)?,
-        public_exponent: UintRef::new(e).map_err(|_| CryptoError::InvalidKey)?,
-    }
-    .to_der()
-    .map_err(|_| CryptoError::InvalidKey)?;
-    SubjectPublicKeyInfoOwned {
-        algorithm: AlgorithmIdentifierOwned {
-            oid: ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
-            parameters: Some(Any::null()),
-        },
-        subject_public_key: BitString::from_bytes(&pkcs1).map_err(|_| CryptoError::InvalidKey)?,
-    }
-    .to_der()
-    .map_err(|_| CryptoError::InvalidKey)
-}
 
 pub fn generate_rsa_pkcs8_der(bits: usize) -> crate::Result<Vec<u8>> {
     let size = match bits {
@@ -68,7 +38,12 @@ pub fn rsa_public_components(private_der: &[u8]) -> crate::Result<(Vec<u8>, Vec<
 }
 
 pub fn rsa_oaep256_encrypt(n: &[u8], e: &[u8], plaintext: &[u8]) -> crate::Result<Vec<u8>> {
-    let public = PublicEncryptingKey::from_der(&rsa_public_spki(n, e)?)
+    // Preserve the unsigned-integer normalization of the former DER encoder
+    // while importing the caller's components without an ASN.1 round trip.
+    let n = &n[n.iter().take_while(|byte| **byte == 0).count()..];
+    let e = &e[e.iter().take_while(|byte| **byte == 0).count()..];
+    let public: PublicEncryptingKey = PublicKeyComponents { n, e }
+        .try_into()
         .map_err(|_| CryptoError::InvalidKey)?;
     let public = OaepPublicEncryptingKey::new(public).map_err(|_| CryptoError::InvalidKey)?;
     let mut ciphertext = vec![0; public.ciphertext_size()];

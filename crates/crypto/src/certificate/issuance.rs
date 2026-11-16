@@ -18,7 +18,8 @@ pub fn public_key_from_pem(private_key_pem: &str) -> crate::Result<Vec<u8>> {
 
 pub fn self_signed(params: CertificateParams, private_key_pem: &str) -> crate::Result<Vec<u8>> {
     let key = rcgen::KeyPair::from_pem(private_key_pem).map_err(|_| CryptoError::InvalidKey)?;
-    Ok(rcgen::CertifiedIssuer::self_signed(params, key)
+    Ok(params
+        .self_signed(&key)
         .map_err(|_| CryptoError::OperationFailed)?
         .der()
         .to_vec())

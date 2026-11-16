@@ -61,11 +61,24 @@ fn all_jose_algorithms_interoperate_with_independent_vectors() {
             vector["public_jwk"]
         );
 
+        for malformed in [&[][..], &private[..private.len() / 2]] {
+            assert!(matches!(
+                signature::PreparedSigningKey::new(algorithm, malformed),
+                Err(CryptoError::InvalidKey)
+            ));
+            assert_eq!(
+                signature::public_jwk(algorithm, malformed),
+                Err(CryptoError::InvalidKey)
+            );
+        }
         let prepared = signature::PreparedSigningKey::new(algorithm, &private).unwrap();
-        let signed = prepared.sign(&message).unwrap();
-        signature::verify(algorithm, &key, &message, &signed).unwrap();
-        if matches!(algorithm, Algorithm::EdDSA | Algorithm::RS256) {
-            assert_eq!(signed, expected);
+        assert_eq!(prepared.public_jwk(), vector["public_jwk"]);
+        for _ in 0..3 {
+            let signed = prepared.sign(&message).unwrap();
+            signature::verify(algorithm, &key, &message, &signed).unwrap();
+            if matches!(algorithm, Algorithm::EdDSA | Algorithm::RS256) {
+                assert_eq!(signed, expected);
+            }
         }
         let mut tampered = expected;
         tampered[0] ^= 1;
@@ -102,6 +115,45 @@ fn all_jose_algorithms_interoperate_with_independent_vectors() {
     wasm_bindgen_test::wasm_bindgen_test
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn ed25519_public_projection_accepts_valid_pkcs8_versions() {
+    let fixture = vectors();
+    let vector = &fixture["signatures"][0];
+    let key = verification_key(&vector["public_jwk"]);
+    let message = bytes(&fixture["message"]);
+    for private in [
+        bytes(&vector["private_der"]),
+        bytes(&fixture["ed25519_pkcs8_v2"]["private_der"]),
+    ] {
+        let prepared = signature::PreparedSigningKey::new(Algorithm::EdDSA, &private).unwrap();
+        assert_eq!(prepared.public_jwk(), vector["public_jwk"]);
+        assert_eq!(
+            signature::public_jwk(Algorithm::EdDSA, &private).unwrap(),
+            vector["public_jwk"]
+        );
+        let signed = prepared.sign(&message).unwrap();
+        assert_eq!(signed, bytes(&vector["signature"]));
+        signature::verify(Algorithm::EdDSA, &key, &message, &signed).unwrap();
+        assert_eq!(
+            signature::public_jwk(Algorithm::EdDSA, &private[..private.len() - 1]),
+            Err(CryptoError::InvalidKey)
+        );
+    }
+    let mismatched = bytes(&fixture["ed25519_pkcs8_v2"]["mismatched_public_der"]);
+    assert!(matches!(
+        signature::PreparedSigningKey::new(Algorithm::EdDSA, &mismatched),
+        Err(CryptoError::InvalidKey)
+    ));
+    assert_eq!(
+        signature::public_jwk(Algorithm::EdDSA, &mismatched),
+        Err(CryptoError::InvalidKey)
+    );
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn rsa_oaep_preserves_key_format_and_authenticated_decryption() {
     let fixture = vectors();
     let vector = &fixture["rsa_oaep"];
@@ -121,6 +173,72 @@ fn rsa_oaep_preserves_key_format_and_authenticated_decryption() {
         prepared.decrypt(&tampered),
         Err(CryptoError::AuthenticationFailed)
     );
+    for incompatible in vector["incompatible_ciphertexts"].as_array().unwrap() {
+        assert_eq!(
+            prepared.decrypt(&bytes(&incompatible["ciphertext"])),
+            Err(CryptoError::AuthenticationFailed),
+            "{}",
+            incompatible["parameter"]
+        );
+    }
+    let extended_ciphertext = [&[0], ciphertext.as_slice()].concat();
+    for malformed in [
+        &ciphertext[..ciphertext.len() - 1],
+        extended_ciphertext.as_slice(),
+    ] {
+        assert_eq!(
+            prepared.decrypt(malformed),
+            Err(CryptoError::AuthenticationFailed)
+        );
+    }
+
+    // Key transport has always accepted unsigned integer components with zero
+    // prefixes; native direct component import must preserve that behavior.
+    for prefix_len in [1, 3] {
+        let prefixed_n = [vec![0; prefix_len], n.clone()].concat();
+        let prefixed_e = [vec![0; prefix_len], e.clone()].concat();
+        let encrypted =
+            key_wrap::rsa_oaep256_encrypt(&prefixed_n, &prefixed_e, &plaintext).unwrap();
+        assert_eq!(prepared.decrypt(&encrypted).unwrap(), plaintext);
+    }
+    for exponent in [&[][..], &[0], &[1], &[2], &[1, 0, 0, 0, 0, 1]] {
+        assert!(key_wrap::rsa_oaep256_encrypt(&n, exponent, &plaintext).is_err());
+    }
+    let mut even_modulus = n;
+    *even_modulus.last_mut().unwrap() &= 0xfe;
+    assert!(key_wrap::rsa_oaep256_encrypt(&even_modulus, &e, &plaintext).is_err());
+}
+
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
+fn ps256_rejects_non_sha256_salt_lengths() {
+    let fixture = vectors();
+    let key = verification_key(&fixture["signatures"][2]["public_jwk"]);
+    let message = bytes(&fixture["message"]);
+    for vector in fixture["invalid_pss_salt"].as_array().unwrap() {
+        assert_eq!(
+            signature::verify(
+                Algorithm::PS256,
+                &key,
+                &message,
+                &bytes(&vector["signature"])
+            ),
+            Err(CryptoError::InvalidSignature),
+            "salt length {}",
+            vector["salt_len"]
+        );
+        assert!(matches!(
+            jwt::decode::<Value>(
+                vector["token"].as_str().unwrap(),
+                &key,
+                &validation(Algorithm::PS256)
+            ),
+            Err(CryptoError::InvalidSignature)
+        ));
+    }
 }
 
 #[cfg_attr(
@@ -134,6 +252,10 @@ fn rsa_import_rejects_inconsistent_crt_coefficients() {
     let mut pkcs1 = bytes(&vector["private_der"]);
     *pkcs1.last_mut().unwrap() ^= 1;
     assert!(signature::PreparedSigningKey::new(Algorithm::RS256, &pkcs1).is_err());
+    assert_eq!(
+        signature::public_jwk(Algorithm::RS256, &pkcs1),
+        Err(CryptoError::InvalidKey)
+    );
 
     let mut pkcs8 = bytes(&fixture["rsa_oaep"]["private_pkcs8"]);
     *pkcs8.last_mut().unwrap() ^= 1;
@@ -208,28 +330,11 @@ fn rsa_verification_rejects_undersized_and_noncanonical_keys() {
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn malformed_ed25519_keys_return_errors() {
-    let fixture = vectors();
-    let vector = &fixture["signatures"][0];
     for len in [0, 1, 31, 33] {
-        let key =
-            VerificationKey::from_ed_components(&URL_SAFE_NO_PAD.encode(vec![7; len])).unwrap();
-        assert!(
-            signature::verify(
-                Algorithm::EdDSA,
-                &key,
-                &bytes(&fixture["message"]),
-                &bytes(&vector["signature"])
-            )
-            .is_err()
-        );
-        assert!(
-            jwt::decode::<Value>(
-                vector["token"].as_str().unwrap(),
-                &key,
-                &validation(Algorithm::EdDSA)
-            )
-            .is_err()
-        );
+        assert!(matches!(
+            VerificationKey::from_ed_components(&URL_SAFE_NO_PAD.encode(vec![7; len])),
+            Err(CryptoError::InvalidKey)
+        ));
     }
 }
 

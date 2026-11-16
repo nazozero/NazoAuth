@@ -2,25 +2,26 @@ use aes_kw::{KeyInit as _, KwAes128, KwAes256};
 use rsa::{
     BoxedUint, PrivateKey, PublicKey,
     pkcs1::EncodeRsaPrivateKey as _,
-    pkcs8::{DecodePrivateKey as _, EncodePrivateKey as _, EncodePublicKey as _},
+    pkcs8::{EncodePrivateKey as _, EncodePublicKey as _},
     traits::PublicKeyParts as _,
 };
 
 use crate::CryptoError;
 
 fn private_key(private_der: &[u8]) -> crate::Result<PrivateKey> {
-    let key = PrivateKey::from_pkcs8_der(private_der).map_err(|_| CryptoError::InvalidKey)?;
+    let input =
+        pkcs8::PrivateKeyInfoRef::try_from(private_der).map_err(|_| CryptoError::InvalidKey)?;
+    let pkcs1 = input.private_key.as_bytes();
+    let key = PrivateKey::try_from(input).map_err(|_| CryptoError::InvalidKey)?;
     if !(2048..=8192).contains(&key.n().bit_width_vartime()) {
         return Err(CryptoError::InvalidKey);
     }
     // Do not silently repair malformed CRT coefficients during key import.
-    let input =
-        pkcs8::PrivateKeyInfoRef::try_from(private_der).map_err(|_| CryptoError::InvalidKey)?;
     if key
         .to_pkcs1_der()
         .map_err(|_| CryptoError::InvalidKey)?
         .as_bytes()
-        != input.private_key.as_bytes()
+        != pkcs1
     {
         return Err(CryptoError::InvalidKey);
     }
