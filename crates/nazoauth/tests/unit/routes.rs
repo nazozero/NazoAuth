@@ -197,21 +197,44 @@ fn body_budgets_follow_the_actual_extractor_and_stream_contracts() {
 
 #[test]
 fn only_public_metadata_resources_can_omit_connection_facts() {
+    const METADATA_PATHS: [&str; 6] = [
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/",
+        "/.well-known/oauth-protected-resource/{*tail}",
+        "/jwks.json",
+    ];
     let without_facts = routes()
         .iter()
         .filter(|route| !route.needs_connection_facts())
         .map(|route| route.path)
         .collect::<Vec<_>>();
+    assert_eq!(without_facts, METADATA_PATHS);
+    let projected_headers = routes()
+        .iter()
+        .filter_map(|route| {
+            route.request_headers().map(|headers| {
+                assert_eq!(
+                    headers,
+                    [
+                        header::ORIGIN,
+                        header::ACCESS_CONTROL_REQUEST_METHOD,
+                        header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    ]
+                );
+                route.path
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(projected_headers, METADATA_PATHS);
     assert_eq!(
-        without_facts,
-        [
-            "/.well-known/openid-configuration",
-            "/.well-known/oauth-authorization-server",
-            "/.well-known/oauth-protected-resource",
-            "/.well-known/oauth-protected-resource/",
-            "/.well-known/oauth-protected-resource/{*tail}",
-            "/jwks.json",
-        ]
+        routes()
+            .iter()
+            .filter(|route| route.needs_nonce_admission())
+            .map(|route| route.path)
+            .collect::<Vec<_>>(),
+        ["/openid4vci/nonce"]
     );
 
     // This resource has no body, but its IP budget precedes method rejection.
@@ -222,6 +245,8 @@ fn only_public_metadata_resources_can_omit_connection_facts() {
         StatusCode::METHOD_NOT_ALLOWED
     );
     assert!(nonce.needs_connection_facts());
+    assert!(nonce.request_headers().is_none());
+    assert!(nonce.needs_nonce_admission());
 }
 
 #[test]

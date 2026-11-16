@@ -116,11 +116,7 @@ impl NazoAuth {
         E: std::error::Error + Send + Sync + 'static,
     {
         // This resource's existing budget also applies to unsupported methods.
-        if route
-            .methods
-            .iter()
-            .any(|method| method.endpoint == Endpoint::CredentialNonce)
-        {
+        if route.needs_nonce_admission() {
             extract!(
                 Box::pin(crate::endpoints::rate_limit::enforce_auth_request_limit(
                     &self.identity.auth_request_limiter,

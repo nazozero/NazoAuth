@@ -297,6 +297,46 @@ where
         }
         cases.push(request.body(Bytes::from_static(body.as_bytes())).unwrap());
     }
+    // Compare the complete input with adapters that use the declared metadata
+    // head projection, including repeated CORS fields and rejected methods.
+    for target in [
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/",
+        "/.well-known/oauth-protected-resource/api/child",
+        "/jwks.json",
+    ] {
+        for method in [Method::GET, Method::HEAD, Method::OPTIONS, Method::POST] {
+            for origin in [
+                None,
+                Some("https://browser.example"),
+                Some("https://unregistered.example"),
+            ] {
+                let mut request = Request::builder()
+                    .method(method.clone())
+                    .uri(target)
+                    .header(header::HOST, "issuer.example")
+                    .header(header::CONTENT_TYPE, "text/plain")
+                    .header("forwarded", "for=192.0.2.10;host=untrusted.example")
+                    .header("client-cert", "untrusted")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                    .header(header::ACCESS_CONTROL_REQUEST_METHOD, "HEAD")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "accept")
+                    .header(header::ACCESS_CONTROL_REQUEST_HEADERS, "authorization");
+                if let Some(origin) = origin {
+                    request = request
+                        .header(header::ORIGIN, origin)
+                        .header(header::ORIGIN, "https://second.example");
+                }
+                cases.push(
+                    request
+                        .body(Bytes::from_static(b"ignored metadata body"))
+                        .unwrap(),
+                );
+            }
+        }
+    }
     for mut request in cases {
         request.extensions_mut().insert(ConnectionFacts {
             peer_addr: Some("192.0.2.20:43125".parse().unwrap()),

@@ -119,7 +119,10 @@ async fn standard_response(response: HttpResponse) -> http::Response<Bytes> {
 #[actix_web::test]
 async fn public_facade_and_actix_keep_routes_and_protocol_contracts_equivalent() {
     for register_optional_routes in [false, true] {
-        let state = infrastructure(register_optional_routes).await;
+        let mut state = infrastructure(register_optional_routes).await;
+        Arc::make_mut(&mut state.settings)
+            .endpoint
+            .cors_allowed_origins = vec!["https://browser.example".to_owned()];
         let facade = crate::test_support::facade::application(&state)
             .await
             .unwrap();

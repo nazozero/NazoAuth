@@ -63,9 +63,12 @@ framework or runtime trait to implement.
    forwarding handler. Each resource contains its method metadata, body mode and
    registration guard. Bind a forwarding fallback as well so the facade owns
    unknown-path responses. Keep framework-owned UI resources separate.
-2. Preserve the original method, URI and repeated header values. In particular,
-   do not rebuild a URL from forwarded headers, decode the raw target, collapse
-   duplicate headers, parse form fields, or deserialize JSON in framework glue.
+2. Preserve the original method and URI. `Route::request_headers()` declares
+   which request headers the resource consumes: `None` requires every header;
+   a list permits forwarding only those names, retaining all their repeated
+   values. Forward all headers for unknown paths. Do not rebuild a URL from
+   forwarded headers, decode the raw target, collapse duplicate values, parse
+   form fields, or deserialize JSON in framework glue.
 3. Use the matched resource's `Route::needs_connection_facts()` declaration to
    decide whether to put `ConnectionFacts` in the standard request extensions;
    retain facts for unknown paths. `peer_addr` is the actual socket peer. Supply
@@ -107,11 +110,17 @@ values retain their reference counts. No per-value ownership wrapper or URI text
 conversion is needed.
 
 The four public discovery/authorization-server/protected-resource/JWKS metadata
-endpoints do not consume connection facts. Their manifest resources let adapters
-omit the unused extension allocation. All other resources retain facts, including
-the credential nonce resource's IP budget for unsupported methods. The standalone
-`nazo_http_actix::forward_request` conversion always preserves complete facts;
-the registered forwarding handler consumes the resource declaration.
+endpoints consume only `Origin`, `Access-Control-Request-Method` and
+`Access-Control-Request-Headers` for CORS, and do not consume connection facts.
+Their six manifest resources let adapters omit unused request-header storage and
+the connection-facts extension. Host tenant selection still uses the original
+request's authority and TLS server name before forwarding. All other resources
+retain every header and connection facts, including the credential nonce
+resource's IP budget for unsupported methods. The two transport requirements are
+independent declarations for the whole resource and are computed from the
+manifest at compile time. The standalone `nazo_http_actix::forward_request`
+conversion always preserves every header and complete facts; the registered
+forwarding handler consumes the resource declarations.
 
 Uncompressed `Bytes` chunks and completed response bodies retain their storage.
 The collector reuses a single chunk and combines chunks only when the endpoint

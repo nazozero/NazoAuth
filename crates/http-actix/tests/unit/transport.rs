@@ -65,7 +65,7 @@ fn raw_request_targets_duplicate_values_and_body_storage_are_preserved() {
 }
 
 #[actix_web::test]
-async fn registered_request_conversion_obeys_resource_connection_requirements() {
+async fn registered_request_conversion_obeys_resource_head_requirements() {
     let app = awtest::init_service(App::new().configure(configure)).await;
     for (method, path, expected_facts) in [
         (
@@ -95,6 +95,8 @@ async fn registered_request_conversion_obeys_resource_connection_requirements() 
         ),
         (http::Method::GET, "/jwks.json", false),
         (http::Method::HEAD, "/jwks.json", false),
+        (http::Method::OPTIONS, "/jwks.json", false),
+        (http::Method::POST, "/jwks.json", false),
         (http::Method::POST, "/openid4vci/nonce", true),
         (http::Method::GET, "/openid4vci/nonce", true),
         (http::Method::GET, "/userinfo", true),
@@ -106,10 +108,40 @@ async fn registered_request_conversion_obeys_resource_connection_requirements() 
         let mut expected = http::Request::builder()
             .method(method)
             .uri(format!("{path}?state=%2F&state=%252F"))
+            .header(http::header::HOST, "issuer.example")
             .header("x-context", private)
             .header("x-context", "public")
             .body(Bytes::from(vec![0, 255, b'=', b'&']))
             .unwrap();
+        let mut origin = http::HeaderValue::from_str("https://app.example").unwrap();
+        origin.set_sensitive(true);
+        for (name, values) in [
+            (
+                http::header::ORIGIN,
+                [
+                    origin,
+                    http::HeaderValue::from_static("https://other.example"),
+                ],
+            ),
+            (
+                http::header::ACCESS_CONTROL_REQUEST_METHOD,
+                [
+                    http::HeaderValue::from_static("GET"),
+                    http::HeaderValue::from_static("HEAD"),
+                ],
+            ),
+            (
+                http::header::ACCESS_CONTROL_REQUEST_HEADERS,
+                [
+                    http::HeaderValue::from_static("accept"),
+                    http::HeaderValue::from_static("content-type"),
+                ],
+            ),
+        ] {
+            for value in values {
+                expected.headers_mut().append(name.clone(), value);
+            }
+        }
         expected.extensions_mut().insert(ConnectionFacts {
             peer_addr: Some("192.0.2.20:43125".parse().unwrap()),
             ..ConnectionFacts::default()
@@ -120,11 +152,8 @@ async fn registered_request_conversion_obeys_resource_connection_requirements() 
         let complete = forward_request(original, expected.body().clone());
         conformance::assert_request(&expected, &complete);
 
-        let needs_facts = original
-            .app_data::<&'static Route>()
-            .is_none_or(|route| route.needs_connection_facts());
-        let actual =
-            forward_request_with_connection_facts(original, expected.body().clone(), needs_facts);
+        let route = original.app_data::<&'static Route>().copied();
+        let actual = forward_request_for_route(original, expected.body().clone(), route);
         assert_eq!(
             actual.extensions().get::<ConnectionFacts>().is_some(),
             expected_facts,
@@ -133,6 +162,8 @@ async fn registered_request_conversion_obeys_resource_connection_requirements() 
         if !expected_facts {
             expected.extensions_mut().remove::<ConnectionFacts>();
             assert!(actual.extensions().is_empty());
+            expected.headers_mut().remove(http::header::HOST);
+            expected.headers_mut().remove("x-context");
         }
         conformance::assert_request(&expected, &actual);
         assert_eq!(actual.body().as_ptr(), expected.body().as_ptr());
@@ -140,7 +171,7 @@ async fn registered_request_conversion_obeys_resource_connection_requirements() 
             actual.uri().path_and_query().unwrap().as_str().as_ptr(),
             original.uri().path_and_query().unwrap().as_str().as_ptr(),
         );
-        for name in original.headers().keys() {
+        for name in actual.headers().keys() {
             for (source, target) in original
                 .headers()
                 .get_all(name)
@@ -357,9 +388,14 @@ async fn connection_facts_come_from_the_connection_and_ignore_proxy_claims() {
             web::to(move |request: HttpRequest| {
                 let mut expected = expected.clone();
                 async move {
-                    let omitted =
-                        forward_request_with_connection_facts(&request, Bytes::new(), false);
+                    let route = nazoauth::integration::routes()
+                        .iter()
+                        .find(|route| route.path == "/jwks.json")
+                        .unwrap();
+                    let omitted = forward_request_for_route(&request, Bytes::new(), Some(route));
                     assert!(omitted.extensions().is_empty());
+                    assert!(omitted.headers().is_empty());
+                    assert_eq!(omitted.headers().capacity(), 0);
                     let forwarded = forward_request(&request, Bytes::new());
                     expected.peer_addr = request.peer_addr();
                     assert_eq!(

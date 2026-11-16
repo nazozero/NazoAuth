@@ -1,7 +1,7 @@
 //! The product's complete HTTP surface. Adapters consume this table without owning policy.
 use std::{borrow::Cow, sync::OnceLock};
 
-use http::{Method, StatusCode, header};
+use http::{HeaderName, Method, StatusCode, header};
 
 use crate::http::{CorsPolicy, Response, finish};
 
@@ -199,9 +199,56 @@ pub struct Route {
     pub cors: CorsPolicy,
     pub guard: RouteGuard,
     allowed_methods: &'static str,
+    needs_connection_facts: bool,
+    request_headers: Option<&'static [HeaderName]>,
+    nonce_admission: bool,
 }
 
 impl Route {
+    const fn new(
+        path: &'static str,
+        methods: &'static [RouteMethod],
+        cors: CorsPolicy,
+        guard: RouteGuard,
+        allowed_methods: &'static str,
+    ) -> Self {
+        const METADATA_HEADERS: &[HeaderName] = &[
+            header::ORIGIN,
+            header::ACCESS_CONTROL_REQUEST_METHOD,
+            header::ACCESS_CONTROL_REQUEST_HEADERS,
+        ];
+        let mut needs_connection_facts = false;
+        let mut request_headers = Some(METADATA_HEADERS);
+        let mut nonce_admission = false;
+        let mut index = 0;
+        while index < methods.len() {
+            match methods[index].endpoint {
+                Endpoint::Discovery
+                | Endpoint::OauthAuthorizationServerMetadata
+                | Endpoint::OauthProtectedResourceMetadata
+                | Endpoint::Jwks => {}
+                endpoint => {
+                    needs_connection_facts = true;
+                    request_headers = None;
+                    if matches!(endpoint, Endpoint::CredentialNonce) {
+                        nonce_admission = true;
+                    }
+                }
+            }
+            index += 1;
+        }
+        Self {
+            path,
+            methods,
+            cors,
+            guard,
+            allowed_methods,
+            needs_connection_facts,
+            request_headers,
+            nonce_admission,
+        }
+    }
+
     pub fn resolve_method(&self, method: &Method) -> Result<&'static RouteMethod, Response> {
         if let Some(found) = self.methods.iter().find(|entry| entry.method == *method) {
             return Ok(found);
@@ -232,16 +279,18 @@ impl Route {
 
     /// Whether this resource consumes connection facts, including admission
     /// checks that run before method resolution.
-    pub fn needs_connection_facts(&self) -> bool {
-        self.methods.iter().any(|method| {
-            !matches!(
-                method.endpoint,
-                Endpoint::Discovery
-                    | Endpoint::OauthAuthorizationServerMetadata
-                    | Endpoint::OauthProtectedResourceMetadata
-                    | Endpoint::Jwks
-            )
-        })
+    pub const fn needs_connection_facts(&self) -> bool {
+        self.needs_connection_facts
+    }
+
+    /// Request headers consumed by this resource, including CORS and unsupported
+    /// methods. `None` requires all headers; a list retains every repeated value.
+    pub const fn request_headers(&self) -> Option<&'static [HeaderName]> {
+        self.request_headers
+    }
+
+    pub(crate) const fn needs_nonce_admission(&self) -> bool {
+        self.nonce_admission
     }
 }
 
@@ -370,16 +419,16 @@ pub fn resolve<'path>(method: &Method, path: &'path str) -> Result<RouteMatch<'p
 
 macro_rules! route {
     ($path:literal, $cors:ident, $guard:ident, $first_method:ident => $first_endpoint:ident ($first_body:expr) $(, $method:ident => $endpoint:ident ($body:expr))* $(,)?) => {
-        Route {
-            path: $path,
-            cors: CorsPolicy::$cors,
-            guard: RouteGuard::$guard,
-            methods: &[
+        Route::new(
+            $path,
+            &[
                 RouteMethod { method: Method::$first_method, endpoint: Endpoint::$first_endpoint, body: $first_body },
                 $(RouteMethod { method: Method::$method, endpoint: Endpoint::$endpoint, body: $body },)*
             ],
-            allowed_methods: concat!(stringify!($first_method), $(", ", stringify!($method),)*),
-        }
+            CorsPolicy::$cors,
+            RouteGuard::$guard,
+            concat!(stringify!($first_method), $(", ", stringify!($method),)*),
+        )
     };
 }
 

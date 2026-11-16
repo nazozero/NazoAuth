@@ -78,19 +78,14 @@ pub async fn serve(
     request: HttpRequest,
     payload: web::Payload,
 ) -> HttpResponse {
-    let route = request.app_data::<&'static Route>();
+    let route = request.app_data::<&'static Route>().copied();
     let body_mode = route
         .map(|route| route.body(request.method()))
         .unwrap_or(nazoauth::integration::BodyMode::None);
-    let needs_connection_facts = route.is_none_or(|route| route.needs_connection_facts());
     let body = forward_payload(&request, payload.into_inner(), body_mode);
     forward_response(
         application
-            .handle_stream(forward_request_with_connection_facts(
-                &request,
-                body,
-                needs_connection_facts,
-            ))
+            .handle_stream(forward_request_for_route(&request, body, route))
             .await,
     )
 }
@@ -122,25 +117,33 @@ fn payload_error(error: PayloadError) -> io::Error {
 /// Share standard HTTP metadata and body storage. Trust decisions stay in the
 /// facade.
 pub fn forward_request<B>(request: &HttpRequest, body: B) -> http::Request<B> {
-    forward_request_with_connection_facts(request, body, true)
+    forward_request_for_route(request, body, None)
 }
 
-fn forward_request_with_connection_facts<B>(
+fn forward_request_for_route<B>(
     request: &HttpRequest,
     body: B,
-    needs_connection_facts: bool,
+    route: Option<&Route>,
 ) -> http::Request<B> {
     let mut forwarded = http::Request::new(body);
     *forwarded.method_mut() = request.method().clone();
     *forwarded.uri_mut() = request.uri().clone();
     *forwarded.version_mut() = request.version();
-    forwarded
-        .headers_mut()
-        .reserve(request.headers().len_keys());
-    for (name, value) in request.headers() {
-        forwarded.headers_mut().append(name.clone(), value.clone());
+    if let Some(names) = route.and_then(Route::request_headers) {
+        for name in names {
+            for value in request.headers().get_all(name) {
+                forwarded.headers_mut().append(name.clone(), value.clone());
+            }
+        }
+    } else {
+        forwarded
+            .headers_mut()
+            .reserve(request.headers().len_keys());
+        for (name, value) in request.headers() {
+            forwarded.headers_mut().append(name.clone(), value.clone());
+        }
     }
-    if needs_connection_facts {
+    if route.is_none_or(Route::needs_connection_facts) {
         let mut facts = request
             .conn_data::<ConnectionFacts>()
             .cloned()
