@@ -2,6 +2,11 @@ use crate::http::Response;
 use bytes::Bytes;
 use http::{HeaderValue, StatusCode, header};
 use serde::Serialize;
+// Generated JSON uses native SIMD; portable hosts retain the existing encoder.
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+use serde_json::to_vec as encode_json;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use sonic_rs::to_vec as encode_json;
 
 #[derive(Serialize)]
 struct OAuthErrorBody<'a> {
@@ -272,7 +277,7 @@ pub fn json(mut builder: http::response::Builder, value: impl Serialize) -> Resp
             );
         }
     }
-    match serde_json::to_vec(&value) {
+    match encode_json(&value) {
         Ok(body) => finish(builder, body),
         Err(error) => super::request::text_error(
             StatusCode::INTERNAL_SERVER_ERROR,
