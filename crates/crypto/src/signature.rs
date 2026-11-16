@@ -71,11 +71,9 @@ impl PreparedSigningKey {
                 let public = pair.public_key().as_ref();
                 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
                 let public = pair.verifying_key().to_bytes();
-                serde_json::json!({
-                    "kty": "OKP",
-                    "crv": "Ed25519",
-                    "x": URL_SAFE_NO_PAD.encode(public),
-                })
+                let mut jwk = serde_json::json!({"kty": "OKP", "crv": "Ed25519"});
+                jwk["x"] = URL_SAFE_NO_PAD.encode(public).into();
+                jwk
             }
             PreparedKey::Ec(pair) => {
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -83,12 +81,10 @@ impl PreparedSigningKey {
                 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
                 let public = pair.verifying_key().to_sec1_point(false);
                 let point: &[u8] = public.as_ref();
-                serde_json::json!({
-                    "kty": "EC",
-                    "crv": "P-256",
-                    "x": URL_SAFE_NO_PAD.encode(&point[1..33]),
-                    "y": URL_SAFE_NO_PAD.encode(&point[33..]),
-                })
+                let mut jwk = serde_json::json!({"kty": "EC", "crv": "P-256"});
+                jwk["x"] = URL_SAFE_NO_PAD.encode(&point[1..33]).into();
+                jwk["y"] = URL_SAFE_NO_PAD.encode(&point[33..]).into();
+                jwk
             }
             PreparedKey::Rsa(pair) => {
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -105,11 +101,10 @@ impl PreparedSigningKey {
                     use rsa::traits::PublicKeyParts as _;
                     (pair.n_bytes(), pair.e_bytes())
                 };
-                serde_json::json!({
-                    "kty": "RSA",
-                    "n": URL_SAFE_NO_PAD.encode(n),
-                    "e": URL_SAFE_NO_PAD.encode(e),
-                })
+                let mut jwk = serde_json::json!({"kty": "RSA"});
+                jwk["n"] = URL_SAFE_NO_PAD.encode(n).into();
+                jwk["e"] = URL_SAFE_NO_PAD.encode(e).into();
+                jwk
             }
         }
     }
