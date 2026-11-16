@@ -52,7 +52,10 @@ impl MtlsCertificateSource {
 
     /// Installs request-local state without parsing certificates or accepting a peer.
     pub fn prepare_request(self: &Arc<Self>, request: &mut Request) {
-        if self.mode == MtlsCertificateSourceMode::Disabled {
+        if self.mode == MtlsCertificateSourceMode::Disabled
+            || (self.mode == MtlsCertificateSourceMode::Rfc9440
+                && !request.headers().contains_key("client-cert"))
+        {
             return;
         }
         request.extensions_mut().insert(Arc::clone(self));

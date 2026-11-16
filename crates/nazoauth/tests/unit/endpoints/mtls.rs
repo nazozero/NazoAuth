@@ -33,6 +33,52 @@ impl CertificateChainVerifier for Verifier {
 }
 
 #[test]
+fn forwarded_certificate_state_requires_a_leaf_header() {
+    let (_, identity) = certificate();
+    let identity = Arc::new(identity);
+    let verifier = Arc::new(Verifier(AtomicUsize::new(0)));
+    let source = Arc::new(MtlsCertificateSource::new(
+        MtlsCertificateSourceMode::Rfc9440,
+        &[IpCidr::parse("192.0.2.0/24").unwrap()],
+        Some(verifier.clone()),
+    ));
+    for (header, installed) in [
+        (None, false),
+        (Some(("client-cert-chain", ":AA==:")), false),
+        (Some(("client-cert", "")), true),
+    ] {
+        let mut request = request("192.0.2.10:443");
+        request
+            .extensions_mut()
+            .get_mut::<ConnectionFacts>()
+            .unwrap()
+            .client_certificate = Some(identity.clone());
+        if let Some((name, value)) = header {
+            request
+                .headers_mut()
+                .insert(name, HeaderValue::from_static(value));
+        }
+        source.prepare_request(&mut request);
+        assert_eq!(
+            request
+                .extensions()
+                .get::<Arc<MtlsCertificateSource>>()
+                .is_some(),
+            installed,
+        );
+        assert_eq!(
+            request
+                .extensions()
+                .get::<ForwardedClientCertificate>()
+                .is_some(),
+            installed,
+        );
+        assert!(request_mtls_client_certificate(&request).is_none());
+    }
+    assert_eq!(verifier.0.load(Ordering::Relaxed), 0);
+}
+
+#[test]
 fn forwarded_certificate_is_lazy_and_verified_once() {
     let (encoded, identity) = certificate();
     let verifier = Arc::new(Verifier(AtomicUsize::new(0)));
