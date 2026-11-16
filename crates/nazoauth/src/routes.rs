@@ -357,10 +357,12 @@ pub(crate) fn routing_path(path: &str) -> Cow<'_, str> {
             _ => None,
         }
     }
+    let Some(mut cursor) = path.find('%') else {
+        return Cow::Borrowed(path);
+    };
     let input = path.as_bytes();
     let mut output: Option<Vec<u8>> = None;
     let mut copied = 0;
-    let mut cursor = 0;
     while cursor + 2 < input.len() {
         if input[cursor] == b'%'
             && let (Some(high), Some(low)) = (hex(input[cursor + 1]), hex(input[cursor + 2]))

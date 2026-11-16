@@ -270,12 +270,9 @@ pub fn json(mut builder: http::response::Builder, value: impl Serialize) -> Resp
         // Content-Type, the usual two CORS headers and six security defaults
         // should fit before the first insertion, without growing the map later.
         headers.reserve(9usize.saturating_sub(headers.keys_len()));
-        if !headers.contains_key(header::CONTENT_TYPE) {
-            headers.insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("application/json"),
-            );
-        }
+        headers
+            .entry(header::CONTENT_TYPE)
+            .or_insert_with(|| HeaderValue::from_static("application/json"));
     }
     match encode_json(&value) {
         Ok(body) => finish(builder, body),
