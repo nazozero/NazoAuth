@@ -127,108 +127,100 @@ impl NazoAuth {
             );
         }
         let method = extract!(route.resolve_method(request.method()));
-        // Allocate large endpoint state only for requests that use it; metadata
-        // requests must not inherit the largest endpoint's future allocation.
         match method.endpoint {
-            Endpoint::Token => {
-                self.mtls.prepare_request(request);
-                let collect = extract!(http::validate_route_body_head(request, method));
-                Box::pin(async move {
-                    if collect {
-                        *request.body_mut() =
-                            extract!(http::collect_route_body(method, stream).await);
-                    }
-                    crate::endpoints::token::dispatch::token_with_service(
-                        self.core.token_endpoint_handles.as_ref(),
-                        self.identity.client_ip_config.as_ref(),
-                        request,
-                        request.body(),
-                    )
-                    .await
-                })
-                .await
+            Endpoint::Discovery => {
+                return http::discovery(self.core.metadata_handles.as_ref()).await;
             }
-            Endpoint::Discovery => http::discovery(self.core.metadata_handles.as_ref()).await,
             Endpoint::OauthAuthorizationServerMetadata => {
-                http::oauth_authorization_server_metadata(self.core.metadata_handles.as_ref()).await
+                return http::oauth_authorization_server_metadata(
+                    self.core.metadata_handles.as_ref(),
+                )
+                .await;
             }
             Endpoint::OauthProtectedResourceMetadata => {
-                http::oauth_protected_resource_metadata(self.core.metadata_handles.as_ref()).await
+                return http::oauth_protected_resource_metadata(
+                    self.core.metadata_handles.as_ref(),
+                )
+                .await;
             }
-            Endpoint::Jwks => http::jwks(self.core.metadata_handles.as_ref()).await,
-            _ => {
-                self.mtls.prepare_request(request);
-                Box::pin(self.dispatch_endpoint(method, params, request, stream)).await
-            }
+            Endpoint::Jwks => return http::jwks(self.core.metadata_handles.as_ref()).await,
+            _ => {}
         }
-    }
 
-    async fn dispatch_endpoint<S, E>(
-        &self,
-        method: &RouteMethod,
-        params: &matchit::Params<'_, '_>,
-        request: &mut Request,
-        stream: S,
-    ) -> Response
-    where
-        S: futures_util::Stream<Item = Result<Bytes, E>>,
-        E: std::error::Error + Send + Sync + 'static,
-    {
+        self.mtls.prepare_request(request);
         match method.endpoint {
             Endpoint::UploadAvatar => {
-                return crate::endpoints::profile::avatar::upload_avatar(
+                return Box::pin(crate::endpoints::profile::avatar::upload_avatar(
                     &self.identity.session_profiles,
                     &self.identity.avatar_profiles,
                     request,
                     stream,
-                )
+                ))
                 .await;
             }
             Endpoint::BackchannelAuthentication => {
-                return crate::endpoints::token::ciba::backchannel_authentication(
+                return Box::pin(crate::endpoints::token::ciba::backchannel_authentication(
                     &self.core.ciba_application,
                     &self.identity.client_ip_config,
                     request,
                     http::collect_route_body(method, stream),
-                )
+                ))
                 .await;
             }
             Endpoint::DynamicClientRegistration => {
-                return http::dynamic_client_registration(
+                return Box::pin(http::dynamic_client_registration(
                     &self.core.dynamic_registration_handles,
                     request,
                     http::collect_route_body(method, stream),
-                )
+                ))
                 .await;
             }
             Endpoint::ClientConfigurationPut => {
-                return http::client_configuration_put(
+                return Box::pin(http::client_configuration_put(
                     &self.core.dynamic_registration_handles,
                     request,
                     extract!(http::parse_path(
                         params.get("client_id").expect("manifest capture")
                     )),
                     http::collect_route_body(method, stream),
-                )
+                ))
                 .await;
             }
             Endpoint::OidcLogout => {
-                return http::oidc_logout(
+                return Box::pin(http::oidc_logout(
                     &self.identity.oidc_logout,
                     request,
                     http::collect_route_body(method, stream),
-                )
+                ))
                 .await;
             }
-            _ => {
-                if extract!(http::validate_route_body_head(request, method)) {
-                    *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
-                }
-            }
+            _ => {}
         }
+        if extract!(http::validate_route_body_head(request, method)) {
+            *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
+        }
+        self.dispatch_endpoint(method, params, request).await
+    }
 
+    // Each selected endpoint owns its own async state. A request does not reserve
+    // space for unrelated handlers, and body decoding stays at the transport boundary.
+    fn dispatch_endpoint<'a>(
+        &'a self,
+        method: &RouteMethod,
+        params: &'a matchit::Params<'_, '_>,
+        request: &'a Request,
+    ) -> futures_util::future::LocalBoxFuture<'a, Response> {
         match method.endpoint {
-            Endpoint::MdocCrl => {
+            Endpoint::Token => Box::pin(async move {
+                crate::endpoints::token::dispatch::token_with_service(
+                    self.core.token_endpoint_handles.as_ref(),
+                    self.identity.client_ip_config.as_ref(),
+                    request,
+                    request.body(),
+                )
+                .await
+            }),
+            Endpoint::MdocCrl => Box::pin(async move {
                 crate::well_known::mdoc_crl(
                     self.mdoc_crls.as_deref(),
                     &extract!(http::parse_path::<String>(
@@ -236,37 +228,37 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::CredentialIssuerMetadata => {
+            }),
+            Endpoint::CredentialIssuerMetadata => Box::pin(async move {
                 crate::openid4vc::credential_issuer_metadata(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     request,
                 )
                 .await
-            }
-            Endpoint::ControlDiscovery => {
+            }),
+            Endpoint::ControlDiscovery => Box::pin(async move {
                 crate::control_discovery::control_discovery(
                     &require!(self.deployment.as_ref()).capabilities.identity,
                     extract!(http::parse_json_limit(request, 2048)),
                 )
                 .await
-            }
-            Endpoint::AdminRuntimeModules => {
+            }),
+            Endpoint::AdminRuntimeModules => Box::pin(async move {
                 http::admin_runtime_modules(
                     self.identity.runtime_module_admin_endpoint.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::AdminRuntimeModuleEvents => {
+            }),
+            Endpoint::AdminRuntimeModuleEvents => Box::pin(async move {
                 http::admin_runtime_module_events(
                     self.identity.runtime_module_admin_endpoint.as_ref(),
                     request,
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminPatchRuntimeModule => {
+            }),
+            Endpoint::AdminPatchRuntimeModule => Box::pin(async move {
                 http::admin_patch_runtime_module(
                     self.identity.runtime_module_admin_endpoint.as_ref(),
                     request,
@@ -276,8 +268,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminControllerSlotCommit => {
+            }),
+            Endpoint::AdminControllerSlotCommit => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_slot_commit(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -287,8 +279,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::AdminControllerSlotRotate => {
+            }),
+            Endpoint::AdminControllerSlotRotate => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_slot_rotate(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -298,8 +290,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::AdminControllerSlotRevoke => {
+            }),
+            Endpoint::AdminControllerSlotRevoke => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_slot_revoke(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -309,8 +301,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::AdminControllerApproval => {
+            }),
+            Endpoint::AdminControllerApproval => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::admin_controller_approval(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -320,8 +312,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::AdminRecoveryRoot => {
+            }),
+            Endpoint::AdminRecoveryRoot => Box::pin(async move {
                 crate::endpoints::admin::recovery_root::admin_recovery_root(
                     self.identity.admin_sessions.as_ref(),
                     &require!(self.deployment.as_ref()).recovery_root,
@@ -329,8 +321,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminRecoveryRootApproval => {
+            }),
+            Endpoint::AdminRecoveryRootApproval => Box::pin(async move {
                 crate::endpoints::admin::recovery_root::admin_recovery_root_approval(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -340,8 +332,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::AdminRecoveryRootRotate => {
+            }),
+            Endpoint::AdminRecoveryRootRotate => Box::pin(async move {
                 crate::endpoints::admin::recovery_root::admin_recovery_root_rotate(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -351,57 +343,59 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
+            }),
+            Endpoint::Ready => {
+                Box::pin(async move { crate::well_known::ready(&self.readiness).await })
             }
-            Endpoint::Ready => crate::well_known::ready(&self.readiness).await,
-            Endpoint::Live => crate::well_known::live().await,
-            Endpoint::Startup => crate::well_known::startup().await,
-            Endpoint::AuthorizeGet => {
+            Endpoint::Live => Box::pin(async move { crate::well_known::live().await }),
+            Endpoint::Startup => Box::pin(async move { crate::well_known::startup().await }),
+            Endpoint::AuthorizeGet => Box::pin(async move {
                 crate::endpoints::authorization::request::authorize_get(
                     self.identity.authorization_endpoint.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::AuthorizePost => {
+            }),
+            Endpoint::AuthorizePost => Box::pin(async move {
                 crate::endpoints::authorization::request::authorize_post(
                     self.identity.authorization_endpoint.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::AuthorizeClientPresentation => {
+            }),
+            Endpoint::AuthorizeClientPresentation => Box::pin(async move {
                 crate::endpoints::authorization::presentation::authorize_client_presentation(
                     self.identity.authorization_endpoint.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::AuthorizeConsent => {
+            }),
+            Endpoint::AuthorizeConsent => Box::pin(async move {
                 crate::endpoints::authorization::consent::authorize_consent(
                     self.identity.authorization_endpoint.as_ref(),
                     request,
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AuthorizeDecision => {
+            }),
+            Endpoint::AuthorizeDecision => Box::pin(async move {
                 http::authorize_decision(
                     self.identity.authorization_decision_endpoint.as_ref(),
                     request,
                     extract!(http::parse_form(request)),
                 )
                 .await
-            }
-            Endpoint::Par => {
+            }),
+            Endpoint::Par => Box::pin(async move {
                 crate::endpoints::authorization::par::par(
                     self.identity.authorization_endpoint.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::CibaVerificationPage => {
+            }),
+            Endpoint::CibaVerificationPage => Box::pin(async move {
                 crate::endpoints::token::ciba::ciba_verification_page(
                     self.core.ciba_application.as_ref(),
                     extract!(http::parse_path(
@@ -409,8 +403,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::DeviceAuthorization => {
+            }),
+            Endpoint::DeviceAuthorization => Box::pin(async move {
                 crate::endpoints::token::device::device_authorization(
                     self.identity.device_decision_handles.as_ref(),
                     self.core.device_config.as_ref(),
@@ -418,16 +412,16 @@ impl NazoAuth {
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::DeviceVerificationPage => {
+            }),
+            Endpoint::DeviceVerificationPage => Box::pin(async move {
                 crate::endpoints::token::device::device_verification_page(
                     self.identity.device_decision_handles.as_ref(),
                     self.core.device_config.as_ref(),
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::DeviceVerification => {
+            }),
+            Endpoint::DeviceVerification => Box::pin(async move {
                 crate::endpoints::token::device::device_verification(
                     self.identity.device_decision_handles.as_ref(),
                     self.identity.session_profiles.as_ref(),
@@ -435,8 +429,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::DeviceDecision => {
+            }),
+            Endpoint::DeviceDecision => Box::pin(async move {
                 crate::endpoints::token::device::device_decision(
                     self.identity.device_decision_handles.as_ref(),
                     self.identity.session_profiles.as_ref(),
@@ -445,79 +439,79 @@ impl NazoAuth {
                     extract!(http::parse_form(request)),
                 )
                 .await
-            }
-            Endpoint::CheckSessionIframe => {
+            }),
+            Endpoint::CheckSessionIframe => Box::pin(async move {
                 http::check_session_iframe(self.identity.session_management_endpoint.as_ref()).await
-            }
-            Endpoint::CheckSessionStatus => {
+            }),
+            Endpoint::CheckSessionStatus => Box::pin(async move {
                 http::check_session_status(
                     self.identity.session_management_endpoint.as_ref(),
                     request,
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::Revoke => {
+            }),
+            Endpoint::Revoke => Box::pin(async move {
                 http::revoke(
                     self.core.token_management_endpoint.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::Introspect => {
+            }),
+            Endpoint::Introspect => Box::pin(async move {
                 http::introspect(
                     self.core.token_management_endpoint.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::FapiResource => {
+            }),
+            Endpoint::FapiResource => Box::pin(async move {
                 http::fapi_resource(
                     self.core.resource_server_http_data.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::Userinfo => {
+            }),
+            Endpoint::Userinfo => Box::pin(async move {
                 http::userinfo(
                     self.core.userinfo_endpoint.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::ScimServiceProviderConfig => {
+            }),
+            Endpoint::ScimServiceProviderConfig => Box::pin(async move {
                 http::scim_service_provider_config(self.core.scim_endpoint.as_ref(), request).await
-            }
-            Endpoint::ScimSchemas => {
+            }),
+            Endpoint::ScimSchemas => Box::pin(async move {
                 http::scim_schemas(self.core.scim_endpoint.as_ref(), request).await
-            }
-            Endpoint::ScimResourceTypes => {
+            }),
+            Endpoint::ScimResourceTypes => Box::pin(async move {
                 http::scim_resource_types(self.core.scim_endpoint.as_ref(), request).await
-            }
-            Endpoint::ScimPollSecurityEvents => {
+            }),
+            Endpoint::ScimPollSecurityEvents => Box::pin(async move {
                 http::scim_poll_security_events(
                     self.core.scim_endpoint.as_ref(),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::ScimListUsers => {
+            }),
+            Endpoint::ScimListUsers => Box::pin(async move {
                 http::scim_list_users(self.core.scim_endpoint.as_ref(), request).await
-            }
-            Endpoint::ScimCreateUser => {
+            }),
+            Endpoint::ScimCreateUser => Box::pin(async move {
                 http::scim_create_user(
                     self.core.scim_endpoint.as_ref(),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::ScimGetUser => {
+            }),
+            Endpoint::ScimGetUser => Box::pin(async move {
                 http::scim_get_user(
                     self.core.scim_endpoint.as_ref(),
                     request,
@@ -526,8 +520,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::ScimReplaceUser => {
+            }),
+            Endpoint::ScimReplaceUser => Box::pin(async move {
                 http::scim_replace_user(
                     self.core.scim_endpoint.as_ref(),
                     request,
@@ -537,8 +531,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::ScimPatchUser => {
+            }),
+            Endpoint::ScimPatchUser => Box::pin(async move {
                 http::scim_patch_user(
                     self.core.scim_endpoint.as_ref(),
                     request,
@@ -548,8 +542,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::ScimDeleteUser => {
+            }),
+            Endpoint::ScimDeleteUser => Box::pin(async move {
                 http::scim_delete_user(
                     self.core.scim_endpoint.as_ref(),
                     request,
@@ -558,38 +552,38 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::SendCode => {
+            }),
+            Endpoint::SendCode => Box::pin(async move {
                 http::send_code(
                     self.identity.local_registration_endpoint.as_ref(),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::Register => {
+            }),
+            Endpoint::Register => Box::pin(async move {
                 http::register(
                     self.identity.local_registration_endpoint.as_ref(),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::Login => {
+            }),
+            Endpoint::Login => Box::pin(async move {
                 http::login(
                     self.identity.password_login_endpoint.as_ref(),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::FederationProviderList => {
+            }),
+            Endpoint::FederationProviderList => Box::pin(async move {
                 crate::endpoints::auth::federation::federation_provider_list(
                     self.identity.federation_http_config.as_ref(),
                 )
                 .await
-            }
-            Endpoint::FederationSamlAcs => {
+            }),
+            Endpoint::FederationSamlAcs => Box::pin(async move {
                 crate::endpoints::auth::federation::federation_saml_acs(
                     self.identity.auth_request_limiter.as_ref(),
                     self.identity.client_ip_config.as_ref(),
@@ -599,8 +593,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::FederationProviderStart => {
+            }),
+            Endpoint::FederationProviderStart => Box::pin(async move {
                 crate::endpoints::auth::federation::federation_provider_start(
                     self.identity.auth_request_limiter.as_ref(),
                     self.identity.client_ip_config.as_ref(),
@@ -612,8 +606,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::FederationProviderCallback => {
+            }),
+            Endpoint::FederationProviderCallback => Box::pin(async move {
                 crate::endpoints::auth::federation::federation_provider_callback(
                     self.identity.auth_request_limiter.as_ref(),
                     self.identity.client_ip_config.as_ref(),
@@ -626,71 +620,71 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::PasskeyLoginBegin => {
+            }),
+            Endpoint::PasskeyLoginBegin => Box::pin(async move {
                 http::passkey_login_begin(
                     self.identity.passkey_login_endpoint.as_ref(),
                     request,
                     http::parse_json(request).map_err(|_| ()),
                 )
                 .await
-            }
-            Endpoint::PasskeyLoginFinish => {
+            }),
+            Endpoint::PasskeyLoginFinish => Box::pin(async move {
                 http::passkey_login_finish(
                     self.identity.passkey_login_endpoint.as_ref(),
                     request,
                     http::parse_json(request).map_err(|_| ()),
                 )
                 .await
-            }
-            Endpoint::MfaVerify => {
+            }),
+            Endpoint::MfaVerify => Box::pin(async move {
                 http::mfa_verify(
                     self.identity.mfa_profiles.as_ref(),
                     request,
                     extract!(http::parse_mfa_json(request)),
                 )
                 .await
-            }
-            Endpoint::MfaOptions => http::mfa_options().await,
-            Endpoint::Csrf => {
+            }),
+            Endpoint::MfaOptions => Box::pin(async move { http::mfa_options().await }),
+            Endpoint::Csrf => Box::pin(async move {
                 crate::endpoints::auth::csrf::csrf(
                     self.identity.session_profiles.as_ref(),
                     self.identity.csrf_http_config.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::ProfileMe => {
+            }),
+            Endpoint::ProfileMe => Box::pin(async move {
                 http::profile_me(self.identity.profile_account_endpoint.as_ref(), request).await
-            }
-            Endpoint::ProfileUpdate => {
+            }),
+            Endpoint::ProfileUpdate => Box::pin(async move {
                 http::profile_update(
                     self.identity.profile_account_endpoint.as_ref(),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::PasskeyList => {
+            }),
+            Endpoint::PasskeyList => Box::pin(async move {
                 http::passkey_list(self.identity.passkey_profile_endpoint.as_ref(), request).await
-            }
-            Endpoint::PasskeyRegistrationBegin => {
+            }),
+            Endpoint::PasskeyRegistrationBegin => Box::pin(async move {
                 http::passkey_registration_begin(
                     self.identity.passkey_profile_endpoint.as_ref(),
                     request,
                     http::parse_json(request).map_err(|_| ()),
                 )
                 .await
-            }
-            Endpoint::PasskeyRegistrationFinish => {
+            }),
+            Endpoint::PasskeyRegistrationFinish => Box::pin(async move {
                 http::passkey_registration_finish(
                     self.identity.passkey_profile_endpoint.as_ref(),
                     request,
                     http::parse_json(request).map_err(|_| ()),
                 )
                 .await
-            }
-            Endpoint::PasskeyDelete => {
+            }),
+            Endpoint::PasskeyDelete => Box::pin(async move {
                 http::passkey_delete(
                     self.identity.passkey_profile_endpoint.as_ref(),
                     request,
@@ -699,67 +693,67 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::MfaTotpBegin => {
+            }),
+            Endpoint::MfaTotpBegin => Box::pin(async move {
                 http::mfa_totp_begin(self.identity.mfa_profiles.as_ref(), request).await
-            }
-            Endpoint::MfaTotpConfirm => {
+            }),
+            Endpoint::MfaTotpConfirm => Box::pin(async move {
                 http::mfa_totp_confirm(
                     self.identity.mfa_profiles.as_ref(),
                     request,
                     extract!(http::parse_mfa_json(request)),
                 )
                 .await
-            }
-            Endpoint::MfaStepUp => {
+            }),
+            Endpoint::MfaStepUp => Box::pin(async move {
                 http::mfa_step_up(
                     self.identity.mfa_profiles.as_ref(),
                     request,
                     extract!(http::parse_mfa_json(request)),
                 )
                 .await
-            }
-            Endpoint::MfaBackupCodesRegenerate => {
+            }),
+            Endpoint::MfaBackupCodesRegenerate => Box::pin(async move {
                 http::mfa_backup_codes_regenerate(
                     self.identity.mfa_profiles.as_ref(),
                     request,
                     extract!(http::parse_mfa_json(request)),
                 )
                 .await
-            }
-            Endpoint::MfaDisable => {
+            }),
+            Endpoint::MfaDisable => Box::pin(async move {
                 http::mfa_disable(
                     self.identity.mfa_profiles.as_ref(),
                     request,
                     extract!(http::parse_mfa_json(request)),
                 )
                 .await
-            }
-            Endpoint::GetAvatar => {
+            }),
+            Endpoint::GetAvatar => Box::pin(async move {
                 crate::endpoints::profile::avatar::get_avatar(
                     self.identity.session_profiles.as_ref(),
                     self.identity.avatar_profiles.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::DeleteAvatar => {
+            }),
+            Endpoint::DeleteAvatar => Box::pin(async move {
                 crate::endpoints::profile::avatar::delete_avatar(
                     self.identity.session_profiles.as_ref(),
                     self.identity.avatar_profiles.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::AvatarUploadCapability => {
+            }),
+            Endpoint::AvatarUploadCapability => Box::pin(async move {
                 crate::endpoints::profile::avatar::avatar_upload_capability(
                     self.identity.session_profiles.as_ref(),
                     self.identity.avatar_profiles.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::BeginDirectAvatarUpload => {
+            }),
+            Endpoint::BeginDirectAvatarUpload => Box::pin(async move {
                 crate::endpoints::profile::avatar::begin_direct_avatar_upload(
                     self.identity.session_profiles.as_ref(),
                     self.identity.avatar_profiles.as_ref(),
@@ -767,8 +761,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::CompleteDirectAvatarUpload => {
+            }),
+            Endpoint::CompleteDirectAvatarUpload => Box::pin(async move {
                 crate::endpoints::profile::avatar::complete_direct_avatar_upload(
                     self.identity.session_profiles.as_ref(),
                     self.identity.avatar_profiles.as_ref(),
@@ -778,20 +772,20 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::ProfileApplications => {
+            }),
+            Endpoint::ProfileApplications => Box::pin(async move {
                 http::profile_applications(self.identity.profile_account_endpoint.as_ref(), request)
                     .await
-            }
-            Endpoint::MyFederationLinks => {
+            }),
+            Endpoint::MyFederationLinks => Box::pin(async move {
                 crate::endpoints::profile::federation_links::my_federation_links(
                     self.identity.session_profiles.as_ref(),
                     self.identity.profile_federation.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::UnlinkMyFederationLink => {
+            }),
+            Endpoint::UnlinkMyFederationLink => Box::pin(async move {
                 crate::endpoints::profile::federation_links::unlink_my_federation_link(
                     self.identity.session_profiles.as_ref(),
                     self.identity.profile_federation.as_ref(),
@@ -801,16 +795,16 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::MyAccessRequests => {
+            }),
+            Endpoint::MyAccessRequests => Box::pin(async move {
                 crate::endpoints::profile::access_requests::my_access_requests(
                     self.identity.session_profiles.as_ref(),
                     self.identity.profile_access_requests.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::CreateAccessRequest => {
+            }),
+            Endpoint::CreateAccessRequest => Box::pin(async move {
                 crate::endpoints::profile::access_requests::create_access_request(
                     self.identity.session_profiles.as_ref(),
                     self.identity.profile_access_requests.as_ref(),
@@ -818,16 +812,16 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::MyMtlsTrustRequests => {
+            }),
+            Endpoint::MyMtlsTrustRequests => Box::pin(async move {
                 crate::endpoints::profile::mtls_trust::my_mtls_trust_requests(
                     self.identity.session_profiles.as_ref(),
                     self.identity.mtls_trust_anchors.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::CreateMtlsTrustRequest => {
+            }),
+            Endpoint::CreateMtlsTrustRequest => Box::pin(async move {
                 crate::endpoints::profile::mtls_trust::create_mtls_trust_request(
                     self.identity.session_profiles.as_ref(),
                     self.identity.mtls_trust_anchors.as_ref(),
@@ -835,8 +829,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AccessDelivery => {
+            }),
+            Endpoint::AccessDelivery => Box::pin(async move {
                 crate::endpoints::profile::delivery::access_delivery(
                     self.identity.session_profiles.as_ref(),
                     self.identity.profile_access_requests.as_ref(),
@@ -844,8 +838,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::CibaVerification => {
+            }),
+            Endpoint::CibaVerification => Box::pin(async move {
                 crate::endpoints::token::ciba::ciba_verification(
                     self.core.ciba_application.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -855,8 +849,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::CibaDecision => {
+            }),
+            Endpoint::CibaDecision => Box::pin(async move {
                 crate::endpoints::token::ciba::ciba_decision(
                     self.core.ciba_application.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -868,18 +862,18 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::ProfileLogout => {
+            }),
+            Endpoint::ProfileLogout => Box::pin(async move {
                 http::profile_logout(self.identity.profile_logout_endpoint.as_ref(), request).await
-            }
-            Endpoint::ControllerSlots => {
+            }),
+            Endpoint::ControllerSlots => Box::pin(async move {
                 crate::endpoints::admin::controller_registry::controller_slots(
                     &require!(self.deployment.as_ref()).controller_registry,
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminUsers => {
+            }),
+            Endpoint::AdminUsers => Box::pin(async move {
                 crate::endpoints::admin::users::admin_users(
                     self.identity.admin_sessions.as_ref(),
                     self.identity.admin_users.as_ref(),
@@ -887,8 +881,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminCreateUser => {
+            }),
+            Endpoint::AdminCreateUser => Box::pin(async move {
                 crate::endpoints::admin::users::admin_create_user(
                     self.core.security_audit.as_ref(),
                     self.password_hasher.as_ref(),
@@ -899,8 +893,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminPatchUser => {
+            }),
+            Endpoint::AdminPatchUser => Box::pin(async move {
                 crate::endpoints::admin::users::admin_patch_user(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -913,8 +907,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::SystemSetTenantAdmin => {
+            }),
+            Endpoint::SystemSetTenantAdmin => Box::pin(async move {
                 crate::endpoints::admin::users::system_set_tenant_admin(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -939,8 +933,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminClients => {
+            }),
+            Endpoint::AdminClients => Box::pin(async move {
                 crate::endpoints::admin::clients::list::admin_clients(
                     self.identity.admin_sessions.as_ref(),
                     self.core.admin_client_service.as_ref(),
@@ -948,8 +942,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminCreateClient => {
+            }),
+            Endpoint::AdminCreateClient => Box::pin(async move {
                 crate::endpoints::admin::clients::create::admin_create_client(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -959,15 +953,15 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminClientTemplates => {
+            }),
+            Endpoint::AdminClientTemplates => Box::pin(async move {
                 crate::endpoints::admin::clients::templates::admin_client_templates(
                     self.identity.admin_sessions.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::AdminGetClient => {
+            }),
+            Endpoint::AdminGetClient => Box::pin(async move {
                 crate::endpoints::admin::clients::detail::admin_get_client(
                     self.identity.admin_sessions.as_ref(),
                     self.core.admin_client_service.as_ref(),
@@ -977,8 +971,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::AdminPatchClient => {
+            }),
+            Endpoint::AdminPatchClient => Box::pin(async move {
                 crate::endpoints::admin::clients::update::admin_patch_client(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -991,16 +985,16 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminFederationProviders => {
+            }),
+            Endpoint::AdminFederationProviders => Box::pin(async move {
                 crate::endpoints::admin::federation::admin_federation_providers(
                     self.identity.admin_sessions.as_ref(),
                     self.identity.admin_federation.as_ref(),
                     request,
                 )
                 .await
-            }
-            Endpoint::AdminGrants => {
+            }),
+            Endpoint::AdminGrants => Box::pin(async move {
                 crate::endpoints::admin::grants::admin_grants(
                     self.identity.admin_sessions.as_ref(),
                     self.identity.admin_grants.as_ref(),
@@ -1008,8 +1002,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminRevokeGrant => {
+            }),
+            Endpoint::AdminRevokeGrant => Box::pin(async move {
                 crate::endpoints::admin::grants::admin_revoke_grant(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1018,8 +1012,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminAccessRequests => {
+            }),
+            Endpoint::AdminAccessRequests => Box::pin(async move {
                 crate::endpoints::admin::access_requests::admin_access_requests(
                     self.identity.admin_sessions.as_ref(),
                     self.identity.admin_access_requests.as_ref(),
@@ -1027,8 +1021,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminMtlsTrustRequests => {
+            }),
+            Endpoint::AdminMtlsTrustRequests => Box::pin(async move {
                 crate::endpoints::admin::mtls_trust::admin_mtls_trust_requests(
                     self.identity.admin_sessions.as_ref(),
                     self.identity.mtls_trust_anchors.as_ref(),
@@ -1036,8 +1030,8 @@ impl NazoAuth {
                     extract!(http::parse_query(request)),
                 )
                 .await
-            }
-            Endpoint::AdminMtlsTrustBundle => {
+            }),
+            Endpoint::AdminMtlsTrustBundle => Box::pin(async move {
                 crate::endpoints::admin::mtls_trust::admin_mtls_trust_bundle(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1045,8 +1039,8 @@ impl NazoAuth {
                     request,
                 )
                 .await
-            }
-            Endpoint::AdminApproveMtlsTrustRequest => {
+            }),
+            Endpoint::AdminApproveMtlsTrustRequest => Box::pin(async move {
                 crate::endpoints::admin::mtls_trust::admin_approve_mtls_trust_request(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1058,8 +1052,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminRejectMtlsTrustRequest => {
+            }),
+            Endpoint::AdminRejectMtlsTrustRequest => Box::pin(async move {
                 crate::endpoints::admin::mtls_trust::admin_reject_mtls_trust_request(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1071,8 +1065,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminRevokeMtlsTrustAnchor => {
+            }),
+            Endpoint::AdminRevokeMtlsTrustAnchor => Box::pin(async move {
                 crate::endpoints::admin::mtls_trust::admin_revoke_mtls_trust_anchor(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1084,8 +1078,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminApproveAccessRequest => {
+            }),
+            Endpoint::AdminApproveAccessRequest => Box::pin(async move {
                 crate::endpoints::admin::access_requests::admin_approve_access_request(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1103,8 +1097,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminRejectAccessRequest => {
+            }),
+            Endpoint::AdminRejectAccessRequest => Box::pin(async move {
                 crate::endpoints::admin::access_requests::admin_reject_access_request(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1116,8 +1110,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminGetCredentialDataset => {
+            }),
+            Endpoint::AdminGetCredentialDataset => Box::pin(async move {
                 crate::endpoints::admin::openid4vc::admin_get_credential_dataset(
                     self.identity.admin_sessions.as_ref(),
                     require!(self.core.credential_dataset_admin.as_deref()),
@@ -1132,8 +1126,8 @@ impl NazoAuth {
                     ),
                 )
                 .await
-            }
-            Endpoint::AdminPutCredentialDataset => {
+            }),
+            Endpoint::AdminPutCredentialDataset => Box::pin(async move {
                 crate::endpoints::admin::openid4vc::admin_put_credential_dataset(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1150,8 +1144,8 @@ impl NazoAuth {
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::AdminDeleteCredentialDataset => {
+            }),
+            Endpoint::AdminDeleteCredentialDataset => Box::pin(async move {
                 crate::endpoints::admin::openid4vc::admin_delete_credential_dataset(
                     self.core.security_audit.as_ref(),
                     self.identity.admin_sessions.as_ref(),
@@ -1167,22 +1161,22 @@ impl NazoAuth {
                     ),
                 )
                 .await
-            }
-            Endpoint::ControllerRecoveryChallenge => {
+            }),
+            Endpoint::ControllerRecoveryChallenge => Box::pin(async move {
                 crate::endpoints::admin::controller_recovery::controller_recovery_challenge(
                     &require!(self.deployment.as_ref()).recovery_root,
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::ControllerRecoveryCommit => {
+            }),
+            Endpoint::ControllerRecoveryCommit => Box::pin(async move {
                 crate::endpoints::admin::controller_recovery::controller_recovery_commit(
                     &require!(self.deployment.as_ref()).recovery_root,
                     extract!(http::parse_json_limit(request, 8192)),
                 )
                 .await
-            }
-            Endpoint::ClientConfigurationGet => {
+            }),
+            Endpoint::ClientConfigurationGet => Box::pin(async move {
                 http::client_configuration_get(
                     self.core.dynamic_registration_handles.as_ref(),
                     request,
@@ -1191,8 +1185,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::ClientConfigurationDelete => {
+            }),
+            Endpoint::ClientConfigurationDelete => Box::pin(async move {
                 http::client_configuration_delete(
                     self.core.dynamic_registration_handles.as_ref(),
                     request,
@@ -1201,16 +1195,16 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::CreateCredentialOffer => {
+            }),
+            Endpoint::CreateCredentialOffer => Box::pin(async move {
                 crate::openid4vc::create_credential_offer(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::CredentialOffer => {
+            }),
+            Endpoint::CredentialOffer => Box::pin(async move {
                 crate::openid4vc::credential_offer(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     extract!(http::parse_path(
@@ -1218,39 +1212,39 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::CredentialNonce => {
+            }),
+            Endpoint::CredentialNonce => Box::pin(async move {
                 crate::openid4vc::credential_nonce(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     request,
                 )
                 .await
-            }
-            Endpoint::Credential => {
+            }),
+            Endpoint::Credential => Box::pin(async move {
                 crate::openid4vc::credential(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::DeferredCredential => {
+            }),
+            Endpoint::DeferredCredential => Box::pin(async move {
                 crate::openid4vc::deferred_credential(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     request,
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::Notification => {
+            }),
+            Endpoint::Notification => Box::pin(async move {
                 crate::openid4vc::notification(
                     require!(self.core.credential_issuer_endpoint.as_deref()),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::PresentationComplete => {
+            }),
+            Endpoint::PresentationComplete => Box::pin(async move {
                 crate::openid4vc::presentation_complete(
                     require!(self.core.presentation_endpoint.as_deref()),
                     extract!(http::parse_path(
@@ -1258,16 +1252,16 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::CreatePresentation => {
+            }),
+            Endpoint::CreatePresentation => Box::pin(async move {
                 crate::openid4vc::create_presentation(
                     require!(self.core.presentation_endpoint.as_deref()),
                     request,
                     extract!(http::parse_json_limit(request, 2097152)),
                 )
                 .await
-            }
-            Endpoint::PresentationRequest => {
+            }),
+            Endpoint::PresentationRequest => Box::pin(async move {
                 crate::openid4vc::presentation_request(
                     require!(self.core.presentation_endpoint.as_deref()),
                     extract!(http::parse_path(
@@ -1276,8 +1270,8 @@ impl NazoAuth {
                     http::parse_form(request).ok(),
                 )
                 .await
-            }
-            Endpoint::PresentationResponse => {
+            }),
+            Endpoint::PresentationResponse => Box::pin(async move {
                 crate::openid4vc::presentation_response(
                     require!(self.core.presentation_endpoint.as_deref()),
                     extract!(http::parse_path(
@@ -1287,8 +1281,8 @@ impl NazoAuth {
                     request.body(),
                 )
                 .await
-            }
-            Endpoint::PresentationResult => {
+            }),
+            Endpoint::PresentationResult => Box::pin(async move {
                 crate::openid4vc::presentation_result(
                     require!(self.core.presentation_endpoint.as_deref()),
                     request,
@@ -1297,9 +1291,8 @@ impl NazoAuth {
                     )),
                 )
                 .await
-            }
-            Endpoint::Token
-            | Endpoint::Discovery
+            }),
+            Endpoint::Discovery
             | Endpoint::OauthAuthorizationServerMetadata
             | Endpoint::OauthProtectedResourceMetadata
             | Endpoint::Jwks
@@ -1307,7 +1300,11 @@ impl NazoAuth {
             | Endpoint::DynamicClientRegistration
             | Endpoint::ClientConfigurationPut
             | Endpoint::BackchannelAuthentication
-            | Endpoint::OidcLogout => unreachable!("endpoint dispatched before buffered fallback"),
+            | Endpoint::OidcLogout => {
+                Box::pin(
+                    async move { unreachable!("endpoint dispatched before buffered fallback") },
+                )
+            }
         }
     }
 }

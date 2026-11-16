@@ -3,60 +3,6 @@ use http::{StatusCode, header};
 use super::*;
 
 #[test]
-fn generated_json_preserves_wire_bytes_and_serialization_errors() {
-    fn assert_encoded(value: impl Serialize) {
-        let expected = serde_json::to_vec(&value).unwrap();
-        let response = json_response(value);
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
-        assert_eq!(response.body().as_ref(), expected);
-    }
-
-    assert_encoded((0u8..=127).map(char::from).collect::<String>());
-    assert_encoded("é中🦀\u{2028}\u{2029}\"\\/\0\r\n\t");
-    assert_encoded(u128::MAX);
-    assert_encoded(i128::MIN);
-    for value in [0.1f32, -0.0, f32::MIN_POSITIVE, f32::MAX] {
-        assert_encoded(value);
-    }
-    for value in [
-        f64::NAN,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        -0.0,
-        0.0,
-        1.0,
-        f64::MIN_POSITIVE,
-        f64::MAX,
-        1.2345678901234567,
-        1e-7,
-        1e20,
-    ] {
-        assert_encoded(value);
-    }
-    assert_encoded(serde_json::json!({
-        "sub": "issuer|用户",
-        "exp": 1_900_000_000i64,
-        "optional": null,
-        "keys": [{"kty": "RSA", "n": "A_b-CdEfGhIjKlMnOpQrStUvWxYz0123456789".repeat(10), "e": "AQAB"}],
-        "nested": [true, {"a": 1, "z": [0.25, 2]}],
-    }));
-
-    struct Invalid;
-    impl Serialize for Invalid {
-        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
-            Err(serde::ser::Error::custom("invalid response value"))
-        }
-    }
-    let response = json_response(Invalid);
-    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(
-        response.body(),
-        "Json serialize error: invalid response value"
-    );
-}
-
-#[test]
 fn invalid_client_challenges_only_http_basic() {
     use nazo_oauth_server::contracts::oauth_error::OAuthEndpointError;
 

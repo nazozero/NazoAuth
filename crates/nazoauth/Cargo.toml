@@ -56,9 +56,6 @@ zeroize.workspace = true
 nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509"] }
 serde = { workspace = true, features = ["derive"] }
 
-[target.'cfg(any(target_arch = "x86_64", target_arch = "aarch64"))'.dependencies]
-sonic-rs.workspace = true
-
 [dev-dependencies]
 nazo-key-management = { workspace = true, features = ["test-support"] }
 rcgen.workspace = true

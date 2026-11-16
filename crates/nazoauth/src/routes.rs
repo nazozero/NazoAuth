@@ -42,7 +42,7 @@ impl BodyMode {
 
 /// Conditions applied before method dispatch or consuming a request body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RouteGuard {
+pub(crate) enum RouteGuard {
     None,
     ControlTenant,
     Openid4vci,
@@ -196,8 +196,8 @@ pub struct RouteMethod {
 pub struct Route {
     pub path: &'static str,
     pub methods: &'static [RouteMethod],
-    pub cors: CorsPolicy,
-    pub guard: RouteGuard,
+    pub(crate) cors: CorsPolicy,
+    pub(crate) guard: RouteGuard,
     allowed_methods: &'static str,
     needs_connection_facts: bool,
     request_headers: Option<&'static [HeaderName]>,
@@ -249,7 +249,7 @@ impl Route {
         }
     }
 
-    pub fn resolve_method(&self, method: &Method) -> Result<&'static RouteMethod, Response> {
+    pub(crate) fn resolve_method(&self, method: &Method) -> Result<&'static RouteMethod, Response> {
         if let Some(found) = self.methods.iter().find(|entry| entry.method == *method) {
             return Ok(found);
         }

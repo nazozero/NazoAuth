@@ -4,12 +4,11 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-pub use crate::http::CorsPolicy;
 use crate::http::apply_security_headers;
-pub use crate::routes::{
-    BodyMode, Endpoint, Route, RouteGuard, RouteMethod, route_for_path, routes,
+pub use crate::routes::{BodyMode, Endpoint, Route, RouteMethod, route_for_path, routes};
+pub(crate) use crate::routes::{
+    RouteGuard, guard_precedes_cors, match_path, routing_path, unmatched_policy,
 };
-pub(crate) use crate::routes::{guard_precedes_cors, match_path, routing_path, unmatched_policy};
 pub use nazo_oauth_server::contracts::token_client_auth::ClientCertificateFacts;
 
 #[cfg(feature = "conformance")]

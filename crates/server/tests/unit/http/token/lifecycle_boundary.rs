@@ -40,10 +40,10 @@ fn function_body<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
 #[test]
 fn production_token_dispatch_and_grants_do_not_receive_app_state() {
     let dispatch = include_str!("../../../../../nazoauth/src/endpoints/token/dispatch/mod.rs");
-    let dispatch = function_body(dispatch, "pub fn token_with_service(", "");
+    let dispatch = function_body(dispatch, "pub async fn token_with_service(", "");
     assert_eq!(
         include_str!("../../../../../nazoauth/src/endpoints/token/dispatch/mod.rs")
-            .matches("pub fn token_with_service(")
+            .matches("pub async fn token_with_service(")
             .count(),
         1,
         "token dispatch must expose exactly one production entry point"

@@ -59,11 +59,8 @@ The adapter contract is `http::Request` / `http::Response`, `bytes::Bytes`,
 `integration::ConnectionFacts`, and the canonical route manifest. There is no
 framework or runtime trait to implement.
 
-Generated JSON response bodies use `sonic-rs` on x86_64 and AArch64, selected at
-compile time; other targets, including WASM, use `serde_json`. Both encode the
-existing Serde response types directly into the byte buffer moved to `Bytes`.
-Parsing and cryptographic serialization keep their existing implementations.
-Stored JSON/JWT responses retain their original bytes and bypass this encoder.
+The manifest exposes transport metadata. CORS, route guards and method rejection
+rules remain internal to the facade.
 
 1. Bind a default request forwarding handler so the facade receives known and
    unknown paths. Keep framework-owned UI resources separate. Use

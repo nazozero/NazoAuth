@@ -58,13 +58,9 @@ where
     S: futures_util::Stream<Item = Result<Bytes, E>>,
 {
     use futures_util::TryStreamExt;
-    let route = nazoauth::integration::routes()
-        .iter()
-        .find(|route| route.path == "/bc-authorize")
-        .expect("CIBA route");
-    let method = route
-        .resolve_method(&http::Method::POST)
-        .expect("CIBA POST method");
+    let method = nazoauth::test_support::resolve(&http::Method::POST, "/bc-authorize")
+        .expect("CIBA POST route")
+        .method;
     nazoauth::test_support::http::collect_route_body(
         method,
         source.map_err(|_| std::io::Error::other("fixture payload failure")),
