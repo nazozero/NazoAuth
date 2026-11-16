@@ -4,11 +4,10 @@ use futures_util::StreamExt as _;
 use nazoauth::integration::{BodyMode, conformance};
 
 fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
-    let mut builder = awtest::TestRequest::with_uri(&request.uri().to_string())
-        .method(actix_web::http::Method::from_bytes(request.method().as_str().as_bytes()).unwrap());
+    let mut builder =
+        awtest::TestRequest::with_uri(&request.uri().to_string()).method(request.method().clone());
     for (name, value) in request.headers() {
-        builder =
-            builder.append_header((actix_header_name(name), actix_header_value(value.clone())));
+        builder = builder.append_header((name.clone(), value.clone()));
     }
     if let Some(peer) = request
         .extensions()
@@ -35,11 +34,23 @@ async fn standard_response(response: HttpResponse) -> http::Response<Bytes> {
 
 #[test]
 fn raw_request_targets_duplicate_values_and_body_storage_are_preserved() {
-    for expected in conformance::transport_requests() {
+    for mut expected in conformance::transport_requests() {
+        let mut private = http::HeaderValue::from_static("private");
+        private.set_sensitive(true);
+        expected.headers_mut().append("x-context", private);
+        expected
+            .headers_mut()
+            .append("x-context", http::HeaderValue::from_static("public"));
         let request = framework_request(&expected).to_http_request();
         let actual = forward_request(&request, expected.body().clone());
         conformance::assert_request(&expected, &actual);
         assert_eq!(actual.body().as_ptr(), expected.body().as_ptr());
+        if let Some(path) = request.uri().path_and_query() {
+            assert_eq!(
+                actual.uri().path_and_query().unwrap().as_str().as_ptr(),
+                path.as_str().as_ptr(),
+            );
+        }
         for name in request.headers().keys() {
             for (source, target) in request
                 .headers()
@@ -47,6 +58,7 @@ fn raw_request_targets_duplicate_values_and_body_storage_are_preserved() {
                 .zip(actual.headers().get_all(name.as_str()).iter())
             {
                 assert_eq!(source.as_bytes().as_ptr(), target.as_bytes().as_ptr());
+                assert_eq!(source.is_sensitive(), target.is_sensitive());
             }
         }
     }
@@ -54,7 +66,13 @@ fn raw_request_targets_duplicate_values_and_body_storage_are_preserved() {
 
 #[actix_web::test]
 async fn production_response_presenters_survive_conversion_without_body_copy() {
-    for (name, expected) in conformance::response_cases() {
+    for (name, mut expected) in conformance::response_cases() {
+        let mut private = http::HeaderValue::from_static("private");
+        private.set_sensitive(true);
+        expected.headers_mut().append("x-context", private);
+        expected
+            .headers_mut()
+            .append("x-context", http::HeaderValue::from_static("public"));
         let pointer = expected.body().as_ptr();
         let forwarded = forward_response(expected.clone());
         for name in expected.headers().keys() {
@@ -65,6 +83,7 @@ async fn production_response_presenters_survive_conversion_without_body_copy() {
                 .zip(forwarded.headers().get_all(name.as_str()))
             {
                 assert_eq!(source.as_bytes().as_ptr(), target.as_bytes().as_ptr());
+                assert_eq!(source.is_sensitive(), target.is_sensitive());
             }
         }
         let actual = standard_response(forwarded).await;

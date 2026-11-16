@@ -150,9 +150,11 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
-# Retire the Actix port once a stable upstream HTTP/2 configuration omits h2 0.3.
+# Keep Actix, h2 and the facade on shared HTTP 1.x metadata. Retire these coupled
+# overrides when stable upstream packages provide the same type graph.
 [patch.crates-io]
-actix-http = { git = "https://github.com/nazozero/actix-web", rev = "38157c15d5391509d1d752f5304c3cb1eeb3d234" }
+actix-http = { git = "https://github.com/nazozero/actix-web", rev = "cd9d8e580065d8e285f5835fc5bd75d88dc35482" }
+actix-router = { git = "https://github.com/nazozero/actix-web", rev = "cd9d8e580065d8e285f5835fc5bd75d88dc35482" }
 # TODO: replace this fork when a maintained release uses patched crypto-bigint
 # and preserves the coset 0.4 and borrowed-transcript contracts.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }

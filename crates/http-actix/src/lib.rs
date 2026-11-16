@@ -91,34 +91,18 @@ fn payload_error(error: PayloadError) -> io::Error {
     }
 }
 
-/// Translate HTTP metadata, sharing header-value and body storage across the
-/// framework's HTTP version boundary. Trust decisions stay in the facade.
+/// Share standard HTTP metadata and body storage. Trust decisions stay in the
+/// facade.
 pub fn forward_request<B>(request: &HttpRequest, body: B) -> http::Request<B> {
     let mut forwarded = http::Request::new(body);
-    *forwarded.method_mut() = http::Method::from_bytes(request.method().as_str().as_bytes())
-        .expect("valid framework method");
-    *forwarded.uri_mut() = request
-        .uri()
-        .to_string()
-        .try_into()
-        .expect("valid framework URI");
-    *forwarded.version_mut() = match request.version() {
-        actix_web::http::Version::HTTP_09 => http::Version::HTTP_09,
-        actix_web::http::Version::HTTP_10 => http::Version::HTTP_10,
-        actix_web::http::Version::HTTP_11 => http::Version::HTTP_11,
-        actix_web::http::Version::HTTP_2 => http::Version::HTTP_2,
-        actix_web::http::Version::HTTP_3 => http::Version::HTTP_3,
-        _ => unreachable!("unsupported framework HTTP version"),
-    };
+    *forwarded.method_mut() = request.method().clone();
+    *forwarded.uri_mut() = request.uri().clone();
+    *forwarded.version_mut() = request.version();
+    forwarded
+        .headers_mut()
+        .reserve(request.headers().len_keys());
     for (name, value) in request.headers() {
-        let mut converted = http::HeaderValue::from_maybe_shared(Bytes::from_owner(value.clone()))
-            .expect("valid framework header value");
-        converted.set_sensitive(value.is_sensitive());
-        forwarded.headers_mut().append(
-            http::HeaderName::from_bytes(name.as_str().as_bytes())
-                .expect("valid framework header name"),
-            converted,
-        );
+        forwarded.headers_mut().append(name.clone(), value.clone());
     }
     let mut facts = request
         .conn_data::<ConnectionFacts>()
@@ -132,34 +116,20 @@ pub fn forward_request<B>(request: &HttpRequest, body: B) -> http::Request<B> {
 /// Move response body storage into Actix while preserving every repeated header.
 pub fn forward_response(response: http::Response<Bytes>) -> HttpResponse {
     let (parts, body) = response.into_parts();
-    let mut builder = HttpResponse::build(
-        actix_web::http::StatusCode::from_u16(parts.status.as_u16()).expect("valid HTTP status"),
-    );
+    let mut forwarded = HttpResponse::new(parts.status);
     let mut name = None;
     for (next_name, value) in parts.headers {
         if let Some(next_name) = next_name {
             name = Some(next_name);
         }
-        builder.append_header((
-            actix_header_name(name.as_ref().expect("header iterator starts with a name")),
-            actix_header_value(value),
-        ));
+        forwarded.headers_mut().append(
+            name.as_ref()
+                .expect("header iterator starts with a name")
+                .clone(),
+            value,
+        );
     }
-    builder.body(body)
-}
-
-fn actix_header_name(name: &http::HeaderName) -> actix_web::http::header::HeaderName {
-    actix_web::http::header::HeaderName::from_bytes(name.as_str().as_bytes())
-        .expect("valid HTTP header name")
-}
-
-fn actix_header_value(value: http::HeaderValue) -> actix_web::http::header::HeaderValue {
-    let sensitive = value.is_sensitive();
-    let mut converted =
-        actix_web::http::header::HeaderValue::from_maybe_shared(Bytes::from_owner(value))
-            .expect("valid HTTP header value");
-    converted.set_sensitive(sensitive);
-    converted
+    forwarded.set_body(body).map_into_boxed_body()
 }
 
 /// Apply the same neutral security policy to host-owned responses and rejections.
@@ -170,11 +140,8 @@ pub async fn security_headers<B: MessageBody>(
     let defaults = nazoauth::integration::security_headers(request.path());
     let mut response = next.call(request).await?;
     for (name, value) in defaults {
-        let name = actix_header_name(name);
-        if !response.headers().contains_key(&name) {
-            response
-                .headers_mut()
-                .insert(name, actix_header_value(value.clone()));
+        if !response.headers().contains_key(name) {
+            response.headers_mut().insert(name.clone(), value.clone());
         }
     }
     Ok(response)

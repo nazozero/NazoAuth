@@ -87,13 +87,16 @@ Multipart avatar uploads remain incremental. Unrelated fields are skipped, and
 the avatar service enforces the uploaded file's bound. The adapter must not
 collect the entire multipart body or invent a total upload limit.
 
-Uncompressed `Bytes` chunks, header values and completed response bodies retain
-their storage across the Actix bridge. The collector reuses a single chunk and combines chunks
-only when the endpoint needs a contiguous body. Content decoding, serialization
-and combining multiple chunks perform the work required by their inputs. Actix
-uses HTTP 0.2 metadata while the neutral contract uses HTTP 1.x. `Bytes::from_owner`
-keeps header values shared across that boundary; URI text and header names are
-converted. Shared ownership still allocates ownership metadata and updates reference counts.
+The Actix adapter and facade use the same HTTP 1.x metadata types. URI components,
+header names and header values share their byte storage; owned response headers
+and bodies move into Actix. Header maps still allocate entry storage, and shared
+values retain their reference counts. No per-value ownership wrapper or URI text
+conversion is needed.
+
+Uncompressed `Bytes` chunks and completed response bodies retain their storage.
+The collector reuses a single chunk and combines chunks only when the endpoint
+needs a contiguous body. Content decoding, serialization and combining multiple
+chunks perform the work required by their inputs.
 
 ### Routing and host response policy
 

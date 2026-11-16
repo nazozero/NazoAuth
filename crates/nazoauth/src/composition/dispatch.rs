@@ -179,9 +179,28 @@ impl NazoAuth {
             }
         }
 
-        // Buffered endpoints share the request collected above.
-        let request: &Request = request;
+        // The token path does not enter the other endpoints' parsing state.
         match method.endpoint {
+            Endpoint::Token => {
+                crate::endpoints::token::dispatch::token_with_service(
+                    self.core.token_endpoint_handles.as_ref(),
+                    self.identity.client_ip_config.as_ref(),
+                    request,
+                    request.body(),
+                )
+                .await
+            }
+            endpoint => self.dispatch_buffered(endpoint, params, request).await,
+        }
+    }
+
+    async fn dispatch_buffered(
+        &self,
+        endpoint: Endpoint,
+        params: &matchit::Params<'_, '_>,
+        request: &Request,
+    ) -> Response {
+        match endpoint {
             Endpoint::Discovery => http::discovery(self.core.metadata_handles.as_ref()).await,
             Endpoint::OauthAuthorizationServerMetadata => {
                 http::oauth_authorization_server_metadata(self.core.metadata_handles.as_ref()).await
@@ -404,15 +423,6 @@ impl NazoAuth {
                     self.core.device_config.as_ref(),
                     request,
                     extract!(http::parse_form(request)),
-                )
-                .await
-            }
-            Endpoint::Token => {
-                crate::endpoints::token::dispatch::token_with_service(
-                    self.core.token_endpoint_handles.as_ref(),
-                    self.identity.client_ip_config.as_ref(),
-                    request,
-                    request.body(),
                 )
                 .await
             }
@@ -1269,11 +1279,12 @@ impl NazoAuth {
                 )
                 .await
             }
-            Endpoint::UploadAvatar
+            Endpoint::Token
+            | Endpoint::UploadAvatar
             | Endpoint::DynamicClientRegistration
             | Endpoint::ClientConfigurationPut
             | Endpoint::BackchannelAuthentication
-            | Endpoint::OidcLogout => unreachable!("streamed ingress dispatches these endpoints"),
+            | Endpoint::OidcLogout => unreachable!("endpoint dispatched before buffered fallback"),
         }
     }
 }
