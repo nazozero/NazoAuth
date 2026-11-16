@@ -52,6 +52,27 @@ fn product_defaults_preserve_native_policy() {
 }
 
 #[test]
+fn issuer_defaults_allow_passkey_overrides_before_complete_validation() {
+    let mut settings = Configuration::new(
+        nazo_identity::TenantContext::default_system(),
+        "http://[::1]:8080",
+        "client-secret-pepper-at-least-thirty-two-bytes",
+    )
+    .expect("an IPv6 issuer can use a separately configured passkey origin");
+    assert!(
+        settings
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("PASSKEY_RP_ID")
+    );
+    settings.identity.passkey.origin = "http://localhost:8080".to_owned();
+    settings.identity.passkey.rp_id = "localhost".to_owned();
+    settings.validate().unwrap();
+    assert_eq!(settings.endpoint.issuer, "http://[::1]:8080");
+}
+
+#[test]
 fn mutable_configuration_is_revalidated_at_product_boundary() {
     let cases: &[InvalidConfiguration] = &[
         (

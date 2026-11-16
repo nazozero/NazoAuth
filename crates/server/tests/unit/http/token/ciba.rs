@@ -92,6 +92,7 @@ fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> TestInfrastruc
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.session.cookie_secure = true;
     configure(&mut settings);
     TestInfrastructure {
         diesel_db: create_pool(
@@ -119,6 +120,7 @@ async fn live_ciba_replay_state() -> Option<TestInfrastructure> {
     let mut settings = Settings::from_config(&ConfigSource::default())
         .expect("default CIBA test settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.session.cookie_secure = true;
     Some(TestInfrastructure {
         diesel_db: create_pool(database_url, 2).expect("CIBA test database should build"),
         valkey,

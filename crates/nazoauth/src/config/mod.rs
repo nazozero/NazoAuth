@@ -175,7 +175,7 @@ impl Configuration {
             .expect("validated issuer has a host")
             .to_owned();
         let client_secret_pepper = client_secret_pepper.into();
-        let configuration = Self {
+        Ok(Self {
             tenant: TenantSettings { context: tenant },
             endpoint: EndpointSettings {
                 mtls_endpoint_base_url: issuer.clone(),
@@ -284,8 +284,6 @@ impl Configuration {
                 transaction_ttl_seconds: 300,
                 revocation_policy: Openid4vcRevocationPolicy::Disabled,
             },
-        };
-        configuration.validate()?;
-        Ok(configuration)
+        })
     }
 }
