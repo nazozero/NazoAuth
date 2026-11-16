@@ -1,7 +1,7 @@
 //! Exhaustive endpoint dispatch over the single transport manifest.
 use super::NazoAuth;
 use crate::http::{self, Request, Response};
-use crate::integration::{Endpoint, Route, RouteGuard};
+use crate::integration::{Endpoint, Route, RouteGuard, RouteMethod};
 use ::http::StatusCode;
 use bytes::Bytes;
 
@@ -126,6 +126,47 @@ impl NazoAuth {
         }
         let method = extract!(route.resolve_method(request.method()));
         self.mtls.prepare_request(request);
+        // Keep the common token and metadata paths outside other endpoints'
+        // parsing and streaming state.
+        match method.endpoint {
+            Endpoint::Token => {
+                if extract!(http::validate_route_body_head(request, method)) {
+                    *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
+                }
+                crate::endpoints::token::dispatch::token_with_service(
+                    self.core.token_endpoint_handles.as_ref(),
+                    self.identity.client_ip_config.as_ref(),
+                    request,
+                    request.body(),
+                )
+                .await
+            }
+            Endpoint::Discovery => http::discovery(self.core.metadata_handles.as_ref()).await,
+            Endpoint::OauthAuthorizationServerMetadata => {
+                http::oauth_authorization_server_metadata(self.core.metadata_handles.as_ref()).await
+            }
+            Endpoint::OauthProtectedResourceMetadata => {
+                http::oauth_protected_resource_metadata(self.core.metadata_handles.as_ref()).await
+            }
+            Endpoint::Jwks => http::jwks(self.core.metadata_handles.as_ref()).await,
+            _ => {
+                self.dispatch_endpoint(method, params, request, stream)
+                    .await
+            }
+        }
+    }
+
+    async fn dispatch_endpoint<S, E>(
+        &self,
+        method: &RouteMethod,
+        params: &matchit::Params<'_, '_>,
+        request: &mut Request,
+        stream: S,
+    ) -> Response
+    where
+        S: futures_util::Stream<Item = Result<Bytes, E>>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
         match method.endpoint {
             Endpoint::UploadAvatar => {
                 return crate::endpoints::profile::avatar::upload_avatar(
@@ -179,35 +220,7 @@ impl NazoAuth {
             }
         }
 
-        // The token path does not enter the other endpoints' parsing state.
         match method.endpoint {
-            Endpoint::Token => {
-                crate::endpoints::token::dispatch::token_with_service(
-                    self.core.token_endpoint_handles.as_ref(),
-                    self.identity.client_ip_config.as_ref(),
-                    request,
-                    request.body(),
-                )
-                .await
-            }
-            endpoint => self.dispatch_buffered(endpoint, params, request).await,
-        }
-    }
-
-    async fn dispatch_buffered(
-        &self,
-        endpoint: Endpoint,
-        params: &matchit::Params<'_, '_>,
-        request: &Request,
-    ) -> Response {
-        match endpoint {
-            Endpoint::Discovery => http::discovery(self.core.metadata_handles.as_ref()).await,
-            Endpoint::OauthAuthorizationServerMetadata => {
-                http::oauth_authorization_server_metadata(self.core.metadata_handles.as_ref()).await
-            }
-            Endpoint::OauthProtectedResourceMetadata => {
-                http::oauth_protected_resource_metadata(self.core.metadata_handles.as_ref()).await
-            }
             Endpoint::MdocCrl => {
                 crate::well_known::mdoc_crl(
                     self.mdoc_crls.as_deref(),
@@ -461,7 +474,6 @@ impl NazoAuth {
                 )
                 .await
             }
-            Endpoint::Jwks => http::jwks(self.core.metadata_handles.as_ref()).await,
             Endpoint::Userinfo => {
                 http::userinfo(
                     self.core.userinfo_endpoint.as_ref(),
@@ -1280,6 +1292,10 @@ impl NazoAuth {
                 .await
             }
             Endpoint::Token
+            | Endpoint::Discovery
+            | Endpoint::OauthAuthorizationServerMetadata
+            | Endpoint::OauthProtectedResourceMetadata
+            | Endpoint::Jwks
             | Endpoint::UploadAvatar
             | Endpoint::DynamicClientRegistration
             | Endpoint::ClientConfigurationPut

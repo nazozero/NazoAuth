@@ -52,17 +52,14 @@ pub async fn serve(
     request: HttpRequest,
     payload: web::Payload,
 ) -> HttpResponse {
-    let request_head = forward_request(&request, ());
     let body_mode = request
         .app_data::<&'static Route>()
-        .map(|route| route.body(request_head.method()))
+        .map(|route| route.body(request.method()))
         .unwrap_or(nazoauth::integration::BodyMode::None);
     let body = forward_payload(&request, payload.into_inner(), body_mode);
-    // Move the standard head and the original Bytes stream into the facade.
-    let (parts, ()) = request_head.into_parts();
     forward_response(
         application
-            .handle_stream(http::Request::from_parts(parts, body))
+            .handle_stream(forward_request(&request, body))
             .await,
     )
 }

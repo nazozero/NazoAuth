@@ -261,13 +261,16 @@ pub fn finish(builder: http::response::Builder, body: impl Into<Bytes>) -> Respo
 
 /// Serialize once at the protocol boundary; adapters only move the result.
 pub fn json(mut builder: http::response::Builder, value: impl Serialize) -> Response {
-    if let Some(headers) = builder.headers_mut()
-        && !headers.contains_key(header::CONTENT_TYPE)
-    {
-        headers.insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
+    if let Some(headers) = builder.headers_mut() {
+        // Content-Type, the usual two CORS headers and six security defaults
+        // should fit before the first insertion, without growing the map later.
+        headers.reserve(9usize.saturating_sub(headers.keys_len()));
+        if !headers.contains_key(header::CONTENT_TYPE) {
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+        }
     }
     match serde_json::to_vec(&value) {
         Ok(body) => finish(builder, body),
