@@ -148,58 +148,47 @@ impl NazoAuth {
         }
 
         self.mtls.prepare_request(request);
-        match method.endpoint {
-            Endpoint::UploadAvatar => {
-                return Box::pin(crate::endpoints::profile::avatar::upload_avatar(
-                    &self.identity.session_profiles,
-                    &self.identity.avatar_profiles,
-                    request,
-                    stream,
-                ))
-                .await;
-            }
+        let future: futures_util::future::LocalBoxFuture<'_, Response> = match method.endpoint {
+            Endpoint::UploadAvatar => Box::pin(crate::endpoints::profile::avatar::upload_avatar(
+                &self.identity.session_profiles,
+                &self.identity.avatar_profiles,
+                request,
+                stream,
+            )),
             Endpoint::BackchannelAuthentication => {
-                return Box::pin(crate::endpoints::token::ciba::backchannel_authentication(
+                Box::pin(crate::endpoints::token::ciba::backchannel_authentication(
                     &self.core.ciba_application,
                     &self.identity.client_ip_config,
                     request,
                     http::collect_route_body(method, stream),
                 ))
-                .await;
             }
-            Endpoint::DynamicClientRegistration => {
-                return Box::pin(http::dynamic_client_registration(
-                    &self.core.dynamic_registration_handles,
-                    request,
-                    http::collect_route_body(method, stream),
-                ))
-                .await;
+            Endpoint::DynamicClientRegistration => Box::pin(http::dynamic_client_registration(
+                &self.core.dynamic_registration_handles,
+                request,
+                http::collect_route_body(method, stream),
+            )),
+            Endpoint::ClientConfigurationPut => Box::pin(http::client_configuration_put(
+                &self.core.dynamic_registration_handles,
+                request,
+                extract!(http::parse_path(
+                    params.get("client_id").expect("manifest capture")
+                )),
+                http::collect_route_body(method, stream),
+            )),
+            Endpoint::OidcLogout => Box::pin(http::oidc_logout(
+                &self.identity.oidc_logout,
+                request,
+                http::collect_route_body(method, stream),
+            )),
+            _ => {
+                if extract!(http::validate_route_body_head(request, method)) {
+                    *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
+                }
+                self.dispatch_endpoint(method, params, request)
             }
-            Endpoint::ClientConfigurationPut => {
-                return Box::pin(http::client_configuration_put(
-                    &self.core.dynamic_registration_handles,
-                    request,
-                    extract!(http::parse_path(
-                        params.get("client_id").expect("manifest capture")
-                    )),
-                    http::collect_route_body(method, stream),
-                ))
-                .await;
-            }
-            Endpoint::OidcLogout => {
-                return Box::pin(http::oidc_logout(
-                    &self.identity.oidc_logout,
-                    request,
-                    http::collect_route_body(method, stream),
-                ))
-                .await;
-            }
-            _ => {}
-        }
-        if extract!(http::validate_route_body_head(request, method)) {
-            *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
-        }
-        self.dispatch_endpoint(method, params, request).await
+        };
+        future.await
     }
 
     // Each selected endpoint owns its own async state. A request does not reserve
