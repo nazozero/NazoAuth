@@ -1,33 +1,26 @@
 #![forbid(unsafe_code)]
+// Return the standard HTTP response directly; boxing errors would add an allocation.
+#![allow(clippy::result_large_err)]
+//! Framework-neutral NazoAuth embedding and HTTP integration.
 
-#[cfg(test)]
-#[macro_use]
-#[path = "../tests/support/macros.rs"]
-mod test_macros;
-
-mod adapters;
-pub mod bootstrap;
-pub mod cli;
+pub mod capabilities;
+mod composition;
 pub mod config;
+mod control;
 mod control_discovery;
-pub mod controller_registry;
-#[cfg(test)]
-#[path = "../tests/unit/domain.rs"]
-mod domain;
+mod endpoints;
 mod http;
-mod jobs;
-mod keyctl;
-pub mod operator_task;
-pub mod recovery_root;
+pub mod integration;
+mod openid4vc;
+mod well_known;
+
+pub use composition::{NazoAuth, NazoAuthBuilder};
+pub use integration::ConnectionFacts;
+
+mod routes;
 mod runtime_modules;
-#[cfg(test)]
-#[path = "../tests/support/schema.rs"]
-mod schema;
-mod settings;
-mod tenant_resource_preparation;
 
-pub mod launchers;
-
-#[cfg(test)]
-#[path = "../tests/support/mod.rs"]
-pub(crate) mod test_support;
+/// Focused host regression access to the production neutral implementation.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support;

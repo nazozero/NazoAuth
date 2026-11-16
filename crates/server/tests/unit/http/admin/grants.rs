@@ -1,0 +1,1027 @@
+use super::*;
+use actix_web::cookie::Cookie;
+use diesel::QueryableByName;
+use diesel::sql_query;
+use diesel::sql_types::{BigInt, Int4, Nullable, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use serde_json::Value;
+use std::sync::Arc;
+use std::time::Duration as StdDuration;
+
+use crate::config::ConfigSource;
+use crate::http::sessions::SessionHttpConfig;
+use crate::settings::Settings;
+use crate::test_support::SessionPayload;
+use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
+use chrono::Utc;
+use nazo_identity::DEFAULT_ORGANIZATION_ID;
+use nazo_identity::DEFAULT_REALM_ID;
+use nazo_identity::DEFAULT_TENANT_ID;
+use nazo_oauth_server::domain::rows::ClientRow;
+use nazo_postgres::{create_pool, get_conn};
+
+use crate::http::admin::clients::test_support::{
+    CreateClientRequest, InsertClientError, PreparedClientRegistration, insert_prepared_client,
+    prepare_client_insert_with_secret_pepper,
+};
+
+async fn prepare_client_insert_for_test(
+    payload: CreateClientRequest,
+    pairwise_subject_secret: Option<&str>,
+    issuer: &str,
+) -> Result<PreparedClientRegistration, InsertClientError> {
+    prepare_client_insert_with_secret_pepper(
+        payload,
+        pairwise_subject_secret,
+        crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        issuer,
+        nazo_identity::TenantContext::default_system(),
+        nazo_key_management::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
+    )
+    .await
+}
+
+fn grant_row() -> nazo_auth::AdminGrantView {
+    nazo_auth::AdminGrantView {
+        user_id: Uuid::now_v7(),
+        email: "user@example.com".to_owned(),
+        client_id: "client-1".to_owned(),
+        client_name: "Client One".to_owned(),
+        last_authorized_at: Utc::now(),
+        authorization_count: 3,
+        last_scopes: vec!["openid".to_owned(), "payments".to_owned()],
+        last_authorization_details: json!([{"type": "payment_initiation"}]),
+    }
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
+}
+
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
+}
+
+fn test_state() -> TestInfrastructure {
+    TestInfrastructure {
+        diesel_db: create_pool(
+            "postgres://nazo_admin_grants_test_invalid:nazo_admin_grants_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: unavailable_valkey_client(),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: crate::test_support::test_key_manager(),
+    }
+}
+
+fn admin_grant_dependencies(
+    state: &Data<TestInfrastructure>,
+) -> (
+    Data<AdminSessionHandles>,
+    Data<dyn AdminGrantRepositoryPort>,
+) {
+    let session = &state.settings.session;
+    (
+        Data::new(AdminSessionHandles::new(
+            std::sync::Arc::new(nazo_oauth_server::sessions::SessionResolver::new(
+                Arc::new(nazo_valkey::SessionStore::new(&state.valkey_connection())),
+                Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),
+                state.settings.tenant.context.tenant_id,
+            )),
+            SessionHttpConfig::new(
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
+                session.cookie_secure,
+            ),
+        )),
+        Data::from(
+            Arc::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()))
+                as Arc<dyn AdminGrantRepositoryPort>,
+        ),
+    )
+}
+
+async fn invoke_admin_grants(
+    state: Data<TestInfrastructure>,
+    req: HttpRequest,
+    query: Query<HashMap<String, String>>,
+) -> HttpResponse {
+    let (admin_sessions, grants) = admin_grant_dependencies(&state);
+    admin_grants(admin_sessions, grants, req, query).await
+}
+
+async fn invoke_admin_revoke_grant(
+    state: Data<TestInfrastructure>,
+    req: HttpRequest,
+    payload: Json<GrantRevokeRequest>,
+) -> HttpResponse {
+    let (admin_sessions, grants) = admin_grant_dependencies(&state);
+    admin_revoke_grant(admin_sessions, grants, req, payload).await
+}
+
+struct CommittedGrantUnknown(nazo_postgres::GrantRepository);
+
+impl AdminGrantRepositoryPort for CommittedGrantUnknown {
+    fn page(
+        &self,
+        tenant_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> nazo_auth::AdminGrantFuture<'_, nazo_auth::AdminGrantPage> {
+        self.0.page(tenant_id, limit, offset)
+    }
+
+    fn revoke_by_client_id<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        client_id: &'a str,
+        admin_user_id: Uuid,
+    ) -> nazo_auth::AdminGrantRevokeFuture<'a> {
+        Box::pin(async move {
+            self.0
+                .revoke_by_client_id(tenant_id, user_id, client_id, admin_user_id)
+                .await?;
+            // Hide the acknowledgement only after a real successful PG commit.
+            Err(AdminGrantRevokeError::Revoke(
+                nazo_auth::AuthorizationPortError::Unavailable,
+            ))
+        })
+    }
+}
+
+fn create_client_request(client_name: &str) -> CreateClientRequest {
+    CreateClientRequest {
+        client_name: client_name.to_owned(),
+        client_type: "confidential".to_owned(),
+        redirect_uris: vec!["https://client.example/callback".to_owned()],
+        post_logout_redirect_uris: Vec::new(),
+        scopes: vec!["openid".to_owned(), "payments".to_owned()],
+        allowed_audiences: vec!["https://api.example".to_owned()],
+        grant_types: vec!["authorization_code".to_owned(), "refresh_token".to_owned()],
+        token_endpoint_auth_method: "client_secret_post".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: true,
+        backchannel_token_delivery_mode: "poll".to_owned(),
+        backchannel_client_notification_endpoint: None,
+        backchannel_authentication_request_signing_alg: None,
+        backchannel_user_code_parameter: false,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: Vec::new(),
+        tls_client_auth_san_uri: Vec::new(),
+        tls_client_auth_san_ip: Vec::new(),
+        tls_client_auth_san_email: Vec::new(),
+        jwks_uri: None,
+        jwks: None,
+        request_uris: Vec::new(),
+        initiate_login_uri: None,
+        presentation: nazo_auth::ClientPresentationMetadata::default(),
+        id_token_signed_response_alg: None,
+        id_token_encrypted_response_alg: None,
+        id_token_encrypted_response_enc: None,
+        request_object_signing_alg: None,
+        request_object_encryption_alg: None,
+        request_object_encryption_enc: None,
+        token_endpoint_auth_signing_alg: None,
+        introspection_signed_response_alg: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
+        subject_type: None,
+        sector_identifier_uri: None,
+        security_policy: nazo_auth::ClientSecurityPolicy::default(),
+    }
+}
+
+async fn oauth_error_name(response: actix_web::HttpResponse) -> Option<String> {
+    let bytes = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("OAuth response body should collect");
+    let body: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("OAuth response body should be JSON");
+    body.get("error")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+}
+
+fn database_url_with_search_path(schema: &str) -> Option<String> {
+    let base = std::env::var("DATABASE_URL").ok()?;
+    let separator = if base.contains('?') { "&" } else { "?" };
+    Some(format!(
+        "{base}{separator}options=-csearch_path%3D{schema}%2Cpublic"
+    ))
+}
+
+struct LiveAdminGrantFixture {
+    state: Data<TestInfrastructure>,
+    schema: Option<String>,
+}
+
+impl LiveAdminGrantFixture {
+    async fn new() -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        Self::from_database_url(database_url, None).await
+    }
+
+    async fn new_isolated(schema: &str) -> Option<Self> {
+        let database_url = database_url_with_search_path(schema)?;
+        let fixture = Self::from_database_url(database_url, Some(schema.to_owned())).await?;
+        fixture
+            .create_isolated_schema(&[
+                "users",
+                "oauth_clients",
+                "user_client_grants",
+                "oauth_refresh_contracts",
+                "oauth_refresh_families",
+                "oauth_refresh_spent_tokens",
+            ])
+            .await;
+        Some(fixture)
+    }
+
+    async fn from_database_url(database_url: String, schema: Option<String>) -> Option<Self> {
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let config = ConfigSource::from_pairs_for_test([
+            ("ISSUER", "https://issuer.example"),
+            ("TRANSPORT_MODE", "direct-tls"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
+            ("COOKIE_SECURE", "true"),
+            ("SESSION_COOKIE_NAME", "nazo_admin_grants_session"),
+            ("CSRF_COOKIE_NAME", "nazo_admin_grants_csrf"),
+        ]);
+        let settings = Settings::from_config(&config).expect("test settings should load");
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+        let diesel_db = create_pool(database_url, 4).expect("database pool should build");
+        crate::test_support::initialize_audit_dependencies(&diesel_db);
+
+        Some(Self {
+            state: Data::new(TestInfrastructure {
+                diesel_db,
+                valkey,
+                settings: Arc::new(settings),
+                keyset: crate::test_support::test_key_manager(),
+            }),
+            schema,
+        })
+    }
+
+    async fn create_isolated_schema(&self, tables: &[&str]) {
+        let Some(schema) = self.schema.as_deref() else {
+            return;
+        };
+        self.exec_sql(&format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema))
+            .await;
+        for table in tables {
+            self.exec_sql(&format!(
+                r#"CREATE TABLE "{}"."{}" (LIKE public."{}" INCLUDING ALL)"#,
+                schema, table, table
+            ))
+            .await;
+        }
+    }
+
+    async fn exec_sql(&self, sql: &str) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(sql)
+            .execute(&mut conn)
+            .await
+            .expect("schema mutation should succeed");
+    }
+
+    async fn rename_column(&self, table: &str, from: &str, to: &str) {
+        let schema = self
+            .schema
+            .as_deref()
+            .expect("isolated fixture should provide schema");
+        self.exec_sql(&format!(
+            r#"ALTER TABLE "{}"."{}" RENAME COLUMN "{}" TO "{}""#,
+            schema, table, from, to
+        ))
+        .await;
+    }
+
+    async fn cleanup(&self) {
+        let Some(schema) = self.schema.as_deref() else {
+            return;
+        };
+        self.exec_sql(&format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema))
+            .await;
+    }
+
+    async fn create_user(&self, suffix: &str, role: &str, admin_level: i32) -> DatabaseUserFixture {
+        let email = format!("admin-grants-{suffix}@example.com");
+        let username = format!("admin-grants-{suffix}");
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES ($1, $2, $3, $4, $5, 'unused-admin-grants-hash', true, false, true, $6, $7)
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(username)
+        .bind::<Text, _>(email)
+        .bind::<Text, _>(role.to_owned())
+        .bind::<Int4, _>(admin_level)
+        .get_result::<DatabaseUserFixture>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn store_session(&self, user: &DatabaseUserFixture, sid: &str) {
+        let payload = SessionPayload {
+            authorization_epoch: 0,
+            user_id: user.id,
+            auth_time: Utc::now().timestamp(),
+            amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
+            pending_mfa: false,
+            oidc_sid: Some(format!("oidc-{sid}")),
+        };
+        valkey_set_ex(
+            &self.state.valkey,
+            nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}")),
+            serde_json::to_string(&payload).expect("session should serialize"),
+            self.state.settings.session.session_ttl_seconds,
+        )
+        .await
+        .expect("session should store");
+    }
+
+    fn admin_get_request(&self, sid: &str, uri: &str) -> HttpRequest {
+        actix_web::test::TestRequest::get()
+            .uri(uri)
+            .cookie(Cookie::new(
+                self.state.settings.session.session_cookie_name.clone(),
+                sid.to_owned(),
+            ))
+            .to_http_request()
+    }
+
+    fn admin_post_request(&self, sid: &str, csrf: &str, uri: &str) -> HttpRequest {
+        actix_web::test::TestRequest::post()
+            .uri(uri)
+            .cookie(Cookie::new(
+                self.state.settings.session.session_cookie_name.clone(),
+                sid.to_owned(),
+            ))
+            .cookie(Cookie::new(
+                self.state.settings.session.csrf_cookie_name.clone(),
+                csrf.to_owned(),
+            ))
+            .insert_header(("x-csrf-token", csrf))
+            .to_http_request()
+    }
+
+    async fn insert_client(&self, client_name: &str) -> nazo_auth::OAuthClient {
+        let prepared = match prepare_client_insert_for_test(
+            create_client_request(client_name),
+            None,
+            "http://localhost:8000",
+        )
+        .await
+        {
+            Ok(prepared) => prepared,
+            Err(_) => panic!("client creation payload should be valid"),
+        };
+        insert_prepared_client(
+            &nazo_postgres::OAuthClientRepository::new(self.state.diesel_db.clone()),
+            &prepared,
+        )
+        .await
+        .expect("client should insert")
+    }
+
+    async fn insert_grant(&self, user: &DatabaseUserFixture, client: &nazo_auth::OAuthClient) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO user_client_grants (
+                tenant_id, user_id, client_id, first_authorized_at, last_authorized_at,
+                last_scopes, last_authorization_details, authorization_count
+            )
+            VALUES ($1, $2, $3, now(), now(), '["openid","payments"]'::jsonb, '[]'::jsonb, 2)
+            "#,
+        )
+        .bind::<SqlUuid, _>(user.tenant_id)
+        .bind::<SqlUuid, _>(user.id)
+        .bind::<SqlUuid, _>(client.id)
+        .execute(&mut conn)
+        .await
+        .expect("user grant should insert");
+    }
+
+    async fn insert_refresh_token(&self, user: &DatabaseUserFixture, client: &ClientRow) {
+        let family_id = Uuid::now_v7();
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        let contract = serde_json::json!({
+            "subject": user.id.to_string(),
+            "scopes": ["openid", "offline_access"],
+            "audiences": ["resource://default"],
+            "authorization_details": [],
+            "authentication_context": {
+                "version": 1,
+                "issuer": "https://issuer.example.test",
+                "audience": client.client_id,
+                "auth_time": Utc::now().timestamp() - 1,
+                "amr": ["pwd"],
+                "userinfo_claims": [],
+                "userinfo_claim_requests": [],
+                "id_token_claims": [],
+                "id_token_claim_requests": []
+            }
+        });
+        sql_query(
+            r#"
+            WITH c AS (
+                INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+                VALUES ($2, $8, $7::jsonb)
+                ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+            )
+            INSERT INTO oauth_refresh_families (
+                tenant_id, token_family_id, contract_blake3, client_id, user_id,
+                current_member_id, current_token_blake3, current_audience,
+                current_issued_at, current_expires_at, created_at
+            )
+            VALUES (
+                $2, $4, $8, $5, $6,
+                $1, $3, '["resource://default"]'::jsonb,
+                now(), now() + interval '1 day', now()
+            )
+            "#,
+        )
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .bind::<SqlUuid, _>(client.tenant_id)
+        .bind::<diesel::sql_types::Binary, _>(
+            blake3::hash(format!("refresh-{}", Uuid::now_v7()).as_bytes())
+                .as_bytes()
+                .to_vec(),
+        )
+        .bind::<SqlUuid, _>(family_id)
+        .bind::<SqlUuid, _>(client.id)
+        .bind::<Nullable<SqlUuid>, _>(Some(user.id))
+        .bind::<diesel::sql_types::Jsonb, _>(contract.clone())
+        .bind::<diesel::sql_types::Binary, _>(
+            blake3::hash(serde_json::to_vec(&contract).unwrap().as_slice())
+                .as_bytes()
+                .to_vec(),
+        )
+        .execute(&mut conn)
+        .await
+        .expect("refresh token row should insert");
+    }
+
+    async fn grant_count(&self, user: &DatabaseUserFixture, client: &ClientRow) -> i64 {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            "SELECT COUNT(*) AS count FROM user_client_grants WHERE user_id = $1 AND client_id = $2",
+        )
+        .bind::<SqlUuid, _>(user.id)
+        .bind::<SqlUuid, _>(client.id)
+        .get_result::<CountRow>(&mut conn)
+        .await
+        .expect("grant count should load")
+        .count
+    }
+
+    async fn revoked_refresh_token_count(
+        &self,
+        user: &DatabaseUserFixture,
+        client: &ClientRow,
+    ) -> i64 {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            "SELECT COUNT(*) AS count FROM oauth_refresh_families WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NOT NULL",
+        )
+        .bind::<SqlUuid, _>(user.id)
+        .bind::<SqlUuid, _>(client.id)
+        .get_result::<CountRow>(&mut conn)
+        .await
+        .expect("revoked token count should load")
+        .count
+    }
+}
+
+#[test]
+fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
+    let source = include_str!("../../../../../nazoauth/src/endpoints/admin/grants.rs");
+    let adapter = include_str!("../../../../../persistence-postgres/src/repositories/grants.rs");
+    let tokens = include_str!("../../../../../persistence-postgres/src/repositories/tokens.rs");
+
+    assert!(source.contains("&dyn AdminGrantRepositoryPort"));
+    assert!(!source.contains("nazo_postgres"));
+    assert!(!source.contains("GrantProjection"));
+    assert!(!source.contains("OAuthClientRepository"));
+    assert!(adapter.contains(".transaction::<AdminGrantRevocation"));
+    assert!(adapter.contains(".filter(oauth_clients::client_id.eq(client_id))"));
+    assert!(!adapter.contains(".for_update()"));
+    assert!(adapter.contains("lock_refresh_grant_scope(connection"));
+    assert!(tokens.contains("lock_refresh_grant_scope("));
+    assert!(tokens.contains("lock_refresh_family(connection, family_id)"));
+    assert!(adapter.contains(".filter(user_client_grants::tenant_id.eq(tenant_id))"));
+}
+
+#[actix_web::test]
+async fn grants_list_response_preserves_pagination_and_scope_projection() {
+    let row = grant_row();
+    let expected = json!({
+        "user_id": row.user_id,
+        "email": "user@example.com",
+        "client_id": "client-1",
+        "client_name": "Client One",
+        "last_authorized_at": row.last_authorized_at,
+        "authorization_count": 3,
+        "last_scopes": ["openid", "payments"],
+        "last_authorization_details": [{"type": "payment_initiation"}]
+    });
+    let response = grants_list_response(2, 50, 101, vec![row]);
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("grant list body should collect");
+    let body: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(body["total"], json!(101));
+    assert_eq!(body["page"], json!(2));
+    assert_eq!(body["page_size"], json!(50));
+    let items = body["items"].as_array().expect("items should be an array");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0], expected);
+}
+
+#[actix_web::test]
+async fn grant_revocation_response_reports_only_aggregate_state_change() {
+    let response = grant_revocation_response(2, 1);
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("grant revocation body should collect");
+    let body: Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(body["revoked_refresh_tokens"], json!(2));
+    assert_eq!(body["removed_grants"], json!(1));
+    assert!(body.get("refresh_token").is_none());
+    assert!(body.get("access_token").is_none());
+}
+
+#[actix_web::test]
+async fn admin_grants_requires_admin_before_database_lookup() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::get()
+        .uri("/admin/grants")
+        .to_http_request();
+
+    let response = invoke_admin_grants(state, req, Query(HashMap::new())).await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        oauth_error_name(response).await.as_deref(),
+        Some("access_denied")
+    );
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_rejects_missing_csrf_before_auth_or_lookup() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::post()
+        .uri("/admin/grants/revoke")
+        .cookie(Cookie::new(
+            state.settings.session.session_cookie_name.clone(),
+            "session-id",
+        ))
+        .to_http_request();
+
+    let response = invoke_admin_revoke_grant(
+        state,
+        req,
+        Json(GrantRevokeRequest {
+            user_id: Uuid::now_v7().to_string(),
+            client_id: "client-1".to_owned(),
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_name(response).await.as_deref(),
+        Some("invalid_request")
+    );
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_requires_admin_even_with_valid_csrf() {
+    let Some(fixture) = LiveAdminGrantFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let non_admin = fixture
+        .create_user(&format!("{suffix}-user"), "user", 0)
+        .await;
+    let target = fixture
+        .create_user(&format!("{suffix}-target"), "user", 0)
+        .await;
+    let client = fixture
+        .insert_client(&format!("Grant Non Admin {suffix}"))
+        .await;
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&non_admin, &sid).await;
+
+    let response = invoke_admin_revoke_grant(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: target.id.to_string(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        oauth_error_name(response).await.as_deref(),
+        Some("access_denied")
+    );
+}
+
+#[actix_web::test]
+async fn admin_grants_list_returns_admin_view_without_token_material() {
+    let Some(fixture) = LiveAdminGrantFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture
+        .create_user(&format!("{suffix}-admin"), "admin", 10)
+        .await;
+    let user = fixture
+        .create_user(&format!("{suffix}-user"), "user", 0)
+        .await;
+    let client = fixture
+        .insert_client(&format!("Grant Client {suffix}"))
+        .await;
+    fixture.insert_grant(&user, &client).await;
+    let sid = format!("sid-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+
+    let response = invoke_admin_grants(
+        fixture.state.clone(),
+        fixture.admin_get_request(&sid, "/admin/grants?page=1&page_size=20"),
+        Query(HashMap::from([
+            ("page".to_owned(), "1".to_owned()),
+            ("page_size".to_owned(), "20".to_owned()),
+        ])),
+    )
+    .await;
+
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["total"].as_i64().is_some_and(|total| total >= 1));
+    let items = body["items"].as_array().expect("items should be an array");
+    let item = items
+        .iter()
+        .find(|item| {
+            item["user_id"] == json!(user.id) && item["client_id"] == json!(client.client_id)
+        })
+        .expect("admin grants response should include the grant inserted by this test");
+    assert_eq!(item["authorization_count"], 2);
+    assert!(item.get("refresh_token").is_none());
+    assert!(item.get("access_token").is_none());
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_validates_input_and_removes_live_grants() {
+    let Some(fixture) = LiveAdminGrantFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let admin = fixture
+        .create_user(&format!("{suffix}-admin"), "admin", 10)
+        .await;
+    let user = fixture
+        .create_user(&format!("{suffix}-user"), "user", 0)
+        .await;
+    let client = fixture
+        .insert_client(&format!("Grant Revoke {suffix}"))
+        .await;
+    fixture.insert_grant(&user, &client).await;
+    fixture.insert_refresh_token(&user, &client).await;
+    let sid = format!("sid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&admin, &sid).await;
+
+    let invalid_user_response = invoke_admin_revoke_grant(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: "not-a-uuid".to_owned(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+    assert_eq!(invalid_user_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_name(invalid_user_response).await.as_deref(),
+        Some("invalid_request")
+    );
+
+    let missing_client_response = invoke_admin_revoke_grant(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: user.id.to_string(),
+            client_id: "missing-client".to_owned(),
+        }),
+    )
+    .await;
+    assert_eq!(missing_client_response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        oauth_error_name(missing_client_response).await.as_deref(),
+        Some("invalid_request")
+    );
+
+    let response = invoke_admin_revoke_grant(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: user.id.to_string(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["revoked_refresh_tokens"], 1);
+    assert_eq!(body["removed_grants"], 1);
+    assert_eq!(fixture.grant_count(&user, &client).await, 0);
+    assert_eq!(fixture.revoked_refresh_token_count(&user, &client).await, 1);
+}
+
+#[actix_web::test]
+async fn admin_grants_list_surfaces_backend_failure_when_projection_breaks() {
+    let schema = format!("admin_grants_projection_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminGrantFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("projection-admin", "admin", 10).await;
+    let end_user = fixture.create_user("projection-user", "user", 0).await;
+    let sid = "sid-grants-projection";
+    fixture.store_session(&admin, sid).await;
+    let client = fixture.insert_client("Projection Client").await;
+    fixture.insert_grant(&end_user, &client).await;
+    fixture
+        .rename_column(
+            "user_client_grants",
+            "last_authorization_details",
+            "last_authorization_details_unavailable",
+        )
+        .await;
+
+    let response = invoke_admin_grants(
+        fixture.state.clone(),
+        fixture.admin_get_request(sid, "/admin/grants"),
+        Query(HashMap::new()),
+    )
+    .await;
+    fixture.cleanup().await;
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_surfaces_client_lookup_failure_after_admin_authentication() {
+    let schema = format!("admin_grants_lookup_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminGrantFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("lookup-admin", "admin", 10).await;
+    let end_user = fixture.create_user("lookup-user", "user", 0).await;
+    let sid = format!("sid-grants-lookup-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-grants-lookup-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let client = fixture.insert_client("Lookup Client").await;
+    fixture
+        .rename_column("oauth_clients", "client_id", "client_id_unavailable")
+        .await;
+
+    let response = invoke_admin_revoke_grant(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: end_user.id.to_string(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+    fixture.cleanup().await;
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_surfaces_transaction_failure_without_partial_revocation() {
+    let schema = format!("admin_grants_write_{}", Uuid::now_v7().simple());
+    let Some(fixture) = LiveAdminGrantFixture::new_isolated(&schema).await else {
+        return;
+    };
+    let admin = fixture.create_user("write-admin", "admin", 10).await;
+    let end_user = fixture.create_user("write-user", "user", 0).await;
+    let sid = format!("sid-grants-write-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-grants-write-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let client = fixture.insert_client("Write Client").await;
+    fixture.insert_grant(&end_user, &client).await;
+    fixture.insert_refresh_token(&end_user, &client).await;
+    fixture
+        .rename_column(
+            "oauth_refresh_families",
+            "revoked_at",
+            "revoked_at_unavailable",
+        )
+        .await;
+
+    let response = invoke_admin_revoke_grant(
+        fixture.state.clone(),
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: end_user.id.to_string(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+    fixture
+        .rename_column(
+            "oauth_refresh_families",
+            "revoked_at_unavailable",
+            "revoked_at",
+        )
+        .await;
+    let grant_count = fixture.grant_count(&end_user, &client).await;
+    let token_count = fixture
+        .revoked_refresh_token_count(&end_user, &client)
+        .await;
+    fixture.cleanup().await;
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let body: Value = serde_json::from_slice(&body).expect("response should be JSON");
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert_eq!(
+        grant_count, 1,
+        "grant row should remain when transaction fails"
+    );
+    assert_eq!(
+        token_count, 0,
+        "refresh token should remain unrecalled on failure"
+    );
+}
+
+#[actix_web::test]
+async fn admin_revoke_grant_unknown_ack_is_503_with_committed_effect_and_required_evidence() {
+    let Some(fixture) = LiveAdminGrantFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple();
+    let admin = fixture
+        .create_user(&format!("unknown-grant-admin-{suffix}"), "admin", 10)
+        .await;
+    let user = fixture
+        .create_user(&format!("unknown-grant-target-{suffix}"), "user", 0)
+        .await;
+    let sid = format!("sid-grant-unknown-{}", Uuid::now_v7().simple());
+    let csrf = format!("csrf-grant-unknown-{}", Uuid::now_v7().simple());
+    fixture.store_session(&admin, &sid).await;
+    let client = fixture.insert_client("Unknown ACK Grant").await;
+    fixture.insert_grant(&user, &client).await;
+    fixture.insert_refresh_token(&user, &client).await;
+    let (sessions, _) = admin_grant_dependencies(&fixture.state);
+    let grants: Data<dyn AdminGrantRepositoryPort> = Data::from(Arc::new(CommittedGrantUnknown(
+        nazo_postgres::GrantRepository::new(fixture.state.diesel_db.clone()),
+    ))
+        as Arc<dyn AdminGrantRepositoryPort>);
+    let response = admin_revoke_grant(
+        sessions,
+        grants,
+        fixture.admin_post_request(&sid, &csrf, "/admin/grants/revoke"),
+        Json(GrantRevokeRequest {
+            user_id: user.id.to_string(),
+            client_id: client.client_id.clone(),
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_name(response).await.as_deref(),
+        Some("server_error")
+    );
+    assert_eq!(fixture.grant_count(&user, &client).await, 0);
+    assert_eq!(fixture.revoked_refresh_token_count(&user, &client).await, 1);
+    let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
+    let count = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_type='admin_grant_revoked' AND payload->>'tenant_id'=$1 AND payload->>'admin_user_id'=$2 AND payload->>'user_id'=$3 AND payload->>'client_id'=$4 AND payload->>'removed_grants'='1' AND payload->>'revoked_refresh_tokens'='1'")
+        .bind::<Text, _>(admin.tenant_id.to_string())
+        .bind::<Text, _>(admin.id.to_string())
+        .bind::<Text, _>(user.id.to_string())
+        .bind::<Text, _>(&client.client_id)
+        .get_result::<CountRow>(&mut connection).await.unwrap().count;
+    assert_eq!(
+        count, 1,
+        "Unknown does not erase canonical evidence or report known non-commit"
+    );
+    fixture.cleanup().await;
+}

@@ -1,0 +1,434 @@
+use nazo_operator_protocol::{
+    CONTROL_DISCOVERY_SCHEMA, DiscoveryRequest, decode_instance_public_key,
+    verify_deployment_statement, verify_discovery_statement,
+};
+use std::path::PathBuf;
+
+use super::*;
+
+fn identity_public_key(identity: &nazoauth::capabilities::DeploymentIdentity) -> VerifyingKey {
+    let response = identity
+        .respond(DiscoveryRequest {
+            schema: CONTROL_DISCOVERY_SCHEMA,
+            nonce: URL_SAFE_NO_PAD.encode([7_u8; 32]),
+        })
+        .unwrap();
+    decode_instance_public_key(&response.instance_public_key).unwrap()
+}
+
+fn identity_key_id(identity: &nazoauth::capabilities::DeploymentIdentity) -> String {
+    instance_key_id(&identity_public_key(identity))
+}
+
+fn temporary_root() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "nazoauth-control-discovery-test-{}",
+        uuid::Uuid::now_v7()
+    ))
+}
+
+#[test]
+fn identity_is_stable_and_online_statement_is_nonce_bound() {
+    let root = temporary_root();
+    let endpoint = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let nonce = URL_SAFE_NO_PAD.encode([7_u8; 32]);
+    let response = endpoint
+        .respond(DiscoveryRequest {
+            schema: CONTROL_DISCOVERY_SCHEMA,
+            nonce: nonce.clone(),
+        })
+        .unwrap();
+    let public_key = decode_instance_public_key(&response.instance_public_key).unwrap();
+    let statement = verify_discovery_statement(
+        &response.statement,
+        &identity_key_id(&endpoint),
+        &public_key,
+        &nonce,
+        Utc::now().timestamp(),
+    )
+    .unwrap();
+    assert_eq!(statement.deployment_id, "deployment-test");
+    assert_eq!(statement.runtime_instance_id, "runtime-test");
+
+    let reloaded = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    assert_eq!(identity_key_id(&endpoint), identity_key_id(&reloaded));
+    let offline = fs::read_to_string(
+        root.join(INSTANCE_DIRECTORY)
+            .join(DEPLOYMENT_STATEMENT_FILE),
+    )
+    .unwrap();
+    let offline =
+        verify_deployment_statement(offline.trim(), &identity_key_id(&reloaded), &public_key)
+            .unwrap();
+    assert_eq!(offline.deployment_id, statement.deployment_id);
+    assert_eq!(offline.runtime_instance_id, statement.runtime_instance_id);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn replicas_can_share_deployment_id_without_sharing_instance_keys() {
+    let root = temporary_root();
+    let replica_a = root.join("replica-a");
+    let replica_b = root.join("replica-b");
+    let first = initialize(
+        &root,
+        Some(&replica_a),
+        Some("deployment-shared"),
+        Some("runtime-a"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let second = initialize(
+        &root,
+        Some(&replica_b),
+        Some("deployment-shared"),
+        Some("runtime-b"),
+        "https://auth.example",
+    )
+    .unwrap();
+    assert_eq!(first.deployment_id(), second.deployment_id());
+    assert_ne!(first.runtime_instance_id(), second.runtime_instance_id());
+    assert_ne!(identity_key_id(&first), identity_key_id(&second));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn persisted_deployment_identity_fails_closed_on_reconfiguration() {
+    let root = temporary_root();
+    initialize(
+        &root,
+        None,
+        Some("deployment-original"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let error = initialize(
+        &root,
+        None,
+        Some("deployment-substitute"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("refusing to change deployment identity"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[actix_web::test]
+async fn http_discovery_rejects_invalid_challenges_without_exposing_identity() {
+    let root = temporary_root();
+    let endpoint = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let response = nazoauth::test_support::control_discovery::control_discovery(
+        &endpoint,
+        DiscoveryRequest {
+            schema: CONTROL_DISCOVERY_SCHEMA + 1,
+            nonce: URL_SAFE_NO_PAD.encode([7_u8; 32]),
+        },
+    )
+    .await;
+    assert_eq!(response.status(), http::StatusCode::BAD_REQUEST);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[actix_web::test]
+async fn http_discovery_returns_signed_response_for_valid_challenges() {
+    let root = temporary_root();
+    let endpoint = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let response = nazoauth::test_support::control_discovery::control_discovery(
+        &endpoint,
+        DiscoveryRequest {
+            schema: CONTROL_DISCOVERY_SCHEMA,
+            nonce: URL_SAFE_NO_PAD.encode([8_u8; 32]),
+        },
+    )
+    .await;
+    assert_eq!(response.status(), http::StatusCode::OK);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn initialization_rejects_unusable_identity_roots_and_identifiers() {
+    let data_root = temporary_root();
+    fs::write(&data_root, b"not-a-directory").unwrap();
+    let error = initialize(
+        &data_root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("failed to create deployment identity directory"));
+    fs::remove_file(data_root).unwrap();
+
+    let root = temporary_root();
+    fs::create_dir_all(&root).unwrap();
+    let identity_file = root.join("identity-file");
+    fs::write(&identity_file, b"not-a-directory").unwrap();
+    let error = initialize(
+        &root,
+        Some(&identity_file),
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("failed to create runtime instance identity directory"));
+    fs::remove_dir_all(root).unwrap();
+
+    let root = temporary_root();
+    let error = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("invalid/runtime-id"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("invalid file identifier"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn initialization_rejects_corrupt_identity_key_and_statement() {
+    let root = temporary_root();
+    initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let identity_dir = root.join(INSTANCE_DIRECTORY);
+    let original_key = fs::read_to_string(identity_dir.join(IDENTITY_KEY_FILE)).unwrap();
+    fs::write(
+        identity_dir.join(IDENTITY_KEY_FILE),
+        "!".repeat(32).as_bytes(),
+    )
+    .unwrap();
+    let error = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("not valid base64url"));
+
+    fs::write(
+        identity_dir.join(IDENTITY_KEY_FILE),
+        URL_SAFE_NO_PAD.encode([3; 31]),
+    )
+    .unwrap();
+    let error = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("must contain 32 bytes"));
+
+    fs::write(identity_dir.join(IDENTITY_KEY_FILE), original_key).unwrap();
+    fs::write(
+        identity_dir.join(DEPLOYMENT_STATEMENT_FILE),
+        b"not-a-deployment-statement",
+    )
+    .unwrap();
+    let error = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(!error.is_empty());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn generated_identifiers_are_stable_without_controller_configuration() {
+    let root = temporary_root();
+    let first = initialize(&root, None, None, None, "https://auth.example").unwrap();
+    let second = initialize(&root, None, None, None, "https://auth.example").unwrap();
+    assert_eq!(first.deployment_id(), second.deployment_id());
+    assert_eq!(first.runtime_instance_id(), second.runtime_instance_id());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn public_identity_key_cannot_be_substituted_independently() {
+    let root = temporary_root();
+    initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .unwrap();
+    let identity_dir = root.join(INSTANCE_DIRECTORY);
+    let substitute = SigningKey::from_bytes(&[31; 32]);
+    fs::write(
+        identity_dir.join(IDENTITY_PUBLIC_FILE),
+        encode_instance_public_key(&substitute.verifying_key()),
+    )
+    .unwrap();
+    let error = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://auth.example",
+    )
+    .err()
+    .unwrap()
+    .to_string();
+    assert!(error.contains("restore the identity as one unit"));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn concurrent_immutable_publication_accepts_only_identical_contents() {
+    let root = temporary_root();
+    fs::create_dir_all(&root).unwrap();
+    let path = root.join("immutable-identity");
+
+    publish_new_file(&path, b"first").unwrap();
+    publish_new_file(&path, b"first").unwrap();
+    let error = publish_new_file(&path, b"substitute")
+        .err()
+        .unwrap()
+        .to_string();
+
+    assert!(error.contains("different contents"));
+    assert_eq!(fs::read(&path).unwrap(), b"first");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn concurrent_immutable_publication_rejects_symlink_targets() {
+    use std::os::unix::fs::symlink;
+
+    let root = temporary_root();
+    fs::create_dir_all(&root).unwrap();
+    let target = root.join("attacker-controlled");
+    let path = root.join("immutable-identity");
+    fs::write(&target, b"first").unwrap();
+    symlink(&target, &path).unwrap();
+
+    let error = publish_new_file(&path, b"first").err().unwrap().to_string();
+
+    assert!(error.contains("not a regular file"));
+    assert_eq!(fs::read(&target).unwrap(), b"first");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn changed_public_deployment_claim_replaces_signed_statement_and_cleans_temporary_files() {
+    let root = temporary_root();
+    initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://old-auth.example",
+    )
+    .unwrap();
+    let second = initialize(
+        &root,
+        None,
+        Some("deployment-test"),
+        Some("runtime-test"),
+        "https://new-auth.example",
+    )
+    .unwrap();
+    let identity_dir = root.join(INSTANCE_DIRECTORY);
+    let current = fs::read_to_string(identity_dir.join(DEPLOYMENT_STATEMENT_FILE)).unwrap();
+    let current = verify_deployment_statement(
+        current.trim(),
+        &identity_key_id(&second),
+        &identity_public_key(&second),
+    )
+    .unwrap();
+    assert_eq!(current.issuer, "https://new-auth.example");
+    assert_eq!(
+        fs::read_dir(&identity_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".deployment-statement.")
+            })
+            .count(),
+        0
+    );
+    assert_eq!(fs::read_dir(&identity_dir).unwrap().count(), 5);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn failed_statement_replacement_preserves_target_and_cleans_temporary_files() {
+    let root = temporary_root();
+    fs::create_dir_all(&root).unwrap();
+    let path = root.join("statement");
+    fs::create_dir(&path).unwrap();
+    fs::write(path.join("existing"), b"keep").unwrap();
+
+    assert!(publish_replaceable_file(&path, b"new").is_err());
+    assert_eq!(fs::read(path.join("existing")).unwrap(), b"keep");
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    fs::remove_dir_all(root).unwrap();
+}

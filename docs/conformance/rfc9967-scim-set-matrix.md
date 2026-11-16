@@ -30,9 +30,10 @@ CI executes it through
 ## Hard test boundaries
 
 - Production Rust sources under `crates/scim-events/src` and
-  `crates/http-actix/src/scim.rs` may not contain test modules or test
-  attributes. Domain tests live in `crates/scim-events/tests`; HTTP adapter
-  tests live in `crates/http-actix/tests`.
+  `crates/nazoauth/src/http/scim.rs` may not contain test modules or test
+  attributes. Domain tests live in `crates/scim-events/tests`; HTTP protocol
+  tests live in `crates/nazoauth/tests/transport/scim_transport.rs`, and native
+  long-poll timing tests live in `crates/server/tests/unit/adapters/scim_events.rs`.
 - The black-box runner may seed and delete receiver credentials in
   `scim_tokens` and clean their credential-use audit rows, but it may not read
   or write event/outbox/receipt storage.

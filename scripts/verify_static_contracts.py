@@ -26,12 +26,12 @@ PACKAGE_ROLES = {
     "nazo-oauth-server-postgres": "adapter",
     "nazo-oauth-server-valkey": "adapter",
     "nazo-digital-credentials": "domain",
-    "nazo-http-actix": "adapter",
+    "nazo-http-actix": "http-adapter",
     "nazo-http-signatures": "domain",
     "nazo-identity": "domain",
     "nazo-key-management": "domain",
-    "nazoauth": "host",
-    "nazo-openid4vc-http-actix": "adapter",
+    "nazoauth": "facade",
+    "nazo-server": "host",
     "nazo-openid4vci": "domain",
     "nazo-openid4vp": "domain",
     "nazo-operator-protocol": "domain",
@@ -45,10 +45,12 @@ PACKAGE_ROLES = {
 ALLOWED_DEPENDENCY_ROLES = {
     "domain": {"domain"},
     "application": {"domain", "application"},
+    "facade": {"domain", "application"},
+    "http-adapter": {"facade"},
     "adapter": {"domain", "application", "adapter"},
-    "host": {"domain", "application", "adapter", "host"},
+    "host": {"domain", "application", "facade", "http-adapter", "adapter", "host"},
 }
-INNER_ROLES = {"domain", "application"}
+INNER_ROLES = {"domain", "application", "facade"}
 # Every inner package participates in the target contract. Keeping this list
 # attached to the role model makes a new inner crate an automatic CI obligation.
 PORTABLE_PACKAGES = tuple(
@@ -154,11 +156,14 @@ def rust_production_source(source: str) -> str:
     return source
 
 
-def production_dependency_entries(manifest: dict, workspace: dict):
-    """Yield every explicit normal/build edge, including disabled target/optional edges."""
+def dependency_entries(manifest: dict, workspace: dict, *, include_dev: bool = False):
+    """Yield declared edges, preserving aliases, target sections and merged features."""
     sections = [(None, manifest), *manifest.get("target", {}).items()]
     for target, section in sections:
-        for table, kind in (("dependencies", "normal"), ("build-dependencies", "build")):
+        tables = [("dependencies", "normal"), ("build-dependencies", "build")]
+        if include_dev:
+            tables.append(("dev-dependencies", "dev"))
+        for table, kind in tables:
             for alias, value in section.get(table, {}).items():
                 spec = value.copy() if isinstance(value, dict) else {"version": value}
                 if spec.get("workspace"):
@@ -172,6 +177,11 @@ def production_dependency_entries(manifest: dict, workspace: dict):
                 yield alias, spec.get("package", alias), spec, kind, target
 
 
+def production_dependency_entries(manifest: dict, workspace: dict):
+    """Yield every explicit normal/build edge, including disabled target/optional edges."""
+    yield from dependency_entries(manifest, workspace)
+
+
 def manifest_reader():
     """Read each Cargo manifest once within one guard run."""
     @cache
@@ -180,14 +190,14 @@ def manifest_reader():
     return read
 
 
-def resolved_production_dependencies(manifest_path: Path, workspace: dict, read_manifest):
+def resolved_dependencies(manifest_path: Path, workspace: dict, read_manifest, *, include_dev: bool = False):
     """Resolve Cargo aliases and local package identity once for both architecture guards.
 
     Returned specs also carry _alias, _kind, _target and the resolved absolute crate
     directory _path. These are guard metadata, not Cargo manifest fields.
     """
     manifest = read_manifest(manifest_path)
-    for alias, package, spec, kind, target in production_dependency_entries(manifest, workspace):
+    for alias, package, spec, kind, target in dependency_entries(manifest, workspace, include_dev=include_dev):
         local_path = None
         if "path" in spec:
             base = ROOT if spec.get("workspace") else manifest_path.parent
@@ -199,6 +209,10 @@ def resolved_production_dependencies(manifest_path: Path, workspace: dict, read_
             **spec, "_alias": alias, "_kind": kind, "_target": target,
             "_path": str(local_path) if local_path is not None else None,
         }
+
+
+def resolved_production_dependencies(manifest_path: Path, workspace: dict, read_manifest):
+    yield from resolved_dependencies(manifest_path, workspace, read_manifest)
 
 
 def package_manifests():
@@ -216,6 +230,24 @@ def check_package_roles(read_manifest) -> None:
         if role is None:
             violations.append(f"unclassified local package requires owner review: {package}")
             continue
+        facade_aliases = set()
+        for dependency, spec in resolved_dependencies(path, workspace, read_manifest, include_dev=True):
+            if dependency != "nazoauth":
+                continue
+            facade_aliases.add(spec["_alias"])
+            if "test-support" in spec.get("features", []) and not (
+                package == "nazo-server" and spec["_kind"] == "dev"
+            ):
+                violations.append(f"{package}: nazoauth/test-support is restricted to the native host dev-dependency")
+        test_support_edges = {
+            edge for alias in facade_aliases
+            for edge in (f"{alias}/test-support", f"{alias}?/test-support")
+        }
+        if package == "nazoauth":
+            test_support_edges.add("test-support")
+        for feature, enabled in manifest.get("features", {}).items():
+            if test_support_edges.intersection(enabled):
+                violations.append(f"{package} feature {feature}: internal test-support cannot be enabled by a package feature")
         for dependency, spec in resolved_production_dependencies(path, workspace, read_manifest):
             dependency_role = PACKAGE_ROLES.get(dependency)
             edge = (
@@ -296,18 +328,19 @@ def check_inner_source_boundaries(read_manifest) -> None:
     """
     workspace = read_manifest(ROOT / "Cargo.toml")["workspace"]
     concrete_crates = {name.replace("-", "_") for name in EXECUTION_DEPENDENCIES}
-    concrete_crates.update(
-        name.replace("-", "_")
-        for name, role in PACKAGE_ROLES.items()
-        if role in {"adapter", "host"}
-    )
     violations = []
     imports = re.compile(r"\buse\s+([^;]+);", re.DOTALL)
     qualified = re.compile(r"(?<!\w)(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)+")
     for manifest_path in package_manifests():
         manifest = read_manifest(manifest_path)
-        if PACKAGE_ROLES.get(manifest["package"]["name"]) not in INNER_ROLES:
+        role = PACKAGE_ROLES.get(manifest["package"]["name"])
+        if role not in INNER_ROLES | {"http-adapter"}:
             continue
+        forbidden_crates = (concrete_crates if role in INNER_ROLES else set()) | {
+            name.replace("-", "_")
+            for name, dependency_role in PACKAGE_ROLES.items()
+            if dependency_role not in ALLOWED_DEPENDENCY_ROLES[role]
+        }
         dependency_aliases = {
             spec["_alias"].replace("-", "_"): name.replace("-", "_")
             for name, spec in resolved_production_dependencies(manifest_path, workspace, read_manifest)
@@ -326,13 +359,33 @@ def check_inner_source_boundaries(read_manifest) -> None:
             forbidden_paths = set()
             for candidate in candidates:
                 resolved = resolved_rust_path(candidate, aliases)
-                if resolved.partition("::")[0] in concrete_crates or HOST_PATHS.match(resolved):
+                if (
+                    resolved.partition("::")[0] in forbidden_crates
+                    or (role in INNER_ROLES and HOST_PATHS.match(resolved))
+                    or (role == "http-adapter" and resolved.startswith("nazoauth::test_support"))
+                ):
                     forbidden_paths.add(resolved)
             if forbidden_paths:
                 relative = path.relative_to(ROOT).as_posix()
                 violations.append(f"{relative}: concrete execution paths {sorted(forbidden_paths)}")
     if violations:
         raise SystemExit("inner source boundary violated:\n" + "\n".join(violations))
+
+
+def check_generic_integration_abstractions() -> None:
+    """Integration uses ecosystem HTTP values, not a second framework/runtime API."""
+    declarations = re.compile(
+        r"\b(?:struct|enum|trait|type)\s+"
+        r"(?:GenericRequest|GenericResponse|WebFramework|RuntimePort|Executor|AsyncRuntime|Platform|Environment)\b"
+    )
+    violations = []
+    for path in sorted((ROOT / "crates").glob("*/src/**/*.rs")):
+        source = rust_production_source(path.read_text(encoding="utf-8"))
+        for match in declarations.finditer(source):
+            line = source.count("\n", 0, match.start()) + 1
+            violations.append(f"{path.relative_to(ROOT)}:{line}: {match[0]}")
+    if violations:
+        raise SystemExit("generic integration abstraction is forbidden:\n" + "\n".join(violations))
 
 
 def migration_line(path: Path) -> str:
@@ -414,7 +467,7 @@ def check_toolchain_pins() -> None:
         raise SystemExit("Containerfile runtime base image must be pinned by digest")
     if "cargo build --release --locked" not in containerfile:
         raise SystemExit("Containerfile release build must use Cargo.lock")
-    if "--package nazoauth --bin nazoauth" not in containerfile:
+    if "--package nazo-server --bin nazoauth" not in containerfile:
         raise SystemExit("Containerfile must build the nazoauth aggregate executable")
     if (
         "COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./"
@@ -500,14 +553,21 @@ def check_toolchain_pins() -> None:
 
 
 def check_aggregate_package_boundary(read_manifest) -> None:
-    """nazoauth stays the single aggregate host binary; direction is checked by roles."""
+    """The native package owns the executable; nazoauth is a neutral library."""
     workspace = read_manifest(ROOT / "Cargo.toml")["workspace"]
-    if workspace.get("default-members") != ["crates/nazoauth"]:
-        raise SystemExit("workspace default-members must contain only the nazoauth aggregate")
+    if workspace.get("default-members") != ["crates/server"]:
+        raise SystemExit("workspace default-members must contain only the native server")
 
-    manifest = read_manifest(ROOT / "crates" / "nazoauth" / "Cargo.toml")
+    manifest = read_manifest(ROOT / "crates" / "server" / "Cargo.toml")
+    if manifest["package"]["name"] != "nazo-server":
+        raise SystemExit("crates/server must own the nazo-server package")
     if "bin" not in manifest or manifest["bin"][0]["name"] != "nazoauth":
         raise SystemExit("Native Host must retain the nazoauth executable")
+    facade = read_manifest(ROOT / "crates" / "nazoauth" / "Cargo.toml")
+    if facade["package"]["name"] != "nazoauth" or facade.get("bin"):
+        raise SystemExit("crates/nazoauth must own only the framework-neutral library")
+    if (ROOT / "crates" / "nazoauth" / "src" / "main.rs").exists():
+        raise SystemExit("the neutral facade must not contain an implicit host executable")
 
 
 def check_workspace_package_metadata(read_manifest) -> None:
@@ -662,7 +722,7 @@ def check_ciba_ping_connection_pinning() -> None:
     invariant remains because no black-box test can distinguish a pinned
     connection from re-resolution.
     """
-    path = ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_sender.rs"
+    path = ROOT / "crates" / "server" / "src" / "adapters" / "ciba_ping_sender.rs"
     source = rust_production_source(path.read_text(encoding="utf-8"))
     reference = path.relative_to(ROOT)
     binding = re.search(
@@ -748,6 +808,7 @@ def main() -> None:
         check_toolchain_pins()
         check_package_roles(read_manifest)
         check_inner_source_boundaries(read_manifest)
+        check_generic_integration_abstractions()
         check_aggregate_package_boundary(read_manifest)
         check_workspace_package_metadata(read_manifest)
         check_rust_test_structure()

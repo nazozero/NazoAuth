@@ -304,7 +304,7 @@ mkdir -p "$DATA_DIR" \
 export LLVM_PROFILE_FILE="$(profile_path 'cargo-%p-%m.profraw')"
 cargo test --locked -p nazo-postgres --test migrations \
   pending_migrations_create_all_runtime_module_state_tables
-cargo build --locked --workspace --all-features --package nazoauth --bin nazoauth
+cargo build --locked --workspace --all-features --package nazo-server --bin nazoauth
 cp "$SERVER_BIN" "$E2E_SERVER_BIN"
 chmod +x "$E2E_SERVER_BIN"
 "$SERVER_BIN" tenant-bootstrap

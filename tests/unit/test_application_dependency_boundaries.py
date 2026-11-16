@@ -16,7 +16,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
     def assert_manifest_boundary(self, package: str, dependencies: str, rejected: bool) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "Cargo.toml").write_text('[workspace]\n[workspace.dependencies]\nhidden = { package = "nazoauth", path = "crates/host" }\n')
+            (root / "Cargo.toml").write_text('[workspace]\n[workspace.dependencies]\nhidden = { package = "nazo-server", path = "crates/host" }\n')
             crate = root / "crates" / "consumer"
             crate.mkdir(parents=True)
             (crate / "Cargo.toml").write_text(f'[package]\nname = "{package}"\n' + dependencies)
@@ -28,7 +28,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
                     GUARDS.check_package_roles(GUARDS.manifest_reader())
 
     def test_application_rejects_host_and_http_adapter(self) -> None:
-        for dependency in ("nazoauth", "nazo-http-actix"):
+        for dependency in ("nazo-server", "nazo-http-actix", "nazoauth"):
             with self.subTest(dependency=dependency):
                 self.assert_manifest_boundary("nazo-oauth-server", f'[dependencies]\n{dependency} = "1"\n', True)
 
@@ -42,11 +42,37 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
         self.assert_manifest_boundary("nazo-oauth-server", '[target.\'cfg(unix)\'.build-dependencies]\nhidden = { package = "nazo-http-actix", version = "1", optional = true }\n', True)
 
     def test_native_composition_and_application_domain_dependencies_are_allowed(self) -> None:
-        self.assert_manifest_boundary("nazoauth", '[dependencies]\nnazo-http-actix = "1"\n', False)
+        self.assert_manifest_boundary("nazo-server", '[dependencies]\nnazo-http-actix = "1"\n', False)
         self.assert_manifest_boundary("nazo-oauth-server", '[dependencies]\nnazo-identity = "1"\nhttp = "1"\n', False)
+
+    def test_facade_composes_inner_capabilities_without_concrete_adapters(self) -> None:
+        self.assert_manifest_boundary("nazoauth", '[dependencies]\nnazo-oauth-server = "1"\nnazo-identity = "1"\nhttp = "1"\n', False)
+        for dependency in ("nazo-server", "nazo-http-actix", "nazo-oauth-server-postgres", "nazo-valkey"):
+            with self.subTest(dependency=dependency):
+                self.assert_manifest_boundary("nazoauth", f'[dependencies]\n{dependency} = "1"\n', True)
+
+    def test_http_adapter_cannot_own_application_or_protocol_composition(self) -> None:
+        self.assert_manifest_boundary("nazo-http-actix", '[dependencies]\nnazoauth = "1"\nactix-web = "1"\nhttp = "1"\n', False)
+        for dependency in ("nazo-auth", "nazo-identity", "nazo-oauth-server", "nazo-runtime-modules", "nazo-postgres", "nazo-server"):
+            with self.subTest(dependency=dependency):
+                self.assert_manifest_boundary("nazo-http-actix", f'[dependencies]\n{dependency} = "1"\n', True)
+
+    def test_adapter_alias_cannot_hide_protocol_ownership(self) -> None:
+        self.assert_manifest_boundary("nazo-http-actix", '[target.\'cfg(unix)\'.dependencies]\nhidden = { package = "nazo-auth", version = "1", optional = true }\n', True)
 
     def test_dev_executor_is_not_a_production_edge(self) -> None:
         self.assert_manifest_boundary("nazo-oauth-server", '[dev-dependencies]\nfutures-executor = "1"\n', False)
+
+    def test_internal_facade_test_support_is_only_a_native_dev_dependency(self) -> None:
+        edge = 'nazoauth = { version = "1", features = ["test-support"] }\n'
+        self.assert_manifest_boundary("nazo-server", '[dev-dependencies]\n' + edge, False)
+        for package in ("nazo-http-actix", "nazo-server"):
+            for table in ("dependencies", "target.'cfg(unix)'.build-dependencies"):
+                self.assert_manifest_boundary(package, f'[{table}]\n' + edge, True)
+        self.assert_manifest_boundary("nazo-http-actix", '[dev-dependencies]\n' + edge, True)
+        self.assert_manifest_boundary("nazo-http-actix", '[dependencies]\ninner={package="nazoauth",version="1"}\n[features]\nleak=["inner/test-support"]\n', True)
+        self.assert_manifest_boundary("nazoauth", '[features]\ndefault=["test-support"]\ntest-support=[]\n', True)
+        self.assert_manifest_boundary("nazo-http-actix", '[dev-dependencies]\nnazoauth={version="1",features=["conformance"]}\n', False)
 
     def test_renamed_framework_and_optional_target_runtime_are_rejected(self) -> None:
         for table in ("dependencies", "build-dependencies", "target.'cfg(windows)'.dependencies", "target.'cfg(unix)'.build-dependencies"):
@@ -58,10 +84,16 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
                         True,
                     )
 
+    def test_facade_rejects_optional_framework_and_runtime_dependencies(self) -> None:
+        for table in ("dependencies", "build-dependencies", "target.'cfg(windows)'.dependencies"):
+            for dependency in ("actix-web", "axum", "hyper", "tokio"):
+                with self.subTest(table=table, dependency=dependency):
+                    self.assert_manifest_boundary("nazoauth", f'[{table}]\nhidden = {{ package = "{dependency}", version = "1", optional = true }}\n', True)
+
     def test_unclassified_external_dependency_is_allowed(self) -> None:
         """Third-party crates use a denylist, not an allowlist: ordinary
         algorithm/data crates need no review entry."""
-        for consumer in ("nazo-oauth-server", "nazo-identity", "nazoauth"):
+        for consumer in ("nazo-oauth-server", "nazo-identity", "nazo-server"):
             with self.subTest(consumer=consumer):
                 self.assert_manifest_boundary(consumer, '[dependencies]\nnew-data-library = "1"\n', False)
 
@@ -72,7 +104,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
     def test_local_certificate_provisioning_belongs_to_native_composition(self) -> None:
         dependency = '[dependencies]\nnazo-crypto = { version = "1", features = ["x509", "certificate-issuance"] }\n'
         self.assert_manifest_boundary("nazo-oauth-server", dependency, True)
-        self.assert_manifest_boundary("nazoauth", dependency, False)
+        self.assert_manifest_boundary("nazo-server", dependency, False)
 
     def test_path_identity_and_workspace_origin_cannot_be_hidden(self) -> None:
         for workspace_edge in (False, True):
@@ -80,7 +112,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
                 root = Path(temporary)
                 host = root / "private-host"
                 host.mkdir()
-                (host / "Cargo.toml").write_text('[package]\nname = "nazoauth"\n')
+                (host / "Cargo.toml").write_text('[package]\nname = "nazo-server"\n')
                 inherited = '[workspace.dependencies]\nhidden = { path = "private-host" }\n' if workspace_edge else ""
                 (root / "Cargo.toml").write_text('[workspace]\n' + inherited)
                 consumer = root / "crates" / "consumer"
@@ -96,7 +128,7 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
             consumer = root / "crates" / "consumer"
             consumer.mkdir(parents=True)
             path = consumer / "Cargo.toml"
-            path.write_text('[package]\nname="nazoauth"\n[target.\'cfg(unix)\'.build-dependencies]\nhidden={workspace=true,optional=true,features=["rt"]}\n')
+            path.write_text('[package]\nname="nazo-server"\n[target.\'cfg(unix)\'.build-dependencies]\nhidden={workspace=true,optional=true,features=["rt"]}\n')
             workspace = {"dependencies": {"hidden": {"package": "tokio", "version": "1", "features": ["sync"]}}}
             with patch.object(GUARDS, "ROOT", root):
                 edges = list(GUARDS.resolved_production_dependencies(path, workspace, GUARDS.manifest_reader()))
@@ -134,10 +166,19 @@ class InnerSourceBoundaries(unittest.TestCase):
             "use actix_web::{web::Data, HttpRequest as Request}; pub struct Input(pub Data<Request>);",
             "pub fn endpoint(input: axum::extract::State<State>) -> axum::response::Response { todo!() }",
             "pub struct Pending(pub tokio::task::JoinHandle<()>);",
-            "pub struct NativeFacade(pub nazoauth::http::HttpRequest);",
+            "pub struct NativeFacade(pub nazo_server::http::HttpRequest);",
         ):
             with self.subTest(source=source):
                 self.assert_source_boundary(source, True)
+
+    def test_http_adapter_cannot_import_inner_graph_or_internal_test_exports(self) -> None:
+        for source in (
+            "use nazo_oauth_server::token::dispatch::TokenEndpointHandles;",
+            "use nazoauth::test_support::http::TokenManagementEndpoint;",
+            "use nazoauth as facade; use facade::test_support::endpoints;",
+        ):
+            self.assert_source_boundary(source, True, package="nazo-http-actix")
+        self.assert_source_boundary("use nazoauth::NazoAuth; use actix_web::HttpRequest;", False, package="nazo-http-actix")
 
     def test_renamed_dependency_and_import_alias_cannot_hide_runtime(self) -> None:
         self.assert_source_boundary(
@@ -192,9 +233,23 @@ class InnerSourceBoundaries(unittest.TestCase):
             "fn digest() { let _ = blake3::hash(b\"value\"); }", False,
         )
 
+    def test_facade_rejects_framework_and_host_paths(self) -> None:
+        for source in (
+            "pub struct Request(actix_web::HttpRequest);",
+            "use nazo_server::bootstrap; fn build() { bootstrap::start(); }",
+            "fn run() { tokio::spawn(async {}); }",
+        ):
+            with self.subTest(source=source):
+                self.assert_source_boundary(source, True, package="nazoauth")
+        self.assert_source_boundary(
+            "use http::{Request, Response}; use bytes::Bytes; "
+            "pub async fn handle(request: Request<Bytes>) -> Response<Bytes> { todo!() }",
+            False, package="nazoauth",
+        )
+
     def test_native_and_adapter_execution_and_test_executor_are_allowed(self) -> None:
         execution = "fn run() { tokio::spawn(async {}); std::fs::read(\"fixture\"); }"
-        self.assert_source_boundary(execution, False, package="nazoauth")
+        self.assert_source_boundary(execution, False, package="nazo-server")
         self.assert_source_boundary(execution, False, package="nazo-http-actix")
         for attribute in ('#[cfg(test)]', '#[cfg(all(test, feature="fixtures"))]'):
             with self.subTest(attribute=attribute):
@@ -207,6 +262,40 @@ class InnerSourceBoundaries(unittest.TestCase):
             '// tokio::spawn(async {});\n'
             'const TEXT: &str = r#"std::fs::read(\"key\"); HttpRequest"#; '
             'fn format() -> fmt::Result { Ok(()) }', False,
+        )
+
+
+class IntegrationAbstractions(unittest.TestCase):
+    def check_source(self, source: str, rejected: bool) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "crates" / "integration" / "src" / "lib.rs"
+            path.parent.mkdir(parents=True)
+            path.write_text(source)
+            with patch.object(GUARDS, "ROOT", root):
+                if rejected:
+                    with self.assertRaises(SystemExit):
+                        GUARDS.check_generic_integration_abstractions()
+                else:
+                    GUARDS.check_generic_integration_abstractions()
+
+    def test_fake_framework_and_runtime_declarations_are_rejected(self) -> None:
+        for declaration in (
+            "pub struct GenericRequest;", "enum GenericResponse {}", "pub trait WebFramework {}",
+            "pub trait RuntimePort {}", "struct Executor;", "type AsyncRuntime = ();",
+            "struct Platform;", "pub enum Environment {}",
+            '#[cfg(feature="host")] pub trait RuntimePort {}',
+        ):
+            with self.subTest(declaration=declaration):
+                self.check_source(declaration, True)
+
+    def test_standard_values_and_domain_specific_execution_contracts_are_allowed(self) -> None:
+        self.check_source(
+            "use http::{Request, Response}; pub trait TenantResourceExecutorPort {} "
+            "// struct GenericRequest;\n"
+            'const EXAMPLE: &str = "trait RuntimePort {}"; '
+            "#[cfg(test)] mod tests { struct Executor; }",
+            False,
         )
 
 
@@ -332,7 +421,7 @@ class RustTestStructureBoundaries(unittest.TestCase):
 class CibaPingConnectionPinning(unittest.TestCase):
     """Validated CIBA addresses must be the addresses the client dials."""
 
-    SENDER = "crates/nazoauth/src/adapters/ciba_ping_sender.rs"
+    SENDER = "crates/server/src/adapters/ciba_ping_sender.rs"
 
     def assert_pinning(self, source: str, rejected: bool) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,0 +1,702 @@
+//! External OIDC, OAuth2-social, and trusted SAML-gateway federation.
+
+use crate::http::Request as HttpRequest;
+use crate::http::Response as HttpResponse;
+use crate::http::{
+    json_response, json_response_no_store, make_cookie, oauth_error, redirect_found,
+    with_cookie_headers,
+};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chrono::Utc;
+use http::StatusCode;
+use nazo_identity::{FederationError, LoginSuccess, VerifiedExternalIdentity};
+use serde::{Serialize, de::DeserializeOwned};
+
+use serde_json::json;
+
+use crate::config::{
+    ExternalLoginProvider, ExternalLoginProviderAdapter, FederationProviderRegistry,
+    FederationSettings, OidcFederationSettings, SamlGatewaySettings, SessionSettings,
+    SocialProviderSettings,
+};
+use crate::http::{ClientIpConfig, client_ip_with_config};
+use nazo_identity::email::normalize_email_address;
+use nazo_oauth_server::rate_limit::AuthRequestLimiter;
+use nazo_oauth_server::services::LocalFederationService;
+
+pub mod oidc;
+pub mod saml;
+pub mod social;
+use oidc::*;
+use saml::*;
+use social::*;
+
+pub const FEDERATION_STATE_TTL_SECONDS: u64 = 300;
+pub const SAML_REPLAY_TTL_SECONDS: u64 =
+    (SAML_ASSERTION_MAX_TTL_SECONDS + SAML_ASSERTION_CLOCK_SKEW_SECONDS) as u64;
+pub const MAX_FEDERATION_PROVIDER_RESPONSE_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone)]
+pub struct FederationHttpConfig {
+    pub providers: FederationProviderRegistry,
+    pub client: std::sync::Arc<dyn FederationHttpClient>,
+    pub saml_gateway: Option<SamlGatewaySettings>,
+    pub session_cookie_name: String,
+    pub csrf_cookie_name: String,
+    pub session_ttl_seconds: u64,
+    pub pending_mfa_session_ttl_seconds: u64,
+    pub cookie_secure: bool,
+}
+
+impl FederationHttpConfig {
+    pub fn new(
+        federation: &FederationSettings,
+        client: std::sync::Arc<dyn FederationHttpClient>,
+        session: &SessionSettings,
+    ) -> Self {
+        Self {
+            providers: federation.providers.clone(),
+            client,
+            saml_gateway: federation.saml_gateway.clone(),
+            session_cookie_name: session.session_cookie_name.clone(),
+            csrf_cookie_name: session.csrf_cookie_name.clone(),
+            session_ttl_seconds: session.session_ttl_seconds,
+            pending_mfa_session_ttl_seconds: session.pending_mfa_session_ttl_seconds,
+            cookie_secure: session.cookie_secure,
+        }
+    }
+}
+
+/// Outbound transport for configured federation providers. The host enforces the
+/// supplied response limit while reading, disables redirects and environment
+/// proxies, and applies the existing ten-second exchange timeout.
+pub trait FederationHttpClient: Send + Sync {
+    fn send(&self, request: HttpRequest, max_response_bytes: usize) -> FederationHttpFuture<'_>;
+}
+
+pub type FederationHttpFuture<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<HttpResponse>> + Send + 'a>>;
+
+pub async fn send(
+    client: &dyn FederationHttpClient,
+    request: HttpRequest,
+) -> anyhow::Result<HttpResponse> {
+    client
+        .send(request, MAX_FEDERATION_PROVIDER_RESPONSE_BYTES)
+        .await
+}
+
+pub fn federation_response_bytes(response: HttpResponse) -> anyhow::Result<bytes::Bytes> {
+    if response.status().is_client_error() || response.status().is_server_error() {
+        anyhow::bail!("federation provider returned HTTP {}", response.status());
+    }
+    Ok(response.into_body())
+}
+
+pub fn federation_json_response<T: DeserializeOwned>(response: HttpResponse) -> anyhow::Result<T> {
+    Ok(serde_json::from_slice(&federation_response_bytes(
+        response,
+    )?)?)
+}
+
+pub fn federation_text_response(response: HttpResponse) -> anyhow::Result<String> {
+    Ok(std::str::from_utf8(&federation_response_bytes(response)?)?.to_owned())
+}
+
+#[derive(Serialize)]
+pub struct FederationProviderView<'a> {
+    pub provider_id: &'a str,
+    pub display_name: &'a str,
+    pub adapter_type: &'static str,
+    pub icon: Option<&'a str>,
+    pub display_order: i32,
+    pub start_url: String,
+}
+
+pub async fn federation_provider_list(config: &FederationHttpConfig) -> HttpResponse {
+    #[derive(Serialize)]
+    struct ProviderList<'a> {
+        providers: Vec<FederationProviderView<'a>>,
+    }
+    let providers = config
+        .providers
+        .enabled_public_providers()
+        .map(provider_view)
+        .collect::<Vec<_>>();
+    json_response_no_store(ProviderList { providers })
+}
+
+pub async fn federation_provider_start(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    path: String,
+) -> HttpResponse {
+    if let Err(response) =
+        crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
+    {
+        return response;
+    }
+    let provider_id = path;
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
+        return unknown_provider_response();
+    };
+    let browser_binding_seed =
+        read_federation_binding_seed(req, config).unwrap_or_else(rand::random::<[u8; 32]>);
+    match &provider.adapter {
+        ExternalLoginProviderAdapter::Oidc(provider) => {
+            match service
+                .start_oidc(
+                    provider.provider_id.clone(),
+                    &browser_binding_seed,
+                    Utc::now(),
+                )
+                .await
+            {
+                Ok(start) => federation_start_response(
+                    config,
+                    oidc_authorization_url(
+                        provider,
+                        &start.state,
+                        &start.nonce,
+                        &start.pkce_verifier,
+                    ),
+                    &browser_binding_seed,
+                ),
+                Err(error) => federation_state_error(error),
+            }
+        }
+        ExternalLoginProviderAdapter::Social(provider) => {
+            match service
+                .start_social(provider_id, &browser_binding_seed, Utc::now())
+                .await
+            {
+                Ok(start) => federation_start_response(
+                    config,
+                    social_authorization_url(provider, &start.state, &start.pkce_verifier),
+                    &browser_binding_seed,
+                ),
+                Err(error) => federation_state_error(error),
+            }
+        }
+    }
+}
+
+pub fn federation_binding_cookie_name(config: &FederationHttpConfig) -> &'static str {
+    if config.cookie_secure {
+        "__Host-nazo_federation_binding"
+    } else {
+        "nazo_federation_binding"
+    }
+}
+
+pub fn read_federation_binding_seed(
+    req: &HttpRequest,
+    config: &FederationHttpConfig,
+) -> Option<[u8; 32]> {
+    let cookie = crate::http::cookie_value(req, federation_binding_cookie_name(config))?;
+    let value = cookie.as_str();
+    if value.len() != 43 {
+        return None;
+    }
+    let mut seed = [0; 32];
+    URL_SAFE_NO_PAD.decode_slice(value, &mut seed).ok()?;
+    Some(seed)
+}
+
+pub fn federation_start_response(
+    config: &FederationHttpConfig,
+    location: String,
+    seed: &[u8; 32],
+) -> HttpResponse {
+    with_cookie_headers(
+        redirect_found(location),
+        &[make_cookie(
+            federation_binding_cookie_name(config),
+            &URL_SAFE_NO_PAD.encode(seed),
+            true,
+            FEDERATION_STATE_TTL_SECONDS,
+            config.cookie_secure,
+        )],
+    )
+}
+
+pub async fn federation_provider_callback(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    path: String,
+    query: OidcCallbackQuery,
+) -> HttpResponse {
+    if let Err(response) =
+        crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
+    {
+        return response;
+    }
+    let provider_id = path;
+    let Some(provider) = config.providers.enabled_provider(&provider_id) else {
+        return unknown_provider_response();
+    };
+    match &provider.adapter {
+        ExternalLoginProviderAdapter::Oidc(provider) => {
+            oidc_callback_after_rate_limit_for_provider(
+                service, config, client_ip, req, query, provider,
+            )
+            .await
+        }
+        ExternalLoginProviderAdapter::Social(provider) => {
+            social_callback_after_rate_limit(
+                service,
+                config,
+                client_ip,
+                req,
+                query,
+                provider_id,
+                provider,
+            )
+            .await
+        }
+    }
+}
+
+pub async fn oidc_callback_after_rate_limit_for_provider(
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    client_ip: &ClientIpConfig,
+    req: &HttpRequest,
+    query: OidcCallbackQuery,
+    provider: &OidcFederationSettings,
+) -> HttpResponse {
+    let input = match validate_oidc_callback_input(&query) {
+        Ok(input) => input,
+        Err(response) => return response,
+    };
+    let Some(browser_binding_seed) = read_federation_binding_seed(req, config) else {
+        return federation_state_error(FederationError::InvalidState);
+    };
+    let stored = match service
+        .consume_oidc(
+            input.state_token,
+            &provider.provider_id,
+            &browser_binding_seed,
+            Utc::now(),
+        )
+        .await
+    {
+        Ok(stored) => stored,
+        Err(error) => return federation_state_error(error),
+    };
+    let token = match exchange_oidc_code(
+        config.client.as_ref(),
+        provider,
+        input.code,
+        &stored.pkce_verifier,
+    )
+    .await
+    {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC token exchange failed");
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                "OIDC federation failed.",
+            );
+        }
+    };
+    let jwks = match fetch_oidc_jwks(config.client.as_ref(), provider).await {
+        Ok(jwks) => jwks,
+        Err(error) => {
+            tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC JWKS fetch failed");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "OIDC federation unavailable.",
+            );
+        }
+    };
+    let claims = match verify_oidc_id_token(provider, &jwks, &token.id_token, &stored.nonce) {
+        Ok(claims) => claims,
+        Err(error) => {
+            tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC ID Token verification failed");
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                "OIDC federation failed.",
+            );
+        }
+    };
+    let email = match claims
+        .email
+        .as_deref()
+        .and_then(|value| normalize_email_address(value).ok())
+    {
+        Some(email) => email,
+        None => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                "OIDC email claim required.",
+            );
+        }
+    };
+    if claims.email_verified != Some(true) {
+        return oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "OIDC email must be verified.",
+        );
+    }
+    complete_federation(
+        service,
+        config,
+        VerifiedExternalIdentity {
+            provider_type: "oidc".to_owned(),
+            provider_id: provider.provider_id.clone(),
+            subject: claims.sub.clone(),
+            email: Some(email.clone()),
+            display_name: claims.name.clone(),
+            claims: json!({
+                "iss": claims.iss,
+                "sub": claims.sub,
+                "email": email,
+                "name": claims.name,
+                "given_name": claims.given_name,
+                "family_name": claims.family_name,
+            }),
+        },
+        "oidc",
+        client_ip_with_config(req, client_ip),
+        false,
+    )
+    .await
+}
+
+pub async fn social_callback_after_rate_limit(
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    client_ip: &ClientIpConfig,
+    req: &HttpRequest,
+    query: OidcCallbackQuery,
+    provider_id: String,
+    provider: &SocialProviderSettings,
+) -> HttpResponse {
+    let input = match validate_oidc_callback_input(&query) {
+        Ok(input) => input,
+        Err(response) => return response,
+    };
+    let Some(browser_binding_seed) = read_federation_binding_seed(req, config) else {
+        return federation_state_error(FederationError::InvalidState);
+    };
+    let stored = match service
+        .consume_social(
+            input.state_token,
+            &provider_id,
+            &browser_binding_seed,
+            Utc::now(),
+        )
+        .await
+    {
+        Ok(stored) => stored,
+        Err(error) => return federation_state_error(error),
+    };
+    let identity = match resolve_social_identity(
+        config.client.as_ref(),
+        provider,
+        input.code,
+        &stored.pkce_verifier,
+    )
+    .await
+    {
+        Ok(identity) => identity,
+        Err(_) => {
+            tracing::warn!(%provider_id, "OAuth2 social federation failed");
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                "social federation failed.",
+            );
+        }
+    };
+    let existing_only = identity.email.is_none();
+    complete_federation(
+        service,
+        config,
+        VerifiedExternalIdentity {
+            provider_type: "oauth2_social".to_owned(),
+            provider_id,
+            subject: identity.subject,
+            email: identity.email,
+            display_name: identity.display_name,
+            claims: identity.claims,
+        },
+        "oauth2_social",
+        client_ip_with_config(req, client_ip),
+        existing_only,
+    )
+    .await
+}
+
+pub async fn federation_saml_acs(
+    limiter: &AuthRequestLimiter,
+    client_ip: &ClientIpConfig,
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    req: &HttpRequest,
+    payload: SamlGatewayAssertion,
+) -> HttpResponse {
+    if let Err(response) =
+        crate::endpoints::rate_limit::enforce_auth_request_limit(limiter, req, client_ip).await
+    {
+        return response;
+    }
+    let Some(settings) = config.saml_gateway.as_ref() else {
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "temporarily_unavailable",
+            "SAML federation is not configured.",
+        );
+    };
+    let email = match normalize_email_address(&payload.email) {
+        Ok(email) => email,
+        Err(_) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "SAML email is invalid.",
+            );
+        }
+    };
+    if !valid_saml_gateway_assertion(settings, &payload, &email) {
+        return oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "SAML federation failed.",
+        );
+    }
+    if let Err(error) = service
+        .consume_saml_assertion(&payload.signature, payload.exp, Utc::now())
+        .await
+    {
+        return federation_saml_replay_error(error);
+    }
+    complete_federation(
+        service,
+        config,
+        VerifiedExternalIdentity {
+            provider_type: "saml".to_owned(),
+            provider_id: settings.issuer.clone(),
+            subject: payload.subject.clone(),
+            email: Some(email.clone()),
+            // This gateway envelope does not authenticate name. It remains
+            // explicitly untrusted link metadata, never local profile identity.
+            display_name: None,
+            claims: json!({
+                "iss": payload.issuer,
+                "aud": payload.audience,
+                "sub": payload.subject,
+                "email": email,
+                "untrusted_display_name": payload.name,
+            }),
+        },
+        "saml",
+        client_ip_with_config(req, client_ip),
+        false,
+    )
+    .await
+}
+
+pub async fn complete_federation(
+    service: &LocalFederationService,
+    config: &FederationHttpConfig,
+    identity: VerifiedExternalIdentity,
+    method: &str,
+    source_ip: String,
+    existing_only: bool,
+) -> HttpResponse {
+    let result = if existing_only {
+        service
+            .complete_existing_only(identity, method.to_owned(), source_ip)
+            .await
+    } else {
+        service
+            .complete_verified(identity, method.to_owned(), source_ip)
+            .await
+    };
+    match result {
+        Ok(success) => federation_session_response(config, success),
+        Err(error) => federation_completion_error(error),
+    }
+}
+
+pub fn federation_session_response(
+    config: &FederationHttpConfig,
+    success: LoginSuccess,
+) -> HttpResponse {
+    let mfa_required = success.session.pending_mfa();
+    let ttl = if mfa_required {
+        config.pending_mfa_session_ttl_seconds
+    } else {
+        config.session_ttl_seconds
+    };
+    with_cookie_headers(
+        json_response(json!({
+            "expires_in": ttl,
+            "csrf_token": success.csrf_token,
+            "mfa_required": mfa_required
+        })),
+        &[
+            make_cookie(
+                &config.session_cookie_name,
+                &success.session_id,
+                true,
+                ttl,
+                config.cookie_secure,
+            ),
+            make_cookie(
+                &config.csrf_cookie_name,
+                &success.csrf_token,
+                false,
+                ttl,
+                config.cookie_secure,
+            ),
+        ],
+    )
+}
+
+#[derive(PartialEq, Eq)]
+pub struct OidcCallbackInput<'a> {
+    pub state_token: &'a str,
+    pub code: &'a str,
+}
+
+impl std::fmt::Debug for OidcCallbackInput<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OidcCallbackInput([REDACTED])")
+    }
+}
+
+pub fn validate_oidc_callback_input(
+    query: &OidcCallbackQuery,
+) -> Result<OidcCallbackInput<'_>, HttpResponse> {
+    if query.error.is_some() {
+        return Err(oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "OIDC federation failed.",
+        ));
+    }
+    let state_token = query
+        .state
+        .as_deref()
+        .and_then(nazo_identity::federation::normalize_federation_token)
+        .ok_or_else(|| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "invalid federation state.",
+            )
+        })?;
+    let code = query
+        .code
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .filter(|value| value.len() <= 4096)
+        .ok_or_else(|| {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "authorization code required.",
+            )
+        })?;
+    Ok(OidcCallbackInput { state_token, code })
+}
+
+pub fn provider_view(provider: &ExternalLoginProvider) -> FederationProviderView<'_> {
+    FederationProviderView {
+        provider_id: &provider.provider_id,
+        display_name: &provider.display_name,
+        adapter_type: provider.adapter_type(),
+        icon: provider.icon.as_deref(),
+        display_order: provider.display_order,
+        start_url: format!("/auth/federation/{}/start", provider.provider_id),
+    }
+}
+
+pub fn unknown_provider_response() -> HttpResponse {
+    oauth_error(
+        StatusCode::NOT_FOUND,
+        "invalid_request",
+        "federation provider is not configured.",
+    )
+}
+
+pub fn federation_state_error(error: FederationError) -> HttpResponse {
+    match error {
+        FederationError::InvalidState => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid federation state.",
+        ),
+        FederationError::StateExpired | FederationError::ProviderMismatch => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "federation state expired.",
+        ),
+        error => {
+            tracing::warn!(?error, "federation state operation failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "federation state failed.",
+            )
+        }
+    }
+}
+
+pub fn federation_completion_error(error: FederationError) -> HttpResponse {
+    match error {
+        FederationError::VerifiedEmailRequired => oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "verified external email or existing link required.",
+        ),
+        FederationError::InactiveExistingLink => {
+            oauth_error(StatusCode::UNAUTHORIZED, "access_denied", "当前账号已停用.")
+        }
+        FederationError::LoginFailed => oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "federation login failed.",
+        ),
+        FederationError::Session(_) | FederationError::SessionCollision => oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "session write failed.",
+        ),
+        error => {
+            tracing::warn!(?error, "federation identity resolution failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "federation login failed.",
+            )
+        }
+    }
+}
+
+pub fn federation_saml_replay_error(error: FederationError) -> HttpResponse {
+    match error {
+        FederationError::SamlReplay => oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "SAML federation failed.",
+        ),
+        error => federation_state_error(error),
+    }
+}

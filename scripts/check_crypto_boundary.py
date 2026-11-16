@@ -27,11 +27,11 @@ BACKEND_PACKAGES = {
 _BACKEND_ROOTS = frozenset(name.replace("-", "_") for name in BACKEND_PACKAGES)
 
 TLS_EXCEPTIONS = {
-    "crates/nazoauth/src/bootstrap/transport.rs": {
+    "crates/server/src/bootstrap/transport.rs": {
         "rustls::crypto::CryptoProvider",
         "rustls::crypto::aws_lc_rs::default_provider",
     },
-    "crates/nazoauth/src/bootstrap/startup/services/factory.rs": {
+    "crates/server/src/bootstrap/startup/configuration.rs": {
         "rustls::crypto::aws_lc_rs::default_provider",
     },
     "crates/persistence-postgres/src/pool.rs": {
@@ -68,10 +68,11 @@ _VERIFIER_PATHS = {
     "rustls::server::danger::ClientCertVerifier",
 }
 _VERIFIER_FILES = {
-    "crates/nazoauth/src/bootstrap/transport.rs",
-    "crates/nazoauth/src/http/mtls.rs",
+    "crates/server/src/bootstrap/transport.rs",
+    "crates/server/src/adapters/transport_facts.rs",
+    "crates/server/src/bootstrap/startup/tenant_runtime.rs",
 }
-_WEBPKI_FILES = {"crates/nazoauth/src/bootstrap/transport.rs"}
+_WEBPKI_FILES = {"crates/server/src/bootstrap/transport.rs"}
 
 _QUALIFIED = re.compile(r"(?<!\w)(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)+")
 _USES = re.compile(r"\buse\s+([^;]+);", re.DOTALL)

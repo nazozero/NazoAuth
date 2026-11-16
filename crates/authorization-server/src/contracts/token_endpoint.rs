@@ -9,7 +9,8 @@ pub struct ClientAttestationFacts<'a> {
 pub struct TokenRequestFacts<'a> {
     pub dpop: DpopRequestFacts<'a>,
     pub client_attestation: ClientAttestationFacts<'a>,
-    pub certificate: Option<ClientCertificateFacts>,
+    /// Selected request identity; certificate metadata and DER stay in request-owned storage.
+    pub certificate: Option<&'a ClientCertificateFacts>,
 }
 
 /// Parsed input whose endpoint-level parameter and authentication-source checks passed.

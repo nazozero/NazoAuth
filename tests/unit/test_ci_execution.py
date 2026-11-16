@@ -44,7 +44,7 @@ class CiExecutionTests(unittest.TestCase):
     def test_every_coverage_exclusion_has_an_uninstrumented_owner(self):
         script = (ROOT / "scripts/generate_codecov_lcov.sh").read_text()
         quality = (ROOT / ".github/workflows/code-quality.yml").read_text()
-        issuance = (ROOT / "crates/nazoauth/tests/token_issuance_simplification.rs").read_text()
+        issuance = (ROOT / "crates/server/tests/token_issuance_simplification.rs").read_text()
         owned = set(re.findall(r"#\[(?:tokio::|actix_web::)?test(?:\([^\]]*\))?\]\s*(?:async\s+)?fn\s+(\w+)", issuance))
         self.assertTrue(owned)
         convergence = "two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures"

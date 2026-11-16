@@ -31,7 +31,7 @@ class PersistenceGraphTests(unittest.TestCase):
         self.assertIs(GRAPH.PACKAGE_ROLES, GRAPH.contracts.PACKAGE_ROLES)
         self.assertIs(GRAPH.ALLOWED_DEPENDENCY_ROLES, GRAPH.contracts.ALLOWED_DEPENDENCY_ROLES)
         for package, role in GRAPH.PACKAGE_ROLES.items():
-            if role in {"domain", "application"}:
+            if role in GRAPH.contracts.INNER_ROLES:
                 self.assertIn(package, GRAPH.graph_roots())
         self.assertIn("nazo-oauth-server-postgres", GRAPH.graph_roots())
         self.assertIn("nazo-oauth-server-valkey", GRAPH.graph_roots())
@@ -47,10 +47,18 @@ class PersistenceGraphTests(unittest.TestCase):
         self.assertIn("nazo-oauth-server", GRAPH.forbidden_graph_dependencies("nazo-auth"))
         self.assertNotIn("tokio", GRAPH.forbidden_graph_dependencies("nazo-auth"))
 
+    def test_facade_graph_is_checked_without_rejecting_its_own_root(self) -> None:
+        self.assertIn("nazoauth", GRAPH.graph_roots())
+        forbidden = GRAPH.forbidden_graph_dependencies("nazoauth")
+        self.assertNotIn("nazoauth", forbidden)
+        self.assertNotIn("nazo-oauth-server", forbidden)
+        self.assertIn("nazo-http-actix", forbidden)
+        self.assertIn("nazo-server", forbidden)
+
     def test_tree_uses_locked_normal_and_build_edges_and_keeps_names(self) -> None:
-        output = "nazo-auth v1.0.0 (local)\nnazoauth v1.0.0 (local)\ndiesel v2.3.0 (*)\n"
+        output = "nazo-auth v1.0.0 (local)\nnazo-server v1.0.0 (local)\ndiesel v2.3.0 (*)\n"
         with mock.patch.object(GRAPH.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, output, "")) as run:
-            self.assertEqual(GRAPH.package_names("nazo-auth", self.root), {"nazo-auth", "nazoauth", "diesel"})
+            self.assertEqual(GRAPH.package_names("nazo-auth", self.root), {"nazo-auth", "nazo-server", "diesel"})
         self.assertEqual(run.call_args.args[0], ["cargo", "tree", "--locked", "--all-features", "--package", "nazo-auth", "--edges", "normal,build", "--prefix", "none"])
         self.assertEqual(run.call_args.kwargs["cwd"], self.root)
 
@@ -63,11 +71,11 @@ class PersistenceGraphTests(unittest.TestCase):
         diagnostic = io.StringIO()
         with (
             mock.patch.object(GRAPH, "graph_roots", return_value={"nazo-oauth-server"}),
-            mock.patch.object(GRAPH, "package_names", return_value={"nazo-oauth-server", "nazoauth"}),
+            mock.patch.object(GRAPH, "package_names", return_value={"nazo-oauth-server", "nazo-server"}),
             contextlib.redirect_stderr(diagnostic),
         ):
             self.assertEqual(GRAPH.main(), 1)
-        self.assertIn("nazo-oauth-server: nazoauth", diagnostic.getvalue())
+        self.assertIn("nazo-oauth-server: nazo-server", diagnostic.getvalue())
 
     def test_main_fails_closed_when_tree_fails(self) -> None:
         with (

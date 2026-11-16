@@ -30,7 +30,7 @@ RUN --mount=type=cache,id=nazoauth-cargo-registry,target=/usr/local/cargo/regist
     --mount=type=cache,id=nazoauth-cargo-git,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=nazoauth-target-${SOURCE_SHA},target=/app/target,sharing=locked \
     cargo build --release --locked \
-      --package nazoauth --bin nazoauth \
+      --package nazo-server --bin nazoauth \
     && install -Dm755 target/release/nazoauth /out/nazoauth \
     && printf "%s" "${SOURCE_SHA}" > /out/source-sha
 

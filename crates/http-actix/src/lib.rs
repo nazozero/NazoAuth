@@ -1,132 +1,177 @@
-//! Actix transport adapters and protocol response presentation.
-//!
-//! This crate owns HTTP-framework details. Domain policy and infrastructure
-//! access remain in their focused crates.
+#![forbid(unsafe_code)]
+//! Actix registration, connection facts and HTTP value conversion for NazoAuth.
+//! All routing, protocol interpretation and endpoint policy belong to the facade.
 
-mod authorization_decision;
+use std::{borrow::Cow, io};
+
+use actix_web::{
+    Error, HttpRequest, HttpResponse,
+    body::MessageBody,
+    dev::{Decompress, ServiceRequest, ServiceResponse},
+    error::PayloadError,
+    middleware::Next,
+    web,
+};
+use bytes::Bytes;
+use futures_util::{TryStreamExt as _, future::Either};
+use nazoauth::{ConnectionFacts, NazoAuth, integration::Route};
+
+/// Register the canonical product surface. Install the already-built tenant as
+/// `web::Data<NazoAuth>` in application data, including tenant-selected data.
+pub fn configure(config: &mut web::ServiceConfig) {
+    for route in nazoauth::integration::routes() {
+        config.service(
+            web::resource(actix_path(route.path).as_ref())
+                .app_data(route)
+                .to(serve),
+        );
+    }
+    config.default_service(web::to(serve));
+}
+
+fn actix_path(path: &'static str) -> Cow<'static, str> {
+    let Some(start) = path.find("{*") else {
+        return Cow::Borrowed(path);
+    };
+    let end = path[start..]
+        .find('}')
+        .expect("canonical catch-all has a closing brace")
+        + start;
+    Cow::Owned(format!(
+        "{}{{{}:.*}}{}",
+        &path[..start],
+        &path[start + 2..end],
+        &path[end + 1..]
+    ))
+}
+
+/// Forward one framework request without assembling services or buffering its
+/// payload. Decoding consumes the canonical route's transport metadata.
+pub async fn serve(
+    application: web::Data<NazoAuth>,
+    request: HttpRequest,
+    payload: web::Payload,
+) -> HttpResponse {
+    let request_head = forward_request(&request, ());
+    let body_mode = request
+        .app_data::<&'static Route>()
+        .map(|route| route.body(request_head.method()))
+        .unwrap_or(nazoauth::integration::BodyMode::None);
+    let body = forward_payload(&request, payload.into_inner(), body_mode);
+    // Move the standard head and the original Bytes stream into the facade.
+    let (parts, ()) = request_head.into_parts();
+    forward_response(
+        application
+            .handle_stream(http::Request::from_parts(parts, body))
+            .await,
+    )
+}
+
+fn forward_payload(
+    request: &HttpRequest,
+    payload: actix_web::dev::Payload,
+    body_mode: nazoauth::integration::BodyMode,
+) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> {
+    if body_mode.decode_content() {
+        Either::Left(
+            Decompress::from_headers(payload, request.headers())
+                .limit(body_mode.limit().expect("decoded bodies have a limit")),
+        )
+    } else {
+        Either::Right(payload)
+    }
+    .map_err(payload_error)
+}
+
+fn payload_error(error: PayloadError) -> io::Error {
+    if matches!(error, PayloadError::Overflow) {
+        io::Error::new(io::ErrorKind::FileTooLarge, error)
+    } else {
+        io::Error::other(error)
+    }
+}
+
+/// Translate HTTP metadata, sharing header-value and body storage across the
+/// framework's HTTP version boundary. Trust decisions stay in the facade.
+pub fn forward_request<B>(request: &HttpRequest, body: B) -> http::Request<B> {
+    let mut forwarded = http::Request::new(body);
+    *forwarded.method_mut() = http::Method::from_bytes(request.method().as_str().as_bytes())
+        .expect("valid framework method");
+    *forwarded.uri_mut() = request
+        .uri()
+        .to_string()
+        .try_into()
+        .expect("valid framework URI");
+    *forwarded.version_mut() = match request.version() {
+        actix_web::http::Version::HTTP_09 => http::Version::HTTP_09,
+        actix_web::http::Version::HTTP_10 => http::Version::HTTP_10,
+        actix_web::http::Version::HTTP_11 => http::Version::HTTP_11,
+        actix_web::http::Version::HTTP_2 => http::Version::HTTP_2,
+        actix_web::http::Version::HTTP_3 => http::Version::HTTP_3,
+        _ => unreachable!("unsupported framework HTTP version"),
+    };
+    for (name, value) in request.headers() {
+        let mut converted = http::HeaderValue::from_maybe_shared(Bytes::from_owner(value.clone()))
+            .expect("valid framework header value");
+        converted.set_sensitive(value.is_sensitive());
+        forwarded.headers_mut().append(
+            http::HeaderName::from_bytes(name.as_str().as_bytes())
+                .expect("valid framework header name"),
+            converted,
+        );
+    }
+    let mut facts = request
+        .conn_data::<ConnectionFacts>()
+        .cloned()
+        .unwrap_or_default();
+    facts.peer_addr = request.peer_addr();
+    forwarded.extensions_mut().insert(facts);
+    forwarded
+}
+
+/// Move response body storage into Actix while preserving every repeated header.
+pub fn forward_response(response: http::Response<Bytes>) -> HttpResponse {
+    let (parts, body) = response.into_parts();
+    let mut builder = HttpResponse::build(
+        actix_web::http::StatusCode::from_u16(parts.status.as_u16()).expect("valid HTTP status"),
+    );
+    for (name, value) in &parts.headers {
+        builder.append_header((actix_header_name(name), actix_header_value(value)));
+    }
+    builder.body(body)
+}
+
+fn actix_header_name(name: &http::HeaderName) -> actix_web::http::header::HeaderName {
+    actix_web::http::header::HeaderName::from_bytes(name.as_str().as_bytes())
+        .expect("valid HTTP header name")
+}
+
+fn actix_header_value(value: &http::HeaderValue) -> actix_web::http::header::HeaderValue {
+    let mut converted =
+        actix_web::http::header::HeaderValue::from_maybe_shared(Bytes::from_owner(value.clone()))
+            .expect("valid HTTP header value");
+    converted.set_sensitive(value.is_sensitive());
+    converted
+}
+
+/// Apply the same neutral security policy to host-owned responses and rejections.
+pub async fn security_headers<B: MessageBody>(
+    request: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, Error> {
+    let defaults = nazoauth::integration::security_headers(request.path());
+    let mut response = next.call(request).await?;
+    for (name, value) in defaults {
+        let name = actix_header_name(name);
+        if !response.headers().contains_key(&name) {
+            response
+                .headers_mut()
+                .insert(name, actix_header_value(value));
+        }
+    }
+    Ok(response)
+}
+
 #[cfg(test)]
-#[path = "../tests/unit/authorization_request_object.rs"]
-mod authorization_request_object_tests;
-mod cookies;
-mod cors;
-mod csrf;
-mod dpop;
-mod dynamic_client_registration;
-mod extract;
-mod fapi_resource;
-mod form_post_response;
-mod html;
-mod local_registration;
-mod metadata;
-mod mfa_profile;
-mod middleware;
-mod oidc_logout;
-mod passkey;
-mod password_login;
-mod presenter;
-mod profile_account;
-mod runtime_modules;
-mod scim;
-mod session;
-mod session_management;
-mod token_client_auth;
-mod token_forms;
-mod token_management;
-mod userinfo;
-
-pub use presenter::{oauth_endpoint_error_response, pre_authorized_token_error_response};
-
-pub use authorization_decision::{
-    AuthorizationDecisionEndpoint, AuthorizationDecisionForm, authorize_decision,
-};
-pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
-pub use cors::{
-    cors_admin, cors_admin_with_origin_predicate, cors_auth_api,
-    cors_auth_api_with_origin_predicate, cors_browser_token_management,
-    cors_browser_token_management_with_origin_predicate, cors_browser_userinfo,
-    cors_browser_userinfo_with_origin_predicate, cors_scim, cors_scim_with_origin_predicate,
-    cors_well_known, cors_well_known_with_origin_predicate,
-};
-pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
-pub use dpop::{
-    dpop_error_response, dpop_proof_header, dpop_proof_present, dpop_request_authority,
-};
-pub use dynamic_client_registration::{
-    ClientIpConfig, ClientIpHeaderMode, ClientIpParseError, DynamicRegistrationClientStore,
-    DynamicRegistrationDependencyError, DynamicRegistrationEndpoint, DynamicRegistrationFuture,
-    IpCidr, client_configuration_delete, client_configuration_get, client_configuration_put,
-    client_ip_with_config, client_ip_with_context, dynamic_client_registration,
-    parse_forwarded_for_value, parse_trusted_proxy_cidrs, request_from_trusted_proxy_cidrs,
-};
-pub use extract::{
-    ResourceAccessToken, authorization_access_token, mfa_json_config, mfa_method_not_allowed,
-    mfa_options, request_uses_form_urlencoded, resource_access_token,
-};
-pub use fapi_resource::{FapiResourceEndpoint, fapi_resource};
-pub use form_post_response::form_post_authorization_response;
-pub use local_registration::{
-    LocalRegistrationEndpoint, RegisterRequest, SendCodeRequest, register, send_code,
-};
-pub use metadata::{
-    MetadataHandles, discovery, jwks, oauth_authorization_server_metadata,
-    oauth_protected_resource_metadata,
-};
-pub use mfa_profile::{
-    MfaProfileConfig, MfaProfileEndpoint, configure_mfa_challenge_route,
-    configure_mfa_profile_routes, mfa_backup_codes_regenerate, mfa_disable, mfa_step_up,
-    mfa_totp_begin, mfa_totp_confirm, mfa_verify,
-};
-pub use middleware::{apply_security_headers, security_headers};
-pub use oidc_logout::{OidcLogoutConfig, OidcLogoutEndpoint, oidc_logout};
-pub use passkey::{
-    PasskeyLoginBeginRequest, PasskeyLoginConfig, PasskeyLoginEndpoint, PasskeyLoginFinishRequest,
-    PasskeyProfileConfig, PasskeyProfileEndpoint, PasskeyRegistrationBeginRequest,
-    PasskeyRegistrationFinishRequest, configure_passkey_login_routes,
-    configure_passkey_profile_routes, passkey_delete, passkey_list, passkey_login_begin,
-    passkey_login_finish, passkey_registration_begin, passkey_registration_finish,
-};
-pub use password_login::{PasswordLoginConfig, PasswordLoginEndpoint, login};
-pub use presenter::{
-    authorization_error_response, bearer_challenge, bytes_response, empty_response,
-    empty_response_no_store, is_oauth_error_description_byte, json_response,
-    json_response_no_store, json_response_status, json_response_status_no_store,
-    oauth_bearer_error, oauth_error, oauth_error_description, oauth_token_error, redirect_found,
-    redirect_see_other,
-};
-pub use profile_account::{
-    ProfileAccountEndpoint, UpdateProfileRequest, profile_applications, profile_me, profile_update,
-};
-pub use runtime_modules::{
-    RuntimeModuleAdminEndpoint, RuntimeModuleEventPageQuery, RuntimeModulePatch,
-    admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
-};
-pub use scim::{
-    ScimEndpoint, scim_create_user, scim_delete_user, scim_get_user, scim_list_users,
-    scim_patch_user, scim_poll_security_events, scim_replace_user, scim_resource_types,
-    scim_schemas, scim_service_provider_config,
-};
-pub use session::{
-    SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,
-    profile_logout,
-};
-pub use session_management::{
-    CheckSessionStatusQuery, SessionManagementConfig, SessionManagementEndpoint,
-    check_session_iframe, check_session_status,
-};
-pub use token_client_auth::{
-    TokenClientAuthForm, basic_authorization_credentials, token_client_auth_transport_facts,
-};
-pub use token_forms::{
-    parse_token_form, parse_token_form_with_pre_authorized, parse_token_management_form,
-    token_management_form_error, token_management_has_conflicting_client_auth,
-    token_management_oauth_error,
-};
-pub use token_management::{
-    TokenManagementEndpoint, TokenManagementRequestFactsExtractor, introspect, revoke,
-};
-pub use userinfo::{UserinfoEndpoint, userinfo};
-
-pub mod mtls;
-pub use mtls::MtlsThumbprintExtractor;
-
-pub use presenter::token_endpoint_success_response;
+#[path = "../tests/unit/transport.rs"]
+mod tests;

@@ -19,10 +19,10 @@ impl BasicAuthorizationCredentials {
     }
 }
 
-/// Certificate and possession facts extracted by the deployment-specific HTTP adapter.
+/// Certificate and possession facts selected at the neutral HTTP boundary.
 ///
-/// The token-management core receives these facts after the adapter has established that the
-/// forwarding peer is trusted. PKI trust and registered-key binding are separate authorization
+/// Hosts supply direct TLS facts. Forwarded facts are selected only after the facade establishes
+/// that the forwarding peer is trusted. PKI trust and registered-key binding are separate authorization
 /// decisions. Keeping the value framework-neutral prevents `HttpRequest` and
 /// `HeaderMap` from crossing into authentication policy.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

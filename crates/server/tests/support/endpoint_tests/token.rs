@@ -1,0 +1,23 @@
+// Native regression module: reexports the actual neutral implementation.
+pub(crate) use nazoauth::test_support::endpoints::token::*;
+#[path = "../../unit/http/token/authorization_code.rs"]
+pub(crate) mod authorization_code_tests;
+pub(crate) mod ciba;
+#[path = "../../unit/http/token/client_auth.rs"]
+pub(crate) mod client_auth_tests;
+#[path = "../../unit/http/token/client_credentials.rs"]
+pub(crate) mod client_credentials_tests;
+pub(crate) mod device;
+pub(crate) mod device_config;
+pub(crate) mod dispatch;
+pub(crate) mod issue;
+#[path = "../../unit/http/token/jwt_bearer.rs"]
+pub(crate) mod jwt_bearer_tests;
+#[path = "../../unit/http/token/lifecycle_boundary.rs"]
+pub(crate) mod lifecycle_boundary_tests;
+#[path = "../../unit/http/token/native_sso.rs"]
+pub(crate) mod native_sso_tests;
+#[path = "../../unit/http/token/refresh.rs"]
+pub(crate) mod refresh_tests;
+#[path = "../../unit/http/token/token_exchange.rs"]
+pub(crate) mod token_exchange_tests;

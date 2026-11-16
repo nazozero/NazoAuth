@@ -1,0 +1,181 @@
+use super::StartupConfiguration;
+use super::*;
+use anyhow::Context as _;
+use nazo_oauth_server::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
+use nazo_oauth_server::services::ServerAuthorizationService;
+
+pub(super) struct Openid4vcServices {
+    pub(super) credential_issuer_operations:
+        Option<Arc<dyn nazo_openid4vci::application::CredentialIssuerOperations>>,
+    pub(super) credential_issuer_endpoint: Option<Arc<CredentialIssuerEndpoint>>,
+    pub(super) credential_dataset_admin: Option<Arc<CredentialDatasetAdminService>>,
+    pub(super) presentation_endpoint: Option<Arc<PresentationEndpoint>>,
+    pub(super) client_attestation_validator: Option<Arc<Openid4vcClientAttestationValidator>>,
+}
+
+pub(super) async fn build(
+    startup: &StartupConfiguration,
+    token_service: &Arc<nazo_oauth_server::services::ServerTokenService>,
+    authorization_service: &Arc<ServerAuthorizationService>,
+    runtime_registry: Arc<ServerRuntimeModuleRegistry>,
+    keyset: &nazo_key_management::KeyManager,
+) -> anyhow::Result<Openid4vcServices> {
+    let settings = startup.settings.as_ref();
+    let persistence = startup.capabilities.persistence.provider();
+    let openid4vc_enabled =
+        settings.modules.enable_openid4vci_issuer || settings.modules.enable_openid4vp_verifier;
+    let data_key = openid4vc_enabled.then(|| {
+        settings
+            .openid4vc
+            .data_encryption_key
+            .expect("enabled OpenID4VC modules require a data encryption key")
+    });
+    let trust_policy_store = openid4vc_enabled.then(|| persistence.openid4vc_trust_policies());
+    let openid4vc_crypto = if openid4vc_enabled {
+        Some(
+            Openid4vcCredentialCrypto::new_with_policies(
+                keyset.clone(),
+                nazo_digital_credentials::VcIssuerTrustPolicy::san_bound(),
+                settings.openid4vc.revocation_policy,
+                startup.capabilities.mdoc_signer.clone().ok_or_else(|| {
+                    anyhow::anyhow!("enabled OpenID4VC requires an mdoc signing capability")
+                })?,
+            )
+            .context("failed to initialize OpenID4VC credential crypto from managed material")?
+            .with_status_resolver(startup.capabilities.documents.clone()),
+        )
+    } else {
+        None
+    };
+    let client_attestation_validator = settings
+        .modules
+        .enable_openid4vci_issuer
+        .then(|| {
+            let static_client_attestation = settings
+                .openid4vc
+                .client_attestation_issuer
+                .as_ref()
+                .map(|issuer| {
+                    (
+                        issuer.clone(),
+                        settings
+                            .openid4vc
+                            .client_attestation_jwks
+                            .clone()
+                            .expect("configured client attestation requires trust keys"),
+                    )
+                });
+            Openid4vcClientAttestationValidator::with_trust_policies(
+                static_client_attestation,
+                trust_policy_store
+                    .clone()
+                    .expect("enabled OpenID4VCI requires a trust policy store"),
+                settings.tenant.context.tenant_id.as_uuid(),
+            )
+            .map(Arc::new)
+        })
+        .transpose()?;
+    let (credential_issuer_endpoint, credential_dataset_admin, credential_issuer_operations) =
+        if settings.modules.enable_openid4vci_issuer {
+            let data_key = data_key.expect("enabled OpenID4VCI requires a data encryption key");
+            let issuance_store = persistence
+                .openid4vci_store(data_key, startup.capabilities.passwords.verifier.clone());
+            let subject_store = persistence.openid4vc_subjects();
+            let dataset_store = persistence.openid4vci_datasets(data_key);
+            let proof_validator = Openid4vcProofValidator::new(
+                settings
+                    .openid4vc
+                    .key_attestation_jwks
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({"keys": []})),
+            )?
+            .with_trust_policies(
+                trust_policy_store
+                    .clone()
+                    .expect("enabled OpenID4VCI requires a trust policy store"),
+                settings.tenant.context.tenant_id.as_uuid(),
+            );
+            let operations = Arc::new(ServerCredentialIssuerOperations::new(
+                issuance_store,
+                subject_store,
+                dataset_store,
+                settings.tenant.context.tenant_id.as_uuid(),
+                data_key,
+                token_service.clone(),
+                authorization_service.clone(),
+                runtime_registry.snapshot_store(),
+                startup.capabilities.passwords.hasher.clone(),
+                openid4vc_crypto
+                    .as_ref()
+                    .expect("enabled OpenID4VCI requires crypto")
+                    .clone(),
+                proof_validator,
+                settings.endpoint.issuer.clone(),
+                settings.openid4vc.credential_configurations.clone(),
+                settings
+                    .openid4vc
+                    .deferred_credential_configurations
+                    .clone(),
+                settings.protocol.dpop_nonce_policy,
+            )?);
+            (
+                Some(Arc::new(
+                    CredentialIssuerEndpoint::new(
+                        operations.clone(),
+                        settings
+                            .openid4vc
+                            .issuer_management_token
+                            .clone()
+                            .expect("enabled OpenID4VCI requires a management token")
+                            .into_bytes(),
+                    )
+                    .with_client_certificate_extractor(move |request| {
+                        crate::endpoints::mtls::request_mtls_thumbprint(request)
+                    }),
+                )),
+                Some(Arc::new(CredentialDatasetAdminService::new(
+                    operations.clone(),
+                ))),
+                Some(
+                    operations as Arc<dyn nazo_openid4vci::application::CredentialIssuerOperations>,
+                ),
+            )
+        } else {
+            (None, None, None)
+        };
+    let presentation_endpoint = if settings.modules.enable_openid4vp_verifier {
+        let data_key = data_key.expect("enabled OpenID4VP requires a data encryption key");
+        let presentation_store =
+            persistence.openid4vp_store(settings.tenant.context.tenant_id.as_uuid(), data_key);
+        Some(Arc::new(PresentationEndpoint::new(
+            Arc::new(ServerPresentationOperations::new(
+                presentation_store,
+                settings.tenant.context.tenant_id.as_uuid(),
+                openid4vc_crypto.expect("enabled OpenID4VP requires crypto"),
+                runtime_registry.snapshot_store(),
+                trust_policy_store.expect("enabled OpenID4VP requires a trust policy store"),
+                PresentationVerifierConfig {
+                    issuer: settings.endpoint.issuer.clone(),
+                    wallet_origins: settings.openid4vc.wallet_authorization_origins.clone(),
+                    transaction_ttl_seconds: settings.openid4vc.transaction_ttl_seconds,
+                },
+            )),
+            settings
+                .openid4vc
+                .verifier_management_token
+                .clone()
+                .expect("enabled OpenID4VP requires a management token")
+                .into_bytes(),
+        )))
+    } else {
+        None
+    };
+
+    Ok(Openid4vcServices {
+        credential_issuer_operations,
+        credential_issuer_endpoint,
+        credential_dataset_admin,
+        presentation_endpoint,
+        client_attestation_validator,
+    })
+}

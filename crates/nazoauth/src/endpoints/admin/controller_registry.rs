@@ -1,0 +1,599 @@
+//! 管理端控制器注册表接口（D01/D02/D05）。
+//!
+//! 审批签发端点要求管理员会话具备最近的交互式 MFA step-up（复用既有
+//! `require_admin_with_recent_mfa_*` 语义，固定 5 分钟新鲜度上限）；提交端点
+//! 消费一次性审批令牌，令牌校验与注册表变更在同一个数据库事务内原子完成。
+//! 明文审批令牌只在签发响应中出现一次，永不写入日志或审计载荷。
+use crate::control::controller_registry::{
+    ControllerKeyWarning, ControllerRegistryService, ControllerRegistryServiceError,
+    IdentityChange, RevokeRequest, RotateRequest, SlotChangeRequest, expiry_warning,
+};
+use crate::endpoints::admin::require_transactional_audit_or_unavailable;
+use crate::endpoints::sessions::{
+    AdminSessionHandles, require_admin_or_forbidden_with_handles,
+    require_admin_with_recent_mfa_or_forbidden_with_handles,
+};
+use crate::http::Request as HttpRequest;
+use crate::http::Response as HttpResponse;
+use http::StatusCode;
+
+use crate::http::{ClientIpConfig, client_ip_with_config};
+use crate::http::{
+    csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store, oauth_error,
+};
+use chrono::Utc;
+use nazo_oauth_server::crypto::blake3_hex;
+use nazo_persistence::control_plane::AdminIdentityAudit;
+use nazo_persistence::control_plane::{
+    ControllerIdentityAction, ControllerSlotStatus, IdentityApprovalError,
+    MAX_ACTIVE_CONTROLLER_SLOTS, StoredControllerSlot,
+};
+use serde::Deserialize;
+use std::collections::HashMap;
+
+pub fn ensure_csrf(
+    admin_sessions: &AdminSessionHandles,
+    req: &HttpRequest,
+) -> Result<(), HttpResponse> {
+    let http = admin_sessions.http_config();
+    if has_valid_csrf_token_for_cookies(
+        req,
+        None,
+        http.session_cookie_name(),
+        http.csrf_cookie_name(),
+    ) {
+        Ok(())
+    } else {
+        Err(csrf_error())
+    }
+}
+
+/// GET /controller-registry/slots?deployment_id=...
+///
+/// Authoritative answer to "which controllers exist for this deployment and
+/// when do they expire". The exact-deployment query returns public controller
+/// metadata only; it never returns key material, approvals, or recovery data.
+/// Identity-changing endpoints remain under `/admin` and keep their existing
+/// session, CSRF, approval, and fresh-MFA requirements.
+pub async fn controller_slots(
+    registry: &ControllerRegistryService,
+    q: HashMap<String, String>,
+) -> HttpResponse {
+    let Some(deployment_id) = q
+        .get("deployment_id")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+    else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "缺少 deployment_id 查询参数.",
+        );
+    };
+    match registry.list_slots(deployment_id).await {
+        Ok(slots) => slots_list_response(deployment_id, &slots),
+        Err(error) => service_error_response(error),
+    }
+}
+
+/// 审批签发请求：`action` 判别必需载荷；字段显式声明以保持严格反序列化。
+/// bind/add 需要 label/public_key/kid；rotate 额外需要 controller_id；
+/// revoke 只允许 deployment_id/controller_id，携带其余字段一律拒绝。
+/// P0-3：仅 bind 允许携带 recovery_public_key/recovery_kid（原子首绑）。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApprovalRequestBody {
+    pub action: String,
+    pub deployment_id: String,
+    #[serde(default)]
+    pub controller_id: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub public_key: Option<String>,
+    #[serde(default)]
+    pub kid: Option<String>,
+    #[serde(default)]
+    pub recovery_public_key: Option<String>,
+    #[serde(default)]
+    pub recovery_kid: Option<String>,
+}
+
+impl ApprovalRequestBody {
+    fn missing(field: &'static str) -> HttpResponse {
+        oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            oauth_error_description_field(field),
+        )
+    }
+
+    fn unexpected(field: &'static str) -> HttpResponse {
+        oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            oauth_error_unexpected_field(field),
+        )
+    }
+
+    fn change(self) -> Result<IdentityChange, HttpResponse> {
+        match self.action.as_str() {
+            "bind" | "add" => {
+                if self.controller_id.is_some() {
+                    return Err(Self::unexpected("controller_id"));
+                }
+                if (self.recovery_public_key.is_some() || self.recovery_kid.is_some())
+                    && self.action != "bind"
+                {
+                    return Err(Self::unexpected("recovery_public_key/recovery_kid"));
+                }
+                let label = self.label.ok_or_else(|| Self::missing("label"))?;
+                let public_key = self.public_key.ok_or_else(|| Self::missing("public_key"))?;
+                let kid = self.kid.ok_or_else(|| Self::missing("kid"))?;
+                let request = SlotChangeRequest {
+                    deployment_id: self.deployment_id,
+                    label,
+                    kid,
+                    public_key,
+                    recovery_public_key: self.recovery_public_key,
+                    recovery_kid: self.recovery_kid,
+                };
+                Ok(if self.action == "bind" {
+                    IdentityChange::Bind(request)
+                } else {
+                    IdentityChange::Add(request)
+                })
+            }
+            "rotate" => {
+                if self.recovery_public_key.is_some() || self.recovery_kid.is_some() {
+                    return Err(Self::unexpected("recovery_public_key/recovery_kid"));
+                }
+                let controller_id = self
+                    .controller_id
+                    .ok_or_else(|| Self::missing("controller_id"))?;
+                let label = self.label.ok_or_else(|| Self::missing("label"))?;
+                let public_key = self.public_key.ok_or_else(|| Self::missing("public_key"))?;
+                let kid = self.kid.ok_or_else(|| Self::missing("kid"))?;
+                Ok(IdentityChange::Rotate(RotateRequest {
+                    deployment_id: self.deployment_id,
+                    controller_id,
+                    label,
+                    kid,
+                    public_key,
+                }))
+            }
+            "revoke" => {
+                if self.recovery_public_key.is_some() || self.recovery_kid.is_some() {
+                    return Err(Self::unexpected("recovery_public_key/recovery_kid"));
+                }
+                if self.label.is_some() || self.public_key.is_some() || self.kid.is_some() {
+                    return Err(Self::unexpected("label/public_key/kid"));
+                }
+                let controller_id = self
+                    .controller_id
+                    .ok_or_else(|| Self::missing("controller_id"))?;
+                Ok(IdentityChange::Revoke(RevokeRequest {
+                    deployment_id: self.deployment_id,
+                    controller_id,
+                }))
+            }
+            _ => Err(invalid_action()),
+        }
+    }
+}
+
+pub fn invalid_action() -> HttpResponse {
+    oauth_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "action 必须是 bind/add/rotate/revoke，且携带对应载荷.",
+    )
+}
+
+pub fn oauth_error_description_field(field: &str) -> &'static str {
+    match field {
+        "label" => "缺少 label 字段.",
+        "public_key" => "缺少 public_key 字段.",
+        "kid" => "缺少 kid 字段.",
+        _ => "缺少 controller_id 字段.",
+    }
+}
+
+pub fn oauth_error_unexpected_field(_field: &str) -> &'static str {
+    "该动作不允许携带此字段."
+}
+
+/// POST /admin/controller-registry/approvals
+///
+/// Issues one single-use approval token bound to the exact action payload.
+/// Requires a fresh interactive MFA step-up: an old privileged session can
+/// browse, but it cannot authorize a machine identity change.
+pub async fn admin_controller_approval(
+    audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
+    admin_sessions: &AdminSessionHandles,
+    registry: &ControllerRegistryService,
+    client_ip_config: &ClientIpConfig,
+    req: &HttpRequest,
+    body: ApprovalRequestBody,
+) -> HttpResponse {
+    if let Err(response) = ensure_csrf(admin_sessions, req) {
+        return response;
+    }
+    let admin =
+        match require_admin_with_recent_mfa_or_forbidden_with_handles(admin_sessions, req).await {
+            Ok(admin) => admin,
+            Err(response) => return response,
+        };
+    if let Err(response) = require_transactional_audit_or_unavailable(audit).await {
+        return response;
+    }
+    let change = match body.change() {
+        Ok(change) => change,
+        Err(response) => return response,
+    };
+    match registry
+        .issue_approval_with_required_audit(
+            AdminIdentityAudit {
+                tenant: admin.tenant,
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(req, client_ip_config)),
+            },
+            &change,
+            Utc::now(),
+        )
+        .await
+    {
+        Ok(issued) => {
+            // Durable evidence that a fresh-MFA administrator approved this
+            // exact action digest.  The plaintext token is never audited.
+            json_response_no_store(serde_json::json!({
+                // The plaintext token appears here and nowhere else — never in
+                // logs or audit payloads.
+                "approval_token": issued.token,
+                "action": issued.action.as_str(),
+                "action_sha256": issued.action_sha256,
+                "expires_at": issued.expires_at.to_rfc3339(),
+                "single_use": true,
+            }))
+        }
+        Err(error) => service_error_response(error),
+    }
+}
+
+/// POST /admin/controller-registry/slots 请求体。
+///
+/// bind 与 add 共用该载荷；`action` 决定审批绑定语义。字段显式声明以保持
+/// 严格反序列化（serde flatten 会削弱 deny_unknown_fields 的严格性）。
+/// P0-3：仅 bind 允许携带 recovery 双字段（与审批同一原子载荷）。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlotCommitBody {
+    pub approval_token: String,
+    pub action: String,
+    pub deployment_id: String,
+    pub label: String,
+    pub public_key: String,
+    pub kid: String,
+    #[serde(default)]
+    pub recovery_public_key: Option<String>,
+    #[serde(default)]
+    pub recovery_kid: Option<String>,
+}
+
+impl SlotCommitBody {
+    fn into_change(self) -> Result<(String, IdentityChange), HttpResponse> {
+        let action = match self.action.as_str() {
+            "bind" => ControllerIdentityAction::Bind,
+            "add" => ControllerIdentityAction::Add,
+            _ => return Err(invalid_action()),
+        };
+        let request = SlotChangeRequest {
+            deployment_id: self.deployment_id,
+            label: self.label,
+            kid: self.kid,
+            public_key: self.public_key,
+            recovery_public_key: self.recovery_public_key,
+            recovery_kid: self.recovery_kid,
+        };
+        let change = if action == ControllerIdentityAction::Bind {
+            IdentityChange::Bind(request)
+        } else {
+            IdentityChange::Add(request)
+        };
+        Ok((self.approval_token, change))
+    }
+}
+
+/// POST /admin/controller-registry/slots
+///
+/// Commits an approved bind/add.  The approval token must be unconsumed,
+/// unexpired, and bound to exactly this payload; consumption and enrollment
+/// share one transaction.
+pub async fn admin_controller_slot_commit(
+    audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
+    admin_sessions: &AdminSessionHandles,
+    registry: &ControllerRegistryService,
+    client_ip_config: &ClientIpConfig,
+    req: &HttpRequest,
+    body: SlotCommitBody,
+) -> HttpResponse {
+    if let Err(response) = ensure_csrf(admin_sessions, req) {
+        return response;
+    }
+    let admin = match require_admin_or_forbidden_with_handles(admin_sessions, req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
+    if let Err(response) = require_transactional_audit_or_unavailable(audit).await {
+        return response;
+    }
+    let (approval_token, change) = match body.into_change() {
+        Ok(change) => change,
+        Err(response) => return response,
+    };
+    match registry
+        .commit_with_required_audit(
+            approval_token,
+            change,
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant,
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(req, client_ip_config)),
+            },
+        )
+        .await
+    {
+        Ok(slot) => slot_response(&slot),
+        Err(error) => service_error_response(error),
+    }
+}
+
+/// POST /admin/controller-registry/slots/rotate 请求体。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlotRotateBody {
+    pub approval_token: String,
+    pub deployment_id: String,
+    pub controller_id: String,
+    pub label: String,
+    pub public_key: String,
+    pub kid: String,
+}
+
+impl SlotRotateBody {
+    fn into_change(self) -> (String, IdentityChange) {
+        (
+            self.approval_token,
+            IdentityChange::Rotate(RotateRequest {
+                deployment_id: self.deployment_id,
+                controller_id: self.controller_id,
+                label: self.label,
+                kid: self.kid,
+                public_key: self.public_key,
+            }),
+        )
+    }
+}
+
+/// POST /admin/controller-registry/slots/rotate
+pub async fn admin_controller_slot_rotate(
+    audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
+    admin_sessions: &AdminSessionHandles,
+    registry: &ControllerRegistryService,
+    client_ip_config: &ClientIpConfig,
+    req: &HttpRequest,
+    body: SlotRotateBody,
+) -> HttpResponse {
+    if let Err(response) = ensure_csrf(admin_sessions, req) {
+        return response;
+    }
+    let admin = match require_admin_or_forbidden_with_handles(admin_sessions, req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
+    if let Err(response) = require_transactional_audit_or_unavailable(audit).await {
+        return response;
+    }
+    let (approval_token, change) = body.into_change();
+    match registry
+        .commit_with_required_audit(
+            approval_token,
+            change,
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant,
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(req, client_ip_config)),
+            },
+        )
+        .await
+    {
+        Ok(slot) => slot_response(&slot),
+        Err(error) => service_error_response(error),
+    }
+}
+
+/// POST /admin/controller-registry/slots/revoke 请求体。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SlotRevokeBody {
+    pub approval_token: String,
+    pub deployment_id: String,
+    pub controller_id: String,
+}
+
+impl SlotRevokeBody {
+    fn into_change(self) -> (String, IdentityChange) {
+        (
+            self.approval_token,
+            IdentityChange::Revoke(RevokeRequest {
+                deployment_id: self.deployment_id,
+                controller_id: self.controller_id,
+            }),
+        )
+    }
+}
+
+/// POST /admin/controller-registry/slots/revoke
+pub async fn admin_controller_slot_revoke(
+    audit: &dyn nazo_oauth_server::ports::audit::SecurityAudit,
+    admin_sessions: &AdminSessionHandles,
+    registry: &ControllerRegistryService,
+    client_ip_config: &ClientIpConfig,
+    req: &HttpRequest,
+    body: SlotRevokeBody,
+) -> HttpResponse {
+    if let Err(response) = ensure_csrf(admin_sessions, req) {
+        return response;
+    }
+    let admin = match require_admin_or_forbidden_with_handles(admin_sessions, req).await {
+        Ok(admin) => admin,
+        Err(response) => return response,
+    };
+    if let Err(response) = require_transactional_audit_or_unavailable(audit).await {
+        return response;
+    }
+    let (approval_token, change) = body.into_change();
+    match registry
+        .commit_with_required_audit(
+            approval_token,
+            change,
+            Utc::now(),
+            AdminIdentityAudit {
+                tenant: admin.tenant,
+                actor_user_id: admin.id(),
+                source_ip_hash: blake3_hex(&client_ip_with_config(req, client_ip_config)),
+            },
+        )
+        .await
+    {
+        Ok(slot) => slot_response(&slot),
+        Err(error) => service_error_response(error),
+    }
+}
+
+pub fn status_str(status: ControllerSlotStatus) -> &'static str {
+    match status {
+        ControllerSlotStatus::Active => "active",
+        ControllerSlotStatus::Revoked => "revoked",
+    }
+}
+
+pub fn slot_view(slot: &StoredControllerSlot) -> serde_json::Value {
+    serde_json::json!({
+        "deployment_id": slot.deployment_id,
+        "controller_id": slot.controller_id,
+        "label": slot.label,
+        "kid": slot.kid,
+        "slot_index": slot.slot_index,
+        "issued_at": slot.issued_at.to_rfc3339(),
+        "expires_at": slot.expires_at.to_rfc3339(),
+        "status": status_str(slot.status),
+        "warning": expiry_warning(Utc::now(), slot.expires_at).map(|warning| match warning {
+            ControllerKeyWarning::Urgent => "urgent_24h",
+            ControllerKeyWarning::Expiring => "expiring_7d",
+        }),
+    })
+}
+
+pub fn slot_response(slot: &StoredControllerSlot) -> HttpResponse {
+    json_response_no_store(serde_json::json!({ "slot": slot_view(slot) }))
+}
+
+pub fn slots_list_response(deployment_id: &str, slots: &[StoredControllerSlot]) -> HttpResponse {
+    let items: Vec<serde_json::Value> = slots.iter().map(slot_view).collect();
+    json_response_no_store(serde_json::json!({
+        "deployment_id": deployment_id,
+        "total": items.len(),
+        "max_active_slots": MAX_ACTIVE_CONTROLLER_SLOTS,
+        "items": items,
+    }))
+}
+
+/// Typed mapping onto the admin error conventions; infrastructure faults stay
+/// opaque while operator mistakes get actionable descriptions.  Audit payloads
+/// and logs never include approval tokens or key material.
+pub fn service_error_response(error: ControllerRegistryServiceError) -> HttpResponse {
+    match error {
+        ControllerRegistryServiceError::Invalid(description) => {
+            oauth_error(StatusCode::BAD_REQUEST, "invalid_request", description)
+        }
+        ControllerRegistryServiceError::SlotLimit(summaries) => {
+            let items: Vec<serde_json::Value> = summaries
+                .iter()
+                .map(|summary| {
+                    serde_json::json!({
+                        "controller_id": summary.controller_id,
+                        "label": summary.label,
+                        "kid": summary.kid,
+                        "slot_index": summary.slot_index,
+                        "expires_at": summary.expires_at.to_rfc3339(),
+                    })
+                })
+                .collect();
+            crate::http::json_response_status(
+                StatusCode::CONFLICT,
+                serde_json::json!({
+                    "error": "controller_slot_limit",
+                    "error_description":
+                        "该 deployment 已有三个未撤销控制器槽位；必须先撤销再新增.",
+                    "active_slots": items,
+                }),
+            )
+        }
+        ControllerRegistryServiceError::UnknownController => oauth_error(
+            StatusCode::NOT_FOUND,
+            "invalid_request",
+            "未找到该 controller_id 对应的控制器槽位.",
+        ),
+        ControllerRegistryServiceError::AlreadyRevoked => oauth_error(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "该控制器槽位已处于撤销终态.",
+        ),
+        ControllerRegistryServiceError::DuplicateKid => oauth_error(
+            StatusCode::CONFLICT,
+            "invalid_request",
+            "同一 deployment 下已存在相同 kid 的控制器密钥.",
+        ),
+        ControllerRegistryServiceError::ApprovalRejected(rejection) => {
+            let (status, description) = match rejection {
+                IdentityApprovalError::UnknownToken => (StatusCode::BAD_REQUEST, "审批令牌不存在."),
+                IdentityApprovalError::Replayed => (
+                    StatusCode::CONFLICT,
+                    "审批令牌已被使用；身份变更需要重新批准.",
+                ),
+                IdentityApprovalError::Expired => (
+                    StatusCode::BAD_REQUEST,
+                    "审批令牌已过期；请在十分钟窗口内完成提交.",
+                ),
+                IdentityApprovalError::ActionMismatch => (
+                    StatusCode::BAD_REQUEST,
+                    "审批令牌与本次提交的动作内容不一致.",
+                ),
+                IdentityApprovalError::Transport(inner) => {
+                    tracing::warn!(%inner, "controller identity approval storage failure");
+                    return oauth_error(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "审批状态查询失败.",
+                    );
+                }
+            };
+            oauth_error(status, "invalid_request", description)
+        }
+        ControllerRegistryServiceError::Transport(error) => {
+            tracing::warn!(%error, "controller registry storage failure");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "控制器注册表暂不可用.",
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/endpoints/admin/controller_registry.rs"]
+mod tests;

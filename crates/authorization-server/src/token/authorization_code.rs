@@ -510,7 +510,6 @@ pub async fn token_authorization_code_with_service(
         dpop_jkt: dpop_jkt.as_deref(),
         certificate_thumbprint: facts
             .certificate
-            .as_ref()
             .and_then(|certificate| certificate.thumbprint.as_deref()),
         client_attestation_jkt,
     };
