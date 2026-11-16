@@ -9,7 +9,7 @@ use nazo_oauth_server::contracts::metadata::{
     MetadataEndpointConfig, MetadataSnapshot, MetadataSnapshotSource,
 };
 use nazo_runtime_modules::ActiveModuleSnapshot;
-use serde_json::Value;
+use serde::Serialize;
 
 /// Focused HTTP services for discovery, RFC 8414/RFC 9728 metadata, and JWKS.
 #[derive(Clone)]
@@ -24,7 +24,10 @@ impl MetadataHandles {
         Self { config, snapshots }
     }
 
-    fn authorization_server_metadata(&self, snapshot: &MetadataSnapshot) -> Value {
+    fn authorization_server_metadata<'a>(
+        &'a self,
+        snapshot: &'a MetadataSnapshot,
+    ) -> impl Serialize + 'a {
         authorization_server_metadata(
             AuthorizationServerMetadataInput {
                 issuer: &self.config.issuer,
@@ -49,7 +52,10 @@ impl MetadataHandles {
         )
     }
 
-    fn protected_resource_metadata(&self, modules: &ActiveModuleSnapshot) -> Value {
+    fn protected_resource_metadata<'a>(
+        &'a self,
+        modules: &'a ActiveModuleSnapshot,
+    ) -> impl Serialize + 'a {
         protected_resource_metadata(
             ProtectedResourceMetadataInput {
                 issuer: &self.config.issuer,
