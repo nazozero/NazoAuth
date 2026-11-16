@@ -276,9 +276,11 @@ cargo test --all-features --locked -p nazo-postgres --test migrations pending_mi
 cargo test --workspace --all-features --locked --no-fail-fast
 ```
 
-The migration test prepares the test database before the full suite, as in
-CI. The full suite collects failures across test targets in one run; any failed
-target still fails the gate. For a focused change, run the owning package/test
+The migration test prepares the test database before the full suite. CI builds
+one test archive without debug symbols or incremental compilation, then runs
+four nextest partitions with independently isolated PostgreSQL, Valkey and S3
+fixtures. Tests within each partition remain serial; documentation tests run
+separately and any failed partition fails the gate. For a focused change, run the owning package/test
 target first; broaden
 validation when the change crosses boundaries or leaves an unresolved risk.
 Documentation-only changes need source/example/reference checks; native Rust
@@ -287,8 +289,8 @@ independent checks. A passed unit suite does not replace required HTTP, migratio
 conformance, deployment, or performance evidence.
 
 CI budgets Cargo build concurrency from the runner's available logical CPUs
-and memory (3 GiB per build job). Shared-state tests remain serial. Schema
-materialization uses the workspace suite's feature set to reuse its artifacts.
+and memory (3 GiB per build job). Schema materialization reuses the test archive
+in each isolated partition.
 The audit backlog scale fixture vacuums its deleted rows at handoff; the
 separate dead-prefix regression still creates its own ack-deleted prefix and
 requires natural autovacuum recovery without manual vacuum of that lifecycle.

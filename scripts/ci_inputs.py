@@ -23,7 +23,7 @@ WORKFLOWS = {
     "perf": "perf-images.yml",
 }
 INPUTS = {
-    "rust": RUST + ("scripts/*.sh", ".github/workflows/codecov.yml", "codecov.yml",
+    "rust": RUST + ("scripts/*.sh", "scripts/ci_build_jobs.py", ".github/workflows/codecov.yml", "codecov.yml",
                     "requirements/codecov.txt", "Containerfile", ".dockerignore", ".env.yaml.example"),
     "codeql": RUST + ("Containerfile", ".dockerignore"),
     # Image construction, HTTP fixtures and source-policy checks are one contract.

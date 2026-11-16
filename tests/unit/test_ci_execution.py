@@ -27,13 +27,17 @@ class CiExecutionTests(unittest.TestCase):
         self.assertIn("  workflow_call:", coverage)
         self.assertNotIn("  push:", coverage)
         self.assertIn("uses: ./.github/workflows/codecov.yml", quality)
-        full = quality.split("- name: Test workspace with PostgreSQL and Valkey", 1)[1].split("\n      - name:", 1)[0]
-        self.assertIn("if: github.event_name != 'workflow_dispatch'", full)
-        self.assertIn("cargo test --workspace --all-features --locked --no-fail-fast", full)
+        self.assertIn("cargo nextest archive --workspace --all-features --locked", quality)
+        self.assertIn("shard: [1, 2, 3, 4]", quality)
+        self.assertIn("--partition slice:${{ matrix.shard }}/4 --test-threads 1 --no-fail-fast", quality)
+        self.assertIn("test(=pending_migrations_create_all_runtime_module_state_tables)", quality)
+        for result in ("BUILD_RESULT", "CLIPPY_RESULT", "FIXTURE_RESULT", "SHARDS_RESULT"):
+            self.assertIn(f'test "${result}" = success', quality)
         self.assertIn("cargo test --workspace --all-features --locked --doc", quality)
         from scripts.ci_inputs import INPUTS
         for path in (".github/workflows/codecov.yml", "codecov.yml", "requirements/codecov.txt"):
             self.assertIn(path, INPUTS["rust"])
+        self.assertIn("scripts/ci_build_jobs.py", INPUTS["rust"])
         self.assertIn("needs.inputs.outputs.run != 'false'", quality)
         self.assertIn("  schedule:", coverage)
 
