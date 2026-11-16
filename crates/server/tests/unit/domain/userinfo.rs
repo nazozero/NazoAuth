@@ -81,8 +81,8 @@ fn disconnected_valkey_client() -> fred::prelude::Client {
 }
 
 fn userinfo_test_state() -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();
 
@@ -189,8 +189,8 @@ async fn live_userinfo_state_from_database_url(
     valkey.init().await.expect("valkey should connect");
     let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let _public_jwk = key_material.public_jwk("userinfo-test-kid");
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();
 
@@ -266,8 +266,8 @@ async fn drop_schema(state: &Data<TestInfrastructure>, schema: &str) {
 fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<TestInfrastructure> {
     let key_material = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let _public_jwk = key_material.public_jwk("userinfo-test-kid");
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();
 
@@ -1757,7 +1757,7 @@ async fn userinfo_remote_jwks_failure_never_falls_back_to_stored_keys() {
 
 #[test]
 fn userinfo_accepts_only_userinfo_or_default_audience() {
-    let mut settings = Settings::from_config(&crate::config::ConfigSource::default())
+    let mut settings = Settings::from_config(&crate::config::ConfigSource::from_pairs_for_test([]))
         .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();

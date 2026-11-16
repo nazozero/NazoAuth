@@ -72,7 +72,8 @@ fn oidc_authorization_url_includes_all_required_params() {
 fn authorization_url_preserves_configured_endpoint_query() {
     let mut provider = provider();
     provider.authorization_endpoint = "https://issuer.example/authorize/?tenant=example".into();
-    let location = oidc_authorization_url(&provider, "state", "nonce", "verifier");
+    let nonce = random_urlsafe_token();
+    let location = oidc_authorization_url(&provider, "state", &nonce, "verifier");
     let url = url::Url::parse(&location).unwrap();
     assert!(
         url.query_pairs()

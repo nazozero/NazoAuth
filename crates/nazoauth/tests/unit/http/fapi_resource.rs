@@ -919,13 +919,16 @@ fn bearer_dpop_and_mtls_protocol_errors_keep_exact_http_contracts() {
             );
         }
 
-        let nonce = "resource-nonce-1";
+        let nonce = nazo_oauth_server::crypto::random_urlsafe_token();
         let response = protocol_error_response(
-            ProtectedResourceAuthorizationError::UseDpopNonce(nonce.to_owned()),
+            ProtectedResourceAuthorizationError::UseDpopNonce(nonce.clone()),
             AccessTokenAuthScheme::DPoP,
         );
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(response.headers().get("dpop-nonce").unwrap(), nonce);
+        assert_eq!(
+            response.headers().get("dpop-nonce").unwrap(),
+            nonce.as_str()
+        );
         assert_eq!(
             response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
             "DPoP error=\"use_dpop_nonce\""

@@ -1,5 +1,5 @@
 use super::create_error_response;
-use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
+use crate::config::ConfigSource;
 use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration,
     prepare_client_insert_with_secret_pepper,
@@ -17,7 +17,7 @@ async fn prepare_client_insert_for_test(
     prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,
-        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        ConfigSource::client_secret_pepper_for_test(),
         issuer,
         nazo_identity::TenantContext::default_system(),
         nazo_key_management::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
@@ -95,7 +95,7 @@ async fn prepared_client_retains_the_selected_non_default_tenant_context() {
     let prepared = prepare_client_insert_with_secret_pepper(
         payload,
         Some("pairwise-subject-secret"),
-        LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        ConfigSource::client_secret_pepper_for_test(),
         "https://issuer.example",
         tenant,
         nazo_key_management::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
@@ -133,8 +133,11 @@ async fn prepare_client_insert_issues_secret_only_for_secret_based_confidential_
         assert_eq!(prepared.token_endpoint_auth_method, method);
         assert!(
             stored_hash.split(':').nth(1).is_some_and(|salt| {
-                client_secret_digest(issued_secret, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, salt)
-                    == stored_hash
+                client_secret_digest(
+                    issued_secret,
+                    ConfigSource::client_secret_pepper_for_test(),
+                    salt,
+                ) == stored_hash
             }),
             "stored secret digest must verify the one-time plaintext secret"
         );

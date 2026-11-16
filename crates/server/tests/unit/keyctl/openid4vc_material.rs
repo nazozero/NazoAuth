@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_key_management::{
@@ -15,20 +15,21 @@ use super::super::shared::{
     MemoryOperatorPersistence, MemorySigningKeyRepository, temporary_directory, tenant_binding,
 };
 
+fn test_wrapping_key() -> [u8; 32] {
+    static KEY: OnceLock<[u8; 32]> = OnceLock::new();
+    *KEY.get_or_init(rand::random)
+}
+
 fn mdoc_database_config(data_dir: &Path) -> ConfigSource {
     ConfigSource::from_owned_pairs_for_test([
         ("DATA_DIR".to_owned(), data_dir.display().to_string()),
         (
             "SIGNING_KEY_ENCRYPTION_KEY".to_owned(),
-            URL_SAFE_NO_PAD.encode([0x42_u8; 32]),
+            URL_SAFE_NO_PAD.encode(test_wrapping_key()),
         ),
         (
             "SIGNING_KEY_ENCRYPTION_KEY_ID".to_owned(),
             "keyctl-test-root".to_owned(),
-        ),
-        (
-            "CLIENT_SECRET_PEPPER".to_owned(),
-            "0123456789abcdef0123456789abcdef".to_owned(),
         ),
         ("TRANSPORT_MODE".to_owned(), "trusted-proxy".to_owned()),
         ("MTLS_CERTIFICATE_SOURCE".to_owned(), "rfc9440".to_owned()),
@@ -204,7 +205,7 @@ async fn database_manager(
         None,
         tenant_id,
         repository,
-        SigningKeyWrappingKeyRing::new("keyctl-test-root", [0x42; 32], None)
+        SigningKeyWrappingKeyRing::new("keyctl-test-root", test_wrapping_key(), None)
             .expect("wrapping key ring"),
     )
     .await
@@ -268,7 +269,7 @@ async fn write_mdoc_import_fixture(
 
 #[test]
 fn database_certificate_profile_requires_the_managed_shape() {
-    let config = ConfigSource::default();
+    let config = ConfigSource::from_pairs_for_test([]);
     let binding = tenant_binding("https://tenant.example");
     let single_purpose = parse_generate_local("ES256", &["credential".to_owned()]).unwrap();
     assert!(
@@ -1117,7 +1118,8 @@ async fn replace_only_sealed_private_payload(
 ) {
     let mut record = repository.load().await.unwrap().unwrap();
     let expected = record.revision;
-    let ring = SigningKeyWrappingKeyRing::new("keyctl-test-root", [0x42; 32], None).unwrap();
+    let ring =
+        SigningKeyWrappingKeyRing::new("keyctl-test-root", test_wrapping_key(), None).unwrap();
 
     let mut payload: serde_json::Value = serde_json::from_slice(
         ring.open_generation(tenant_id, &mut record.clone())

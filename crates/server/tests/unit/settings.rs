@@ -13,7 +13,7 @@ const MDOC_CREDENTIAL_CONFIGURATIONS: &str = r#"{"mdl":{"format":"mso_mdoc","sco
 #[test]
 fn persistence_totp_key_ring_validates_configuration_once_at_construction() {
     assert!(
-        mfa_totp_key_ring(&ConfigSource::default())
+        mfa_totp_key_ring(&ConfigSource::from_pairs_for_test([]))
             .unwrap()
             .is_none()
     );
@@ -510,7 +510,7 @@ fn issuer_and_verifier_management_credentials_must_be_distinct() {
 
 #[test]
 fn default_dpop_nonce_policy_is_required() {
-    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
 
     assert_eq!(
         settings.protocol.dpop_nonce_policy,
@@ -520,7 +520,7 @@ fn default_dpop_nonce_policy_is_required() {
 
 #[test]
 fn shared_ip_admission_defaults_do_not_replace_failed_login_throttling() {
-    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
     let rate_limit = &settings.identity.rate_limit;
 
     assert_eq!(rate_limit.window_seconds, 60);
@@ -819,7 +819,7 @@ fn dpop_nonce_policy_rejects_legacy_compatibility_alias() {
 
 #[test]
 fn request_object_jti_is_optional_unless_the_operator_requires_it() {
-    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
 
     assert_eq!(
         settings.protocol.request_object_jti_policy,
@@ -847,7 +847,7 @@ fn invalid_request_object_jti_policy_is_rejected() {
 
 #[test]
 fn default_ciba_security_profile_is_fapi_ciba_id1() {
-    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
 
     assert_eq!(
         settings.protocol.ciba_security_profile,
@@ -899,7 +899,7 @@ fn secure_deployments_default_to_host_only_cookie_names() {
 
 #[test]
 fn configured_module_dependencies_default_closed_and_accept_explicit_values() {
-    let defaults = Settings::from_config(&ConfigSource::default()).unwrap();
+    let defaults = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
     assert!(!defaults.modules.enable_openid4vci_issuer);
     assert!(!defaults.modules.enable_openid4vp_verifier);
     assert!(!defaults.modules.register_openid4vci_routes);
@@ -1040,16 +1040,25 @@ fn token_issuance_loads_without_dedicated_response_key_material() {
 }
 
 #[test]
-fn non_loopback_issuer_requires_client_secret_pepper() {
-    let config =
-        ConfigSource::from_pairs_for_test([("PUBLIC_BASE_URL", "https://auth.example.test")]);
-    let error = settings_error(
-        &config,
-        "production issuer must configure client secret pepper",
-    );
+fn settings_require_materialized_client_secret_pepper() {
+    for issuer in ["http://127.0.0.1:8000", "https://auth.example.test"] {
+        let config = ConfigSource::from_pairs_for_test([
+            ("PUBLIC_BASE_URL", issuer),
+            ("CLIENT_SECRET_PEPPER", ""),
+        ]);
+        assert_eq!(
+            settings_error(&config, "settings require a generated or configured pepper")
+                .to_string(),
+            "CLIENT_SECRET_PEPPER is required"
+        );
+    }
     assert_eq!(
-        error.to_string(),
-        "CLIENT_SECRET_PEPPER is required for non-loopback issuers"
+        settings_error(
+            &ConfigSource::default(),
+            "missing generated secrets must fail"
+        )
+        .to_string(),
+        "CLIENT_SECRET_PEPPER is required"
     );
 }
 
@@ -1365,7 +1374,7 @@ fn explicit_storage_paths_override_data_dir_derivations() {
 
 #[test]
 fn signing_key_rotation_settings_default_to_automatic_lifecycle() {
-    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
 
     assert_eq!(
         settings.keys.signing_key_rotation_interval_seconds,
@@ -1882,7 +1891,7 @@ fn saml_gateway_requires_strong_shared_secret_when_enabled() {
 }
 #[test]
 fn fapi_http_signature_defaults_are_bounded() {
-    let settings = Settings::from_config(&ConfigSource::default()).unwrap();
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap();
 
     assert_eq!(settings.protocol.fapi_http_signature_max_age_seconds, 60);
 }
@@ -1943,7 +1952,7 @@ fn additional_discovery_scopes_follow_oauth_scope_token_grammar() {
         ["orders:read", "urn:example:scope"]
     );
     assert!(
-        Settings::from_config(&ConfigSource::default())
+        Settings::from_config(&ConfigSource::from_pairs_for_test([]))
             .unwrap()
             .protocol
             .additional_scopes_supported

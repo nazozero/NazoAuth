@@ -116,8 +116,8 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
 }
 
 fn baseline_settings() -> Settings {
-    let mut settings =
-        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    let mut settings = Settings::from_config(&crate::config::ConfigSource::from_pairs_for_test([]))
+        .expect("settings");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.endpoint.mtls_endpoint_base_url = "https://issuer.example".to_owned();
     settings.endpoint.frontend_base_url = "https://frontend.example".to_owned();
@@ -419,8 +419,8 @@ impl LiveParFixture {
     async fn new_with_settings(configure: impl FnOnce(&mut Settings)) -> Option<Self> {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
-        let mut settings =
-            Settings::from_config(&ConfigSource::default()).expect("test settings should load");
+        let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("test settings should load");
         settings.endpoint.issuer = "https://issuer.example".to_owned();
         settings.protocol.par_ttl_seconds = 90;
         settings.identity.rate_limit.token_management_max_requests = 100_000;
@@ -583,8 +583,8 @@ impl LiveParFixture {
 }
 
 fn par_state_without_live_services() -> ParTestFixture {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.identity.rate_limit.token_management_max_requests = 100_000;
 
     ParTestFixture::new(

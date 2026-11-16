@@ -29,9 +29,10 @@ async fn live_transport_state() -> crate::test_support::TestInfrastructure {
     let valkey = nazo_valkey::test_support::connect(&valkey_url, std::time::Duration::from_secs(1))
         .await
         .expect("test Valkey connection");
-    let mut settings =
-        crate::settings::Settings::from_config(&crate::config::ConfigSource::default())
-            .expect("test settings");
+    let mut settings = crate::settings::Settings::from_config(
+        &crate::config::ConfigSource::from_pairs_for_test([]),
+    )
+    .expect("test settings");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.endpoint.mtls_endpoint_base_url = "https://mtls.example".to_owned();
     settings.protocol.default_audience = "resource://default".to_owned();

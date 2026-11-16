@@ -233,11 +233,7 @@ impl Settings {
         if subject_type == SubjectType::Pairwise && pairwise_subject_secret.is_none() {
             bail!("PAIRWISE_SUBJECT_SECRET is required when SUBJECT_TYPE=pairwise");
         }
-        let client_secret_pepper = match config.optional_string("CLIENT_SECRET_PEPPER") {
-            Some(secret) => secret,
-            None if issuer_is_loopback_http => LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER.to_owned(),
-            None => bail!("CLIENT_SECRET_PEPPER is required for non-loopback issuers"),
-        };
+        let client_secret_pepper = config.required_string("CLIENT_SECRET_PEPPER")?;
         let authorization_server_profile =
             profile::authorization_server_profile_from_config(config)?;
         let ciba_security_profile = profile::ciba_security_profile_from_config(config)?;

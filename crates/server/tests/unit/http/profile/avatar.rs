@@ -179,13 +179,14 @@ fn build_test_state(settings: Settings) -> TestInfrastructure {
 
 fn test_state() -> TestInfrastructure {
     build_test_state(
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("default settings should load"),
     )
 }
 
 fn test_state_with_avatar_dir(avatar_storage_dir: PathBuf) -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.storage.avatar_storage_dir = avatar_storage_dir;
     build_test_state(settings)
 }

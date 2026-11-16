@@ -7,7 +7,8 @@ fn framework_request(request: &http::Request<Bytes>) -> awtest::TestRequest {
     let mut builder = awtest::TestRequest::with_uri(&request.uri().to_string())
         .method(actix_web::http::Method::from_bytes(request.method().as_str().as_bytes()).unwrap());
     for (name, value) in request.headers() {
-        builder = builder.append_header((actix_header_name(name), actix_header_value(value)));
+        builder =
+            builder.append_header((actix_header_name(name), actix_header_value(value.clone())));
     }
     if let Some(peer) = request
         .extensions()

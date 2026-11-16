@@ -84,7 +84,7 @@ fn test_state() -> TestInfrastructure {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([])).expect("default settings should load"),
         ),
         keyset: crate::test_support::test_key_manager(),
     }

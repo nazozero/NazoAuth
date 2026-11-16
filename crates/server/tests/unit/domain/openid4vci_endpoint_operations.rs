@@ -260,8 +260,8 @@ async fn operations_with_proof_validator(
     token_repository: Option<Arc<dyn nazo_auth::TokenRepositoryPort>>,
     proof_override: Option<Openid4vcProofValidator>,
 ) -> IssuerFixture {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("unit settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("unit settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.modules.enable_openid4vci_issuer = enabled;
     let keyset = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);

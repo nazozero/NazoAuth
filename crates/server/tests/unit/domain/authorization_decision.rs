@@ -142,8 +142,8 @@ fn authorization_decision_endpoint(
 }
 
 fn decision_state() -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.protocol.auth_code_ttl_seconds = 60;
 
@@ -227,8 +227,8 @@ impl DecisionLiveFixture {
 
     async fn from_database_url(database_url: String, schema: Option<String>) -> Option<Self> {
         let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
-        let mut settings =
-            Settings::from_config(&ConfigSource::default()).expect("test settings should load");
+        let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("test settings should load");
         settings.endpoint.issuer = "https://issuer.example".to_owned();
         settings.endpoint.frontend_base_url = "https://app.example".to_owned();
         settings.protocol.auth_code_ttl_seconds = 60;

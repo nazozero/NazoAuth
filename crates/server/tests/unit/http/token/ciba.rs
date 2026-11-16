@@ -89,8 +89,8 @@ async fn ciba_test_application(
 }
 
 fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.session.cookie_secure = true;
     configure(&mut settings);
@@ -117,7 +117,7 @@ fn ciba_test_state() -> TestInfrastructure {
 async fn live_ciba_replay_state() -> Option<TestInfrastructure> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     let valkey = live_test_valkey().await?;
-    let mut settings = Settings::from_config(&ConfigSource::default())
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
         .expect("default CIBA test settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.session.cookie_secure = true;

@@ -7,7 +7,6 @@ use anyhow::bail;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::validate_issuer_url;
 
-use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use crate::config::{ConfigSource, DEFAULT_DATA_DIR};
 use nazoauth::config::{
     ClientIpHeaderMode, IpCidr, MtlsCertificateSourceMode, parse_trusted_proxy_cidrs,

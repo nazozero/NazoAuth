@@ -172,9 +172,10 @@ async fn operations_with_crypto(
     crypto: Openid4vcCredentialCrypto,
     enabled: bool,
 ) -> PresentationFixture {
-    let mut settings =
-        crate::settings::Settings::from_config(&crate::config::ConfigSource::default())
-            .expect("fixture settings should load");
+    let mut settings = crate::settings::Settings::from_config(
+        &crate::config::ConfigSource::from_pairs_for_test([]),
+    )
+    .expect("fixture settings should load");
     settings.modules.enable_openid4vp_verifier = enabled;
     let mut active_modules = crate::test_support::persisted_runtime_modules_fixture();
     if enabled {

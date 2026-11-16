@@ -255,7 +255,7 @@ fn settings_with_oidc_provider(provider: Option<&OidcFederationSettings>) -> Set
     // None 表示没有任何外部登录 provider；Some 表示通过 registry 注册一个 OIDC provider。
     let config = match provider {
         Some(provider) => oidc_provider_registry_config(provider),
-        None => ConfigSource::default(),
+        None => ConfigSource::from_pairs_for_test([]),
     };
     Settings::from_config(&config).expect("federation settings should load")
 }
@@ -546,10 +546,13 @@ async fn response_json(response: HttpResponse) -> (StatusCode, Value) {
     (status, json)
 }
 
-const TEST_BROWSER_BINDING_SEED: [u8; 32] = [0x35; 32];
+fn test_browser_binding_seed() -> &'static [u8; 32] {
+    static SEED: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+    SEED.get_or_init(rand::random)
+}
 
 fn bound_federation_test_request() -> actix_web::test::TestRequest {
-    let value = URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED);
+    let value = URL_SAFE_NO_PAD.encode(test_browser_binding_seed());
     // These existing policy tests span both dev and secure fixture settings.
     // Dedicated binding tests below construct each configured name explicitly.
     actix_web::test::TestRequest::get()
@@ -570,7 +573,7 @@ async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
     let start = service
         .start_oidc(
             TEST_OIDC_PROVIDER_ID.to_owned(),
-            &TEST_BROWSER_BINDING_SEED,
+            test_browser_binding_seed(),
             Utc::now(),
         )
         .await
@@ -579,7 +582,7 @@ async fn bound_oidc_state(state: &TestInfrastructure) -> OidcFederationState {
         .consume_oidc(
             &start.state,
             TEST_OIDC_PROVIDER_ID,
-            &TEST_BROWSER_BINDING_SEED,
+            test_browser_binding_seed(),
             Utc::now(),
         )
         .await
@@ -1189,7 +1192,7 @@ fn saml_gateway_signature_is_bound_to_assertion_fields() {
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let now = Utc::now().timestamp();
     let signature = saml_gateway_signature(
@@ -1228,7 +1231,7 @@ fn saml_gateway_assertion_rejects_correctly_signed_overlong_ttl() {
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let now = Utc::now().timestamp();
     let signature = saml_gateway_signature(
@@ -1263,7 +1266,7 @@ fn saml_gateway_assertion_rejects_wrong_issuer_audience_and_signature() {
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let now = Utc::now().timestamp();
     let mut wrong_issuer = saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
@@ -1306,7 +1309,7 @@ fn saml_gateway_assertion_rejects_expired_or_future_assertions() {
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let now = Utc::now().timestamp();
     for (iat, exp) in [(now - 600, now - 60), (now + 61, now + 120)] {
@@ -1353,7 +1356,7 @@ async fn saml_acs_rejects_invalid_email_before_signature_or_identity_resolution(
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let Some(state) = live_federation_state(None, Some(settings)).await else {
         return;
@@ -1386,7 +1389,7 @@ async fn saml_acs_rejects_signed_assertion_with_wrong_audience_before_identity_r
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let now = Utc::now().timestamp();
     let mut payload = saml_assertion(&settings, "subject", "user@example.com", now, now + 60);
@@ -2040,7 +2043,7 @@ async fn saml_acs_creates_new_federated_user_session_and_external_link() {
     let settings = SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: "01234567890123456789012345678901".to_owned(),
+        secret: random_urlsafe_token(),
     };
     let suffix = Uuid::now_v7().simple().to_string();
     let email = format!("saml-{suffix}@example.com");

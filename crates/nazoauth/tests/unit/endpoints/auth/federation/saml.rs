@@ -18,13 +18,11 @@ fn saml_gateway_signature(
 use super::*;
 use crate::config::SamlGatewaySettings;
 
-const TEST_SECRET: &str = "01234567890123456789012345678901";
-
 fn settings() -> SamlGatewaySettings {
     SamlGatewaySettings {
         issuer: "gateway".to_owned(),
         audience: "nazo".to_owned(),
-        secret: TEST_SECRET.to_owned(),
+        secret: nazo_oauth_server::crypto::random_urlsafe_token(),
     }
 }
 

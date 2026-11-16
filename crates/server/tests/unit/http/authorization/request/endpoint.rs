@@ -39,8 +39,8 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
 }
 
 fn endpoint_state(require_par: bool) -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.protocol.require_pushed_authorization_requests = require_par;
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.endpoint.frontend_base_url = "https://app.example".to_owned();

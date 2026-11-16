@@ -141,7 +141,8 @@ fn test_state() -> TestInfrastructure {
             .build()
             .expect("valkey client construction should not connect"),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+                .expect("default settings should load"),
         ),
         keyset: crate::test_support::test_key_manager(),
     }
@@ -155,8 +156,8 @@ fn live_refresh_state_from_database_url(
     profile: AuthorizationServerProfile,
     database_url: String,
 ) -> Option<TestInfrastructure> {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.protocol.authorization_server_profile = profile;
 
     Some(TestInfrastructure {

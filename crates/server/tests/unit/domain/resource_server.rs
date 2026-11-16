@@ -157,8 +157,8 @@ async fn production_signature_verifier_binds_replay_to_the_scoped_client_tenant(
         nazo_valkey::test_support::scoped_connect(&valkey_url, Duration::from_secs(1))
             .await
             .expect("configured Valkey should connect");
-    let settings =
-        Settings::from_config(&ConfigSource::default()).expect("test settings should load");
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("test settings should load");
     let runtime_modules = crate::runtime_modules::test_support::runtime_module_registry_for_test(
         pool.clone(),
         &settings,

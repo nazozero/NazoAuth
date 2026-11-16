@@ -75,19 +75,19 @@ fn binding_cookie_requires_exact_canonical_32_byte_encoding_and_configured_name(
         let config = binding_http_config(secure);
         assert_eq!(
             read_federation_binding_seed(
-                &binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
+                &binding_request(&config, Some(test_browser_binding_seed())),
                 &config,
             ),
-            Some(TEST_BROWSER_BINDING_SEED),
+            Some(*test_browser_binding_seed()),
         );
         assert!(read_federation_binding_seed(&binding_request(&config, None), &config).is_none());
         for value in [
             URL_SAFE_NO_PAD.encode([1_u8; 31]),
             URL_SAFE_NO_PAD.encode([1_u8; 33]),
-            format!("{}=", URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED)),
+            format!("{}=", URL_SAFE_NO_PAD.encode(test_browser_binding_seed())),
             format!("{}+", "A".repeat(42)),
             format!("{}B", "A".repeat(42)), // Nonzero discarded trailing bits.
-            format!(" {}", URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED)),
+            format!(" {}", URL_SAFE_NO_PAD.encode(test_browser_binding_seed())),
         ] {
             let req = actix_web::test::TestRequest::get()
                 .cookie(actix_web::cookie::Cookie::new(
@@ -105,7 +105,7 @@ fn binding_cookie_requires_exact_canonical_32_byte_encoding_and_configured_name(
         let req = actix_web::test::TestRequest::get()
             .cookie(actix_web::cookie::Cookie::new(
                 wrong_name,
-                URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED),
+                URL_SAFE_NO_PAD.encode(test_browser_binding_seed()),
             ))
             .to_http_request();
         assert!(read_federation_binding_seed(&req, &config).is_none());
@@ -119,7 +119,7 @@ fn successful_start_cookie_has_secure_host_or_dev_attributes_and_renews_300_seco
         let response = federation_start_response(
             &config,
             "https://provider.example/authorize".to_owned(),
-            &TEST_BROWSER_BINDING_SEED,
+            test_browser_binding_seed(),
         );
         assert_eq!(response.status(), StatusCode::FOUND);
         let header = response
@@ -139,7 +139,7 @@ fn successful_start_cookie_has_secure_host_or_dev_attributes_and_renews_300_seco
         );
         assert_eq!(
             cookie.value(),
-            URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED)
+            URL_SAFE_NO_PAD.encode(test_browser_binding_seed())
         );
         assert_eq!(cookie.value().len(), 43);
         assert_eq!(cookie.path(), Some("/"));
@@ -202,7 +202,7 @@ async fn missing_or_bad_cookie_calls_no_state_store_and_valid_cookie_preserves_o
         }
     }
     for social in [false, true] {
-        let req = binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED));
+        let req = binding_request(&config, Some(test_browser_binding_seed()));
         let before = std::sync::atomic::AtomicUsize::load(&states.calls, Ordering::SeqCst);
         let response = if social {
             super::super::social_callback_after_rate_limit(
@@ -313,7 +313,7 @@ async fn oidc_attacker_code_and_state_in_another_browser_cannot_burn_owner_login
         crate::test_support::federation_service(&fixture.state),
         &config,
         crate::test_support::client_ip_config(&fixture.state),
-        binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
+        binding_request(&config, Some(test_browser_binding_seed())),
         callback_query(&state_token),
         &provider,
     )
@@ -332,7 +332,7 @@ async fn oidc_attacker_code_and_state_in_another_browser_cannot_burn_owner_login
     jwks_request.await.unwrap();
     assert!(request.contains("code=code-1"));
     assert!(request.contains("code_verifier=verifier-1"));
-    assert!(!request.contains(&URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED)));
+    assert!(!request.contains(&URL_SAFE_NO_PAD.encode(test_browser_binding_seed())));
     assert!(!request.contains(&owner_hash));
     assert!(
         valkey_get(&fixture.state.valkey, key)
@@ -361,7 +361,7 @@ async fn social_attacker_code_and_state_in_another_browser_preserves_owner_compl
     provider.userinfo_endpoint = userinfo_endpoint;
     let service = crate::test_support::federation_service(&fixture.state);
     let start = service
-        .start_social("social".to_owned(), &TEST_BROWSER_BINDING_SEED, Utc::now())
+        .start_social("social".to_owned(), test_browser_binding_seed(), Utc::now())
         .await
         .unwrap();
     let config = crate::test_support::federation_http_config(&fixture.state);
@@ -404,7 +404,7 @@ async fn social_attacker_code_and_state_in_another_browser_preserves_owner_compl
         service,
         &config,
         crate::test_support::client_ip_config(&fixture.state),
-        binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
+        binding_request(&config, Some(test_browser_binding_seed())),
         callback_query(&start.state),
         "social".to_owned(),
         &provider,
@@ -425,7 +425,7 @@ async fn social_attacker_code_and_state_in_another_browser_preserves_owner_compl
         token_request.await.unwrap(),
         userinfo_request.await.unwrap(),
     ] {
-        assert!(!request.contains(&URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED)));
+        assert!(!request.contains(&URL_SAFE_NO_PAD.encode(test_browser_binding_seed())));
         assert!(!request.contains(&owner_hash));
     }
     assert!(
@@ -502,7 +502,7 @@ async fn existing_browser_cookie_supports_parallel_oidc_and_social_starts_withou
                 client_ip.clone(),
                 service.clone(),
                 config.clone(),
-                binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
+                binding_request(&config, Some(test_browser_binding_seed())),
                 Path::from(TEST_OIDC_PROVIDER_ID.to_owned()),
             ),
             super::super::federation_provider_start(
@@ -510,13 +510,13 @@ async fn existing_browser_cookie_supports_parallel_oidc_and_social_starts_withou
                 client_ip.clone(),
                 service.clone(),
                 config.clone(),
-                binding_request(&config, Some(&TEST_BROWSER_BINDING_SEED)),
+                binding_request(&config, Some(test_browser_binding_seed())),
                 Path::from("social".to_owned()),
             ),
         );
         for response in [&oidc, &social] {
             assert_eq!(response.status(), StatusCode::FOUND);
-            let encoded = URL_SAFE_NO_PAD.encode(TEST_BROWSER_BINDING_SEED);
+            let encoded = URL_SAFE_NO_PAD.encode(test_browser_binding_seed());
             assert_eq!(
                 cookie_value_from_response(response, federation_binding_cookie_name(&config)),
                 Some(encoded.clone())
@@ -546,13 +546,13 @@ async fn existing_browser_cookie_supports_parallel_oidc_and_social_starts_withou
             service.consume_oidc(
                 &oidc_state,
                 TEST_OIDC_PROVIDER_ID,
-                &TEST_BROWSER_BINDING_SEED,
+                test_browser_binding_seed(),
                 Utc::now()
             ),
             service.consume_social(
                 &social_state,
                 "social",
-                &TEST_BROWSER_BINDING_SEED,
+                test_browser_binding_seed(),
                 Utc::now()
             ),
         );

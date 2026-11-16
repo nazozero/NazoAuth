@@ -101,8 +101,8 @@ impl LiveOpenid4vcAdminFixture {
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
 
-        let mut settings =
-            Settings::from_config(&ConfigSource::default()).expect("unit settings should load");
+        let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("unit settings should load");
         settings.endpoint.issuer = "https://issuer.example".to_owned();
         settings.modules.enable_openid4vci_issuer = true;
         settings.openid4vc.data_encryption_key = Some([0x51; 32]);

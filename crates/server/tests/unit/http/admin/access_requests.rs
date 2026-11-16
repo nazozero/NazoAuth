@@ -107,7 +107,7 @@ fn test_state() -> TestInfrastructure {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default())
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
                 .expect("default settings should load"),
         ),
         keyset: crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256),
@@ -290,8 +290,8 @@ fn query_with_status(value: &str) -> HashMap<String, String> {
 
 #[test]
 fn delivery_tokens_are_deterministic_and_request_scoped() {
-    let settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     let pepper = &settings.protocol.client_secret_pepper;
     let user_id = Uuid::now_v7();
     let request_id = Uuid::now_v7();

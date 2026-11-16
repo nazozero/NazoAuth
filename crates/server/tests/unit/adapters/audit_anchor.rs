@@ -22,13 +22,18 @@ use nazo_persistence::{
 };
 use nazo_postgres::AuditLedgerRepository;
 use serde_json::{Value, json};
-use std::{collections::VecDeque, sync::Mutex, time::Duration};
+use std::{
+    collections::VecDeque,
+    sync::{Mutex, OnceLock},
+    time::Duration,
+};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use url::Url;
 use uuid::Uuid;
 
 fn test_signing_key() -> SigningKey {
-    SigningKey::from_bytes(&[42; 32])
+    static KEY: OnceLock<[u8; 32]> = OnceLock::new();
+    SigningKey::from_bytes(KEY.get_or_init(rand::random))
 }
 
 fn test_verify_key() -> VerifyingKey {
@@ -39,7 +44,7 @@ fn valid_worker_config(endpoint: Url) -> AuditAnchorWorkerConfig {
     AuditAnchorWorkerConfig {
         preflight: required_config(),
         endpoint,
-        auth_secret: b"anchor-secret-that-is-long-enough".to_vec(),
+        auth_secret: rand::random::<[u8; 32]>().to_vec(),
         receipt_verify_key: test_verify_key(),
         ca_bundle_pem: None,
         poll_interval: Duration::from_secs(1),
@@ -816,7 +821,7 @@ async fn worker_iteration_reschedules_invalid_receipts_without_acknowledging() {
             encode_hash(&[0xaa; 32]),
             None,
             false,
-            &SigningKey::from_bytes(&[77; 32]),
+            &SigningKey::from_bytes(&rand::random()),
         ),
     ] {
         let (endpoint, server) = local_anchor_endpoint_with_body(200, response_body).await;
@@ -1117,7 +1122,7 @@ fn receipt_verification_requires_signature_schema_and_binding() {
         encode_hash(&batch.digest),
         None,
         false,
-        &SigningKey::from_bytes(&[77; 32]),
+        &SigningKey::from_bytes(&rand::random()),
     );
     assert!(verify_receipt(&wrong_key, &test_verify_key(), &expectation).is_err());
 
@@ -1157,8 +1162,9 @@ fn receipt_verification_requires_signature_schema_and_binding() {
 #[test]
 fn checkpoint_signature_is_deterministic_and_url_safe() {
     let body = br#"{"sequence":7,"event_hash":"abc"}"#;
-    let first = sign_body(b"anchor-secret-that-is-long-enough", body);
-    let second = sign_body(b"anchor-secret-that-is-long-enough", body);
+    let secret: [u8; 32] = rand::random();
+    let first = sign_body(&secret, body);
+    let second = sign_body(&secret, body);
 
     assert_eq!(first, second);
     assert!(!first.is_empty());
@@ -1250,7 +1256,7 @@ fn mode_helpers_and_deployment_id_boundaries_are_explicit() {
 
 #[test]
 fn preflight_source_uses_safe_defaults_and_requires_identity_when_enabled() {
-    let disabled = crate::config::ConfigSource::default();
+    let disabled = crate::config::ConfigSource::from_pairs_for_test([]);
     let disabled_config = super::config::preflight_config_from_source(&disabled)
         .expect("disabled mode has a safe default identity");
     assert_eq!(disabled_config.mode, AuditAnchorMode::Disabled);

@@ -1,16 +1,17 @@
 impl ConfigSource {
+    pub(crate) fn client_secret_pepper_for_test() -> &'static str {
+        static PEPPER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        PEPPER.get_or_init(nazo_oauth_server::crypto::random_urlsafe_token)
+    }
+
     pub(crate) fn from_pairs_for_test(
         values: impl IntoIterator<Item = (&'static str, &'static str)>,
     ) -> Self {
-        Self {
-            file_values: values
+        Self::from_owned_pairs_for_test(
+            values
                 .into_iter()
-                .map(|(key, value)| (key.to_owned(), value.to_owned()))
-                .collect(),
-            env_values: HashMap::new(),
-            generated_values: HashMap::new(),
-            config_dir: PathBuf::from("."),
-        }
+                .map(|(key, value)| (key.to_owned(), value.to_owned())),
+        )
     }
 
     pub(crate) fn from_owned_pairs_for_test(
@@ -20,7 +21,11 @@ impl ConfigSource {
         Self {
             file_values: values.into_iter().collect(),
             env_values: HashMap::new(),
-            generated_values: HashMap::new(),
+            // Match the real loader's generated pepper without filesystem I/O.
+            generated_values: HashMap::from([(
+                "CLIENT_SECRET_PEPPER".to_owned(),
+                Self::client_secret_pepper_for_test().to_owned(),
+            )]),
             config_dir: PathBuf::from("."),
         }
     }

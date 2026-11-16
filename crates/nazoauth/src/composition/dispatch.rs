@@ -1,7 +1,7 @@
 //! Exhaustive endpoint dispatch over the single transport manifest.
 use super::NazoAuth;
 use crate::http::{self, Request, Response};
-use crate::integration::{Endpoint, Route, RouteGuard, RouteMethod};
+use crate::integration::{Endpoint, Route, RouteGuard};
 use ::http::StatusCode;
 use bytes::Bytes;
 
@@ -23,12 +23,164 @@ macro_rules! require {
 }
 
 impl NazoAuth {
-    async fn dispatch_buffered(
+    /// Serve an already decoded HTTP request. A single body chunk retains its
+    /// allocation through parsing and byte-preserving response paths.
+    pub fn handle(&self, request: Request) -> impl std::future::Future<Output = Response> {
+        self.handle_stream(request.map(|body| {
+            futures_util::stream::once(std::future::ready(Ok::<_, std::convert::Infallible>(body)))
+        }))
+    }
+
+    /// Serve framework-provided body chunks without requiring a runtime or a
+    /// Send stream. Content decoding follows the route's declared BodyMode;
+    /// adapters report decoder limits as io::ErrorKind::FileTooLarge.
+    pub async fn handle_stream<S, E>(&self, request: ::http::Request<S>) -> Response
+    where
+        S: futures_util::Stream<Item = Result<Bytes, E>>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let (parts, stream) = request.into_parts();
+        let mut request = Request::from_parts(parts, Bytes::new());
+        let mut response = self.route(&mut request, stream).await;
+        http::apply_security_headers(
+            response.headers_mut(),
+            request.uri().path() == "/check_session",
+        );
+        response
+    }
+
+    async fn route<S, E>(&self, request: &mut Request, stream: S) -> Response
+    where
+        S: futures_util::Stream<Item = Result<Bytes, E>>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        // Uri::clone shares the original bytes and lets Params borrow the raw
+        // target while the body is installed in the same standard Request.
+        let uri = request.uri().clone();
+        let routing_path = crate::integration::routing_path(uri.path());
+        let matched = crate::integration::match_path(&routing_path);
+        let (cors, guard) = matched.as_ref().map_or_else(
+            || crate::integration::unmatched_policy(&routing_path),
+            |(route, _)| (route.cors, route.guard),
+        );
+        let enabled = self.guard_enabled(guard);
+        if crate::integration::guard_precedes_cors(&routing_path) && !enabled {
+            return http::empty_response(StatusCode::NOT_FOUND);
+        }
+        let origins = &self.settings.endpoint.cors_allowed_origins;
+        if let Some(response) = http::cors_preflight(cors, request, origins) {
+            return response;
+        }
+        let mut response = match matched {
+            Some((route, params)) if enabled => {
+                self.dispatch_stream(route, &params, request, stream).await
+            }
+            _ => http::empty_response(StatusCode::NOT_FOUND),
+        };
+        http::apply_cors_headers(cors, request, origins, response.headers_mut());
+        response
+    }
+
+    fn guard_enabled(&self, guard: RouteGuard) -> bool {
+        match guard {
+            RouteGuard::None => true,
+            RouteGuard::ControlTenant => self.deployment.as_ref().is_some_and(|deployment| {
+                deployment.capabilities.control_tenant == self.settings.tenant.context.tenant_id
+            }),
+            RouteGuard::Openid4vci => {
+                self.settings.modules.register_openid4vci_routes
+                    && self.core.credential_issuer_endpoint.is_some()
+            }
+            RouteGuard::Openid4vp => {
+                self.settings.modules.register_openid4vp_routes
+                    && self.core.presentation_endpoint.is_some()
+            }
+        }
+    }
+
+    async fn dispatch_stream<S, E>(
         &self,
-        method: &RouteMethod,
+        route: &Route,
         params: &matchit::Params<'_, '_>,
-        request: &Request,
-    ) -> Response {
+        request: &mut Request,
+        stream: S,
+    ) -> Response
+    where
+        S: futures_util::Stream<Item = Result<Bytes, E>>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        // This resource's existing budget also applies to unsupported methods.
+        if route
+            .methods
+            .iter()
+            .any(|method| method.endpoint == Endpoint::CredentialNonce)
+        {
+            extract!(
+                crate::endpoints::rate_limit::enforce_auth_request_limit(
+                    &self.identity.auth_request_limiter,
+                    request,
+                    &self.identity.client_ip_config,
+                )
+                .await
+            );
+        }
+        let method = extract!(route.resolve_method(request.method()));
+        self.mtls.prepare_request(request);
+        match method.endpoint {
+            Endpoint::UploadAvatar => {
+                return crate::endpoints::profile::avatar::upload_avatar(
+                    &self.identity.session_profiles,
+                    &self.identity.avatar_profiles,
+                    request,
+                    stream,
+                )
+                .await;
+            }
+            Endpoint::BackchannelAuthentication => {
+                return crate::endpoints::token::ciba::backchannel_authentication(
+                    &self.core.ciba_application,
+                    &self.identity.client_ip_config,
+                    request,
+                    http::collect_route_body(method, stream),
+                )
+                .await;
+            }
+            Endpoint::DynamicClientRegistration => {
+                return http::dynamic_client_registration(
+                    &self.core.dynamic_registration_handles,
+                    request,
+                    http::collect_route_body(method, stream),
+                )
+                .await;
+            }
+            Endpoint::ClientConfigurationPut => {
+                return http::client_configuration_put(
+                    &self.core.dynamic_registration_handles,
+                    request,
+                    extract!(http::parse_path(
+                        params.get("client_id").expect("manifest capture")
+                    )),
+                    http::collect_route_body(method, stream),
+                )
+                .await;
+            }
+            Endpoint::OidcLogout => {
+                return http::oidc_logout(
+                    &self.identity.oidc_logout,
+                    request,
+                    http::collect_route_body(method, stream),
+                )
+                .await;
+            }
+            _ => {
+                if extract!(http::validate_route_body_head(request, method)) {
+                    *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
+                }
+            }
+        }
+
+        // Buffered endpoints share the request collected above.
+        let request: &Request = request;
         match method.endpoint {
             Endpoint::Discovery => http::discovery(self.core.metadata_handles.as_ref()).await,
             Endpoint::OauthAuthorizationServerMetadata => {
@@ -1122,166 +1274,6 @@ impl NazoAuth {
             | Endpoint::ClientConfigurationPut
             | Endpoint::BackchannelAuthentication
             | Endpoint::OidcLogout => unreachable!("streamed ingress dispatches these endpoints"),
-        }
-    }
-}
-
-impl NazoAuth {
-    /// Serve an already decoded HTTP request. A single body chunk retains its
-    /// allocation through parsing and byte-preserving response paths.
-    pub fn handle(&self, request: Request) -> impl std::future::Future<Output = Response> {
-        self.handle_stream(request.map(|body| {
-            futures_util::stream::once(std::future::ready(Ok::<_, std::convert::Infallible>(body)))
-        }))
-    }
-
-    /// Serve framework-provided body chunks without requiring a runtime or a
-    /// Send stream. Content decoding follows the route's declared BodyMode;
-    /// adapters report decoder limits as io::ErrorKind::FileTooLarge.
-    pub async fn handle_stream<S, E>(&self, request: ::http::Request<S>) -> Response
-    where
-        S: futures_util::Stream<Item = Result<Bytes, E>>,
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        let (parts, stream) = request.into_parts();
-        let mut request = Request::from_parts(parts, Bytes::new());
-        let mut response = self.route(&mut request, stream).await;
-        http::apply_security_headers(
-            response.headers_mut(),
-            request.uri().path() == "/check_session",
-        );
-        response
-    }
-
-    async fn route<S, E>(&self, request: &mut Request, stream: S) -> Response
-    where
-        S: futures_util::Stream<Item = Result<Bytes, E>>,
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        // Uri::clone shares the original bytes and lets Params borrow the raw
-        // target while the body is installed in the same standard Request.
-        let uri = request.uri().clone();
-        let routing_path = crate::integration::routing_path(uri.path());
-        let matched = crate::integration::match_path(&routing_path);
-        let (cors, guard) = matched.as_ref().map_or_else(
-            || crate::integration::unmatched_policy(&routing_path),
-            |(route, _)| (route.cors, route.guard),
-        );
-        let enabled = self.guard_enabled(guard);
-        if crate::integration::guard_precedes_cors(&routing_path) && !enabled {
-            return http::empty_response(StatusCode::NOT_FOUND);
-        }
-        let origins = &self.settings.endpoint.cors_allowed_origins;
-        if let Some(response) = http::cors_preflight(cors, request, origins) {
-            return response;
-        }
-        let mut response = match matched {
-            Some((route, params)) if enabled => {
-                self.dispatch_stream(route, &params, request, stream).await
-            }
-            _ => http::empty_response(StatusCode::NOT_FOUND),
-        };
-        http::apply_cors_headers(cors, request, origins, response.headers_mut());
-        response
-    }
-
-    fn guard_enabled(&self, guard: RouteGuard) -> bool {
-        match guard {
-            RouteGuard::None => true,
-            RouteGuard::ControlTenant => self.deployment.as_ref().is_some_and(|deployment| {
-                deployment.capabilities.control_tenant == self.settings.tenant.context.tenant_id
-            }),
-            RouteGuard::Openid4vci => {
-                self.settings.modules.register_openid4vci_routes
-                    && self.core.credential_issuer_endpoint.is_some()
-            }
-            RouteGuard::Openid4vp => {
-                self.settings.modules.register_openid4vp_routes
-                    && self.core.presentation_endpoint.is_some()
-            }
-        }
-    }
-
-    async fn dispatch_stream<S, E>(
-        &self,
-        route: &Route,
-        params: &matchit::Params<'_, '_>,
-        request: &mut Request,
-        stream: S,
-    ) -> Response
-    where
-        S: futures_util::Stream<Item = Result<Bytes, E>>,
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        // This resource's existing budget also applies to unsupported methods.
-        if route
-            .methods
-            .iter()
-            .any(|method| method.endpoint == Endpoint::CredentialNonce)
-        {
-            extract!(
-                crate::endpoints::rate_limit::enforce_auth_request_limit(
-                    &self.identity.auth_request_limiter,
-                    request,
-                    &self.identity.client_ip_config,
-                )
-                .await
-            );
-        }
-        let method = extract!(route.resolve_method(request.method()));
-        self.mtls.prepare_request(request);
-        match method.endpoint {
-            Endpoint::UploadAvatar => {
-                crate::endpoints::profile::avatar::upload_avatar(
-                    &self.identity.session_profiles,
-                    &self.identity.avatar_profiles,
-                    request,
-                    stream,
-                )
-                .await
-            }
-            Endpoint::BackchannelAuthentication => {
-                crate::endpoints::token::ciba::backchannel_authentication(
-                    &self.core.ciba_application,
-                    &self.identity.client_ip_config,
-                    request,
-                    http::collect_route_body(method, stream),
-                )
-                .await
-            }
-            Endpoint::DynamicClientRegistration => {
-                http::dynamic_client_registration(
-                    &self.core.dynamic_registration_handles,
-                    request,
-                    http::collect_route_body(method, stream),
-                )
-                .await
-            }
-            Endpoint::ClientConfigurationPut => {
-                http::client_configuration_put(
-                    &self.core.dynamic_registration_handles,
-                    request,
-                    extract!(http::parse_path(
-                        params.get("client_id").expect("manifest capture")
-                    )),
-                    http::collect_route_body(method, stream),
-                )
-                .await
-            }
-            Endpoint::OidcLogout => {
-                http::oidc_logout(
-                    &self.identity.oidc_logout,
-                    request,
-                    http::collect_route_body(method, stream),
-                )
-                .await
-            }
-            _ => {
-                if extract!(http::validate_route_body_head(request, method)) {
-                    *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
-                }
-                self.dispatch_buffered(method, params, request).await
-            }
         }
     }
 }

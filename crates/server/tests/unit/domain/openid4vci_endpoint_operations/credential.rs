@@ -113,7 +113,7 @@ async fn live_http_attestation_holder_limit_precedes_nonce_claim_for_immediate_a
             App::new()
                 .app_data(web::Data::new(neutral_vc::CredentialIssuerEndpoint::new(
                     operations,
-                    vec![1; 32],
+                    nazo_oauth_server::crypto::random_urlsafe_token().into_bytes(),
                 )))
                 .route("/openid4vci/credential", web::post().to(credential_http))
                 .route(
@@ -217,7 +217,7 @@ async fn live_http_no_proof_configuration_issues_without_a_nonce_and_rejects_str
             App::new()
                 .app_data(web::Data::new(neutral_vc::CredentialIssuerEndpoint::new(
                     operations,
-                    vec![1; 32],
+                    nazo_oauth_server::crypto::random_urlsafe_token().into_bytes(),
                 )))
                 .route("/openid4vci/credential", web::post().to(credential_http))
                 .route(
@@ -226,8 +226,9 @@ async fn live_http_no_proof_configuration_issues_without_a_nonce_and_rejects_str
                 ),
         )
         .await;
+        let unissued_nonce = nazo_oauth_server::crypto::random_urlsafe_token();
         let mut request =
-            jwt_credential_request(&configuration_id, &fixture.issuer.issuer, "no-issued-nonce");
+            jwt_credential_request(&configuration_id, &fixture.issuer.issuer, &unissued_nonce);
         let response = test::call_service(
             &app,
             test::TestRequest::post()
@@ -284,8 +285,9 @@ async fn live_http_no_proof_configuration_issues_without_a_nonce_and_rejects_str
         return;
     };
     let token = credential_access_token(&fixture, &configuration_id).await;
+    let unissued_nonce = nazo_oauth_server::crypto::random_urlsafe_token();
     let mut request =
-        jwt_credential_request(&configuration_id, &fixture.issuer.issuer, "no-issued-nonce");
+        jwt_credential_request(&configuration_id, &fixture.issuer.issuer, &unissued_nonce);
     request.proofs = None;
     let error = fixture
         .issuer

@@ -95,7 +95,9 @@ async fn tenant_s3_can_override_global_local_and_absent_tenants_still_inherit() 
 
 #[test]
 fn missing_global_and_tenant_storage_disables_avatars_without_blocking_configuration() {
-    let provider = TenantAvatarObjectStoreProvider::from_config(&ConfigSource::default()).unwrap();
+    let provider =
+        TenantAvatarObjectStoreProvider::from_config(&ConfigSource::from_pairs_for_test([]))
+            .unwrap();
     for id in [tenant(1), tenant(2)] {
         assert!(matches!(
             provider.for_tenant(id),

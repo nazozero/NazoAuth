@@ -168,7 +168,8 @@ mod security_tokens;
 mod token_claims;
 
 fn test_settings() -> Settings {
-    Settings::from_config(&ConfigSource::default()).expect("default settings should load")
+    Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load")
 }
 
 fn private_key_jwt_client(jwks: Value) -> ClientRow {
@@ -263,6 +264,7 @@ fn signed_client_assertion_without_kid(
 #[tokio::test]
 async fn verify_password_blocking_matches_argon2_verifier() {
     let password = uuid::Uuid::now_v7().to_string();
+    let wrong_password = nazo_oauth_server::crypto::random_urlsafe_token();
     let hash = hash_password(&password).expect("password should hash");
 
     assert!(
@@ -275,7 +277,7 @@ async fn verify_password_blocking_matches_argon2_verifier() {
     );
     assert!(
         !verify_password_blocking_limited(
-            "wrong password".to_owned(),
+            wrong_password,
             nazo_identity::PasswordHash::new(hash).unwrap(),
         )
         .await
@@ -288,7 +290,7 @@ fn dummy_password_hash_is_valid_and_never_matches_the_probe_password() {
     let hash = dummy_password_hash().expect("dummy password hash should initialize");
 
     let hash = nazo_identity::PasswordHash::new(hash).expect("valid dummy password hash");
-    assert!(!hash.verify_password("attacker supplied password"));
+    assert!(!hash.verify_password(&nazo_oauth_server::crypto::random_urlsafe_token()));
 }
 
 #[tokio::test]

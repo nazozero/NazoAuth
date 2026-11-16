@@ -1,7 +1,9 @@
 #[test]
 fn token_management_request_facts_preserve_the_exact_endpoint_path() {
-    let settings = crate::settings::Settings::from_config(&crate::config::ConfigSource::default())
-        .expect("default settings should load");
+    let settings = crate::settings::Settings::from_config(
+        &crate::config::ConfigSource::from_pairs_for_test([]),
+    )
+    .expect("default settings should load");
     let extractor = super::ServerTokenManagementRequestFactsExtractor::new(
         crate::test_support::http::ClientIpConfig::new(
             &settings.endpoint.trusted_proxy_cidrs,

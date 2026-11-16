@@ -134,7 +134,7 @@ async fn managed_repository() -> (KeyManager, Arc<ControlledRepository>) {
         None,
         uuid::Uuid::now_v7(),
         repository.clone(),
-        SigningKeyWrappingKeyRing::new("test", [0xA5; 32], None).unwrap(),
+        SigningKeyWrappingKeyRing::new("test", rand::random(), None).unwrap(),
     )
     .await
     .unwrap();

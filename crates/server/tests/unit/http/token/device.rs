@@ -137,15 +137,17 @@ fn device_client() -> ClientRow {
 }
 
 fn device_settings() -> Settings {
-    let mut settings =
-        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    let mut settings = Settings::from_config(&crate::config::ConfigSource::from_pairs_for_test([]))
+        .expect("settings");
     settings.device.device_authorization_ttl_seconds = 600;
     settings.device.device_authorization_poll_interval_seconds = 5;
     settings
 }
 
 fn disabled_state() -> TestInfrastructure {
-    state_with_settings(Settings::from_config(&ConfigSource::default()).expect("settings"))
+    state_with_settings(
+        Settings::from_config(&ConfigSource::from_pairs_for_test([])).expect("settings"),
+    )
 }
 
 fn state_with_settings(settings: Settings) -> TestInfrastructure {

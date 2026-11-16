@@ -135,8 +135,15 @@ pub fn forward_response(response: http::Response<Bytes>) -> HttpResponse {
     let mut builder = HttpResponse::build(
         actix_web::http::StatusCode::from_u16(parts.status.as_u16()).expect("valid HTTP status"),
     );
-    for (name, value) in &parts.headers {
-        builder.append_header((actix_header_name(name), actix_header_value(value)));
+    let mut name = None;
+    for (next_name, value) in parts.headers {
+        if let Some(next_name) = next_name {
+            name = Some(next_name);
+        }
+        builder.append_header((
+            actix_header_name(name.as_ref().expect("header iterator starts with a name")),
+            actix_header_value(value),
+        ));
     }
     builder.body(body)
 }
@@ -146,11 +153,12 @@ fn actix_header_name(name: &http::HeaderName) -> actix_web::http::header::Header
         .expect("valid HTTP header name")
 }
 
-fn actix_header_value(value: &http::HeaderValue) -> actix_web::http::header::HeaderValue {
+fn actix_header_value(value: http::HeaderValue) -> actix_web::http::header::HeaderValue {
+    let sensitive = value.is_sensitive();
     let mut converted =
-        actix_web::http::header::HeaderValue::from_maybe_shared(Bytes::from_owner(value.clone()))
+        actix_web::http::header::HeaderValue::from_maybe_shared(Bytes::from_owner(value))
             .expect("valid HTTP header value");
-    converted.set_sensitive(value.is_sensitive());
+    converted.set_sensitive(sensitive);
     converted
 }
 
@@ -166,7 +174,7 @@ pub async fn security_headers<B: MessageBody>(
         if !response.headers().contains_key(&name) {
             response
                 .headers_mut()
-                .insert(name, actix_header_value(value));
+                .insert(name, actix_header_value(value.clone()));
         }
     }
     Ok(response)

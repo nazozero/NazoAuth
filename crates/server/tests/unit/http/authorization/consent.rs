@@ -134,8 +134,8 @@ impl ConsentLiveFixture {
 
     async fn from_database_url(database_url: String, schema: Option<String>) -> Option<Self> {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
-        let mut settings =
-            Settings::from_config(&ConfigSource::default()).expect("test settings should load");
+        let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("test settings should load");
         settings.endpoint.issuer = "https://issuer.example".to_owned();
         settings.endpoint.frontend_base_url = "https://app.example".to_owned();
         settings.protocol.auth_code_ttl_seconds = 60;
@@ -510,7 +510,8 @@ async fn authorize_consent_requires_login() {
             .build()
             .expect("valkey client should construct"),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+                .expect("settings should load"),
         ),
         keyset: crate::test_support::test_key_manager(),
     };

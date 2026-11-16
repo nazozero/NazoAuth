@@ -38,8 +38,8 @@ use nazo_postgres::create_pool;
 use std::sync::Arc;
 
 fn native_sso_state_with_signing_key() -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
 
     TestInfrastructure {
@@ -305,8 +305,8 @@ fn native_sso_scope_and_client_admission_are_fail_closed() {
 
 #[test]
 fn native_sso_subject_policy_uses_client_specific_subject_mapping() {
-    let settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     let config =
         crate::http::token::issue::token_issuance_config(&settings.application_configuration());
     let client = native_sso_client(json!(["openid", "offline_access", "device_sso"]));

@@ -35,7 +35,10 @@ const DISCOVERY_PATH: &str = "/.well-known/openid-configuration";
 const DEPLOYMENT_ID: &str = "t1-issuance-simplification";
 const STATE_EPOCH: &str = "0198f7d1-0000-7000-8000-000000000002";
 const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_t1_issuance_runtime";
-const CLIENT_SECRET_PEPPER: &str = "t1-issuance-client-secret-pepper-00000000";
+fn client_secret_pepper() -> &'static str {
+    static PEPPER: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    PEPPER.get_or_init(nazo_oauth_server::crypto::random_urlsafe_token)
+}
 
 fn test_databases() -> Option<(String, String)> {
     let database = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -95,7 +98,7 @@ TRANSPORT_MODE: "trusted-proxy"
 TRUSTED_PROXY_CIDRS: "127.0.0.1/32"
 MTLS_CERTIFICATE_SOURCE: "rfc9440"
 CLIENT_IP_HEADER_MODE: "x-forwarded-for"
-CLIENT_SECRET_PEPPER: "{CLIENT_SECRET_PEPPER}"
+CLIENT_SECRET_PEPPER: "{client_secret_pepper}"
 COOKIE_SECURE: true
 SESSION_COOKIE_NAME: "t1_session"
 CSRF_COOKIE_NAME: "t1_csrf"
@@ -104,7 +107,8 @@ SUBJECT_TYPE: "public"
 SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE: false
 RUST_LOG: "info"
 "#,
-        data_dir.display().to_string().replace('\\', "/")
+        data_dir.display().to_string().replace('\\', "/"),
+        client_secret_pepper = client_secret_pepper(),
     )
 }
 
@@ -497,7 +501,7 @@ fn client_secret_hash(secret: &str) -> String {
     use sha2::Sha256;
 
     let salt = Uuid::now_v7().simple().to_string();
-    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(CLIENT_SECRET_PEPPER.as_bytes())
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(client_secret_pepper().as_bytes())
         .expect("HMAC accepts any key");
     mac.update(salt.as_bytes());
     mac.update(b":");

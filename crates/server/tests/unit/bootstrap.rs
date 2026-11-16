@@ -341,7 +341,7 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
 
 #[test]
 fn direct_tls_listener_is_disabled_by_default_and_requires_complete_identity() {
-    let disabled = ConfigSource::default();
+    let disabled = ConfigSource::from_pairs_for_test([]);
     let disabled_settings = Settings::from_config(&disabled).unwrap();
     assert!(
         direct_tls_listeners(&disabled, &disabled_settings)

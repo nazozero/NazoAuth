@@ -152,7 +152,8 @@ use std::time::Duration as StdDuration;
 
 fn token_management_state() -> TestInfrastructure {
     token_management_state_with_settings(
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("default settings should load"),
     )
 }
 
@@ -175,8 +176,8 @@ fn token_management_state_with_settings(settings: Settings) -> TestInfrastructur
 }
 
 fn token_management_state_with_trusted_proxy() -> TestInfrastructure {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
     token_management_state_with_settings(settings)
@@ -204,8 +205,8 @@ fn fixture_secret(label: &str) -> String {
 }
 
 fn fixture_secret_hash(secret: &str) -> String {
-    let settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     hash_client_secret(secret, &settings.protocol.client_secret_pepper)
 }
 
@@ -380,8 +381,8 @@ fn confidential_client_secret_auth_accepts_correct_and_rejects_wrong_secret_by_d
     let correct_secret = fixture_secret("correct");
     let wrong_secret = fixture_secret("wrong");
     let hash = fixture_secret_hash(&correct_secret);
-    let settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
 
     let salt = hash
         .split(':')
@@ -819,8 +820,8 @@ async fn pki_client_auth_rejects_matching_subject_without_an_active_client_ancho
 
 #[actix_web::test]
 async fn token_endpoint_audience_is_rejected_even_with_legacy_client_flag() {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     let state = token_management_state_with_settings(settings);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
@@ -873,8 +874,8 @@ async fn token_endpoint_audience_is_rejected_even_with_legacy_client_flag() {
 
 #[actix_web::test]
 async fn ciba_private_key_jwt_accepts_only_ps256_issuer_audience() {
-    let mut settings =
-        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+        .expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     let state = token_management_state_with_settings(settings);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);

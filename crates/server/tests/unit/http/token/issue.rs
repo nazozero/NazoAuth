@@ -407,7 +407,8 @@ fn issue_state_with_invalid_signing_key() -> TestInfrastructure {
         .expect("pool construction should not connect"),
         valkey: disconnected_valkey_client(),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+                .expect("default settings should load"),
         ),
         keyset: crate::test_support::failing_key_manager(),
     }
@@ -424,7 +425,8 @@ fn issue_state_with_valid_signing_key() -> TestInfrastructure {
         .expect("pool construction should not connect"),
         valkey: disconnected_valkey_client(),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+                .expect("default settings should load"),
         ),
         keyset: crate::test_support::test_key_manager(),
     }
@@ -511,7 +513,8 @@ fn issue_state_with_live_database_pool_size(max_size: usize) -> Option<TestInfra
         diesel_db,
         valkey,
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+                .expect("default settings should load"),
         ),
         // The default OIDC ID-token algorithm is RS256. Keep the live
         // issuance fixture aligned with that protocol default so this test
@@ -533,7 +536,8 @@ fn issue_state_with_live_database_and_disconnected_valkey() -> Option<TestInfras
         diesel_db,
         valkey: disconnected_valkey_client(),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+                .expect("default settings should load"),
         ),
         keyset: crate::test_support::test_key_manager_with_algorithm(
             jsonwebtoken::Algorithm::RS256,

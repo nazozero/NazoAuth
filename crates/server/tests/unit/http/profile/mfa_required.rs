@@ -470,7 +470,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         pool.clone(),
         Some(
             MfaTotpKeyRing::new(
-                MfaTotpKey::new("http-fixture-current", [7; 32]).unwrap(),
+                MfaTotpKey::new("http-fixture-current", rand::random()).unwrap(),
                 None,
             )
             .unwrap(),
@@ -478,8 +478,10 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
     );
     let now = Utc::now().timestamp();
     let step = now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let totp_secret: [u8; 20] = rand::random();
+    let totp_secret_base32 = nazo_identity::mfa::base32_encode(&totp_secret);
     repository
-        .begin_totp_enrollment(tenant.tenant_id, user, "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+        .begin_totp_enrollment(tenant.tenant_id, user, &totp_secret_base32)
         .await
         .unwrap();
     if regenerate {
@@ -490,8 +492,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
             .unwrap()
             .unwrap();
         let old_now = (step - 2) * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
-        let old_code =
-            nazo_identity::mfa::totp_for_step(b"12345678901234567890", step - 2).unwrap();
+        let old_code = nazo_identity::mfa::totp_for_step(&totp_secret, step - 2).unwrap();
         let prepared = initial
             .prepare_totp_confirmation(&account, old_code, old_now)
             .await
@@ -563,7 +564,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
         "/auth/me/mfa/totp/confirm"
     };
     let code = nazo_identity::mfa::totp_for_step(
-        b"12345678901234567890",
+        &totp_secret,
         Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
     )
     .unwrap();

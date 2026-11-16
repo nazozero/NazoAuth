@@ -96,8 +96,8 @@ use actix_web::test::TestRequest;
 use nazo_oauth_server::policy::AuthorizationServerProfile;
 
 fn settings(profile: AuthorizationServerProfile) -> Settings {
-    let mut settings =
-        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    let mut settings = Settings::from_config(&crate::config::ConfigSource::from_pairs_for_test([]))
+        .expect("settings");
     settings.protocol.authorization_server_profile = profile;
     settings
 }

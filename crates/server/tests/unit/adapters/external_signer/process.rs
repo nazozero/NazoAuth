@@ -849,7 +849,7 @@ async fn external_signer_invalid_signature_terminates_owned_descendant() {
     });
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
-    let wrapping_keys = SigningKeyWrappingKeyRing::new("external-test", [0x81; 32], None)
+    let wrapping_keys = SigningKeyWrappingKeyRing::new("external-test", rand::random(), None)
         .expect("test wrapping key is valid");
     let manager = KeyManager::load_or_create_database(
         KeySettings {

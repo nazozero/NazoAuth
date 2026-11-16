@@ -146,7 +146,7 @@ pub(crate) async fn prepare_client_patch(
         &nazo_auth::AdminClientPolicy {
             tenant: nazo_identity::TenantContext::default_system(),
             pairwise_subject_secret: pairwise_subject_secret.map(ToOwned::to_owned),
-            client_secret_pepper: crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER
+            client_secret_pepper: crate::config::ConfigSource::client_secret_pepper_for_test()
                 .to_owned(),
         },
         &sector_identifiers,

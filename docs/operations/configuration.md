@@ -79,7 +79,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |
 | `UI_ENABLED` | `true` | Host the default or custom static UI under `/ui/`; set false for API-only or external UI hosting |
 | `UI_STATIC_DIR` | `${DATA_DIR}/ui/current` | Existing custom UI directory. When unset, first use installs official NazoAuthWeb; existing files are preserved and can be replaced without restarting |
-| `CLIENT_SECRET_PEPPER` | generated under `DATA_DIR/secrets` | Explicit values override the persisted generated value; keep it stable and back it up with the database |
+| `CLIENT_SECRET_PEPPER` | generated under `DATA_DIR/secrets` | Explicit values override the persisted generated value; an explicitly empty value is rejected, including for loopback HTTP. Keep it stable and back it up with the database |
 | `PASSWORD_HASH_MAX_CONCURRENCY` | `8` | Maximum concurrent Argon2 password verifications per process; tune from CPU and memory capacity, not by lowering Argon2 cost |
 | `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | `100` | Maximum bounded wait for a password-verification slot before returning `temporarily_unavailable` |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Window for the broad source-IP admission buckets |

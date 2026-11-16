@@ -579,8 +579,10 @@ pub(crate) fn dpop_token_request(
 
 #[test]
 fn dpop_token_fixture_has_valid_signature_and_target() {
-    let settings =
-        crate::settings::Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    let settings = crate::settings::Settings::from_config(
+        &crate::config::ConfigSource::from_pairs_for_test([]),
+    )
+    .unwrap();
     let key = client_signing_fixture(jsonwebtoken::Algorithm::EdDSA);
     let request = dpop_token_request(&settings, &key);
     let proof = request.headers().get("dpop").unwrap().to_str().unwrap();

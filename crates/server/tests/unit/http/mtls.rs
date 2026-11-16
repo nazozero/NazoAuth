@@ -346,11 +346,11 @@ fn prepared(
 
 fn mode_from_config(value: Option<&'static str>) -> anyhow::Result<MtlsCertificateSourceMode> {
     let Some(value) = value else {
-        return Ok(
-            crate::settings::Settings::from_config(&crate::config::ConfigSource::default())?
-                .endpoint
-                .mtls_certificate_source,
-        );
+        return Ok(crate::settings::Settings::from_config(
+            &crate::config::ConfigSource::from_pairs_for_test([]),
+        )?
+        .endpoint
+        .mtls_certificate_source);
     };
     let (transport, trusted_proxies) = if value == "direct-tls" {
         ("direct-tls", "")

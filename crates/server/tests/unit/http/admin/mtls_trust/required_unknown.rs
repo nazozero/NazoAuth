@@ -121,7 +121,7 @@ async fn hidden_committed_trust_ack_is_503_for_approve_reject_and_revoke_with_re
     let state = TestInfrastructure {
         diesel_db: pool.clone(),
         valkey,
-        settings: Arc::new(Settings::from_config(&ConfigSource::default()).unwrap()),
+        settings: Arc::new(Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap()),
         keyset: crate::test_support::test_key_manager(),
     };
     let tenant = TenantContext::default_system();
@@ -375,7 +375,7 @@ async fn bundle_export_waits_for_real_required_audit_commit_and_rejects_late_fai
     let state = TestInfrastructure {
         diesel_db: pool.clone(),
         valkey,
-        settings: Arc::new(Settings::from_config(&ConfigSource::default()).unwrap()),
+        settings: Arc::new(Settings::from_config(&ConfigSource::from_pairs_for_test([])).unwrap()),
         keyset: crate::test_support::test_key_manager(),
     };
     let admin = Uuid::now_v7();

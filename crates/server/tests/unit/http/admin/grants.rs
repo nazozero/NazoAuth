@@ -38,7 +38,7 @@ async fn prepare_client_insert_for_test(
     prepare_client_insert_with_secret_pepper(
         payload,
         pairwise_subject_secret,
-        crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
+        crate::config::ConfigSource::client_secret_pepper_for_test(),
         issuer,
         nazo_identity::TenantContext::default_system(),
         nazo_key_management::SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
@@ -92,7 +92,7 @@ fn test_state() -> TestInfrastructure {
         .expect("pool construction should not connect"),
         valkey: unavailable_valkey_client(),
         settings: Arc::new(
-            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+            Settings::from_config(&ConfigSource::from_pairs_for_test([])).expect("default settings should load"),
         ),
         keyset: crate::test_support::test_key_manager(),
     }

@@ -89,8 +89,8 @@ impl LiveFixture {
     async fn new() -> Option<Self> {
         let database_url = crate::test_support::backend_url("DATABASE_URL")?;
         let valkey_url = crate::test_support::backend_url("VALKEY_URL")?;
-        let mut settings =
-            Settings::from_config(&ConfigSource::default()).expect("test settings must load");
+        let mut settings = Settings::from_config(&ConfigSource::from_pairs_for_test([]))
+            .expect("test settings must load");
         settings.identity.email.delivery = EmailDelivery::Smtp(SmtpEmailSettings {
             host: "127.0.0.1".to_owned(),
             port: 1025,
