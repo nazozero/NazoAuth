@@ -187,7 +187,8 @@ const OVERRIDING_ENV_KEYS: &[&str] = &[
 ];
 
 fn child_command(subcommand: &str, config: &Path) -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nazoauth"));
+    let mut command =
+        Command::new(std::env::var_os("CARGO_BIN_EXE_nazoauth").expect("nazoauth test binary"));
     command
         .arg(subcommand)
         .env("NAZOAUTH_SERVER_CONFIG_FILE", config);

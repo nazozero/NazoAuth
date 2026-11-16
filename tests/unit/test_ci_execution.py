@@ -28,8 +28,8 @@ class CiExecutionTests(unittest.TestCase):
         self.assertNotIn("  push:", coverage)
         self.assertIn("uses: ./.github/workflows/codecov.yml", quality)
         self.assertIn("cargo nextest archive --workspace --all-features --locked", quality)
-        self.assertIn("shard: [1, 2, 3, 4]", quality)
-        self.assertIn("--partition slice:${{ matrix.shard }}/4 --test-threads 1 --no-fail-fast", quality)
+        self.assertIn("shard: [1, 2, 3, 4, 5, 6]", quality)
+        self.assertIn("--partition slice:${{ matrix.shard }}/6 --test-threads 1 --no-fail-fast", quality)
         self.assertIn("test(=pending_migrations_create_all_runtime_module_state_tables)", quality)
         for result in ("BUILD_RESULT", "CLIPPY_RESULT", "FIXTURE_RESULT", "SHARDS_RESULT"):
             self.assertIn(f'test "${result}" = success', quality)

@@ -118,7 +118,8 @@ struct SpawnOptions<'a> {
 }
 
 fn spawn_operator_task(root: &Path, compact: &str, options: SpawnOptions<'_>) -> Child {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nazoauth"));
+    let mut command =
+        Command::new(std::env::var_os("CARGO_BIN_EXE_nazoauth").expect("nazoauth test binary"));
     command
         .arg("operator-task")
         .current_dir(root)

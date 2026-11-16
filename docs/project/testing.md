@@ -278,7 +278,7 @@ cargo test --workspace --all-features --locked --no-fail-fast
 
 The migration test prepares the test database before the full suite. CI builds
 one test archive without debug symbols or incremental compilation, then runs
-four nextest partitions with independently isolated PostgreSQL, Valkey and S3
+six nextest partitions with independently isolated PostgreSQL, Valkey and S3
 fixtures. Tests within each partition remain serial; documentation tests run
 separately and any failed partition fails the gate. For a focused change, run the owning package/test
 target first; broaden
