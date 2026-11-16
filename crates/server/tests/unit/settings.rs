@@ -1590,6 +1590,7 @@ fn email_code_dev_response_requires_debug_loopback_issuer() {
 
     let public = ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://auth.example.test"),
+        ("TRANSPORT_MODE", "direct-tls"),
         (
             "CLIENT_SECRET_PEPPER",
             "test-client-secret-pepper-that-is-long-enough-0001",

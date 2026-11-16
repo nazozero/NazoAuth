@@ -2427,7 +2427,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     for relative in [
         "authorization-server/src/domain/rows.rs",
-        "nazoauth/src/http/admin/grants.rs",
+        "nazoauth/src/endpoints/admin/grants.rs",
         "authorization-server/src/authorization/request/prompt_none.rs",
         "authorization-server/src/domain/scim.rs",
         "authorization-server/src/token/issue/authorization_code_state.rs",
@@ -2437,7 +2437,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "authorization-server/src/token/token_exchange.rs",
         "authorization-server/src/domain/userinfo.rs",
         "authorization-server/src/domain/client_policy.rs",
-        "nazoauth/src/http/views.rs",
+        "nazoauth/src/endpoints/views.rs",
     ] {
         let source = std::fs::read_to_string(crates.join(relative))
             .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
@@ -2460,7 +2460,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
             );
         }
     }
-    for package in ["authorization-server", "nazoauth"] {
+    for package in ["authorization-server", "nazoauth", "server"] {
         assert!(
             !crates.join(package).join("src/schema.rs").exists(),
             "server production source must not contain a test-only Diesel schema"

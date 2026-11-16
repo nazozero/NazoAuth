@@ -18,7 +18,7 @@ pub(crate) async fn par(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let request = crate::test_support::transport::request_head(&req);
+    let request = crate::test_support::transport::request_with_client_ip(&req, &endpoint.client_ip);
     nazo_http_actix::forward_response(
         nazoauth::test_support::endpoints::authorization::par::par(
             endpoint.get_ref(),

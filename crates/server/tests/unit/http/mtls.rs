@@ -352,15 +352,19 @@ fn mode_from_config(value: Option<&'static str>) -> anyhow::Result<MtlsCertifica
                 .mtls_certificate_source,
         );
     };
-    let transport = if value == "direct-tls" {
-        "direct-tls"
+    let (transport, trusted_proxies) = if value == "direct-tls" {
+        ("direct-tls", "")
     } else {
-        "trusted-proxy"
+        ("trusted-proxy", "192.0.2.0/24")
     };
     let config = crate::config::ConfigSource::from_pairs_for_test([
         ("ISSUER", "https://issuer.example"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "test-client-secret-pepper-that-is-long-enough-0001",
+        ),
         ("TRANSPORT_MODE", transport),
-        ("TRUSTED_PROXY_CIDRS", "192.0.2.0/24"),
+        ("TRUSTED_PROXY_CIDRS", trusted_proxies),
         ("MTLS_CERTIFICATE_SOURCE", value),
     ]);
     Ok(crate::settings::Settings::from_config(&config)?
