@@ -152,7 +152,7 @@ async fn registered_request_conversion_obeys_resource_head_requirements() {
         let complete = forward_request(original, expected.body().clone());
         conformance::assert_request(&expected, &complete);
 
-        let route = original.app_data::<&'static Route>().copied();
+        let route = nazoauth::integration::route_for_path(original.uri().path());
         let actual = forward_request_for_route(original, expected.body().clone(), route);
         assert_eq!(
             actual.extensions().get::<ConnectionFacts>().is_some(),
@@ -219,31 +219,45 @@ async fn production_response_presenters_survive_conversion_without_body_copy() {
 }
 
 #[actix_web::test]
-async fn every_manifest_binding_reaches_an_explicit_production_resource() {
-    // The missing application rejects at the ordinary Data extractor. Looking
-    // at the matched resource distinguishes a registered binding from fallback
-    // without constructing a second protocol implementation.
-    let app = awtest::init_service(App::new().configure(configure)).await;
+async fn every_manifest_binding_reaches_the_production_forwarder() {
+    // A missing facade rejects at the ordinary Data extractor. A framework
+    // routing or method rejection would instead produce its own 404 or 405.
+    let app = awtest::init_service(
+        App::new()
+            .route(
+                "/ui/ping",
+                web::get().to(|| async { HttpResponse::Accepted().finish() }),
+            )
+            .configure(configure),
+    )
+    .await;
     for (route, request) in conformance::registration_requests() {
         let response = awtest::call_service(&app, framework_request(&request).to_request()).await;
         assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(
-            response.request().match_pattern().as_deref(),
-            Some(actix_path(route.path).as_ref()),
-            "unregistered canonical resource {} {}",
-            request.method(),
-            request.uri(),
+        assert!(response.request().match_pattern().is_none());
+        let matched = nazoauth::integration::route_for_path(response.request().uri().path())
+            .expect("canonical path retains its transport metadata");
+        assert!(
+            std::ptr::eq(matched, route),
+            "{}: {}",
+            route.path,
+            matched.path
         );
-        let bound = response
-            .request()
-            .app_data::<&'static Route>()
-            .expect("canonical resource retains its transport metadata");
-        assert!(std::ptr::eq(*bound, route));
         assert_eq!(
-            bound.body(response.request().method()),
+            matched.body(response.request().method()),
             route.body(request.method())
         );
     }
+    let native = awtest::call_service(
+        &app,
+        awtest::TestRequest::get().uri("/ui/ping").to_request(),
+    )
+    .await;
+    assert_eq!(native.status(), http::StatusCode::ACCEPTED);
+    assert_eq!(
+        native.request().match_pattern().as_deref(),
+        Some("/ui/ping")
+    );
     for path in [
         "/not-a-route",
         "/.well-known",
@@ -266,8 +280,8 @@ async fn every_manifest_binding_reaches_an_explicit_production_resource() {
     ] {
         let response =
             awtest::call_service(&app, awtest::TestRequest::get().uri(path).to_request()).await;
-        // Scope fallbacks must reach serve just like the root fallback; the
-        // missing Data extractor distinguishes them from Actix's own 404.
+        // Unknown prefixes and trailing separators use the same production
+        // forwarder; the facade owns their final status and CORS policy.
         assert_eq!(
             response.status(),
             http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -275,7 +289,7 @@ async fn every_manifest_binding_reaches_an_explicit_production_resource() {
         );
         assert!(response.request().match_pattern().is_none(), "{path}");
         assert!(
-            response.request().app_data::<&'static Route>().is_none(),
+            nazoauth::integration::route_for_path(path).is_none(),
             "{path}"
         );
     }

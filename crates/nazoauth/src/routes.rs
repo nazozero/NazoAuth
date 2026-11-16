@@ -405,6 +405,14 @@ pub(crate) fn match_path(path: &str) -> Option<(&'static Route, matchit::Params<
     Some((*matched.value, matched.params))
 }
 
+/// Look up transport metadata from the original URI path using the facade's
+/// normalization rules. This does not resolve the method or apply registration,
+/// capability or CORS policy; those checks remain in the facade.
+pub fn route_for_path(raw_path: &str) -> Option<&'static Route> {
+    let path = routing_path(raw_path);
+    match_path(&path).map(|(route, _)| route)
+}
+
 #[cfg(any(test, feature = "test-support"))]
 pub fn resolve<'path>(method: &Method, path: &'path str) -> Result<RouteMatch<'path>, Response> {
     let (route, params) =
@@ -432,7 +440,7 @@ macro_rules! route {
     };
 }
 
-const ROUTES: &[Route] = &[
+static ROUTES: &[Route] = &[
     route!("/.well-known/openid-configuration", WellKnown, None, GET => Discovery(BodyMode::None)),
     route!("/.well-known/oauth-authorization-server", WellKnown, None, GET => OauthAuthorizationServerMetadata(BodyMode::None)),
     route!("/.well-known/oauth-protected-resource", WellKnown, None, GET => OauthProtectedResourceMetadata(BodyMode::None)),

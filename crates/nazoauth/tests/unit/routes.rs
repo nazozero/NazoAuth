@@ -42,6 +42,52 @@ fn routing_decodes_escaped_literals_without_changing_signed_target_or_separators
 }
 
 #[test]
+fn transport_lookup_returns_canonical_resources_from_raw_uri_paths() {
+    for (raw_path, canonical_path) in [
+        ("/%74oken", "/token"),
+        ("/%61uth/login", "/auth/login"),
+        ("/admin/clients/templates", "/admin/clients/templates"),
+        ("/admin/clients/client%2Fone", "/admin/clients/{client_id}"),
+        ("/admin/clients/a%25b%2Bc", "/admin/clients/{client_id}"),
+        ("/admin/clients/%FF", "/admin/clients/{client_id}"),
+        (
+            "/.well-known/mdoc/issuer%2Fa.crl",
+            "/.well-known/mdoc/{issuer_id}.crl",
+        ),
+        (
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource",
+        ),
+        (
+            "/.well-known/oauth-protected-resource/",
+            "/.well-known/oauth-protected-resource/",
+        ),
+        (
+            "/.well-known/oauth-protected-resource/api/one%2Ftwo",
+            "/.well-known/oauth-protected-resource/{*tail}",
+        ),
+        ("/openid4vci/nonce", "/openid4vci/nonce"),
+    ] {
+        let expected = routes()
+            .iter()
+            .find(|route| route.path == canonical_path)
+            .unwrap();
+        assert!(std::ptr::eq(route_for_path(raw_path).unwrap(), expected));
+    }
+    for path in [
+        "/unknown",
+        "/token/",
+        "/%2574oken",
+        "/%2Ftoken",
+        "/to%2Bken",
+        "/.well-known/mdoc/issuer-a",
+        "/openid4vci",
+    ] {
+        assert!(route_for_path(path).is_none(), "{path}");
+    }
+}
+
+#[test]
 fn scope_policies_and_control_precedence_apply_to_unknown_paths() {
     assert_eq!(
         unmatched_policy("/auth/me/missing"),

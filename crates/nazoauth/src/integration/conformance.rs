@@ -12,8 +12,8 @@ use super::{ConnectionFacts, Route, routes};
 use crate::NazoAuth;
 
 /// One request and its expected resource for every registered method and path,
-/// including captures and catch-all tails. Check the framework's selected
-/// resource against the supplied route to verify the production bindings.
+/// including captures and catch-all tails. Check the canonical lookup against
+/// the supplied route and send each request through the production forwarder.
 pub fn registration_requests() -> Vec<(&'static Route, Request<Bytes>)> {
     routes()
         .iter()

@@ -495,6 +495,12 @@ SDK retry policies are explicitly disabled. `OTEL_EXPORTER_OTLP_TIMEOUT` is the
 per-request timeout in milliseconds, not an additional retry budget. Required
 audit export and its acceptance barriers remain a separate pipeline.
 
+HTTP request traces and metrics use route patterns for `http.route`, never the
+raw path or query. Host-owned UI and other explicit routes retain their Actix
+patterns. Other known NazoAuth paths use the canonical manifest pattern,
+including `{*tail}` for catch-all parameters; unknown paths and service errors
+use `unmatched`.
+
 ### SCIM denied-credential admission
 
 `SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS` defaults to 60 denied attempts per source

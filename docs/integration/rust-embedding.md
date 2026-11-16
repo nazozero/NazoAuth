@@ -59,10 +59,12 @@ The adapter contract is `http::Request` / `http::Response`, `bytes::Bytes`,
 `integration::ConnectionFacts`, and the canonical route manifest. There is no
 framework or runtime trait to implement.
 
-1. Enumerate `integration::routes()` to register all resources with one request
-   forwarding handler. Each resource contains its method metadata, body mode and
-   registration guard. Bind a forwarding fallback as well so the facade owns
-   unknown-path responses. Keep framework-owned UI resources separate.
+1. Bind a default request forwarding handler so the facade receives known and
+   unknown paths. Keep framework-owned UI resources separate. Use
+   `integration::route_for_path(request.uri().path())` to obtain transport
+   metadata from the canonical manifest. This lookup does not apply method,
+   registration or capability policy. `integration::routes()` exposes the whole
+   inventory for mechanical coverage checks.
 2. Preserve the original method and URI. `Route::request_headers()` declares
    which request headers the resource consumes: `None` requires every header;
    a list permits forwarding only those names, retaining all their repeated
@@ -142,13 +144,24 @@ also need the same policy on listener rejections and static UI responses.
 that purpose; add only headers not already supplied by the response.
 
 An Actix embedding installs `web::Data::from(application)` and
-`.configure(nazo_http_actix::configure)`. The adapter groups the manifest's
-resources into path scopes while preserving their complete route patterns and
-forwarding unknown paths to the facade. Apply `nazo_http_actix::security_headers`
-to host-owned routes; facade responses already contain the policy. The native
-host applies it to its static UI and adds the same defaults when rejecting tenant
-selection. A multi-tenant host selects one immutable tenant snapshot before
-forwarding; it does not rebuild the facade per request.
+`.configure(nazo_http_actix::configure)`. The adapter installs one default
+forwarding service and looks up transport metadata with `route_for_path`.
+Framework-owned resources, including the native host's static UI, retain their
+own handlers. The facade performs its own authoritative lookup for captures,
+guards, CORS and method resolution.
+
+The native request observer keeps an Actix route pattern for host-owned resources
+and otherwise uses the manifest's canonical `Route::path`; unknown paths and
+framework errors are labeled `unmatched`. Catch-all API labels therefore use
+`{*tail}`, replacing the adapter's former Actix `{tail:.*}` spelling. The adapter,
+facade and observer each use the canonical radix tree; no lookup result or
+parameter captures are passed through request extensions.
+
+Apply `nazo_http_actix::security_headers` to host-owned routes; facade responses
+already contain the policy. The native host applies it to its static UI and adds
+the same defaults when rejecting tenant selection. A multi-tenant host selects
+one immutable tenant snapshot before forwarding; it does not rebuild the facade
+per request.
 
 ## Run the adapter conformance kit
 
@@ -165,7 +178,7 @@ framework's ordinary test client and conversion functions.
 
 | Check | How to run it |
 | --- | --- |
-| Complete registration | `registration_requests()` pairs each request with its expected manifest route. Send the request through the production router and compare its selected resource with `route.path`, including captured and catch-all paths. |
+| Complete registration | `registration_requests()` pairs each request with its expected manifest route. Verify `route_for_path` returns that route, including captured and catch-all paths, and send every case through the production forwarder. Use the public facade comparison to verify the resulting protocol behavior. |
 | Request fidelity | Pass `transport_requests()` through the real request conversion and call `assert_request`; it checks method, raw target, repeated headers, body bytes and connection facts. |
 | Response fidelity | Pass each `response_cases()` response through the real framework response conversion and call `assert_response`. The corpus invokes production presenters for redirects, OAuth challenges, cache policy, DPoP nonces, cookies and retained credential JSON/JWT bytes. |
 | Public facade equivalence | Build a fresh tenant fixture, then call `assert_adapter(&application, send).await`, where `send` uses the framework's production registration and returns a standard HTTP response. |

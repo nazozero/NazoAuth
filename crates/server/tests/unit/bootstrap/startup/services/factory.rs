@@ -56,6 +56,85 @@ async fn tenant_rejections_keep_security_headers_and_the_session_iframe_exceptio
     }
 }
 
+#[actix_web::test]
+async fn request_metrics_keep_host_patterns_and_canonical_product_routes() {
+    let log = std::env::temp_dir().join(format!("http-metrics-{}.log", uuid::Uuid::now_v7()));
+    let writer = std::fs::File::create_new(&log).unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_writer(move || writer.try_clone().unwrap())
+        .finish();
+    let subscriber = tracing::subscriber::set_default(subscriber);
+    let app = test::init_service(
+        App::new().wrap(from_fn(observe_request)).service(
+            web::scope("")
+                .service(web::scope("/ui").route(
+                    "/{asset:.*}",
+                    web::get().to(|| async { HttpResponse::Ok().finish() }),
+                ))
+                .route(
+                    "/admin/clients/{native_client}",
+                    web::get().to(|| async { HttpResponse::Ok().finish() }),
+                )
+                .default_service(web::to(|| async { HttpResponse::NotFound().finish() })),
+        ),
+    )
+    .await;
+    let cases = [
+        ("/jwks.json", "/jwks.json", StatusCode::NOT_FOUND),
+        (
+            "/register/private-client-id?state=private-query",
+            "/register/{client_id}",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "/.well-known/oauth-protected-resource/private/resource",
+            "/.well-known/oauth-protected-resource/{*tail}",
+            StatusCode::NOT_FOUND,
+        ),
+        ("/%6Awks.json", "/jwks.json", StatusCode::NOT_FOUND),
+        (
+            "/admin/clients/private-native-id",
+            "/admin/clients/{native_client}",
+            StatusCode::OK,
+        ),
+        ("/ui/assets/private.js", "/ui/{asset:.*}", StatusCode::OK),
+        (
+            "/private-unknown-path?state=private-query",
+            "unmatched",
+            StatusCode::NOT_FOUND,
+        ),
+    ];
+    for (path, _, status) in cases {
+        let response =
+            test::call_service(&app, test::TestRequest::get().uri(path).to_request()).await;
+        assert_eq!(response.status(), status);
+    }
+    drop(subscriber);
+    let output = std::fs::read_to_string(&log).unwrap();
+    std::fs::remove_file(log).unwrap();
+    let events = output
+        .lines()
+        .filter(|line| line.contains("HTTP request completed"))
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), cases.len());
+    for (event, (_, route, status)) in events.iter().zip(cases) {
+        assert!(
+            event.contains(&format!("http.route=\"{route}\"")),
+            "{event}"
+        );
+        assert!(
+            event.contains(&format!("http.response.status_code={}", status.as_u16())),
+            "{event}"
+        );
+        assert!(
+            !event.contains("private-"),
+            "raw request target entered metrics"
+        );
+    }
+}
+
 async fn test_request_timeout<B>(
     request: ServiceRequest,
     next: Next<B>,
@@ -124,6 +203,7 @@ async fn request_timeout_covers_typed_json_extractor() {
     assert!(event.contains("monotonic_counter.http_server_requests=1"));
     assert!(event.contains("histogram.http_server_request_duration_ms="));
     assert!(event.contains("http.response.status_code=408"));
+    assert!(event.contains("http.route=\"unmatched\""));
     assert!(events.next().is_none());
 }
 

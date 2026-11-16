@@ -2,7 +2,7 @@
 //! Actix registration, connection facts and HTTP value conversion for NazoAuth.
 //! All routing, protocol interpretation and endpoint policy belong to the facade.
 
-use std::{borrow::Cow, io};
+use std::io;
 
 use actix_web::{
     Error, HttpRequest, HttpResponse,
@@ -19,56 +19,7 @@ use nazoauth::{ConnectionFacts, NazoAuth, integration::Route};
 /// Register the canonical product surface. Install the already-built tenant as
 /// `web::Data<NazoAuth>` in application data, including tenant-selected data.
 pub fn configure(config: &mut web::ServiceConfig) {
-    // Keep manifest order while excluding unrelated path groups from each scan.
-    let mut groups: Vec<(&'static str, Vec<&'static Route>)> = Vec::new();
-    for route in nazoauth::integration::routes() {
-        let end = route.path[1..]
-            .find('/')
-            .map_or(route.path.len(), |index| index + 1);
-        let prefix = &route.path[..end];
-        if let Some((_, routes)) = groups.iter_mut().find(|(key, _)| *key == prefix) {
-            routes.push(route);
-        } else {
-            groups.push((prefix, vec![route]));
-        }
-    }
-    for (prefix, routes) in groups {
-        if routes.len() == 1 {
-            let route = routes[0];
-            config.service(
-                web::resource(actix_path(route.path).as_ref())
-                    .app_data(route)
-                    .to(serve),
-            );
-        } else {
-            let mut scope = web::scope(prefix).default_service(web::to(serve));
-            for route in routes {
-                scope = scope.service(
-                    web::resource(actix_path(&route.path[prefix.len()..]).as_ref())
-                        .app_data(route)
-                        .to(serve),
-                );
-            }
-            config.service(scope);
-        }
-    }
     config.default_service(web::to(serve));
-}
-
-fn actix_path(path: &'static str) -> Cow<'static, str> {
-    let Some(start) = path.find("{*") else {
-        return Cow::Borrowed(path);
-    };
-    let end = path[start..]
-        .find('}')
-        .expect("canonical catch-all has a closing brace")
-        + start;
-    Cow::Owned(format!(
-        "{}{{{}:.*}}{}",
-        &path[..start],
-        &path[start + 2..end],
-        &path[end + 1..]
-    ))
 }
 
 /// Forward one framework request without assembling services or buffering its
@@ -78,7 +29,7 @@ pub async fn serve(
     request: HttpRequest,
     payload: web::Payload,
 ) -> HttpResponse {
-    let route = request.app_data::<&'static Route>().copied();
+    let route = nazoauth::integration::route_for_path(request.uri().path());
     let body_mode = route
         .map(|route| route.body(request.method()))
         .unwrap_or(nazoauth::integration::BodyMode::None);

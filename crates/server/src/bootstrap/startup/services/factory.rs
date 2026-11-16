@@ -5,6 +5,7 @@ use actix_web::error::ErrorRequestTimeout;
 use actix_web::http::StatusCode;
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{App, Error, HttpResponse, HttpServer, web};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -144,7 +145,14 @@ where
     async move {
         let result = future.await;
         let (route, status) = match &result {
-            Ok(response) => (response.request().match_pattern(), response.status()),
+            Ok(response) => {
+                let request = response.request();
+                let route = request.match_pattern().map(Cow::Owned).or_else(|| {
+                    nazoauth::integration::route_for_path(request.uri().path())
+                        .map(|route| Cow::Borrowed(route.path))
+                });
+                (route, response.status())
+            }
             Err(error) => (None, error.as_response_error().status_code()),
         };
         let route = route.as_deref().unwrap_or("unmatched");
