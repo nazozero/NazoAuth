@@ -1,5 +1,5 @@
 use super::*;
-use crate::serialization::{generate_key_material, public_jwk_from_private_der};
+use crate::serialization::{generate_key_material, signing_public_jwk};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -13,10 +13,14 @@ fn external_signing_key() -> ExternalSigningKey {
 fn eddsa_fixture(kid: &str) -> (Vec<u8>, Value) {
     let material =
         generate_key_material(jsonwebtoken::Algorithm::EdDSA).expect("test key should generate");
-    let public_jwk = public_jwk_from_private_der(
+    let public_jwk = signing_public_jwk(
         kid,
         jsonwebtoken::Algorithm::EdDSA,
-        &material.private_pkcs8_der,
+        nazo_crypto::signature::public_jwk(
+            jsonwebtoken::Algorithm::EdDSA,
+            &material.private_pkcs8_der,
+        )
+        .expect("public key should derive"),
     )
     .expect("public JWK should derive");
     (material.private_pkcs8_der, public_jwk)
@@ -107,10 +111,14 @@ fn external_public_jwk_policy_is_algorithm_and_usage_bound() {
 
     let ec_material = generate_key_material(jsonwebtoken::Algorithm::ES256)
         .expect("ES256 test key should generate");
-    let ec_jwk = public_jwk_from_private_der(
+    let ec_jwk = signing_public_jwk(
         "ec-kid",
         jsonwebtoken::Algorithm::ES256,
-        &ec_material.private_pkcs8_der,
+        nazo_crypto::signature::public_jwk(
+            jsonwebtoken::Algorithm::ES256,
+            &ec_material.private_pkcs8_der,
+        )
+        .expect("ES256 public key should derive"),
     )
     .expect("ES256 public JWK should derive");
     assert!(decoding_key_from_public_jwk(&ec_jwk, jsonwebtoken::Algorithm::ES256).is_some());
@@ -131,10 +139,14 @@ fn external_public_jwk_policy_is_algorithm_and_usage_bound() {
 
     let rsa_material = generate_key_material(jsonwebtoken::Algorithm::RS256)
         .expect("RSA test key should generate");
-    let rsa_jwk = public_jwk_from_private_der(
+    let rsa_jwk = signing_public_jwk(
         "rsa-kid",
         jsonwebtoken::Algorithm::RS256,
-        &rsa_material.private_pkcs8_der,
+        nazo_crypto::signature::public_jwk(
+            jsonwebtoken::Algorithm::RS256,
+            &rsa_material.private_pkcs8_der,
+        )
+        .expect("RSA public key should derive"),
     )
     .expect("RSA public JWK should derive");
     assert!(decoding_key_from_public_jwk(&rsa_jwk, jsonwebtoken::Algorithm::RS256).is_some());

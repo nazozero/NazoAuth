@@ -902,7 +902,7 @@ fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
 
         let hs = signed_jwt_proof(
             None,
-            &EncodingKey::from_secret(b"test-secret"),
+            &EncodingKey::from_secret(b"test-secret").unwrap(),
             &claims,
             Some("openid4vci-proof+jwt"),
             Algorithm::HS256,
@@ -1054,7 +1054,7 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
         header.typ = Some(typ.to_owned());
         header.kid = kid.map(ToOwned::to_owned);
         let signing_key = if algorithm == Algorithm::HS256 {
-            EncodingKey::from_secret(b"attester-secret")
+            EncodingKey::from_secret(b"attester-secret").unwrap()
         } else {
             attester_key.clone()
         };

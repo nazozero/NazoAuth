@@ -168,7 +168,11 @@ impl CredentialVerifierPort for MissingHolderVerifier {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let transaction_id = Uuid::now_v7();
     let now = Utc::now();
@@ -432,7 +436,11 @@ fn cardinality_transaction() -> PresentationTransaction {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn dcql_checks_all_returned_cardinalities_before_verification_or_completion() {
     for (multiple, values, valid, expected_count) in [
         (false, json!([]), false, 0),
@@ -483,7 +491,11 @@ async fn dcql_checks_all_returned_cardinalities_before_verification_or_completio
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn dcql_optional_queries_may_be_absent_but_not_malformed_or_overfilled() {
     let mut transaction = cardinality_transaction();
     transaction.request.dcql_query.credential_sets =
@@ -580,7 +592,11 @@ impl CredentialVerifierPort for OutcomeVerifier {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn discarded_presentations_are_removed_before_required_alternative_selection() {
     for (first, second, alternative, multiple, expected_count) in [
         (
@@ -662,7 +678,11 @@ async fn discarded_presentations_are_removed_before_required_alternative_selecti
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn optional_query_nonce_and_session_errors_reject_the_entire_response() {
     for rejected in ["bad-nonce", "bad-session"] {
         let mut transaction = cardinality_transaction();
@@ -700,7 +720,11 @@ async fn optional_query_nonce_and_session_errors_reject_the_entire_response() {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn optional_query_verifier_unavailability_remains_a_dependency_failure() {
     for (wire, error) in [
         ("unavailable", CredentialTrustError::Unavailable),
@@ -742,7 +766,11 @@ async fn optional_query_verifier_unavailability_remains_a_dependency_failure() {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings() {
     for (authority_type, value, accepted) in [
         ("aki", "AQID", true),
@@ -784,7 +812,11 @@ async fn dcql_aki_matches_authenticated_chain_bytes_and_not_issuer_strings() {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn dcql_matches_verified_sd_jwt_alternative_types() {
     struct AliasVerifier(serde_json::Value);
     impl CredentialVerifierPort for AliasVerifier {
@@ -855,7 +887,11 @@ async fn dcql_matches_verified_sd_jwt_alternative_types() {
     }
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response() {
     for query in [
         json!({"credentials":[{"id":"pid","format":"dc+sd-jwt","meta":{"vct_values":["ExampleCredential"]}}],"credential_sets":[]}),
@@ -898,7 +934,11 @@ async fn malformed_retained_dcql_never_verifies_or_completes_an_empty_response()
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn presentation_transaction_debug_does_not_expose_decryption_material() {
     let mut transaction = cardinality_transaction();
     transaction.response_encryption_private_key = Some(*b"private-decryption-secret-32byte");
@@ -909,7 +949,11 @@ fn presentation_transaction_debug_does_not_expose_decryption_material() {
     );
 }
 
-#[tokio::test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn dcql_claim_modes_preserve_required_optional_and_wildcard_matching() {
     struct ClaimsVerifier;
     impl CredentialVerifierPort for ClaimsVerifier {

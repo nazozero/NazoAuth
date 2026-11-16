@@ -199,10 +199,14 @@ async fn external_registration_rejects_unreachable_algorithm_transition() {
     let before = repository.snapshot().unwrap();
     let material =
         crate::serialization::generate_key_material(nazo_crypto::jwt::Algorithm::ES256).unwrap();
-    let public_jwk = crate::serialization::public_jwk_from_private_der(
+    let public_jwk = crate::serialization::signing_public_jwk(
         "different-algorithm",
         nazo_crypto::jwt::Algorithm::ES256,
-        &material.private_pkcs8_der,
+        nazo_crypto::signature::public_jwk(
+            nazo_crypto::jwt::Algorithm::ES256,
+            &material.private_pkcs8_der,
+        )
+        .unwrap(),
     )
     .unwrap();
     let error = manager
@@ -234,10 +238,14 @@ async fn external_registration_rejects_unusable_verification_material_without_pe
     let generation = manager.snapshot();
     let material =
         crate::serialization::generate_key_material(nazo_crypto::jwt::Algorithm::ES256).unwrap();
-    let mut wrong_usage = crate::serialization::public_jwk_from_private_der(
+    let mut wrong_usage = crate::serialization::signing_public_jwk(
         "invalid-external",
         nazo_crypto::jwt::Algorithm::ES256,
-        &material.private_pkcs8_der,
+        nazo_crypto::signature::public_jwk(
+            nazo_crypto::jwt::Algorithm::ES256,
+            &material.private_pkcs8_der,
+        )
+        .unwrap(),
     )
     .unwrap();
     wrong_usage["key_ops"] = json!(["sign"]);

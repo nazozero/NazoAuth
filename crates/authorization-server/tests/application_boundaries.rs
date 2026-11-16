@@ -9,7 +9,11 @@ use app::{
 use authorization_fixture::{Fixture, client, session};
 use nazo_identity::SessionId;
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn client_display_projects_only_registered_public_metadata() {
     let mut registered = client(true);
     registered.registration.client_name = "External consumer client".into();
@@ -28,7 +32,11 @@ fn client_display_projects_only_registered_public_metadata() {
     assert_eq!(fixture.ports.calls(), ["client_presentation"]);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn consent_loads_authenticated_account_before_request_state() {
     let fixture = Fixture::new(Ok(None), Ok(Some(session())));
     let application = fixture.make_application();

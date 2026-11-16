@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Barrier, Mutex};
 use std::task::{Context, Poll, Waker};
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
+use web_time::SystemTime;
 
 use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredRevisionGuard,
@@ -376,7 +377,11 @@ impl ModuleLifecycle for RecordingDrainLifecycle {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn resumed_drain_uses_the_persisted_deadline_instead_of_extending_the_ttl() {
     let repository = Arc::new(Repository::new(usize::MAX));
     repository.force_desired(7, DesiredMode::Disabled);
@@ -593,7 +598,11 @@ fn stale_disable_cannot_persist_final_state() {
     );
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn successful_enable_and_disable_emit_exhaustive_ordered_audit() {
     let enabling_repository = Arc::new(Repository::new(usize::MAX));
     enabling_repository.force_desired(7, DesiredMode::Enabled);

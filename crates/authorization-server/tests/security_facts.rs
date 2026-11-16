@@ -48,7 +48,11 @@ fn parsed(grant_type: &str, has_audience_param: bool) -> ParsedTokenForm {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn token_prepare_rejects_grant_parameter_before_auth_source_conflict() {
     let first = prepare_token_request(
         parsed("client_credentials", true),
@@ -130,7 +134,11 @@ fn dpop_facts(
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn malformed_present_proof_fails_before_state_and_missing_bound_proof_is_distinct() {
     let state = CountingDpopState::default();
     let result = futures_executor::block_on(validate_dpop_proof(
@@ -160,7 +168,11 @@ fn malformed_present_proof_fails_before_state_and_missing_bound_proof_is_distinc
     assert_eq!(state.0.load(Ordering::SeqCst), 0);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn unbound_request_without_proof_does_not_touch_dpop_state() {
     let state = CountingDpopState::default();
     let result = futures_executor::block_on(validate_dpop_proof(

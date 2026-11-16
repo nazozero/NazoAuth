@@ -5,8 +5,10 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
+
+use web_time::Instant;
 
 use crate::ExternalKeySigner;
 use arc_swap::ArcSwap;
@@ -100,9 +102,8 @@ impl LifecycleHealth {
 /// entry of one generation.
 ///
 /// The DER remains because `database_local_private_key_pem` (mdoc export) is a
-/// real consumer; the prepared key serves every request-time signing path and
-/// for RSA algorithms now holds the parsed provider key pair, so the private
-/// key is never re-parsed from DER per request.
+/// real consumer; the prepared key retains each algorithm's parsed key pair
+/// and serves every request-time signing path without re-parsing private DER.
 pub(crate) struct LocalSigningMaterial {
     pub(crate) private_pkcs8_der: Vec<u8>,
     pub(crate) prepared: nazo_crypto::signature::PreparedSigningKey,
@@ -899,16 +900,16 @@ impl KeyManager {
             "test-{}",
             crate::serialization::signing_algorithm_name(algorithm).unwrap()
         );
-        let public_jwk = crate::serialization::public_jwk_from_private_der(
-            &kid,
-            algorithm,
-            &material.private_pkcs8_der,
-        )
-        .expect("test public JWK should derive");
         let local_material = Arc::new(
             LocalSigningMaterial::new(algorithm, material.private_pkcs8_der)
                 .expect("test signing material should be usable"),
         );
+        let public_jwk = crate::serialization::signing_public_jwk(
+            &kid,
+            algorithm,
+            local_material.prepared.public_jwk(),
+        )
+        .expect("test public JWK should derive");
         let active_signing_key = match behavior {
             TestSigningBehavior::Working => ActiveSigningKey::Local(Arc::clone(&local_material)),
             TestSigningBehavior::Failing => ActiveSigningKey::FailingForTest,
@@ -982,10 +983,14 @@ impl KeyManager {
             "test-aux-{}",
             crate::serialization::signing_algorithm_name(algorithm).unwrap()
         );
-        let public_jwk = crate::serialization::public_jwk_from_private_der(
+        let local_material = Arc::new(
+            LocalSigningMaterial::new(algorithm, material.private_pkcs8_der)
+                .expect("test auxiliary key material should be usable"),
+        );
+        let public_jwk = crate::serialization::signing_public_jwk(
             &kid,
             algorithm,
-            &material.private_pkcs8_der,
+            local_material.prepared.public_jwk(),
         )
         .unwrap();
         loaded.verification_keys.push(StoredVerificationKey {
@@ -1006,10 +1011,7 @@ impl KeyManager {
                 .into_iter()
                 .collect(),
                 state: KeyState::Active,
-                handle: KeyHandle::Local(Arc::new(
-                    LocalSigningMaterial::new(algorithm, material.private_pkcs8_der)
-                        .expect("test auxiliary key material should be usable"),
-                )),
+                handle: KeyHandle::Local(local_material),
             },
         });
         manager

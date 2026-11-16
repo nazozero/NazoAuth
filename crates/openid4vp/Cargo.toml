@@ -21,5 +21,8 @@ uuid = { workspace = true, features = ["serde", "v7"] }
 [lints]
 workspace = true
 
-[dev-dependencies]
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test.workspace = true

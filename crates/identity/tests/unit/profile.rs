@@ -314,7 +314,11 @@ async fn profile_update_normalizes_only_writable_profile_fields() {
     assert_eq!(stored.lock().unwrap().profile, updated.account.profile);
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn oidc_profile_fields_validate_their_declared_syntax() {
     for value in ["1980", "0000", "1980-02-29", "0000-02-29", "2000-12-31"] {
         assert!(
@@ -369,7 +373,16 @@ fn oidc_profile_fields_validate_their_declared_syntax() {
             "{value}"
         );
     }
-    for value in ["Asia/Shanghai", "UTC", "America/New_York"] {
+    for value in [
+        "Asia/Shanghai",
+        "UTC",
+        "America/New_York",
+        "america/new_york",
+        "US/Eastern",
+        "Etc/GMT+8",
+        "Etc/Unknown",
+        "etc/UNKNOWN",
+    ] {
         assert!(
             normalize_profile_patch(ProfilePatch {
                 zoneinfo: Some(value.into()),

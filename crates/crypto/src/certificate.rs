@@ -1,81 +1,31 @@
 //! X.509 issuance and signature checks behind the crypto boundary.
 //!
-//! Certificate profile DTOs are the same upstream types the codebase already
-//! used; private keys, issuers, and the native chain verifier stay private.
+//! Verification is portable. Native certificate provisioning is an explicit
+//! host capability selected with `certificate-issuance`.
 
+#[cfg(feature = "certificate-issuance")]
 pub use rcgen::string::PrintableString;
+#[cfg(feature = "certificate-issuance")]
 pub use rcgen::{
     BasicConstraints, CertificateParams, CertificateRevocationListParams, CrlDistributionPoint,
     CustomExtension, DistinguishedName, DnType, DnValue, IsCa, KeyIdMethod, KeyUsagePurpose,
     RevokedCertParams, SerialNumber,
 };
-pub use rustls::pki_types::CertificateDer;
+pub use rustls_pki_types::CertificateDer;
 
-use std::sync::Arc;
+#[cfg(feature = "certificate-issuance")]
+mod issuance;
+#[cfg(feature = "certificate-issuance")]
+pub use issuance::{
+    generate_p256_private_key_pem, public_key_from_pem, self_signed, sign, sign_crl,
+};
+
+#[cfg(any(test, all(target_arch = "wasm32", target_os = "unknown")))]
+mod portable;
+
 use std::time::Duration;
 
 use crate::CryptoError;
-
-pub fn generate_p256_private_key_pem() -> crate::Result<String> {
-    Ok(rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
-        .map_err(|_| CryptoError::OperationFailed)?
-        .serialize_pem())
-}
-
-pub fn public_key_from_pem(private_key_pem: &str) -> crate::Result<Vec<u8>> {
-    Ok(rcgen::KeyPair::from_pem(private_key_pem)
-        .map_err(|_| CryptoError::InvalidKey)?
-        .public_key_raw()
-        .to_vec())
-}
-
-pub fn self_signed(params: CertificateParams, private_key_pem: &str) -> crate::Result<Vec<u8>> {
-    let key = rcgen::KeyPair::from_pem(private_key_pem).map_err(|_| CryptoError::InvalidKey)?;
-    Ok(rcgen::CertifiedIssuer::self_signed(params, key)
-        .map_err(|_| CryptoError::OperationFailed)?
-        .der()
-        .to_vec())
-}
-
-pub fn sign(
-    params: CertificateParams,
-    subject_key_pem: &str,
-    issuer_certificate_der: &[u8],
-    issuer_key_pem: &str,
-) -> crate::Result<Vec<u8>> {
-    let subject_key =
-        rcgen::KeyPair::from_pem(subject_key_pem).map_err(|_| CryptoError::InvalidKey)?;
-    let issuer_key =
-        rcgen::KeyPair::from_pem(issuer_key_pem).map_err(|_| CryptoError::InvalidKey)?;
-    let issuer = rcgen::Issuer::from_ca_cert_der(&issuer_certificate_der.into(), issuer_key)
-        .map_err(|_| CryptoError::InvalidInput)?;
-    Ok(params
-        .signed_by(&subject_key, &issuer)
-        .map_err(|_| CryptoError::OperationFailed)?
-        .der()
-        .to_vec())
-}
-
-pub fn sign_crl(
-    params: CertificateRevocationListParams,
-    issuer_certificate_der: &[u8],
-    issuer_key_pem: &str,
-) -> crate::Result<Vec<u8>> {
-    let issuer_key =
-        rcgen::KeyPair::from_pem(issuer_key_pem).map_err(|_| CryptoError::InvalidKey)?;
-    let (_, certificate) = x509_parser::parse_x509_certificate(issuer_certificate_der)
-        .map_err(|_| CryptoError::InvalidInput)?;
-    if issuer_key.public_key_raw() != certificate.public_key().subject_public_key.data.as_ref() {
-        return Err(CryptoError::InvalidKey);
-    }
-    let issuer = rcgen::Issuer::from_ca_cert_der(&issuer_certificate_der.into(), issuer_key)
-        .map_err(|_| CryptoError::InvalidInput)?;
-    Ok(params
-        .signed_by(&issuer)
-        .map_err(|_| CryptoError::OperationFailed)?
-        .der()
-        .to_vec())
-}
 
 /// Checks only this certificate's signature against the given issuer key.
 /// Issuer/name/CA/time/revocation/anchor selection stays with the caller.
@@ -83,9 +33,17 @@ pub fn verify_signature(
     certificate: &x509_parser::certificate::X509Certificate<'_>,
     issuer_public_key: &x509_parser::x509::SubjectPublicKeyInfo<'_>,
 ) -> crate::Result<()> {
-    certificate
-        .verify_signature(Some(issuer_public_key))
-        .map_err(|_| CryptoError::InvalidSignature)
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        certificate
+            .verify_signature(Some(issuer_public_key))
+            .map_err(|_| CryptoError::InvalidSignature)
+    }
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        portable::verify_certificate_signature(certificate, issuer_public_key)
+            .map_err(|_| CryptoError::InvalidSignature)
+    }
 }
 
 /// Validates an ordered document-signing certificate path against one explicit
@@ -98,7 +56,7 @@ pub fn verify_document_signing_chain_at(
     anchor: &CertificateDer<'_>,
     unix_seconds: u64,
 ) -> crate::Result<()> {
-    use rustls::pki_types::UnixTime;
+    use rustls_pki_types::UnixTime;
     use x509_parser::time::ASN1Time;
 
     let time = ASN1Time::from_timestamp(
@@ -130,14 +88,15 @@ pub fn verify_document_signing_chain_at(
     let anchor = webpki::anchor_from_trusted_cert(anchor).map_err(|_| CryptoError::InvalidInput)?;
     let roots = [anchor];
     let leaf = webpki::EndEntityCert::try_from(leaf).map_err(|_| CryptoError::InvalidInput)?;
-    let provider = rustls::crypto::aws_lc_rs::default_provider();
     // Every supplied intermediate must be on the authenticated path, in wire
     // order. Consumers use that same chain for revocation and authority facts.
     let exact_path = |path: &webpki::VerifiedPath<'_>| {
         if path
             .intermediate_certificates()
             .map(|cert| cert.der())
-            .eq(intermediates.iter().cloned())
+            .eq(intermediates
+                .iter()
+                .map(|der| CertificateDer::from_slice(der)))
         {
             Ok(())
         } else {
@@ -145,7 +104,7 @@ pub fn verify_document_signing_chain_at(
         }
     };
     leaf.verify_for_usage(
-        provider.signature_verification_algorithms.all,
+        verification_algorithms(),
         &roots,
         intermediates,
         UnixTime::since_unix_epoch(Duration::from_secs(unix_seconds)),
@@ -177,30 +136,71 @@ pub fn verify_client_chain_at(
     anchors_pem: &str,
     unix_seconds: u64,
 ) -> crate::Result<()> {
-    use rustls::pki_types::{CertificateDer, UnixTime, pem::PemObject as _};
+    use rustls_pki_types::{UnixTime, pem::PemObject as _};
 
-    let mut roots = rustls::RootCertStore::empty();
-    for certificate in CertificateDer::pem_slice_iter(anchors_pem.as_bytes()) {
-        let certificate = certificate.map_err(|_| CryptoError::InvalidInput)?;
-        roots
-            .add(certificate)
-            .map_err(|_| CryptoError::InvalidInput)?;
-    }
+    let certificates = CertificateDer::pem_slice_iter(anchors_pem.as_bytes())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| CryptoError::InvalidInput)?;
+    let roots = certificates
+        .iter()
+        .map(webpki::anchor_from_trusted_cert)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| CryptoError::InvalidInput)?;
     if roots.is_empty() {
         return Err(CryptoError::InvalidInput);
     }
-    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let verifier =
-        rustls::server::WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
-            .build()
-            .map_err(|_| CryptoError::OperationFailed)?;
     let (leaf, intermediates) = chain_der.split_first().ok_or(CryptoError::InvalidInput)?;
-    verifier
-        .verify_client_cert(
-            leaf,
+    webpki::EndEntityCert::try_from(leaf)
+        .map_err(|_| CryptoError::InvalidSignature)?
+        .verify_for_usage(
+            verification_algorithms(),
+            &roots,
             intermediates,
             UnixTime::since_unix_epoch(Duration::from_secs(unix_seconds)),
+            webpki::KeyUsage::client_auth(),
+            None,
+            None,
         )
         .map(|_| ())
         .map_err(|_| CryptoError::InvalidSignature)
+}
+
+fn verification_algorithms()
+-> &'static [&'static dyn rustls_pki_types::SignatureVerificationAlgorithm] {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        use webpki::aws_lc_rs as algorithms;
+
+        // Preserve the AWS-LC certificate algorithms previously selected by
+        // rustls without constructing a TLS provider for each verification.
+        static ALGORITHMS: &[&dyn rustls_pki_types::SignatureVerificationAlgorithm] = &[
+            algorithms::ECDSA_P256_SHA256,
+            algorithms::ECDSA_P256_SHA384,
+            algorithms::ECDSA_P256_SHA512,
+            algorithms::ECDSA_P384_SHA256,
+            algorithms::ECDSA_P384_SHA384,
+            algorithms::ECDSA_P384_SHA512,
+            algorithms::ECDSA_P521_SHA256,
+            algorithms::ECDSA_P521_SHA384,
+            algorithms::ECDSA_P521_SHA512,
+            algorithms::ED25519,
+            algorithms::RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
+            algorithms::RSA_PSS_2048_8192_SHA384_LEGACY_KEY,
+            algorithms::RSA_PSS_2048_8192_SHA512_LEGACY_KEY,
+            algorithms::RSA_PKCS1_2048_8192_SHA256,
+            algorithms::RSA_PKCS1_2048_8192_SHA384,
+            algorithms::RSA_PKCS1_2048_8192_SHA512,
+            algorithms::RSA_PKCS1_2048_8192_SHA256_ABSENT_PARAMS,
+            algorithms::RSA_PKCS1_2048_8192_SHA384_ABSENT_PARAMS,
+            algorithms::RSA_PKCS1_2048_8192_SHA512_ABSENT_PARAMS,
+            algorithms::ML_DSA_44,
+            algorithms::ML_DSA_65,
+            algorithms::ML_DSA_87,
+        ];
+        ALGORITHMS
+    }
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        portable::ALGORITHMS
+    }
 }

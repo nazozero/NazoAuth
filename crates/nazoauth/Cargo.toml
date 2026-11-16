@@ -35,7 +35,7 @@ lettre = { workspace = true, features = ["aws-lc-rs", "builder", "rustls-platfor
 lru = { workspace = true }
 mdoc-rs = { workspace = true }
 nazo-auth = { workspace = true }
-nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509"] }
+nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509", "certificate-issuance"] }
 nazo-digital-credentials = { workspace = true }
 nazo-http-actix = { workspace = true }
 nazo-identity = { workspace = true }

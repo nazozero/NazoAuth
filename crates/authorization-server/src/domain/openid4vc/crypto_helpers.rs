@@ -3,7 +3,7 @@ use chrono::Utc;
 use coset::{CoseKeyBuilder, iana};
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use nazo_digital_credentials::CredentialTrustError;
-use rustls::pki_types::{CertificateDer, pem::PemObject as _};
+use rustls_pki_types::{CertificateDer, pem::PemObject as _};
 use serde_json::{Map, Value, json};
 
 pub(super) fn decoding_key_trust(

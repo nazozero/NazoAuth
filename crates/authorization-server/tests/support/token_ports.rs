@@ -1,4 +1,6 @@
-use crate::services::{ServerAuthorizationService, ServerTokenService};
+#![allow(dead_code)]
+
+use super::app::services::{ServerAuthorizationService, ServerTokenService};
 use chrono::{DateTime, Utc};
 use nazo_auth::*;
 use serde_json::Value;
@@ -9,6 +11,7 @@ use uuid::Uuid;
 struct HolderFixture {
     code: Result<Option<AuthorizationCodeState>, TokenPortError>,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
+    userinfo: Option<(nazo_identity::SubjectClaims, bool)>,
 }
 
 #[allow(unused_variables)]
@@ -43,7 +46,22 @@ impl TokenRepositoryPort for HolderFixture {
         subject: UserinfoSubjectRef<'a>,
         client_id: &'a str,
     ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
-        panic!("unexpected TokenRepositoryPort::userinfo_snapshot call")
+        let (claims, _) = self
+            .userinfo
+            .as_ref()
+            .expect("UserInfo read must be configured");
+        let client = self.client.as_ref().unwrap().as_ref().unwrap();
+        assert_eq!(tenant_id, client.tenant_id);
+        assert_eq!(client_id, client.client_id);
+        assert!(
+            matches!(subject, UserinfoSubjectRef::UserId(id) if id == claims.subject.as_uuid())
+        );
+        Box::pin(async move {
+            Ok(Some(UserinfoSnapshot {
+                subject: claims.clone(),
+                client: Some(client.clone()),
+            }))
+        })
     }
     fn refresh_token<'a>(
         &'a self,
@@ -96,7 +114,12 @@ impl TokenRepositoryPort for HolderFixture {
         tenant_id: Uuid,
         claims: &'a nazo_auth::Claims,
     ) -> TokenFuture<'a, bool> {
-        panic!("unexpected TokenRepositoryPort::access_token_revoked call")
+        let (_, revoked) = self
+            .userinfo
+            .as_ref()
+            .expect("revocation read must be configured");
+        assert_eq!(tenant_id.to_string(), claims.tenant_id);
+        Box::pin(async move { Ok(*revoked) })
     }
     fn refresh_family_active(
         &self,
@@ -358,8 +381,12 @@ pub(crate) fn services(
     code: Result<Option<AuthorizationCodeState>, TokenPortError>,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
 ) -> (ServerTokenService, ServerAuthorizationService) {
-    let fixture = HolderFixture { code, client };
-    let key = nazo_key_management::KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let fixture = HolderFixture {
+        code,
+        client,
+        userinfo: None,
+    };
+    let key = nazo_key_management::KeyManager::for_test(nazo_crypto::jwt::Algorithm::EdDSA);
     (
         ServerTokenService::new(
             fixture.clone(),
@@ -371,5 +398,23 @@ pub(crate) fn services(
             Arc::new(fixture) as Arc<dyn AuthorizationStateStorePort>,
             key,
         ),
+    )
+}
+
+pub(crate) fn userinfo_service(
+    keys: nazo_key_management::KeyManager,
+    client: OAuthClient,
+    subject: nazo_identity::SubjectClaims,
+    revoked: bool,
+) -> ServerTokenService {
+    let ports = HolderFixture {
+        code: Ok(None),
+        client: Ok(Some(client)),
+        userinfo: Some((subject, revoked)),
+    };
+    ServerTokenService::new(
+        ports.clone(),
+        Arc::new(ports) as Arc<dyn TokenStateStorePort>,
+        keys,
     )
 }

@@ -49,6 +49,11 @@ ALLOWED_DEPENDENCY_ROLES = {
     "host": {"domain", "application", "adapter", "host"},
 }
 INNER_ROLES = {"domain", "application"}
+# Every inner package participates in the target contract. Keeping this list
+# attached to the role model makes a new inner crate an automatic CI obligation.
+PORTABLE_PACKAGES = tuple(
+    package for package, role in PACKAGE_ROLES.items() if role in INNER_ROLES
+)
 
 # Concrete runtime, network and storage implementations an inner (domain or
 # application) package must not bind to. This is a denylist, not an allowlist:
@@ -70,6 +75,7 @@ HOST_PATHS = re.compile(
     r"set_var|remove_var|set_current_dir|home_dir)(?:::|$)"
     r"|std::net::(?:TcpListener|TcpStream|UdpSocket|ToSocketAddrs)(?:::|$)"
     r"|std::io::(?:stdin|stdout|stderr)(?:::|$)"
+    r"|std::time::(?:Instant|SystemTime)::(?:now|elapsed)(?:::|$)"
     r"|rustls::(?:ClientConnection|ServerConnection|Connection|Stream|StreamOwned)(?:::|$)"
     r"|lettre::(?:AsyncSmtpTransport|SmtpTransport|AsyncTransport|Transport|transport)(?:::|$)"
     r"|mdoc_rs::(?:runtime|transport|http|ble|nfc)(?:::|$)"
@@ -223,6 +229,11 @@ def check_package_roles(read_manifest) -> None:
                 violations.append(f"{edge}: unclassified local dependency requires owner review")
             elif role in INNER_ROLES and dependency in EXECUTION_DEPENDENCIES:
                 violations.append(f"{edge}: concrete execution dependency in an inner package")
+            if (
+                role in INNER_ROLES and dependency == "nazo-crypto"
+                and "certificate-issuance" in spec.get("features", [])
+            ):
+                violations.append(f"{edge}: native certificate provisioning in an inner package")
             if role in INNER_ROLES and dependency == "lettre":
                 transport_features = [
                     feature for feature in spec.get("features", [])

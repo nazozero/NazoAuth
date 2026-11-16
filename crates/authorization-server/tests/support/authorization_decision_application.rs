@@ -82,7 +82,11 @@ fn consent() -> ConsentPayload {
     }
 }
 
-#[test]
+#[cfg_attr(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    wasm_bindgen_test::wasm_bindgen_test
+)]
+#[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn decision_cleanup_cannot_change_committed_outcome_or_its_retention() {
     block_on(async {
         for decision in [

@@ -43,7 +43,8 @@ ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize"]
 aead = ["dep:aes-gcm"]
 password = ["dep:argon2"]
 ed25519 = ["dep:ed25519-dalek"]
-x509 = ["dep:rcgen", "dep:rustls", "dep:x509-parser", "x509-parser/verify-aws"]
+x509 = ["dep:rustls", "dep:x509-parser", "x509-parser/verify-aws"]
+certificate-issuance = ["x509", "dep:rcgen"]
 
 [dependencies]
 thiserror = "1"

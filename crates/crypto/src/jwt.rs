@@ -33,9 +33,17 @@ impl VerificationKey {
     }
 
     pub fn from_ed_components(x: &str) -> crate::Result<Self> {
-        jsonwebtoken::DecodingKey::from_ed_components(x)
-            .map(|inner| Self { inner })
-            .map_err(|_| CryptoError::InvalidKey)
+        let inner = jsonwebtoken::DecodingKey::from_ed_components(x)
+            .map_err(|_| CryptoError::InvalidKey)?;
+        if inner
+            .try_get_as_bytes()
+            .map_err(|_| CryptoError::InvalidKey)?
+            .len()
+            != 32
+        {
+            return Err(CryptoError::InvalidKey);
+        }
+        Ok(Self { inner })
     }
 
     /// Reuses RSA components already decoded for the caller's key policy.
@@ -82,6 +90,8 @@ pub fn decode<T: serde::de::DeserializeOwned>(
     key: &VerificationKey,
     validation: &Validation,
 ) -> crate::Result<TokenData<T>> {
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    validate_portable_key(&key.inner)?;
     let decoded = jsonwebtoken::decode(token, &key.inner, validation).map_err(token_error)?;
     reject_unsupported_extensions(&decoded.header)?;
     Ok(decoded)
@@ -109,5 +119,26 @@ fn token_error(error: jsonwebtoken::errors::Error) -> CryptoError {
         jsonwebtoken::errors::ErrorKind::InvalidKeyFormat => CryptoError::InvalidKey,
         jsonwebtoken::errors::ErrorKind::Provider(_) => CryptoError::OperationFailed,
         _ => CryptoError::InvalidToken,
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+fn validate_portable_key(key: &jsonwebtoken::DecodingKey) -> crate::Result<()> {
+    match key.kind() {
+        jsonwebtoken::DecodingKeyKind::RsaModulusExponent { n, e } => {
+            // Match the native provider's canonical unsigned representation and
+            // modulus limits. The provider owns the remaining RSA validation.
+            let first = n
+                .first()
+                .copied()
+                .filter(|byte| *byte != 0)
+                .ok_or(CryptoError::InvalidSignature)?;
+            let bits = n.len() * 8 - first.leading_zeros() as usize;
+            if !(2048..=8192).contains(&bits) || e.first().is_none_or(|byte| *byte == 0) {
+                return Err(CryptoError::InvalidSignature);
+            }
+            Ok(())
+        }
+        jsonwebtoken::DecodingKeyKind::SecretOrDer(_) => Ok(()),
     }
 }

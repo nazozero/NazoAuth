@@ -69,6 +69,11 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
         self.assert_manifest_boundary("nazo-identity", '[dependencies]\nlettre = { version = "1", default-features = false }\n', False)
         self.assert_manifest_boundary("nazo-identity", '[dependencies]\nlettre = { version = "1", features = ["smtp-transport"] }\n', True)
 
+    def test_local_certificate_provisioning_belongs_to_native_composition(self) -> None:
+        dependency = '[dependencies]\nnazo-crypto = { version = "1", features = ["x509", "certificate-issuance"] }\n'
+        self.assert_manifest_boundary("nazo-oauth-server", dependency, True)
+        self.assert_manifest_boundary("nazoauth", dependency, False)
+
     def test_path_identity_and_workspace_origin_cannot_be_hidden(self) -> None:
         for workspace_edge in (False, True):
             with self.subTest(workspace_edge=workspace_edge), tempfile.TemporaryDirectory() as temporary:
@@ -164,6 +169,19 @@ class InnerSourceBoundaries(unittest.TestCase):
         for attribute in ('#[cfg(feature="runtime")]', '#[cfg(any(test, feature="runtime"))]', '#[cfg(not(test))]'):
             with self.subTest(attribute=attribute):
                 self.assert_source_boundary(attribute + '\nfn run() { tokio::spawn(async {}); }', True)
+
+    def test_std_clock_execution_cannot_hide_a_wasm_runtime_panic(self) -> None:
+        for source in (
+            "fn now() { std::time::SystemTime::now(); }",
+            "use std::time::Instant; fn now() { Instant::now(); }",
+            "use std::time::{SystemTime as Clock}; fn now() { Clock::now(); }",
+        ):
+            with self.subTest(source=source):
+                self.assert_source_boundary(source, True)
+        self.assert_source_boundary(
+            "use std::time::{Duration, SystemTime}; struct Record { at: SystemTime, ttl: Duration } "
+            "fn now() { web_time::Instant::now(); web_time::SystemTime::now(); }", False,
+        )
 
     def test_neutral_data_crypto_and_module_lifecycle_are_allowed(self) -> None:
         self.assert_source_boundary(

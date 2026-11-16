@@ -735,10 +735,10 @@ async fn external_signatures_use_the_selected_generation_prepared_public_key() {
     );
 
     let replacement = nazo_crypto::signature::generate_private_key(loaded.active_alg).unwrap();
-    loaded.verification_keys[0].public_jwk = crate::serialization::public_jwk_from_private_der(
+    loaded.verification_keys[0].public_jwk = crate::serialization::signing_public_jwk(
         &loaded.active_kid,
         loaded.active_alg,
-        &replacement,
+        nazo_crypto::signature::public_jwk(loaded.active_alg, &replacement).unwrap(),
     )
     .unwrap();
     manager

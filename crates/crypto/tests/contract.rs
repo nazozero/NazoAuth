@@ -1,6 +1,8 @@
 //! Contract tests for the nazo-crypto boundary. Native dependencies are used
 //! here only as oracles for the old implementations being replaced.
 
+#![cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+
 use nazo_crypto::CryptoError;
 
 #[test]
@@ -419,61 +421,51 @@ mod jose {
         ));
     }
 
-    /// Malformed RSA DER must fail at construction: the retained native key
+    /// Malformed DER must fail at construction: the retained native key
     /// pair is parsed once in `new`, so an invalid generation can never be
     /// published and can never produce a signature.
     #[test]
-    fn rsa_prepared_key_rejects_invalid_der_at_construction() {
-        let private_der = signature::generate_private_key(Algorithm::RS256).unwrap();
-        let truncated = &private_der[..private_der.len() / 2];
+    fn prepared_key_rejects_invalid_der_at_construction() {
+        let rsa_der = signature::generate_private_key(Algorithm::RS256).unwrap();
         let ed25519_der = signature::generate_private_key(Algorithm::EdDSA).unwrap();
+        let ec_der = signature::generate_private_key(Algorithm::ES256).unwrap();
 
-        for (algorithm, bad) in [
-            (Algorithm::RS256, &[][..]),
-            (Algorithm::PS256, &[][..]),
-            (Algorithm::RS256, &[0x30u8, 0x03][..]),
-            (Algorithm::PS256, truncated),
-            (Algorithm::RS256, &ed25519_der[..]),
+        for (algorithm, private_der, wrong_family) in [
+            (Algorithm::EdDSA, &ed25519_der, &rsa_der),
+            (Algorithm::ES256, &ec_der, &ed25519_der),
+            (Algorithm::RS256, &rsa_der, &ed25519_der),
+            (Algorithm::PS256, &rsa_der, &ed25519_der),
         ] {
-            assert!(
-                matches!(
-                    signature::PreparedSigningKey::new(algorithm, bad),
-                    Err(CryptoError::InvalidKey)
-                ),
-                "{algorithm:?} must reject malformed DER at construction"
-            );
-        }
-    }
-
-    /// Structural check: the RSA request-time path must not re-enter DER
-    /// parsing or the provider signer factory. Interop and concurrency
-    /// coverage above is the real proof; this guards the hot path shape.
-    #[test]
-    fn rsa_sign_path_does_not_reparse_der() {
-        const SOURCE: &str = include_str!("../src/signature.rs");
-        let rsa_arm = SOURCE
-            .split("PreparedKey::Rsa(pair) =>")
-            .nth(1)
-            .expect("RSA sign arm exists")
-            .split("PreparedKey::Provider")
-            .next()
-            .expect("RSA arm precedes provider arm");
-        for forbidden in ["from_der", "from_pkcs8", "signer_factory", "try_sign"] {
-            assert!(
-                !rsa_arm.contains(forbidden),
-                "RSA sign arm must not contain {forbidden}"
-            );
+            for bad in [
+                &[][..],
+                &[0x30u8, 0x03][..],
+                &private_der[..private_der.len() / 2],
+                wrong_family.as_slice(),
+            ] {
+                assert!(
+                    matches!(
+                        signature::PreparedSigningKey::new(algorithm, bad),
+                        Err(CryptoError::InvalidKey)
+                    ),
+                    "{algorithm:?} must reject malformed DER at construction"
+                );
+            }
         }
     }
 
     /// The prepared key is shared by every signing handle of a generation;
     /// it must be `Send + Sync` and support concurrent signing.
     #[test]
-    fn prepared_rsa_key_signs_concurrently_across_eight_threads() {
+    fn prepared_key_signs_concurrently_across_eight_threads() {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<signature::PreparedSigningKey>();
 
-        for algorithm in [Algorithm::RS256, Algorithm::PS256] {
+        for algorithm in [
+            Algorithm::EdDSA,
+            Algorithm::ES256,
+            Algorithm::RS256,
+            Algorithm::PS256,
+        ] {
             let private_der = signature::generate_private_key(algorithm).unwrap();
             let decoding = native_decoding_key(algorithm, &private_der);
             let key = std::sync::Arc::new(
@@ -1096,7 +1088,7 @@ mod password {
     }
 }
 
-#[cfg(feature = "x509")]
+#[cfg(feature = "certificate-issuance")]
 mod certificate {
     use nazo_crypto::{CryptoError, certificate as certs};
     use x509_parser::extensions::ParsedExtension;
@@ -1400,6 +1392,7 @@ mod certificate {
     }
 }
 
+#[cfg(feature = "certificate-issuance")]
 #[test]
 fn crl_signer_rejects_certificate_private_key_mismatch() {
     use nazo_crypto::certificate as certs;

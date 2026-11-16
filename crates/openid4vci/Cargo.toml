@@ -17,8 +17,11 @@ thiserror.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["serde", "v7"] }
 
-[dev-dependencies]
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]
 workspace = true
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test.workspace = true

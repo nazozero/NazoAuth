@@ -10,6 +10,7 @@ repository.workspace = true
 test-support = []
 
 [dependencies]
+web-time.workspace = true
 hex.workspace = true
 arc-swap.workspace = true
 anyhow.workspace = true
@@ -34,11 +35,13 @@ x509-parser.workspace = true
 workspace = true
 
 [dev-dependencies]
-aws-lc-rs.workspace = true
 der.workspace = true
-jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+jsonwebtoken.workspace = true
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
 tokio = { workspace = true, features = ["macros", "rt"] }
 futures-executor.workspace = true
-rcgen.workspace = true
 time.workspace = true
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dev-dependencies]
+aws-lc-rs.workspace = true
+rcgen.workspace = true

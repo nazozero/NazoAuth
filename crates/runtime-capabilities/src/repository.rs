@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::time::SystemTime;
+use web_time::SystemTime;
 
 use crate::{
     DesiredMode, HistoricalDesiredMode, ModuleEventType, ModuleId, ModuleRevision, ModuleState,

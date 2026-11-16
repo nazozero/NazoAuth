@@ -101,6 +101,64 @@ manager/orchestrator layer between the handler and its focused services. Traits
 are reserved for a real dependency inversion: infrastructure, external
 providers, clocks/test substitutes, or multiple genuine implementations.
 
+## WASM Portability Boundary
+
+Every package with the `domain` or `application` role in
+[`PACKAGE_ROLES`](../../scripts/verify_static_contracts.py) belongs to the
+`wasm32-unknown-unknown` production contract:
+
+| Role | Packages |
+| --- | --- |
+| Application | `nazo-oauth-server` |
+| Domain and shared capabilities | `nazo-auth`, `nazo-crypto`, `nazo-digital-credentials`, `nazo-http-signatures`, `nazo-identity`, `nazo-key-management`, `nazo-openid4vci`, `nazo-openid4vp`, `nazo-operator-protocol`, `nazo-persistence`, `nazo-resource-server`, `nazo-runtime-modules`, `nazo-scim-events` |
+
+`nazoauth` is the native composition root. Its process lifecycle, filesystem,
+HTTP/TLS listener, outbound transports and database/cache adapters remain host
+responsibilities. A WASM host consumes the same application and domain code and
+implements the existing semantic ports for its storage and remote operations.
+It drives one-shot application and background-batch futures itself. Neither
+protocol decisions nor discovery rules depend on the compilation target.
+
+The supported WASM runtime supplies JavaScript `Date`, `performance` and
+`crypto.getRandomValues` through the libraries' WASM bindings. Chrono provides
+UTC wall time, UUID supplies timestamped identifiers, `getrandom` supplies
+cryptographic entropy, and `web-time` provides the portable clock operations
+that the standard library cannot execute on this target. Native clock calls
+continue to use the standard implementation through `web-time`. A non-JavaScript
+embedding must supply compatible imports; this boundary does not include a
+Cloudflare, browser transport, or bare-engine host implementation. Timezone-name
+validation queries the bundled `jiff-tzdb` IANA index directly without consulting
+the host's filesystem or constructing a timezone runtime.
+
+`nazo-crypto` retains the six portable capabilities `jose`, `ecdh`, `aead`,
+`password`, `ed25519`, and `x509`. Backend selection stays inside that crate and
+applies the same algorithm, key-format, certificate and signature policy across
+targets. Native JOSE and RSA paths retain AWS-LC; WASM uses the RustCrypto JWT
+provider and portable RSA-OAEP/AES key-wrap implementations. Local signing
+generations retain parsed Ed25519, P-256 and RSA key pairs for signatures and
+public JWK projection. The backend validates standard Ed25519 PKCS#8 v1 and v2
+inputs; generated storage encodings are unchanged. Cargo selects the backend
+without a runtime dispatch layer.
+Local CA/certificate/CRL provisioning is the separate
+`certificate-issuance` native-host feature. Certificate verification and
+OpenID4VC credential issuance remain in the portable graph; enabling native
+certificate provisioning from an inner consumer is an architecture violation.
+
+An unavailable external signer, storage adapter or other deployment capability
+must be rejected by host composition before its module becomes active. The
+existing module lifecycle publishes enabled capabilities only after their
+dependencies are ready, so unavailable behavior cannot appear in discovery.
+The portable boundary adds no fallback signer, storage implementation, runtime
+wrapper, or weakened protocol path.
+
+The [portability gate](../../.github/workflows/wasm-portability.yml) checks each
+inner package independently and checks their combined portable feature closure.
+It inspects resolved normal dependencies and active features, including
+transitive dependencies, to reject native execution that may still compile as
+an unusable WASM stub. Existing source and dependency guards enforce the same
+ownership rules on native builds. Build-host procedural macros and compiler
+helpers are separate from the target's runtime graph.
+
 ## Runtime Modules
 
 Optional protocol and product capabilities are compiled into the single
