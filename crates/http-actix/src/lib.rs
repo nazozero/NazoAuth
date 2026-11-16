@@ -47,11 +47,13 @@ fn actix_path(path: &'static str) -> Cow<'static, str> {
 
 /// Forward one framework request without assembling services or buffering its
 /// payload. Decoding consumes the canonical route's transport metadata.
-pub async fn serve(
-    application: web::Data<NazoAuth>,
-    request: HttpRequest,
-    payload: web::Payload,
-) -> HttpResponse {
+pub async fn serve(request: HttpRequest, payload: web::Payload) -> HttpResponse {
+    let Some(application) = request.app_data::<web::Data<NazoAuth>>() else {
+        return HttpResponse::from_error(actix_web::error::ErrorInternalServerError(
+            "Requested application data is not configured correctly. \
+             View/enable debug logs for more details.",
+        ));
+    };
     let request_head = forward_request(&request, ());
     let body_mode = request
         .app_data::<&'static Route>()

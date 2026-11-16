@@ -81,7 +81,7 @@ async fn production_response_presenters_survive_conversion_without_body_copy() {
 
 #[actix_web::test]
 async fn every_manifest_binding_reaches_an_explicit_production_resource() {
-    // The missing application rejects at the ordinary Data extractor. Looking
+    // The missing application rejects at the adapter's app-data lookup. Looking
     // at the matched resource distinguishes a registered binding from fallback
     // without constructing a second protocol implementation.
     let app = awtest::init_service(App::new().configure(configure)).await;
@@ -101,6 +101,40 @@ async fn every_manifest_binding_reaches_an_explicit_production_resource() {
     )
     .await;
     assert!(response.request().match_pattern().is_none());
+}
+
+#[actix_web::test]
+async fn missing_application_preserves_extractor_error_without_polling_body() {
+    let request = awtest::TestRequest::post().uri("/token").to_http_request();
+    let expected = match <web::Data<NazoAuth> as actix_web::FromRequest>::extract(&request).await {
+        Err(error) => HttpResponse::from_error(error),
+        Ok(_) => panic!("fixture has no application data"),
+    };
+    let polls = std::rc::Rc::new(std::cell::Cell::new(0));
+    let observed = polls.clone();
+    let stream: std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<Bytes, PayloadError>>>> =
+        Box::pin(futures_util::stream::poll_fn(move |_| {
+            observed.set(observed.get() + 1);
+            std::task::Poll::Ready(None)
+        }));
+    let mut payload = actix_web::dev::Payload::from(stream);
+    let payload = <web::Payload as actix_web::FromRequest>::from_request(&request, &mut payload)
+        .await
+        .unwrap();
+    let actual = serve(request, payload).await;
+    assert_eq!(actual.status(), expected.status());
+    assert_eq!(actual.headers().len(), expected.headers().len());
+    for name in expected.headers().keys() {
+        assert_eq!(
+            actual.headers().get_all(name).collect::<Vec<_>>(),
+            expected.headers().get_all(name).collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(
+        to_bytes(actual.into_body()).await.unwrap(),
+        to_bytes(expected.into_body()).await.unwrap(),
+    );
+    assert_eq!(polls.get(), 0);
 }
 
 #[actix_web::test]
