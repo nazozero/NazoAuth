@@ -129,21 +129,19 @@ impl NazoAuth {
         let method = extract!(route.resolve_method(request.method()));
         match method.endpoint {
             Endpoint::Discovery => {
-                return http::discovery(self.core.metadata_handles.as_ref()).await;
+                return http::discovery(self.core.metadata_handles.as_ref());
             }
             Endpoint::OauthAuthorizationServerMetadata => {
                 return http::oauth_authorization_server_metadata(
                     self.core.metadata_handles.as_ref(),
-                )
-                .await;
+                );
             }
             Endpoint::OauthProtectedResourceMetadata => {
                 return http::oauth_protected_resource_metadata(
                     self.core.metadata_handles.as_ref(),
-                )
-                .await;
+                );
             }
-            Endpoint::Jwks => return http::jwks(self.core.metadata_handles.as_ref()).await,
+            Endpoint::Jwks => return http::jwks(self.core.metadata_handles.as_ref()),
             _ => {}
         }
 

@@ -63,111 +63,106 @@ fn handles(source: Arc<TestSnapshots>) -> MetadataHandles {
 
 #[test]
 fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
-    futures_executor::block_on(async {
-        let source = Arc::new(TestSnapshots {
-            calls: AtomicUsize::new(0),
-            module_calls: AtomicUsize::new(0),
-            jwks_calls: AtomicUsize::new(0),
-        });
-        let handles = handles(source.clone());
+    let source = Arc::new(TestSnapshots {
+        calls: AtomicUsize::new(0),
+        module_calls: AtomicUsize::new(0),
+        jwks_calls: AtomicUsize::new(0),
+    });
+    let handles = handles(source.clone());
 
-        for (path, response) in [
-            (
-                "/.well-known/openid-configuration",
-                discovery(&handles).await,
-            ),
-            (
-                "/.well-known/oauth-authorization-server",
-                oauth_authorization_server_metadata(&handles).await,
-            ),
-        ] {
-            assert_eq!(response.status(), StatusCode::OK, "GET {path}");
-            assert_eq!(
-                response
-                    .headers()
-                    .get("content-type")
-                    .and_then(|value| value.to_str().ok()),
-                Some("application/json"),
-                "GET {path}"
-            );
-            let body: Value = serde_json::from_slice(response.body()).unwrap();
-            assert_eq!(body["issuer"], "https://issuer.example");
-            let scopes = body["scopes_supported"].as_array().unwrap();
-            assert!(scopes.contains(&json!("orders:read")));
-            assert!(!scopes.contains(&json!("credential:inactive")));
-            assert_eq!(
-                body["grant_types_supported"][3],
-                "urn:openid:params:grant-type:ciba"
-            );
-            assert_eq!(
-                body["id_token_signing_alg_values_supported"],
-                json!(["PS256", "RS256"])
-            );
-            assert_eq!(
-                body["authorization_signing_alg_values_supported"],
-                json!(["PS256"])
-            );
-        }
-
-        for path in [
-            "/.well-known/oauth-protected-resource",
-            "/.well-known/oauth-protected-resource/fapi/resource",
-        ] {
-            let response = oauth_protected_resource_metadata(&handles).await;
-            assert_eq!(response.status(), StatusCode::OK, "GET {path}");
-            assert_eq!(
-                response
-                    .headers()
-                    .get("content-type")
-                    .and_then(|value| value.to_str().ok()),
-                Some("application/json"),
-                "GET {path}"
-            );
-            let body: Value = serde_json::from_slice(response.body()).unwrap();
-            assert_eq!(body["resource"], "https://issuer.example/fapi/resource");
-            assert_eq!(
-                body["authorization_servers"],
-                json!(["https://issuer.example"])
-            );
-        }
-
-        assert_eq!(source.calls.load(Ordering::Relaxed), 2);
-        assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
-        assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 0);
-        let response = jwks(&handles).await;
-        assert_eq!(response.status(), StatusCode::OK);
+    for (path, response) in [
+        ("/.well-known/openid-configuration", discovery(&handles)),
+        (
+            "/.well-known/oauth-authorization-server",
+            oauth_authorization_server_metadata(&handles),
+        ),
+    ] {
+        assert_eq!(response.status(), StatusCode::OK, "GET {path}");
         assert_eq!(
             response
                 .headers()
                 .get("content-type")
                 .and_then(|value| value.to_str().ok()),
-            Some("application/json")
+            Some("application/json"),
+            "GET {path}"
         );
         let body: Value = serde_json::from_slice(response.body()).unwrap();
-        assert_eq!(body["keys"][0]["kid"], "current");
-        assert_eq!(source.calls.load(Ordering::Relaxed), 2);
-        assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
-        assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(body["issuer"], "https://issuer.example");
+        let scopes = body["scopes_supported"].as_array().unwrap();
+        assert!(scopes.contains(&json!("orders:read")));
+        assert!(!scopes.contains(&json!("credential:inactive")));
+        assert_eq!(
+            body["grant_types_supported"][3],
+            "urn:openid:params:grant-type:ciba"
+        );
+        assert_eq!(
+            body["id_token_signing_alg_values_supported"],
+            json!(["PS256", "RS256"])
+        );
+        assert_eq!(
+            body["authorization_signing_alg_values_supported"],
+            json!(["PS256"])
+        );
+    }
 
-        for path in [
-            "/.well-known/openid-configuration",
-            "/.well-known/oauth-authorization-server",
-            "/.well-known/oauth-protected-resource",
-            "/.well-known/oauth-protected-resource/fapi/resource",
-            "/jwks.json",
-        ] {
-            for method in [Method::POST, Method::OPTIONS] {
-                let response = crate::routes::resolve(&method, path).unwrap_err();
-                assert_eq!(
-                    response.status(),
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    "{method} {path}"
-                );
-                assert_eq!(response.headers().get("allow").unwrap(), "GET");
-            }
+    for path in [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/fapi/resource",
+    ] {
+        let response = oauth_protected_resource_metadata(&handles);
+        assert_eq!(response.status(), StatusCode::OK, "GET {path}");
+        assert_eq!(
+            response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json"),
+            "GET {path}"
+        );
+        let body: Value = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(body["resource"], "https://issuer.example/fapi/resource");
+        assert_eq!(
+            body["authorization_servers"],
+            json!(["https://issuer.example"])
+        );
+    }
+
+    assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+    assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 0);
+    let response = jwks(&handles);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+    let body: Value = serde_json::from_slice(response.body()).unwrap();
+    assert_eq!(body["keys"][0]["kid"], "current");
+    assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+    assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
+
+    for path in [
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/fapi/resource",
+        "/jwks.json",
+    ] {
+        for method in [Method::POST, Method::OPTIONS] {
+            let response = crate::routes::resolve(&method, path).unwrap_err();
+            assert_eq!(
+                response.status(),
+                StatusCode::METHOD_NOT_ALLOWED,
+                "{method} {path}"
+            );
+            assert_eq!(response.headers().get("allow").unwrap(), "GET");
         }
-        assert_eq!(source.calls.load(Ordering::Relaxed), 2);
-        assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
-        assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
-    });
+    }
+    assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+    assert_eq!(source.module_calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
 }

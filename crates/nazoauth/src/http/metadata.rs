@@ -62,25 +62,25 @@ impl MetadataHandles {
 }
 
 /// OIDC Discovery metadata. A single immutable snapshot is used for the whole document.
-pub async fn discovery(handles: &MetadataHandles) -> Response {
+pub fn discovery(handles: &MetadataHandles) -> Response {
     let snapshot = handles.snapshots.snapshot();
     crate::http::json_response(handles.authorization_server_metadata(&snapshot))
 }
 
 /// RFC 8414 Authorization Server metadata.
-pub async fn oauth_authorization_server_metadata(handles: &MetadataHandles) -> Response {
+pub fn oauth_authorization_server_metadata(handles: &MetadataHandles) -> Response {
     let snapshot = handles.snapshots.snapshot();
     crate::http::json_response(handles.authorization_server_metadata(&snapshot))
 }
 
 /// RFC 9728 Protected Resource metadata.
-pub async fn oauth_protected_resource_metadata(handles: &MetadataHandles) -> Response {
+pub fn oauth_protected_resource_metadata(handles: &MetadataHandles) -> Response {
     let snapshot = handles.snapshots.active_modules();
     crate::http::json_response(handles.protected_resource_metadata(&snapshot))
 }
 
 /// Public JSON Web Key Set derived from the current key snapshot.
-pub async fn jwks(handles: &MetadataHandles) -> Response {
+pub fn jwks(handles: &MetadataHandles) -> Response {
     crate::http::json_response(handles.snapshots.jwks())
 }
 
