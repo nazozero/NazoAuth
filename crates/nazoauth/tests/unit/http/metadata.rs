@@ -7,7 +7,7 @@ use nazo_oauth_server::contracts::metadata::{
     MetadataEndpointConfig, MetadataSnapshot, MetadataSnapshotSource,
 };
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::*;
 
