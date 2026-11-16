@@ -27,15 +27,16 @@ use crate::settings::Settings;
 use actix_files::{Files, NamedFile};
 use actix_web::{
     HttpResponse,
-    dev::{ServiceRequest, ServiceResponse, fn_service},
+    dev::{HttpServiceFactory, ServiceRequest, ServiceResponse, fn_service},
+    middleware::from_fn,
     web,
 };
 use nazo_http_actix::security_headers;
 use transport::{direct_tls_listeners, spawn_direct_tls_reloader};
 
-fn ui_static_files(root: PathBuf) -> Files {
+fn ui_static_files(root: PathBuf) -> impl HttpServiceFactory {
     let index = root.join("index.html");
-    Files::new("/ui", root)
+    let files = Files::new("", root)
         .index_file("index.html")
         .disable_content_disposition()
         .default_handler(fn_service(move |request: ServiceRequest| {
@@ -66,7 +67,10 @@ fn ui_static_files(root: PathBuf) -> Files {
                 let response = file.into_response(&request);
                 Ok(ServiceResponse::new(request, response))
             }
-        }))
+        }));
+    web::scope("/ui")
+        .wrap(from_fn(security_headers))
+        .service(files)
 }
 
 #[cfg(test)]

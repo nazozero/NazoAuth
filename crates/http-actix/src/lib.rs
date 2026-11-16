@@ -19,12 +19,38 @@ use nazoauth::{ConnectionFacts, NazoAuth, integration::Route};
 /// Register the canonical product surface. Install the already-built tenant as
 /// `web::Data<NazoAuth>` in application data, including tenant-selected data.
 pub fn configure(config: &mut web::ServiceConfig) {
+    // Keep manifest order while excluding unrelated path groups from each scan.
+    let mut groups: Vec<(&'static str, Vec<&'static Route>)> = Vec::new();
     for route in nazoauth::integration::routes() {
-        config.service(
-            web::resource(actix_path(route.path).as_ref())
-                .app_data(route)
-                .to(serve),
-        );
+        let end = route.path[1..]
+            .find('/')
+            .map_or(route.path.len(), |index| index + 1);
+        let prefix = &route.path[..end];
+        if let Some((_, routes)) = groups.iter_mut().find(|(key, _)| *key == prefix) {
+            routes.push(route);
+        } else {
+            groups.push((prefix, vec![route]));
+        }
+    }
+    for (prefix, routes) in groups {
+        if routes.len() == 1 {
+            let route = routes[0];
+            config.service(
+                web::resource(actix_path(route.path).as_ref())
+                    .app_data(route)
+                    .to(serve),
+            );
+        } else {
+            let mut scope = web::scope(prefix).default_service(web::to(serve));
+            for route in routes {
+                scope = scope.service(
+                    web::resource(actix_path(&route.path[prefix.len()..]).as_ref())
+                        .app_data(route)
+                        .to(serve),
+                );
+            }
+            config.service(scope);
+        }
     }
     config.default_service(web::to(serve));
 }

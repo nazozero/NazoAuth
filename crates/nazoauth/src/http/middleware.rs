@@ -37,7 +37,7 @@ pub fn apply_security_headers(headers: &mut HeaderMap, is_check_session_iframe: 
 }
 
 fn insert_static_header(headers: &mut HeaderMap, name: HeaderName, value: &'static str) {
-    if !headers.contains_key(&name) {
-        headers.insert(name, HeaderValue::from_static(value));
-    }
+    headers
+        .entry(name)
+        .or_insert_with(|| HeaderValue::from_static(value));
 }

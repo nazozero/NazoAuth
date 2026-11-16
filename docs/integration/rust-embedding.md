@@ -6,6 +6,16 @@ network adapters, and task scheduling. The distributed executable is named
 `nazoauth`. `nazo-http-actix` translates Actix transport values into the public
 library contract.
 
+## Dependencies in an external workspace
+
+Cargo does not inherit `[patch]` entries from dependencies. Copy the applicable
+`[patch.crates-io]` overrides from the [workspace manifest](../../Cargo.toml)
+for the NazoAuth revision being consumed into your own workspace-root
+`Cargo.toml`. The neutral facade requires the `mdoc-rs` and `passkey-auth`
+overrides. `nazo-http-actix` also requires both `actix-http` and `actix-router`
+overrides to share HTTP 1.x metadata types with the facade. The `rustls` override
+applies to the native host's shared-certificate TLS integration.
+
 ## Build one tenant
 
 Create `nazoauth::config::Configuration` with the tenant context, issuer and
@@ -113,9 +123,13 @@ also need the same policy on listener rejections and static UI responses.
 that purpose; add only headers not already supplied by the response.
 
 An Actix embedding installs `web::Data::from(application)` and
-`.configure(nazo_http_actix::configure)`. Its outer middleware can use
-`nazo_http_actix::security_headers`. A multi-tenant host selects one immutable
-tenant snapshot before forwarding; it does not rebuild the facade per request.
+`.configure(nazo_http_actix::configure)`. The adapter groups the manifest's
+resources into path scopes while preserving their complete route patterns and
+forwarding unknown paths to the facade. Apply `nazo_http_actix::security_headers`
+to host-owned routes; facade responses already contain the policy. The native
+host applies it to its static UI and adds the same defaults when rejecting tenant
+selection. A multi-tenant host selects one immutable tenant snapshot before
+forwarding; it does not rebuild the facade per request.
 
 ## Run the adapter conformance kit
 

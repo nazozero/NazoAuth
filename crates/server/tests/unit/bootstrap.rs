@@ -205,18 +205,20 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
     std::fs::write(root.join("index.html"), index_body).unwrap();
     std::fs::write(root.join("assets/app.js"), asset_body).unwrap();
 
-    let app = actix_test::init_service(
-        App::new()
-            .wrap(from_fn(security_headers))
-            .service(ui_static_files(root.clone())),
-    )
-    .await;
+    let app = actix_test::init_service(App::new().service(ui_static_files(root.clone()))).await;
+    let assert_ui_security = |headers: &header::HeaderMap| {
+        for (name, value) in nazoauth::integration::security_headers("/ui/") {
+            assert_eq!(headers.get(name), Some(value));
+        }
+        assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+    };
 
-    for path in ["/ui/", "/ui/auth"] {
+    for path in ["/ui", "/ui/", "/ui/auth", "/ui/check_session"] {
         let response =
             actix_test::call_service(&app, actix_test::TestRequest::get().uri(path).to_request())
                 .await;
         assert_eq!(response.status(), actix_web::http::StatusCode::OK, "{path}");
+        assert_ui_security(response.headers());
         assert_eq!(
             response
                 .headers()
@@ -235,6 +237,7 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
     )
     .await;
     assert_eq!(asset.status(), actix_web::http::StatusCode::OK);
+    assert_ui_security(asset.headers());
     assert!(
         !asset
             .headers()
@@ -256,6 +259,7 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
     )
     .await;
     assert_eq!(range.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+    assert_ui_security(range.headers());
     assert_eq!(
         range.headers().get(header::CONTENT_RANGE).unwrap(),
         format!("bytes 0-6/{}", asset_body.len()).as_str()
@@ -277,6 +281,7 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
         not_modified.status(),
         actix_web::http::StatusCode::NOT_MODIFIED
     );
+    assert_ui_security(not_modified.headers());
 
     let head_builder = HttpServer::new({
         let root = root.clone();
@@ -294,6 +299,9 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
         .await
         .unwrap();
     assert_eq!(head.status(), reqwest::StatusCode::OK);
+    for (name, value) in nazoauth::integration::security_headers("/ui/assets/app.js") {
+        assert_eq!(head.headers().get(name), Some(value));
+    }
     assert_eq!(
         head.headers().get("content-length").unwrap(),
         asset_body.len().to_string().as_str()
@@ -312,6 +320,21 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
         missing_asset.status(),
         actix_web::http::StatusCode::NOT_FOUND
     );
+    assert_ui_security(missing_asset.headers());
+    assert!(actix_test::read_body(missing_asset).await.is_empty());
+
+    let unsupported = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/ui/assets/app.js")
+            .to_request(),
+    )
+    .await;
+    assert_eq!(
+        unsupported.status(),
+        actix_web::http::StatusCode::METHOD_NOT_ALLOWED
+    );
+    assert_ui_security(unsupported.headers());
 
     // The same running service reads replacements, without reloading a descriptor.
     std::fs::write(root.join("index.html"), "replacement frontend").unwrap();
@@ -335,6 +358,8 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
         missing_index.status(),
         actix_web::http::StatusCode::NOT_FOUND
     );
+    assert_ui_security(missing_index.headers());
+    assert!(actix_test::read_body(missing_index).await.is_empty());
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -1291,7 +1316,6 @@ async fn fapi_resource_static_route_rejects_options_without_cors_and_keeps_secur
     let app = actix_test::init_service(
         App::new()
             .app_data(web::Data::from(facade))
-            .wrap(from_fn(security_headers))
             .configure(nazo_http_actix::configure),
     )
     .await;

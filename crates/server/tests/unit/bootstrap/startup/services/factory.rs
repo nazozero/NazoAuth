@@ -24,6 +24,38 @@ async fn direct_tls_sni_and_http_host_must_select_the_same_tenant() {
     ));
 }
 
+#[actix_web::test]
+async fn tenant_rejections_keep_security_headers_and_the_session_iframe_exception() {
+    for path in ["/token", "/check_session"] {
+        for status in [StatusCode::NOT_FOUND, StatusCode::MISDIRECTED_REQUEST] {
+            let response =
+                tenant_rejection(test::TestRequest::get().uri(path).to_srv_request(), status);
+            assert_eq!(response.status(), status);
+            for (name, value) in nazoauth::integration::security_headers(path) {
+                assert_eq!(response.headers().get(name), Some(value));
+            }
+            assert_eq!(
+                response
+                    .headers()
+                    .get("x-frame-options")
+                    .map(|value| value.as_bytes()),
+                (path != "/check_session").then_some(b"DENY".as_slice()),
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get("content-security-policy")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .contains("frame-ancestors 'none'"),
+                path != "/check_session",
+            );
+            assert!(test::read_body(response).await.is_empty());
+        }
+    }
+}
+
 async fn test_request_timeout<B>(
     request: ServiceRequest,
     next: Next<B>,

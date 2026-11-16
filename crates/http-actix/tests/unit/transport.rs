@@ -106,6 +106,7 @@ async fn every_manifest_binding_reaches_an_explicit_production_resource() {
     let app = awtest::init_service(App::new().configure(configure)).await;
     for (route, request) in conformance::registration_requests() {
         let response = awtest::call_service(&app, framework_request(&request).to_request()).await;
+        assert_eq!(response.status(), http::StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(
             response.request().match_pattern().as_deref(),
             Some(actix_path(route.path).as_ref()),
@@ -113,13 +114,51 @@ async fn every_manifest_binding_reaches_an_explicit_production_resource() {
             request.method(),
             request.uri(),
         );
+        let bound = response
+            .request()
+            .app_data::<&'static Route>()
+            .expect("canonical resource retains its transport metadata");
+        assert!(std::ptr::eq(*bound, route));
+        assert_eq!(
+            bound.body(response.request().method()),
+            route.body(request.method())
+        );
     }
-    let response = awtest::call_service(
-        &app,
-        awtest::TestRequest::get().uri("/not-a-route").to_request(),
-    )
-    .await;
-    assert!(response.request().match_pattern().is_none());
+    for path in [
+        "/not-a-route",
+        "/.well-known",
+        "/.well-known/",
+        "/.well-known/not-a-route",
+        "/admin",
+        "/admin/",
+        "/admin/controller-registry/not-a-route",
+        "/auth",
+        "/auth/",
+        "/auth/me/not-a-route",
+        "/authentic/not-a-route",
+        "/authorize/",
+        "/device/",
+        "/check_session/",
+        "/register/",
+        "/scim/v2/not-a-route",
+        "/openid4vci/not-a-route",
+        "/openid4vp/not-a-route",
+    ] {
+        let response =
+            awtest::call_service(&app, awtest::TestRequest::get().uri(path).to_request()).await;
+        // Scope fallbacks must reach serve just like the root fallback; the
+        // missing Data extractor distinguishes them from Actix's own 404.
+        assert_eq!(
+            response.status(),
+            http::StatusCode::INTERNAL_SERVER_ERROR,
+            "{path}"
+        );
+        assert!(response.request().match_pattern().is_none(), "{path}");
+        assert!(
+            response.request().app_data::<&'static Route>().is_none(),
+            "{path}"
+        );
+    }
 }
 
 #[actix_web::test]

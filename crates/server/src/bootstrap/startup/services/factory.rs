@@ -1,8 +1,8 @@
 use super::super::tenant_runtime::{ProcessRuntime, TenantHostIndex, TenantRuntimeRegistry};
-use super::*;
 use actix_web::body::{EitherBody, MessageBody};
 use actix_web::dev::{Extensions, ServiceRequest, ServiceResponse};
 use actix_web::error::ErrorRequestTimeout;
+use actix_web::http::StatusCode;
 use actix_web::middleware::{Next, from_fn};
 use actix_web::{App, Error, HttpResponse, HttpServer, web};
 use std::cell::RefCell;
@@ -64,6 +64,14 @@ fn direct_tls_host_matches(server_name: Option<&str>, host: &str) -> bool {
     server_name.is_none_or(|server_name| server_name == host)
 }
 
+fn tenant_rejection(request: ServiceRequest, status: StatusCode) -> ServiceResponse {
+    let mut response = HttpResponse::new(status);
+    for (name, value) in nazoauth::integration::security_headers(request.path()) {
+        response.headers_mut().insert(name.clone(), value.clone());
+    }
+    request.into_response(response)
+}
+
 async fn bind_tenant_app_data<B>(
     registry: TenantRuntimeRegistry,
     cache: Rc<RefCell<WorkerTenantDataCache>>,
@@ -74,9 +82,7 @@ where
     B: MessageBody + 'static,
 {
     let Some(host) = crate::bootstrap::host::canonical_request_host(request.head()) else {
-        return Ok(request
-            .into_response(HttpResponse::NotFound().finish())
-            .map_into_right_body());
+        return Ok(tenant_rejection(request, StatusCode::NOT_FOUND).map_into_right_body());
     };
     if !direct_tls_host_matches(
         request
@@ -85,15 +91,11 @@ where
             .and_then(|facts| facts.server_name.as_deref()),
         &host,
     ) {
-        return Ok(request
-            .into_response(HttpResponse::MisdirectedRequest().finish())
-            .map_into_right_body());
+        return Ok(tenant_rejection(request, StatusCode::MISDIRECTED_REQUEST).map_into_right_body());
     }
     let container = cache.borrow_mut().resolve(registry.load(), &host);
     let Some((container, tenant_id)) = container else {
-        return Ok(request
-            .into_response(HttpResponse::NotFound().finish())
-            .map_into_right_body());
+        return Ok(tenant_rejection(request, StatusCode::NOT_FOUND).map_into_right_body());
     };
 
     request.add_data_container(container);
@@ -191,7 +193,6 @@ pub(super) async fn run(
         App::new()
             .wrap(from_fn(request_timeout))
             .wrap(from_fn(observe_request))
-            .wrap(from_fn(security_headers))
             .service(tenant_scope)
     })
     // Keep the existing plaintext listener HTTP/1-only; Actix 4.19 otherwise

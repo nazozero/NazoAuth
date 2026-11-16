@@ -34,19 +34,25 @@ impl NazoAuth {
     /// Serve framework-provided body chunks without requiring a runtime or a
     /// Send stream. Content decoding follows the route's declared BodyMode;
     /// adapters report decoder limits as io::ErrorKind::FileTooLarge.
-    pub async fn handle_stream<S, E>(&self, request: ::http::Request<S>) -> Response
+    pub fn handle_stream<S, E>(
+        &self,
+        request: ::http::Request<S>,
+    ) -> impl std::future::Future<Output = Response>
     where
         S: futures_util::Stream<Item = Result<Bytes, E>>,
         E: std::error::Error + Send + Sync + 'static,
     {
         let (parts, stream) = request.into_parts();
         let mut request = Request::from_parts(parts, Bytes::new());
-        let mut response = self.route(&mut request, stream).await;
-        http::apply_security_headers(
-            response.headers_mut(),
-            request.uri().path() == "/check_session",
-        );
-        response
+        // Capture the final request once instead of retaining a second input head.
+        async move {
+            let mut response = self.route(&mut request, stream).await;
+            http::apply_security_headers(
+                response.headers_mut(),
+                request.uri().path() == "/check_session",
+            );
+            response
+        }
     }
 
     async fn route<S, E>(&self, request: &mut Request, stream: S) -> Response
@@ -71,9 +77,9 @@ impl NazoAuth {
         if let Some(response) = http::cors_preflight(cors, request, origins) {
             return response;
         }
-        let mut response = match matched {
+        let mut response = match matched.as_ref() {
             Some((route, params)) if enabled => {
-                self.dispatch_stream(route, &params, request, stream).await
+                self.dispatch_stream(route, params, request, stream).await
             }
             _ => http::empty_response(StatusCode::NOT_FOUND),
         };
@@ -116,29 +122,34 @@ impl NazoAuth {
             .any(|method| method.endpoint == Endpoint::CredentialNonce)
         {
             extract!(
-                crate::endpoints::rate_limit::enforce_auth_request_limit(
+                Box::pin(crate::endpoints::rate_limit::enforce_auth_request_limit(
                     &self.identity.auth_request_limiter,
                     request,
                     &self.identity.client_ip_config,
-                )
+                ))
                 .await
             );
         }
         let method = extract!(route.resolve_method(request.method()));
-        self.mtls.prepare_request(request);
-        // Keep the common token and metadata paths outside other endpoints'
-        // parsing and streaming state.
+        // Allocate large endpoint state only for requests that use it; metadata
+        // requests must not inherit the largest endpoint's future allocation.
         match method.endpoint {
             Endpoint::Token => {
-                if extract!(http::validate_route_body_head(request, method)) {
-                    *request.body_mut() = extract!(http::collect_route_body(method, stream).await);
-                }
-                crate::endpoints::token::dispatch::token_with_service(
-                    self.core.token_endpoint_handles.as_ref(),
-                    self.identity.client_ip_config.as_ref(),
-                    request,
-                    request.body(),
-                )
+                self.mtls.prepare_request(request);
+                let collect = extract!(http::validate_route_body_head(request, method));
+                Box::pin(async move {
+                    if collect {
+                        *request.body_mut() =
+                            extract!(http::collect_route_body(method, stream).await);
+                    }
+                    crate::endpoints::token::dispatch::token_with_service(
+                        self.core.token_endpoint_handles.as_ref(),
+                        self.identity.client_ip_config.as_ref(),
+                        request,
+                        request.body(),
+                    )
+                    .await
+                })
                 .await
             }
             Endpoint::Discovery => http::discovery(self.core.metadata_handles.as_ref()).await,
@@ -150,8 +161,8 @@ impl NazoAuth {
             }
             Endpoint::Jwks => http::jwks(self.core.metadata_handles.as_ref()).await,
             _ => {
-                self.dispatch_endpoint(method, params, request, stream)
-                    .await
+                self.mtls.prepare_request(request);
+                Box::pin(self.dispatch_endpoint(method, params, request, stream)).await
             }
         }
     }
