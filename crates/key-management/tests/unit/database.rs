@@ -609,7 +609,7 @@ async fn external_registration_rejects_unusable_verification_material_without_pe
             "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig",
             "kid": "invalid-external",
             "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEQEBAQEBAQEBAQE"
+            "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
         }),
         wrong_usage,
     ] {
