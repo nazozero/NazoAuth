@@ -2297,7 +2297,7 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
 
     let mut violations = Vec::new();
     let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    for package in ["authorization-server", "nazoauth"] {
+    for package in ["authorization-server", "nazoauth", "server"] {
         visit(&crates.join(package).join("src"), &mut violations);
     }
     assert!(
@@ -2310,9 +2310,9 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
 #[test]
 fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let admin_path = manifest.join("../nazoauth/src/http/admin/access_requests.rs");
-    let profile_path = manifest.join("../nazoauth/src/http/profile/access_requests.rs");
-    let delivery_path = manifest.join("../nazoauth/src/http/profile/delivery.rs");
+    let admin_path = manifest.join("../nazoauth/src/endpoints/admin/access_requests.rs");
+    let profile_path = manifest.join("../nazoauth/src/endpoints/profile/access_requests.rs");
+    let delivery_path = manifest.join("../nazoauth/src/endpoints/profile/delivery.rs");
     let identity_profile_path = manifest.join("../identity/src/profile.rs");
 
     let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
@@ -2326,7 +2326,7 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
         assert!(!source.contains("diesel::"));
         assert!(!source.contains("client_access_requests::"));
     }
-    for package in ["authorization-server", "nazoauth"] {
+    for package in ["authorization-server", "nazoauth", "server"] {
         let source = manifest.join("..").join(package).join("src");
         assert!(
             !source.join("support/access_requests.rs").exists(),
@@ -2463,10 +2463,10 @@ fn oauth_client_queries_cross_the_persistence_port_without_a_server_postgres_dep
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut violations = Vec::new();
     let mut direct_repository_calls = 0;
-    for package in ["authorization-server", "nazoauth"] {
+    for package in ["authorization-server", "nazoauth", "server"] {
         let server_root = manifest.join("..").join(package).join("src");
         let support_root = server_root.join("support");
-        let composition_root = (package == "nazoauth").then(|| server_root.join("launchers"));
+        let composition_root = (package == "server").then(|| server_root.join("launchers"));
         visit(
             &server_root,
             &support_root,
@@ -2855,7 +2855,7 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         !auth_root.contains("verify_client_secret_hash"),
         "auth must not expose a public stored-hash verifier"
     );
-    for package in ["authorization-server", "nazoauth"] {
+    for package in ["authorization-server", "nazoauth", "server"] {
         assert!(
             !manifest
                 .join("..")
@@ -2922,7 +2922,7 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
     }
 
     let mut violations = Vec::new();
-    for package in ["authorization-server", "nazoauth"] {
+    for package in ["authorization-server", "nazoauth", "server"] {
         visit(
             &manifest.join("..").join(package).join("src"),
             &mut violations,

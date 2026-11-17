@@ -1,4 +1,4 @@
-use serde_json::{Value, json};
+use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{CapabilityAdmission, MetadataCapabilities, module_admissible};
 use crate::{
@@ -126,231 +126,350 @@ pub struct ProtectedResourceMetadataInput<'a> {
     pub mtls_enabled: bool,
 }
 
-/// Builds a single immutable OAuth AS/OIDC metadata document from typed inputs.
+/// Borrows one immutable OAuth AS/OIDC metadata snapshot for direct serialization.
 #[must_use]
-pub fn authorization_server_metadata(
-    input: AuthorizationServerMetadataInput<'_>,
-    snapshot: &ActiveModuleSnapshot,
-) -> Value {
-    let capabilities = MetadataCapabilities::from_snapshot(snapshot);
-    let issuer = input.issuer;
-    let response_signing_algs: Vec<_> = input
-        .signing_algorithms
-        .response
-        .iter()
-        .copied()
-        .filter(|algorithm| {
-            !input.profile.requires_fapi2_security()
-                || crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm)
-        })
-        .collect();
-    let active_signing_algs = input.signing_algorithms.active;
-    let mut id_token_signing_algs =
-        id_token_signing_alg_values_supported(input.signing_algorithms.id_token);
-    if input.profile.requires_fapi2_security() {
-        id_token_signing_algs.retain(|algorithm| crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm));
-    }
-    let token_auth_methods = token_endpoint_auth_methods_supported(
-        input.profile,
-        input.mtls_enabled,
-        capabilities.openid4vci_issuer,
-    );
-    let revocation_auth_methods: Vec<_> = token_auth_methods
-        .iter()
-        .copied()
-        .filter(|method| *method != "attest_jwt_client_auth")
-        .collect();
-    let introspection_auth_methods: Vec<_> = revocation_auth_methods
-        .iter()
-        .copied()
-        .filter(|method| *method != "none")
-        .collect();
-    let token_auth_signing_algs = token_endpoint_auth_signing_alg_values_supported(input.profile);
-    let request_object_signing_algs =
-        request_object_signing_alg_values_supported(input.profile, active_signing_algs);
-    let mut response_modes = response_modes_supported(input.profile);
-    if !capabilities.jarm {
-        response_modes.retain(|mode| *mode != "jwt");
-    }
-    let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
-    if capabilities.native_sso {
-        scopes_supported.push("device_sso");
-    }
-    for scope in input.additional_scopes_supported.iter().chain(
-        input
-            .credential_scopes
-            .iter()
-            .filter(|_| capabilities.openid4vci_issuer),
-    ) {
-        if !scopes_supported.contains(&scope.as_str()) {
-            scopes_supported.push(scope.as_str());
-        }
-    }
-    let mut metadata = json!({
-        "issuer": issuer,
-        "authorization_endpoint": format!("{issuer}/authorize"),
-        "token_endpoint": format!("{issuer}/token"),
-        "end_session_endpoint": format!("{issuer}/logout"),
-        "pushed_authorization_request_endpoint": format!("{issuer}/par"),
-        "revocation_endpoint": format!("{issuer}/revoke"),
-        "introspection_endpoint": format!("{issuer}/introspect"),
-        "userinfo_endpoint": format!("{issuer}/userinfo"),
-        "jwks_uri": format!("{issuer}/jwks.json"),
-        "response_types_supported": ["code"],
-        "response_modes_supported": response_modes,
-        "subject_types_supported": subject_types_supported(input),
-        "id_token_signing_alg_values_supported": id_token_signing_algs,
-        "userinfo_signing_alg_values_supported": response_signing_algs,
-        "userinfo_encryption_alg_values_supported": SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        "userinfo_encryption_enc_values_supported": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        "authorization_signing_alg_values_supported": response_signing_algs,
-        "authorization_encryption_alg_values_supported": SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        "authorization_encryption_enc_values_supported": SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        "token_endpoint_auth_methods_supported": token_auth_methods,
-        "token_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
-        "revocation_endpoint_auth_methods_supported": revocation_auth_methods,
-        "revocation_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
-        "introspection_endpoint_auth_methods_supported": introspection_auth_methods,
-        "introspection_endpoint_auth_signing_alg_values_supported": token_auth_signing_algs,
-        "scopes_supported": scopes_supported,
-        "claims_supported": CLAIMS_SUPPORTED,
-        "acr_values_supported": [BASELINE_ACR_VALUE],
-        "prompt_values_supported": PROMPT_VALUES_SUPPORTED,
-        "grant_types_supported": capabilities.grant_types,
-        "protected_resources": [input.protected_resource_identifier],
-        "authorization_response_iss_parameter_supported": true,
-        "claims_parameter_supported": true,
-        "backchannel_logout_supported": true,
-        "backchannel_logout_session_supported": true,
-        "require_pushed_authorization_requests": input.require_pushed_authorization_requests,
-        "code_challenge_methods_supported": ["S256"],
-        "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS
-    });
-    for (field, values) in [
-        (
-            "id_token_encryption_alg_values_supported",
-            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        ),
-        (
-            "id_token_encryption_enc_values_supported",
-            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        ),
-        (
-            "introspection_signing_alg_values_supported",
-            active_signing_algs,
-        ),
-        (
-            "introspection_encryption_alg_values_supported",
-            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-        ),
-        (
-            "introspection_encryption_enc_values_supported",
-            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-        ),
-    ] {
-        metadata[field] = json!(values);
-    }
-
-    if capabilities.authorization_details {
-        metadata["authorization_details_types_supported"] = json!(
-            SUPPORTED_AUTHORIZATION_DETAILS_TYPES
-                .iter()
-                .copied()
-                .filter(|type_| capabilities.openid4vci_issuer || *type_ != "openid_credential")
-                .collect::<Vec<_>>()
-        );
-    }
-    if capabilities.openid4vci_issuer {
-        metadata["client_attestation_signing_alg_values_supported"] = json!(["ES256"]);
-        metadata["client_attestation_pop_signing_alg_values_supported"] = json!(["ES256"]);
-    }
-    if capabilities.device_authorization {
-        metadata["device_authorization_endpoint"] = json!(format!("{issuer}/device_authorization"));
-    }
-    if capabilities.dynamic_client_registration {
-        metadata["registration_endpoint"] = json!(format!("{issuer}/register"));
-    }
-    if capabilities.frontchannel_logout {
-        metadata["frontchannel_logout_supported"] = json!(true);
-        metadata["frontchannel_logout_session_supported"] = json!(true);
-    }
-    if capabilities.session_management {
-        metadata["check_session_iframe"] = json!(format!("{issuer}/check_session"));
-    }
-    if capabilities.ciba {
-        metadata["backchannel_authentication_endpoint"] = json!(format!("{issuer}/bc-authorize"));
-        metadata["backchannel_token_delivery_modes_supported"] = json!(["poll", "ping"]);
-        metadata["backchannel_user_code_parameter_supported"] = json!(false);
-        metadata["backchannel_authentication_request_signing_alg_values_supported"] =
-            json!(crate::CIBA_JWT_SIGNING_ALGS);
-    }
-    if capabilities.request_objects {
-        metadata["request_parameter_supported"] = json!(true);
-        metadata["request_object_signing_alg_values_supported"] =
-            json!(request_object_signing_algs);
-        metadata["request_object_encryption_alg_values_supported"] = json!(["RSA-OAEP-256"]);
-        metadata["request_object_encryption_enc_values_supported"] = json!(["A256GCM"]);
-    }
-    // External request_uri is available only with the dynamically registered,
-    // signed-Request-Object baseline. FAPI continues to require AS-issued PAR handles.
-    metadata["request_uri_parameter_supported"] = json!(
-        capabilities.dynamic_client_registration
-            && capabilities.request_objects
-            && !input.profile.requires_fapi2_security()
-    );
-    if input.mtls_enabled {
-        let mtls_base = input.mtls_endpoint_base_url;
-        metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
-        metadata["mtls_endpoint_aliases"] = json!({
-            "token_endpoint": format!("{mtls_base}/token"),
-            "pushed_authorization_request_endpoint": format!("{mtls_base}/par"),
-            "revocation_endpoint": format!("{mtls_base}/revoke"),
-            "introspection_endpoint": format!("{mtls_base}/introspect"),
-            "userinfo_endpoint": format!("{mtls_base}/userinfo")
-        });
-        if capabilities.ciba {
-            metadata["mtls_endpoint_aliases"]["backchannel_authentication_endpoint"] =
-                json!(format!("{mtls_base}/bc-authorize"));
-        }
-    }
-
-    metadata
+pub fn authorization_server_metadata<'a>(
+    input: AuthorizationServerMetadataInput<'a>,
+    snapshot: &'a ActiveModuleSnapshot,
+) -> impl Serialize + 'a {
+    AuthorizationServerMetadata { input, snapshot }
 }
 
-/// Builds RFC 9728 protected-resource metadata from the same capability snapshot.
+struct AuthorizationServerMetadata<'a> {
+    input: AuthorizationServerMetadataInput<'a>,
+    snapshot: &'a ActiveModuleSnapshot,
+}
+
+impl Serialize for AuthorizationServerMetadata<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let input = self.input;
+        let capabilities = MetadataCapabilities::from_snapshot(self.snapshot);
+        let issuer = input.issuer;
+        let response_signing_algs: Vec<_> = input
+            .signing_algorithms
+            .response
+            .iter()
+            .copied()
+            .filter(|algorithm| {
+                !input.profile.requires_fapi2_security()
+                    || crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm)
+            })
+            .collect();
+        let active_signing_algs = input.signing_algorithms.active;
+        let mut id_token_signing_algs =
+            id_token_signing_alg_values_supported(input.signing_algorithms.id_token);
+        if input.profile.requires_fapi2_security() {
+            id_token_signing_algs
+                .retain(|algorithm| crate::FAPI2_JWT_SIGNING_ALGS.contains(algorithm));
+        }
+        let token_auth_methods = token_endpoint_auth_methods_supported(
+            input.profile,
+            input.mtls_enabled,
+            capabilities.openid4vci_issuer,
+        );
+        let revocation_auth_methods: Vec<_> = token_auth_methods
+            .iter()
+            .copied()
+            .filter(|method| *method != "attest_jwt_client_auth")
+            .collect();
+        let introspection_auth_methods: Vec<_> = revocation_auth_methods
+            .iter()
+            .copied()
+            .filter(|method| *method != "none")
+            .collect();
+        let token_auth_signing_algs =
+            token_endpoint_auth_signing_alg_values_supported(input.profile);
+        let request_object_signing_algs =
+            request_object_signing_alg_values_supported(input.profile, active_signing_algs);
+        let mut response_modes = response_modes_supported(input.profile);
+        if !capabilities.jarm {
+            response_modes.retain(|mode| *mode != "jwt");
+        }
+        let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
+        if capabilities.native_sso {
+            scopes_supported.push("device_sso");
+        }
+        for scope in input.additional_scopes_supported.iter().chain(
+            input
+                .credential_scopes
+                .iter()
+                .filter(|_| capabilities.openid4vci_issuer),
+        ) {
+            if !scopes_supported.contains(&scope.as_str()) {
+                scopes_supported.push(scope.as_str());
+            }
+        }
+        // Preserve the previous JSON object's lexical field order without building
+        // an owned Value tree. Static strings and snapshot lists serialize by reference.
+        let mut metadata = serializer.serialize_map(None)?;
+        metadata.serialize_entry("acr_values_supported", &[BASELINE_ACR_VALUE])?;
+        if capabilities.authorization_details {
+            metadata.serialize_entry(
+                "authorization_details_types_supported",
+                &SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+                    .iter()
+                    .copied()
+                    .filter(|type_| capabilities.openid4vci_issuer || *type_ != "openid_credential")
+                    .collect::<Vec<_>>(),
+            )?;
+        }
+        metadata.serialize_entry(
+            "authorization_encryption_alg_values_supported",
+            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+        )?;
+        metadata.serialize_entry(
+            "authorization_encryption_enc_values_supported",
+            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+        )?;
+        metadata.serialize_entry("authorization_endpoint", &format!("{issuer}/authorize"))?;
+        metadata.serialize_entry("authorization_response_iss_parameter_supported", &true)?;
+        metadata.serialize_entry(
+            "authorization_signing_alg_values_supported",
+            &response_signing_algs,
+        )?;
+        if capabilities.ciba {
+            metadata.serialize_entry(
+                "backchannel_authentication_endpoint",
+                &format!("{issuer}/bc-authorize"),
+            )?;
+            metadata.serialize_entry(
+                "backchannel_authentication_request_signing_alg_values_supported",
+                crate::CIBA_JWT_SIGNING_ALGS,
+            )?;
+        }
+        metadata.serialize_entry("backchannel_logout_session_supported", &true)?;
+        metadata.serialize_entry("backchannel_logout_supported", &true)?;
+        if capabilities.ciba {
+            metadata.serialize_entry(
+                "backchannel_token_delivery_modes_supported",
+                &["poll", "ping"],
+            )?;
+            metadata.serialize_entry("backchannel_user_code_parameter_supported", &false)?;
+        }
+        if capabilities.session_management {
+            metadata.serialize_entry("check_session_iframe", &format!("{issuer}/check_session"))?;
+        }
+        metadata.serialize_entry("claims_parameter_supported", &true)?;
+        metadata.serialize_entry("claims_supported", &CLAIMS_SUPPORTED)?;
+        if capabilities.openid4vci_issuer {
+            metadata.serialize_entry(
+                "client_attestation_pop_signing_alg_values_supported",
+                &["ES256"],
+            )?;
+            metadata.serialize_entry(
+                "client_attestation_signing_alg_values_supported",
+                &["ES256"],
+            )?;
+        }
+        metadata.serialize_entry("code_challenge_methods_supported", &["S256"])?;
+        if capabilities.device_authorization {
+            metadata.serialize_entry(
+                "device_authorization_endpoint",
+                &format!("{issuer}/device_authorization"),
+            )?;
+        }
+        metadata.serialize_entry("dpop_signing_alg_values_supported", &DPOP_SIGNING_ALGS)?;
+        metadata.serialize_entry("end_session_endpoint", &format!("{issuer}/logout"))?;
+        if capabilities.frontchannel_logout {
+            metadata.serialize_entry("frontchannel_logout_session_supported", &true)?;
+            metadata.serialize_entry("frontchannel_logout_supported", &true)?;
+        }
+        metadata.serialize_entry("grant_types_supported", &capabilities.grant_types)?;
+        metadata.serialize_entry(
+            "id_token_encryption_alg_values_supported",
+            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+        )?;
+        metadata.serialize_entry(
+            "id_token_encryption_enc_values_supported",
+            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+        )?;
+        metadata.serialize_entry(
+            "id_token_signing_alg_values_supported",
+            &id_token_signing_algs,
+        )?;
+        metadata.serialize_entry(
+            "introspection_encryption_alg_values_supported",
+            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+        )?;
+        metadata.serialize_entry(
+            "introspection_encryption_enc_values_supported",
+            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+        )?;
+        metadata.serialize_entry("introspection_endpoint", &format!("{issuer}/introspect"))?;
+        metadata.serialize_entry(
+            "introspection_endpoint_auth_methods_supported",
+            &introspection_auth_methods,
+        )?;
+        metadata.serialize_entry(
+            "introspection_endpoint_auth_signing_alg_values_supported",
+            token_auth_signing_algs,
+        )?;
+        metadata.serialize_entry(
+            "introspection_signing_alg_values_supported",
+            active_signing_algs,
+        )?;
+        metadata.serialize_entry("issuer", issuer)?;
+        metadata.serialize_entry("jwks_uri", &format!("{issuer}/jwks.json"))?;
+        if input.mtls_enabled {
+            metadata.serialize_entry(
+                "mtls_endpoint_aliases",
+                &MtlsEndpointAliases {
+                    base: input.mtls_endpoint_base_url,
+                    ciba: capabilities.ciba,
+                },
+            )?;
+        }
+        metadata.serialize_entry("prompt_values_supported", &PROMPT_VALUES_SUPPORTED)?;
+        metadata.serialize_entry(
+            "protected_resources",
+            &[input.protected_resource_identifier],
+        )?;
+        metadata.serialize_entry(
+            "pushed_authorization_request_endpoint",
+            &format!("{issuer}/par"),
+        )?;
+        if capabilities.dynamic_client_registration {
+            metadata.serialize_entry("registration_endpoint", &format!("{issuer}/register"))?;
+        }
+        if capabilities.request_objects {
+            metadata.serialize_entry(
+                "request_object_encryption_alg_values_supported",
+                &["RSA-OAEP-256"],
+            )?;
+            metadata.serialize_entry(
+                "request_object_encryption_enc_values_supported",
+                &["A256GCM"],
+            )?;
+            metadata.serialize_entry(
+                "request_object_signing_alg_values_supported",
+                request_object_signing_algs,
+            )?;
+            metadata.serialize_entry("request_parameter_supported", &true)?;
+        }
+        // External request_uri is available only with the dynamically registered,
+        // signed-Request-Object baseline. FAPI continues to require AS-issued PAR handles.
+        metadata.serialize_entry(
+            "request_uri_parameter_supported",
+            &(capabilities.dynamic_client_registration
+                && capabilities.request_objects
+                && !input.profile.requires_fapi2_security()),
+        )?;
+        metadata.serialize_entry(
+            "require_pushed_authorization_requests",
+            &input.require_pushed_authorization_requests,
+        )?;
+        metadata.serialize_entry("response_modes_supported", &response_modes)?;
+        metadata.serialize_entry("response_types_supported", &["code"])?;
+        metadata.serialize_entry("revocation_endpoint", &format!("{issuer}/revoke"))?;
+        metadata.serialize_entry(
+            "revocation_endpoint_auth_methods_supported",
+            &revocation_auth_methods,
+        )?;
+        metadata.serialize_entry(
+            "revocation_endpoint_auth_signing_alg_values_supported",
+            token_auth_signing_algs,
+        )?;
+        metadata.serialize_entry("scopes_supported", &scopes_supported)?;
+        metadata.serialize_entry("subject_types_supported", subject_types_supported(input))?;
+        if input.mtls_enabled {
+            metadata.serialize_entry("tls_client_certificate_bound_access_tokens", &true)?;
+        }
+        metadata.serialize_entry("token_endpoint", &format!("{issuer}/token"))?;
+        metadata.serialize_entry("token_endpoint_auth_methods_supported", &token_auth_methods)?;
+        metadata.serialize_entry(
+            "token_endpoint_auth_signing_alg_values_supported",
+            token_auth_signing_algs,
+        )?;
+        metadata.serialize_entry(
+            "userinfo_encryption_alg_values_supported",
+            SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+        )?;
+        metadata.serialize_entry(
+            "userinfo_encryption_enc_values_supported",
+            SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+        )?;
+        metadata.serialize_entry("userinfo_endpoint", &format!("{issuer}/userinfo"))?;
+        metadata.serialize_entry(
+            "userinfo_signing_alg_values_supported",
+            &response_signing_algs,
+        )?;
+        metadata.end()
+    }
+}
+
+struct MtlsEndpointAliases<'a> {
+    base: &'a str,
+    ciba: bool,
+}
+
+impl Serialize for MtlsEndpointAliases<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let base = self.base;
+        let mut aliases = serializer.serialize_map(Some(if self.ciba { 6 } else { 5 }))?;
+        if self.ciba {
+            aliases.serialize_entry(
+                "backchannel_authentication_endpoint",
+                &format!("{base}/bc-authorize"),
+            )?;
+        }
+        aliases.serialize_entry("introspection_endpoint", &format!("{base}/introspect"))?;
+        aliases.serialize_entry(
+            "pushed_authorization_request_endpoint",
+            &format!("{base}/par"),
+        )?;
+        aliases.serialize_entry("revocation_endpoint", &format!("{base}/revoke"))?;
+        aliases.serialize_entry("token_endpoint", &format!("{base}/token"))?;
+        aliases.serialize_entry("userinfo_endpoint", &format!("{base}/userinfo"))?;
+        aliases.end()
+    }
+}
+
+/// Borrows the same capability snapshot for RFC 9728 metadata serialization.
 #[must_use]
-pub fn protected_resource_metadata(
-    input: ProtectedResourceMetadataInput<'_>,
-    snapshot: &ActiveModuleSnapshot,
-) -> Value {
-    let mut metadata = json!({
-        "resource": input.protected_resource_identifier,
-        "authorization_servers": [input.issuer],
-        "resource_name": "Nazo OAuth Protected Resource",
+pub fn protected_resource_metadata<'a>(
+    input: ProtectedResourceMetadataInput<'a>,
+    snapshot: &'a ActiveModuleSnapshot,
+) -> impl Serialize + 'a {
+    ProtectedResourceMetadata { input, snapshot }
+}
+
+struct ProtectedResourceMetadata<'a> {
+    input: ProtectedResourceMetadataInput<'a>,
+    snapshot: &'a ActiveModuleSnapshot,
+}
+
+impl Serialize for ProtectedResourceMetadata<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let input = self.input;
+        let mut metadata = serializer.serialize_map(None)?;
+        if module_admissible(
+            self.snapshot,
+            ModuleId::AuthorizationDetails,
+            CapabilityAdmission::NewRequest,
+        ) {
+            metadata.serialize_entry(
+                "authorization_details_types_supported",
+                &SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+                    .iter()
+                    .copied()
+                    .filter(|type_| *type_ != "openid_credential")
+                    .collect::<Vec<_>>(),
+            )?;
+        }
+        metadata.serialize_entry("authorization_servers", &[input.issuer])?;
         // This document describes the configured protected resource (the
         // FAPI resource by default), whose transport rejects form-body bearer
         // tokens. Baseline UserInfo compatibility is a different resource.
-        "bearer_methods_supported": ["header"],
-        "scopes_supported": SCOPES_SUPPORTED,
-        "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS
-    });
-    if input.mtls_enabled {
-        metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
+        metadata.serialize_entry("bearer_methods_supported", &["header"])?;
+        metadata.serialize_entry("dpop_signing_alg_values_supported", &DPOP_SIGNING_ALGS)?;
+        metadata.serialize_entry("resource", input.protected_resource_identifier)?;
+        metadata.serialize_entry("resource_name", "Nazo OAuth Protected Resource")?;
+        metadata.serialize_entry("scopes_supported", &SCOPES_SUPPORTED)?;
+        if input.mtls_enabled {
+            metadata.serialize_entry("tls_client_certificate_bound_access_tokens", &true)?;
+        }
+        metadata.end()
     }
-    if module_admissible(
-        snapshot,
-        ModuleId::AuthorizationDetails,
-        CapabilityAdmission::NewRequest,
-    ) {
-        metadata["authorization_details_types_supported"] = json!(
-            SUPPORTED_AUTHORIZATION_DETAILS_TYPES
-                .iter()
-                .copied()
-                .filter(|type_| *type_ != "openid_credential")
-                .collect::<Vec<_>>()
-        );
-    }
-    metadata
 }
 
 fn subject_types_supported(input: AuthorizationServerMetadataInput<'_>) -> &'static [&'static str] {

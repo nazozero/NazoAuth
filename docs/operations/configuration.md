@@ -79,7 +79,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |
 | `UI_ENABLED` | `true` | Host the default or custom static UI under `/ui/`; set false for API-only or external UI hosting |
 | `UI_STATIC_DIR` | `${DATA_DIR}/ui/current` | Existing custom UI directory. When unset, first use installs official NazoAuthWeb; existing files are preserved and can be replaced without restarting |
-| `CLIENT_SECRET_PEPPER` | generated under `DATA_DIR/secrets` | Explicit values override the persisted generated value; keep it stable and back it up with the database |
+| `CLIENT_SECRET_PEPPER` | generated under `DATA_DIR/secrets` | Explicit values override the persisted generated value; an explicitly empty value is rejected, including for loopback HTTP. Keep it stable and back it up with the database |
 | `PASSWORD_HASH_MAX_CONCURRENCY` | `8` | Maximum concurrent Argon2 password verifications per process; tune from CPU and memory capacity, not by lowering Argon2 cost |
 | `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | `100` | Maximum bounded wait for a password-verification slot before returning `temporarily_unavailable` |
 | `RATE_LIMIT_WINDOW_SECONDS` | `60` | Window for the broad source-IP admission buckets |
@@ -495,6 +495,12 @@ SDK retry policies are explicitly disabled. `OTEL_EXPORTER_OTLP_TIMEOUT` is the
 per-request timeout in milliseconds, not an additional retry budget. Required
 audit export and its acceptance barriers remain a separate pipeline.
 
+HTTP request traces and metrics use route patterns for `http.route`, never the
+raw path or query. Host-owned UI and other explicit routes retain their Actix
+patterns. Other known NazoAuth paths use the canonical manifest pattern,
+including `{*tail}` for catch-all parameters; unknown paths and service errors
+use `unmatched`.
+
 ### SCIM denied-credential admission
 
 `SCIM_DENIAL_RATE_LIMIT_MAX_REQUESTS` defaults to 60 denied attempts per source
@@ -597,3 +603,14 @@ provenance. A Request Object without `kid` selects the current advertised key;
 clients retaining an older recipient must send its `kid`. Existing recipient
 records without creation metadata start their schedule at the durable upgrade
 boundary. External signing keys remain operator-owned.
+
+## Inbound HTTP versions
+
+The native server uses official Actix releases with inbound HTTP/2 disabled in
+the build. Plaintext, direct TLS and direct mTLS listeners serve HTTP/1.1; startup
+logs state this explicitly. TLS 1.3 and client-certificate authentication are
+unchanged. There is no environment option to activate the affected legacy h2
+backend. HTTP/2-only clients must use a safe terminating proxy with HTTP/1.1
+upstream and the documented trusted-proxy certificate configuration. Outbound
+HTTP clients are independent and may negotiate HTTP/2 using patched dependencies.
+See [embedding and dependency contracts](../integration/rust-embedding.md).

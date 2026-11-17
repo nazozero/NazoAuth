@@ -167,6 +167,9 @@ jobs:
           -v ON_ERROR_STOP=1
           -c 'CREATE DATABASE nazo_audit_test'
 
+      - name: Check native transport dependencies
+        run: python3 scripts/check_native_transport.py
+
       - name: Format
         run: cargo fmt --check
 
@@ -183,9 +186,9 @@ jobs:
         # These four tests require the uninstrumented server's timing. All
         # remaining lib/bin/integration tests belong to the coverage job.
         run: |
-          cargo test --locked --all-features -p nazoauth --test tenant_directory_convergence \
+          cargo test --locked --all-features -p nazo-server --test tenant_directory_convergence \
             two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures -- --nocapture
-          cargo test --locked --all-features -p nazoauth --test token_issuance_simplification -- --nocapture
+          cargo test --locked --all-features -p nazo-server --test token_issuance_simplification -- --nocapture
 
       - name: Test documentation examples outside coverage
         if: github.event_name == 'workflow_dispatch'
@@ -250,6 +253,9 @@ jobs:
         run: python3 scripts/ci_build_jobs.py >> "$GITHUB_ENV"
       - name: Install native dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
+      - name: Check native transport dependencies
+        run: python3 scripts/check_native_transport.py
+
       - name: Format
         run: cargo fmt --check
       - name: Clippy all targets

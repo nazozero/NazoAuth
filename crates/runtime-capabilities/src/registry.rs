@@ -21,7 +21,7 @@ mod transition;
 
 /// Coordinates durable desired state, one process instance's lifecycle, and
 /// the lock-free admission snapshot used by request handlers.
-pub struct RuntimeModuleRegistry<R, L> {
+pub struct RuntimeModuleRegistry<R, L: ?Sized> {
     repository: Arc<R>,
     lifecycle: Arc<L>,
     catalog: ModuleCatalog,
@@ -34,7 +34,7 @@ pub struct RuntimeModuleRegistry<R, L> {
 impl<R, L> RuntimeModuleRegistry<R, L>
 where
     R: ModuleStateRepository,
-    L: ModuleLifecycle,
+    L: ModuleLifecycle + ?Sized,
 {
     #[must_use]
     pub fn new(

@@ -1,0 +1,29 @@
+// Dynamic client registration is kept as one transport-facing module for
+// callers and route wiring. Bearer parsing, IP resolution, extraction, and
+// response presentation stay here; business operations live in the application.
+
+mod auth;
+mod handlers;
+mod ip;
+mod response;
+mod types;
+
+pub use handlers::{
+    client_configuration_delete, client_configuration_get, client_configuration_put,
+    dynamic_client_registration,
+};
+#[cfg(any(test, feature = "test-support"))]
+pub use ip::parse_forwarded_for_value;
+pub use ip::{
+    ClientIpConfig, ClientIpHeaderMode, ClientIpParseError, IpCidr, client_ip_with_config,
+    client_ip_with_context, parse_trusted_proxy_cidrs, request_from_trusted_proxy_cidrs,
+};
+#[cfg(any(test, feature = "test-support"))]
+pub use nazo_auth::{
+    DynamicRegistrationClientStore, DynamicRegistrationDependencyError, DynamicRegistrationFuture,
+};
+pub use types::DynamicRegistrationEndpoint;
+
+#[cfg(test)]
+#[path = "../../tests/unit/http/dynamic_client_registration.rs"]
+mod tests;

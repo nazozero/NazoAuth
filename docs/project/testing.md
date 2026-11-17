@@ -86,12 +86,45 @@ Run the structure check before the Rust quality gate below.
 
 ## Verification
 
+### Framework adapter conformance
+
+The facade's `conformance` feature exposes reusable cases and assertion helpers
+under `nazoauth::integration::conformance`. The cases call production routing and
+presenters; framework tests only convert transport values. The Actix suite
+checks canonical registration, raw targets and duplicate values, unchanged
+`Bytes` storage, decoder bounds, real connection facts, and host security headers.
+The native fixture compares public `NazoAuth::handle` with the production Actix
+registration with absent process routes, registered but disabled tenant
+capabilities, and an enabled credential issuer. The credential fixture creates
+offers and tokens through the public facade, then compares the first JSON and
+encrypted JWT credential responses with their durable retries through both
+transports. See the [adapter guide](../integration/rust-embedding.md).
+
+```sh
+python3 scripts/check_native_transport.py
+cargo test -p nazo-http-actix --lib
+cargo test -p nazoauth --lib
+cargo test -p nazo-server --lib facade_conformance
+```
+
+The dependency check verifies official Actix sources and rejects feature
+unification that re-enables inbound HTTP/2 or an affected h2 version. The direct
+TLS/mTLS test verifies HTTP/1.1 negotiation and rejection of an h2-only client.
+Metadata conversion tests preserve raw URI/header semantics; only body and replay
+bytes require pointer identity across the HTTP 0.2/1.x boundary.
+
+The last command uses the ordinary test PostgreSQL and Valkey configuration.
+The separate `test-support` feature is permitted only in the native host's dev
+dependency; adapters cannot use internal endpoint handles in place of this kit.
+
 ### Portable inner packages and runtime behavior
 
 The [WASM portability workflow](../../.github/workflows/wasm-portability.yml)
-checks the domain/application package set owned by
+checks the domain/application/facade package set owned by
 `scripts/verify_static_contracts.py`. It runs on pull requests, main pushes and
 manual dispatch without a database, cache, HTTP server, or native task scheduler.
+The `nazoauth` facade participates in this gate; the `nazo-server` native host
+and concrete HTTP/storage adapters do not.
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -301,7 +334,7 @@ Targeted suites with their own entry points:
   legacy parsing checks. `crates/state-store-valkey/tests/federation_binding.rs`
   defines real-Valkey matching-take concurrency, exact raw/deadline preservation,
   matching-owner typed corruption and the single-EVAL call-path contract.
-- `crates/nazoauth/tests/unit/http/auth/federation/browser_binding.rs` defines
+- `crates/server/tests/unit/http/auth/federation/browser_binding.rs` defines
   canonical cookie/security attributes, missing-cookie zero-store calls,
   backend failure mapping, OIDC/social attacker-to-other-browser rejection with
   subsequent owner completion, parallel established-cookie starts, and the
@@ -321,7 +354,7 @@ Targeted suites with their own entry points:
   Docker runner. The database login needs CREATE DATABASE and CREATE ROLE.
   Existing controller, recovery, MFA and client suites verify current runtime
   behavior against complete isolated databases.
-- `crates/nazoauth/tests/unit/http/token/authorization_code/identity.rs` covers
+- `crates/server/tests/unit/http/token/authorization_code/identity.rs` covers
   real issuance with a hidden commit ACK, stable identity after cache restoration,
   fresh signed DPoP holder checks with missing or expired Pending payload, mTLS
   receipt matching after current binding is disabled, and historical payload or
@@ -344,7 +377,7 @@ Targeted suites with their own entry points:
   clear ACK. Use separate fault tests for driver packet loss and crash recovery.
 - `crates/state-store-valkey/tests/replay_contract.rs` covers real client-
   attestation owner-clock expiry, shared token/PAR consumption and concurrent NX.
-  `crates/nazoauth/tests/unit/http/token/dispatch/attestation.rs` combines signed
+  `crates/server/tests/unit/http/token/dispatch/attestation.rs` combines signed
   input with real Valkey expiry and covers post-NX Unknown in both endpoints,
   including the retained physical marker and cross-endpoint rejection. These
   host cases need both isolated PostgreSQL and Valkey; semantic ACK injection
@@ -361,10 +394,10 @@ Targeted suites with their own entry points:
   MFA repository tests verify that audit failure restores the verifier deleted
   by a failed consumption transaction. The baseline upgrade preserves existing
   credential facts without replaying historical compaction migrations.
-- `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
+- `crates/server/tests/token_issuance_simplification.rs` drives the real
   spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
-- `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path
-  benchmark: run `cargo test -p nazoauth --test token_hotpath_perf -- --ignored`
+- `crates/server/tests/token_hotpath_perf.rs` is the opt-in hot-path
+  benchmark: run `cargo test -p nazo-server --test token_hotpath_perf -- --ignored`
   with `NAZO_PERF_OUTPUT`, an isolated
   PostgreSQL with `pg_stat_statements` preloaded
   (`NAZO_TEST_DATABASE_URL`/`DATABASE_URL`), and `NAZO_TEST_VALKEY_URL`/
@@ -432,7 +465,7 @@ packages from the final image before scanning its exported archive.
 
 ## Avatar focused regressions
 
-Local storage definitions in `crates/nazoauth/tests/unit/adapters/avatar_files.rs`
+Local storage definitions in `crates/server/tests/unit/adapters/avatar_files.rs`
 exercise immutable preparation, unique CAS loser cleanup, repository errors
 before/after a committed reference, cancellation at each observed I/O suspension
 and either side of CAS, deletion ordering, restart/legacy fallback, tenant/user

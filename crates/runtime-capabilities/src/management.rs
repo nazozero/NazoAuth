@@ -53,7 +53,7 @@ pub enum RuntimeModuleManagementError<E> {
     MissingDesiredState(ModuleId),
 }
 
-pub struct RuntimeModuleManagement<R, L> {
+pub struct RuntimeModuleManagement<R, L: ?Sized> {
     repository: Arc<R>,
     registry: Arc<RuntimeModuleRegistry<R, L>>,
     catalog: ModuleCatalog,
@@ -63,7 +63,7 @@ pub struct RuntimeModuleManagement<R, L> {
 impl<R, L> RuntimeModuleManagement<R, L>
 where
     R: ModuleStateRepository,
-    L: ModuleLifecycle,
+    L: ModuleLifecycle + ?Sized,
 {
     #[must_use]
     pub fn new(

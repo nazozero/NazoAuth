@@ -22,6 +22,7 @@ set can be scanned from one place.
 | Configuration | [operations/configuration.md](operations/configuration.md) |
 | Release platform support | [operations/platform-support.md](operations/platform-support.md) |
 | OpenID Connect integration | [integration/openid-connect.md](integration/openid-connect.md) |
+| Rust embedding and framework adapters | [integration/rust-embedding.md](integration/rust-embedding.md) |
 | Chinese OpenID Connect integration | [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) |
 | Protocol and profile status | [protocol/profile-matrix.md](protocol/profile-matrix.md) |
 | Composable capability policy | [protocol/composable-capability-policy.md](protocol/composable-capability-policy.md) |
@@ -88,6 +89,7 @@ set can be scanned from one place.
 | --- | --- |
 | [integration/openid-connect.md](integration/openid-connect.md) | OpenID Connect relying-party integration guide and security boundaries. |
 | [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) | Chinese OpenID Connect relying-party integration guide and security boundaries. |
+| [integration/rust-embedding.md](integration/rust-embedding.md) | Framework-neutral embedding, transport contract and reusable adapter conformance checks. |
 
 ### Protocol
 

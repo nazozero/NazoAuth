@@ -126,6 +126,12 @@ pub trait SectorIdentifierResolverPort: Send + Sync {
     fn resolve<'a>(&'a self, uri: &'a str) -> SectorIdentifierFuture<'a>;
 }
 
+impl<T: SectorIdentifierResolverPort + ?Sized> SectorIdentifierResolverPort for std::sync::Arc<T> {
+    fn resolve<'a>(&'a self, uri: &'a str) -> SectorIdentifierFuture<'a> {
+        self.as_ref().resolve(uri)
+    }
+}
+
 /// Cryptographic operations are isolated from protocol validation and use-case policy.
 pub trait AdminClientCryptoPort: Send + Sync {
     fn response_signing_algorithms(&self) -> Vec<String>;

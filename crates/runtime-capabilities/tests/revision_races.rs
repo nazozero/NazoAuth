@@ -342,7 +342,7 @@ fn catalog() -> ModuleCatalog {
 fn registry(
     repository: Arc<Repository>,
     accepting: bool,
-) -> RuntimeModuleRegistry<Repository, NoopModuleLifecycle> {
+) -> RuntimeModuleRegistry<Repository, dyn ModuleLifecycle> {
     RuntimeModuleRegistry::new(
         repository,
         Arc::new(NoopModuleLifecycle),
@@ -523,7 +523,7 @@ fn run_stale_disable(
     pause_at: usize,
 ) -> (
     Arc<Repository>,
-    Arc<RuntimeModuleRegistry<Repository, NoopModuleLifecycle>>,
+    Arc<RuntimeModuleRegistry<Repository, dyn ModuleLifecycle>>,
 ) {
     let repository = Arc::new(Repository::new(pause_at));
     repository.force_desired(7, DesiredMode::Disabled);

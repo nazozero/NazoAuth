@@ -1,0 +1,69 @@
+//! Authorization consent HTTP projection and cookie extraction.
+
+use crate::http::Request as HttpRequest;
+use crate::http::Response as HttpResponse;
+use crate::http::{cookie_value, json_response_no_store, oauth_endpoint_error_response};
+use nazo_auth::ConsentPayload;
+use nazo_identity::SessionId;
+use nazo_oauth_server::authorization::AuthorizationApplication;
+use serde::Serialize;
+use std::collections::HashMap;
+
+use crate::endpoints::authorization::AuthorizationEndpoint;
+use crate::endpoints::sessions::SessionHttpConfig;
+
+pub fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) -> HttpResponse {
+    #[derive(Serialize)]
+    struct ConsentPage<'a> {
+        request_id: String,
+        client_id: String,
+        client_name: String,
+        redirect_uri: String,
+        scopes: Vec<String>,
+        userinfo_claims: Vec<&'a str>,
+        id_token_claims: Vec<&'a str>,
+        authorization_details: serde_json::Value,
+        csrf_token: Option<String>,
+    }
+    json_response_no_store(ConsentPage {
+        request_id: payload.request_id,
+        client_id: payload.client_id,
+        client_name: payload.client_name,
+        redirect_uri: payload.redirect_uri,
+        scopes: payload.scopes,
+        userinfo_claims: payload.userinfo_claim_requests.names(),
+        id_token_claims: payload.id_token_claim_requests.names(),
+        authorization_details: payload.authorization_details,
+        csrf_token,
+    })
+}
+
+pub async fn authorize_consent(
+    endpoint: &AuthorizationEndpoint,
+    req: &HttpRequest,
+    q: HashMap<String, String>,
+) -> HttpResponse {
+    authorize_consent_with_context(
+        endpoint.application.as_ref(),
+        &endpoint.session_http,
+        req,
+        q,
+    )
+    .await
+}
+
+pub async fn authorize_consent_with_context(
+    application: &AuthorizationApplication,
+    session_http: &SessionHttpConfig,
+    req: &HttpRequest,
+    q: HashMap<String, String>,
+) -> HttpResponse {
+    let session_id = cookie_value(req, session_http.session_cookie_name()).map(SessionId::new);
+    let request_id = q.get("request_id").map(String::as_str);
+    match application.consent(session_id.as_ref(), request_id).await {
+        Ok(payload) => {
+            consent_page_response(payload, cookie_value(req, session_http.csrf_cookie_name()))
+        }
+        Err(error) => oauth_endpoint_error_response(error),
+    }
+}

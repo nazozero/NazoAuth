@@ -5,7 +5,6 @@ members = [
     "crates/key-management",
     "crates/openid4vci",
     "crates/openid4vp",
-    "crates/openid4vc-http-actix",
     "crates/persistence",
     "crates/persistence-postgres",
     "crates/authorization-server",
@@ -13,6 +12,7 @@ members = [
     "crates/authorization-server-valkey",
     "crates/authorization-server-object-store",
     "crates/nazoauth",
+    "crates/server",
     "crates/operator-protocol",
     "crates/http-signatures",
     "crates/http-actix",
@@ -24,7 +24,7 @@ members = [
     "crates/crypto",
 ]
 default-members = [
-    "crates/nazoauth",
+    "crates/server",
 ]
 resolver = "3"
 exclude = ["fuzz"]
@@ -37,10 +37,20 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/nazozero/NazoAuth"
 
 [workspace.dependencies]
+bytes = "1.12.1"
+cookie = "0.16.2"
+mime = "0.3.17"
+matchit = "0.9.2"
+percent-encoding = "2.3.2"
+multer = { version = "3.1.0", default-features = false }
+encoding_rs = "0.8.35"
+serde_urlencoded = "0.7.1"
+nazoauth = { version = "0.3.9", path = "crates/nazoauth" }
 hex = "0.4.3"
-actix-cors = "0.7.2"
 actix-files = "0.7.4"
-actix-web = "4.19.0"
+# Keep the native listener on HTTP/1.1 while upstream HTTP/2 uses affected h2 0.3.
+# Explicit features preserve the other framework capabilities without enabling http2.
+actix-web = { version = "4.19.0", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "compress-zstd", "cookies", "unicode", "compat", "ws"] }
 actix-tls = "3.6.1"
 anyhow = "1.0.104"
 aes-gcm = "0.11.1"
@@ -81,7 +91,6 @@ nazo-identity = { version = "0.3.9", path = "crates/identity" }
 nazo-key-management = { version = "0.3.9", path = "crates/key-management" }
 nazo-openid4vci = { version = "0.3.9", path = "crates/openid4vci" }
 nazo-openid4vp = { version = "0.3.9", path = "crates/openid4vp" }
-nazo-openid4vc-http-actix = { version = "0.3.9", path = "crates/openid4vc-http-actix" }
 nazo-oauth-server = { version = "0.3.9", path = "crates/authorization-server" }
 nazo-oauth-server-postgres = { version = "0.3.9", path = "crates/authorization-server-postgres" }
 nazo-oauth-server-valkey = { version = "0.3.9", path = "crates/authorization-server-valkey" }
@@ -143,9 +152,7 @@ codegen-units = 1
 strip = "symbols"
 panic = "abort"
 
-# Retire the Actix port once a stable upstream HTTP/2 configuration omits h2 0.3.
 [patch.crates-io]
-actix-http = { git = "https://github.com/nazozero/actix-web", rev = "38157c15d5391509d1d752f5304c3cb1eeb3d234" }
 # TODO: replace this fork when a maintained release uses patched crypto-bigint
 # and preserves the coset 0.4 and borrowed-transcript contracts.
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }

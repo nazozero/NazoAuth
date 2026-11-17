@@ -10,7 +10,7 @@ use super::RuntimeModuleRegistry;
 impl<R, L> RuntimeModuleRegistry<R, L>
 where
     R: ModuleStateRepository,
-    L: ModuleLifecycle,
+    L: ModuleLifecycle + ?Sized,
 {
     /// Poll durable state once for this instance. The snapshot only eliminates
     /// settled work; every transition still reads and fences its current state.

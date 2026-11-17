@@ -45,6 +45,17 @@ fn resource_input(mtls_enabled: bool) -> ProtectedResourceMetadataInput<'static>
     }
 }
 
+fn json_value(document: impl serde::Serialize) -> Value {
+    let bytes = serde_json::to_vec(&document).expect("metadata must serialize");
+    let value: Value = serde_json::from_slice(&bytes).expect("metadata must be JSON");
+    assert_eq!(
+        bytes,
+        serde_json::to_vec(&value).expect("metadata JSON must serialize"),
+        "metadata must preserve lexical field order"
+    );
+    value
+}
+
 fn merge(parts: impl IntoIterator<Item = Value>) -> Value {
     let mut merged = serde_json::Map::new();
     for part in parts {
@@ -59,14 +70,14 @@ fn merge(parts: impl IntoIterator<Item = Value>) -> Value {
 
 #[test]
 fn baseline_document_shape_is_locked() {
-    let actual = authorization_server_metadata(
+    let actual = json_value(authorization_server_metadata(
         input(),
         &snapshot([
             ModuleId::JwtBearerGrant,
             ModuleId::TokenExchange,
             ModuleId::Jarm,
         ]),
-    );
+    ));
 
     assert_eq!(
         actual,
@@ -203,7 +214,7 @@ fn runtime_module_advertisements_are_table_driven() {
         },
     ];
 
-    let disabled = authorization_server_metadata(input(), &snapshot([]));
+    let disabled = json_value(authorization_server_metadata(input(), &snapshot([])));
     for case in cases {
         assert!(
             disabled.get(case.field).is_none(),
@@ -211,7 +222,10 @@ fn runtime_module_advertisements_are_table_driven() {
             case.field,
             case.module
         );
-        let enabled = authorization_server_metadata(input(), &snapshot([case.module]));
+        let enabled = json_value(authorization_server_metadata(
+            input(),
+            &snapshot([case.module]),
+        ));
         assert_eq!(
             enabled.get(case.field),
             Some(&case.expected),
@@ -224,7 +238,10 @@ fn runtime_module_advertisements_are_table_driven() {
 
 #[test]
 fn native_sso_does_not_emit_nonstandard_discovery_field() {
-    let enabled = authorization_server_metadata(input(), &snapshot([ModuleId::NativeSso]));
+    let enabled = json_value(authorization_server_metadata(
+        input(),
+        &snapshot([ModuleId::NativeSso]),
+    ));
 
     assert!(enabled.get("native_sso_supported").is_none());
     assert!(
@@ -255,7 +272,7 @@ fn grant_modules_change_only_the_typed_grant_catalog() {
     ];
 
     for (module, grant) in cases {
-        let metadata = authorization_server_metadata(input(), &snapshot([module]));
+        let metadata = json_value(authorization_server_metadata(input(), &snapshot([module])));
         let grants = metadata["grant_types_supported"]
             .as_array()
             .expect("grant catalog must be an array");
@@ -265,8 +282,11 @@ fn grant_modules_change_only_the_typed_grant_catalog() {
 
 #[test]
 fn jarm_capability_controls_jwt_response_mode() {
-    let disabled = authorization_server_metadata(input(), &snapshot([]));
-    let enabled = authorization_server_metadata(input(), &snapshot([ModuleId::Jarm]));
+    let disabled = json_value(authorization_server_metadata(input(), &snapshot([])));
+    let enabled = json_value(authorization_server_metadata(
+        input(),
+        &snapshot([ModuleId::Jarm]),
+    ));
 
     assert_eq!(
         disabled["response_modes_supported"],
@@ -280,17 +300,19 @@ fn jarm_capability_controls_jwt_response_mode() {
 
 #[test]
 fn external_request_uri_is_advertised_only_with_both_required_modules_on_baseline() {
-    let baseline = authorization_server_metadata(
+    let baseline = json_value(authorization_server_metadata(
         input(),
         &snapshot([
             ModuleId::DynamicClientRegistration,
             ModuleId::RequestObjects,
         ]),
-    );
+    ));
     assert_eq!(baseline["request_uri_parameter_supported"], true);
 
-    let request_objects_only =
-        authorization_server_metadata(input(), &snapshot([ModuleId::RequestObjects]));
+    let request_objects_only = json_value(authorization_server_metadata(
+        input(),
+        &snapshot([ModuleId::RequestObjects]),
+    ));
     assert_eq!(
         request_objects_only["request_uri_parameter_supported"],
         false
@@ -298,13 +320,13 @@ fn external_request_uri_is_advertised_only_with_both_required_modules_on_baselin
 
     let mut fapi = input();
     fapi.profile = MetadataAuthorizationServerProfile::Fapi2Security;
-    let fapi = authorization_server_metadata(
+    let fapi = json_value(authorization_server_metadata(
         fapi,
         &snapshot([
             ModuleId::DynamicClientRegistration,
             ModuleId::RequestObjects,
         ]),
-    );
+    ));
     assert_eq!(fapi["request_uri_parameter_supported"], false);
 }
 
@@ -315,7 +337,7 @@ fn draining_modules_are_not_advertised_as_accepting_new_transactions() {
         accepting: BTreeSet::new(),
         draining: ModuleId::ALL.into_iter().collect(),
     };
-    let metadata = authorization_server_metadata(input(), &snapshot);
+    let metadata = json_value(authorization_server_metadata(input(), &snapshot));
 
     assert_eq!(
         metadata["grant_types_supported"],
@@ -337,10 +359,10 @@ fn draining_modules_are_not_advertised_as_accepting_new_transactions() {
 
 #[test]
 fn non_standard_http_signatures_and_scim_do_not_mutate_standard_metadata() {
-    let baseline = authorization_server_metadata(input(), &snapshot([]));
+    let baseline = json_value(authorization_server_metadata(input(), &snapshot([])));
     for module in [ModuleId::HttpMessageSignatures, ModuleId::Scim] {
         assert_eq!(
-            authorization_server_metadata(input(), &snapshot([module])),
+            json_value(authorization_server_metadata(input(), &snapshot([module]))),
             baseline,
             "{module:?} must not invent a standard discovery field"
         );
@@ -350,18 +372,18 @@ fn non_standard_http_signatures_and_scim_do_not_mutate_standard_metadata() {
 #[test]
 fn ciba_metadata_is_complete_and_profile_scoped() {
     let snapshot = snapshot([ModuleId::Ciba]);
-    let baseline = authorization_server_metadata(input(), &snapshot);
+    let baseline = json_value(authorization_server_metadata(input(), &snapshot));
     assert_eq!(
         baseline["backchannel_token_delivery_modes_supported"],
         json!(["poll", "ping"])
     );
-    let mtls = authorization_server_metadata(
+    let mtls = json_value(authorization_server_metadata(
         AuthorizationServerMetadataInput {
             mtls_enabled: true,
             ..input()
         },
         &snapshot,
-    );
+    ));
     assert_eq!(
         mtls["mtls_endpoint_aliases"]["backchannel_authentication_endpoint"],
         json!("https://mtls.issuer.example/bc-authorize")
@@ -375,13 +397,13 @@ fn ciba_metadata_is_complete_and_profile_scoped() {
         json!(["ES256", "PS256"])
     );
 
-    let hardened = authorization_server_metadata(
+    let hardened = json_value(authorization_server_metadata(
         AuthorizationServerMetadataInput {
             ciba_profile: CibaMetadataProfile::Fapi2Ciba,
             ..input()
         },
         &snapshot,
-    );
+    ));
     assert_eq!(
         hardened["token_endpoint_auth_methods_supported"],
         baseline["token_endpoint_auth_methods_supported"]
@@ -425,7 +447,7 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
     ];
 
     for (profile, response_modes, request_algs, _signed_introspection) in cases {
-        let metadata = authorization_server_metadata(
+        let metadata = json_value(authorization_server_metadata(
             AuthorizationServerMetadataInput {
                 profile,
                 require_pushed_authorization_requests: true,
@@ -437,7 +459,7 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
                 ..input()
             },
             &snapshot,
-        );
+        ));
         assert_eq!(metadata["response_modes_supported"], response_modes);
         assert_eq!(
             metadata["request_object_signing_alg_values_supported"],
@@ -457,13 +479,13 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
 
 #[test]
 fn composable_metadata_advertises_the_union_of_supported_client_policies() {
-    let metadata = authorization_server_metadata(
+    let metadata = json_value(authorization_server_metadata(
         AuthorizationServerMetadataInput {
             profile: MetadataAuthorizationServerProfile::Composable,
             ..input()
         },
         &snapshot([ModuleId::Jarm, ModuleId::RequestObjects]),
-    );
+    ));
 
     assert_eq!(
         metadata["response_modes_supported"],
@@ -492,7 +514,7 @@ fn composable_metadata_advertises_the_union_of_supported_client_policies() {
 fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preserved() {
     const ACTIVE_PS256: &[&str] = &["PS256"];
     const RESPONSE: &[&str] = &["PS256", "EdDSA"];
-    let metadata = authorization_server_metadata(
+    let metadata = json_value(authorization_server_metadata(
         AuthorizationServerMetadataInput {
             mtls_enabled: true,
             pairwise_subject_enabled: true,
@@ -504,7 +526,7 @@ fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preser
             ..input()
         },
         &snapshot([]),
-    );
+    ));
 
     assert_eq!(
         metadata["subject_types_supported"],
@@ -541,7 +563,7 @@ fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preser
 fn id_token_metadata_includes_non_primary_eligible_signing_keys() {
     const ID_TOKEN_ALGORITHMS: &[&str] = &["RS256", "PS256"];
     const RESPONSE_ALGORITHMS: &[&str] = &["RS256", "PS256"];
-    let metadata = authorization_server_metadata(
+    let metadata = json_value(authorization_server_metadata(
         AuthorizationServerMetadataInput {
             signing_algorithms: MetadataSigningAlgorithms {
                 active: ACTIVE_RS256,
@@ -551,7 +573,7 @@ fn id_token_metadata_includes_non_primary_eligible_signing_keys() {
             ..input()
         },
         &snapshot([]),
-    );
+    ));
 
     assert_eq!(
         metadata["id_token_signing_alg_values_supported"],
@@ -561,7 +583,10 @@ fn id_token_metadata_includes_non_primary_eligible_signing_keys() {
 
 #[test]
 fn protected_resource_metadata_uses_the_same_rar_snapshot() {
-    let disabled = protected_resource_metadata(resource_input(false), &snapshot([]));
+    let disabled = json_value(protected_resource_metadata(
+        resource_input(false),
+        &snapshot([]),
+    ));
     assert_eq!(
         disabled,
         json!({
@@ -576,10 +601,10 @@ fn protected_resource_metadata_uses_the_same_rar_snapshot() {
         })
     );
 
-    let enabled = protected_resource_metadata(
+    let enabled = json_value(protected_resource_metadata(
         resource_input(true),
         &snapshot([ModuleId::AuthorizationDetails]),
-    );
+    ));
     assert_eq!(
         enabled["authorization_details_types_supported"],
         json!(["account_information", "payment_initiation"])
@@ -600,14 +625,14 @@ fn token_management_auth_metadata_projects_its_actual_endpoint_policies() {
                 } else {
                     vec![]
                 });
-                let metadata = authorization_server_metadata(
+                let metadata = json_value(authorization_server_metadata(
                     AuthorizationServerMetadataInput {
                         profile,
                         mtls_enabled,
                         ..input()
                     },
                     &snapshot,
-                );
+                ));
                 let token = metadata["token_endpoint_auth_methods_supported"]
                     .as_array()
                     .unwrap();
@@ -656,7 +681,7 @@ fn discovery_scopes_merge_public_configuration_and_active_credential_scopes() {
     };
     let active = snapshot([ModuleId::Openid4vciIssuer]);
     assert_eq!(
-        authorization_server_metadata(input, &active)["scopes_supported"],
+        json_value(authorization_server_metadata(input, &active))["scopes_supported"],
         json!([
             "openid",
             "profile",
@@ -677,7 +702,7 @@ fn discovery_scopes_merge_public_configuration_and_active_credential_scopes() {
         },
     ] {
         assert_eq!(
-            authorization_server_metadata(input, &inactive)["scopes_supported"],
+            json_value(authorization_server_metadata(input, &inactive))["scopes_supported"],
             json!([
                 "openid",
                 "profile",

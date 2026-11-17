@@ -11,7 +11,7 @@ use super::RuntimeModuleRegistry;
 impl<R, L> RuntimeModuleRegistry<R, L>
 where
     R: ModuleStateRepository,
-    L: ModuleLifecycle,
+    L: ModuleLifecycle + ?Sized,
 {
     #[must_use]
     pub fn snapshot(&self) -> Arc<ActiveModuleSnapshot> {

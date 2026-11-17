@@ -1,0 +1,69 @@
+//! CSRF token 刷新端点。
+use crate::endpoints::sessions::SessionProfileHandles;
+use crate::http::Request as HttpRequest;
+use crate::http::Response as HttpResponse;
+
+use crate::http::json_response;
+use crate::http::{make_cookie, with_cookie_headers};
+use nazo_oauth_server::crypto::random_urlsafe_token;
+
+use serde::Serialize;
+// 只有已登录用户可以刷新 token，避免匿名请求制造无意义状态。
+
+#[derive(Clone, Debug)]
+pub struct CsrfHttpConfig {
+    pub cookie_name: Box<str>,
+    pub session_ttl_seconds: u64,
+    pub cookie_secure: bool,
+}
+
+impl CsrfHttpConfig {
+    pub fn new(
+        cookie_name: impl Into<Box<str>>,
+        session_ttl_seconds: u64,
+        cookie_secure: bool,
+    ) -> Self {
+        Self {
+            cookie_name: cookie_name.into(),
+            session_ttl_seconds,
+            cookie_secure,
+        }
+    }
+}
+
+/// 为当前会话生成新的 CSRF token。
+pub async fn csrf(
+    sessions: &SessionProfileHandles,
+    config: &CsrfHttpConfig,
+    req: &HttpRequest,
+) -> HttpResponse {
+    if let Err(response) = sessions.current_session_or_login_required(req).await {
+        return response;
+    };
+
+    let csrf_token = random_urlsafe_token();
+    csrf_response(config, csrf_token)
+}
+
+pub fn csrf_response(config: &CsrfHttpConfig, csrf_token: String) -> HttpResponse {
+    #[derive(Serialize)]
+    struct CsrfResponse<'a> {
+        csrf_token: &'a str,
+    }
+    with_cookie_headers(
+        json_response(CsrfResponse {
+            csrf_token: &csrf_token,
+        }),
+        &[make_cookie(
+            &config.cookie_name,
+            &csrf_token,
+            false,
+            config.session_ttl_seconds,
+            config.cookie_secure,
+        )],
+    )
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/endpoints/auth/csrf.rs"]
+mod tests;

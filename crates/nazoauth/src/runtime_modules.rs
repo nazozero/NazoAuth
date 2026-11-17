@@ -2,8 +2,6 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
-use actix_web::web;
-use futures_util::{StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nazo_oauth_server::contracts::runtime_modules::{
     RuntimeModuleAdminError, RuntimeModuleAdminFuture, RuntimeModuleAdministration,
 };
@@ -11,23 +9,23 @@ use nazo_runtime_modules::{
     ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredRevisionGuard, DesiredStateChange,
     DesiredStateRecord, DesiredStateUpdate, DesiredStateUpdateOutcome, InstanceStateMutation,
     InstanceStateRecord, ModuleCatalog, ModuleEventPage, ModuleId, ModuleLifecycle,
-    ModuleReconcileState, ModuleRevision, ModuleState, ModuleStateRepository, ReconcileOutcome,
-    RegistryError, RuntimeModuleManagement, RuntimeModuleManagementError, RuntimeModuleRegistry,
+    ModuleReconcileState, ModuleRevision, ModuleState, ModuleStateRepository, RegistryError,
+    RuntimeModuleManagement, RuntimeModuleManagementError, RuntimeModuleRegistry,
     RuntimeModuleView,
 };
 
-use crate::settings::Settings;
+use crate::config::Configuration;
 
-pub(crate) type ServerRuntimeModuleRegistry =
-    RuntimeModuleRegistry<PersistenceRuntimeModuleRepository, ServerModuleLifecycle>;
+pub type ServerRuntimeModuleRegistry =
+    RuntimeModuleRegistry<PersistenceRuntimeModuleRepository, dyn ModuleLifecycle>;
 
 #[derive(Clone)]
-pub(crate) struct PersistenceRuntimeModuleRepository {
+pub struct PersistenceRuntimeModuleRepository {
     store: Arc<dyn nazo_persistence::RuntimeModuleStore>,
 }
 
 impl PersistenceRuntimeModuleRepository {
-    pub(crate) fn new(store: Arc<dyn nazo_persistence::RuntimeModuleStore>) -> Self {
+    pub fn new(store: Arc<dyn nazo_persistence::RuntimeModuleStore>) -> Self {
         Self { store }
     }
 }
@@ -112,64 +110,22 @@ impl ModuleStateRepository for PersistenceRuntimeModuleRepository {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct ServerModuleLifecycle {
-    repository: Arc<PersistenceRuntimeModuleRepository>,
-}
-
-impl ModuleLifecycle for ServerModuleLifecycle {
-    fn drain_stored_transactions(
-        &self,
-        module_id: ModuleId,
-        revision: ModuleRevision,
-        remaining_duration: Duration,
-    ) -> nazo_runtime_modules::LifecycleFuture<
-        '_,
-        Result<bool, nazo_runtime_modules::LifecycleFailure>,
-    > {
-        Box::pin(async move {
-            let deadline = tokio::time::Instant::now() + remaining_duration;
-            loop {
-                if !self
-                    .repository
-                    .validate_revision(module_id, revision)
-                    .await
-                    .map_err(|_| nazo_runtime_modules::LifecycleFailure {
-                        code: "drain_revision_lookup_failed",
-                    })?
-                {
-                    return Err(nazo_runtime_modules::LifecycleFailure {
-                        code: "revision_changed",
-                    });
-                }
-                let now = tokio::time::Instant::now();
-                if now >= deadline {
-                    return Ok(true);
-                }
-                tokio::time::sleep((deadline - now).min(Duration::from_secs(1))).await;
-            }
-        })
-    }
-}
-
-pub(crate) struct RuntimeModules {
-    pub(crate) repository: Arc<PersistenceRuntimeModuleRepository>,
-    pub(crate) registry: Arc<ServerRuntimeModuleRegistry>,
-    pub(crate) catalog: ModuleCatalog,
-    pub(crate) instance_id: String,
+pub struct RuntimeModules {
+    pub repository: Arc<PersistenceRuntimeModuleRepository>,
+    pub registry: Arc<ServerRuntimeModuleRegistry>,
+    pub catalog: ModuleCatalog,
+    pub instance_id: String,
 }
 
 impl RuntimeModules {
-    pub(crate) async fn initialize(
+    pub async fn initialize(
         store: Arc<dyn nazo_persistence::RuntimeModuleStore>,
-        settings: &Settings,
+        lifecycle: Arc<dyn ModuleLifecycle>,
+        settings: &Configuration,
         instance_id: &str,
     ) -> anyhow::Result<Self> {
         let repository = Arc::new(PersistenceRuntimeModuleRepository::new(store));
         let catalog = module_catalog(settings)?;
-        let lifecycle = Arc::new(ServerModuleLifecycle {
-            repository: repository.clone(),
-        });
         let instance_id = instance_id.to_owned();
         let (accepting, draining) =
             load_explicit_desired_states(&repository, &catalog, &instance_id).await?;
@@ -193,8 +149,8 @@ impl RuntimeModules {
         Ok(modules)
     }
 
-    pub(crate) fn administration(&self) -> Arc<dyn RuntimeModuleAdministration> {
-        Arc::new(ServerRuntimeModuleAdministration {
+    pub fn administration(&self) -> Arc<dyn RuntimeModuleAdministration> {
+        Arc::new(ModuleAdministration {
             management: RuntimeModuleManagement::new(
                 self.repository.clone(),
                 self.registry.clone(),
@@ -203,79 +159,13 @@ impl RuntimeModules {
             ),
         })
     }
-
-    pub(crate) fn spawn_reconciler(modules: web::Data<Self>) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            let planning_registry = modules.registry.clone();
-            let transition_registry = modules.registry.clone();
-            run_reconciler(
-                move || {
-                    let registry = planning_registry.clone();
-                    Box::pin(async move { registry.plan_reconciliation().await })
-                },
-                move |module_id| {
-                    let registry = transition_registry.clone();
-                    Box::pin(async move { registry.reconcile_once(module_id).await })
-                },
-            )
-            .await;
-        })
-    }
 }
 
-type ReconcileError = RegistryError<nazo_identity::ports::RepositoryError>;
-
-// The tenant owns this loop and every in-flight future. The narrow closures
-// expose the existing registry operations to deterministic scheduling tests.
-async fn run_reconciler(
-    mut plan: impl FnMut() -> BoxFuture<'static, Result<Vec<ModuleId>, ReconcileError>> + Send,
-    mut reconcile: impl FnMut(ModuleId) -> BoxFuture<'static, Result<ReconcileOutcome, ReconcileError>>
-    + Send,
-) {
-    type Error = ReconcileError;
-    let mut interval = tokio::time::interval(Duration::from_secs(1));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut planning: Option<BoxFuture<'static, Result<Vec<ModuleId>, Error>>> = None;
-    let mut transitions: FuturesUnordered<
-        BoxFuture<'static, (ModuleId, Result<ReconcileOutcome, Error>)>,
-    > = FuturesUnordered::new();
-    let mut busy = BTreeSet::new();
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
-                if planning.is_none() {
-                    planning = Some(plan());
-                }
-            }
-            plan = async { planning.as_mut().expect("guarded planning future").await }, if planning.is_some() => {
-                planning = None;
-                match plan {
-                    Ok(ids) => for module_id in ids {
-                        if busy.insert(module_id) {
-                            let transition = reconcile(module_id);
-                            transitions.push(Box::pin(async move { (module_id, transition.await) }));
-                        }
-                    },
-                    Err(error) => tracing::error!(?error, "runtime module snapshot read failed"),
-                }
-            }
-            Some((module_id, outcome)) = transitions.next(), if !transitions.is_empty() => {
-                busy.remove(&module_id);
-                match outcome {
-                    Ok(ReconcileOutcome::NoChange) => {}
-                    Ok(outcome) => tracing::info!(?module_id, ?outcome, "runtime module reconciled"),
-                    Err(error) => tracing::error!(?module_id, ?error, "runtime module reconcile failed"),
-                }
-            }
-        }
-    }
+struct ModuleAdministration {
+    management: RuntimeModuleManagement<PersistenceRuntimeModuleRepository, dyn ModuleLifecycle>,
 }
 
-struct ServerRuntimeModuleAdministration {
-    management: RuntimeModuleManagement<PersistenceRuntimeModuleRepository, ServerModuleLifecycle>,
-}
-
-impl RuntimeModuleAdministration for ServerRuntimeModuleAdministration {
+impl RuntimeModuleAdministration for ModuleAdministration {
     fn list(&self) -> RuntimeModuleAdminFuture<'_, Vec<RuntimeModuleView>> {
         Box::pin(async { self.management.list().await.map_err(map_management_error) })
     }
@@ -341,7 +231,7 @@ fn map_management_error(
     }
 }
 
-fn module_catalog(settings: &Settings) -> anyhow::Result<ModuleCatalog> {
+pub fn module_catalog(settings: &Configuration) -> anyhow::Result<ModuleCatalog> {
     let protocol = &settings.protocol;
     let session = &settings.session;
     let mut catalog = ModuleCatalog::fixed(CatalogDurations {
@@ -432,10 +322,6 @@ async fn load_explicit_desired_states(
     }
     Ok((accepting, draining))
 }
-
-#[cfg(test)]
-#[path = "../tests/support/runtime_modules.rs"]
-pub(crate) mod test_support;
 
 #[cfg(test)]
 #[path = "../tests/unit/runtime_modules.rs"]

@@ -84,14 +84,14 @@ class Rfc9967BlackBoxPolicyTests(unittest.TestCase):
     def test_scim_tests_are_outside_production_sources(self) -> None:
         sources = [
             ROOT / "crates" / "scim-events" / "src" / "lib.rs",
-            ROOT / "crates" / "http-actix" / "src" / "scim.rs",
+            ROOT / "crates" / "nazoauth" / "src" / "http" / "scim.rs",
         ]
         for path in sources:
             source = path.read_text(encoding="utf-8")
             self.assertNotIn("#[cfg(test)]", source, path)
             self.assertNotIn("mod tests", source, path)
         self.assertTrue((ROOT / "crates" / "scim-events" / "tests" / "domain_contract.rs").is_file())
-        self.assertTrue((ROOT / "crates" / "http-actix" / "tests" / "scim_transport.rs").is_file())
+        self.assertTrue((ROOT / "crates" / "nazoauth" / "tests" / "transport" / "scim_transport.rs").is_file())
 
 
 if __name__ == "__main__":

@@ -72,7 +72,6 @@ pub async fn validate_token_sender_constraints(
         .then(|| {
             facts
                 .certificate
-                .as_ref()
                 .and_then(|certificate| certificate.thumbprint.as_deref())
         })
         .flatten();

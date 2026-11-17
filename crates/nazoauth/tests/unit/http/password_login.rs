@@ -1,0 +1,442 @@
+use crate::http::Response;
+use bytes::Bytes;
+use cookie::Cookie;
+use http::{StatusCode, header};
+use std::sync::Mutex;
+
+use nazo_identity::authentication::PasswordLoginResult;
+use nazo_identity::ports::RepositoryError;
+use nazo_oauth_server::contracts::password_login::PasswordLoginFuture;
+use serde_json::Value;
+
+use super::*;
+
+struct FakeOperations {
+    inputs: Mutex<Vec<AuthenticatePasswordInput>>,
+    result: Mutex<Result<PasswordLoginResult, AuthenticatePasswordError>>,
+}
+
+impl PasswordLoginOperations for FakeOperations {
+    fn authenticate_password(&self, input: AuthenticatePasswordInput) -> PasswordLoginFuture<'_> {
+        self.inputs.lock().unwrap().push(input);
+        let result = self.result.lock().unwrap().clone();
+        Box::pin(async move { result })
+    }
+}
+
+struct RecordingRateLimit {
+    subjects: Mutex<Vec<String>>,
+    result: Mutex<Result<(), AuthenticationRateLimitError>>,
+}
+
+impl AuthenticationRateLimit for RecordingRateLimit {
+    fn enforce<'a>(
+        &'a self,
+        subject: &'a str,
+    ) -> nazo_oauth_server::contracts::local_registration::LocalRegistrationFuture<
+        'a,
+        Result<(), AuthenticationRateLimitError>,
+    > {
+        self.subjects.lock().unwrap().push(subject.to_owned());
+        let result = *self.result.lock().unwrap();
+        Box::pin(async move { result })
+    }
+}
+
+fn success() -> PasswordLoginResult {
+    PasswordLoginResult {
+        session_id: "new-session".to_owned(),
+        csrf_token: "new-csrf".to_owned(),
+        mfa_required: true,
+    }
+}
+
+fn endpoint(
+    result: Result<PasswordLoginResult, AuthenticatePasswordError>,
+    rate_result: Result<(), AuthenticationRateLimitError>,
+    proxies: &[crate::http::IpCidr],
+    mode: crate::http::ClientIpHeaderMode,
+) -> (
+    PasswordLoginEndpoint,
+    Arc<FakeOperations>,
+    Arc<RecordingRateLimit>,
+) {
+    let operations = Arc::new(FakeOperations {
+        inputs: Mutex::new(Vec::new()),
+        result: Mutex::new(result),
+    });
+    let rate_limit = Arc::new(RecordingRateLimit {
+        subjects: Mutex::new(Vec::new()),
+        result: Mutex::new(rate_result),
+    });
+    (
+        PasswordLoginEndpoint::new(
+            operations.clone(),
+            rate_limit.clone(),
+            ClientIpConfig::new(proxies, mode),
+            PasswordLoginConfig::new(
+                "https://issuer.example",
+                "https://app.example/ui/",
+                "session",
+                "csrf",
+                "remembered",
+                300,
+                true,
+            ),
+        ),
+        operations,
+        rate_limit,
+    )
+}
+
+async fn body_json(response: Response) -> Value {
+    serde_json::from_slice(&response.into_body()).unwrap()
+}
+
+fn assert_no_store(response: &Response) {
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(response.headers().get(header::PRAGMA).unwrap(), "no-cache");
+}
+
+#[test]
+fn json_success_sets_session_and_csrf_together_and_rotates_previous_id() {
+    futures_executor::block_on(async {
+        let (endpoint, operations, rate_limit) = endpoint(
+            Ok(success()),
+            Ok(()),
+            &[],
+            crate::http::ClientIpHeaderMode::None,
+        );
+        let response = login(
+            &endpoint,
+            &http::Request::builder()
+                .method("POST")
+                .extension(crate::integration::ConnectionFacts {
+                    peer_addr: Some("203.0.113.10:49152".parse().unwrap()),
+                    ..Default::default()
+                })
+                .header(
+                    header::COOKIE,
+                    (Cookie::new("session", "old-session")).to_string(),
+                )
+                .header(
+                    header::COOKIE,
+                    (Cookie::new("remembered", " remembered-token ")).to_string(),
+                )
+                .header(header::USER_AGENT, " unit-test-agent ")
+                .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+                .body(Bytes::new())
+                .unwrap(),
+            &Bytes::from_static(br#"{"email":" Alice@Example.TEST ","password":"secret"}"#),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_no_store(&response);
+        let cookies = response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect::<Vec<_>>();
+        assert_eq!(cookies.len(), 2);
+        assert!(
+            cookies
+                .iter()
+                .any(|value| value.starts_with("session=new-session"))
+        );
+        assert!(
+            cookies
+                .iter()
+                .any(|value| value.starts_with("csrf=new-csrf"))
+        );
+        let input = operations.inputs.lock().unwrap()[0].clone();
+        assert_eq!(input.email, "alice@example.test");
+        assert_eq!(input.source_ip, "203.0.113.10");
+        assert_eq!(input.previous_session_id.as_deref(), Some("old-session"));
+        assert_eq!(
+            input.remembered_mfa,
+            Some(RememberedMfaProof {
+                token_hash: blake3_hex("remembered-token"),
+                user_agent_hash: Some(blake3_hex("unit-test-agent")),
+            })
+        );
+        assert_eq!(
+            rate_limit.subjects.lock().unwrap().as_slice(),
+            &["203.0.113.10"]
+        );
+        let body = body_json(response).await;
+        assert_eq!(body["expires_in"], 300);
+        assert_eq!(body["csrf_token"], "new-csrf");
+        assert_eq!(body["mfa_required"], true);
+    });
+}
+
+#[test]
+fn form_login_requires_exact_origin_and_redirects_only_to_authorize() {
+    futures_executor::block_on(async {
+        for next in [
+            "/authorize?client_id=client",
+            "https://evil.example/authorize",
+            "//evil.example/authorize",
+            "/%2f%2fevil.example",
+            "/profile",
+        ] {
+            let (endpoint, operations, _) = endpoint(
+                Ok(success()),
+                Ok(()),
+                &[],
+                crate::http::ClientIpHeaderMode::None,
+            );
+            let response = login(
+                &endpoint,
+                &http::Request::builder()
+                    .method("POST")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::ORIGIN, "https://app.example")
+                    .body(Bytes::new())
+                    .unwrap(),
+                &Bytes::from(format!(
+                    "email=alice%40example.test&password=secret&next={}",
+                    url::form_urlencoded::byte_serialize(next.as_bytes()).collect::<String>()
+                )),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::SEE_OTHER);
+            assert_no_store(&response);
+            let expected = if next.starts_with("/authorize") {
+                next
+            } else {
+                "https://app.example/ui/profile"
+            };
+            assert_eq!(response.headers().get(header::LOCATION).unwrap(), expected);
+            assert_eq!(
+                response
+                    .headers()
+                    .get_all(header::SET_COOKIE)
+                    .iter()
+                    .count(),
+                2
+            );
+            assert_eq!(operations.inputs.lock().unwrap().len(), 1);
+        }
+
+        for origin in [
+            None,
+            Some("null"),
+            Some("https://app.example/path"),
+            Some(" https://app.example"),
+            Some("https://evil.example"),
+        ] {
+            let (endpoint, operations, _) = endpoint(
+                Ok(success()),
+                Ok(()),
+                &[],
+                crate::http::ClientIpHeaderMode::None,
+            );
+            let mut request = http::Request::builder()
+                .method("POST")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded");
+            if let Some(origin) = origin {
+                request = request.header(header::ORIGIN, origin);
+            }
+            let response = login(
+                &endpoint,
+                &request.body(Bytes::new()).unwrap(),
+                &Bytes::from_static(b"email=alice%40example.test&password=secret"),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert_no_store(&response);
+            assert_eq!(
+                response
+                    .headers()
+                    .get_all(header::SET_COOKIE)
+                    .iter()
+                    .count(),
+                0
+            );
+            assert!(operations.inputs.lock().unwrap().is_empty());
+        }
+    });
+}
+
+#[test]
+fn malformed_requests_fail_before_rate_limit_and_authentication() {
+    futures_executor::block_on(async {
+        let cases = [
+            (
+                "application/json",
+                Bytes::from_static(b"not-json"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "application/x-www-form-urlencoded",
+                Bytes::from_static(b"email=a%40b.test&email=c%40d.test&password=x"),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                "text/plain",
+                Bytes::from_static(b"email=a"),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+        ];
+        for (content_type, body, status) in cases {
+            let (endpoint, operations, rate_limit) = endpoint(
+                Ok(success()),
+                Ok(()),
+                &[],
+                crate::http::ClientIpHeaderMode::None,
+            );
+            let response = login(
+                &endpoint,
+                &http::Request::builder()
+                    .method("POST")
+                    .header(header::CONTENT_TYPE, content_type)
+                    .body(Bytes::new())
+                    .unwrap(),
+                &body,
+            )
+            .await;
+            assert_eq!(response.status(), status);
+            assert_no_store(&response);
+            assert!(operations.inputs.lock().unwrap().is_empty());
+            assert!(rate_limit.subjects.lock().unwrap().is_empty());
+        }
+    });
+}
+
+#[test]
+fn trusted_proxy_is_honored_but_untrusted_forwarding_is_ignored() {
+    futures_executor::block_on(async {
+        let trusted = crate::http::IpCidr::parse("10.0.0.0/8").unwrap();
+        for (peer, expected) in [
+            ("10.1.2.3:49152", "198.51.100.7"),
+            ("203.0.113.8:49152", "203.0.113.8"),
+        ] {
+            let (endpoint, operations, rate_limit) = endpoint(
+                Ok(success()),
+                Ok(()),
+                std::slice::from_ref(&trusted),
+                crate::http::ClientIpHeaderMode::XForwardedFor,
+            );
+            let response = login(
+                &endpoint,
+                &http::Request::builder()
+                    .method("POST")
+                    .extension(crate::integration::ConnectionFacts {
+                        peer_addr: Some(peer.parse().unwrap()),
+                        ..Default::default()
+                    })
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header("x-forwarded-for", "198.51.100.7")
+                    .body(Bytes::new())
+                    .unwrap(),
+                &Bytes::from_static(br#"{"email":"alice@example.test","password":"secret"}"#),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(operations.inputs.lock().unwrap()[0].source_ip, expected);
+            assert_eq!(rate_limit.subjects.lock().unwrap()[0], expected);
+        }
+    });
+}
+
+#[test]
+fn rate_limit_and_authentication_failures_set_no_cookies_and_no_store() {
+    futures_executor::block_on(async {
+        let cases = [
+            (
+                Err(AuthenticationRateLimitError::Limited {
+                    retry_after_seconds: 17,
+                }),
+                Ok(success()),
+                StatusCode::TOO_MANY_REQUESTS,
+                "temporarily_unavailable",
+                Some("17"),
+            ),
+            (
+                Ok(()),
+                Err(AuthenticatePasswordError::InvalidCredentials),
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                None,
+            ),
+            (
+                Ok(()),
+                Err(AuthenticatePasswordError::ThrottleUnavailable(
+                    RepositoryError::Unavailable,
+                )),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                None,
+            ),
+            (
+                Ok(()),
+                Err(AuthenticatePasswordError::SecretBusy),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "temporarily_unavailable",
+                Some("1"),
+            ),
+        ];
+        for (rate, result, status, error, retry_after) in cases {
+            let (endpoint, operations, _) =
+                endpoint(result, rate, &[], crate::http::ClientIpHeaderMode::None);
+            let response = login(
+                &endpoint,
+                &http::Request::builder()
+                    .method("POST")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Bytes::new())
+                    .unwrap(),
+                &Bytes::from_static(br#"{"email":"alice@example.test","password":"secret"}"#),
+            )
+            .await;
+            assert_eq!(response.status(), status);
+            assert_no_store(&response);
+            assert_eq!(
+                response
+                    .headers()
+                    .get_all(header::SET_COOKIE)
+                    .iter()
+                    .count(),
+                0
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok()),
+                retry_after
+            );
+            assert_eq!(body_json(response).await["error"], error);
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                assert!(operations.inputs.lock().unwrap().is_empty());
+            }
+        }
+    });
+}
+
+#[test]
+fn route_methods_cors_and_security_headers_are_locked() {
+    futures_executor::block_on(async {
+        for method in [http::Method::GET, http::Method::OPTIONS] {
+            let mut response = crate::routes::resolve(&method, "/auth/login").unwrap_err();
+            crate::http::apply_security_headers(response.headers_mut(), false);
+            assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+            assert_eq!(response.headers().get(header::ALLOW).unwrap(), "POST");
+            assert!(
+                response
+                    .headers()
+                    .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                    .is_none()
+            );
+            assert_eq!(
+                response.headers().get(header::X_FRAME_OPTIONS).unwrap(),
+                "DENY"
+            );
+        }
+    });
+}

@@ -8,7 +8,11 @@ they are not divided one crate per RFC. Calls between crates remain ordinary
 in-process Rust calls. The design does not use a dynamic-library plugin ABI,
 RPC, an event bus, a command bus, or layers whose only job is forwarding.
 
-The root manifest is a virtual workspace with resolver 3. This repository releases the `nazoauth` application composition root.
+The root manifest is a virtual workspace with resolver 3. The `nazoauth` package
+is the framework-neutral embedding facade. The `nazo-server` package owns the
+native composition root and releases the `nazoauth` executable.
+The [Rust embedding guide](../integration/rust-embedding.md) describes the public
+builder, standard HTTP transport contract and adapter conformance kit.
 Its CLI includes the version-coupled server and operator-task work; the
 independently released host lifecycle controller lives in
 [`nazozero/NazoAuthCtl`](https://github.com/nazozero/NazoAuthCtl) and consumes
@@ -36,13 +40,13 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `persistence-postgres` | `nazo-postgres` | Durable PostgreSQL adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and transaction boundaries. Rows never leave this crate. |
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. It is not a generic plugin or miscellaneous-module crate. |
-| `http-actix` | `nazo-http-actix` | Actix extraction, request context, CORS, middleware, security headers, protocol response presentation, and Actix-specific integration over application capabilities. It depends on `nazo-oauth-server`, does not query Diesel or Fred, and does not construct token claims. |
-| `openid4vc-http-actix` | `nazo-openid4vc-http-actix` | Actix transport adapters for the OpenID4VCI and OpenID4VP cores, including their controller-protocol protected management surface. |
+| `http-actix` | `nazo-http-actix` | Actix request/body conversion, route binding and response conversion through the public `nazoauth` adapter contract. It supplies connection facts and does not construct application services or interpret protocol policy. |
 | `authorization-server` | `nazo-oauth-server` | Host-independent application capabilities: authorization and token flows, domain operations, typed contracts, semantic ports, and worker operations. It does not load process configuration, register Actix routes, open connections, or schedule native background tasks. |
-| `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL provider: binds an existing pool and repositories to application persistence ports. Native startup, migration/operator execution, and pool construction belong to `nazoauth`. It has no Valkey dependency. |
+| `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL provider: binds an existing pool and repositories to application persistence ports. Native startup, migration/operator execution, and pool construction belong to `nazo-server`. It has no Valkey dependency. |
 | `authorization-server-valkey` | `nazo-oauth-server-valkey` | Valkey provider: composes tenant-scoped transient-state ports and namespace bindings from a supplied client, with no persistent-database dependency. The native launcher owns configuration and connection startup. |
 | `authorization-server-object-store` | `nazo-oauth-server-object-store` | Concrete S3-compatible avatar storage, including credentials and request signing. The native host selects local or S3 storage and constructs the tenant binding. |
-| `nazoauth` | `nazoauth` | Native host and production executable: configuration, launchers, tenant/bootstrap composition, HTTP wiring, CLI/operator tasks, TLS, process adapters, local storage, and background scheduling. It calls application capabilities and concrete infrastructure adapters. |
+| `nazoauth` | `nazoauth` | Framework-neutral embedding API, application composition and HTTP protocol adaptation. It owns route identity, request interpretation, security presentation and response bytes, including OpenID4VC endpoints. Its integration contract uses standard HTTP values and connection facts. |
+| `server` | `nazo-server` | Native host and `nazoauth` executable: process configuration, launchers, tenant/bootstrap resources, HTTP listener wiring, CLI/operator tasks, TLS, process adapters, local storage and background scheduling. It binds concrete infrastructure to the neutral facade. |
 
 The historical Axum/Tower and tonic adapters are removed. Only Actix transport
 integration is maintained. The generic resource-server core may use the
@@ -56,14 +60,16 @@ the only package expected to see every concrete launch adapter. The manifests ar
 ownership direction is:
 
 ```text
-native host (nazoauth) -> application, HTTP adapters, infrastructure adapters
-HTTP adapters         -> application capabilities and domain APIs
-application           -> domain APIs and semantic ports
-driver adapters       -> the ports they implement
+native host (nazo-server) -> facade, HTTP adapter, infrastructure adapters
+HTTP adapter             -> nazoauth public integration contract
+facade (nazoauth)         -> application capabilities and domain APIs
+application              -> domain APIs and semantic ports
+driver adapters          -> the ports they implement
 ```
 
-`authorization-server` owns the application layer; `nazoauth` owns native
-composition. A type using framework-neutral `http`, futures, or `Arc` does not
+`authorization-server` owns the application layer; `nazoauth` owns embedding
+and HTTP protocol adaptation; `server` owns native resources and execution.
+A type using framework-neutral `http`, futures, or `Arc` does not
 by itself create a native-host dependency. See each crate's `Cargo.toml` for
 the current dependency edges rather than copying an exhaustive graph here.
 
@@ -80,41 +86,46 @@ The enforced prohibitions are more important than a broad graph:
 - `resource-server` does not depend on `authorization-server-core`, `identity`, or Actix.
 - `authorization-server-core` does not depend on Actix, PostgreSQL, Diesel,
   Valkey, Fred, or rows.
-- `authorization-server` does not depend on Actix, native launchers, or database/state drivers.
-- `http-actix` does not depend on Diesel or Fred.
+- `authorization-server` does not depend on the facade, Actix, native launchers, or database/state drivers.
+- `nazoauth` does not depend on concrete HTTP adapters, native hosts, runtimes or storage drivers.
+- `http-actix` depends on the facade, not its internal application/domain packages or storage drivers.
+- integration does not introduce a generic request, response, framework, executor or runtime abstraction.
 - no crate cycle, workspace-wide prelude, or cross-crate glob re-export is
   allowed.
 
 The normal request path is deliberately short:
 
 ```text
-Actix request -> canonical Host (and direct-TLS SNI) validation
-              -> immutable TenantHostIndex -> tenant app-data container
-              -> handler -> domain service / repository / store / signer
-              -> typed result -> Actix presenter
+Actix request and connection facts -> standard HTTP request and Bytes
+                                  -> neutral route and HTTP interpretation
+                                  -> application capabilities and semantic ports
+                                  -> standard HTTP response and Bytes
+                                  -> Actix response
 ```
 
 The host index is published as a complete immutable snapshot. A request has no
 second directory lookup and no default-tenant fallback; an unknown Host is
-rejected before a tenant graph is injected. There is no controller/facade/
-manager/orchestrator layer between the handler and its focused services. Traits
+rejected before a tenant graph is selected. The facade owns real HTTP behavior
+and composition; it does not add forwarding managers between handlers and
+their focused services. Traits
 are reserved for a real dependency inversion: infrastructure, external
 providers, clocks/test substitutes, or multiple genuine implementations.
 
 ## WASM Portability Boundary
 
-Every package with the `domain` or `application` role in
+Every package with the `domain`, `application` or `facade` role in
 [`PACKAGE_ROLES`](../../scripts/verify_static_contracts.py) belongs to the
 `wasm32-unknown-unknown` production contract:
 
 | Role | Packages |
 | --- | --- |
+| Facade | `nazoauth` |
 | Application | `nazo-oauth-server` |
 | Domain and shared capabilities | `nazo-auth`, `nazo-crypto`, `nazo-digital-credentials`, `nazo-http-signatures`, `nazo-identity`, `nazo-key-management`, `nazo-openid4vci`, `nazo-openid4vp`, `nazo-operator-protocol`, `nazo-persistence`, `nazo-resource-server`, `nazo-runtime-modules`, `nazo-scim-events` |
 
-`nazoauth` is the native composition root. Its process lifecycle, filesystem,
+`nazo-server` is the native composition root. Its process lifecycle, filesystem,
 HTTP/TLS listener, outbound transports and database/cache adapters remain host
-responsibilities. A WASM host consumes the same application and domain code and
+responsibilities. A WASM host consumes the same neutral facade and domain code and
 implements the existing semantic ports for its storage and remote operations.
 It drives one-shot application and background-batch futures itself. Neither
 protocol decisions nor discovery rules depend on the compilation target.
@@ -213,9 +224,9 @@ consumer. A handler must not receive the complete settings object, PostgreSQL
 pool, Valkey connection, key manager, or a global application state merely
 because another handler needs it.
 
-Top-level composition aggregates may exist while the process is assembled, but
-they are not request dependencies. Focused injection is a compiler-enforced
-boundary: metadata handlers receive metadata configuration, keys, and the
+Framework adapters receive the facade rather than its internal service graph.
+Within that boundary, endpoint dependencies stay focused: metadata handlers
+receive metadata configuration, keys, and the
 capability snapshot; session handlers receive session policy and session
 storage; repositories are injected only into flows that query them.
 
@@ -271,7 +282,7 @@ Other cross-store Required intents still precede their destructive mutations.
 System tenant administrator changes register Required evidence and commit the
 canonical `system_tenant_admin_updated` ledger event in the same PostgreSQL
 transaction as the target role change. Its target tenant and explicit actor
-source come from locked account facts; the HTTP adapter supplies only the
+source come from locked account facts; the HTTP boundary supplies only the
 source IP hash. Tenant-local identity events omit a cross-tenant actor, while
 the atomic ledger retains the complete actor and target attribution. The HTTP
 handler preserves the audit preflight and does not append the outcome again.
@@ -553,7 +564,7 @@ while its security-event child is draining.
 
 ### Resource token presentation
 
-The shared Actix extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
+The neutral HTTP extractor rejects multiple physical Authorization headers, repeated decoded form token fields including blank values, and a selected header or form token combined with a query token. Query-only tokens remain unsupported. Invalid form input cannot be hidden by a valid header. UserInfo Bearer presentation rejects a token carrying a DPoP `jkt` even if it also carries an mTLS thumbprint; the generic resource verifier likewise requires `jkt` for DPoP presentation and compares proof HTTP methods exactly. Introspection and revocation metadata derive their supported authentication methods from the token endpoint policy with each management endpoint's exclusions.
 
 MFA verification retains the confirmed TOTP credential row UUID as the generation proof. Remembered-device insertion takes a key-share lock on that exact row; backup-code regeneration takes an update lock on it after hashing. A retired generation cannot publish a remember cookie, replace a new generation’s codes, or disable a new enrollment. Disabling carries the already consumed factor proof and source-IP hash to `clear_mfa_state_if_current_with_required_audit`; the adapter atomically checks that exact confirmed generation before clearing its dependent state, without consuming a second factor. Clearing MFA uses READ COMMITTED and orders writes TOTP → backup codes → remembered devices → user; enrollment confirmation follows the same order. An unavailable clear ACK
 can follow a committed effect; it must not be interpreted as proof that the old
@@ -604,7 +615,7 @@ replace signature coverage, cryptographic verification, sender binding, time or
 replay checks. A changed body or field rejects reuse. Received response
 verification always checks its actual body without supplied evidence.
 
-The Actix FAPI endpoint keeps one request-local digest result for its captured
+The neutral FAPI HTTP endpoint keeps one request-local digest result for its captured
 immutable body, including a failed result, and uses one generated digest for its
 outgoing response. Error response linkage preserves the existing omission of an
 invalid request digest. This removes repeated body hashes on the normal path;

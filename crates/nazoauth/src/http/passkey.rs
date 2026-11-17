@@ -1,0 +1,581 @@
+use crate::http::{Request, Response};
+use http::{StatusCode, header};
+use nazo_oauth_server::contracts::local_registration::{
+    AuthenticationRateLimit, AuthenticationRateLimitError,
+};
+use nazo_oauth_server::contracts::passkey::{
+    PasskeyEndpointError, PasskeyLoginFinishCommand, PasskeyLoginOperations, PasskeyProfileContext,
+    PasskeyProfileOperations, PasskeyRegistrationFinishCommand,
+};
+
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use nazo_identity::{
+    LoginSuccess, PasskeyError, RememberedMfaProof,
+    ports::{PasskeyCredential, PasskeyCredentialSummary},
+};
+use passkey_auth::{AuthenticationResponse, RegistrationResponse};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use uuid::Uuid;
+
+use crate::http::{
+    ClientIpConfig, authorization_error_response, clear_cookie, client_ip_with_config,
+    cookie_value, csrf_error, empty_response_no_store, has_valid_csrf_token_for_cookies,
+    json_response_no_store, json_response_status_no_store, make_cookie, with_cookie_headers,
+};
+
+#[derive(Clone)]
+pub struct PasskeyLoginConfig {
+    session_cookie_name: String,
+    csrf_cookie_name: String,
+    remembered_mfa_cookie_name: String,
+    session_ttl_seconds: u64,
+    cookie_secure: bool,
+}
+
+impl PasskeyLoginConfig {
+    #[must_use]
+    pub fn new(
+        session_cookie_name: impl Into<String>,
+        csrf_cookie_name: impl Into<String>,
+        remembered_mfa_cookie_name: impl Into<String>,
+        session_ttl_seconds: u64,
+        cookie_secure: bool,
+    ) -> Self {
+        Self {
+            session_cookie_name: session_cookie_name.into(),
+            csrf_cookie_name: csrf_cookie_name.into(),
+            remembered_mfa_cookie_name: remembered_mfa_cookie_name.into(),
+            session_ttl_seconds,
+            cookie_secure,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PasskeyProfileConfig {
+    session_cookie_name: String,
+    csrf_cookie_name: String,
+    cookie_secure: bool,
+}
+
+impl PasskeyProfileConfig {
+    #[must_use]
+    pub fn new(
+        session_cookie_name: impl Into<String>,
+        csrf_cookie_name: impl Into<String>,
+        cookie_secure: bool,
+    ) -> Self {
+        Self {
+            session_cookie_name: session_cookie_name.into(),
+            csrf_cookie_name: csrf_cookie_name.into(),
+            cookie_secure,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PasskeyLoginEndpoint {
+    operations: Arc<dyn PasskeyLoginOperations>,
+    rate_limit: Arc<dyn AuthenticationRateLimit>,
+    client_ip: ClientIpConfig,
+    config: PasskeyLoginConfig,
+}
+
+impl PasskeyLoginEndpoint {
+    #[must_use]
+    pub fn new(
+        operations: Arc<dyn PasskeyLoginOperations>,
+        rate_limit: Arc<dyn AuthenticationRateLimit>,
+        client_ip: ClientIpConfig,
+        config: PasskeyLoginConfig,
+    ) -> Self {
+        Self {
+            operations,
+            rate_limit,
+            client_ip,
+            config,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PasskeyProfileEndpoint {
+    operations: Arc<dyn PasskeyProfileOperations>,
+    config: PasskeyProfileConfig,
+}
+
+impl PasskeyProfileEndpoint {
+    #[must_use]
+    pub fn new(
+        operations: Arc<dyn PasskeyProfileOperations>,
+        config: PasskeyProfileConfig,
+    ) -> Self {
+        Self { operations, config }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PasskeyLoginBeginRequest {
+    pub email: String,
+}
+
+#[derive(Deserialize)]
+pub struct PasskeyLoginFinishRequest {
+    pub ceremony_id: String,
+    pub response: AuthenticationResponse,
+}
+
+#[derive(Deserialize)]
+pub struct PasskeyRegistrationBeginRequest {
+    pub label: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct PasskeyRegistrationFinishRequest {
+    pub ceremony_id: String,
+    pub response: RegistrationResponse,
+}
+
+pub async fn passkey_login_begin(
+    endpoint: &PasskeyLoginEndpoint,
+    request: &Request,
+    payload: Result<PasskeyLoginBeginRequest, ()>,
+) -> Response {
+    let Ok(payload) = payload else {
+        return invalid_passkey_json_response();
+    };
+    let source_ip = client_ip_with_config(request, &endpoint.client_ip);
+    if let Err(error) = endpoint.rate_limit.enforce(&source_ip).await {
+        return rate_limit_error_response(error);
+    }
+    match endpoint
+        .operations
+        .login_begin(payload.email.trim().to_lowercase())
+        .await
+    {
+        Ok(begin) => json_response_no_store(json!({
+            "ceremony_id": begin.ceremony_id,
+            "publicKey": begin.challenge,
+        })),
+        Err(error) => passkey_login_error(error),
+    }
+}
+
+pub async fn passkey_login_finish(
+    endpoint: &PasskeyLoginEndpoint,
+    request: &Request,
+    payload: Result<PasskeyLoginFinishRequest, ()>,
+) -> Response {
+    let Ok(payload) = payload else {
+        return invalid_passkey_json_response();
+    };
+    let source_ip = client_ip_with_config(request, &endpoint.client_ip);
+    if let Err(error) = endpoint.rate_limit.enforce(&source_ip).await {
+        return rate_limit_error_response(error);
+    }
+    let command = PasskeyLoginFinishCommand {
+        ceremony_id: payload.ceremony_id,
+        response: payload.response,
+        source_ip,
+        remembered_mfa: remembered_mfa_proof(request, &endpoint.config),
+        previous_session_id: cookie_value(request, &endpoint.config.session_cookie_name),
+        now: Utc::now(),
+    };
+    match endpoint.operations.login_finish(command).await {
+        Ok(success) => passkey_session_response(&endpoint.config, success),
+        Err(error) => passkey_login_error(error),
+    }
+}
+
+pub async fn passkey_registration_begin(
+    endpoint: &PasskeyProfileEndpoint,
+    request: &Request,
+    payload: Result<PasskeyRegistrationBeginRequest, ()>,
+) -> Response {
+    let Ok(payload) = payload else {
+        return invalid_passkey_json_response();
+    };
+    let context = match profile_context(endpoint, request, true) {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
+    match endpoint
+        .operations
+        .registration_begin(context, payload.label)
+        .await
+    {
+        Ok(begin) => json_response_no_store(json!({
+            "ceremony_id": begin.ceremony_id,
+            "publicKey": begin.challenge,
+        })),
+        Err(error) => registration_begin_error(endpoint, error),
+    }
+}
+
+pub async fn passkey_registration_finish(
+    endpoint: &PasskeyProfileEndpoint,
+    request: &Request,
+    payload: Result<PasskeyRegistrationFinishRequest, ()>,
+) -> Response {
+    let Ok(payload) = payload else {
+        return invalid_passkey_json_response();
+    };
+    let context = match profile_context(endpoint, request, true) {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
+    match endpoint
+        .operations
+        .registration_finish(PasskeyRegistrationFinishCommand {
+            context,
+            ceremony_id: payload.ceremony_id,
+            response: payload.response,
+        })
+        .await
+    {
+        Ok(credential) => passkey_created_response(credential),
+        Err(error) => registration_error(endpoint, error),
+    }
+}
+
+pub async fn passkey_list(endpoint: &PasskeyProfileEndpoint, request: &Request) -> Response {
+    let context = match profile_context(endpoint, request, false) {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
+    match endpoint.operations.list_summaries(context).await {
+        Ok(credentials) => passkey_list_response(&credentials),
+        Err(error) => passkey_management_error(endpoint, error, "passkey state unavailable."),
+    }
+}
+
+pub async fn passkey_delete(
+    endpoint: &PasskeyProfileEndpoint,
+    request: &Request,
+    path: Uuid,
+) -> Response {
+    let context = match profile_context(endpoint, request, true) {
+        Ok(context) => context,
+        Err(response) => return response,
+    };
+    match endpoint.operations.delete(context, path).await {
+        Ok(()) => empty_response_no_store(StatusCode::NO_CONTENT),
+        Err(PasskeyEndpointError::Core(PasskeyError::NotFound)) => authorization_error_response(
+            StatusCode::NOT_FOUND,
+            "invalid_request",
+            "passkey not found.",
+        ),
+        Err(error) => passkey_management_error(endpoint, error, "passkey delete failed."),
+    }
+}
+
+fn profile_context(
+    endpoint: &PasskeyProfileEndpoint,
+    request: &Request,
+    require_csrf: bool,
+) -> Result<PasskeyProfileContext, Response> {
+    if require_csrf
+        && !has_valid_csrf_token_for_cookies(
+            request,
+            None,
+            &endpoint.config.session_cookie_name,
+            &endpoint.config.csrf_cookie_name,
+        )
+    {
+        return Err(crate::http::presenter::no_store(csrf_error()));
+    }
+    let Some(session_id) = cookie_value(request, &endpoint.config.session_cookie_name) else {
+        return Err(login_required_response(endpoint));
+    };
+    Ok(PasskeyProfileContext {
+        session_id,
+        now: Utc::now().timestamp(),
+    })
+}
+
+fn remembered_mfa_proof(
+    request: &Request,
+    config: &PasskeyLoginConfig,
+) -> Option<RememberedMfaProof> {
+    let token = cookie_value(request, &config.remembered_mfa_cookie_name)?;
+    let user_agent_hash = request
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(blake3_hex);
+    Some(RememberedMfaProof {
+        token_hash: blake3_hex(token.trim()),
+        user_agent_hash,
+    })
+}
+
+pub(super) fn invalid_passkey_json_response() -> Response {
+    authorization_error_response(
+        StatusCode::BAD_REQUEST,
+        "invalid_request",
+        "passkey request body is invalid.",
+    )
+}
+
+fn blake3_hex(value: &str) -> String {
+    blake3::hash(value.as_bytes()).to_hex().to_string()
+}
+
+fn rate_limit_error_response(error: AuthenticationRateLimitError) -> Response {
+    match error {
+        AuthenticationRateLimitError::Limited {
+            retry_after_seconds,
+        } => {
+            let mut response = authorization_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "temporarily_unavailable",
+                "请求过于频繁，请稍后重试.",
+            );
+            if let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            response
+        }
+        AuthenticationRateLimitError::Unavailable => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "请求频率校验失败.",
+        ),
+    }
+}
+
+fn passkey_login_error(error: PasskeyEndpointError) -> Response {
+    let PasskeyEndpointError::Core(error) = error else {
+        return authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "session write failed.",
+        );
+    };
+    match error {
+        PasskeyError::InvalidCeremonyId => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid ceremony id.",
+        ),
+        PasskeyError::InvalidCredentialId => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "invalid passkey credential id.",
+        ),
+        PasskeyError::CeremonyExpired => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey ceremony expired.",
+        ),
+        PasskeyError::Account(_) => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "user lookup failed.",
+        ),
+        PasskeyError::State(_) | PasskeyError::CeremonyState(_) => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "passkey state unavailable.",
+        ),
+        PasskeyError::Mfa(_) => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "MFA state lookup failed.",
+        ),
+        PasskeyError::Session(_) | PasskeyError::SessionCollision => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "session write failed.",
+        ),
+        _ => authorization_error_response(
+            StatusCode::UNAUTHORIZED,
+            "access_denied",
+            "passkey login failed.",
+        ),
+    }
+}
+
+fn registration_begin_error(
+    endpoint: &PasskeyProfileEndpoint,
+    error: PasskeyEndpointError,
+) -> Response {
+    match error {
+        PasskeyEndpointError::Core(PasskeyError::InvalidLabel) => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey label is too long.",
+        ),
+        error => passkey_management_error(endpoint, error, "passkey state unavailable."),
+    }
+}
+
+fn registration_error(endpoint: &PasskeyProfileEndpoint, error: PasskeyEndpointError) -> Response {
+    match error {
+        PasskeyEndpointError::Core(PasskeyError::InvalidLabel) => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey label is too long.",
+        ),
+        PasskeyEndpointError::Core(PasskeyError::InvalidCeremonyId) => {
+            authorization_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "invalid ceremony id.",
+            )
+        }
+        PasskeyEndpointError::Core(PasskeyError::CeremonyExpired) => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey ceremony expired.",
+        ),
+        PasskeyEndpointError::Core(PasskeyError::CeremonyMismatch) => authorization_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "passkey ceremony mismatch.",
+        ),
+        PasskeyEndpointError::Core(PasskeyError::RegistrationFailed) => {
+            authorization_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "passkey registration failed.",
+            )
+        }
+        PasskeyEndpointError::Core(PasskeyError::AlreadyRegistered) => {
+            authorization_error_response(
+                StatusCode::CONFLICT,
+                "invalid_request",
+                "passkey already registered.",
+            )
+        }
+        PasskeyEndpointError::Core(error @ PasskeyError::CeremonyState(_)) => {
+            passkey_management_error(
+                endpoint,
+                PasskeyEndpointError::Core(error),
+                "passkey state unavailable.",
+            )
+        }
+        error => passkey_management_error(endpoint, error, "passkey registration failed."),
+    }
+}
+
+fn passkey_management_error(
+    endpoint: &PasskeyProfileEndpoint,
+    error: PasskeyEndpointError,
+    description: &'static str,
+) -> Response {
+    match error {
+        PasskeyEndpointError::SessionMissing => login_required_response(endpoint),
+        PasskeyEndpointError::ReauthenticationRequired => authorization_error_response(
+            StatusCode::FORBIDDEN,
+            "reauthentication_required",
+            "管理通行密钥需要最近五分钟内的登录验证；已启用多因素认证的账户需完成交互验证。",
+        ),
+        PasskeyEndpointError::SessionUnavailable => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "会话查询失败.",
+        ),
+        PasskeyEndpointError::Core(_) => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            description,
+        ),
+    }
+}
+
+fn login_required_response(endpoint: &PasskeyProfileEndpoint) -> Response {
+    with_cookie_headers(
+        authorization_error_response(
+            StatusCode::UNAUTHORIZED,
+            "login_required",
+            "会话不存在或已过期,请重新登录.",
+        ),
+        &[
+            clear_cookie(
+                &endpoint.config.session_cookie_name,
+                endpoint.config.cookie_secure,
+            ),
+            clear_cookie(
+                &endpoint.config.csrf_cookie_name,
+                endpoint.config.cookie_secure,
+            ),
+        ],
+    )
+}
+
+fn passkey_session_response(config: &PasskeyLoginConfig, success: LoginSuccess) -> Response {
+    let cookies = [
+        make_cookie(
+            &config.session_cookie_name,
+            &success.session_id,
+            true,
+            config.session_ttl_seconds,
+            config.cookie_secure,
+        ),
+        make_cookie(
+            &config.csrf_cookie_name,
+            &success.csrf_token,
+            false,
+            config.session_ttl_seconds,
+            config.cookie_secure,
+        ),
+    ];
+    with_cookie_headers(
+        json_response_no_store(json!({
+            "expires_in": config.session_ttl_seconds,
+            "csrf_token": success.csrf_token,
+            "mfa_required": success.session.pending_mfa(),
+        })),
+        &cookies,
+    )
+}
+
+#[derive(Serialize)]
+struct PublicPasskey<'a> {
+    id: Uuid,
+    label: &'a str,
+    credential_id: &'a str,
+    sign_count: i64,
+    last_used_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl<'a> From<&'a PasskeyCredentialSummary> for PublicPasskey<'a> {
+    fn from(row: &'a PasskeyCredentialSummary) -> Self {
+        Self {
+            id: row.id,
+            label: &row.label,
+            credential_id: &row.credential_id,
+            sign_count: row.sign_count,
+            last_used_at: row.last_used_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+fn passkey_list_response(rows: &[PasskeyCredentialSummary]) -> Response {
+    #[derive(Serialize)]
+    struct PasskeyList<'a> {
+        passkeys: Vec<PublicPasskey<'a>>,
+    }
+    json_response_no_store(PasskeyList {
+        passkeys: rows.iter().map(PublicPasskey::from).collect(),
+    })
+}
+
+fn passkey_created_response(row: PasskeyCredential) -> Response {
+    let summary = PasskeyCredentialSummary::from(row);
+    json_response_status_no_store(StatusCode::CREATED, PublicPasskey::from(&summary))
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/http/passkey.rs"]
+mod tests;

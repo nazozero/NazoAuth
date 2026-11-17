@@ -8,7 +8,7 @@ use super::RuntimeModuleRegistry;
 impl<R, L> RuntimeModuleRegistry<R, L>
 where
     R: ModuleStateRepository,
-    L: ModuleLifecycle,
+    L: ModuleLifecycle + ?Sized,
 {
     /// Applies a desired-state change only after validating the dependency
     /// policy against one coherent admission snapshot.

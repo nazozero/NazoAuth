@@ -20,20 +20,22 @@ class WasmPortability(unittest.TestCase):
         roles = GATE.contracts.PACKAGE_ROLES
         self.assertEqual(
             set(GATE.contracts.PORTABLE_PACKAGES),
-            {package for package, role in roles.items() if role in {"domain", "application"}},
+            {package for package, role in roles.items() if role in GATE.contracts.INNER_ROLES},
         )
         self.assertIn("nazo-oauth-server", GATE.contracts.PORTABLE_PACKAGES)
-        self.assertNotIn("nazoauth", GATE.contracts.PORTABLE_PACKAGES)
+        self.assertIn("nazoauth", GATE.contracts.PORTABLE_PACKAGES)
+        self.assertNotIn("nazo-server", GATE.contracts.PORTABLE_PACKAGES)
+        self.assertNotIn("nazo-http-actix", GATE.contracts.PORTABLE_PACKAGES)
 
     def test_transitive_runtime_network_storage_and_native_crypto_are_rejected(self):
-        for package in ("tokio", "reqwest", "actix-web", "axum", "diesel", "fred", "aws-lc-sys", "nazo-valkey"):
+        for package in ("tokio", "reqwest", "actix-web", "axum", "diesel", "fred", "aws-lc-sys", "nazo-valkey", "nazo-http-actix", "nazo-server"):
             with self.subTest(package=package):
                 tree = f"nazo-identity v1.0.0\nordinary-wrapper v1.0.0\n{package} v1.0.0 (*)\n"
                 self.assertEqual(GATE.runtime_violations(tree), {package})
 
     def test_neutral_data_algorithms_and_web_primitives_are_allowed(self):
         tree = "\n".join(f"{package} v1.0.0" for package in (
-            "nazo-identity", "futures-util", "http", "rustls-pki-types", "rustls-webpki",
+            "nazoauth", "nazo-identity", "futures-util", "http", "rustls-pki-types", "rustls-webpki",
             "chrono", "web-time", "wasm-bindgen", "getrandom", "p256", "sha2",
         ))
         self.assertEqual(GATE.runtime_violations(tree), set())

@@ -282,7 +282,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             ROOT / "crates" / "authorization-server" / "Cargo.toml"
         ).read_text(encoding="utf-8")
         distribution_manifest = (
-            ROOT / "crates" / "nazoauth" / "Cargo.toml"
+            ROOT / "crates" / "server" / "Cargo.toml"
         ).read_text(encoding="utf-8")
         postgres_manifest = (
             ROOT / "crates" / "authorization-server-postgres" / "Cargo.toml"
@@ -302,9 +302,9 @@ class ReleaseGovernanceTests(unittest.TestCase):
             ROOT / ".github" / "workflows" / "release-security.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("cargo build --release --locked --target ${{ matrix.target }}", release)
-        self.assertIn("--package nazoauth --bin nazoauth", release)
+        self.assertIn("--package nazo-server --bin nazoauth", release)
         self.assertIn(
-            "--manifest-path crates/nazoauth/Cargo.toml",
+            "--manifest-path crates/server/Cargo.toml",
             release,
         )
         self.assertNotIn("--package nazoauthctl --bin nazoauthctl", release)
@@ -316,13 +316,13 @@ class ReleaseGovernanceTests(unittest.TestCase):
         )
 
         containerfile = (ROOT / "Containerfile").read_text(encoding="utf-8")
-        self.assertIn("--package nazoauth --bin nazoauth", containerfile)
+        self.assertIn("--package nazo-server --bin nazoauth", containerfile)
 
         conformance = (
             ROOT / ".github" / "workflows" / "conformance-security.yml"
         ).read_text(encoding="utf-8")
         self.assertIn(
-            "--manifest-path crates/nazoauth/Cargo.toml",
+            "--manifest-path crates/server/Cargo.toml",
             conformance,
         )
 

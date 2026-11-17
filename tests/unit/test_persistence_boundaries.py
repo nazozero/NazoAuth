@@ -10,7 +10,7 @@ SERVER = ROOT / "crates" / "authorization-server"
 CONTRACTS = ROOT / "crates" / "persistence"
 POSTGRES_LAUNCHER = ROOT / "crates" / "authorization-server-postgres"
 VALKEY_LAUNCHER = ROOT / "crates" / "authorization-server-valkey"
-DISTRIBUTION = ROOT / "crates" / "nazoauth"
+DISTRIBUTION = ROOT / "crates" / "server"
 
 
 class PersistenceBoundaryTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class PersistenceBoundaryTests(unittest.TestCase):
         ]
         self.assertEqual(
             set(workspace["default-members"]),
-            {"crates/nazoauth"},
+            {"crates/server"},
         )
 
     def test_dependency_graph_gate_is_run_by_ci(self) -> None:

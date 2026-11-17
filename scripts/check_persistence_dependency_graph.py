@@ -103,7 +103,7 @@ def graph_roots() -> set[str]:
     # Cover every inner (domain/application) root plus the storage adapters that
     # carry cross-technology gates.
     return set(GRAPHS) | {
-        name for name, role in PACKAGE_ROLES.items() if role in {"domain", "application"}
+        name for name, role in PACKAGE_ROLES.items() if role in contracts.INNER_ROLES
     }
 
 
@@ -112,7 +112,7 @@ def forbidden_graph_dependencies(package: str) -> set[str]:
     return set(GRAPHS.get(package, ())) | {
         name
         for name, dependency_role in PACKAGE_ROLES.items()
-        if dependency_role not in ALLOWED_DEPENDENCY_ROLES[role]
+        if name != package and dependency_role not in ALLOWED_DEPENDENCY_ROLES[role]
     }
 
 

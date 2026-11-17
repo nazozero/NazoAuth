@@ -343,15 +343,15 @@ class CryptoBoundaryTest(unittest.TestCase):
     def test_tls_provider_exceptions(self):
         _write(
             self._tmp,
-            "crates/nazoauth/Cargo.toml",
-            '[package]\nname = "nazoauth"\nversion = "0.1.0"\n\n'
+            "crates/server/Cargo.toml",
+            '[package]\nname = "nazo-server"\nversion = "0.1.0"\n\n'
             "[dependencies]\n"
             'nazo-crypto = { path = "../crypto", features = ["x509"] }\n'
             'rustls = "0.23"\n',
         )
         _write(
             self._tmp,
-            "crates/nazoauth/src/bootstrap/transport.rs",
+            "crates/server/src/bootstrap/transport.rs",
             "pub fn provider() {\n"
             "    let _ = rustls::crypto::aws_lc_rs::default_provider();\n"
             "    let _ = rustls::crypto::CryptoProvider::get_default();\n"
