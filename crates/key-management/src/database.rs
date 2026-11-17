@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use jiff::Timestamp;
+use jiff::{RoundMode, Timestamp, TimestampRound, Unit};
 use nazo_auth::SigningPurpose;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -314,12 +314,14 @@ pub(crate) async fn mdoc_crl_material(
     for _ in 0..MAX_CAS_ATTEMPTS {
         // Observe again after a CAS conflict: another publisher may have won
         // across a second boundary while this request was awaiting storage.
-        let now = jiff::Timestamp::now();
-        if now.timestamp_subsec_nanos() >= 1_000_000_000 {
-            anyhow::bail!("CRL publication requires an ordinary UTC instant");
-        }
         // X.509 times are whole seconds; a reused publication retains them.
-        let now = DateTime::from_timestamp(now.as_second(), 0)
+        // Jiff timestamps are POSIX instants and cannot carry a leap second.
+        let now = Timestamp::now()
+            .round(
+                TimestampRound::new()
+                    .smallest(Unit::Second)
+                    .mode(RoundMode::Floor),
+            )
             .context("CRL publication time is out of range")?;
         let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
         if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
@@ -373,9 +375,9 @@ pub(crate) async fn mdoc_crl_material(
         if let Some(previous) = previous.as_ref() {
             if previous.revision < 1
                 || previous.revision > record.revision
-                || previous.this_update.timestamp_subsec_nanos() != 0
-                || previous.next_update.timestamp_subsec_nanos() != 0
-                || previous.next_update - previous.this_update
+                || previous.this_update.subsec_nanosecond() != 0
+                || previous.next_update.subsec_nanosecond() != 0
+                || previous.this_update.duration_until(previous.next_update)
                     != jiff::SignedDuration::from_hours(24)
             {
                 anyhow::bail!("invalid persisted CRL publication");
@@ -400,7 +402,7 @@ pub(crate) async fn mdoc_crl_material(
                     source_hash,
                     this_update: now,
                     next_update: now
-                        .checked_add_signed(jiff::SignedDuration::from_hours(24))
+                        .checked_add(jiff::SignedDuration::from_hours(24))
                         .context("CRL publication deadline is out of range")?,
                 };
                 payload
