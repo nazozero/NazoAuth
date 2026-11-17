@@ -8,6 +8,7 @@
 use std::collections::HashSet;
 
 use iri_string::types::UriStr;
+use jiff::{Span, Timestamp, tz::Offset};
 use sha1::{Digest as _, Sha1};
 use x509_parser::{
     certificate::X509Certificate,
@@ -74,13 +75,15 @@ fn check_profile(
             return Err(INVALID);
         }
         let not_before =
-            chrono::DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
-                .ok_or(INVALID)?;
+            Timestamp::from_second(certificate.validity().not_before.timestamp())
+                .map_err(|_| INVALID)?;
         // Calendar years, including February month-end clamping; not a fixed
         // 7305-day approximation that changes at Gregorian century boundaries.
-        let latest = not_before
-            .checked_add_months(chrono::Months::new(240))
-            .ok_or(INVALID)?;
+        let latest = Offset::UTC
+            .to_datetime(not_before)
+            .checked_add(Span::new().years(20))
+            .map_err(|_| INVALID)?;
+        let latest = Offset::UTC.to_timestamp(latest).map_err(|_| INVALID)?;
         if certificate.version() != X509Version::V3
             || certificate.signature_algorithm != certificate.tbs_certificate.signature
             || certificate.subject().as_raw() != certificate.issuer().as_raw()
