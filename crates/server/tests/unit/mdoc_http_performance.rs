@@ -14,8 +14,9 @@
 //! in successful latency percentiles. Request creation and wallet-side signing
 //! are outside the measured interval. The exact same deterministic request
 //! corpus is produced from the shared fixture on both revisions.
-//! Fixture version 2 supplies OS-generated wrapping, persistence and holder
-//! keys, generated once and reused by both revisions rather than hardcoded.
+//! Fixture version 3 supplies OS-generated keys and protocol nonces, generated
+//! once and reused by both revisions. HTTP request nonces derive independently
+//! from this shared fixture and the transaction index.
 //!
 //! Scope: single-tenant facade, production Actix adapter, real PostgreSQL and
 //! Valkey bindings, direct_post, ES256 issuer/holder signatures, X.509 path and
@@ -89,14 +90,10 @@ fn derive_token(fixture_digest: &[u8], label: &[u8], index: usize) -> String {
     URL_SAFE_NO_PAD.encode(digest.finalize())
 }
 
-/// Independent synthetic wallet encoder for the Final B.2.6.1 handover and
-/// ISO DeviceAuthenticationBytes. Only the device proof changes; the complete
-/// original IssuerSigned encoding is copied byte for byte from the fixture.
-fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(fixture["encoded"].as_str().unwrap())
-        .unwrap();
-    let original: Cbor = ciborium::from_reader(bytes.as_slice()).unwrap();
+/// Locate the exact received issuer encoding in the known synthetic shape.
+/// Reject a non-round-trippable fixture before using an encoding to locate it.
+pub(crate) fn issuer_signed_bytes(bytes: &[u8]) -> &[u8] {
+    let original: Cbor = ciborium::from_reader(bytes).unwrap();
     // This synthetic fixture must round-trip exactly before a Value encoding
     // can be used to locate a subtree. The wallet then uses the received slice,
     // never the re-encoded IssuerSigned value, in every generated response.
@@ -123,7 +120,17 @@ fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
         1,
         "unambiguous original IssuerSigned slice"
     );
-    let issuer_signed = &bytes[positions[0]..positions[0] + issuer_encoding.len()];
+    &bytes[positions[0]..positions[0] + issuer_encoding.len()]
+}
+
+/// Independent synthetic wallet encoder for the Final B.2.6.1 handover and
+/// ISO DeviceAuthenticationBytes. Only the device proof changes; the complete
+/// original IssuerSigned encoding is copied byte for byte from the fixture.
+fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(fixture["encoded"].as_str().unwrap())
+        .unwrap();
+    let issuer_signed = issuer_signed_bytes(&bytes);
     let holder_private_key: Vec<u8> =
         serde_json::from_value(fixture["holder_private_key"].clone()).unwrap();
     assert_eq!(holder_private_key.len(), 32);
@@ -454,7 +461,7 @@ pub(crate) async fn run() {
         .expect("test Valkey URL");
     let fixture_bytes = std::fs::read(fixture_path).unwrap();
     let fixture: Value = serde_json::from_slice(&fixture_bytes).unwrap();
-    assert_eq!(fixture["version"], 2);
+    assert_eq!(fixture["version"], 3);
     let fixture_digest = Sha256::digest(&fixture_bytes);
     let cases = prepare_cases(&fixture, &fixture_digest, warmup + sample_count);
     let mut corpus_digest = Sha256::new();

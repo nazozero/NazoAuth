@@ -27,8 +27,27 @@ cargo test --release --locked -p nazo-oauth-server --lib \
   mdoc_embedded_api_latency -- --ignored --nocapture
 ```
 
-The fixture contains newly generated test material, including OS-generated
-wrapping, persistence and holder keys. Reuse it in isolated checkouts and build
+The helper writes version 2 with newly generated test material, including
+OS-generated wrapping, persistence and holder keys. Upgrade it once using the
+current candidate's already-built standalone example:
+
+```sh
+NAZO_MDOC_ACTION=prepare-fixture \
+NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
+./target/release/examples/mdoc_http_performance
+```
+
+This writes version 3 in place after authenticating the new presentation. It
+reads two independent 256-bit nonces directly from the operating system CSPRNG
+and persists them as `api_nonce` and `interop_nonce`. It rebuilds the API Final
+SessionTranscript and holder proof with the API client ID and response URI;
+interop uses its separate retained context. The complete original IssuerSigned
+wire slice stays byte for byte identical, with its hash recorded in the fixture.
+The preparation step rejects expired fixtures, unexpected shapes, repeated
+preparation of version 3 and any failed protocol/trust check. No nonce generation
+occurs inside a timed operation.
+
+Reuse the single prepared version 3 fixture in isolated checkouts and build
 directories. It expires after 50 minutes; after expiration, regenerate it and
 repeat every compared variant. Keep the fixture private even though its keys
 are synthetic. The helper's historical timing mode uses a test signer on the
@@ -58,7 +77,9 @@ NAZO_MDOC_API_SAMPLES=2000 \
 The runner performs 100 warmups per operation, then at least 1,000 measurements
 of each operation, serially at concurrency one. Signing uses three claims
 (`given_name`, `age`, `issuing_country`); verification uses the same separate
-two-claim signed presentation (`given_name`, `age`) on every revision. Signing
+two-claim signed presentation (`given_name`, `age`) on every revision. The signing metric is native port `Ok`-return latency, not proof that every
+legacy issuer output is protocol-conformant. Inspect actual signed outputs
+separately and retain rejections. Signing
 includes dropping the returned String; verification records elapsed time before
 checking and dropping the verified result. Both variants use identical timing
 boundaries. Failures stop the run. Results include the fixture digest, ordered
@@ -79,9 +100,9 @@ same-version verification first.
 
 Run the other revision with `NAZO_MDOC_ACTION=interop-verify`,
 `NAZO_MDOC_INTEROP_INPUT` pointing to that export and a separate
-`NAZO_MDOC_INTEROP_OUTPUT`. It checks the shared fixture identity and exact issuer
-slice, verifies with the actual application port, and requires rejection of a
-changed verifier nonce/transcript. Source and verifier variant names must be
+`NAZO_MDOC_INTEROP_OUTPUT`. It checks the shared fixture identity, the persisted random interop nonce and
+exact issuer slice, verifies with the actual application port, and requires
+rejection after changing one bit of that nonce and rebuilding the transcript. Source and verifier variant names must be
 nonempty and different. Repeat in the reverse direction. A pair of self-checks
 or acceptance of helper-generated fixtures does not establish this contract.
 These checks do not claim interoperability with a third-party wallet.
