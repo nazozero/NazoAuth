@@ -1,15 +1,4 @@
-/rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/macros/mod.rs:47: binary operation `==` cannot be applied to type `Result<jiff::Timestamp, jiff::Error>`
-crates/persistence-postgres/src/repositories/scim.rs:405: the trait bound `jiff::Timestamp: FromSqlRow<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/scim.rs:405: the trait bound `jiff::Timestamp: Queryable<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/tokens.rs:1354: no method named `to_diesel` found for struct `SqlLiteral<ST, T>` in the current scope
-crates/persistence-postgres/src/repositories/audit_ledger.rs:928: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/authorization_flow.rs:434: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/authorization_flow.rs:436: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/authorization_flow.rs:442: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/token_issuance.rs:566: no method named `ok_or` found for enum `Result<T, E>` in the current scope
-crates/persistence-postgres/src/repositories/token_issuance.rs:785: no method named `to_diesel` found for struct `SqlLiteral<ST, T>` in the current scope
-crates/persistence-postgres/src/repositories/tokens/create_family.rs:99: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/tokens/create_family.rs:101: the trait bound `jiff::Timestamp: diesel::serialize::ToSql<diesel::sql_types::Timestamptz, Pg>` is not satisfied
-crates/persistence-postgres/src/repositories/../../tests/unit/repositories/access_token_revocation.rs:112: mismatched types
-crates/persistence-postgres/src/repositories/../../tests/unit/repositories/access_token_revocation.rs:113: mismatched types
-crates/persistence-postgres/src/repositories/../../tests/unit/repositories/access_token_revocation.rs:463: mismatched types
+crates/persistence-postgres/src/repositories/token_issuance.rs:795: the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied
+crates/persistence-postgres/src/repositories/token_issuance.rs:795: the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied
+crates/persistence-postgres/src/repositories/token_issuance.rs:796: the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied
+crates/persistence-postgres/src/repositories/token_issuance.rs:796: the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied
