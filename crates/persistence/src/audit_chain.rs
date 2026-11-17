@@ -23,7 +23,11 @@ pub fn security_audit_event_hash(
     hasher.update(event_id.as_bytes());
     update_len_prefixed(&mut hasher, event_type.as_bytes());
     update_len_prefixed(&mut hasher, event_category.as_bytes());
-    hasher.update(&occurred_at.as_microsecond().to_be_bytes());
+    // The v1 chain uses floor-rounded Unix microseconds, including dates
+    // before 1970. Jiff as_microsecond() truncates toward zero instead.
+    // Every Jiff timestamp fits in i64 when expressed in microseconds.
+    let micros = occurred_at.as_nanosecond().div_euclid(1_000) as i64;
+    hasher.update(&micros.to_be_bytes());
     update_len_prefixed(&mut hasher, payload_canonical);
     *hasher.finalize().as_bytes()
 }
@@ -57,4 +61,52 @@ pub fn security_audit_batch_digest(
 fn update_len_prefixed(hasher: &mut blake3::Hasher, value: &[u8]) {
     hasher.update(&(value.len() as u64).to_be_bytes());
     hasher.update(value);
+}
+
+#[cfg(test)]
+mod timestamp_regressions {
+    use super::security_audit_event_hash;
+    use jiff::Timestamp;
+
+    fn hash(at: Timestamp) -> [u8; 32] {
+        security_audit_event_hash(
+            1,
+            &[0; 32],
+            uuid::Uuid::nil(),
+            "event",
+            "security",
+            at,
+            b"{}",
+        )
+    }
+
+    #[test]
+    fn v1_chain_floors_submicrosecond_instants_on_both_sides_of_epoch() {
+        for (nanos, micros) in [
+            (0, 0),
+            (1, 0),
+            (999, 0),
+            (1000, 1),
+            (1001, 1),
+            (-1, -1),
+            (-999, -1),
+            (-1000, -1),
+            (-1001, -2),
+            (-1_000_000_001, -1_000_001),
+        ] {
+            assert_eq!(
+                hash(Timestamp::from_nanosecond(nanos).unwrap()),
+                hash(Timestamp::from_microsecond(micros).unwrap()),
+                "nanosecond input {nanos}",
+            );
+        }
+        assert_ne!(
+            hash(Timestamp::UNIX_EPOCH),
+            hash(Timestamp::from_microsecond(-1).unwrap())
+        );
+        assert_ne!(
+            hash(Timestamp::UNIX_EPOCH),
+            hash(Timestamp::from_microsecond(1).unwrap())
+        );
+    }
 }

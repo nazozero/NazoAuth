@@ -34,6 +34,7 @@ struct Event<'a> {
     event_hash: &'a [u8],
     event_type: &'a str,
     event_category: &'a str,
+    #[serde(serialize_with = "serialize_audit_timestamp")]
     occurred_at: jiff::Timestamp,
     payload_canonical: &'a str,
 }
@@ -53,6 +54,26 @@ impl<'a> From<&'a SecurityAuditPendingDelivery> for Event<'a> {
 }
 fn serialize_base64<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
     serializer.collect_str(&Base64Display::new(bytes, &URL_SAFE_NO_PAD))
+}
+
+// Anchor v2 has a frozen byte representation: fractional precision is 0, 3,
+// 6 or 9 digits. Jiff's default minimal precision would change old batches.
+// collect_str writes directly into the serializer without a temporary String.
+fn serialize_audit_timestamp<S: Serializer>(
+    value: &jiff::Timestamp,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let nanos = value.subsec_nanosecond();
+    let precision = if nanos == 0 {
+        0
+    } else if nanos % 1_000_000 == 0 {
+        3
+    } else if nanos % 1_000 == 0 {
+        6
+    } else {
+        9
+    };
+    serializer.collect_str(&format_args!("{value:.precision$}"))
 }
 
 struct Events<'a>(&'a [SecurityAuditPendingDelivery]);

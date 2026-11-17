@@ -25,35 +25,18 @@ const MDL_DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const MDL_NAMESPACE: &str = "org.iso.18013.5.1";
 
 pub(super) fn to_protocol_time(value: Timestamp) -> Result<MdocTimestamp, CredentialTrustError> {
-    if value.subsec_nanosecond() >= 1_000_000_000 {
-        // Chrono uses excess nanoseconds for a leap second. Never interpret
-        // those as an ordinary Unix instant in the following second.
-        MdocTimestamp::parse_rfc3339(&value.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
-            .map_err(|_| CredentialTrustError::InvalidValidity)
-    } else {
-        MdocTimestamp::from_unix_nanos(
-            i128::from(value.as_second()) * 1_000_000_000 + i128::from(value.subsec_nanosecond()),
-        )
+    MdocTimestamp::from_unix_nanos(value.as_nanosecond())
         .map_err(|_| CredentialTrustError::InvalidValidity)
-    }
 }
 
 pub(super) fn from_protocol_time(value: MdocTimestamp) -> Result<Timestamp, CredentialTrustError> {
-    if let Some(nanos) = value.unix_nanos() {
-        let seconds = i64::try_from(nanos.div_euclid(1_000_000_000))
-            .map_err(|_| CredentialTrustError::InvalidValidity)?;
-        let nanoseconds = u32::try_from(nanos.rem_euclid(1_000_000_000))
-            .map_err(|_| CredentialTrustError::InvalidValidity)?;
-        Timestamp::new(seconds, nanoseconds).ok_or(CredentialTrustError::InvalidValidity)
-    } else {
-        let text = value
-            .format_rfc3339()
-            .map_err(|_| CredentialTrustError::InvalidValidity)?;
-        (&text)
-            .parse::<jiff::Timestamp>()
-            .map(|value| value)
-            .map_err(|_| CredentialTrustError::InvalidValidity)
-    }
+    // The protocol type preserves leap seconds, whereas application deadlines
+    // are POSIX instants. Reject an unrepresentable instant at this boundary;
+    // never silently fold a signed leap second into an adjacent second.
+    let nanos = value
+        .unix_nanos()
+        .ok_or(CredentialTrustError::InvalidValidity)?;
+    Timestamp::from_nanosecond(nanos).map_err(|_| CredentialTrustError::InvalidValidity)
 }
 
 pub(super) async fn sign(
@@ -102,12 +85,6 @@ pub(super) async fn sign(
     let expires_at = to_protocol_time(input.expires_at)?;
     if signed >= expires_at || signed > not_after {
         return Err(CredentialTrustError::InvalidEncoding);
-    }
-    // The application's certificate path engine consumes ordinary Unix seconds.
-    // Reject this unsupported signing instant instead of issuing a credential
-    // that the same application would have to fold during trust validation.
-    if signed.is_leap_second() {
-        return Err(CredentialTrustError::InvalidValidity);
     }
     let mut builder = DocumentBuilder::new(&input.payload.credential_type)
         .device_key(jwk_to_cose_key(jwk)?)
