@@ -1,0 +1,142 @@
+name: Passkey three-way performance
+
+on:
+  push:
+    branches: [audit/passkey-resume-20261118]
+    paths: [.github/workflows/passkey-performance-continuation.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      RUSTUP_TOOLCHAIN: '1.100.0'
+      CARGO_INCREMENTAL: '0'
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nazozero/passkey-auth-rs
+          ref: 6b05844a0cc5f7443e0bec378f904b2c3d39f387
+          fetch-depth: 0
+          path: candidate
+          persist-credentials: false
+          show-progress: false
+      - name: Prepare immutable inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence binaries baseline checkpoint
+          git -C candidate archive d59b317998e56f4a16a69133d7a854c5c34f795b | tar -x -C baseline
+          git -C candidate archive 8260480634fac09e1151ca2b1a9eaa1c02af6f67 | tar -x -C checkpoint
+          mkdir -p baseline/perf baseline/benches
+          cp candidate/docs/evidence/baseline-Cargo.lock baseline/Cargo.lock
+          cp candidate/docs/evidence/baseline-perf-Cargo.toml baseline/perf/Cargo.toml
+          cp candidate/docs/evidence/baseline-perf-Cargo.lock baseline/perf/Cargo.lock
+          cp candidate/benches/ceremony.rs baseline/benches/ceremony.rs
+          # Dalek 2 and P-256 0.14 expose different versions of the Signer trait.
+          # This import is the only baseline harness source adaptation.
+          printf '\nuse p256::ecdsa::signature::Signer as _;\n' >> baseline/benches/ceremony.rs
+          cp candidate/benches/ceremony.rs checkpoint/benches/ceremony.rs
+          git -C candidate rev-parse HEAD HEAD^{tree} > evidence/candidate.identity.txt
+          git -C candidate rev-parse 8260480634fac09e1151ca2b1a9eaa1c02af6f67 8260480634fac09e1151ca2b1a9eaa1c02af6f67^{tree} > evidence/checkpoint.identity.txt
+          git -C candidate rev-parse d59b317998e56f4a16a69133d7a854c5c34f795b d59b317998e56f4a16a69133d7a854c5c34f795b^{tree} > evidence/baseline.identity.txt
+          sha256sum candidate/benches/ceremony.rs checkpoint/benches/ceremony.rs baseline/benches/ceremony.rs candidate/perf/run.py candidate/perf/allocations.py > evidence/harnesses.sha256
+          rustup toolchain install 1.100.0 --profile minimal --target wasm32-wasip1
+          rustc -Vv > evidence/compiler.txt
+          cargo -V >> evidence/compiler.txt
+          node --version > evidence/node.txt
+          lscpu > evidence/cpu.txt
+      - name: Build all artifacts before any measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          for label in baseline checkpoint candidate; do
+            CARGO_TARGET_DIR="$PWD/build/portable" cargo build --locked --release --manifest-path "$label/perf/Cargo.toml" > "evidence/build-$label-portable.log" 2>&1 || { tail -80 "evidence/build-$label-portable.log"; exit 1; }
+            cp build/portable/release/ceremony-bench "binaries/$label-portable"
+            CARGO_TARGET_DIR="$PWD/build/wasi" cargo build --locked --release --target wasm32-wasip1 --manifest-path "$label/perf/Cargo.toml" > "evidence/build-$label-wasi.log" 2>&1 || { tail -80 "evidence/build-$label-wasi.log"; exit 1; }
+            cp build/wasi/wasm32-wasip1/release/ceremony-bench.wasm "binaries/$label.wasm"
+          done
+          for label in checkpoint candidate; do
+            CARGO_TARGET_DIR="$PWD/build/aws" cargo build --locked --release --features aws-lc --manifest-path "$label/perf/Cargo.toml" > "evidence/build-$label-aws.log" 2>&1 || { tail -80 "evidence/build-$label-aws.log"; exit 1; }
+            cp build/aws/release/ceremony-bench "binaries/$label-aws"
+          done
+          sha256sum binaries/* > evidence/artifacts.sha256
+          cp baseline/perf/Cargo.lock evidence/baseline-perf.Cargo.lock
+          cp checkpoint/perf/Cargo.lock evidence/checkpoint-perf.Cargo.lock
+          cp candidate/perf/Cargo.lock evidence/candidate-perf.Cargo.lock
+      - name: Six balanced rounds per execution mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          cpu=$(python3 -c 'import os; print(min(os.sched_getaffinity(0)))')
+          python3 candidate/perf/run.py --baseline binaries/baseline-portable --checkpoint binaries/checkpoint-portable --candidate binaries/candidate-portable --rounds 6 --iterations 5000 --cpu "$cpu" --output evidence/native-rustcrypto.json
+          python3 candidate/perf/run.py --baseline binaries/baseline-portable --checkpoint binaries/checkpoint-aws --candidate binaries/candidate-aws --rounds 6 --iterations 5000 --cpu "$cpu" --output evidence/native-aws-lc.json
+          python3 candidate/perf/run.py --baseline binaries/baseline.wasm --checkpoint binaries/checkpoint.wasm --candidate binaries/candidate.wasm --wasi --rounds 6 --iterations 5000 --cpu "$cpu" --output evidence/wasi.json
+      - name: Native allocations outside the latency experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t versions < <(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          packages = {p['name']: p['version'] for p in tomllib.loads(Path('candidate/perf/Cargo.lock').read_text())['package']}
+          print(packages['aws-lc-rs'])
+          print(packages['aws-lc-sys'])
+          PY
+          )
+          python3 candidate/perf/allocations.py --baseline binaries/baseline-portable --rustcrypto binaries/candidate-portable --aws-lc binaries/candidate-aws --checkpoint-rustcrypto binaries/checkpoint-portable --checkpoint-aws-lc binaries/checkpoint-aws --aws-lc-version "${versions[0]}" --aws-lc-sys-version "${versions[1]}" --trace-dir traces --output evidence/allocations.json
+          tar -czf evidence/allocation-traces.tar.gz traces
+      - name: Summarize without hiding tail regressions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          lines = ['# Passkey continuation: same-host three-way comparison', '', 'Workflow run: ' + os.environ['GITHUB_RUN_ID'], '', 'Six balanced rounds per mode, 5,000 operations per case and round, concurrency one. Values are medians of per-round quantiles, not pooled percentiles. All binaries were compiled before timing; allocation tracing was separate. Hosted-runner observations are not a production SLO or cross-machine comparison.', '', 'Baseline: d59b317998e56f4a16a69133d7a854c5c34f795b. Checkpoint: 8260480634fac09e1151ca2b1a9eaa1c02af6f67. Candidate: 6b05844a0cc5f7443e0bec378f904b2c3d39f387 (runtime 84938674306a2ca0b84319e8ee499b61b8f32e84). Baseline uses the archived dependency locks and the common harness plus one Signer-trait compatibility import.', '']
+          for name in ('native-rustcrypto', 'native-aws-lc', 'wasi'):
+              data = json.loads(Path('evidence/' + name + '.json').read_text())
+              values = data['median_by_case']
+              lines += ['## ' + name, '', '| Case | Baseline P50 µs | Checkpoint P50 µs | Candidate P50 µs | P50 vs checkpoint | P95 vs checkpoint | P99 vs checkpoint | Candidate op/s |', '|---|---:|---:|---:|---:|---:|---:|---:|']
+              for case in sorted(values['candidate']):
+                  b, p, c = (values[label][case] for label in ('baseline', 'checkpoint', 'candidate'))
+                  delta = lambda metric: (c[metric] / p[metric] - 1) * 100
+                  lines.append(f"| {case} | {b['p50_ns']/1000:.3f} | {p['p50_ns']/1000:.3f} | {c['p50_ns']/1000:.3f} | {delta('p50_ns'):+.2f}% | {delta('p95_ns'):+.2f}% | {delta('p99_ns'):+.2f}% | {c['throughput_per_sec']:.0f} |")
+              lines += ['']
+          Path('evidence/summary.md').write_text('\n'.join(lines) + '\n')
+          print('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: passkey-three-way-performance
+          path: evidence/
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: success()
+        with:
+          ref: audit/passkey-resume-20261118
+          path: results-repo
+          persist-credentials: true
+          show-progress: false
+      - name: Preserve inspectable evidence on an isolated result branch
+        if: success()
+        working-directory: results-repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          destination=docs/evidence/passkey-continuation-20261118
+          mkdir -p "$destination"
+          cp ../evidence/* "$destination/"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$destination"
+          git commit -m 'test(perf): retain three-way current-source latency and allocation evidence'
+          git push origin "HEAD:refs/heads/audit/passkey-perf-$GITHUB_RUN_ID"
+          echo "RESULT_BRANCH=audit/passkey-perf-$GITHUB_RUN_ID"
