@@ -31,7 +31,7 @@ crates/persistence-postgres/src/pool.rs:448: // The harness owns the connection 
 crates/persistence-postgres/src/repositories/mfa/mod.rs:163: occurred_at: std::time::SystemTime::now(),
 crates/persistence-postgres/src/repositories/users.rs:916: occurred_at: std::time::SystemTime::now(),
 crates/persistence-postgres/tests/audit_ledger.rs:1176: // n_dead_tup is updated by the asynchronous stats collector, not inline
-crates/persistence-postgres/tests/control_plane_required.rs:926: // Socket close and backend rollback are asynchronous. Require PostgreSQL
+crates/persistence-postgres/tests/control_plane_required.rs:929: // Socket close and backend rollback are asynchronous. Require PostgreSQL
 crates/persistence-postgres/tests/pool_async_contract.rs:39: for synchronous_connection in ["diesel::PgConnection", "diesel::pg::PgConnection"] {
 crates/persistence-postgres/tests/pool_async_contract.rs:41: !operation.contains(synchronous_connection),
 crates/persistence-postgres/tests/pool_async_contract.rs:42: "{name} must not reintroduce the synchronous libpq connection path"

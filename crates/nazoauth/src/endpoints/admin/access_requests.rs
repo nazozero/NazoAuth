@@ -215,10 +215,8 @@ pub async fn admin_approve_access_request(
         return response;
     }
     let token = access_delivery_token(&config.client_secret_pepper, request_user_id, request_id);
-    let Some(expires_at) = i64::try_from(config.delivery_ttl_seconds)
-        .ok()
-        .and_then(SignedDuration::try_seconds)
-        .and_then(|ttl| Timestamp::now().checked_add(ttl))
+    let Ok(expires_at) =
+        Timestamp::now().checked_add(std::time::Duration::from_secs(config.delivery_ttl_seconds))
     else {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,

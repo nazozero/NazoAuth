@@ -70,7 +70,7 @@ impl MfaRepository {
                         user_mfa_remembered_devices::table
                             .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
                             .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()))
-                            .filter(user_mfa_remembered_devices::expires_at.le((now).to_diesel())),
+                            .filter(user_mfa_remembered_devices::expires_at.le(now)),
                     )
                     .execute(connection)
                     .await?;

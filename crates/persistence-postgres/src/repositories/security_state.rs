@@ -461,7 +461,7 @@ impl SecurityStateMaintenanceRepository {
                     (after.map(|row| row.cutoff)).to_diesel(),
                 )
                 .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
-                    (after.map(|row| row.created_at),).to_diesel(),
+                    after.map(|row| row.created_at).to_diesel(),
                 )
                 .bind::<sql_types::Uuid, _>(after.map_or(uuid::Uuid::nil(), |row| row.tenant_id))
                 .bind::<sql_types::Binary, _>(

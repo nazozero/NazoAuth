@@ -41,8 +41,8 @@ impl AuthorizationRepository {
             access_token_jti_blake3: blake3_hex(access_token_jti),
             client_id,
             tenant_id,
-            revoked_at: Timestamp::now(),
-            expires_at: deadline,
+            revoked_at: (Timestamp::now()).into(),
+            expires_at: (deadline).into(),
         });
         let Some(family_id) = refresh_token_family_id else {
             // Without a refresh family there is no multi-statement fence: the

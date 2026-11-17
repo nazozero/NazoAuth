@@ -109,10 +109,7 @@ impl MfaRepository {
                         .filter(users::tenant_id.eq(tenant_id.as_uuid()))
                         .filter(users::is_active.eq(true)),
                 )
-                .set((
-                    users::mfa_enabled.eq(false),
-                    users::updated_at.eq((now).to_diesel()),
-                ))
+                .set((users::mfa_enabled.eq(false), users::updated_at.eq(now)))
                 .execute(connection)
                 .await?;
                 if updated != 1 {

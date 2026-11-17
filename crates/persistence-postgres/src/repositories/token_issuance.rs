@@ -99,8 +99,8 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
                         access_token_jti_blake3: jti_digest,
                         client_id: row.client_id,
                         tenant_id,
-                        revoked_at: now,
-                        expires_at: row.expires_at,
+                        revoked_at: (now).into(),
+                        expires_at: (row.expires_at).into(),
                     });
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -113,8 +113,8 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
                             ),
                         )));
                     }
-                    if row.expires_at > existing.expires_at {
-                        existing.expires_at = row.expires_at;
+                    if row.expires_at > existing.expires_at.into() {
+                        existing.expires_at = row.expires_at.into();
                     }
                 }
             }

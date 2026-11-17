@@ -23,9 +23,7 @@ fn kid_text(seed: u8) -> String {
 const CONTROLLER_ID: &str = "019c8ca2-30a6-7cc9-9f2a-4f5a6b7c8d90";
 
 fn at(seconds: i64) -> jiff::Timestamp {
-    Timestamp::new(1_800_000_000 + seconds, 0)
-        .single()
-        .expect("valid timestamp")
+    Timestamp::new(1_800_000_000 + seconds, 0).expect("valid timestamp")
 }
 
 fn slot_request(deployment: &str, label: &str, seed: u8) -> SlotChangeRequest {

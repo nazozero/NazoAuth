@@ -175,9 +175,7 @@ async fn isolated_repository(_case: &str) -> Option<(String, ControllerRegistryR
 }
 
 fn at(seconds: i64) -> Timestamp {
-    Timestamp::new(1_800_000_000 + seconds, 0)
-        .single()
-        .expect("valid timestamp")
+    Timestamp::new(1_800_000_000 + seconds, 0).expect("valid timestamp")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

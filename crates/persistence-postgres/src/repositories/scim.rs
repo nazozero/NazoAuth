@@ -233,7 +233,7 @@ impl ScimRepository {
                         users::display_name.eq(replacement.display_name),
                         users::given_name.eq(replacement.given_name),
                         users::family_name.eq(replacement.family_name),
-                        users::updated_at.eq((now).to_diesel()),
+                        users::updated_at.eq(now),
                     ))
                     .returning(PublicAccountRow::as_returning())
                     .get_result(connection)
@@ -330,7 +330,7 @@ impl ScimRepository {
                             .map(|value| users::display_name.eq(value)),
                         patch.given_name.map(|value| users::given_name.eq(value)),
                         patch.family_name.map(|value| users::family_name.eq(value)),
-                        users::updated_at.eq((now).to_diesel()),
+                        users::updated_at.eq(now),
                     ))
                     .returning(PublicAccountRow::as_returning())
                     .get_result(connection)
@@ -398,8 +398,8 @@ impl ScimRepository {
                     )
                     .set((
                         users::is_active.eq(false),
-                        users::deleted_at.eq((now).to_diesel()),
-                        users::updated_at.eq((now).to_diesel()),
+                        users::deleted_at.eq(now),
+                        users::updated_at.eq(now),
                     ))
                     .returning(users::updated_at)
                     .get_result::<jiff::Timestamp>(connection)
@@ -517,7 +517,7 @@ async fn revoke(
             .filter(oauth_refresh_families::user_id.eq(user_id))
             .filter(oauth_refresh_families::revoked_at.is_null()),
     )
-    .set(oauth_refresh_families::revoked_at.eq((now).to_diesel()))
+    .set(oauth_refresh_families::revoked_at.eq(now))
     .execute(connection)
     .await?;
     diesel::delete(

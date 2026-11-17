@@ -124,7 +124,7 @@ impl TokenRepository {
                         recovery_invalidations::revoked_refresh_tokens,
                         recovery_invalidations::coverage_version,
                     ))
-                    .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
+                    .first::<(String, Uuid, Uuid, jiff_diesel::Timestamp, i64, i16)>(connection)
                     .await
                     .optional()?
                 {
@@ -139,7 +139,7 @@ impl TokenRepository {
                     }
                     return Ok(RecoveryInvalidation {
                         state_epoch: stored_epoch,
-                        not_before: stored_not_before,
+                        not_before: stored_not_before.into(),
                         revoked_refresh_tokens: stored_count as u64,
                     });
                 }
@@ -377,8 +377,8 @@ impl TokenRepository {
                     access_token_jti_blake3: blake3_hex(&access_token.jti),
                     client_id,
                     tenant_id,
-                    revoked_at: Timestamp::now(),
-                    expires_at: deadline,
+                    revoked_at: (Timestamp::now()).into(),
+                    expires_at: (deadline).into(),
                 });
         let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
         let result = guard
@@ -1132,10 +1132,11 @@ async fn persist_refresh_token_inner(
                     oauth_refresh_spent_tokens::successor_member_id,
                     oauth_refresh_spent_tokens::spent_at,
                 ))
-                .first::<(Uuid, Timestamp)>(connection)
+                .first::<(Uuid, jiff_diesel::Timestamp)>(connection)
                 .await
                 .optional()?;
-            let elapsed = edge.map(|(_, spent_at)| retry.retry_started_at.duration_since(spent_at));
+            let elapsed =
+                edge.map(|(_, spent_at)| retry.retry_started_at.duration_since(spent_at.into()));
             let edge_valid = matches!(
                 edge,
                 Some((successor_member_id, _))

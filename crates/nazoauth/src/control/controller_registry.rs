@@ -36,7 +36,7 @@ pub enum ControllerKeyWarning {
 /// Pure policy predicate shared by status surfaces (D09 consumes the render).
 #[must_use]
 pub fn expiry_warning(now: Timestamp, expires_at: Timestamp) -> Option<ControllerKeyWarning> {
-    let remaining = expires_at - now;
+    let remaining = expires_at.duration_since(now);
     if remaining <= SignedDuration::ZERO {
         None
     } else if remaining <= SignedDuration::from_hours(EXPIRY_URGENT_HOURS) {

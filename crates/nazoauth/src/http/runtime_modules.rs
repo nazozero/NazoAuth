@@ -342,9 +342,19 @@ impl Serialize for RuntimeModuleResponse<'_> {
             "disable_policy",
             &disable_policy_name(module.disable_policy),
         )?;
-        map.serialize_entry("drain_deadline", &module.drain_deadline.map(timestamp))?;
+        map.serialize_entry(
+            "drain_deadline",
+            &module
+                .drain_deadline
+                .map(timestamp)
+                .transpose()
+                .map_err(<S::Error as serde::ser::Error>::custom)?,
+        )?;
         map.serialize_entry("failure_code", &module.failure_code)?;
-        map.serialize_entry("updated_at", &timestamp(module.updated_at))?;
+        map.serialize_entry(
+            "updated_at",
+            &timestamp(module.updated_at).map_err(<S::Error as serde::ser::Error>::custom)?,
+        )?;
         map.end()
     }
 }
@@ -365,7 +375,10 @@ impl Serialize for RuntimeEventResponse<'_> {
         map.serialize_entry("after_state", &event.after.map(event_state_name))?;
         map.serialize_entry("revision", &event.revision.get())?;
         map.serialize_entry("outcome_code", &event.outcome_code)?;
-        map.serialize_entry("created_at", &timestamp(event.occurred_at))?;
+        map.serialize_entry(
+            "created_at",
+            &timestamp(event.occurred_at).map_err(<S::Error as serde::ser::Error>::custom)?,
+        )?;
         map.end()
     }
 }
@@ -460,12 +473,12 @@ const fn event_state_name(value: ModuleEventState) -> &'static str {
     }
 }
 
-fn timestamp(value: SystemTime) -> String {
-    let value = match value.duration_since(UNIX_EPOCH) {
-        Ok(duration) => std::time::UNIX_EPOCH + duration,
-        Err(error) => std::time::UNIX_EPOCH - error.duration(),
+fn timestamp(value: SystemTime) -> Result<Timestamp, jiff::Error> {
+    let nanos = match value.duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_nanos() as i128,
+        Err(error) => -(error.duration().as_nanos() as i128),
     };
-    Timestamp::from(value).to_string()
+    Timestamp::from_nanosecond(nanos)
 }
 
 fn unix_timestamp(value: SystemTime) -> i64 {

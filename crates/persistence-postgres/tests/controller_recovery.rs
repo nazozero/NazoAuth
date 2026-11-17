@@ -89,9 +89,7 @@ async fn attempt_state(url: &str, challenge_id: Uuid) -> AttemptState {
 }
 
 fn at(seconds: i64) -> Timestamp {
-    Timestamp::new(1_800_000_000 + seconds, 0)
-        .single()
-        .expect("valid timestamp")
+    Timestamp::new(1_800_000_000 + seconds, 0).expect("valid timestamp")
 }
 
 fn kid_of(public_key: &[u8; 32]) -> String {

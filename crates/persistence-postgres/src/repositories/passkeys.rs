@@ -192,8 +192,8 @@ impl PasskeyRepository {
             )
             .bind::<diesel::sql_types::Jsonb, _>(facts)),
             user_passkey_credentials::sign_count.eq(i64::from(new_sign_count)),
-            user_passkey_credentials::last_used_at.eq((now).to_diesel()),
-            user_passkey_credentials::updated_at.eq((now).to_diesel()),
+            user_passkey_credentials::last_used_at.eq(now),
+            user_passkey_credentials::updated_at.eq(now),
         ))
         .execute(&mut connection)
         .await
