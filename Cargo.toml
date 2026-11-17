@@ -158,7 +158,7 @@ panic = "abort"
 mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc" }
 # Pin the WebAuthn verifier's protocol and credential-persistence contract;
 # upgrades must pass the passkey/MFA and attestation regression suites.
-passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "8260480634fac09e1151ca2b1a9eaa1c02af6f67" }
+passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "84938674306a2ca0b84319e8ee499b61b8f32e84" }
 
 # Direct mTLS shares the immutable peer chain across the TLS/HTTP boundary.
 # Retire when upstream provides shared ownership or a measured per-connection copy is acceptable.

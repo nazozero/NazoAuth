@@ -65,6 +65,13 @@ backup history missing from an older record must remain unknown; adapters must
 not replace missing history with trusted values. The relational credential ID
 and sign counter remain authoritative.
 
+Stored COSE metadata remains subject to its declared schema and usage: when
+`key_ops` is present it must permit signature verification. Malformed or
+contradictory metadata is not a compatibility exception. Ed25519 uses dalek 3
+with the verifier's existing strict acceptance policy over borrowed transcript
+parts. Do not enable dalek's `legacy_compatibility` feature in an embedding
+application; it relaxes the signature scalar bound.
+
 Custom `PasskeyRepositoryPort` implementations use `update_authentication` to
 commit the counter and signed backup facts together. Compare both the expected
 counter and prior backup eligibility before writing, and return `Conflict` when
