@@ -402,7 +402,7 @@ impl ScimRepository {
                         users::updated_at.eq(now),
                     ))
                     .returning(users::updated_at)
-                    .get_result::<jiff::Timestamp>(connection)
+                    .get_result::<jiff_diesel::Timestamp>(connection)
                     .await
                     .optional()?;
                     let Some(deactivated_at) = deactivated_at else {
@@ -416,7 +416,7 @@ impl ScimRepository {
                                 tenant.tenant_id.as_uuid(),
                                 user_id.as_uuid(),
                                 transaction_id,
-                                deactivated_at,
+                                deactivated_at.into(),
                             ),
                             event_retention,
                         )

@@ -109,8 +109,8 @@ fn revocation(
         access_token_jti_blake3: blake3_hex(jti),
         client_id,
         tenant_id,
-        revoked_at,
-        expires_at,
+        revoked_at: revoked_at.into(),
+        expires_at: expires_at.into(),
     }
 }
 
@@ -460,7 +460,8 @@ async fn owner_batch_conflicting_clients_roll_back_and_other_tenants_are_untouch
         .expect("the other tenant's fact is a separate authority key");
     assert_eq!(foreign.access_token_jti_blake3, foreign_id);
     assert_eq!(
-        foreign.expires_at, foreign_expires_at,
+        foreign.expires_at,
+        jiff::Timestamp::from(foreign_expires_at),
         "the conflicting tenant-scoped batch must not touch other tenants"
     );
 }

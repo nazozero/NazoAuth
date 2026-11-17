@@ -351,10 +351,7 @@ impl Serialize for RuntimeModuleResponse<'_> {
                 .map_err(<S::Error as serde::ser::Error>::custom)?,
         )?;
         map.serialize_entry("failure_code", &module.failure_code)?;
-        map.serialize_entry(
-            "updated_at",
-            &timestamp(module.updated_at).map_err(<S::Error as serde::ser::Error>::custom)?,
-        )?;
+        map.serialize_entry("updated_at", &RuntimeTimestamp(module.updated_at))?;
         map.end()
     }
 }
@@ -375,10 +372,7 @@ impl Serialize for RuntimeEventResponse<'_> {
         map.serialize_entry("after_state", &event.after.map(event_state_name))?;
         map.serialize_entry("revision", &event.revision.get())?;
         map.serialize_entry("outcome_code", &event.outcome_code)?;
-        map.serialize_entry(
-            "created_at",
-            &timestamp(event.occurred_at).map_err(<S::Error as serde::ser::Error>::custom)?,
-        )?;
+        map.serialize_entry("created_at", &RuntimeTimestamp(event.occurred_at))?;
         map.end()
     }
 }
@@ -470,6 +464,28 @@ const fn event_state_name(value: ModuleEventState) -> &'static str {
             nazo_runtime_modules::HistoricalDesiredMode::Disabled => "disabled",
         },
         ModuleEventState::Actual(value) => actual_state_name(value),
+    }
+}
+
+// Keep this endpoint's existing RFC3339 bytes (0/3/6/9 fractional digits and
+// +00:00) while streaming the value to serde without an intermediate String.
+struct RuntimeTimestamp(SystemTime);
+
+impl Serialize for RuntimeTimestamp {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let value = timestamp(self.0).map_err(<S::Error as serde::ser::Error>::custom)?;
+        let nanos = value.subsec_nanosecond();
+        let precision = if nanos == 0 {
+            0
+        } else if nanos % 1_000_000 == 0 {
+            3
+        } else if nanos % 1_000 == 0 {
+            6
+        } else {
+            9
+        };
+        let civil = value.to_zoned(jiff::tz::TimeZone::UTC).datetime();
+        serializer.collect_str(&format_args!("{civil:.precision$}+00:00"))
     }
 }
 

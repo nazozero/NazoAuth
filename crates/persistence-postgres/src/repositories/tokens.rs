@@ -1346,12 +1346,9 @@ async fn compromise_family(
     )
     .set((
         oauth_refresh_families::reuse_detected_at.eq(diesel::dsl::now),
-        oauth_refresh_families::revoked_at.eq((diesel::dsl::sql::<
+        oauth_refresh_families::revoked_at.eq(diesel::dsl::sql::<
             diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>,
-        >(
-            "COALESCE(revoked_at, CURRENT_TIMESTAMP)"
-        ))
-        .to_diesel()),
+        >("COALESCE(revoked_at, CURRENT_TIMESTAMP)")),
     ))
     .execute(connection)
     .await?;

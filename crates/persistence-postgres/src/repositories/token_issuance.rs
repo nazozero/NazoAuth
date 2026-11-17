@@ -563,7 +563,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .checked_add(jiff::SignedDuration::from_secs(
                     MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
                 ))
-                .ok_or(TokenPortError::CorruptData)?;
+                .map_err(|_| TokenPortError::CorruptData)?;
             // A SingleUse receipt retains replay-revocation evidence until the
             // token acceptance window and grant deadline both close. Fresh
             // has no receipt and persists neither deadline.
@@ -781,9 +781,11 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 // Expiry closes replay authority even while physical
                 // reclamation has not visited this receipt. Keep the complete
                 // safety horizon, not merely the access-token expiration.
-                .filter(oauth_token_issuances::retain_until.gt(
-                    (diesel::dsl::sql::<sql_types::Timestamptz>("CURRENT_TIMESTAMP")).to_diesel(),
-                ))
+                .filter(oauth_token_issuances::retain_until.gt(diesel::dsl::sql::<
+                    sql_types::Timestamptz,
+                >(
+                    "CURRENT_TIMESTAMP"
+                )))
                 .select((
                     oauth_token_issuances::access_token_jti,
                     oauth_token_issuances::access_token_expires_at,

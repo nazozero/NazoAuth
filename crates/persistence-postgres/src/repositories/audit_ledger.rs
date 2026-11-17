@@ -397,10 +397,13 @@ async fn append_on_connection(
     // A function's first DataRow is not an implicit-transaction commit ACK.
     // Drain through statement completion so late database errors propagate.
     // Inside a business transaction, its owner still awaits the final COMMIT.
-    AuditAppendQuery { event }
-        .load::<AuditMutationRow>(connection)
-        .await
-        .and_then(single_audit_mutation)
+    AuditAppendQuery {
+        event: event,
+        occurred_at: (event).occurred_at.into(),
+    }
+    .load::<AuditMutationRow>(connection)
+    .await
+    .and_then(single_audit_mutation)
 }
 
 /// Re-claim the committed in-flight batch. The identical sequence range and
@@ -902,6 +905,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditPrivilegeQuer
 // Fixed SQL and bind types give the existing per-connection statement cache a stable identity.
 struct AuditAppendQuery<'a> {
     event: &'a SecurityAuditEvent,
+    occurred_at: jiff_diesel::Timestamp,
 }
 impl diesel::query_builder::QueryId for AuditAppendQuery<'_> {
     type QueryId = AuditAppendQuery<'static>;
@@ -925,7 +929,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for AuditAppendQuery<'
         out.push_sql(", ");
         out.push_bind_param::<diesel::sql_types::Jsonb, _>(&self.event.payload)?;
         out.push_sql(", ");
-        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.event.occurred_at)?;
+        out.push_bind_param::<diesel::sql_types::Timestamptz, _>(&self.occurred_at)?;
         out.push_sql(") AS changed");
         Ok(())
     }
