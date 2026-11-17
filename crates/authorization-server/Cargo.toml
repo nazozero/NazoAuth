@@ -57,6 +57,8 @@ nazo-key-management = { workspace = true, features = ["test-support"] }
 aws-lc-rs.workspace = true
 nazo-crypto = { workspace = true, features = ["certificate-issuance"] }
 rcgen.workspace = true
+sha1.workspace = true
+yasna.workspace = true
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 nazo-mdoc = { workspace = true, features = ["wasm-js"] }

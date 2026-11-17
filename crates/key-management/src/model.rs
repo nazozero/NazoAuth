@@ -13,7 +13,7 @@ use web_time::Instant;
 use crate::ExternalKeySigner;
 use arc_swap::ArcSwap;
 use base64::{Engine, encoded_len, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use nazo_auth::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -389,11 +389,17 @@ impl From<Openid4vcPublicMaterial> for Openid4vcMaterial {
     }
 }
 
-/// One issuer's private certificate bundle and fresh revocation facts for CRL issuance.
-/// Unrelated JWT and request-object private keys are not prepared by this read.
+/// One issuer's certificate bundle, revocation facts and persisted CRL publication.
+/// The publication number/time are allocated atomically with those facts. Repeated
+/// reads may return the same publication; they never allocate an in-memory counter.
+/// Unrelated JWT and request-object private keys are not prepared by this operation.
 pub struct MdocCrlMaterial {
     pub issuer_private_material: String,
+    pub certificate_chain_der: Vec<Vec<u8>>,
     pub revocation_snapshot: nazo_digital_credentials::CertificateRevocationSnapshot,
+    pub crl_number: u128,
+    pub this_update: DateTime<Utc>,
+    pub next_update: DateTime<Utc>,
 }
 
 impl fmt::Debug for MdocCrlMaterial {
@@ -402,6 +408,9 @@ impl fmt::Debug for MdocCrlMaterial {
             .debug_struct("MdocCrlMaterial")
             .field("issuer_private_material", &"<redacted>")
             .field("revocation_snapshot", &self.revocation_snapshot)
+            .field("crl_number", &self.crl_number)
+            .field("this_update", &self.this_update)
+            .field("next_update", &self.next_update)
             .finish()
     }
 }
@@ -768,9 +777,11 @@ impl KeyManager {
         crate::database::openid4vc_state(&self.inner.database).await
     }
 
-    /// Read one fresh authoritative generation for the selected CRL issuer.
+    /// Read one authoritative generation and prepare its persisted CRL publication.
     /// Sealing, tenant/revision/public binding and revocation structure remain
-    /// validated; the caller owns selected certificate/profile validation.
+    /// validated. A first publication, changed facts or expiration performs a CAS;
+    /// unchanged current publications are read-only. The caller owns the selected
+    /// certificate/profile validation and signs with these exact facts and times.
     pub async fn database_mdoc_crl_material(
         &self,
         issuer_id: &str,

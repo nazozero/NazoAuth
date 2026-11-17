@@ -18,7 +18,9 @@ The existing key lifecycle refreshes managed OpenID4VC generations at most every
 30 seconds. Local revocation facts are authoritative database state; a successful
 read establishes a new observation window, without writing a new revision.
 Verification rejects an observation older than 60 seconds. CRL requests read the
-database directly and issue a CRL valid for 24 hours. A revoked active DS cannot
+database directly and use a persisted publication valid for 24 hours. Its first
+publication, changed revocation facts or expiry allocate a new publication
+through the same keyset compare-and-swap. A revoked active DS cannot
 be selected for new signing; rotate it to resume issuance.
 
 Client-scoped external trust continues to use tenant TrustPolicy resources.
@@ -30,9 +32,17 @@ reload interval have been removed.
 
 ISO/IEC 18013-5:2021 section 9.3.1, step 5 requires the MSO
 `validityInfo.signed` time to fall within the document signer certificate's
-validity period. The verifier checks the issuer certificate chain at that
-signing time, as well as the issuer signature, credential validity, revocation,
-and device authentication. Certificate validity is checked at the MSO signing time.
+validity period. The mdoc core checks this bound independently of current
+credential validity. NazoAuth performs RFC 5280 certificate path validation
+and certificate revocation checks at the same captured current time used for
+the MSO validity check. An expired DS is not made acceptable by an earlier
+MSO signing time. The authenticated signing time retains a whole leap second;
+it is not forced through a Unix-time conversion that would lose that value.
+
+The remaining checks include the issuer signature, the supported mDL DS
+certificate profile and issuer binding, credential status when present, and
+holder authentication. A successful COSE signature alone does not complete
+these responsibilities.
 
 The standard is identified in the [HAIP normative references](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#ISO.18013-5).
 Freshly issued test certificates and backdated MSO signing times can violate
@@ -50,7 +60,7 @@ nazoauth mdoc-import --tenant <tenant-uuid> --from <certificate-material-directo
 ```
 
 The directory contains `certificate-bundle.pem`. An mdoc profile also requires
-`revocation-snapshot.json` and `iaca-keys/<IACA-fingerprint>.pem` for each IACA.
+`revocation-snapshot.json` and `iaca-keys/<CRL-publication-id>.pem` for each IACA.
 Each IACA file contains its private key, DS certificate, and IACA certificate.
 The selected signing key must already exist in the tenant database keyset and
 match the supplied leaf certificate. Non-mdoc profiles can import a certificate
@@ -64,6 +74,22 @@ must not be promoted to authoritative local state. Missing IACA records, a
 mismatched chain or an existing managed aggregate cause an error. No automatic
 regeneration or file fallback occurs. A failed commit leaves the prior keyset
 unchanged. A repeated import after success reports that material already exists.
+The filename and both certificates' CRL URLs must agree with the publication
+identifier. One IACA key may own only one certificate record in this native
+profile, so importing multiple records with the same key is rejected. Otherwise
+the separate endpoints could publish incomplete lists for one issuer.
+New IACA records also pass the supported root certificate profile. The maximum
+lifetime is computed as 20 calendar years, with February month-end clamping,
+using the existing date library. Fractional certificate times are rejected
+before conversion to whole seconds. The self-signature, current validity, tenant
+configuration and complete active certificate pair are checked separately;
+sharing a publication key does not permit replacing the recorded root DER.
+
+An imported historical record may retain the old DER-hash URL when its root
+omits CRLDistributionPoints and its DS contains that exact legacy URL. This
+exception preserves an existing revocation endpoint; it does not qualify the
+legacy root as the active issuing generation. The active imported pair must
+contain the new root and DS publication address.
 
 Fresh installations initialize the complete aggregate through tenant bootstrap
 or the existing tenant key-generation operation. Normal server startup reads
@@ -82,11 +108,27 @@ With the deployment's normal configuration available to the administrator:
 
 ```sh
 nazoauth mdoc-rotate --tenant <tenant-uuid>
-nazoauth mdoc-revoke --tenant <tenant-uuid> --issuer-id <IACA-fingerprint>
+nazoauth mdoc-revoke --tenant <tenant-uuid> --issuer-id <CRL-publication-id>
 ```
 
-The fingerprint is the 64-character SHA-256 IACA identifier already present in
-that DS certificate's CRL URL. Each current IACA record owns one DS; revocation
+The identifier is the 64-character lowercase hexadecimal value already present
+in that DS certificate's CRL URL. For newly generated material it is
+`SHA-256("NazoAuth mdoc CRL publication v1\0" || IACA subjectPublicKey bytes)`.
+The prefix ends in one zero byte; the key bytes are the raw BIT STRING payload,
+not SubjectPublicKeyInfo DER. This value is available before the root is signed,
+so both root and DS can include the same
+`<issuer>/.well-known/mdoc/<CRL-publication-id>.crl` address without a circular
+hash of the root certificate. This publication identifier is separate from the
+certificate fingerprints used for trust and revocation identities.
+
+Previously published DER-hash addresses remain attached to their original
+records across rotation. No second copy of an IACA private key is created under
+an alias. An existing active root without CRLDistributionPoints requires the
+explicit rotation command before further issuance; its original DS CRL remains
+available afterward. Certificate bytes already distributed to holders are not
+rewritten.
+
+Each current IACA record owns one DS; revocation
 marks that DS revoked, not every historical DS. Concurrent updates use the
 record revision to prevent lost writes. A conflict fails explicitly and must be
 reviewed before repeating the operation. Neither command modifies other tenants.
@@ -99,6 +141,35 @@ CRL issuance reads one fresh, authenticated tenant generation and extracts only
 the selected IACA bundle and revocation snapshot. It retains schema, seal and
 public/private projection binding and revocation structure validation, without
 preparing unrelated JWT signers or request-object RSA keys. The selected DS,
-issuer fingerprint/contact, status, serial and revocation time remain checked;
+publication address/contact, status, serial and revocation time remain checked;
 the crypto signer matches the IACA private key to the certificate and signs
-using that same prepared key. Historical IACA records remain available. CRL numbers derive from the wall clock and may repeat.
+using that same prepared key. Historical IACA records remain available.
+
+The encrypted keyset also records the publication's source hash, allocation
+revision, `thisUpdate` and `nextUpdate`. The hash binds the selected certificate
+DER and persisted revocation snapshot, not private-key bytes. An unchanged,
+unexpired publication reuses the complete to-be-signed CRL content and number.
+A successful compare-and-swap allocates the next number as `2^64 + revision`,
+which is greater than all numbers emitted by the former `u64` wall-clock scheme.
+Concurrent conflicts re-read the winning facts before publishing. A clock
+earlier than the previous publication's `thisUpdate` is rejected. Publication
+monotonicity relies on preserving the authoritative database revision during
+recovery; restoring an older database is not a safe way to reset CRL state.
+
+Upgrade every instance that publishes these CRLs before exposing a new
+publication number. Once a number above `2^64` has been served, the older `u64`
+clock-based publisher cannot resume that endpoint with a valid later number.
+The source change remains reviewable and revertible, but publication state has
+no transparent rollback to the old numbering scheme. Retain the new publisher
+or stop the old endpoint and recover under the authority's normal issuance and
+trust-management procedure. Restoring a database backup must also preserve a
+counter at least as high as every publication already served. This change does
+not itself deploy a production publisher or migrate production state.
+
+The root's CRL endpoint publishes the IACA-signed list for its owned DS. It does
+not independently establish trust in that IACA or make a compromised root key
+safe. Removing a compromised trust anchor and updating its trusted distribution
+remain explicit authority and deployment responsibilities. The applicable
+[ISO/IEC 18013-5:2021 Annex B](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
+and [RFC 5280 CRL-number rules](https://www.rfc-editor.org/rfc/rfc5280.html#section-5.2.3)
+do not replace those operational controls.

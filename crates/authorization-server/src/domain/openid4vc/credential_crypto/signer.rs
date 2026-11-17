@@ -16,7 +16,7 @@ impl Openid4vcCredentialCrypto {
     ) -> anyhow::Result<String> {
         let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
         header.typ = Some("oauth-authz-req+jwt".to_owned());
-        header.x5c = Some(material.x5c);
+        header.x5c = Some(material.x5c());
         material
             .lease
             .encode_jwt(SigningPurpose::PresentationRequest, &header, claims)
@@ -29,7 +29,7 @@ impl Openid4vcCredentialCrypto {
         let material = self.signing_material(lease)?;
         let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
         header.typ = Some("openidvci-issuer-metadata+jwt".to_owned());
-        header.x5c = Some(material.x5c);
+        header.x5c = Some(material.x5c());
         material
             .lease
             .encode_jwt(SigningPurpose::Credential, &header, claims)

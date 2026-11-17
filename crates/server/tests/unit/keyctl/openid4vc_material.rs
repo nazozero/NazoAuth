@@ -84,6 +84,171 @@ fn managed_profile(hostname: &str) -> Openid4vcCertificateProfile {
     }
 }
 
+// Reproduce the historical native shape: the root has no CRLDP and the DS
+// points to SHA-256(root DER). This is independently signed test material,
+// not a damaged or re-encoded instance of the new certificate profile.
+fn legacy_mdoc_material(
+    signing_key: &KeyPair,
+    ca_key: &KeyPair,
+    profile: &Openid4vcCertificateProfile,
+) -> Openid4vcMaterial {
+    let mdoc = profile.mdoc_profile.as_ref().unwrap();
+    let now = time::OffsetDateTime::now_utc()
+        .date()
+        .midnight()
+        .assume_utc();
+    let ca_pem = ca_key.serialize_pem();
+    let ca_public_key = nazo_crypto::certificate::public_key_from_pem(&ca_pem).unwrap();
+    let mut ca_params = CertificateParams::default();
+    ca_params.distinguished_name = DistinguishedName::new();
+    ca_params
+        .distinguished_name
+        .push(DnType::CommonName, "Historical IACA");
+    ca_params.distinguished_name.push(
+        DnType::CountryName,
+        printable_country_name(&mdoc.issuing_country).unwrap(),
+    );
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+    ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    ca_params.key_identifier_method =
+        KeyIdMethod::PreSpecified(Sha1::digest(&ca_public_key).to_vec());
+    ca_params
+        .custom_extensions
+        .push(issuer_alternative_name(&mdoc.issuer_contact_uri));
+    ca_params.not_before = now;
+    ca_params.not_after = now + time::Duration::days(3650);
+    ca_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
+    let ca_der = nazo_crypto::certificate::self_signed(ca_params, &ca_pem).unwrap();
+    let id = hex::encode(Sha256::digest(&ca_der));
+
+    let signing_pem = signing_key.serialize_pem();
+    let mut leaf_params = CertificateParams::new(vec![profile.hostname.clone()]).unwrap();
+    leaf_params.distinguished_name = DistinguishedName::new();
+    leaf_params
+        .distinguished_name
+        .push(DnType::CommonName, profile.hostname.clone());
+    leaf_params.distinguished_name.push(
+        DnType::CountryName,
+        printable_country_name(&mdoc.issuing_country).unwrap(),
+    );
+    leaf_params.is_ca = IsCa::NoCa;
+    leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    leaf_params.custom_extensions = vec![
+        document_signing_extended_key_usage(),
+        subject_key_identifier_extension(
+            &nazo_crypto::certificate::public_key_from_pem(&signing_pem).unwrap(),
+        ),
+        issuer_alternative_name(&mdoc.issuer_contact_uri),
+    ];
+    leaf_params.crl_distribution_points = vec![CrlDistributionPoint {
+        uris: vec![format!("{}/{}.crl", mdoc.crl_distribution_uri, id)],
+    }];
+    leaf_params.use_authority_key_identifier_extension = true;
+    leaf_params.not_before = now;
+    leaf_params.not_after = now + time::Duration::days(457);
+    leaf_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
+    let leaf_der =
+        nazo_crypto::certificate::sign(leaf_params, &signing_pem, &ca_der, &ca_pem).unwrap();
+    let root_pem = pem_certificate(&ca_der);
+    let chain_pem = format!("{}{}", pem_certificate(&leaf_der), root_pem);
+    let now = chrono::Utc::now();
+    Openid4vcMaterial {
+        public: Openid4vcPublicMaterial {
+            signing_kid: "historical-test-kid".to_owned(),
+            certificate_chain_pem: chain_pem.clone(),
+            trust_anchors_pem: root_pem,
+            revocation_snapshot: Some(nazo_digital_credentials::CertificateRevocationSnapshot {
+                version: nazo_digital_credentials::CertificateRevocationSnapshot::VERSION,
+                this_update: now,
+                next_update: now + chrono::Duration::hours(24),
+                entries: vec![nazo_digital_credentials::CertificateRevocationEntry {
+                    issuer: mdoc.issuer_contact_uri.clone(),
+                    certificate: nazo_digital_credentials::certificate_identity(&leaf_der),
+                    status: nazo_digital_credentials::CertificateRevocationStatus::Good,
+                    revoked_at: None,
+                }],
+            }),
+        },
+        iaca_private_materials: [(id, format!("{ca_pem}{chain_pem}"))].into(),
+    }
+}
+
+fn reissue_test_iaca(
+    pem: &str,
+    original: &x509_parser::certificate::X509Certificate<'_>,
+    profile: &MdocCertificateProfile,
+    id: &str,
+    change: impl FnOnce(&mut CertificateParams),
+) -> Vec<u8> {
+    let mut params = CertificateParams::default();
+    params.distinguished_name = DistinguishedName::new();
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "NazoAuth OpenID4VC Local CA");
+    params.distinguished_name.push(
+        DnType::CountryName,
+        printable_country_name(&profile.issuing_country).unwrap(),
+    );
+    params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    params.key_identifier_method = KeyIdMethod::PreSpecified(
+        Sha1::digest(original.public_key().subject_public_key.data.as_ref()).to_vec(),
+    );
+    params
+        .custom_extensions
+        .push(issuer_alternative_name(&profile.issuer_contact_uri));
+    params.crl_distribution_points = vec![CrlDistributionPoint {
+        uris: vec![format!("{}/{}.crl", profile.crl_distribution_uri, id)],
+    }];
+    params.not_before =
+        time::OffsetDateTime::from_unix_timestamp(original.validity().not_before.timestamp())
+            .unwrap();
+    params.not_after =
+        time::OffsetDateTime::from_unix_timestamp(original.validity().not_after.timestamp())
+            .unwrap();
+    params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
+    change(&mut params);
+    nazo_crypto::certificate::self_signed(params, pem).unwrap()
+}
+
+fn certificate_crl_uri(certificate: &x509_parser::certificate::X509Certificate<'_>) -> String {
+    use x509_parser::extensions::{DistributionPointName, GeneralName, ParsedExtension};
+    let extension = certificate
+        .get_extension_unique(&x509_parser::der_parser::oid!(2.5.29.31))
+        .unwrap()
+        .expect("certificate CRLDistributionPoints");
+    assert!(!extension.critical);
+    let ParsedExtension::CRLDistributionPoints(points) = extension.parsed_extension() else {
+        panic!("parsed CRLDistributionPoints");
+    };
+    assert_eq!(points.points.len(), 1);
+    let point = &points.points[0];
+    assert!(point.reasons.is_none());
+    assert!(point.crl_issuer.is_none());
+    let Some(DistributionPointName::FullName(names)) = &point.distribution_point else {
+        panic!("fullName distribution point");
+    };
+    let [GeneralName::URI(uri)] = names.as_slice() else {
+        panic!("one URI distribution point");
+    };
+    (*uri).to_owned()
+}
+
+fn der_sequence_fields(encoded: &[u8]) -> Vec<&[u8]> {
+    use x509_parser::der_parser::asn1_rs::{Any, FromDer};
+    let (remaining, sequence) = Any::from_der(encoded).unwrap();
+    assert!(remaining.is_empty());
+    assert_eq!(sequence.tag(), Tag::Sequence);
+    let mut content = sequence.data;
+    let mut fields = Vec::new();
+    while !content.is_empty() {
+        let (next, _) = Any::from_der(content).unwrap();
+        fields.push(&content[..content.len() - next.len()]);
+        content = next;
+    }
+    fields
+}
+
 fn parse_certificates(pem: &str) -> Vec<CertificateDer<'_>> {
     CertificateDer::pem_slice_iter(pem.as_bytes())
         .collect::<Result<Vec<_>, _>>()
@@ -167,6 +332,21 @@ fn assert_iso_mdoc_certificate_profile(material: &Openid4vcMaterial) {
     assert!(basic_constraints.critical);
     assert!(basic_constraints.value.ca);
     assert_eq!(basic_constraints.value.path_len_constraint, Some(0));
+
+    let root_uri = certificate_crl_uri(&iaca);
+    assert_eq!(certificate_crl_uri(&leaf), root_uri);
+    let id = root_uri
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .strip_suffix(".crl")
+        .unwrap();
+    assert!(material.iaca_private_materials.contains_key(id));
+    assert_ne!(id, hex::encode(Sha256::digest(certificates[1].as_ref())));
+    // The address is derived from the raw public key before the root exists.
+    let mut address_input = b"NazoAuth mdoc CRL publication v1\0".to_vec();
+    address_input.extend_from_slice(iaca.public_key().subject_public_key.data.as_ref());
+    assert_eq!(id, hex::encode(Sha256::digest(address_input)));
 }
 
 fn assert_same_material(left: &Openid4vcMaterial, right: &Openid4vcMaterial) {
@@ -582,12 +762,399 @@ async fn restart_with_a_different_key_manager_still_serves_database_backed_crl()
     let (_, ca) = x509_parser::parse_x509_certificate(iaca[1].as_ref()).expect("parse IACA");
     assert!(parsed_crl.verify_signature(ca.public_key()).is_ok());
     assert_eq!(parsed_crl.iter_revoked_certificates().count(), 0);
-    let response = nazoauth::test_support::well_known::mdoc_crl(Some(&source), &issuer_id).await;
+    let root_uri = certificate_crl_uri(&ca);
+    let (_, ds) = x509_parser::parse_x509_certificate(iaca[0].as_ref()).unwrap();
+    assert_eq!(certificate_crl_uri(&ds), root_uri);
+    assert_eq!(
+        root_uri,
+        format!("https://tenant.example/.well-known/mdoc/{issuer_id}.crl")
+    );
+    // Use the address actually embedded in the root, through the real HTTP
+    // response handler, then verify the returned CRL with that root's key.
+    let address = Url::parse(&root_uri).unwrap();
+    let requested_id = address
+        .path_segments()
+        .unwrap()
+        .next_back()
+        .unwrap()
+        .strip_suffix(".crl")
+        .unwrap();
+    let response = nazoauth::test_support::well_known::mdoc_crl(Some(&source), requested_id).await;
     assert_eq!(response.status(), http::StatusCode::OK);
     assert_eq!(
         response.headers().get("content-type").unwrap(),
         "application/pkix-crl"
     );
+    let (remaining, returned_crl) = x509_parser::parse_x509_crl(response.body()).unwrap();
+    assert!(remaining.is_empty());
+    returned_crl.verify_signature(ca.public_key()).unwrap();
+    assert_eq!(returned_crl.iter_revoked_certificates().count(), 0);
+    assert_eq!(returned_crl.crl_number(), parsed_crl.crl_number());
+    assert_eq!(returned_crl.last_update(), parsed_crl.last_update());
+    assert_eq!(returned_crl.next_update(), parsed_crl.next_update());
+    assert_eq!(
+        returned_crl.tbs_cert_list.as_ref(),
+        parsed_crl.tbs_cert_list.as_ref()
+    );
+    assert_eq!(returned_crl.crl_number().unwrap().to_bytes_be().len(), 9);
+    let fingerprint = hex::encode(Sha256::digest(iaca[1].as_ref()));
+    assert_eq!(
+        nazoauth::test_support::well_known::mdoc_crl(Some(&source), &fingerprint)
+            .await
+            .status(),
+        http::StatusCode::NOT_FOUND,
+        "new material has one publication record, not a second private-key alias"
+    );
+}
+
+#[tokio::test]
+async fn mdoc_import_binds_publication_filename_and_certificate_uri() {
+    for wrong_filename in [true, false] {
+        let source = temporary_directory("mdoc-import-address-binding");
+        let repository = Arc::new(MemorySigningKeyRepository::default());
+        let (manager, _, signing_key) =
+            database_manager_with_mdoc_key(repository.clone(), Uuid::now_v7()).await;
+        let profile = managed_profile("tenant.example");
+        let active = write_mdoc_import_fixture(&source, &signing_key, &profile, true)
+            .await
+            .unwrap();
+        let id = active.iaca_private_materials.keys().next().unwrap();
+        let selected_path = source.join("iaca-keys").join(format!("{id}.pem"));
+        if wrong_filename {
+            let certificates = iaca_certificates(&active, id);
+            let fingerprint = hex::encode(Sha256::digest(certificates[1].as_ref()));
+            tokio::fs::rename(
+                selected_path,
+                source.join("iaca-keys").join(format!("{fingerprint}.pem")),
+            )
+            .await
+            .unwrap();
+        } else {
+            // A correctly signed pair with a different issuer's URL must not
+            // acquire a working local address just by being copied here.
+            let foreign = build_managed_material(
+                &signing_key.serialize_pem(),
+                &managed_profile("different.example"),
+                None,
+            )
+            .unwrap();
+            tokio::fs::write(
+                selected_path,
+                foreign.iaca_private_materials.values().next().unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+        let before = repository.load().await.unwrap().unwrap();
+        let error = import_mdoc_directory(&manager, &profile, &source)
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains(if wrong_filename {
+                "filename does not match its CRL publication address"
+            } else {
+                "no bound CRL publication address"
+            }),
+            "{error:#}"
+        );
+        assert_same_persisted_record(&before, &repository.load().await.unwrap().unwrap());
+        tokio::fs::remove_dir_all(source).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn mdoc_import_binds_the_active_root_and_enforces_its_profile() {
+    let source = temporary_directory("mdoc-import-active-root-binding");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let (manager, _, signing_key) =
+        database_manager_with_mdoc_key(repository.clone(), Uuid::now_v7()).await;
+    let profile = managed_profile("tenant.example");
+    let active = write_mdoc_import_fixture(&source, &signing_key, &profile, true)
+        .await
+        .unwrap();
+    let (id, pem) = active.iaca_private_materials.iter().next().unwrap();
+    let chain = iaca_certificates(&active, id);
+    let (_, original_ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
+    let mdoc = profile.mdoc_profile.as_ref().unwrap();
+
+    // A second valid root with the same key has the same publication ID but
+    // different certificate identity. It must not replace the root captured
+    // together with the DS in the immutable publication record.
+    let replacement_der = reissue_test_iaca(pem, &original_ca, mdoc, id, |_| {});
+    assert_ne!(replacement_der, chain[1].as_ref());
+    let (_, replacement) = x509_parser::parse_x509_certificate(&replacement_der).unwrap();
+    let (_, leaf) = x509_parser::parse_x509_certificate(chain[0].as_ref()).unwrap();
+    nazo_crypto::certificate::verify_signature(&replacement, replacement.public_key()).unwrap();
+    nazo_crypto::certificate::verify_signature(&leaf, replacement.public_key()).unwrap();
+    assert_eq!(replacement.subject(), leaf.issuer());
+    tokio::fs::write(
+        source.join("certificate-bundle.pem"),
+        format!(
+            "{}{}",
+            pem_certificate(chain[0].as_ref()),
+            pem_certificate(&replacement_der),
+        ),
+    )
+    .await
+    .unwrap();
+
+    let before = repository.load().await.unwrap().unwrap();
+    let error = import_mdoc_directory(&manager, &profile, &source)
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("active signing chain does not match its IACA publication record"),
+        "{error:#}"
+    );
+    assert_same_persisted_record(&before, &repository.load().await.unwrap().unwrap());
+
+    // Even an exactly matched active/publication pair is refused when the
+    // newly imported root exceeds the allowed certificate lifetime.
+    let overlong_der = reissue_test_iaca(pem, &original_ca, mdoc, id, |params| {
+        params.not_after = params.not_before + time::Duration::days(8_000);
+    });
+    let (_, overlong) = x509_parser::parse_x509_certificate(&overlong_der).unwrap();
+    nazo_crypto::certificate::verify_signature(&overlong, overlong.public_key()).unwrap();
+    nazo_crypto::certificate::verify_signature(&leaf, overlong.public_key()).unwrap();
+    let active_chain = format!(
+        "{}{}",
+        pem_certificate(chain[0].as_ref()),
+        pem_certificate(&overlong_der)
+    );
+    tokio::fs::write(source.join("certificate-bundle.pem"), &active_chain)
+        .await
+        .unwrap();
+    let private_pem = &pem[..pem.find("-----BEGIN CERTIFICATE-----").unwrap()];
+    tokio::fs::write(
+        source.join("iaca-keys").join(format!("{id}.pem")),
+        format!("{private_pem}{active_chain}"),
+    )
+    .await
+    .unwrap();
+    let error = import_mdoc_directory(&manager, &profile, &source)
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("new imported IACA does not match the mdoc root certificate profile"),
+        "{error:#}"
+    );
+    assert_same_persisted_record(&before, &repository.load().await.unwrap().unwrap());
+    tokio::fs::remove_dir_all(source).await.unwrap();
+}
+
+#[tokio::test]
+async fn mdoc_import_rejects_fractional_iaca_validity_without_truncating_the_bound() {
+    let source = temporary_directory("mdoc-import-fractional-validity");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let (manager, _, signing_key) =
+        database_manager_with_mdoc_key(repository.clone(), Uuid::now_v7()).await;
+    let profile = managed_profile("tenant.example");
+    let active = write_mdoc_import_fixture(&source, &signing_key, &profile, true)
+        .await
+        .unwrap();
+    let (id, pem) = active.iaca_private_materials.iter().next().unwrap();
+    let chain = iaca_certificates(&active, id);
+    let (_, original_ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
+    let start =
+        chrono::DateTime::from_timestamp(original_ca.validity().not_before.timestamp(), 0).unwrap();
+    let limit = start.checked_add_months(chrono::Months::new(240)).unwrap();
+    let excessive = time::OffsetDateTime::from_unix_timestamp(limit.timestamp()).unwrap()
+        + time::Duration::milliseconds(1);
+
+    // rcgen emits whole-second certificate validity. Use existing ASN.1 readers
+    // and writers to construct a DER-valid fractional GeneralizedTime, then
+    // actually sign that new TBS with the original IACA key.
+    let outer = der_sequence_fields(chain[1].as_ref());
+    let fields = der_sequence_fields(outer[0]);
+    let validity_fields = der_sequence_fields(fields[4]);
+    let validity = yasna::construct_der(|writer| {
+        writer.write_sequence(|writer| {
+            writer.next().write_der(validity_fields[0]);
+            writer
+                .next()
+                .write_generalized_time(&yasna::models::GeneralizedTime::from_datetime(excessive));
+        })
+    });
+    let tbs = yasna::construct_der(|writer| {
+        writer.write_sequence(|writer| {
+            for (index, field) in fields.iter().enumerate() {
+                writer
+                    .next()
+                    .write_der(if index == 4 { &validity } else { field });
+            }
+        })
+    });
+    let ca_key = KeyPair::from_pem(pem).unwrap();
+    let signature = rcgen::SigningKey::sign(&ca_key, &tbs).unwrap();
+    let fractional_der = yasna::construct_der(|writer| {
+        writer.write_sequence(|writer| {
+            writer.next().write_der(&tbs);
+            writer.next().write_der(outer[1]);
+            writer
+                .next()
+                .write_bitvec_bytes(&signature, signature.len() * 8);
+        })
+    });
+    let (_, fractional_ca) = x509_parser::parse_x509_certificate(&fractional_der).unwrap();
+    let (_, leaf) = x509_parser::parse_x509_certificate(chain[0].as_ref()).unwrap();
+    assert_eq!(
+        fractional_ca
+            .validity()
+            .not_after
+            .to_datetime()
+            .nanosecond(),
+        1_000_000
+    );
+    assert_eq!(
+        fractional_ca.validity().not_after.timestamp(),
+        limit.timestamp()
+    );
+    assert!(fractional_ca.validity().is_valid());
+    nazo_crypto::certificate::verify_signature(&fractional_ca, fractional_ca.public_key()).unwrap();
+    nazo_crypto::certificate::verify_signature(&leaf, fractional_ca.public_key()).unwrap();
+    let active_chain = format!(
+        "{}{}",
+        pem_certificate(chain[0].as_ref()),
+        pem_certificate(&fractional_der)
+    );
+    tokio::fs::write(source.join("certificate-bundle.pem"), &active_chain)
+        .await
+        .unwrap();
+    let private_pem = &pem[..pem.find("-----BEGIN CERTIFICATE-----").unwrap()];
+    tokio::fs::write(
+        source.join("iaca-keys").join(format!("{id}.pem")),
+        format!("{private_pem}{active_chain}"),
+    )
+    .await
+    .unwrap();
+
+    let before = repository.load().await.unwrap().unwrap();
+    import_mdoc_directory(&manager, &profile, &source)
+        .await
+        .expect_err("fractional IACA validity cannot be admitted by truncating to whole seconds");
+    assert_same_persisted_record(&before, &repository.load().await.unwrap().unwrap());
+    tokio::fs::remove_dir_all(source).await.unwrap();
+}
+
+#[tokio::test]
+async fn mdoc_import_rejects_distinct_records_owning_the_same_iaca_key() {
+    let source = temporary_directory("mdoc-import-iaca-key-conflict");
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let (manager, _, signing_key) =
+        database_manager_with_mdoc_key(repository.clone(), Uuid::now_v7()).await;
+    let profile = managed_profile("tenant.example");
+    let active = write_mdoc_import_fixture(&source, &signing_key, &profile, true)
+        .await
+        .unwrap();
+    let mut snapshot = active.public.revocation_snapshot.unwrap();
+    let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let ds_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let historical = legacy_mdoc_material(&ds_key, &ca_key, &profile);
+        snapshot
+            .entries
+            .extend(historical.public.revocation_snapshot.unwrap().entries);
+        let (id, pem) = historical
+            .iaca_private_materials
+            .into_iter()
+            .next()
+            .unwrap();
+        tokio::fs::write(source.join("iaca-keys").join(format!("{id}.pem")), pem)
+            .await
+            .unwrap();
+        ids.push(id);
+    }
+    assert_ne!(
+        ids[0], ids[1],
+        "distinct valid root certificates share one key"
+    );
+    tokio::fs::write(
+        source.join("revocation-snapshot.json"),
+        serde_json::to_vec(&snapshot).unwrap(),
+    )
+    .await
+    .unwrap();
+    let before = repository.load().await.unwrap().unwrap();
+    let error = import_mdoc_directory(&manager, &profile, &source)
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("publication key cannot own multiple certificate records"),
+        "{error:#}"
+    );
+    assert_same_persisted_record(&before, &repository.load().await.unwrap().unwrap());
+    tokio::fs::remove_dir_all(source).await.unwrap();
+}
+
+#[tokio::test]
+async fn legacy_active_material_requires_explicit_rotation_and_keeps_its_crl() {
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let binding = tenant_binding("https://tenant.example");
+    let data_dir = temporary_directory("legacy-mdoc-operator-rotation");
+    let config = mdoc_database_config(&data_dir);
+    let (manager, kid, signing_key) =
+        database_manager_with_mdoc_key(repository.clone(), binding.tenant.tenant_id.as_uuid())
+            .await;
+    let profile = managed_profile("tenant.example");
+    let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut legacy = legacy_mdoc_material(&signing_key, &ca_key, &profile);
+    legacy.public.signing_kid = kid;
+    let old_id = legacy.iaca_private_materials.keys().next().unwrap().clone();
+    let old_chain = iaca_certificates(&legacy, &old_id);
+    let (_, old_ca) = x509_parser::parse_x509_certificate(old_chain[1].as_ref()).unwrap();
+    let state = manager.database_openid4vc_state().await.unwrap();
+    manager
+        .database_commit_openid4vc(state.revision, legacy.clone(), None)
+        .await
+        .unwrap();
+    let before = repository.load().await.unwrap().unwrap();
+    let error = generate_local_with_database_manager(&manager, Some(&profile), managed_options())
+        .await
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("explicit mdoc rotation is required")
+    );
+    assert_same_persisted_record(&before, &repository.load().await.unwrap().unwrap());
+
+    operator_manage_mdoc(
+        &config,
+        &binding,
+        &MemoryOperatorPersistence {
+            repository: repository.clone(),
+        },
+        MdocManagementAction::Rotate,
+    )
+    .await
+    .expect("the real operator rotation path can recover a legacy active root");
+    let rotated = manager
+        .database_openid4vc_state()
+        .await
+        .unwrap()
+        .material
+        .unwrap();
+    assert_complete_managed_material(&rotated);
+    assert_eq!(rotated.iaca_private_materials.len(), 2);
+    assert_eq!(
+        rotated.iaca_private_materials[&old_id],
+        legacy.iaca_private_materials[&old_id]
+    );
+    let source = MdocCrlSource {
+        keyset: manager,
+        issuer_contact_uri: profile.mdoc_profile.unwrap().issuer_contact_uri,
+    };
+    let response = nazoauth::test_support::well_known::mdoc_crl(Some(&source), &old_id).await;
+    assert_eq!(response.status(), http::StatusCode::OK);
+    let (_, crl) = x509_parser::parse_x509_crl(response.body()).unwrap();
+    crl.verify_signature(old_ca.public_key()).unwrap();
 }
 
 #[tokio::test]
@@ -603,8 +1170,8 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
         .await
         .expect("active import fixture");
     let historical_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-    let historical = build_managed_material(&historical_key.serialize_pem(), &profile, None)
-        .expect("historical import material");
+    let historical_ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let historical = legacy_mdoc_material(&historical_key, &historical_ca_key, &profile);
     let historical_id = historical
         .iaca_private_materials
         .keys()
@@ -694,6 +1261,16 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
         x509_parser::parse_x509_crl(&historical_crl).expect("parse historical CRL");
     let (_, historical_ca) =
         x509_parser::parse_x509_certificate(historical_certs[1].as_ref()).expect("historical CA");
+    assert_eq!(
+        historical_id,
+        hex::encode(Sha256::digest(historical_certs[1].as_ref()))
+    );
+    assert!(
+        historical_ca
+            .get_extension_unique(&x509_parser::der_parser::oid!(2.5.29.31))
+            .unwrap()
+            .is_none()
+    );
     assert!(
         parsed_historical_crl
             .verify_signature(historical_ca.public_key())
@@ -718,6 +1295,9 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
         .unwrap()
         .unwrap();
     let (_, refreshed) = x509_parser::parse_x509_crl(&refreshed_crl).unwrap();
+    refreshed
+        .verify_signature(historical_ca.public_key())
+        .unwrap();
     assert_eq!(
         refreshed
             .iter_revoked_certificates()
@@ -727,6 +1307,13 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
             .timestamp(),
         expected_revocation_time
     );
+    let response =
+        nazoauth::test_support::well_known::mdoc_crl(Some(&source_after_import), &historical_id)
+            .await;
+    assert_eq!(response.status(), http::StatusCode::OK);
+    let (_, served) = x509_parser::parse_x509_crl(response.body()).unwrap();
+    served.verify_signature(historical_ca.public_key()).unwrap();
+    assert_eq!(served.iter_revoked_certificates().count(), 1);
 
     assert!(
         import_mdoc_directory(&manager, &profile, &source)
@@ -972,7 +1559,7 @@ async fn operator_mdoc_management_imports_rotates_and_revokes_persisted_material
             (parse_certificates(pem).first() == Some(&active_certificate))
                 .then(|| issuer_id.clone())
         })
-        .expect("active IACA fingerprint");
+        .expect("active IACA CRL publication address");
 
     let revoked_revision = operator_manage_mdoc(
         &config,
@@ -1024,7 +1611,7 @@ async fn operator_mdoc_management_imports_rotates_and_revokes_persisted_material
         .await
         .unwrap_err()
         .to_string()
-        .contains("unknown IACA fingerprint")
+        .contains("unknown IACA CRL publication address")
     );
 
     tokio::fs::remove_dir_all(source)
@@ -1228,6 +1815,11 @@ async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_rev
     let persistence = MemoryOperatorPersistence {
         repository: repository.clone(),
     };
+    // Establish the published generation before pausing an authoritative read.
+    // A first-publication CAS that races revocation must instead retry against
+    // the winning facts; only an already published version may be returned
+    // from the earlier captured read.
+    signed_mdoc_crl(&source, &issuer).await.unwrap().unwrap();
     let barrier = repository.pause_next_load();
     let (captured, ()) = tokio::join!(signed_mdoc_crl(&source, &issuer), async {
         tokio::time::timeout(
@@ -1257,6 +1849,7 @@ async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_rev
     new_crl.verify_signature(ca.public_key()).unwrap();
     assert_eq!(old_crl.iter_revoked_certificates().count(), 0);
     assert_eq!(new_crl.iter_revoked_certificates().count(), 1);
+    assert!(new_crl.crl_number() > old_crl.crl_number());
     let (_, ds) = x509_parser::parse_x509_certificate(chain[0].as_ref()).unwrap();
     assert_eq!(
         new_crl
@@ -1266,6 +1859,55 @@ async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_rev
             .raw_serial(),
         ds.raw_serial()
     );
+}
+
+#[test]
+fn iaca_profile_uses_twenty_calendar_years_including_century_month_end() {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let profile = managed_profile("issuer.example");
+    let material = build_managed_material(&key.serialize_pem(), &profile, None).unwrap();
+    let (id, pem) = material.iaca_private_materials.iter().next().unwrap();
+    let chain = iaca_certificates(&material, id);
+    let (_, original_ca) = x509_parser::parse_x509_certificate(chain[1].as_ref()).unwrap();
+    let datetime = |year, month, day| {
+        time::Date::from_calendar_date(year, month, day)
+            .unwrap()
+            .with_hms(12, 34, 56)
+            .unwrap()
+            .assume_utc()
+    };
+    for (start, limit) in [
+        (
+            datetime(2026, time::Month::November, 17),
+            datetime(2046, time::Month::November, 17),
+        ),
+        (
+            datetime(2080, time::Month::February, 29),
+            datetime(2100, time::Month::February, 28),
+        ),
+    ] {
+        for exceeds in [false, true] {
+            let der = reissue_test_iaca(
+                pem,
+                &original_ca,
+                profile.mdoc_profile.as_ref().unwrap(),
+                id,
+                |params| {
+                    params.not_before = start;
+                    params.not_after = limit + time::Duration::seconds(i64::from(exceeds));
+                },
+            );
+            let (_, ca) = x509_parser::parse_x509_certificate(&der).unwrap();
+            nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).unwrap();
+            assert_eq!(
+                check_mdoc_iaca_profile(&ca).is_ok(),
+                !exceeds,
+                "start={start}, limit={limit}, exceeds={exceeds}"
+            );
+        }
+    }
+    // This is a profile-only boundary test. Real admission separately checks
+    // current time, so the deliberately future century fixture is not trusted.
 }
 
 #[test]
