@@ -792,9 +792,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     oauth_token_issuances::refresh_token_family_id,
                     oauth_token_issuances::authorization_code_holder,
                 ))
-                .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>(
-                    &mut self.connection().await.map_err(map_repository_error)?,
-                )
+                .first::<(
+                    String,
+                    jiff_diesel::Timestamp,
+                    Option<Uuid>,
+                    Option<serde_json::Value>,
+                )>(&mut self.connection().await.map_err(map_repository_error)?)
                 .await
                 .optional()
                 .map_err(map_diesel_error)?;
@@ -809,7 +812,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     Ok(SingleUseRedemption {
                         authorization_code_holder,
                         access_token_jti,
-                        access_token_expires_at,
+                        access_token_expires_at: access_token_expires_at.into(),
                         refresh_token_family_id,
                     })
                 },

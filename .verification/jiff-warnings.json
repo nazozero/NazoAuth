@@ -153,8 +153,26 @@
   },
   {
     "code": null,
-    "message": "For more information about this error, try `rustc --explain E0277`.",
-    "rendered": "For more information about this error, try `rustc --explain E0277`.\n",
+    "message": "For more information about this error, try `rustc --explain E0599`.",
+    "rendered": "For more information about this error, try `rustc --explain E0599`.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "Some errors have detailed explanations: E0252, E0433.",
+    "rendered": "Some errors have detailed explanations: E0252, E0433.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "For more information about an error, try `rustc --explain E0252`.",
+    "rendered": "For more information about an error, try `rustc --explain E0252`.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "For more information about this error, try `rustc --explain E0308`.",
+    "rendered": "For more information about this error, try `rustc --explain E0308`.\n",
     "sites": []
   }
 ]

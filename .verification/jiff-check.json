@@ -5,86 +5,276 @@
     "compile": 101,
     "check": 101
   },
-  "parent": "c8333f9b93d18fb25dcaf4904ec7b26930bb2ea0",
-  "source_tree_before_evidence": "4e477a430c427402d233f64b54c1ad0fdfb994b0",
-  "workflow_run": "44140618735",
+  "parent": "7f52db530c8d1c1ab3e016e7cee33b52af940ebb",
+  "source_tree_before_evidence": "d080c0ae6a31ab628f0848bdd627820373b003e2",
+  "workflow_run": "44141217087",
   "errors": [
     {
-      "code": "E0277",
-      "message": "the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied",
-      "rendered": "error[E0277]: the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied\n   --> crates/persistence-postgres/src/repositories/token_issuance.rs:795:18\n    |\n795 |                 .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>(\n    |                  ^^^^^ unsatisfied trait bound\n    |\n    = help: the trait `CompatibleType<(std::string::String, jiff::Timestamp, std::option::Option<uuid::Uuid>, std::option::Option<serde_json::Value>), _>` is not implemented for `(Text, Timestamptz, Nullable<Uuid>, Nullable<Jsonb>)`\n    = note: this is a mismatch between what your query returns and what your type expects the query to return\n    = note: the fields in your struct need to match the fields returned by your query in count, order and type\n    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` \n            on your struct `(String, Timestamp, Option<Uuid>, Option<Value>)` and in your query `.select((String, Timestamp, Option<Uuid>, Option<Value>)::as_select())` to get a better error message\n    = help: the following other types implement trait `CompatibleType<U, DB>`:\n              `Untyped` implements `CompatibleType<U, DB>`\n              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`\n              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n            and 58 others\n    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Timestamp, Option<Uuid>, Option<Value>)>`\n    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-4765899662443399000.txt'\n    = note: consider using `--verbose` to print the full type name to the console\n\n",
+      "code": "E0599",
+      "message": "no method named `as_secs` found for struct `Span` in the current scope",
+      "rendered": "error[E0599]: no method named `as_secs` found for struct `Span` in the current scope\n   --> crates/persistence-postgres/tests/controller_recovery.rs:657:37\n    |\n657 |         (issued.expires_at - at(4)).as_secs(),\n    |                                     ^^^^^^^ method not found in `Span`\n\n",
       "sites": [
         {
-          "file": "crates/persistence-postgres/src/repositories/token_issuance.rs",
-          "line": 795,
+          "file": "crates/persistence-postgres/tests/controller_recovery.rs",
+          "line": 657,
           "text": [
             {
-              "highlight_end": 23,
-              "highlight_start": 18,
-              "text": "                .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>("
+              "highlight_end": 44,
+              "highlight_start": 37,
+              "text": "        (issued.expires_at - at(4)).as_secs(),"
             }
           ],
-          "label": "unsatisfied trait bound"
+          "label": "method not found in `Span`"
         }
       ]
     },
     {
-      "code": "E0277",
-      "message": "the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied",
-      "rendered": "error[E0277]: the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied\n   --> crates/persistence-postgres/src/repositories/token_issuance.rs:795:18\n    |\n795 |                 .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>(\n    |                  ^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(String, Timestamp, Option<Uuid>, Option<Value>)`\n    |\n    = note: double check your type mappings via the documentation of `_`\n    = note: `diesel::sql_query` requires the loading target to column names for loading values.\n            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`\n    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Timestamp, Option<Uuid>, Option<Value>)>`\n    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-7484356474541797175.txt'\n    = note: consider using `--verbose` to print the full type name to the console\n\n",
+      "code": "E0252",
+      "message": "the name `Timestamp` is defined multiple times",
+      "rendered": "error[E0252]: the name `Timestamp` is defined multiple times\n  --> crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:76:28\n   |\n12 | use jiff::Timestamp;\n   |     --------------- previous import of the type `Timestamp` here\n...\n76 | use jiff::{SignedDuration, Timestamp};\n   |                            ^^^^^^^^^ `Timestamp` reimported here\n   |\n   = note: `Timestamp` must be defined only once in the type namespace of this module\n\n",
       "sites": [
         {
-          "file": "crates/persistence-postgres/src/repositories/token_issuance.rs",
-          "line": 795,
+          "file": "crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs",
+          "line": 76,
           "text": [
             {
-              "highlight_end": 23,
-              "highlight_start": 18,
-              "text": "                .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>("
+              "highlight_end": 37,
+              "highlight_start": 28,
+              "text": "use jiff::{SignedDuration, Timestamp};"
             }
           ],
-          "label": "the trait `FromSqlRow<_, _>` is not implemented for `(String, Timestamp, Option<Uuid>, Option<Value>)`"
+          "label": "`Timestamp` reimported here"
         }
       ]
     },
     {
-      "code": "E0277",
-      "message": "the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied",
-      "rendered": "error[E0277]: the trait bound `(Text, Timestamptz, Nullable<Uuid>, _): CompatibleType<_, _>` is not satisfied\n   --> crates/persistence-postgres/src/repositories/token_issuance.rs:796:21\n    |\n795 |                 .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>(\n    |                  ----- required by a bound introduced by this call\n796 |                     &mut self.connection().await.map_err(map_repository_error)?,\n    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound\n    |\n    = help: the trait `CompatibleType<(std::string::String, jiff::Timestamp, std::option::Option<uuid::Uuid>, std::option::Option<serde_json::Value>), _>` is not implemented for `(Text, Timestamptz, Nullable<Uuid>, Nullable<Jsonb>)`\n    = note: this is a mismatch between what your query returns and what your type expects the query to return\n    = note: the fields in your struct need to match the fields returned by your query in count, order and type\n    = note: consider using `#[diesel(check_for_backend(_))]` on either `#[derive(Selectable)]` or `#[derive(QueryableByName)]` \n            on your struct `(String, Timestamp, Option<Uuid>, Option<Value>)` and in your query `.select((String, Timestamp, Option<Uuid>, Option<Value>)::as_select())` to get a better error message\n    = help: the following other types implement trait `CompatibleType<U, DB>`:\n              `Untyped` implements `CompatibleType<U, DB>`\n              `diesel::expression::select_by::SelectBy<U, DB>` implements `CompatibleType<U, DB>`\n              `diesel::sql_types::Nullable<(ST, ST1)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n              `diesel::sql_types::Nullable<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>` implements `CompatibleType<std::option::Option<__T>, __DB>`\n            and 58 others\n    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Timestamp, Option<Uuid>, Option<Value>)>`\nnote: required by a bound in `diesel_async::RunQueryDsl::first`\n   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35\n    |\n153 | pub trait RunQueryDsl<Conn>: Sized {\n...\n578 |     fn first<'query, 'conn, U>(\n...\n586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,\n    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`\n    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-4765899662443399000.txt'\n    = note: consider using `--verbose` to print the full type name to the console\n\n",
+      "code": "E0599",
+      "message": "no method named `timestamp` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `timestamp` found for struct `jiff::Timestamp` in the current scope\n   --> crates/server/src/operator_task/execution.rs:471:40\n    |\n471 |         not_before: outcome.not_before.timestamp(),\n    |                                        ^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
       "sites": [
         {
-          "file": "crates/persistence-postgres/src/repositories/token_issuance.rs",
-          "line": 796,
+          "file": "crates/server/src/operator_task/execution.rs",
+          "line": 471,
           "text": [
             {
-              "highlight_end": 80,
-              "highlight_start": 21,
-              "text": "                    &mut self.connection().await.map_err(map_repository_error)?,"
+              "highlight_end": 49,
+              "highlight_start": 40,
+              "text": "        not_before: outcome.not_before.timestamp(),"
             }
           ],
-          "label": "unsatisfied trait bound"
+          "label": "method not found in `jiff::Timestamp`"
         }
       ]
     },
     {
-      "code": "E0277",
-      "message": "the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied",
-      "rendered": "error[E0277]: the trait bound `(String, Timestamp, Option<Uuid>, Option<Value>): FromSqlRow<_, _>` is not satisfied\n   --> crates/persistence-postgres/src/repositories/token_issuance.rs:796:21\n    |\n795 |                 .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>(\n    |                  ----- required by a bound introduced by this call\n796 |                     &mut self.connection().await.map_err(map_repository_error)?,\n    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `FromSqlRow<_, _>` is not implemented for `(String, Timestamp, Option<Uuid>, Option<Value>)`\n    |\n    = note: double check your type mappings via the documentation of `_`\n    = note: `diesel::sql_query` requires the loading target to column names for loading values.\n            You need to provide a type that explicitly derives `diesel::deserialize::QueryableByName`\n    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `LoadQuery<'_, _, (String, Timestamp, Option<Uuid>, Option<Value>)>`\nnote: required by a bound in `diesel_async::RunQueryDsl::first`\n   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/diesel-async-0.9.2/src/run_query_dsl/mod.rs:586:35\n    |\n153 | pub trait RunQueryDsl<Conn>: Sized {\n...\n578 |     fn first<'query, 'conn, U>(\n...\n586 |         diesel::dsl::Limit<Self>: methods::LoadQuery<'query, Conn, U> + Send + 'query,\n    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RunQueryDsl::first`\n    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-postgres/aedd25ee8d76a128/out/nazo_postgres-aedd25ee8d76a128.long-type-7484356474541797175.txt'\n    = note: consider using `--verbose` to print the full type name to the console\n\n",
+      "code": "E0599",
+      "message": "no method named `to_std` found for struct `jiff::Span` in the current scope",
+      "rendered": "error[E0599]: no method named `to_std` found for struct `jiff::Span` in the current scope\n   --> crates/server/src/adapters/audit_anchor/worker.rs:277:59\n    |\n277 |         .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))\n    |                                                           ^^^^^^ method not found in `jiff::Span`\n\n",
       "sites": [
         {
-          "file": "crates/persistence-postgres/src/repositories/token_issuance.rs",
-          "line": 796,
+          "file": "crates/server/src/adapters/audit_anchor/worker.rs",
+          "line": 277,
           "text": [
             {
-              "highlight_end": 80,
-              "highlight_start": 21,
-              "text": "                    &mut self.connection().await.map_err(map_repository_error)?,"
+              "highlight_end": 65,
+              "highlight_start": 59,
+              "text": "        .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))"
             }
           ],
-          "label": "the trait `FromSqlRow<_, _>` is not implemented for `(String, Timestamp, Option<Uuid>, Option<Value>)`"
+          "label": "method not found in `jiff::Span`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `as_secs` found for struct `jiff::Span` in the current scope",
+      "rendered": "error[E0599]: no method named `as_secs` found for struct `jiff::Span` in the current scope\n   --> crates/server/src/adapters/audit_anchor/worker.rs:316:67\n    |\n316 |         .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))\n    |                                                                   ^^^^^^^ method not found in `jiff::Span`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/adapters/audit_anchor/worker.rs",
+          "line": 316,
+          "text": [
+            {
+              "highlight_end": 74,
+              "highlight_start": 67,
+              "text": "        .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))"
+            }
+          ],
+          "label": "method not found in `jiff::Span`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope",
+      "rendered": "error[E0599]: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/server/src/settings/config_loader.rs:542:22\n    |\n540 |                 signing_key_rotation_interval_seconds: task_key_settings\n541 |                     .rotation_interval\n542 |                     .num_seconds(),\n    |                      ^^^^^^^^^^^ method not found in `jiff::SignedDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/settings/config_loader.rs",
+          "line": 542,
+          "text": [
+            {
+              "highlight_end": 33,
+              "highlight_start": 22,
+              "text": "                    .num_seconds(),"
+            }
+          ],
+          "label": "method not found in `jiff::SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope",
+      "rendered": "error[E0599]: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/server/src/settings/config_loader.rs:543:85\n    |\n543 |                 signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),\n    |                                                                                     ^^^^^^^^^^^ method not found in `jiff::SignedDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/settings/config_loader.rs",
+          "line": 543,
+          "text": [
+            {
+              "highlight_end": 96,
+              "highlight_start": 85,
+              "text": "                signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),"
+            }
+          ],
+          "label": "method not found in `jiff::SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `ChronoDuration` in this scope",
+      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:9:20\n  |\n9 |         Some(now - ChronoDuration::milliseconds(4999)),\n  |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
+          "line": 9,
+          "text": [
+            {
+              "highlight_end": 34,
+              "highlight_start": 20,
+              "text": "        Some(now - ChronoDuration::milliseconds(4999)),"
+            }
+          ],
+          "label": "use of undeclared type `ChronoDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `ChronoDuration` in this scope",
+      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n  --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:21:20\n   |\n21 |         Some(now - ChronoDuration::seconds(5)),\n   |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
+          "line": 21,
+          "text": [
+            {
+              "highlight_end": 34,
+              "highlight_start": 20,
+              "text": "        Some(now - ChronoDuration::seconds(5)),"
+            }
+          ],
+          "label": "use of undeclared type `ChronoDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `ChronoDuration` in this scope",
+      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n  --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:22:20\n   |\n22 |         Some(now - ChronoDuration::seconds(6)),\n   |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
+          "line": 22,
+          "text": [
+            {
+              "highlight_end": 34,
+              "highlight_start": 20,
+              "text": "        Some(now - ChronoDuration::seconds(6)),"
+            }
+          ],
+          "label": "use of undeclared type `ChronoDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `ChronoDuration` in this scope",
+      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n  --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:23:20\n   |\n23 |         Some(now + ChronoDuration::seconds(1)),\n   |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
+          "line": 23,
+          "text": [
+            {
+              "highlight_end": 34,
+              "highlight_start": 20,
+              "text": "        Some(now + ChronoDuration::seconds(1)),"
+            }
+          ],
+          "label": "use of undeclared type `ChronoDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope",
+      "rendered": "error[E0599]: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope\n   --> crates/persistence-postgres/tests/scim_security_events.rs:428:76\n    |\n428 |             (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),\n    |                                                                            ^^^^^^^^^ method not found in `(jiff::Timestamp,)`\n    |\nhelp: one of the expressions' fields has a method of the same name\n    |\n428 |             (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).0.to_diesel(),\n    |                                                                            ++\n\n",
+      "sites": [
+        {
+          "file": "crates/persistence-postgres/tests/scim_security_events.rs",
+          "line": 428,
+          "text": [
+            {
+              "highlight_end": 85,
+              "highlight_start": 76,
+              "text": "            (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),"
+            }
+          ],
+          "label": "method not found in `(jiff::Timestamp,)`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope",
+      "rendered": "error[E0599]: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope\n   --> crates/persistence-postgres/tests/scim_security_events.rs:431:80\n    |\n431 |             (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).to_diesel(),\n    |                                                                                ^^^^^^^^^ method not found in `(jiff::Timestamp,)`\n    |\nhelp: one of the expressions' fields has a method of the same name\n    |\n431 |             (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).0.to_diesel(),\n    |                                                                                ++\n\n",
+      "sites": [
+        {
+          "file": "crates/persistence-postgres/tests/scim_security_events.rs",
+          "line": 431,
+          "text": [
+            {
+              "highlight_end": 89,
+              "highlight_start": 80,
+              "text": "            (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).to_diesel(),"
+            }
+          ],
+          "label": "method not found in `(jiff::Timestamp,)`"
+        }
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "rendered": "error[E0308]: mismatched types\n   --> crates/persistence-postgres/tests/token_issuance_fresh.rs:204:13\n    |\n200 |         .revoke_issued_tokens(\n    |          -------------------- arguments to this method are incorrect\n...\n204 |             jiff::Timestamp::new(current.access_token_expires_at, 0),\n    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Timestamp>`, found `Result<Timestamp, Error>`\n    |\n    = note: expected enum `Option<jiff::Timestamp>`\n               found enum `Result<jiff::Timestamp, jiff::Error>`\nnote: method defined here\n   --> crates/authorization-server-core/src/token_service.rs:565:8\n    |\n565 |     fn revoke_issued_tokens<'a>(\n    |        ^^^^^^^^^^^^^^^^^^^^\n\n",
+      "sites": [
+        {
+          "file": "crates/persistence-postgres/tests/token_issuance_fresh.rs",
+          "line": 204,
+          "text": [
+            {
+              "highlight_end": 69,
+              "highlight_start": 13,
+              "text": "            jiff::Timestamp::new(current.access_token_expires_at, 0),"
+            }
+          ],
+          "label": "expected `Option<Timestamp>`, found `Result<Timestamp, Error>`"
         }
       ]
     }
   ],
-  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\nerror: could not compile `nazo-postgres` (lib) due to 4 previous errors; 5 warnings emitted\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `nazo-postgres` (lib test) due to 4 previous errors; 5 warnings emitted"
+  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\nerror: could not compile `nazo-postgres` (test \"controller_recovery\") due to 1 previous error\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `nazo-server` (lib test) due to 5 previous errors\nerror: could not compile `nazo-server` (lib) due to 5 previous errors\nerror: could not compile `nazo-postgres` (test \"scim_security_events\") due to 2 previous errors\nerror: could not compile `nazo-postgres` (test \"token_issuance_fresh\") due to 1 previous error"
 }

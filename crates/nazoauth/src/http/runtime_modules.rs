@@ -344,11 +344,7 @@ impl Serialize for RuntimeModuleResponse<'_> {
         )?;
         map.serialize_entry(
             "drain_deadline",
-            &module
-                .drain_deadline
-                .map(timestamp)
-                .transpose()
-                .map_err(<S::Error as serde::ser::Error>::custom)?,
+            &module.drain_deadline.map(RuntimeTimestamp),
         )?;
         map.serialize_entry("failure_code", &module.failure_code)?;
         map.serialize_entry("updated_at", &RuntimeTimestamp(module.updated_at))?;
