@@ -41,7 +41,7 @@ async fn mdoc_publication_fixture() -> (
         .database_commit_openid4vc(revision, fixture.material, Some(fixture.private_key_pem))
         .await
         .unwrap();
-    let now = DateTime::from_timestamp(jiff::Timestamp::now().timestamp(), 0).unwrap();
+    let now = Timestamp::from_second(Timestamp::now().as_second()).unwrap();
     (manager, repository, issuer, now)
 }
 
@@ -609,7 +609,7 @@ async fn external_registration_rejects_unusable_verification_material_without_pe
             "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig",
             "kid": "invalid-external",
             "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-            "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+            "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEQEBAQEBAQEBAQE"
         }),
         wrong_usage,
     ] {
