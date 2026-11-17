@@ -3673,7 +3673,7 @@ dependencies = [
 [[package]]
 name = "passkey-auth"
 version = "0.2.0"
-source = "git+https://github.com/nazozero/passkey-auth-rs?rev=fa0f0c869b88c8609fbd6097a8ecfefacff2a6b3#fa0f0c869b88c8609fbd6097a8ecfefacff2a6b3"
+source = "git+https://github.com/nazozero/passkey-auth-rs?rev=b3ecfa40c8f626903f36d6065640236ac87fe472#b3ecfa40c8f626903f36d6065640236ac87fe472"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
