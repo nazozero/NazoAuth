@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""One-time mechanical migration, followed by reviewed semantic corrections.
-
-This script runs only against the isolated validation branch. A successful
-transformation is not a validation result; cargo diagnostics and tests follow.
+"""Stage a native Jiff migration only in the isolated validation checkout.
+Compilation and semantic regression tests are separate mandatory gates.
 """
 from pathlib import Path
 import re
@@ -17,9 +15,7 @@ paths = [root / p for p in subprocess.check_output(
 
 
 def closing(text, start):
-    depth = 1
-    in_string = False
-    escaped = False
+    depth, in_string, escaped = 1, False, False
     for i in range(start + 1, len(text)):
         c = text[i]
         if in_string:
@@ -41,12 +37,10 @@ def closing(text, start):
 
 
 def calls(text, pattern, convert):
-    matches = list(re.finditer(pattern, text))
-    for match in reversed(matches):
+    for match in reversed(list(re.finditer(pattern, text))):
         start = match.end() - 1
         end = closing(text, start)
-        replacement = convert(match, text[start + 1:end])
-        text = text[:match.start()] + replacement + text[end + 1:]
+        text = text[:match.start()] + convert(match, text[start + 1:end]) + text[end + 1:]
     return text
 
 
@@ -54,10 +48,9 @@ manifest = root / 'Cargo.toml'
 if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
     profile = 'crates/server/tests/unit/domain/passkey/profile.rs'
     shutil.copyfile(independent / profile, root / profile)
-    value = manifest.read_text().replace(
+    manifest.write_text(manifest.read_text().replace(
         'b3ecfa40c8f626903f36d6065640236ac87fe472',
-        '84938674306a2ca0b84319e8ee499b61b8f32e84')
-    manifest.write_text(value)
+        '84938674306a2ca0b84319e8ee499b61b8f32e84'))
     for path in paths:
         if path.suffix != '.rs':
             continue
@@ -73,9 +66,7 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
             items = []
             for item in match.group(1).split(','):
                 item = item.strip()
-                if not item:
-                    continue
-                if item in ('TimeZone', 'SecondsFormat'):
+                if not item or item in ('TimeZone', 'SecondsFormat'):
                     continue
                 if item in ('DateTime', 'Utc'):
                     item = 'Timestamp'
@@ -85,9 +76,7 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
                     item = 'civil::Date'
                 if item not in items:
                     items.append(item)
-            if not items:
-                return ''
-            return 'use jiff::' + (items[0] if len(items) == 1 else '{' + ', '.join(items) + '}') + ';'
+            return '' if not items else 'use jiff::' + (items[0] if len(items) == 1 else '{' + ', '.join(items) + '}') + ';'
         text = re.sub(r'use chrono::\{([^}]+)\};', import_items, text, flags=re.S)
         text = re.sub(r'use chrono::(?:DateTime|Utc);', 'use jiff::Timestamp;', text)
         text = re.sub(r'use chrono::Duration(?: as \w+)?;', 'use jiff::SignedDuration;', text)
@@ -104,7 +93,6 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
         text = text.replace('Utc.timestamp_opt(', 'Timestamp::new(')
         text = text.replace('Timestamp::from_timestamp_micros(', 'Timestamp::from_microsecond(')
         text = text.replace('Timestamp::from_timestamp(', 'Timestamp::new(')
-        text = calls(text, r'(?:jiff::)?Timestamp::new\(', lambda m, a: m.group(0) + a + ')')
         text = re.sub(r'(Timestamp::new\([^\n;]*?\))\.single\(\)', r'\1', text)
         for old_name, new_name in [('nanoseconds', 'from_nanos'), ('microseconds', 'from_micros'), ('milliseconds', 'from_millis'), ('seconds', 'from_secs'), ('minutes', 'from_mins'), ('hours', 'from_hours')]:
             text = text.replace('SignedDuration::' + old_name + '(', 'SignedDuration::' + new_name + '(')
@@ -124,20 +112,20 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
         text = path.read_text()
         if path == manifest:
             text = re.sub(r'^chrono\s*=.*$', 'jiff = { version = "0.2.42", default-features = false, features = ["std", "serde", "js"] }\njiff-diesel = { version = "0.1.4", features = ["postgres"] }', text, flags=re.M)
-        elif 'workspace' in text:
-            text = re.sub(r'^chrono\s*=.*$', 'jiff.workspace = true', text, flags=re.M)
-            text = text.replace('chrono.workspace = true', 'jiff.workspace = true')
         else:
-            text = re.sub(r'^chrono\s*=.*$', 'jiff = { version = "0.2.42", default-features = false, features = ["std", "serde"] }', text, flags=re.M)
+            def dependency(match):
+                if 'workspace' in match.group(0):
+                    return 'jiff.workspace = true'
+                return 'jiff = { version = "0.2.42", default-features = false, features = ["std", "serde"] }'
+            text = re.sub(r'^chrono(?:\.workspace)?\s*=.*$', dependency, text, flags=re.M)
         text = text.replace('"chrono", ', '').replace(', "chrono"', '').replace('"chrono",\n', '')
         path.write_text(text)
 
-    # The official adapter stays at SQL boundaries; domain models retain Jiff.
     timestamp_columns = set()
     for path in paths:
         if path.name == 'schema.rs':
             timestamp_columns.update(re.findall(r'^\s*(\w+)\s*->\s*(?:Nullable<)?Timestamptz', path.read_text(), re.M))
-    sql_crates = set()
+    sql_crates = {}
     for path in paths:
         if path.suffix != '.rs':
             continue
@@ -150,23 +138,17 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
             if 'Queryable' not in attrs:
                 return match.group(0)
             def field(m):
-                nullable = m.group(3).startswith('Option<')
-                wrapper = 'NullableTimestamp' if nullable else 'Timestamp'
+                wrapper = 'NullableTimestamp' if m.group(3).startswith('Option<') else 'Timestamp'
                 return m.group(1) + '#[diesel(deserialize_as = jiff_diesel::' + wrapper + ')]\n' + m.group(0)
-            body = re.sub(r'^(\s*)((?:pub(?:\([^)]*\))?\s+)?\w+:\s*)(Option<(?:jiff::)?Timestamp>|(?:jiff::)?Timestamp)(,)', field, body, flags=re.M)
+            body = re.sub(r'^([ \t]*)((?:pub(?:\([^)]*\))?\s+)?\w+:\s*)(Option<(?:jiff::)?Timestamp>|(?:jiff::)?Timestamp)(,)', field, body, flags=re.M)
             return attrs + declaration + body + '}'
-        text = re.sub(r'((?:#\[[^\]]*\]\s*)+)((?:pub(?:\([^)]*\))?\s+)?struct\s+\w+[^\{]*\{)([^}]*)(})', rows, text, flags=re.S)
-        need_trait = False
+        text = re.sub(r'((?:#\[[^\]]*\]\s*)+)((?:pub(?:\([^)]*\))?\s+)?struct\s+\w+[^\{]*\{)([^}]*)(})', lambda m: rows(type('Match', (), {'group': lambda self, *ids: tuple(m.group({1:1, 2:2, 3:4}[i]) for i in ids) if len(ids)>1 else m.group(0)})()), text, flags=re.S)
         def bind(match, arg):
-            nonlocal_placeholder = None
-            if 'Timestamptz' not in match.group(1):
-                return match.group(0) + arg + ')'
-            return match.group(0) + '(' + arg + ').to_diesel())'
+            return match.group(0) + (('(' + arg + ').to_diesel()') if 'Timestamptz' in match.group(1) else arg) + ')'
         text = calls(text, r'\.bind::<([^()]*?)>\(', bind)
         if timestamp_columns:
             pattern = r'(\b(?:' + '|'.join(sorted(timestamp_columns)) + r')\.(?:eq|ne|lt|le|gt|ge))\('
             def expression(match, arg):
-                # Comparisons between two columns remain database expressions.
                 if re.fullmatch(r'\s*(?:[\w]+::)+[\w]+\s*', arg) and 'Timestamp::' not in arg:
                     return match.group(0) + arg + ')'
                 return match.group(0) + '(' + arg + ').to_diesel())'
@@ -177,8 +159,9 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
             path.write_text(text)
             relative = path.relative_to(root)
             if relative.parts[0] == 'crates':
-                sql_crates.add((relative.parts[1], relative.parts[2] == 'src'))
-    for name, production in sql_crates:
+                name = relative.parts[1]
+                sql_crates[name] = sql_crates.get(name, False) or relative.parts[2] == 'src'
+    for name, production in sql_crates.items():
         path = root / 'crates' / name / 'Cargo.toml'
         text = path.read_text()
         if 'jiff-diesel' not in text:
