@@ -14,7 +14,7 @@
 //! in successful latency percentiles. Request creation and wallet-side signing
 //! are outside the measured interval. The exact same deterministic request
 //! corpus is produced from the shared fixture on both revisions.
-//! Fixture version 3 supplies OS-generated keys and protocol nonces, generated
+//! Fixture version 4 supplies OS-generated keys and protocol nonces, generated
 //! once and reused by both revisions. HTTP request nonces derive independently
 //! from this shared fixture and the transaction index.
 //!
@@ -431,6 +431,7 @@ fn persisted_result_matches(result: &PresentationResult, case: &Case) -> bool {
         && result.credentials[0].status.is_none()
         && result.credentials[0].claims[NAMESPACE]["given_name"] == "Ada"
         && result.credentials[0].claims[NAMESPACE]["age"] == 42
+        && result.credentials[0].claims[NAMESPACE]["issuing_country"] == "US"
 }
 
 fn require_release_build() {
@@ -461,7 +462,7 @@ pub(crate) async fn run() {
         .expect("test Valkey URL");
     let fixture_bytes = std::fs::read(fixture_path).unwrap();
     let fixture: Value = serde_json::from_slice(&fixture_bytes).unwrap();
-    assert_eq!(fixture["version"], 3);
+    assert_eq!(fixture["version"], 4);
     let fixture_digest = Sha256::digest(&fixture_bytes);
     let cases = prepare_cases(&fixture, &fixture_digest, warmup + sample_count);
     let mut corpus_digest = Sha256::new();

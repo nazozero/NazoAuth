@@ -4,7 +4,7 @@ use anyhow::{Context, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jiff::Timestamp;
 use nazo_auth::SigningPurpose;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -292,42 +292,157 @@ pub(crate) async fn openid4vc_state(
     })
 }
 
+/// The surrounding authenticated keyset revision is the durable sequence source.
+/// Keep this metadata outside `openid4vc`: normal authority replacement must not
+/// erase publication history. Only public certificates/status enter source_hash.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct MdocCrlPublication {
+    revision: i64,
+    source_hash: [u8; 32],
+    this_update: jiff::Timestamp,
+    next_update: jiff::Timestamp,
+}
+
 pub(crate) async fn mdoc_crl_material(
     binding: &DatabaseKeysetBinding,
     issuer_id: &str,
 ) -> anyhow::Result<Option<crate::model::MdocCrlMaterial>> {
+    use sha2::{Digest as _, Sha256};
+
     let mut record = require_record(binding).await?;
-    let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
-    if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
-        anyhow::bail!("database keyset has unsupported schema version");
+    for _ in 0..MAX_CAS_ATTEMPTS {
+        // Observe again after a CAS conflict: another publisher may have won
+        // across a second boundary while this request was awaiting storage.
+        let now = jiff::Timestamp::now();
+        if now.timestamp_subsec_nanos() >= 1_000_000_000 {
+            anyhow::bail!("CRL publication requires an ordinary UTC instant");
+        }
+        // X.509 times are whole seconds; a reused publication retains them.
+        let now = DateTime::from_timestamp(now.as_second(), 0)
+            .context("CRL publication time is out of range")?;
+        let mut payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut record)?;
+        if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
+            anyhow::bail!("database keyset has unsupported schema version");
+        }
+        let Some(material) = payload.get("openid4vc") else {
+            return Ok(None);
+        };
+        let issuers = material
+            .get("iaca_private_materials")
+            .and_then(Value::as_object)
+            .context("managed mdoc material has no IACA private map")?;
+        let Some(private) = issuers.get(issuer_id) else {
+            return Ok(None);
+        };
+        let issuer_private_material = private
+            .as_str()
+            .context("managed IACA private material is not PEM text")?
+            .to_owned();
+        // This authority bundle includes a private-key PEM block, unlike a
+        // public chain. Extract its certificates once; the host owns all DER,
+        // profile and key-matching checks. No private signer is prepared here.
+        let certificate_chain_der: Vec<_> = pem::parse_many(issuer_private_material.as_bytes())?
+            .into_iter()
+            .filter(|block| block.tag() == "CERTIFICATE")
+            .map(pem::Pem::into_contents)
+            .collect();
+        let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::deserialize(
+            material
+                .pointer("/public/revocation_snapshot")
+                .filter(|value| !value.is_null())
+                .context("mdoc authority has no revocation state")?,
+        )?;
+        snapshot
+            .validate_structure()
+            .map_err(|error| anyhow!("invalid managed revocation state: {error}"))?;
+        let source_hash: [u8; 32] = Sha256::digest(serde_json::to_vec(&(
+            issuer_id,
+            &certificate_chain_der,
+            &snapshot,
+        ))?)
+        .into();
+        let publications = payload
+            .get("mdoc_crl_publications")
+            .map(|value| value.as_object().context("invalid CRL publication map"))
+            .transpose()?;
+        let previous = publications
+            .and_then(|entries| entries.get(issuer_id))
+            .map(MdocCrlPublication::deserialize)
+            .transpose()?;
+        if let Some(previous) = previous.as_ref() {
+            if previous.revision < 1
+                || previous.revision > record.revision
+                || previous.this_update.timestamp_subsec_nanos() != 0
+                || previous.next_update.timestamp_subsec_nanos() != 0
+                || previous.next_update - previous.this_update
+                    != jiff::SignedDuration::from_hours(24)
+            {
+                anyhow::bail!("invalid persisted CRL publication");
+            }
+            // A changed revocation snapshot does not authorize moving the
+            // publication clock backwards either. Fail until the clock recovers.
+            if now < previous.this_update {
+                anyhow::bail!("CRL publication clock precedes the previous publication");
+            }
+        }
+        let publication = match previous {
+            Some(previous) if previous.source_hash == source_hash && now < previous.next_update => {
+                previous
+            }
+            _ => {
+                let revision = record
+                    .revision
+                    .checked_add(1)
+                    .context("signing keyset revision overflow")?;
+                let publication = MdocCrlPublication {
+                    revision,
+                    source_hash,
+                    this_update: now,
+                    next_update: now
+                        .checked_add_signed(jiff::SignedDuration::from_hours(24))
+                        .context("CRL publication deadline is out of range")?,
+                };
+                payload
+                    .as_object_mut()
+                    .expect("decrypted keyset is an object")
+                    .entry("mdoc_crl_publications")
+                    .or_insert_with(|| json!({}))
+                    .as_object_mut()
+                    .expect("publication map was checked above")
+                    .insert(issuer_id.to_owned(), serde_json::to_value(&publication)?);
+                let candidate =
+                    persist_payload(binding.tenant_id, revision, payload, &binding.wrapping_keys)?;
+                match binding
+                    .repository
+                    .compare_and_swap(record.revision, candidate)
+                    .await?
+                {
+                    SigningKeysetCompareAndSwapResult::Applied(_) => publication,
+                    SigningKeysetCompareAndSwapResult::Conflict(winner) => {
+                        // Never attach a new number to stale facts after a lost
+                        // race with revocation, rotation or another publisher.
+                        record = winner;
+                        continue;
+                    }
+                }
+            }
+        };
+        return Ok(Some(crate::model::MdocCrlMaterial {
+            issuer_private_material,
+            certificate_chain_der,
+            revocation_snapshot: snapshot,
+            // Old publishers emitted u64 microsecond clocks. This namespace
+            // starts above every such value, then follows the persisted CAS order.
+            crl_number: (1_u128 << 64) + publication.revision as u128,
+            this_update: publication.this_update,
+            next_update: publication.next_update,
+        }));
     }
-    let Some(material) = payload.get("openid4vc") else {
-        return Ok(None);
-    };
-    let issuers = material
-        .get("iaca_private_materials")
-        .and_then(Value::as_object)
-        .context("managed mdoc material has no IACA private map")?;
-    let Some(private) = issuers.get(issuer_id) else {
-        return Ok(None);
-    };
-    let issuer_private_material = private
-        .as_str()
-        .context("managed IACA private material is not PEM text")?
-        .to_owned();
-    let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::deserialize(
-        material
-            .pointer("/public/revocation_snapshot")
-            .filter(|value| !value.is_null())
-            .context("mdoc authority has no revocation state")?,
-    )?;
-    snapshot
-        .validate_structure()
-        .map_err(|error| anyhow!("invalid managed revocation state: {error}"))?;
-    Ok(Some(crate::model::MdocCrlMaterial {
-        issuer_private_material,
-        revocation_snapshot: snapshot,
-    }))
+    Err(crate::SigningKeyRepositoryUnavailable(anyhow!(
+        "CRL publication did not converge after {MAX_CAS_ATTEMPTS} conflicts"
+    ))
+    .into())
 }
 
 pub(crate) async fn commit_openid4vc(

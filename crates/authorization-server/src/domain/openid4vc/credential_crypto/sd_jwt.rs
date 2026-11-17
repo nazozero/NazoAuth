@@ -77,7 +77,7 @@ pub(super) async fn sign(
         .map_err(|_| CredentialTrustError::Unavailable)?;
     let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
     header.typ = Some("dc+sd-jwt".to_owned());
-    header.x5c = Some(material.x5c);
+    header.x5c = Some(material.x5c());
     let mut jwt = material
         .lease
         .encode_jwt(nazo_auth::SigningPurpose::Credential, &header, &credential)

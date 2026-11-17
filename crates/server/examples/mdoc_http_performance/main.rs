@@ -1,4 +1,5 @@
-//! Standalone native HTTP measurement without the server's unrelated test tree.
+//! Standalone native measurements and fresh shared synthetic fixture creation.
+//! Preparation does not depend on the server's unrelated unit-test tree.
 // Shared native files contain APIs outside this deliberately narrow workload.
 #![allow(dead_code, unused_imports)]
 #![forbid(unsafe_code)]

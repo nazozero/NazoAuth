@@ -11,10 +11,11 @@ use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
 use rand::TryRng as _;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
-use std::{hint::black_box, path::PathBuf, time::Instant};
+use std::{hint::black_box, io::Write as _, path::PathBuf, sync::Arc, time::Instant};
 
 const DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const NAMESPACE: &str = "org.iso.18013.5.1";
+const ISSUER: &str = "https://issuer.example";
 const API_CLIENT: &str = "https://verifier.example";
 const API_RESPONSE_URI: &str = "https://verifier.example/response";
 const INTEROP_CLIENT: &str = "https://verifier.example/interop";
@@ -48,7 +49,7 @@ fn nonce<'a>(fixture: &'a Value, name: &str) -> &'a str {
 fn fixture() -> (Value, String) {
     let (_, fixture, hash) = read_fixture();
     assert_eq!(
-        fixture["version"], 3,
+        fixture["version"], 4,
         "prepare the shared fixture once first"
     );
     assert_ne!(
@@ -83,27 +84,96 @@ fn fresh_nonce() -> String {
 }
 
 pub(crate) async fn prepare_fixture() {
-    let (path, mut fixture, source_hash) = read_fixture();
-    assert_eq!(
-        fixture["version"], 2,
-        "prepare-fixture only upgrades version 2 once"
+    use nazo_auth::SigningPurpose;
+    use nazo_key_management::{
+        KeyManager, KeySettings, LocalKeyRegistration, SigningKeyWrappingKeyRing,
+    };
+    use p256::elliptic_curve::Generate as _;
+
+    let path =
+        PathBuf::from(std::env::var_os("NAZO_MDOC_PERF_FIXTURE").expect("new shared fixture path"));
+    assert!(
+        !path.try_exists().unwrap(),
+        "prepare-fixture requires a new path; it never overwrites or upgrades a fixture"
     );
-    let original = URL_SAFE_NO_PAD
-        .decode(fixture["encoded"].as_str().unwrap())
+    let wrapping_key: [u8; 32] = rand::random();
+    let data_encryption_key: [u8; 32] = rand::random();
+    let holder_secret = p256::SecretKey::generate();
+    let tenant_id = uuid::Uuid::now_v7();
+    let repository =
+        Arc::new(nazo_key_management::test_support::MemorySigningKeyRepository::default());
+    let keys = KeyManager::load_or_create_database(
+        KeySettings {
+            rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+            prepublish_window: jiff::SignedDuration::from_hours(1),
+            verification_grace: jiff::SignedDuration::from_hours(1),
+        },
+        None,
+        tenant_id,
+        repository.clone(),
+        SigningKeyWrappingKeyRing::new("synthetic-benchmark-only", wrapping_key, None).unwrap(),
+    )
+    .await
+    .unwrap();
+    let kid = keys
+        .database_register_local(LocalKeyRegistration {
+            algorithm: nazo_crypto::jwt::Algorithm::ES256,
+            purposes: [
+                SigningPurpose::Credential,
+                SigningPurpose::PresentationRequest,
+            ]
+            .into_iter()
+            .collect(),
+        })
+        .await
         .unwrap();
-    let issuer = crate::measurement::issuer_signed_bytes(&original);
+    let issued_at: jiff::Timestamp =
+        chrono::DateTime::from_timestamp(jiff::Timestamp::now().timestamp(), 0).unwrap();
+    let (leaf_der, ca_der) = certificate_fixture(
+        &keys.database_local_private_key_pem(&kid).unwrap(),
+        issued_at.as_second(),
+    );
+    let record = repository.snapshot().unwrap();
     let api_nonce = fresh_nonce();
     let interop_nonce = fresh_nonce();
     assert_ne!(api_nonce, interop_nonce);
+    let mut fixture = json!({
+        "version": 4,
+        "wrapping_key": wrapping_key,
+        "data_encryption_key": data_encryption_key,
+        "holder_private_key": holder_secret.to_bytes().as_slice(),
+        "tenant_id": tenant_id,
+        "kid": kid,
+        "issued_at": issued_at,
+        "expires_at": issued_at + jiff::SignedDuration::from_mins(50),
+        "record": {
+            "revision": record.revision,
+            "public_metadata": record.public_metadata,
+            "encrypted_private_material": record.encrypted_private_material,
+            "wrapping_key_id": record.wrapping_key_id,
+        },
+        "leaf_pem": pem_certificate(&leaf_der),
+        "ca_pem": pem_certificate(&ca_der),
+        "leaf_der": leaf_der,
+        "ca_der": ca_der,
+        "api_nonce": api_nonce,
+        "interop_nonce": interop_nonce,
+        "credential_origin": "actual native CredentialSignerPort::sign; three claims; no MSO status",
+        "certificate_profile": "synthetic ISO mdoc DS/IACA with critical mdlDS EKU, KU, SHA-1 SKI/AKI, PrintableString country, IAN and CRLDP",
+    });
+    // Restore the persisted generation through the same public loader used by
+    // every measured variant. The real signer selects its lease from this keyset.
+    let crypto = crate::native_crypto::create(crate::measurement::load_keys(&fixture).await);
+    let issued = crypto.sign(&input(&fixture)).await.unwrap();
+    let issuer = URL_SAFE_NO_PAD.decode(&issued).unwrap();
     let transcript = transcript(API_CLIENT, &api_nonce, API_RESPONSE_URI);
-    let (response, issuer_offset) = present(issuer, &holder(&fixture), &transcript);
+    let (response, issuer_offset) = present(&issuer, &holder(&fixture), &transcript);
     assert_eq!(
         &response[issuer_offset..issuer_offset + issuer.len()],
         issuer
     );
     assert_eq!(crate::measurement::issuer_signed_bytes(&response), issuer);
     let encoded = URL_SAFE_NO_PAD.encode(response);
-    let crypto = crate::native_crypto::create(crate::measurement::load_keys(&fixture).await);
     let verified = crypto
         .verify(&PresentedCredential {
             expected_audience: API_CLIENT.into(),
@@ -112,14 +182,131 @@ pub(crate) async fn prepare_fixture() {
         .await
         .unwrap();
     check_verified(&verified);
-    fixture["version"] = 3.into();
-    fixture["api_nonce"] = api_nonce.into();
-    fixture["interop_nonce"] = interop_nonce.into();
     fixture["encoded"] = encoded.into();
     fixture["transcript"] = serde_json::to_value(transcript).unwrap();
-    fixture["source_fixture_sha256"] = source_hash.into();
     fixture["issuer_signed_sha256"] = hex::encode(Sha256::digest(issuer)).into();
-    std::fs::write(path, serde_json::to_vec_pretty(&fixture).unwrap()).unwrap();
+    let bytes = serde_json::to_vec_pretty(&fixture).unwrap();
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    options.open(path).unwrap().write_all(&bytes).unwrap();
+}
+
+/// Synthetic certificate data uses the native key controller's mdoc profile
+/// and the same public certificate-issuance backend. No CA key is persisted.
+fn certificate_fixture(signing_key_pem: &str, unix_seconds: i64) -> (Vec<u8>, Vec<u8>) {
+    use nazo_crypto::certificate::{
+        self, BasicConstraints, CertificateParams, CrlDistributionPoint, CustomExtension,
+        DistinguishedName, DnType, DnValue, IsCa, KeyIdMethod, KeyUsagePurpose, PrintableString,
+        SerialNumber,
+    };
+    use sha1::Sha1;
+
+    let name = |common_name: &str| {
+        let mut name = DistinguishedName::new();
+        name.push(DnType::CommonName, common_name);
+        name.push(
+            DnType::CountryName,
+            DnValue::PrintableString(PrintableString::try_from("US").unwrap()),
+        );
+        name
+    };
+    let issuer_alternative_name = || {
+        CustomExtension::from_oid_content(
+            &[2, 5, 29, 18],
+            yasna::construct_der(|writer| {
+                writer.write_sequence(|writer| {
+                    writer
+                        .next()
+                        .write_tagged_implicit(yasna::Tag::context(6), |writer| {
+                            writer.write_ia5_string(ISSUER);
+                        });
+                });
+            }),
+        )
+    };
+    // Match the native key controller's UTC-day validity boundary without
+    // extending the DS lifetime beyond 457 days.
+    let not_before = time::OffsetDateTime::from_unix_timestamp(unix_seconds)
+        .unwrap()
+        .date()
+        .midnight()
+        .assume_utc();
+    let ca_key_pem = certificate::generate_p256_private_key_pem().unwrap();
+    let ca_public_key = certificate::public_key_from_pem(&ca_key_pem).unwrap();
+    // Match the native publication-address derivation, not a trust identifier.
+    // Raw subjectPublicKey bytes are available before the self-signed DER, so
+    // both certificates can contain the same address without a hash cycle.
+    let mut publication = Sha256::new();
+    publication.update(b"NazoAuth mdoc CRL publication v1\0");
+    publication.update(&ca_public_key);
+    let crl_uri = format!(
+        "{ISSUER}/.well-known/mdoc/{}.crl",
+        hex::encode(publication.finalize())
+    );
+    let mut ca = CertificateParams::default();
+    ca.distinguished_name = name("Synthetic mdoc benchmark IACA");
+    ca.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+    ca.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    ca.not_before = not_before;
+    ca.not_after = not_before + time::Duration::days(3650);
+    ca.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
+    ca.key_identifier_method = KeyIdMethod::PreSpecified(Sha1::digest(&ca_public_key).to_vec());
+    ca.custom_extensions.push(issuer_alternative_name());
+    ca.crl_distribution_points.push(CrlDistributionPoint {
+        uris: vec![crl_uri.clone()],
+    });
+    let ca_der = certificate::self_signed(ca, &ca_key_pem).unwrap();
+
+    let mut leaf = CertificateParams::new(vec!["issuer.example".into()]).unwrap();
+    leaf.distinguished_name = name("issuer.example");
+    leaf.is_ca = IsCa::NoCa;
+    leaf.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    leaf.not_before = not_before;
+    leaf.not_after = not_before + time::Duration::days(457);
+    leaf.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
+    leaf.use_authority_key_identifier_extension = true;
+    let mut eku = CustomExtension::from_oid_content(
+        &[2, 5, 29, 37],
+        yasna::construct_der(|writer| {
+            writer.write_sequence(|writer| {
+                writer
+                    .next()
+                    .write_oid(&yasna::models::ObjectIdentifier::from_slice(&[
+                        1, 0, 18013, 5, 1, 2,
+                    ]));
+            });
+        }),
+    );
+    eku.set_criticality(true);
+    leaf.custom_extensions.push(eku);
+    let leaf_identifier = Sha1::digest(certificate::public_key_from_pem(signing_key_pem).unwrap());
+    leaf.custom_extensions
+        .push(CustomExtension::from_oid_content(
+            &[2, 5, 29, 14],
+            yasna::construct_der(|writer| writer.write_bytes(&leaf_identifier)),
+        ));
+    leaf.custom_extensions.push(issuer_alternative_name());
+    leaf.crl_distribution_points.push(CrlDistributionPoint {
+        uris: vec![crl_uri],
+    });
+    let leaf_der = certificate::sign(leaf, signing_key_pem, &ca_der, &ca_key_pem).unwrap();
+    (leaf_der, ca_der)
+}
+
+fn pem_certificate(der: &[u8]) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(der);
+    let mut pem = String::from("-----BEGIN CERTIFICATE-----\n");
+    for chunk in encoded.as_bytes().chunks(64) {
+        pem.push_str(std::str::from_utf8(chunk).unwrap());
+        pem.push('\n');
+    }
+    pem.push_str("-----END CERTIFICATE-----\n");
+    pem
 }
 
 fn holder(fixture: &Value) -> SigningKey {
@@ -135,7 +322,7 @@ fn input(fixture: &Value) -> CredentialSignInput {
     CredentialSignInput {
         payload: CredentialPayload {
             format: CredentialFormat::MsoMdoc,
-            issuer: "https://issuer.example".into(),
+            issuer: ISSUER.into(),
             configuration_id: "synthetic-native-mdoc".into(),
             credential_type: DOCTYPE.into(),
             subject_claims: json!({(NAMESPACE): {"given_name":"Ada", "age":42, "issuing_country":"US"}}),
@@ -248,6 +435,7 @@ fn check_verified(value: &VerifiedCredential) {
     assert!(value.status.is_none());
     assert_eq!(value.claims[NAMESPACE]["given_name"], "Ada");
     assert_eq!(value.claims[NAMESPACE]["age"], 42);
+    assert_eq!(value.claims[NAMESPACE]["issuing_country"], "US");
 }
 
 fn write_result(variable: &str, value: &Value) {
@@ -417,7 +605,7 @@ pub(crate) async fn measure() {
         &json!({
             "scope":"actual native CredentialSignerPort and CredentialVerifierPort; no HTTP/database; same sealed keyset and native signing adapter",
             "certificate_revocation":"Required; synthetic Good operator snapshot; MSO status absent",
-            "inputs":{"sign":"three claims: given_name, age, issuing_country", "verify":"shared two-claim DeviceResponse: given_name, age"},
+            "inputs":{"sign":"three claims: given_name, age, issuing_country", "verify":"shared three-claim DeviceResponse: given_name, age, issuing_country"},
             "output_drop_timing":{"sign":"returned String dropped inside timed interval", "verify":"verified result assertions and drop outside timed interval"},
             "clock":"std::time::Instant elapsed wall time", "concurrency":1, "warmup_per_operation":100,
             "fixture_sha256":fixture_hash, "started_at":started_at, "completed_at":jiff::Timestamp::now(),

@@ -11,10 +11,12 @@ use nazo_oauth_server::{
     domain::openid4vc::Openid4vcCredentialCrypto, policy::Openid4vcRevocationPolicy,
 };
 use rcgen::{
-    BasicConstraints, CertificateParams, CertifiedIssuer, IsCa, KeyPair, KeyUsagePurpose,
-    PKCS_ECDSA_P256_SHA256,
+    BasicConstraints, CertificateParams, CertifiedIssuer, CrlDistributionPoint, CustomExtension,
+    DnType, DnValue, IsCa, KeyIdMethod, KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
+    string::PrintableString,
 };
 use serde_json::json;
+use sha1::{Digest as _, Sha1};
 
 #[test]
 fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_runtime() {
@@ -29,21 +31,86 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
         let leaf_key =
             KeyPair::from_pem(&keyset.database_local_private_key_pem(&kid).unwrap()).unwrap();
         let now = time::OffsetDateTime::now_utc();
+        // Use genuine mdoc certificate profiles while keeping this test on a
+        // plain futures executor: no Tokio runtime or native signer bridge.
+        let certificate_profile = |params: &mut CertificateParams, common_name: &str| {
+            params
+                .distinguished_name
+                .push(DnType::CommonName, common_name);
+            params.distinguished_name.push(
+                DnType::CountryName,
+                DnValue::PrintableString(PrintableString::try_from("US").unwrap()),
+            );
+            params
+                .custom_extensions
+                .push(CustomExtension::from_oid_content(
+                    &[2, 5, 29, 18],
+                    yasna::construct_der(|writer| {
+                        writer.write_sequence(|writer| {
+                            writer
+                                .next()
+                                .write_tagged_implicit(yasna::Tag::context(6), |writer| {
+                                    writer.write_ia5_string("https://issuer.example");
+                                });
+                        });
+                    }),
+                ));
+            params.crl_distribution_points.push(CrlDistributionPoint {
+                uris: vec!["https://issuer.example/mdoc-boundary.crl".to_owned()],
+            });
+        };
+        let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
         let mut ca_params = CertificateParams::default();
-        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        certificate_profile(&mut ca_params, "Boundary test IACA");
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+        ca_params.key_identifier_method =
+            KeyIdMethod::PreSpecified(Sha1::digest(ca_key.public_key_raw()).to_vec());
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         ca_params.not_before = now - time::Duration::minutes(1);
         ca_params.not_after = now + time::Duration::hours(1);
-        let ca = CertifiedIssuer::self_signed(
-            ca_params,
-            KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
-        )
-        .unwrap();
+        let ca = CertifiedIssuer::self_signed(ca_params, ca_key).unwrap();
         let mut leaf_params = CertificateParams::new(vec!["issuer.example".to_owned()]).unwrap();
+        certificate_profile(&mut leaf_params, "Boundary test Document Signer");
+        leaf_params.use_authority_key_identifier_extension = true;
+        let mut eku = CustomExtension::from_oid_content(
+            &[2, 5, 29, 37],
+            yasna::construct_der(|writer| {
+                writer.write_sequence(|writer| {
+                    writer
+                        .next()
+                        .write_oid(&yasna::models::ObjectIdentifier::from_slice(&[
+                            1, 0, 18013, 5, 1, 2,
+                        ]));
+                });
+            }),
+        );
+        eku.set_criticality(true);
+        leaf_params.custom_extensions.push(eku);
+        leaf_params
+            .custom_extensions
+            .push(CustomExtension::from_oid_content(
+                &[2, 5, 29, 14],
+                yasna::construct_der(|writer| {
+                    writer.write_bytes(&Sha1::digest(leaf_key.public_key_raw()))
+                }),
+            ));
         leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
         leaf_params.not_before = now - time::Duration::minutes(1);
         leaf_params.not_after = now + time::Duration::hours(1);
         let leaf = leaf_params.signed_by(&leaf_key, &ca).unwrap();
+        let (_, ca_certificate) = x509_parser::parse_x509_certificate(ca.der()).unwrap();
+        let (_, leaf_certificate) = x509_parser::parse_x509_certificate(leaf.der()).unwrap();
+        nazo_digital_credentials::mdoc_certificate::check_mdoc_iaca_profile(&ca_certificate)
+            .unwrap();
+        nazo_digital_credentials::mdoc_certificate::check_mdoc_document_signer_profile(
+            &leaf_certificate,
+        )
+        .unwrap();
+        nazo_digital_credentials::mdoc_certificate::check_mdoc_issuer_binding(
+            &leaf_certificate,
+            &ca_certificate,
+        )
+        .unwrap();
         keyset.set_openid4vc_material_for_test(Openid4vcPublicMaterial {
             signing_kid: kid.clone(),
             certificate_chain_pem: format!("{}{}", leaf.pem(), ca.pem()),

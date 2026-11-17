@@ -489,7 +489,7 @@ impl Command {
                     "mdoc-rotate" => crate::keyctl::MdocManagementAction::Rotate,
                     _ => crate::keyctl::MdocManagementAction::Revoke {
                         issuer_id: issuer_id.ok_or_else(|| {
-                            anyhow::anyhow!("mdoc-revoke requires --issuer-id <IACA-fingerprint>")
+                            anyhow::anyhow!("mdoc-revoke requires --issuer-id <CRL-publication-id>")
                         })?,
                     },
                 };

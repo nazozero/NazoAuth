@@ -15,43 +15,41 @@ dead tuples and reusable physical high-water space. Include the tested version, 
 
 ## Shared mdoc fixture and native API measurements
 
-Build both revisions before generating the fixture. The ignored
-`mdoc_embedded_api_latency` helper can create shared synthetic test material
-without measuring it:
+Build every compared revision before generating the shared synthetic fixture.
+Use the current candidate's already-built standalone example and a new output
+path:
 
 ```sh
 mkdir -p perf/results
-NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
-NAZO_MDOC_PERF_PREPARE_ONLY=1 \
-cargo test --release --locked -p nazo-oauth-server --lib \
-  mdoc_embedded_api_latency -- --ignored --nocapture
-```
-
-The helper writes version 2 with newly generated test material, including
-OS-generated wrapping, persistence and holder keys. Upgrade it once using the
-current candidate's already-built standalone example:
-
-```sh
 NAZO_MDOC_ACTION=prepare-fixture \
 NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
 ./target/release/examples/mdoc_http_performance
 ```
 
-This writes version 3 in place after authenticating the new presentation. It
-reads two independent 256-bit nonces directly from the operating system CSPRNG
-and persists them as `api_nonce` and `interop_nonce`. It rebuilds the API Final
-SessionTranscript and holder proof with the API client ID and response URI;
-interop uses its separate retained context. The complete original IssuerSigned
-wire slice stays byte for byte identical, with its hash recorded in the fixture.
-The preparation step rejects expired fixtures, unexpected shapes, repeated
-preparation of version 3 and any failed protocol/trust check. No nonce generation
-occurs inside a timed operation.
+Preparation writes version 4 only after a complete native issuance and
+verification succeeds. It creates a persisted key-management generation,
+OS-seeded wrapping, persistence and holder keys, two independent 256-bit protocol
+nonces, and a synthetic DS/IACA certificate pair using the native certificate
+backend. The DS has the mdoc purpose, critical KeyUsage, SKI/AKI, contact and CRL
+extensions, PrintableString country and bounded validity required by the tested
+profile. Required certificate revocation uses an explicit synthetic Good
+operator snapshot. The test does not fetch a CRL or claim that its contact and
+CRL addresses are deployed endpoints.
 
-Reuse the single prepared version 3 fixture in isolated checkouts and build
-directories. It expires after 50 minutes; after expiration, regenerate it and
-repeat every compared variant. Keep the fixture private even though its keys
-are synthetic. The helper's historical timing mode uses a test signer on the
-production baseline; it is not the native deployment performance measurement.
+The actual native `CredentialSignerPort` produces the IssuerSigned bytes for
+three claims. An independent synthetic wallet splices that complete original
+slice unchanged into a Final presentation, records its hash, and signs the
+holder proof. `api_nonce` and `interop_nonce` are generated before all timing and
+persisted with their separate client-ID/response-URI contexts. Preparation uses
+`create_new`, refuses to overwrite or upgrade an existing file, and writes the
+private fixture with mode 0600 on Unix. Every consumer rejects expired or
+unsupported fixture versions and mismatched issuer bytes or transcript context.
+
+Reuse this one version 4 fixture in isolated checkouts and build directories.
+It expires after 50 minutes; after expiration, generate a new file and repeat
+every compared variant. Keep the complete fixture private even though its keys
+are synthetic. The historical ignored library-test helper is not used for
+fixture generation or native deployment timing.
 
 The standalone `mdoc_http_performance` example provides `NAZO_MDOC_ACTION=native-api`
 for actual `CredentialSignerPort::sign` and `CredentialVerifierPort::verify`
@@ -77,7 +75,7 @@ NAZO_MDOC_API_SAMPLES=2000 \
 The runner performs 100 warmups per operation, then at least 1,000 measurements
 of each operation, serially at concurrency one. Signing uses three claims
 (`given_name`, `age`, `issuing_country`); verification uses the same separate
-two-claim signed presentation (`given_name`, `age`) on every revision. The signing metric is native port `Ok`-return latency, not proof that every
+three-claim signed presentation on every revision. The signing metric is native port `Ok`-return latency, not proof that every
 legacy issuer output is protocol-conformant. Inspect actual signed outputs
 separately and retain rejections. Signing
 includes dropping the returned String; verification records elapsed time before

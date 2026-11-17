@@ -5,6 +5,7 @@ use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
+    mdoc_certificate::{check_mdoc_document_signer_profile, check_mdoc_issuer_binding},
 };
 use nazo_mdoc::{
     Timestamp as MdocTimestamp,
@@ -73,7 +74,11 @@ pub(super) async fn sign(
     if !remainder.is_empty() {
         return Err(CredentialTrustError::InvalidEncoding);
     }
-    validate_mdl_issuing_country(&certificate, &input.payload.credential_type, namespaces)?;
+    check_mdoc_document_signer_profile(&certificate)?;
+    let (_, issuer) = x509_parser::parse_x509_certificate(signing_material.issuer_der())
+        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    check_mdoc_issuer_binding(&certificate, &issuer)?;
+    validate_mdl_issuer_attributes(&certificate, &input.payload.credential_type, namespaces)?;
     let not_before =
         MdocTimestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
             .map_err(|_| CredentialTrustError::InvalidEncoding)?;
@@ -144,7 +149,7 @@ pub(super) async fn sign(
     ))
 }
 
-fn validate_mdl_issuing_country(
+fn validate_mdl_issuer_attributes(
     certificate: &x509_parser::certificate::X509Certificate<'_>,
     credential_type: &str,
     namespaces: &Map<String, Value>,
@@ -153,23 +158,49 @@ fn validate_mdl_issuing_country(
         return Ok(());
     }
 
-    let mut country_attributes = certificate.subject().iter_country();
-    let Some(country_attribute) = country_attributes.next() else {
-        return Err(CredentialTrustError::InvalidEncoding);
-    };
-    if country_attributes.next().is_some() {
-        return Err(CredentialTrustError::InvalidEncoding);
-    }
-    let Some(country) = country_attribute.as_str().ok() else {
-        return Err(CredentialTrustError::InvalidEncoding);
-    };
-    let issuing_country = namespaces
+    let namespace = namespaces
         .get(MDL_NAMESPACE)
         .and_then(Value::as_object)
-        .and_then(|namespace| namespace.get("issuing_country"))
-        .and_then(Value::as_str);
-    if issuing_country != Some(country) {
-        return Err(CredentialTrustError::InvalidEncoding);
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    let country = namespace
+        .get("issuing_country")
+        .and_then(Value::as_str)
+        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    validate_mdl_issuer_attribute(certificate, "issuing_country", country)?;
+    if let Some(jurisdiction) = namespace.get("issuing_jurisdiction") {
+        validate_mdl_issuer_attribute(
+            certificate,
+            "issuing_jurisdiction",
+            jurisdiction
+                .as_str()
+                .ok_or(CredentialTrustError::InvalidEncoding)?,
+        )?;
+    }
+    Ok(())
+}
+
+// The DS profile has already established a well-formed country attribute.
+// ISO 18013-5 §7.2.1 compares retrieved data; ST is optional, so a national DS
+// without ST may sign an issuing_jurisdiction. No extra certificate parse is needed.
+fn validate_mdl_issuer_attribute(
+    certificate: &x509_parser::certificate::X509Certificate<'_>,
+    name: &str,
+    value: &str,
+) -> Result<(), CredentialTrustError> {
+    use x509_parser::der_parser::oid;
+    let oid = if name == "issuing_country" {
+        oid!(2.5.4.6)
+    } else {
+        oid!(2.5.4.8)
+    };
+    for attribute in certificate
+        .subject()
+        .iter_attributes()
+        .filter(|attribute| attribute.attr_type() == &oid)
+    {
+        if attribute.as_str().ok() != Some(value) {
+            return Err(CredentialTrustError::InvalidEncoding);
+        }
     }
     Ok(())
 }
@@ -247,6 +278,7 @@ fn mdoc_date(value: &Value, full_date: bool) -> Result<ciborium::Value, Credenti
 pub(super) fn verify(
     crypto: &Openid4vcCredentialCrypto,
     presentation: &PresentedCredential<'_>,
+    now: jiff::Timestamp,
 ) -> Result<(VerifiedCredential, Vec<Vec<u8>>), CredentialTrustError> {
     // Bound the base64 allocation at the public credential boundary as well as
     // the decoded CBOR inside the protocol parser.
@@ -269,7 +301,7 @@ pub(super) fn verify(
         &bytes,
         &transcript,
         &VerificationOptions {
-            now: to_protocol_time(Timestamp::now())?,
+            now: to_protocol_time(now)?,
             max_documents: 1,
         },
     )
@@ -290,26 +322,21 @@ pub(super) fn verify(
         .pop()
         .ok_or(CredentialTrustError::InvalidEncoding)?;
     let trust_anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
-    verify_mdoc_issuer_certificate_chain(
+    let issuer_chain_authority_key_identifiers = verify_mdoc_issuer_certificate_chain(
         pending.certificates(),
-        pending
-            .mso()
-            .validity_info
-            .signed
-            .unix_seconds()
-            .ok_or(CredentialTrustError::InvalidValidity)?,
+        pending.document(),
+        now,
         &trust_anchors,
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
     )?;
+    let (document, mso, certificates) = pending.into_parts();
     let holder_key = mdoc_holder_key(
-        pending
-            .device_key()
-            .clone()
+        mso.device_key_info
+            .device_key
             .to_vec()
             .map_err(|_| CredentialTrustError::InvalidHolderBinding)?,
     );
-    let (document, mso, certificates) = pending.into_parts();
     let status = mso
         .status
         .map(|status| status::mdoc_reference_to_json(status.raw))
@@ -326,8 +353,7 @@ pub(super) fn verify(
         VerifiedCredential {
             format: CredentialFormat::MsoMdoc,
             issuer: URL_SAFE_NO_PAD.encode(Sha256::digest(&certificates[0])),
-            issuer_chain_authority_key_identifiers:
-                super::certificates::issuer_authority_key_identifiers(&certificates)?,
+            issuer_chain_authority_key_identifiers,
             credential_type: mso.doc_type,
             claims: Value::Object(namespaces),
             holder_key: Some(holder_key),
@@ -341,60 +367,81 @@ pub(super) fn verify(
 
 fn verify_mdoc_issuer_certificate_chain(
     certificates: &[Vec<u8>],
-    signed_at: i64,
+    document: &nazo_mdoc::model::document::IssuerSignedDocument,
+    now: jiff::Timestamp,
     trust_anchors: &[Vec<u8>],
     scoped_trust_anchors: &[Vec<u8>],
     revocation_policy: &nazo_digital_credentials::CertificateRevocationPolicy,
-) -> Result<(), CredentialTrustError> {
-    if certificates.is_empty() {
+) -> Result<Vec<Vec<u8>>, CredentialTrustError> {
+    let Some(leaf_der) = certificates.first() else {
+        return Err(CredentialTrustError::UntrustedIssuer);
+    };
+    let (remainder, leaf) = x509_parser::parse_x509_certificate(leaf_der)
+        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    if !remainder.is_empty() {
         return Err(CredentialTrustError::UntrustedIssuer);
     }
-    let direct_scoped_trust_anchor =
-        verify_direct_scoped_trust_anchor(certificates, scoped_trust_anchors, signed_at)?;
-    let scoped_anchor_authenticated = if direct_scoped_trust_anchor {
-        true
-    } else {
-        let anchor = verify_certificate_chain_with_scoped_at(
-            certificates,
-            trust_anchors,
-            scoped_trust_anchors,
-            signed_at,
-        )?
-        .ok_or(CredentialTrustError::UntrustedIssuer)?;
-        scoped_trust_anchors
-            .iter()
-            .any(|candidate| candidate.as_slice() == anchor)
-    };
+    check_mdoc_document_signer_profile(&leaf)?;
+    // ISO 18013-5 §9.3.1 separately requires MSO.signed within the DS validity
+    // interval (checked by the core). The RFC 5280 path and revocation checks
+    // use this presentation's one current-time observation, never MSO.signed.
+    if now.timestamp_subsec_nanos() >= 1_000_000_000 {
+        return Err(CredentialTrustError::InvalidValidity);
+    }
+    let anchor = verify_certificate_chain_with_scoped_at(
+        certificates,
+        trust_anchors,
+        scoped_trust_anchors,
+        now.as_second(),
+    )?
+    .ok_or(CredentialTrustError::UntrustedIssuer)?;
+    // Compare against the actual authenticated issuing CA, including an IACA
+    // link when present. A matching name in some other loaded anchor is no proof.
+    let issuer_der = certificates.get(1).map_or(anchor, Vec::as_slice);
+    let (_, issuer) = x509_parser::parse_x509_certificate(issuer_der)
+        .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+    check_mdoc_issuer_binding(&leaf, &issuer)?;
+    if document.doc_type == MDL_DOCTYPE
+        && let Some(items) = document.issuer_signed.name_spaces.get(MDL_NAMESPACE)
+    {
+        for item in items.iter().filter(|item| {
+            matches!(
+                item.element_identifier.as_str(),
+                "issuing_country" | "issuing_jurisdiction"
+            )
+        }) {
+            validate_mdl_issuer_attribute(
+                &leaf,
+                &item.element_identifier,
+                item.element_value
+                    .as_text()
+                    .ok_or(CredentialTrustError::UntrustedIssuer)?,
+            )
+            .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+        }
+    }
+    let scoped_anchor_authenticated = scoped_trust_anchors
+        .iter()
+        .any(|candidate| candidate.as_slice() == anchor);
     revocation_policy.check_chain_with_scoped_trust(
         None,
         certificates,
-        Timestamp::now(),
+        now,
         scoped_anchor_authenticated,
-    )
-}
-
-/// Accept a single self-signed IACA only when an explicit, scoped trust policy
-/// pins that exact certificate. The ordinary mdoc chain path remains strict and
-/// continues to require a non-CA Document Signer leaf.
-pub(super) fn verify_direct_scoped_trust_anchor(
-    certificates: &[Vec<u8>],
-    scoped_trust_anchors: &[Vec<u8>],
-    unix_time: i64,
-) -> Result<bool, CredentialTrustError> {
-    let [certificate] = certificates else {
-        return Ok(false);
-    };
-    if !scoped_trust_anchors.contains(certificate) {
-        return Ok(false);
+    )?;
+    // Project authenticated certificates already parsed for the profile. Do not
+    // append the loaded anchor or parse the common single-leaf path again.
+    let mut identifiers = Vec::new();
+    super::certificates::append_authority_key_identifiers(&leaf, &mut identifiers);
+    if certificates.len() > 1 {
+        super::certificates::append_authority_key_identifiers(&issuer, &mut identifiers);
+        for der in &certificates[2..] {
+            let (_, certificate) = x509_parser::parse_x509_certificate(der)
+                .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+            super::certificates::append_authority_key_identifiers(&certificate, &mut identifiers);
+        }
     }
-    let at = x509_parser::time::ASN1Time::from_timestamp(unix_time)
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let (_, anchor) = x509_parser::parse_x509_certificate(certificate)
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    Ok(anchor.is_ca()
-        && anchor.validity().is_valid_at(at)
-        && anchor.issuer() == anchor.subject()
-        && nazo_crypto::certificate::verify_signature(&anchor, anchor.public_key()).is_ok())
+    Ok(identifiers)
 }
 
 pub(super) fn verify_certificate_chain_with_scoped_at<'a>(

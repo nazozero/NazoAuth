@@ -80,11 +80,44 @@ Direct core callers use `nazo_mdoc::Timestamp` for validity and verification
 times. Unix constructors are fallible and preserve ordinary nanoseconds;
 RFC 3339 parsing retains whole leap seconds, whose Unix accessors return `None`.
 NazoAuth converts its existing application time values at the mdoc boundary.
+An authenticated historical whole leap second remains a distinct MSO timestamp;
+it is not converted to an ordinary Unix instant to validate a certificate path.
 
 mdoc issuance uses the existing key lease asynchronously: the protocol core
 prepares the COSE signing input, `Openid4vcSigningLease` signs it, and the core
 completes the credential. There is no separate mdoc signing capability, native
 runtime adapter, private-key import or blocking runtime bridge to supply.
+Signing material retains the authenticated issuing authority from the selected
+lease. The issuer removes configured trust anchors by their exact certificate
+identity before building `IssuerAuth.x5chain`; the IACA root is not sent.
+
+The core returns `PendingTrustDocument` after authenticating issuer data, holder
+proof and protocol constraints. NazoAuth separately validates the current X.509
+path, the configured certificate revocation policy and any authenticated MSO
+status reference before returning `VerifiedCredential`. MSO `signed` must be
+within the DS certificate's validity interval; live path and certificate
+revocation checks use the same current-time observation as MSO validity checks.
+The mdoc boundary requires a non-CA Document Signer with a critical
+`digitalSignature`-only KeyUsage, critical `1.0.18013.5.1.2` EKU, and a validity
+period no longer than 457 days. Its PrintableString country and any required
+state must match the actual authenticated issuing CA. Pinning an IACA as a
+scoped trust anchor does not authorize that CA to act as a Document Signer.
+The shared profile implementation also checks serial, SKI/AKI, issuer contact,
+CRL URI and extension constraints; native material admission uses the same
+rules. When mDL issuer attributes are disclosed, their country matches DS
+country and their jurisdiction matches DS state when present. Unrevealed
+attributes remain valid selective disclosures. See the
+[protocol responsibility matrix](../protocol/openid4vc-validation.md#mdoc-protocol-and-trust-responsibilities)
+for the distinction between these profile checks and path authentication.
+
+`MdocStatusIssuancePolicy::Disabled` is the default and rejects a supplied
+status reference. `PublishedTokenStatusList` enables references only when a
+configured resolver can authenticate an already published, current list under
+the credential's IACA and confirm that the allocated index is active. The
+caller owns durable allocation and publication. The shipped issuance endpoints
+do not allocate references. Verification preserves authenticated status presence
+and rejects unsupported mechanisms; certificate revocation and credential
+status are separate checks.
 
 When calling `CredentialVerifierPort` directly for mdoc, construct
 `PresentedCredential.mdoc_session_transcript` from the verifier's retained
@@ -102,6 +135,13 @@ remains readable without a schema migration or re-registration. Optional UV and
 backup history missing from an older record must remain unknown; adapters must
 not replace missing history with trusted values. The relational credential ID
 and sign counter remain authoritative.
+
+Stored COSE metadata remains subject to its declared schema and usage: when
+`key_ops` is present it must permit signature verification. Malformed or
+contradictory metadata is not a compatibility exception. Ed25519 uses dalek 3
+with the verifier's existing strict acceptance policy over borrowed transcript
+parts. Do not enable dalek's `legacy_compatibility` feature in an embedding
+application; it relaxes the signature scalar bound.
 
 Custom `PasskeyRepositoryPort` implementations use `update_authentication` to
 commit the counter and signed backup facts together. Compare both the expected

@@ -109,7 +109,10 @@ There is no assessment override or second device-signature calculation.
 | Actual response-encryption key | Presentation endpoint compares the advertised JWK public members with the key used for JWE decryption | `encrypted_response_key_matches_the_key_bound_by_the_handover` |
 | Holder authentication and current-session failure | Core consumes the validated borrowed transcript and original namespace bytes; NazoAuth treats holder or unsupported document-count failures as whole-response rejection | `signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing` |
 | One document per DeviceResponse | NazoAuth selects the HAIP `max_documents = 1` profile at the parsing boundary | Multi-document response cannot hide a session mismatch or be accepted as an optional credential |
-| Issuer X.509 trust and signing-time validity | NazoAuth's AWS-LC-backed chain owner, including explicit scoped IACA pins | Certificate path, country, signing time, anchor scope and revocation regressions |
+| Issuer X.509 trust and time | Core checks MSO `signed` within the DS validity interval; NazoAuth's AWS-LC-backed path owner uses the same current time as MSO validity and certificate revocation | `mdoc_verification_rejects_expired_ds_even_when_mso_is_current`, certificate-path and historical whole-leap-second regressions |
+| Document Signer certificate profile | Shared `nazo-digital-credentials::mdoc_certificate` checks additional Annex B fields at signing, verification and native material admission; the existing path engine and core retain their own checks | `mdoc_verification_requires_document_signer_profile`, `mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding` and keyctl material regressions |
+| Newly admitted IACA material | Shared IACA profile plus the native owner's actual self-signature, current-time, tenant and publication-address checks | `mdoc_import_binds_the_active_root_and_enforces_its_profile`, `iaca_profile_uses_twenty_calendar_years_including_century_month_end` |
+| mDL issuer attributes | Disclosed `issuing_country` matches DS country; disclosed `issuing_jurisdiction` matches DS state when that state exists | `authenticated_mdl_disclosures_match_the_document_signer_country`, `mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state` |
 | Certificate revocation | Existing `CertificateRevocationPolicy` and authenticated path anchor | Missing/stale snapshots, known revocation and scoped-unknown status regressions |
 | MSO status presence and mechanism policy | Core preserves the complete authenticated CBOR status; NazoAuth accepts only the exact supported `status_list` shape | Unsupported, tagged, duplicate or additional mechanisms fail closed; status presence is never inferred from a lossy JSON conversion |
 | Credential status verification | Existing bounded HTTPS resolver and draft-21 JWT/CWT validator | Revoked, suspended, unknown, unreachable, wrong-signature and wrong-IACA regressions |
@@ -131,12 +134,47 @@ CBOR extensions need an explicit application mapping before they can be used
 as JSON claims.
 The core uses its own `Timestamp` value backed by `time`; the application
 converts its existing time values only at the mdoc boundary. Whole leap seconds
-are preserved during conversion and in date claims. MSO signing at a leap second
-is rejected because the application certificate-path engine accepts ordinary
-Unix seconds; it is never rounded into a neighboring instant. Fractional leap
-seconds are outside the supported time profile.
+are preserved during conversion, in authenticated MSO timestamps and in date
+claims. Certificate-path validation uses the current presentation time, not the
+MSO's historical signing time. Neither value is rounded into a neighboring
+instant; a leap-second current-time observation cannot be represented by the
+path engine and is rejected explicitly. Fractional leap seconds are outside the
+supported time profile.
 Configuration owners remain responsible for complete credential schemas,
 required elements and the authority to issue their claims.
+
+The shared DS profile requires a positive nonzero serial of at most 20 octets,
+an ECDSA certificate signature, a validity interval of at most 457 days, a
+non-CA subject with CN and correctly encoded country, critical
+`digitalSignature`-only KU and critical mDL DS EKU. It checks SHA-1-derived SKI,
+AKI binding to the actual issuing CA, noncritical issuer contact and CRL URI
+extensions, and the profile's prohibited extensions. Extra noncritical
+extensions remain supported; unknown critical or duplicate extensions fail
+closed. These checks do not establish serial-generation entropy or contact URI
+reachability. The existing X.509 path engine checks version, matching signature
+identifiers and exact issuer/subject names; the core checks SPKI encoding and
+algorithm/key compatibility. There is no second path validator.
+
+New IACA material shares the serial, name, identifier, contact and extension
+checks. Its root profile additionally requires version 3, equal issuer/subject
+DER names and signature identifiers, critical CA constraints with path length
+zero, and critical KU containing only `keyCertSign` and `cRLSign`. Supported
+root keys use uncompressed P-256/P-384/P-521 with named-curve parameters;
+Brainpool is outside this implementation. Root validity is bounded to 20
+calendar years, with February 29 clamped to the target month's last day.
+The native owner separately authenticates the self-signature and binds the
+material to its tenant and actual publication route. See
+[managed mdoc state](../operations/mdoc-shared-state.md) for historical CRL
+address retention and explicit rotation.
+
+The issuer omits configured trust anchors from the emitted `x5chain` by exact
+certificate identity. For interoperability, the receiving path owner still
+accepts an otherwise valid chain that explicitly ends in its authenticated
+configured anchor; that compatibility does not authorize using an IACA as the
+Document Signer. Country and state comparisons use the actual authenticated
+issuer, including an IACA link when present. Selective disclosure does not
+require revealing country or jurisdiction. A DS without a state attribute may
+sign a jurisdiction, as permitted by ISO 18013-5 §7.2.1.
 
 The mdoc core also defines the separate Final DC API Handover. NazoAuth exposes
 `direct_post` and `direct_post.jwt`; it does not advertise DC API, proximity
@@ -365,6 +403,11 @@ the same public key as the credential issuer. mdoc uses an ES256/ESP256
 COSE_Sign1 CWT with protected `application/statuslist+cwt` type and `x5chain`;
 its signer must be issued directly by the credential's authenticated IACA.
 Embedded JWKs do not create trust. Certificate revocation remains a separate check.
+The CWT decoder retains the received protected-header byte string for signature
+verification and preserves CBOR tags when validating labels and integer fields.
+Bignum tags cannot become ordinary header labels, list bit widths or TTL values.
+Unsupported critical headers and duplicate labels across header buckets are
+rejected before trust evaluation.
 
 The verifier binds `sub` to the exact status URI, validates required `iat`,
 optional `exp`/`nbf` and positive `ttl` (mdoc requires `exp`), and accepts only

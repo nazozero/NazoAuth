@@ -2808,12 +2808,14 @@ version = "0.3.9"
 dependencies = [
  "base64 0.23.1",
  "flate2",
+ "iri-string",
  "jiff",
  "nazo-crypto",
  "rand 0.10.3",
  "rcgen",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "thiserror",
  "url",
@@ -2917,7 +2919,7 @@ dependencies = [
 [[package]]
 name = "nazo-mdoc"
 version = "0.3.0"
-source = "git+https://github.com/nazozero/mdoc-rs?rev=2492f3610dbb2b0bf37c56abd88fade61753f017#2492f3610dbb2b0bf37c56abd88fade61753f017"
+source = "git+https://github.com/nazozero/mdoc-rs?rev=d2f653d262da4c783ca6c430ef1f056f40baa25f#d2f653d262da4c783ca6c430ef1f056f40baa25f"
 dependencies = [
  "ciborium",
  "const-oid 0.9.6",
@@ -2977,6 +2979,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "time",
  "tracing",
@@ -2985,6 +2988,7 @@ dependencies = [
  "uuid",
  "wasm-bindgen-test",
  "x509-parser",
+ "yasna",
 ]
 
 [[package]]

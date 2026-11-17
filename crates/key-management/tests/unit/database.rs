@@ -21,6 +21,360 @@ use crate::{
 
 use super::*;
 
+async fn mdoc_publication_fixture() -> (
+    KeyManager,
+    Arc<MemorySigningKeyRepository>,
+    String,
+    jiff::Timestamp,
+) {
+    let (manager, repository, _, _) = database_fixture().await;
+    let fixture = openid4vc_fixture(Some(CertificateRevocationStatus::Good), false);
+    let issuer = fixture
+        .material
+        .iaca_private_materials
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    let revision = manager.database_openid4vc_state().await.unwrap().revision;
+    manager
+        .database_commit_openid4vc(revision, fixture.material, Some(fixture.private_key_pem))
+        .await
+        .unwrap();
+    let now = DateTime::from_timestamp(jiff::Timestamp::now().timestamp(), 0).unwrap();
+    (manager, repository, issuer, now)
+}
+
+#[tokio::test]
+async fn mdoc_publication_is_durable_across_reload_material_commit_and_reseal() {
+    let (manager, repository, issuer, now) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    let before = repository.snapshot().unwrap().revision;
+    let first = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    let published = repository.snapshot().unwrap();
+    assert_eq!(published.revision, before + 1);
+    assert_eq!(
+        first.crl_number,
+        (1_u128 << 64) + published.revision as u128
+    );
+    assert!(first.crl_number > u128::from(u64::MAX));
+    assert_eq!(first.certificate_chain_der.len(), 2);
+    assert!(first.this_update >= now);
+    assert_eq!(
+        first.next_update,
+        first.this_update + jiff::SignedDuration::from_hours(24)
+    );
+    assert!(
+        !published
+            .public_metadata
+            .to_string()
+            .contains("PRIVATE KEY")
+    );
+    assert!(!format!("{first:?}").contains("PRIVATE KEY"));
+
+    let reloaded = KeyManager::load_or_create_database(
+        settings(),
+        None,
+        binding.tenant_id,
+        repository.clone(),
+        binding.wrapping_keys.clone(),
+    )
+    .await
+    .unwrap();
+    let again = mdoc_crl_material(&reloaded.inner.database, &issuer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(again.crl_number, first.crl_number);
+    assert_eq!(
+        (again.this_update, again.next_update),
+        (first.this_update, first.next_update)
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, published.revision);
+
+    // An ordinary authority update reserializes `openid4vc`, but must preserve
+    // the publication history outside that object.
+    let state = manager.database_openid4vc_state().await.unwrap();
+    manager
+        .database_commit_openid4vc(state.revision, state.material.unwrap(), None)
+        .await
+        .unwrap();
+    let after_commit = repository.snapshot().unwrap();
+    let same = mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    assert_eq!(same.crl_number, first.crl_number);
+    assert_eq!(
+        repository.snapshot().unwrap().revision,
+        after_commit.revision
+    );
+
+    let new_ring =
+        SigningKeyWrappingKeyRing::new("publication-rotated", rand::random::<[u8; 32]>(), None)
+            .unwrap();
+    let payload = decrypt_payload(
+        binding.tenant_id,
+        &binding.wrapping_keys,
+        &mut after_commit.clone(),
+    )
+    .unwrap();
+    let resealed = persist_payload(
+        binding.tenant_id,
+        after_commit.revision + 1,
+        payload,
+        &new_ring,
+    )
+    .unwrap();
+    assert!(matches!(
+        repository
+            .compare_and_swap(after_commit.revision, resealed)
+            .await
+            .unwrap(),
+        SigningKeysetCompareAndSwapResult::Applied(_)
+    ));
+    let rotated_binding = DatabaseKeysetBinding {
+        wrapping_keys: new_ring,
+        ..binding.clone()
+    };
+    let same = mdoc_crl_material(&rotated_binding, &issuer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(same.crl_number, first.crl_number);
+    let mut before_expiry = repository.snapshot().unwrap();
+    let mut expired_payload = decrypt_payload(
+        binding.tenant_id,
+        &rotated_binding.wrapping_keys,
+        &mut before_expiry,
+    )
+    .unwrap();
+    expired_payload["mdoc_crl_publications"][&issuer]["this_update"] =
+        json!(now - jiff::SignedDuration::from_hours(25));
+    expired_payload["mdoc_crl_publications"][&issuer]["next_update"] =
+        json!(now - jiff::SignedDuration::from_hours(1));
+    repository.replace(Some(
+        persist_payload(
+            binding.tenant_id,
+            before_expiry.revision + 1,
+            expired_payload,
+            &rotated_binding.wrapping_keys,
+        )
+        .unwrap(),
+    ));
+    let expired = mdoc_crl_material(&rotated_binding, &issuer)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(expired.crl_number > first.crl_number);
+    assert!(expired.this_update >= first.this_update);
+    assert_eq!(expired.revocation_snapshot, first.revocation_snapshot);
+}
+
+#[tokio::test]
+async fn mdoc_publication_concurrent_publishers_share_one_persisted_version() {
+    struct SimultaneousReads {
+        inner: Arc<MemorySigningKeyRepository>,
+        captured: std::sync::Barrier,
+    }
+    impl SigningKeyRepository for SimultaneousReads {
+        fn load(&self) -> crate::SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+            Box::pin(async move {
+                let captured = self.inner.load().await?;
+                self.captured.wait();
+                Ok(captured)
+            })
+        }
+        fn create_if_absent(
+            &self,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+            self.inner.create_if_absent(value)
+        }
+        fn compare_and_swap(
+            &self,
+            expected: i64,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+            self.inner.compare_and_swap(expected, value)
+        }
+    }
+    let (manager, repository, issuer, _) = mdoc_publication_fixture().await;
+    let before = repository.snapshot().unwrap().revision;
+    let binding = DatabaseKeysetBinding {
+        repository: Arc::new(SimultaneousReads {
+            inner: repository.clone(),
+            captured: std::sync::Barrier::new(2),
+        }),
+        ..manager.inner.database.clone()
+    };
+    let (first, second) = std::thread::scope(|scope| {
+        let first =
+            scope.spawn(|| futures_executor::block_on(mdoc_crl_material(&binding, &issuer)));
+        let second =
+            scope.spawn(|| futures_executor::block_on(mdoc_crl_material(&binding, &issuer)));
+        (first.join().unwrap(), second.join().unwrap())
+    });
+    let first = first.unwrap().unwrap();
+    let second = second.unwrap().unwrap();
+    assert_eq!(first.crl_number, second.crl_number);
+    assert_eq!(
+        (first.this_update, first.next_update),
+        (second.this_update, second.next_update)
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, before + 1);
+}
+
+#[tokio::test]
+async fn mdoc_publication_lost_cas_reloads_the_winning_revocation_facts() {
+    struct RevokeBeforePublication {
+        inner: Arc<MemorySigningKeyRepository>,
+        winner: std::sync::Mutex<Option<PersistedSigningKeyset>>,
+    }
+    impl SigningKeyRepository for RevokeBeforePublication {
+        fn load(&self) -> crate::SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
+            self.inner.load()
+        }
+        fn create_if_absent(
+            &self,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
+            self.inner.create_if_absent(value)
+        }
+        fn compare_and_swap(
+            &self,
+            expected: i64,
+            value: PersistedSigningKeyset,
+        ) -> crate::SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
+            Box::pin(async move {
+                let winner = self.winner.lock().unwrap().take();
+                if let Some(winner) = winner {
+                    assert!(matches!(
+                        self.inner
+                            .compare_and_swap(expected, winner.clone())
+                            .await?,
+                        SigningKeysetCompareAndSwapResult::Applied(_)
+                    ));
+                    Ok(SigningKeysetCompareAndSwapResult::Conflict(winner))
+                } else {
+                    self.inner.compare_and_swap(expected, value).await
+                }
+            })
+        }
+    }
+    let (manager, repository, issuer, now) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    let mut before = repository.snapshot().unwrap();
+    let mut payload =
+        decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &mut before).unwrap();
+    let snapshot = &mut payload["openid4vc"]["public"]["revocation_snapshot"];
+    let mut facts: CertificateRevocationSnapshot =
+        serde_json::from_value(snapshot.clone()).unwrap();
+    facts.this_update = now;
+    facts.next_update = now + jiff::SignedDuration::from_hours(24);
+    facts.entries[0].status = CertificateRevocationStatus::Revoked;
+    facts.entries[0].revoked_at = Some(now);
+    *snapshot = serde_json::to_value(&facts).unwrap();
+    let winner = persist_payload(
+        binding.tenant_id,
+        before.revision + 1,
+        payload,
+        &binding.wrapping_keys,
+    )
+    .unwrap();
+    let racing = DatabaseKeysetBinding {
+        repository: Arc::new(RevokeBeforePublication {
+            inner: repository.clone(),
+            winner: std::sync::Mutex::new(Some(winner)),
+        }),
+        ..binding.clone()
+    };
+    let result = mdoc_crl_material(&racing, &issuer).await.unwrap().unwrap();
+    assert_eq!(result.revocation_snapshot, facts);
+    assert_eq!(
+        result.crl_number,
+        (1_u128 << 64) + (before.revision + 2) as u128
+    );
+    assert_eq!(repository.snapshot().unwrap().revision, before.revision + 2);
+}
+
+#[tokio::test]
+async fn mdoc_publication_rejects_clock_rollback_invalid_metadata_and_sequence_overflow() {
+    let (manager, repository, issuer, now) = mdoc_publication_fixture().await;
+    let binding = &manager.inner.database;
+    mdoc_crl_material(binding, &issuer).await.unwrap().unwrap();
+    let saved = repository.snapshot().unwrap();
+    let base = decrypt_payload(
+        binding.tenant_id,
+        &binding.wrapping_keys,
+        &mut saved.clone(),
+    )
+    .unwrap();
+    for changed_facts in [false, true] {
+        let mut payload = base.clone();
+        // A valid previously published interval now lies ahead of the clock.
+        payload["mdoc_crl_publications"][&issuer]["this_update"] =
+            json!(now + jiff::SignedDuration::from_hours(1));
+        payload["mdoc_crl_publications"][&issuer]["next_update"] =
+            json!(now + jiff::SignedDuration::from_hours(25));
+        if changed_facts {
+            payload["openid4vc"]["public"]["revocation_snapshot"]["next_update"] =
+                json!(now + jiff::SignedDuration::from_hours(12));
+        }
+        let record = persist_payload(
+            binding.tenant_id,
+            saved.revision + 1,
+            payload,
+            &binding.wrapping_keys,
+        )
+        .unwrap();
+        repository.replace(Some(record));
+        assert!(mdoc_crl_material(binding, &issuer).await.is_err());
+        assert_eq!(repository.snapshot().unwrap().revision, saved.revision + 1);
+    }
+    for (field, value) in [
+        ("revision", json!(0)),
+        ("revision", json!(saved.revision + 2)),
+        ("revision", json!(1.5)),
+        ("source_hash", json!([0])),
+        (
+            "this_update",
+            json!(now + jiff::SignedDuration::from_nanos(1)),
+        ),
+        ("next_update", json!(now)),
+    ] {
+        let mut payload = base.clone();
+        payload["mdoc_crl_publications"][&issuer][field] = value;
+        repository.replace(Some(
+            persist_payload(
+                binding.tenant_id,
+                saved.revision + 1,
+                payload,
+                &binding.wrapping_keys,
+            )
+            .unwrap(),
+        ));
+        assert!(
+            mdoc_crl_material(binding, &issuer).await.is_err(),
+            "invalid publication field {field}"
+        );
+        assert_eq!(repository.snapshot().unwrap().revision, saved.revision + 1);
+    }
+    let mut exhausted = base;
+    exhausted["mdoc_crl_publications"][&issuer]["this_update"] =
+        json!(now - jiff::SignedDuration::from_hours(25));
+    exhausted["mdoc_crl_publications"][&issuer]["next_update"] =
+        json!(now - jiff::SignedDuration::from_hours(1));
+    repository.replace(Some(
+        persist_payload(
+            binding.tenant_id,
+            i64::MAX,
+            exhausted,
+            &binding.wrapping_keys,
+        )
+        .unwrap(),
+    ));
+    assert!(mdoc_crl_material(binding, &issuer).await.is_err());
+    assert_eq!(repository.snapshot().unwrap().revision, i64::MAX);
+}
+
 async fn database_fixture() -> (
     KeyManager,
     Arc<MemorySigningKeyRepository>,
