@@ -36,9 +36,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p evidence jiff-probe/src
+          rustc -Vv > evidence/rustc.txt
+          cargo -V >> evidence/rustc.txt
           printf '[package]\nname="jiff-migration-probe"\nversion="0.0.0"\nedition="2024"\n[dependencies]\njiff={version="=0.2.46",features=["serde","js"]}\njiff-diesel={version="=0.1.4",features=["postgres"]}\n' > jiff-probe/Cargo.toml
           printf 'fn main() {}\n' > jiff-probe/src/main.rs
           cargo fetch --manifest-path jiff-probe/Cargo.toml
+          cp jiff-probe/Cargo.lock evidence/jiff-probe.Cargo.lock
+          cp jiff-probe/Cargo.toml evidence/jiff-probe.Cargo.toml
           cargo fetch --locked --manifest-path nazo/Cargo.toml
           cargo fetch --locked --manifest-path passkey/Cargo.toml
           cargo fetch --locked --manifest-path passkey/perf/Cargo.toml
@@ -48,25 +52,30 @@ jobs:
             mkdir "$label"
             git -C passkey archive "$revision" | tar -x -C "$label"
             git -C passkey archive "$revision" | gzip -n > "evidence/$label.source.tar.gz"
-            cargo fetch --locked --manifest-path "$label/Cargo.toml"
-            if test -f "$label/perf/Cargo.toml"; then cargo fetch --locked --manifest-path "$label/perf/Cargo.toml"; fi
+            if test "$label" = baseline; then
+              mkdir -p baseline/perf baseline/benches
+              cp passkey/docs/evidence/baseline-Cargo.lock baseline/Cargo.lock
+              cp passkey/docs/evidence/baseline-perf-Cargo.toml baseline/perf/Cargo.toml
+              cp passkey/docs/evidence/baseline-perf-Cargo.lock baseline/perf/Cargo.lock
+              cp passkey/benches/ceremony.rs baseline/benches/ceremony.rs
+            fi
+            cargo fetch --locked --manifest-path "$label/perf/Cargo.toml"
           done
-          rustc -Vv > evidence/rustc.txt
-          cargo -V >> evidence/rustc.txt
-          cp jiff-probe/Cargo.lock evidence/jiff-probe.Cargo.lock
-          cp jiff-probe/Cargo.toml evidence/jiff-probe.Cargo.toml
           curl --fail --retry 3 --user-agent 'NazoAuth-continuation-audit' https://crates.io/api/v1/crates/jiff/0.2.46 > evidence/jiff-release.json
           curl --fail --retry 3 --user-agent 'NazoAuth-continuation-audit' https://crates.io/api/v1/crates/jiff-diesel/0.1.4 > evidence/jiff-diesel-release.json
       - name: Archive toolchain and public dependency caches only
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p evidence
           tar -C "$(rustc --print sysroot)" -czf evidence/rust-toolchain.tar.gz bin lib
-          tar -C "${CARGO_HOME:-$HOME/.cargo}" -czf evidence/cargo-public-cache.tar.gz registry git
+          tar -C "${CARGO_HOME:-$HOME/.cargo}" -czf evidence/cargo-public-cache.tar.gz registry/cache registry/index git
           sha256sum evidence/*.tar.gz > evidence/SHA256SUMS
           cat evidence/rustc.txt evidence/SHA256SUMS
           du -h evidence/*.tar.gz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
         with:
           name: passkey-offline-rust-inputs
           path: evidence/
