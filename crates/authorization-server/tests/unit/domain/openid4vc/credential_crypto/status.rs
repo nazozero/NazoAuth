@@ -554,7 +554,7 @@ fn signed_cwt_lists_preserve_wire_types_and_header_presence() {
         let original = cwt(
             &certs,
             URI,
-            jiff::Timestamp::now().timestamp() + 300,
+            jiff::Timestamp::now().as_second() + 300,
             "application/statuslist+cwt",
         );
         let key =
