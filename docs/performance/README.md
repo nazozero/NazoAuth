@@ -13,47 +13,87 @@ Record complete-operation latency, successful throughput, errors and dropped
 iterations together. Distinguish live retained state, expired eligible backlog,
 dead tuples and reusable physical high-water space. Include the tested version, workload and duration with published results.
 
-## Embedded mdoc signing and verification
+## Shared mdoc fixture and native API measurements
 
-The ignored `mdoc_embedded_api_latency` test measures the actual
-`CredentialSignerPort::sign` and `CredentialVerifierPort::verify` calls. It uses
-the normal key-manager path with an in-memory repository, a shared synthetic
-signing key and certificate chain, and identical signed presentation bytes.
-Verification includes issuer and holder signatures, selective-disclosure
-digests, validity, and the application certificate trust path. The fixture has
-no MSO status reference and disables certificate revocation policy.
+Build both revisions before generating the fixture. The ignored
+`mdoc_embedded_api_latency` helper can create shared synthetic test material
+without measuring it:
 
 ```sh
+mkdir -p perf/results
 NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
-NAZO_MDOC_PERF_OUTPUT="$PWD/perf/results/mdoc-candidate.json" \
-NAZO_MDOC_PERF_SAMPLES=2000 \
+NAZO_MDOC_PERF_PREPARE_ONLY=1 \
 cargo test --release --locked -p nazo-oauth-server --lib \
   mdoc_embedded_api_latency -- --ignored --nocapture
 ```
 
-Create the output directory first. The first run creates a fixture containing only newly
-generated test material, including OS-generated wrapping, persistence and holder keys.
-Reuse that fixture for both revisions in isolated
-checkouts and build directories. A fixture expires after 50 minutes; if it has
-expired, regenerate it and repeat both revisions. The output includes the
-fixture digest, 100 warmup operations, nearest-rank P50/P95/P99, mean latency,
-and all sorted samples. Use the same toolchain, build flags, machine and
-concurrency, and record the exact revisions with each result.
+The fixture contains newly generated test material, including OS-generated
+wrapping, persistence and holder keys. Reuse it in isolated checkouts and build
+directories. It expires after 50 minutes; after expiration, regenerate it and
+repeat every compared variant. Keep the fixture private even though its keys
+are synthetic. The helper's historical timing mode uses a test signer on the
+production baseline; it is not the native deployment performance measurement.
 
-These are application-port elapsed times at concurrency one. They do not
-include HTTP, PostgreSQL, Valkey, network certificate-status checks, or a
-credential-status server, and do not replace complete HTTP latency evidence.
-The `code-quality` pull-request workflow runs the full test archive against
-PostgreSQL and Valkey; those correctness results are separate from performance
-measurements.
+The standalone `mdoc_http_performance` example provides `NAZO_MDOC_ACTION=native-api`
+for actual `CredentialSignerPort::sign` and `CredentialVerifierPort::verify`
+measurements. Its version-specific constructor uses each revision's native
+signing adapter, including `TokioMdocDocumentSigner` on the production baseline.
+It loads the shared sealed keyset, uses the SAN-bound issuer trust policy and
+requires certificate revocation validation against an explicit synthetic Good
+operator snapshot for the shared leaf and CA. The authenticated MSO has no
+credential status reference.
+
+After building the example with the same release flags on both revisions:
+
+```sh
+NAZO_MDOC_ACTION=native-api \
+NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
+NAZO_MDOC_API_OUTPUT="$PWD/perf/results/mdoc-api-candidate.json" \
+NAZO_MDOC_HTTP_VARIANT=candidate \
+NAZO_MDOC_HTTP_REVISION="$(git rev-parse HEAD)" \
+NAZO_MDOC_API_SAMPLES=2000 \
+./target/release/examples/mdoc_http_performance
+```
+
+The runner performs 100 warmups per operation, then at least 1,000 measurements
+of each operation, serially at concurrency one. Signing uses three claims
+(`given_name`, `age`, `issuing_country`); verification uses the same separate
+two-claim signed presentation (`given_name`, `age`) on every revision. Signing
+includes dropping the returned String; verification records elapsed time before
+checking and dropping the verified result. Both variants use identical timing
+boundaries. Failures stop the run. Results include the fixture digest, ordered
+raw samples and nearest-rank P50/P95/P99, mean, minimum and maximum latency.
+
+These are application-port elapsed times. They exclude HTTP, PostgreSQL,
+Valkey, network certificate-status checks and credential-status servers. They
+do not replace complete HTTP latency evidence.
+
+## Actual issued-output interoperability
+
+Use `NAZO_MDOC_ACTION=interop-export` with `NAZO_MDOC_INTEROP_OUTPUT` to export
+an actual native `CredentialSignerPort::sign` result. The independent synthetic
+wallet creates a Final SessionTranscript and device signature, then splices the
+complete returned IssuerSigned bytes unchanged into a DeviceResponse. The
+export includes hashes and the exact issuer slice offset, and must pass a
+same-version verification first.
+
+Run the other revision with `NAZO_MDOC_ACTION=interop-verify`,
+`NAZO_MDOC_INTEROP_INPUT` pointing to that export and a separate
+`NAZO_MDOC_INTEROP_OUTPUT`. It checks the shared fixture identity and exact issuer
+slice, verifies with the actual application port, and requires rejection of a
+changed verifier nonce/transcript. Source and verifier variant names must be
+nonempty and different. Repeat in the reverse direction. A pair of self-checks
+or acceptance of helper-generated fixtures does not establish this contract.
+These checks do not claim interoperability with a third-party wallet.
 
 ## mdoc OID4VP HTTP response
 
-The ignored `mdoc_http_performance::mdoc_oid4vp_http_latency` test starts a real
-TCP listener and measures `POST /openid4vp/response/{id}` through the production
+The standalone `mdoc_http_performance` example starts a real TCP listener and
+measures `POST /openid4vp/response/{id}` through the production
 Actix adapter and single-tenant NazoAuth facade. It uses PostgreSQL for retained
 requests and atomic encrypted-result persistence, and connects the production
-Valkey adapter. Each request has its own transaction, nonce, state and holder
+Valkey adapter. This POST has no Valkey roundtrip; PostgreSQL is on its timed
+request path. Each request has its own transaction, nonce, state and holder
 signature. An untimed HTTP GET verifies the persisted authenticated credential;
 the runner also checks that a completed transaction rejects replay.
 
@@ -65,17 +105,36 @@ outside the timed interval. Reusing a fixture permits another run in its same
 database; a new fixture needs a new empty database because the synthetic issuer
 host is already bound to the previous tenant.
 
+The example imports the unchanged native configuration and adapter modules but
+does not compile the server's unrelated test tree. Its small capability-wiring
+fixture is checked byte for byte against the production assembler before any
+request runs. The protocol handlers, persistence adapters and trust checks come
+from the production implementation. Run it from an isolated working directory;
+the native configuration loader creates its normal generated configuration
+secrets there. Use the same directory for both revisions.
+
 ```sh
-NAZO_MDOC_PERF_FIXTURE="$PWD/perf/results/mdoc-shared-fixture.json" \
-NAZO_MDOC_HTTP_OUTPUT="$PWD/perf/results/mdoc-http-candidate.json" \
+NAZO_MDOC_REPOSITORY="$PWD"
+CARGO_PROFILE_RELEASE_PANIC=unwind cargo build --release --locked \
+  -p nazo-server --example mdoc_http_performance
+mkdir -p "$NAZO_MDOC_REPOSITORY/perf/results/mdoc-http-runtime"
+cd "$NAZO_MDOC_REPOSITORY/perf/results/mdoc-http-runtime"
+NAZO_MDOC_PERF_FIXTURE="$NAZO_MDOC_REPOSITORY/perf/results/mdoc-shared-fixture.json" \
+NAZO_MDOC_HTTP_OUTPUT="$NAZO_MDOC_REPOSITORY/perf/results/mdoc-http-candidate.json" \
 NAZO_MDOC_HTTP_VARIANT=candidate \
-NAZO_MDOC_HTTP_REVISION="$(git rev-parse HEAD)" \
+NAZO_MDOC_HTTP_REVISION="$(git -C "$NAZO_MDOC_REPOSITORY" rev-parse HEAD)" \
 NAZO_TEST_DATABASE_URL=postgresql://localhost/nazo_mdoc_candidate \
 NAZO_TEST_VALKEY_URL=redis://localhost:6379/0 \
-cargo test --release --locked -p nazo-server --lib \
-  mdoc_http_performance::mdoc_oid4vp_http_latency \
-  -- --ignored --exact --nocapture --test-threads=1
+CARGO_PROFILE_RELEASE_PANIC=unwind \
+cargo run --release --locked --manifest-path "$NAZO_MDOC_REPOSITORY/Cargo.toml" \
+  -p nazo-server --example mdoc_http_performance
 ```
+
+Use the same panic strategy on both revisions. The commands retain unwinding,
+matching the original test harness rather than the production abort artifact,
+while retaining release optimization,
+thin LTO and one code generation unit. Record any build-profile overrides with
+the measurements.
 
 The default is 100 warmup requests followed by 1,000 measured requests at client
 concurrency one, with one Actix worker and an HTTP/1.1 keep-alive connection.

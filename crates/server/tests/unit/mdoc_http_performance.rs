@@ -1,7 +1,8 @@
 //! Real TCP/HTTP measurements of the production OID4VP response endpoint.
 //!
-//! Run the ignored test in release mode with the same synthetic fixture on both
-//! revisions. Required variables: NAZO_MDOC_PERF_FIXTURE, NAZO_MDOC_HTTP_OUTPUT,
+//! Run the standalone example in release mode with the same synthetic fixture on
+//! both revisions, from an isolated working directory for native configuration.
+//! Required variables: NAZO_MDOC_PERF_FIXTURE, NAZO_MDOC_HTTP_OUTPUT,
 //! NAZO_TEST_DATABASE_URL (or DATABASE_URL), and NAZO_TEST_VALKEY_URL (or
 //! VALKEY_URL). NAZO_MDOC_HTTP_SAMPLES defaults to 1,000 and must be at least
 //! 1,000; NAZO_MDOC_HTTP_WARMUP defaults to 100 and must be at least 100.
@@ -25,7 +26,6 @@ use actix_web::{App, HttpServer, web};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use ciborium::Value as Cbor;
-use coset::AsCborValue as _;
 use diesel::{sql_query, sql_types};
 use diesel_async::RunQueryDsl as _;
 use nazo_digital_credentials::{
@@ -45,7 +45,7 @@ use nazo_openid4vp::{
 use nazo_postgres::{
     TenantBoundaryDefinition, TenantDirectoryRepository, TenantProvisioningRequest,
 };
-use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
+use p256::ecdsa::SigningKey;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use std::{
@@ -81,16 +81,6 @@ fn cbor_field<'a>(value: &'a Cbor, name: &str) -> &'a Cbor {
         .1
 }
 
-fn cbor_field_mut<'a>(value: &'a mut Cbor, name: &str) -> &'a mut Cbor {
-    &mut value
-        .as_map_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|(key, _)| key.as_text() == Some(name))
-        .unwrap()
-        .1
-}
-
 fn derive_token(fixture_digest: &[u8], label: &[u8], index: usize) -> String {
     let mut digest = Sha256::new();
     digest.update(fixture_digest);
@@ -100,17 +90,40 @@ fn derive_token(fixture_digest: &[u8], label: &[u8], index: usize) -> String {
 }
 
 /// Independent synthetic wallet encoder for the Final B.2.6.1 handover and
-/// ISO DeviceAuthenticationBytes. Only the device proof changes; original
-/// issuer-signed embedded byte strings are copied from the shared fixture.
+/// ISO DeviceAuthenticationBytes. Only the device proof changes; the complete
+/// original IssuerSigned encoding is copied byte for byte from the fixture.
 fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
     let bytes = URL_SAFE_NO_PAD
         .decode(fixture["encoded"].as_str().unwrap())
         .unwrap();
     let original: Cbor = ciborium::from_reader(bytes.as_slice()).unwrap();
+    // This synthetic fixture must round-trip exactly before a Value encoding
+    // can be used to locate a subtree. The wallet then uses the received slice,
+    // never the re-encoded IssuerSigned value, in every generated response.
+    assert_eq!(cbor(&original), bytes);
     assert_eq!(
         cbor_field(&original, "documents").as_array().unwrap().len(),
         1
     );
+    let document = &cbor_field(&original, "documents").as_array().unwrap()[0];
+    assert_eq!(cbor_field(document, "docType").as_text(), Some(DOC_TYPE));
+    assert_eq!(
+        cbor_field(cbor_field(document, "deviceSigned"), "nameSpaces"),
+        &Cbor::Tag(24, Box::new(Cbor::Bytes(cbor(&Cbor::Map(vec![]))))),
+        "the shared wallet workload uses empty device namespaces"
+    );
+    let issuer_encoding = cbor(cbor_field(document, "issuerSigned"));
+    let positions: Vec<_> = bytes
+        .windows(issuer_encoding.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == issuer_encoding).then_some(index))
+        .collect();
+    assert_eq!(
+        positions.len(),
+        1,
+        "unambiguous original IssuerSigned slice"
+    );
+    let issuer_signed = &bytes[positions[0]..positions[0] + issuer_encoding.len()];
     let holder_private_key: Vec<u8> =
         serde_json::from_value(fixture["holder_private_key"].clone()).unwrap();
     assert_eq!(holder_private_key.len(), 32);
@@ -166,34 +179,13 @@ fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
                     Cbor::Bytes(Sha256::digest(cbor(&handover_info)).to_vec()),
                 ]),
             ]);
-            let mut response = original.clone();
-            let document = &mut cbor_field_mut(&mut response, "documents")
-                .as_array_mut()
-                .unwrap()[0];
-            assert_eq!(cbor_field(document, "docType").as_text(), Some(DOC_TYPE));
-            let namespaces = cbor_field(cbor_field(document, "deviceSigned"), "nameSpaces").clone();
-            let authentication = Cbor::Array(vec![
-                "DeviceAuthentication".into(),
-                transcript,
-                DOC_TYPE.into(),
-                namespaces,
-            ]);
-            let payload = cbor(&Cbor::Tag(24, Box::new(Cbor::Bytes(cbor(&authentication)))));
-            let signature = coset::CoseSign1Builder::new()
-                .protected(
-                    coset::HeaderBuilder::new()
-                        .algorithm(coset::iana::Algorithm::ES256)
-                        .build(),
-                )
-                .create_detached_signature(&payload, &[], |input| {
-                    let signature: Signature = holder.sign(input);
-                    signature.to_bytes().to_vec()
-                })
-                .build();
-            *cbor_field_mut(cbor_field_mut(document, "deviceSigned"), "deviceAuth") = Cbor::Map(
-                vec![("deviceSignature".into(), signature.to_cbor_value().unwrap())],
+            let (response, issuer_offset) =
+                crate::api::present(issuer_signed, &holder, &cbor(&transcript));
+            assert_eq!(
+                &response[issuer_offset..issuer_offset + issuer_signed.len()],
+                issuer_signed
             );
-            let vp_token = json!({"mdoc": [URL_SAFE_NO_PAD.encode(cbor(&response))]});
+            let vp_token = json!({"mdoc": [URL_SAFE_NO_PAD.encode(response)]});
             let body = url::form_urlencoded::Serializer::new(String::new())
                 .append_pair("state", &request.state)
                 .append_pair("vp_token", &serde_json::to_string(&vp_token).unwrap())
@@ -220,7 +212,7 @@ fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
         .collect()
 }
 
-async fn load_keys(fixture: &Value) -> KeyManager {
+pub(crate) async fn load_keys(fixture: &Value) -> KeyManager {
     let repository =
         Arc::new(nazo_key_management::test_support::MemorySigningKeyRepository::default());
     let record = &fixture["record"];
@@ -332,10 +324,9 @@ async fn infrastructure(
     let valkey = nazo_valkey::test_support::connect(valkey_url, Duration::from_secs(5))
         .await
         .unwrap();
-    let mut settings = crate::settings::Settings::from_config(
-        &crate::config::ConfigSource::from_pairs_for_test([]),
-    )
-    .unwrap();
+    let mut settings =
+        crate::settings::Settings::from_config(&crate::config::ConfigSource::load().unwrap())
+            .unwrap();
     settings.tenant.context = tenant;
     settings.endpoint.issuer = ISSUER.into();
     settings.endpoint.mtls_endpoint_base_url = "https://mtls.example".into();
@@ -436,13 +427,14 @@ fn persisted_result_matches(result: &PresentationResult, case: &Case) -> bool {
 }
 
 fn require_release_build() {
-    #[cfg(debug_assertions)]
-    panic!("measure HTTP with cargo test --release");
+    if cfg!(debug_assertions) {
+        std::panic::panic_any(
+            "measure HTTP with cargo run --release --example mdoc_http_performance",
+        );
+    }
 }
 
-#[actix_web::test]
-#[ignore = "requires a shared synthetic fixture, PostgreSQL, Valkey and an explicit release run"]
-async fn mdoc_oid4vp_http_latency() {
+pub(crate) async fn run() {
     require_release_build();
     let fixture_path = PathBuf::from(
         std::env::var_os("NAZO_MDOC_PERF_FIXTURE").expect("shared synthetic fixture"),
@@ -627,6 +619,9 @@ async fn mdoc_oid4vp_http_latency() {
         "excluded": ["transaction creation", "wallet signing", "untimed GET persisted-result check", "native host tenant router", "TLS", "HAIP/JWE", "remote MSO status fetching"],
         "credential_status": "absent in authenticated fixture MSO", "certificate_revocation": "Required; explicit synthetic Good operator snapshot for shared leaf and CA",
         "key_storage": "same sealed synthetic keyset loaded into MemorySigningKeyRepository; no signing in timed request",
+        "valkey": "production binding connected; this response endpoint has no Valkey roundtrip",
+        "issuer_signed_bytes": "complete original encoding spliced unchanged into each independently signed wallet response",
+        "panic_strategy": if cfg!(panic = "unwind") { "unwind" } else { "abort" },
         "clock": "std::time::Instant elapsed through complete HTTP response body; endpoint uses live Utc clock",
         "fixture_validity_times": {"issued_at": fixture["issued_at"], "expires_at": fixture["expires_at"]},
         "started_at": started_at, "completed_at": completed_at,
