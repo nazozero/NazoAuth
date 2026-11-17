@@ -49,6 +49,10 @@ async fn verified_totp_factor(
         state.diesel_db.clone(),
         Some(nazo_postgres::MfaTotpKeyRing::new(key, None).unwrap()),
     ));
+    repository
+        .activate_totp_key()
+        .await
+        .map_err(|error| anyhow::anyhow!("MFA fixture key activation: {error:?}"))?;
     let service = nazo_identity::MfaService::new(repository, Arc::new(ServerMfaSecretHasher));
     let enrollment = service
         .begin_totp(user, "Passkey fixture")
@@ -352,6 +356,21 @@ impl LivePasskeyFixture {
                 keyset: crate::test_support::test_key_manager(),
             }),
         })
+    }
+
+    async fn isolate_database(&mut self) -> crate::test_support::database::OwnedDatabase {
+        let base = crate::test_support::backend_url("DATABASE_URL").unwrap();
+        let database = crate::test_support::database::OwnedDatabase::new(&base).await;
+        nazo_postgres::run_pending_migrations(&database.url)
+            .await
+            .unwrap();
+        self.state = Data::new(TestInfrastructure {
+            diesel_db: create_pool(database.url.clone(), 4).unwrap(),
+            valkey: self.state.valkey.clone(),
+            settings: self.state.settings.clone(),
+            keyset: self.state.keyset.clone(),
+        });
+        database
     }
 
     async fn create_user(&self, suffix: &str) -> DatabaseUserFixture {
@@ -845,9 +864,10 @@ async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
 #[actix_web::test]
 async fn legacy_or_uninitialized_uv_needs_independent_mfa_before_future_eligibility() {
     for legacy in [true, false] {
-        let Some(fixture) = LivePasskeyFixture::with_user_verification(false).await else {
+        let Some(mut fixture) = LivePasskeyFixture::with_user_verification(false).await else {
             return;
         };
+        let _database = fixture.isolate_database().await;
         let suffix = Uuid::now_v7().simple().to_string();
         let user = fixture.create_user(&format!("uv-init-{suffix}")).await;
         let mut authenticator = FakeAuthenticator::new(format!("uv-init-key-{suffix}").as_bytes());
@@ -1000,17 +1020,7 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
     let Some(mut fixture) = LivePasskeyFixture::with_user_verification(false).await else {
         return;
     };
-    let base = crate::test_support::backend_url("DATABASE_URL").unwrap();
-    let database = crate::test_support::database::OwnedDatabase::new(&base).await;
-    nazo_postgres::run_pending_migrations(&database.url)
-        .await
-        .unwrap();
-    fixture.state = Data::new(TestInfrastructure {
-        diesel_db: create_pool(database.url.clone(), 4).unwrap(),
-        valkey: fixture.state.valkey.clone(),
-        settings: fixture.state.settings.clone(),
-        keyset: fixture.state.keyset.clone(),
-    });
+    let _database = fixture.isolate_database().await;
     let suffix = Uuid::now_v7().simple().to_string();
     let user_agent = format!("passkey-remembered-mfa/{suffix}");
     let user = fixture
@@ -1104,13 +1114,13 @@ async fn passkey_ceremony_cannot_finish_through_a_different_tenant_service() {
         &fixture.state.settings.identity.passkey.origin,
         Some(&passkey_user_handle(&user)),
     );
-    let replay_assertion = serde_json::json!({
-        "id": &assertion.id,
-        "authenticatorData": &assertion.authenticator_data,
-        "signature": &assertion.signature,
-        "clientDataJSON": &assertion.client_data_json,
-        "userHandle": &assertion.user_handle,
-    });
+    let replay_assertion = AuthenticationResponse {
+        id: assertion.id.clone(),
+        authenticator_data: assertion.authenticator_data.clone(),
+        signature: assertion.signature.clone(),
+        client_data_json: assertion.client_data_json.clone(),
+        user_handle: assertion.user_handle.clone(),
+    };
     let rejected = passkey_login_finish(
         Data::new(other_state),
         actix_web::test::TestRequest::default().to_http_request(),
@@ -1132,7 +1142,7 @@ async fn passkey_ceremony_cannot_finish_through_a_different_tenant_service() {
         actix_web::test::TestRequest::default().to_http_request(),
         Json(PasskeyLoginFinishRequest {
             ceremony_id,
-            response: serde_json::from_value(replay_assertion).unwrap(),
+            response: replay_assertion,
         }),
     )
     .await;

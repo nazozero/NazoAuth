@@ -1082,6 +1082,41 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
         .expect("passkeys should load");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].label, "Primary key");
+
+    // An excluded outer ID must not mask a different attested credential ID.
+    let (status, begin) = response_json(
+        passkey_registration_begin(
+            fixture.state.clone(),
+            fixture.request(&sid, &csrf),
+            Json(PasskeyBeginRequest { label: None }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let other = FakeAuthenticator::new(format!("mismatched-{suffix}").as_bytes());
+    let mut mismatched = other.registration_response(
+        begin["publicKey"]["challenge"].as_str().unwrap(),
+        &fixture.state.settings.identity.passkey.origin,
+    );
+    mismatched.id = B64URL.encode(&authenticator.credential_id);
+    let rejected = passkey_registration_finish(
+        fixture.state.clone(),
+        fixture.request(&sid, &csrf),
+        Json(PasskeyFinishRequest {
+            ceremony_id: begin["ceremony_id"].as_str().unwrap().to_owned(),
+            response: mismatched,
+        }),
+    )
+    .await;
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[actix_web::test]

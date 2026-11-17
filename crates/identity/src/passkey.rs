@@ -494,6 +494,11 @@ where
         }
         let credential = match self.webauthn.finish_registration(&stored.state, &response) {
             Ok(credential) => credential,
+            Err(passkey_auth::Error::CredentialExcluded) => {
+                // Preserve the existing duplicate-registration HTTP contract
+                // when the verifier rejects the scoped exclusion before insert.
+                return Err(PasskeyError::AlreadyRegistered);
+            }
             Err(error) => {
                 tracing::debug!(
                     error = ?error,
