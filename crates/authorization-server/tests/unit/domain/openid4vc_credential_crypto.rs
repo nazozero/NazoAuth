@@ -33,7 +33,7 @@ use rcgen::{
 use serde_json::{Value, json};
 use sha2::Digest as _;
 
-use super::mdoc::verify_direct_scoped_trust_anchor;
+use super::mdoc::{from_protocol_time, to_protocol_time, verify_direct_scoped_trust_anchor};
 use super::*;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -262,9 +262,9 @@ fn valid_mdoc_presentation_with_holder(
     let builder = DocumentBuilder::new("org.iso.18013.5.1.mDL")
         .device_key(device_key)
         .validity(ValidityInfo {
-            signed: signed_at,
-            valid_from: signed_at.max(now - Duration::minutes(1)),
-            valid_until: now + Duration::hours(1),
+            signed: to_protocol_time(signed_at).unwrap(),
+            valid_from: to_protocol_time(signed_at.max(now - Duration::minutes(1))).unwrap(),
+            valid_until: to_protocol_time(now + Duration::hours(1)).unwrap(),
             expected_update: None,
         })
         .add_namespace(
@@ -325,6 +325,32 @@ fn valid_mdoc_presentation_with_holder(
         ),
         transcript_bytes,
     )
+}
+
+#[test]
+fn mdoc_time_conversion_preserves_nanoseconds_and_whole_leap_seconds() {
+    for text in [
+        "1969-12-31T23:59:59.999999999Z",
+        "2026-11-17T12:00:00.123456789Z",
+        "2016-12-31T23:59:60Z",
+    ] {
+        let original = chrono::DateTime::parse_from_rfc3339(text)
+            .unwrap()
+            .with_timezone(&Utc);
+        let protocol = to_protocol_time(original).unwrap();
+        assert_eq!(from_protocol_time(protocol).unwrap(), original);
+        if text.contains(":60Z") {
+            assert!(protocol.is_leap_second());
+            assert!(protocol.unix_seconds().is_none());
+        }
+    }
+    let fractional_leap = chrono::DateTime::parse_from_rfc3339("2016-12-31T23:59:60.5Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    assert_eq!(
+        to_protocol_time(fractional_leap),
+        Err(CredentialTrustError::InvalidValidity)
+    );
 }
 
 fn sd_input(
@@ -786,14 +812,18 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
                 .mso()
                 .unwrap();
             assert!(
-                mso.validity_info.signed >= not_before,
+                mso.validity_info.signed >= to_protocol_time(not_before).unwrap(),
                 "published MSO signed time must not precede the pinned certificate"
             );
-            assert!(mso.validity_info.signed <= not_after);
-            assert_eq!(mso.validity_info.signed, issued_at.max(not_before));
+            assert!(mso.validity_info.signed <= to_protocol_time(not_after).unwrap());
+            assert_eq!(
+                mso.validity_info.signed,
+                to_protocol_time(issued_at.max(not_before)).unwrap()
+            );
             assert_eq!(mso.validity_info.valid_from, mso.validity_info.signed);
             assert_eq!(
-                mso.validity_info.valid_until, input.expires_at,
+                mso.validity_info.valid_until,
+                to_protocol_time(input.expires_at).unwrap(),
                 "certificate alignment must not extend credential expiry"
             );
         }
@@ -944,9 +974,12 @@ fn mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values() 
         let issued = URL_SAFE_NO_PAD
             .decode(crypto.sign(&input).await.unwrap())
             .unwrap();
-        let pending =
-            nazo_mdoc::verifier::verify_issued(&issued, "org.iso.18013.5.1.mDL", Utc::now())
-                .unwrap();
+        let pending = nazo_mdoc::verifier::verify_issued(
+            &issued,
+            "org.iso.18013.5.1.mDL",
+            to_protocol_time(Utc::now()).unwrap(),
+        )
+        .unwrap();
         let namespaces = &pending.document().issuer_signed.name_spaces;
         let mdl = &namespaces["org.iso.18013.5.1"];
         assert!(matches!(
@@ -2774,18 +2807,23 @@ fn mdoc_status_tampering_or_removal_fails_before_status_resolution() {
     });
 }
 
-// Deliberately mutate and re-sign the wire payload: the production issuance
-// builder rejects these invalid dates before it creates signing material.
-fn resign_mdoc_validity(
+// Independent wire mutation and signing makes these negative fixtures bypass
+// issuance validation while retaining an authentic issuer and holder proof.
+fn resign_mdoc(
     encoded: &str,
     certs: &CertificateFixture,
-    signed: chrono::DateTime<Utc>,
-    valid_from: chrono::DateTime<Utc>,
-    valid_until: chrono::DateTime<Utc>,
+    edit: impl FnOnce(&mut nazo_mdoc::model::document::IssuerSignedDocument, &mut ciborium::Value),
 ) -> String {
     let mut response = nazo_mdoc::parser::parse(&URL_SAFE_NO_PAD.decode(encoded).unwrap()).unwrap();
-    let auth = &mut response.documents[0].issuer_signed.issuer_auth.cose_sign1;
-    let outer: ciborium::Value = ciborium::from_reader(auth.payload.as_deref().unwrap()).unwrap();
+    let document = &mut response.documents[0];
+    let payload = document
+        .issuer_signed
+        .issuer_auth
+        .cose_sign1
+        .payload
+        .as_deref()
+        .unwrap();
+    let outer: ciborium::Value = ciborium::from_reader(payload).unwrap();
     let ciborium::Value::Tag(24, embedded) = outer else {
         panic!("MSO Tag24")
     };
@@ -2793,30 +2831,9 @@ fn resign_mdoc_validity(
         panic!("MSO bytes")
     };
     let mut mso: ciborium::Value = ciborium::from_reader(inner.as_slice()).unwrap();
-    let validity = mso
-        .as_map_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|(key, _)| key.as_text() == Some("validityInfo"))
-        .unwrap()
-        .1
-        .as_map_mut()
-        .unwrap();
-    for (key, value) in validity {
-        let date = match key.as_text() {
-            Some("signed") => signed,
-            Some("validFrom") => valid_from,
-            Some("validUntil") => valid_until,
-            _ => continue,
-        };
-        *value = ciborium::Value::Tag(
-            0,
-            Box::new(ciborium::Value::Text(
-                date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            )),
-        );
-    }
+    edit(document, &mut mso);
     let inner = nazo_mdoc::cbor::data_item::encode_cbor_canonical(&mso).unwrap();
+    let auth = &mut document.issuer_signed.issuer_auth.cose_sign1;
     auth.payload = Some(
         nazo_mdoc::cbor::data_item::encode_cbor_canonical(&ciborium::Value::Tag(
             24,
@@ -2829,6 +2846,139 @@ fn resign_mdoc_validity(
     let signature: p256::ecdsa::Signature = signing.sign(&auth.tbs_data(&[]));
     auth.signature = signature.to_bytes().to_vec();
     URL_SAFE_NO_PAD.encode(response.to_device_response_cbor().unwrap())
+}
+
+// The production issuance builder rejects these invalid dates before it creates
+// signing material, so mutate the authenticated wire MSO deliberately.
+fn resign_mdoc_validity(
+    encoded: &str,
+    certs: &CertificateFixture,
+    signed: chrono::DateTime<Utc>,
+    valid_from: chrono::DateTime<Utc>,
+    valid_until: chrono::DateTime<Utc>,
+) -> String {
+    resign_mdoc(encoded, certs, |_, mso| {
+        let validity = mso
+            .as_map_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|(key, _)| key.as_text() == Some("validityInfo"))
+            .unwrap()
+            .1
+            .as_map_mut()
+            .unwrap();
+        for (key, value) in validity {
+            let date = match key.as_text() {
+                Some("signed") => signed,
+                Some("validFrom") => valid_from,
+                Some("validUntil") => valid_until,
+                _ => continue,
+            };
+            *value = ciborium::Value::Tag(
+                0,
+                Box::new(ciborium::Value::Text(
+                    date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                )),
+            );
+        }
+    })
+}
+
+#[test]
+fn authenticated_mdoc_claim_tags_are_not_erased() {
+    use ciborium::Value as Cbor;
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        for claim in [
+            Cbor::Tag(42, Box::new(Cbor::Text("Ada".into()))),
+            Cbor::Tag(2, Box::new(Cbor::Bytes(vec![1]))),
+            Cbor::Tag(
+                0,
+                Box::new(Cbor::Tag(1004, Box::new(Cbor::Text("2024-02-29".into())))),
+            ),
+            Cbor::Tag(1004, Box::new(Cbor::Text("2023-02-29".into()))),
+        ] {
+            let changed = resign_mdoc(&encoded, &certs, |document, mso| {
+                let item = document
+                    .issuer_signed
+                    .name_spaces
+                    .get_mut("org.iso.18013.5.1")
+                    .unwrap()
+                    .iter_mut()
+                    .find(|item| item.element_identifier == "given_name")
+                    .unwrap();
+                item.element_value = claim.clone();
+                let value = Cbor::Map(vec![
+                    ("digestID".into(), item.digest_id.into()),
+                    ("random".into(), Cbor::Bytes(item.random.clone())),
+                    (
+                        "elementIdentifier".into(),
+                        item.element_identifier.clone().into(),
+                    ),
+                    ("elementValue".into(), claim.clone()),
+                ]);
+                // Deliberately preserve non-preferred and unsupported tags on
+                // the authenticated wire. The production canonical encoder
+                // correctly refuses a small bignum represented with tag 2.
+                let mut inner = Vec::new();
+                ciborium::into_writer(&value, &mut inner).unwrap();
+                item.encoded = nazo_mdoc::cbor::data_item::encode_cbor_canonical(&Cbor::Tag(
+                    24,
+                    Box::new(Cbor::Bytes(inner)),
+                ))
+                .unwrap();
+                let digests = &mut mso
+                    .as_map_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|(key, _)| key.as_text() == Some("valueDigests"))
+                    .unwrap()
+                    .1;
+                let namespace = &mut digests
+                    .as_map_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|(key, _)| key.as_text() == Some("org.iso.18013.5.1"))
+                    .unwrap()
+                    .1;
+                let digest = &mut namespace
+                    .as_map_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|(key, _)| key.as_integer() == Some(item.digest_id.into()))
+                    .unwrap()
+                    .1;
+                *digest = Cbor::Bytes(sha2::Sha256::digest(&item.encoded).to_vec());
+            });
+            let bytes = URL_SAFE_NO_PAD.decode(&changed).unwrap();
+            // The error must come from the application's semantic projection,
+            // after issuer, digest, holder and session authentication succeeded.
+            assert!(
+                nazo_mdoc::verifier::verify_presentation(
+                    &bytes,
+                    &SessionTranscript::from_cbor(&transcript).unwrap(),
+                    &nazo_mdoc::verifier::VerificationOptions {
+                        now: to_protocol_time(Utc::now()).unwrap(),
+                        max_documents: 1
+                    },
+                )
+                .is_ok()
+            );
+            let presentation = PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: changed.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.as_slice().into()),
+                additional_trust_anchors: vec![].into(),
+            };
+            assert_eq!(
+                crypto.verify(&presentation).await,
+                Err(CredentialTrustError::InvalidEncoding)
+            );
+        }
+    });
 }
 
 #[test]

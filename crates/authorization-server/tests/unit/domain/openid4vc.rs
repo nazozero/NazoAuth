@@ -541,12 +541,15 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         ),
         (
             ciborium::Value::Text("tagged".to_owned()),
-            ciborium::Value::Tag(42, Box::new(ciborium::Value::Text("tag".to_owned()))),
+            ciborium::Value::Tag(
+                1004,
+                Box::new(ciborium::Value::Text("2024-02-29".to_owned())),
+            ),
         ),
     ]);
     assert_eq!(
-        cbor_to_json(cbor).expect("bytes and tags should map to JSON"),
-        json!({"bytes": URL_SAFE_NO_PAD.encode([1_u8, 2, 3]), "tagged": "tag"})
+        cbor_to_json(cbor).expect("bytes and validated dates should map to JSON"),
+        json!({"bytes": URL_SAFE_NO_PAD.encode([1_u8, 2, 3]), "tagged": "2024-02-29"})
     );
     assert!(matches!(
         cbor_to_json(ciborium::Value::Map(vec![(
@@ -561,6 +564,43 @@ fn crypto_helpers_round_trip_json_cbor_values_and_reject_invalid_shapes() {
         cbor_to_json(ciborium::Value::Integer(too_negative)),
         Err(CredentialTrustError::InvalidEncoding)
     ));
+}
+
+#[test]
+fn mdoc_claim_projection_rejects_unknown_tags_and_invalid_date_semantics() {
+    use ciborium::Value as Cbor;
+    let tagged = |tag, value| Cbor::Tag(tag, Box::new(value));
+    assert_eq!(
+        cbor_to_json(tagged(0, Cbor::Text("2026-10-01T20:15:00Z".into()))).unwrap(),
+        json!("2026-10-01T20:15:00Z")
+    );
+    assert_eq!(
+        cbor_to_json(tagged(0, Cbor::Text("2016-12-31T23:59:60Z".into()))).unwrap(),
+        json!("2016-12-31T23:59:60Z")
+    );
+    for invalid in [
+        tagged(42, Cbor::Text("cannot erase the tag".into())),
+        tagged(2, Cbor::Bytes(vec![1])),
+        tagged(1, Cbor::Integer(0.into())),
+        tagged(100, Cbor::Integer(0.into())),
+        tagged(1004, Cbor::Text("2023-02-29".into())),
+        tagged(1004, Cbor::Text("2024-2-29".into())),
+        tagged(0, Cbor::Text("2026-02-30T00:00:00Z".into())),
+        tagged(0, Cbor::Text("2026-10-01T20:15:00.1Z".into())),
+        tagged(0, Cbor::Text("2026-10-01T20:15:00+00:00".into())),
+        tagged(0, Cbor::Integer(0.into())),
+        tagged(0, tagged(1004, Cbor::Text("2024-02-29".into()))),
+        Cbor::Array(vec![tagged(42, Cbor::Text("nested".into()))]),
+        Cbor::Map(vec![(
+            "nested".into(),
+            tagged(42, Cbor::Text("value".into())),
+        )]),
+    ] {
+        assert_eq!(
+            cbor_to_json(invalid),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    }
 }
 
 #[test]

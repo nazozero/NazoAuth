@@ -61,6 +61,11 @@ manifest and lockfile, and use `issue` only where credentials are constructed.
 The WASM issuer enables its `wasm-js` randomness backend. Upgrades require mdoc
 issuance, presentation, status, transcript and WASM regressions.
 
+Direct core callers use `nazo_mdoc::Timestamp` for validity and verification
+times. Unix constructors are fallible and preserve ordinary nanoseconds;
+RFC 3339 parsing retains whole leap seconds, whose Unix accessors return `None`.
+NazoAuth converts its existing application time values at the mdoc boundary.
+
 mdoc issuance uses the existing key lease asynchronously: the protocol core
 prepares the COSE signing input, `Openid4vcSigningLease` signs it, and the core
 completes the credential. There is no separate mdoc signing capability, native

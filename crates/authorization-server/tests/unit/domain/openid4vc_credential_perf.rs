@@ -17,10 +17,9 @@ fn wrapping_keys(key: [u8; 32]) -> SigningKeyWrappingKeyRing {
 }
 
 fn random_key() -> [u8; 32] {
-    use rand::TryRng as _;
-    let mut bytes = [0; 32];
-    rand::rngs::SysRng.try_fill_bytes(&mut bytes).unwrap();
-    bytes
+    // rand's ThreadRng is a cryptographic generator seeded by the OS. Returning
+    // the generated array directly also keeps static analysis on the RNG source.
+    rand::random()
 }
 
 async fn create_fixture() -> Value {

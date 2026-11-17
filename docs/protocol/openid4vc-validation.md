@@ -124,6 +124,17 @@ timestamps use whole seconds and the `Z` UTC suffix. This follows
 [ISO/IEC 18013-5:2021 §§7.2.1 and 7.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
 and [RFC 8943](https://www.rfc-editor.org/rfc/rfc8943.html).
 Custom namespaces and document types retain their supplied JSON value types.
+When projecting authenticated CBOR claims to JSON, the adapter accepts only
+validated date tags 0 and 1004. Unknown tags, nested tags and malformed tagged
+dates are rejected instead of losing their meaning during conversion. Other
+CBOR extensions need an explicit application mapping before they can be used
+as JSON claims.
+The core uses its own `Timestamp` value backed by `time`; the application
+converts its existing time values only at the mdoc boundary. Whole leap seconds
+are preserved during conversion and in date claims. MSO signing at a leap second
+is rejected because the application certificate-path engine accepts ordinary
+Unix seconds; it is never rounded into a neighboring instant. Fractional leap
+seconds are outside the supported time profile.
 Configuration owners remain responsible for complete credential schemas,
 required elements and the authority to issue their claims.
 

@@ -7,6 +7,7 @@ use nazo_digital_credentials::{
     PresentedCredential, VerifiedCredential,
 };
 use nazo_mdoc::{
+    Timestamp,
     builder::DocumentBuilder,
     model::types::{CoseAlgorithm, ValidityInfo},
     session::SessionTranscript,
@@ -15,11 +16,45 @@ use nazo_mdoc::{
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
-use super::super::crypto_helpers::{cbor_to_json, json_to_cbor, jwk_to_cose_key};
+use super::super::crypto_helpers::{
+    cbor_to_json, json_to_cbor, jwk_to_cose_key, validate_mdoc_date_tag,
+};
 use super::{MdocStatusIssuancePolicy, Openid4vcCredentialCrypto, status};
 
 const MDL_DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const MDL_NAMESPACE: &str = "org.iso.18013.5.1";
+
+pub(super) fn to_protocol_time(value: DateTime<Utc>) -> Result<Timestamp, CredentialTrustError> {
+    if value.timestamp_subsec_nanos() >= 1_000_000_000 {
+        // Chrono uses excess nanoseconds for a leap second. Never interpret
+        // those as an ordinary Unix instant in the following second.
+        Timestamp::parse_rfc3339(&value.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
+            .map_err(|_| CredentialTrustError::InvalidValidity)
+    } else {
+        Timestamp::from_unix_nanos(
+            i128::from(value.timestamp()) * 1_000_000_000
+                + i128::from(value.timestamp_subsec_nanos()),
+        )
+        .map_err(|_| CredentialTrustError::InvalidValidity)
+    }
+}
+
+pub(super) fn from_protocol_time(value: Timestamp) -> Result<DateTime<Utc>, CredentialTrustError> {
+    if let Some(nanos) = value.unix_nanos() {
+        let seconds = i64::try_from(nanos.div_euclid(1_000_000_000))
+            .map_err(|_| CredentialTrustError::InvalidValidity)?;
+        let nanoseconds = u32::try_from(nanos.rem_euclid(1_000_000_000))
+            .map_err(|_| CredentialTrustError::InvalidValidity)?;
+        DateTime::from_timestamp(seconds, nanoseconds).ok_or(CredentialTrustError::InvalidValidity)
+    } else {
+        let text = value
+            .format_rfc3339()
+            .map_err(|_| CredentialTrustError::InvalidValidity)?;
+        DateTime::parse_from_rfc3339(&text)
+            .map(|value| value.with_timezone(&Utc))
+            .map_err(|_| CredentialTrustError::InvalidValidity)
+    }
+}
 
 pub(super) async fn sign(
     crypto: &Openid4vcCredentialCrypto,
@@ -56,22 +91,29 @@ pub(super) async fn sign(
         return Err(CredentialTrustError::InvalidEncoding);
     }
     validate_mdl_issuing_country(&certificate, &input.payload.credential_type, namespaces)?;
-    let not_before = DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
-        .ok_or(CredentialTrustError::InvalidEncoding)?;
+    let not_before = Timestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    let not_after = Timestamp::from_unix_seconds(certificate.validity().not_after.timestamp())
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     // The public certificate cohort boundary preserves privacy rounding without
     // extending the credential deadline or predating the selected signing key.
-    let signed = input.issued_at.max(not_before);
-    if signed >= input.expires_at
-        || signed.timestamp() > certificate.validity().not_after.timestamp()
-    {
+    let signed = to_protocol_time(input.issued_at)?.max(not_before);
+    let expires_at = to_protocol_time(input.expires_at)?;
+    if signed >= expires_at || signed > not_after {
         return Err(CredentialTrustError::InvalidEncoding);
+    }
+    // The application's certificate path engine consumes ordinary Unix seconds.
+    // Reject this unsupported signing instant instead of issuing a credential
+    // that the same application would have to fold during trust validation.
+    if signed.is_leap_second() {
+        return Err(CredentialTrustError::InvalidValidity);
     }
     let mut builder = DocumentBuilder::new(&input.payload.credential_type)
         .device_key(jwk_to_cose_key(jwk)?)
         .validity(ValidityInfo {
             signed,
             valid_from: signed,
-            valid_until: input.expires_at,
+            valid_until: expires_at,
             expected_update: None,
         });
     if let Some(resolved_status) = resolved_status {
@@ -214,22 +256,10 @@ fn mdoc_date(value: &Value, full_date: bool) -> Result<ciborium::Value, Credenti
     let text = value
         .as_str()
         .ok_or(CredentialTrustError::InvalidEncoding)?;
-    let valid = if full_date {
-        text.len() == 10
-            && chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
-                .is_ok_and(|date| date.format("%Y-%m-%d").to_string() == text)
-    } else {
-        text.len() == 20
-            && text.as_bytes().get(10) == Some(&b'T')
-            && text.ends_with('Z')
-            && chrono::DateTime::parse_from_rfc3339(text)
-                .is_ok_and(|date| date.timestamp_subsec_nanos() == 0)
-    };
-    if !valid {
-        return Err(CredentialTrustError::InvalidEncoding);
-    }
+    let tag = if full_date { 1004 } else { 0 };
+    validate_mdoc_date_tag(tag, text)?;
     Ok(ciborium::Value::Tag(
-        if full_date { 1004 } else { 0 },
+        tag,
         Box::new(ciborium::Value::Text(text.to_owned())),
     ))
 }
@@ -261,7 +291,7 @@ pub(super) fn verify(
         &bytes,
         &transcript,
         &VerificationOptions {
-            now: Utc::now(),
+            now: to_protocol_time(Utc::now())?,
             max_documents: 1,
         },
     )
@@ -284,7 +314,12 @@ pub(super) fn verify(
     let trust_anchors = crypto.combined_trust_anchors(&presentation.additional_trust_anchors)?;
     verify_mdoc_issuer_certificate_chain(
         pending.certificates(),
-        pending.mso().validity_info.signed.timestamp(),
+        pending
+            .mso()
+            .validity_info
+            .signed
+            .unix_seconds()
+            .ok_or(CredentialTrustError::InvalidValidity)?,
         &trust_anchors,
         &presentation.additional_trust_anchors,
         &crypto.current_revocation_policy(),
@@ -318,8 +353,8 @@ pub(super) fn verify(
             credential_type: mso.doc_type,
             claims: Value::Object(namespaces),
             holder_key: Some(holder_key),
-            issued_at: Some(mso.validity_info.signed),
-            expires_at: Some(mso.validity_info.valid_until),
+            issued_at: Some(from_protocol_time(mso.validity_info.signed)?),
+            expires_at: Some(from_protocol_time(mso.validity_info.valid_until)?),
             status,
         },
         certificates,

@@ -98,12 +98,15 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
             point.y().unwrap().to_vec(),
         )
         .build();
+        let protocol_time = |value: chrono::DateTime<Utc>| {
+            nazo_mdoc::Timestamp::parse_rfc3339(&value.to_rfc3339()).unwrap()
+        };
         let prepared = nazo_mdoc::builder::DocumentBuilder::new("org.example.credential")
             .device_key(device_key)
             .validity(nazo_mdoc::model::types::ValidityInfo {
-                signed: issued_at,
-                valid_from: issued_at,
-                valid_until: issued_at + Duration::minutes(10),
+                signed: protocol_time(issued_at),
+                valid_from: protocol_time(issued_at),
+                valid_until: protocol_time(issued_at + Duration::minutes(10)),
                 expected_update: None,
             })
             .add_namespace(
@@ -142,7 +145,7 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
         let authenticated = nazo_mdoc::verifier::verify_issued(
             &pinned.to_issuer_signed_cbor().unwrap(),
             "org.example.credential",
-            Utc::now(),
+            protocol_time(Utc::now()),
         )
         .unwrap();
         assert_eq!(authenticated.document().doc_type, "org.example.credential");

@@ -89,6 +89,25 @@ pub(super) fn json_to_cbor(value: &Value) -> Result<ciborium::Value, CredentialT
     }
 }
 
+/// Date tags supported by the mdoc JSON adapter use ISO full-date or whole UTC
+/// seconds. Keep issuance and authenticated-claim projection on the same rule.
+pub(super) fn validate_mdoc_date_tag(tag: u64, text: &str) -> Result<(), CredentialTrustError> {
+    let valid = match tag {
+        1004 => nazo_mdoc::cbor::FullDate::new(text).is_ok(),
+        0 => {
+            text.len() == 20
+                && text.as_bytes().get(10) == Some(&b'T')
+                && text.ends_with('Z')
+                && nazo_mdoc::Timestamp::parse_rfc3339(text)
+                    .is_ok_and(|date| date.is_whole_second())
+        }
+        _ => false,
+    };
+    valid
+        .then_some(())
+        .ok_or(CredentialTrustError::InvalidEncoding)
+}
+
 pub(super) fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTrustError> {
     match value {
         ciborium::Value::Null => Ok(Value::Null),
@@ -120,7 +139,13 @@ pub(super) fn cbor_to_json(value: ciborium::Value) -> Result<Value, CredentialTr
             })
             .collect::<Result<Map<_, _>, _>>()
             .map(Value::Object),
-        ciborium::Value::Tag(_, value) => cbor_to_json(*value),
+        ciborium::Value::Tag(tag @ (0 | 1004), value) => {
+            let ciborium::Value::Text(text) = *value else {
+                return Err(CredentialTrustError::InvalidEncoding);
+            };
+            validate_mdoc_date_tag(tag, &text)?;
+            Ok(Value::String(text))
+        }
         _ => Err(CredentialTrustError::InvalidEncoding),
     }
 }

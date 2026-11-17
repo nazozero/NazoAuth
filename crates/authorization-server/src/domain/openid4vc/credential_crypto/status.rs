@@ -19,8 +19,8 @@ const INVALID: CredentialTrustError = CredentialTrustError::InvalidStatus;
 const MAX_TOKEN_BYTES: usize = 128 * 1024;
 const MAX_LIST_BYTES: usize = 16 * 1024 * 1024;
 
-/// Project only the supported authenticated MSO mechanism. The general claim
-/// converter strips CBOR tags, so it must never decide whether status exists.
+/// Project only the supported authenticated MSO mechanism. General claim
+/// projection must never decide whether an authenticated status field exists.
 pub(super) fn mdoc_reference_to_json(raw: Cbor) -> Result<Value, CredentialTrustError> {
     let mechanisms = unique_map(&raw)?;
     let [(Cbor::Text(mechanism), reference)] = mechanisms else {

@@ -45,9 +45,9 @@ dependencies = [
 
 [[package]]
 name = "actix-http"
-version = "3.21.0"
+version = "3.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3422032be73eeb15bafdb64086386385875b653eb418a80241d1f98473e86ea6"
+checksum = "b90352ea64d82226a82060c41dc5fe3925696076f55998ec1bd44ae54611e593"
 dependencies = [
  "actix-codec",
  "actix-service",
@@ -2953,9 +2953,8 @@ dependencies = [
 [[package]]
 name = "nazo-mdoc"
 version = "0.3.0"
-source = "git+https://github.com/nazozero/mdoc-rs?rev=d0eb5421e3b8b06623d9059bd3435aaba0fe03ad#d0eb5421e3b8b06623d9059bd3435aaba0fe03ad"
+source = "git+https://github.com/nazozero/mdoc-rs?rev=2492f3610dbb2b0bf37c56abd88fade61753f017#2492f3610dbb2b0bf37c56abd88fade61753f017"
 dependencies = [
- "chrono",
  "ciborium",
  "const-oid 0.9.6",
  "coset",
@@ -2972,6 +2971,7 @@ dependencies = [
  "sha2 0.10.9",
  "signature 3.0.0",
  "thiserror",
+ "time",
  "x509-cert 0.2.5",
 ]
 
