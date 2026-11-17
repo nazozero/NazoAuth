@@ -8,15 +8,12 @@ concurrency:
   group: pr284-upstream-preparation
   cancel-in-progress: true
 jobs:
-  prepare:
+  export:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     env:
       BASE_SHA: cd10551d79b2ea688a54309dda32a0055f4f938f
       CARGO_TERM_COLOR: never
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
-      RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -24,17 +21,8 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
         with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          shared-key: workspace-quality
-          cache-on-failure: true
-      - name: Budget compilation and install existing native dependencies
-        run: |
-          python3 scripts/ci_build_jobs.py >> "$GITHUB_ENV"
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
-      - name: Apply reviewed transport changes
+          components: rustfmt
+      - name: Reproduce the candidate validated in run 44019169990
         run: |
           python3 .github/pr284-upstream-actix.py
           python3 .github/pr284-upstream-fixups.py
@@ -42,14 +30,8 @@ jobs:
           cargo fmt --all
           python3 scripts/verify_static_contracts.py --check
           python3 scripts/check_native_transport.py
-          cargo tree --locked -p nazo-server -i h2 -e normal
-      - name: Check complete workspace with strict Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-      - name: Verify production adapter contracts
-        run: cargo test --locked -p nazo-http-actix --lib
-      - name: Verify HTTP/1.1 TLS and mTLS plus h2-only rejection
-        run: cargo test --locked -p nazo-server --lib direct_tls_serves_real_https_and_mtls_without_trusting_forged_headers -- --nocapture
-      - name: Publish reviewed source tree without changing a branch
+          git diff -- Cargo.lock
+      - name: Export candidate files without updating refs or workflows
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -57,11 +39,12 @@ jobs:
           rm .github/pr284-upstream-actix.py .github/pr284-upstream-fixups.py .github/workflows/pr284-upstream-actix-prep.yml
           git add -A
           git diff --cached --check "$BASE_SHA"
-          git diff --cached --stat "$BASE_SHA"
           python3 - <<'PY'
           import json
           import os
+          import shutil
           import subprocess
+          import urllib.error
           import urllib.request
           from pathlib import Path
           base = os.environ['BASE_SHA']
@@ -77,18 +60,41 @@ jobs:
               'docs/project/testing.md',
           }
           assert set(paths) <= allowed, sorted(set(paths) - allowed)
-          entries = [{'path': path, 'mode': '100644', 'type': 'blob', 'content': Path(path).read_text()} for path in paths]
-          tree = subprocess.check_output(['git', 'rev-parse', base + '^{tree}'], text=True).strip()
-          request = urllib.request.Request(
-              'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/trees',
-              data=json.dumps({'base_tree': tree, 'tree': entries}).encode(),
-              headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-                       'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'},
-              method='POST',
-          )
-          with urllib.request.urlopen(request, timeout=60) as response:
-              result = json.load(response)
-          print('CANDIDATE_TREE=' + result['sha'])
+          output = Path(os.environ['RUNNER_TEMP']) / 'pr284-candidate'
+          output.mkdir()
+          entries = []
+          for path in paths:
+              destination = output / path
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(path, destination)
+          for path in paths:
+              request = urllib.request.Request(
+                  'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/blobs',
+                  data=json.dumps({'content': Path(path).read_text(), 'encoding': 'utf-8'}).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                           'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'},
+                  method='POST',
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      result = json.load(response)
+              except urllib.error.HTTPError as error:
+                  print('Blob export failed: ' + error.read().decode())
+                  raise
+              expected = subprocess.check_output(['git', 'hash-object', path], text=True).strip()
+              assert result['sha'] == expected, path
+              entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': expected})
+          print('CANDIDATE_BLOBS=' + json.dumps(entries))
           print('CANDIDATE_PARENT=' + base)
-          print('No branch or PR has been changed by this job.')
+          print('No branch, PR, or workflow has been updated by this job.')
+          (output / 'blobs.json').write_text(json.dumps(entries, indent=2))
           PY
+      - name: Preserve exact generated source
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pr284-upstream-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/pr284-candidate
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
