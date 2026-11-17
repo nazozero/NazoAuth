@@ -1110,7 +1110,7 @@ where
             .and_then(|claims| {
                 Some(AccessTokenRevocation {
                     jti: claims.jti,
-                    expires_at: Timestamp::new(claims.exp, 0)?,
+                    expires_at: Timestamp::from_second(claims.exp).ok()?,
                 })
             });
         Ok(access_token)

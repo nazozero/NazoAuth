@@ -1,137 +1,857 @@
 {
   "status": "FAIL",
-  "command": "cargo check --workspace --all-targets --all-features --message-format=json",
-  "parent": "db6438406dab16ea26b3e2f5d9099cb6c2351398",
-  "source_tree_before_evidence": "07d40dad77bbb69814a08ab28a42d4c9c3fb8008",
-  "workflow_run": "44134561169",
+  "command": "cargo check --workspace --all-targets --all-features --keep-going --message-format=json",
+  "parent": "238640dc20460afcdbbf7ebfd2ff81bba77416d2",
+  "source_tree_before_evidence": "5a81664bec7165502a9c56e07144dd0d5fe2ff57",
+  "workflow_run": "44135551937",
   "errors": [
     {
-      "rendered": "error[E0277]: the `?` operator can only be used on `Option`s, not `Result`s, in a closure that returns `Option`\n    --> crates/authorization-server-core/src/token_service.rs:1113:62\n     |\n1110 |             .and_then(|claims| {\n     |                       -------- this function returns an `Option`\n...\n1113 |                     expires_at: Timestamp::new(claims.exp, 0)?,\n     |                                                              ^ use `.ok()?` if you want to discard the `Result<!, jiff::Error>` error information\n\n",
-      "$message_type": "diagnostic",
-      "children": [],
-      "level": "error",
-      "message": "the `?` operator can only be used on `Option`s, not `Result`s, in a closure that returns `Option`",
-      "spans": [
+      "code": "E0433",
+      "message": "cannot find module or crate `chrono` in this scope",
+      "rendered": "error[E0433]: cannot find module or crate `chrono` in this scope\n    --> crates/key-management/src/database.rs:1209:27\n     |\n1209 |     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n     |                           ^^^^^^ use of unresolved module or unlinked crate `chrono`\n     |\n     = help: if you wanted to use a crate named `chrono`, use `cargo add chrono` to add it to your `Cargo.toml`\n\n",
+      "sites": [
         {
-          "byte_end": 35722,
-          "byte_start": 35721,
-          "column_end": 63,
-          "column_start": 62,
-          "expansion": {
-            "def_site_span": {
-              "byte_end": 0,
-              "byte_start": 0,
-              "column_end": 1,
-              "column_start": 1,
-              "expansion": null,
-              "file_name": "crates/authorization-server-core/src/lib.rs",
-              "is_primary": false,
-              "label": null,
-              "line_end": 1,
-              "line_start": 1,
-              "suggested_replacement": null,
-              "suggestion_applicability": null,
-              "text": []
-            },
-            "macro_decl_name": "desugaring of operator `?`",
-            "span": {
-              "byte_end": 35722,
-              "byte_start": 35721,
-              "column_end": 63,
-              "column_start": 62,
-              "expansion": null,
-              "file_name": "crates/authorization-server-core/src/token_service.rs",
-              "is_primary": false,
-              "label": null,
-              "line_end": 1113,
-              "line_start": 1113,
-              "suggested_replacement": null,
-              "suggestion_applicability": null,
-              "text": [
-                {
-                  "highlight_end": 63,
-                  "highlight_start": 62,
-                  "text": "                    expires_at: Timestamp::new(claims.exp, 0)?,"
-                }
-              ]
-            }
-          },
-          "file_name": "crates/authorization-server-core/src/token_service.rs",
-          "is_primary": true,
-          "label": "use `.ok()?` if you want to discard the `Result<!, jiff::Error>` error information",
-          "line_end": 1113,
-          "line_start": 1113,
-          "suggested_replacement": null,
-          "suggestion_applicability": null,
+          "file": "crates/key-management/src/database.rs",
+          "line": 1209,
           "text": [
             {
-              "highlight_end": 63,
-              "highlight_start": 62,
-              "text": "                    expires_at: Timestamp::new(claims.exp, 0)?,"
+              "highlight_end": 33,
+              "highlight_start": 27,
+              "text": "    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
             }
-          ]
-        },
-        {
-          "byte_end": 35575,
-          "byte_start": 35567,
-          "column_end": 31,
-          "column_start": 23,
-          "expansion": null,
-          "file_name": "crates/authorization-server-core/src/token_service.rs",
-          "is_primary": false,
-          "label": "this function returns an `Option`",
-          "line_end": 1110,
-          "line_start": 1110,
-          "suggested_replacement": null,
-          "suggestion_applicability": null,
-          "text": [
-            {
-              "highlight_end": 31,
-              "highlight_start": 23,
-              "text": "            .and_then(|claims| {"
-            }
-          ]
+          ],
+          "label": "use of unresolved module or unlinked crate `chrono`"
         }
-      ],
-      "code": {
-        "code": "E0277",
-        "explanation": "You tried to use a type which doesn't implement some trait in a place which\nexpected that trait.\n\nErroneous code example:\n\n```compile_fail,E0277\n// here we declare the Foo trait with a bar method\ntrait Foo {\n    fn bar(&self);\n}\n\n// we now declare a function which takes an object implementing the Foo trait\nfn some_func<T: Foo>(foo: T) {\n    foo.bar();\n}\n\nfn main() {\n    // we now call the method with the i32 type, which doesn't implement\n    // the Foo trait\n    some_func(5i32); // error: the trait bound `i32 : Foo` is not satisfied\n}\n```\n\nIn order to fix this error, verify that the type you're using does implement\nthe trait. Example:\n\n```\ntrait Foo {\n    fn bar(&self);\n}\n\n// we implement the trait on the i32 type\nimpl Foo for i32 {\n    fn bar(&self) {}\n}\n\nfn some_func<T: Foo>(foo: T) {\n    foo.bar(); // we can now use this method since i32 implements the\n               // Foo trait\n}\n\nfn main() {\n    some_func(5i32); // ok!\n}\n```\n\nOr in a generic context, an erroneous code example would look like:\n\n```compile_fail,E0277\nfn some_func<T>(foo: T) {\n    println!(\"{:?}\", foo); // error: the trait `core::fmt::Debug` is not\n                           //        implemented for the type `T`\n}\n\nfn main() {\n    // We now call the method with the i32 type,\n    // which *does* implement the Debug trait.\n    some_func(5i32);\n}\n```\n\nNote that the error here is in the definition of the generic function. Although\nwe only call it with a parameter that does implement `Debug`, the compiler\nstill rejects the function. It must work with all possible input types. In\norder to make this example compile, we need to restrict the generic type we're\naccepting:\n\n```\nuse std::fmt;\n\n// Restrict the input type to types that implement Debug.\nfn some_func<T: fmt::Debug>(foo: T) {\n    println!(\"{:?}\", foo);\n}\n\nfn main() {\n    // Calling the method is still fine, as i32 implements Debug.\n    some_func(5i32);\n\n    // This would fail to compile now:\n    // struct WithoutDebug;\n    // some_func(WithoutDebug);\n}\n```\n\nRust only looks at the signature of the called function, as such it must\nalready specify all requirements that will be used for every type parameter.\n"
-      }
+      ]
     },
     {
-      "rendered": "error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope\n   --> crates/authorization-server-core/src/extension_grants.rs:166:45\n    |\n166 |         jiff::Timestamp::new(claims.exp, 0).ok_or(JwtBearerGrantError::InvalidAssertion)?;\n    |                                             ^^^^^ method not found in `Result<jiff::Timestamp, jiff::Error>`\n\n",
-      "$message_type": "diagnostic",
-      "children": [],
-      "level": "error",
-      "message": "no method named `ok_or` found for enum `Result<T, E>` in the current scope",
-      "spans": [
+      "code": "E0599",
+      "message": "no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope\n    --> crates/key-management/src/database.rs:1209:11\n     |\n1209 |     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n     |           ^^^^^^^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "sites": [
         {
-          "byte_end": 5536,
-          "byte_start": 5531,
-          "column_end": 50,
-          "column_start": 45,
-          "expansion": null,
-          "file_name": "crates/authorization-server-core/src/extension_grants.rs",
-          "is_primary": true,
-          "label": "method not found in `Result<jiff::Timestamp, jiff::Error>`",
-          "line_end": 166,
-          "line_start": 166,
-          "suggested_replacement": null,
-          "suggestion_applicability": null,
+          "file": "crates/key-management/src/database.rs",
+          "line": 1209,
           "text": [
             {
-              "highlight_end": 50,
-              "highlight_start": 45,
-              "text": "        jiff::Timestamp::new(claims.exp, 0).ok_or(JwtBearerGrantError::InvalidAssertion)?;"
+              "highlight_end": 26,
+              "highlight_start": 11,
+              "text": "    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
             }
-          ]
+          ],
+          "label": "method not found in `jiff::Timestamp`"
         }
-      ],
-      "code": {
-        "code": "E0599",
-        "explanation": "This error occurs when a method is used on a type which doesn't implement it:\n\nErroneous code example:\n\n```compile_fail,E0599\nstruct Mouth;\n\nlet x = Mouth;\nx.chocolate(); // error: no method named `chocolate` found for type `Mouth`\n               //        in the current scope\n```\n\nIn this case, you need to implement the `chocolate` method to fix the error:\n\n```\nstruct Mouth;\n\nimpl Mouth {\n    fn chocolate(&self) { // We implement the `chocolate` method here.\n        println!(\"Hmmm! I love chocolate!\");\n    }\n}\n\nlet x = Mouth;\nx.chocolate(); // ok!\n```\n"
-      }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `ok_or` found for enum `Result<T, E>` in the current scope",
+      "rendered": "error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope\n  --> crates/key-management/src/mtls_trust.rs:90:10\n   |\n89 |     let not_before = Timestamp::new(certificate.validity().not_before.timestamp(), 0)\n90 |         .ok_or(MtlsTrustAnchorError::InvalidPem)?;\n   |          ^^^^^ method not found in `Result<jiff::Timestamp, jiff::Error>`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/mtls_trust.rs",
+          "line": 90,
+          "text": [
+            {
+              "highlight_end": 15,
+              "highlight_start": 10,
+              "text": "        .ok_or(MtlsTrustAnchorError::InvalidPem)?;"
+            }
+          ],
+          "label": "method not found in `Result<jiff::Timestamp, jiff::Error>`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `ok_or` found for enum `Result<T, E>` in the current scope",
+      "rendered": "error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope\n  --> crates/key-management/src/mtls_trust.rs:92:10\n   |\n91 |     let not_after = Timestamp::new(certificate.validity().not_after.timestamp(), 0)\n92 |         .ok_or(MtlsTrustAnchorError::InvalidPem)?;\n   |          ^^^^^ method not found in `Result<jiff::Timestamp, jiff::Error>`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/mtls_trust.rs",
+          "line": 92,
+          "text": [
+            {
+              "highlight_end": 15,
+              "highlight_start": 10,
+              "text": "        .ok_or(MtlsTrustAnchorError::InvalidPem)?;"
+            }
+          ],
+          "label": "method not found in `Result<jiff::Timestamp, jiff::Error>`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope\n   --> crates/state-store-valkey/src/authorization.rs:298:31\n    |\n298 |             vec![consuming_at.to_rfc3339_opts(SecondsFormat::Millis, true)],\n    |                               ^^^^^^^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "sites": [
+        {
+          "file": "crates/state-store-valkey/src/authorization.rs",
+          "line": 298,
+          "text": [
+            {
+              "highlight_end": 46,
+              "highlight_start": 31,
+              "text": "            vec![consuming_at.to_rfc3339_opts(SecondsFormat::Millis, true)],"
+            }
+          ],
+          "label": "method not found in `jiff::Timestamp`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `SecondsFormat` in this scope",
+      "rendered": "error[E0433]: cannot find type `SecondsFormat` in this scope\n   --> crates/state-store-valkey/src/authorization.rs:298:47\n    |\n298 |             vec![consuming_at.to_rfc3339_opts(SecondsFormat::Millis, true)],\n    |                                               ^^^^^^^^^^^^^ use of undeclared type `SecondsFormat`\n\n",
+      "sites": [
+        {
+          "file": "crates/state-store-valkey/src/authorization.rs",
+          "line": 298,
+          "text": [
+            {
+              "highlight_end": 60,
+              "highlight_start": 47,
+              "text": "            vec![consuming_at.to_rfc3339_opts(SecondsFormat::Millis, true)],"
+            }
+          ],
+          "label": "use of undeclared type `SecondsFormat`"
+        }
+      ]
+    },
+    {
+      "code": "E0277",
+      "message": "the size for values of type `str` cannot be known at compilation time",
+      "rendered": "error[E0277]: the size for values of type `str` cannot be known at compilation time\n   --> crates/state-store-valkey/src/authorization.rs:294:13\n    |\n294 |         let reply = command::eval_string(\n    |             ^^^^^ doesn't have a size known at compile-time\n    |\n    = help: the trait `Sized` is not implemented for `str`\n    = note: all local variables must have a statically known size\n\n",
+      "sites": [
+        {
+          "file": "crates/state-store-valkey/src/authorization.rs",
+          "line": 294,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 13,
+              "text": "        let reply = command::eval_string("
+            }
+          ],
+          "label": "doesn't have a size known at compile-time"
+        }
+      ]
+    },
+    {
+      "code": "E0277",
+      "message": "the size for values of type `str` cannot be known at compilation time",
+      "rendered": "error[E0277]: the size for values of type `str` cannot be known at compilation time\n   --> crates/state-store-valkey/src/authorization.rs:294:21\n    |\n294 |           let reply = command::eval_string(\n    |  _____________________^\n295 | |             &self.connection,\n296 | |             BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT,\n297 | |             vec![keys::authorization_code_hash(code_hash)],\n...   |\n300 | |         .await?;\n    | |_______________^ doesn't have a size known at compile-time\n    |\n    = help: the trait `Sized` is not implemented for `str`\n    = note: all local variables must have a statically known size\n\n",
+      "sites": [
+        {
+          "file": "crates/state-store-valkey/src/authorization.rs",
+          "line": 294,
+          "text": [
+            {
+              "highlight_end": 42,
+              "highlight_start": 21,
+              "text": "        let reply = command::eval_string("
+            },
+            {
+              "highlight_end": 30,
+              "highlight_start": 1,
+              "text": "            &self.connection,"
+            },
+            {
+              "highlight_end": 57,
+              "highlight_start": 1,
+              "text": "            BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT,"
+            },
+            {
+              "highlight_end": 60,
+              "highlight_start": 1,
+              "text": "            vec![keys::authorization_code_hash(code_hash)],"
+            },
+            {
+              "highlight_end": 77,
+              "highlight_start": 1,
+              "text": "            vec![consuming_at.to_rfc3339_opts(SecondsFormat::Millis, true)],"
+            },
+            {
+              "highlight_end": 10,
+              "highlight_start": 1,
+              "text": "        )"
+            },
+            {
+              "highlight_end": 16,
+              "highlight_start": 1,
+              "text": "        .await?;"
+            }
+          ],
+          "label": "doesn't have a size known at compile-time"
+        }
+      ]
+    },
+    {
+      "code": "E0277",
+      "message": "the size for values of type `str` cannot be known at compilation time",
+      "rendered": "error[E0277]: the size for values of type `str` cannot be known at compilation time\n   --> crates/state-store-valkey/src/authorization.rs:300:15\n    |\n300 |         .await?;\n    |               ^ doesn't have a size known at compile-time\n    |\n    = help: the trait `Sized` is not implemented for `str`\nnote: required by an implicit `Sized` bound in `ControlFlow`\n   --> /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/control_flow.rs:89:0\n\n",
+      "sites": [
+        {
+          "file": "crates/state-store-valkey/src/authorization.rs",
+          "line": 300,
+          "text": [
+            {
+              "highlight_end": 16,
+              "highlight_start": 15,
+              "text": "        .await?;"
+            }
+          ],
+          "label": "doesn't have a size known at compile-time"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `ok_or_else` found for enum `Result<T, E>` in the current scope",
+      "rendered": "error[E0599]: no method named `ok_or_else` found for enum `Result<T, E>` in the current scope\n   --> crates/state-store-valkey/src/avatar_upload_state.rs:222:18\n    |\n221 |             expires_at: Timestamp::new(value.expires_at, 0)\n222 |                 .ok_or_else(|| Error::corrupt_data(\"invalid avatar upload expiry\"))?,\n    |                  ^^^^^^^^^^\n    |\nhelp: there is a method `or_else` with a similar name\n    |\n222 -                 .ok_or_else(|| Error::corrupt_data(\"invalid avatar upload expiry\"))?,\n222 +                 .or_else(|| Error::corrupt_data(\"invalid avatar upload expiry\"))?,\n    |\n\n",
+      "sites": [
+        {
+          "file": "crates/state-store-valkey/src/avatar_upload_state.rs",
+          "line": 222,
+          "text": [
+            {
+              "highlight_end": 28,
+              "highlight_start": 18,
+              "text": "                .ok_or_else(|| Error::corrupt_data(\"invalid avatar upload expiry\"))?,"
+            }
+          ],
+          "label": null
+        }
+      ]
+    },
+    {
+      "code": "E0432",
+      "message": "unresolved import `jiff::TimeZone`",
+      "rendered": "error[E0432]: unresolved import `jiff::TimeZone`\n --> crates/authorization-server-core/tests/logout_service.rs:6:12\n  |\n6 | use jiff::{TimeZone as _, Timestamp};\n  |            --------^^^^^\n  |            |\n  |            no `TimeZone` in the root\n\n",
+      "sites": [
+        {
+          "file": "crates/authorization-server-core/tests/logout_service.rs",
+          "line": 6,
+          "text": [
+            {
+              "highlight_end": 25,
+              "highlight_start": 12,
+              "text": "use jiff::{TimeZone as _, Timestamp};"
+            }
+          ],
+          "label": null
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find module or crate `chrono` in this scope",
+      "rendered": "error[E0433]: cannot find module or crate `chrono` in this scope\n    --> crates/key-management/src/database.rs:1209:27\n     |\n1209 |     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n     |                           ^^^^^^ use of unresolved module or unlinked crate `chrono`\n     |\n     = help: if you wanted to use a crate named `chrono`, use `cargo add chrono` to add it to your `Cargo.toml`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/database.rs",
+          "line": 1209,
+          "text": [
+            {
+              "highlight_end": 33,
+              "highlight_start": 27,
+              "text": "    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "use of unresolved module or unlinked crate `chrono`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find `OffsetTimestamp` in `time`",
+      "rendered": "error[E0433]: cannot find `OffsetTimestamp` in `time`\n   --> crates/key-management/src/../tests/unit/database.rs:295:21\n    |\n295 |     let now = time::OffsetTimestamp::now_utc();\n    |                     ^^^^^^^^^^^^^^^ could not find `OffsetTimestamp` in `time`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/database.rs",
+          "line": 295,
+          "text": [
+            {
+              "highlight_end": 36,
+              "highlight_start": 21,
+              "text": "    let now = time::OffsetTimestamp::now_utc();"
+            }
+          ],
+          "label": "could not find `OffsetTimestamp` in `time`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find module or crate `chrono` in this scope",
+      "rendered": "error[E0433]: cannot find module or crate `chrono` in this scope\n   --> crates/key-management/src/../tests/unit/database.rs:512:30\n    |\n512 |             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n    |                              ^^^^^^ use of unresolved module or unlinked crate `chrono`\n    |\n    = help: if you wanted to use a crate named `chrono`, use `cargo add chrono` to add it to your `Cargo.toml`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/database.rs",
+          "line": 512,
+          "text": [
+            {
+              "highlight_end": 36,
+              "highlight_start": 30,
+              "text": "            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "use of unresolved module or unlinked crate `chrono`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find module or crate `chrono` in this scope",
+      "rendered": "error[E0433]: cannot find module or crate `chrono` in this scope\n   --> crates/key-management/src/../tests/unit/key_repository.rs:466:30\n    |\n466 |             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n    |                              ^^^^^^ use of unresolved module or unlinked crate `chrono`\n    |\n    = help: if you wanted to use a crate named `chrono`, use `cargo add chrono` to add it to your `Cargo.toml`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/key_repository.rs",
+          "line": 466,
+          "text": [
+            {
+              "highlight_end": 36,
+              "highlight_start": 30,
+              "text": "            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "use of unresolved module or unlinked crate `chrono`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find module or crate `chrono` in this scope",
+      "rendered": "error[E0433]: cannot find module or crate `chrono` in this scope\n   --> crates/key-management/src/../tests/unit/key_repository.rs:520:30\n    |\n520 |             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n    |                              ^^^^^^ use of unresolved module or unlinked crate `chrono`\n    |\n    = help: if you wanted to use a crate named `chrono`, use `cargo add chrono` to add it to your `Cargo.toml`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/key_repository.rs",
+          "line": 520,
+          "text": [
+            {
+              "highlight_end": 36,
+              "highlight_start": 30,
+              "text": "            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "use of unresolved module or unlinked crate `chrono`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope\n    --> crates/key-management/src/database.rs:1209:11\n     |\n1209 |     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n     |           ^^^^^^^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/database.rs",
+          "line": 1209,
+          "text": [
+            {
+              "highlight_end": 26,
+              "highlight_start": 11,
+              "text": "    value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "method not found in `jiff::Timestamp`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope\n   --> crates/key-management/src/../tests/unit/database.rs:512:14\n    |\n511 |         (jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1))\n512 |             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n    |              ^^^^^^^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/database.rs",
+          "line": 512,
+          "text": [
+            {
+              "highlight_end": 29,
+              "highlight_start": 14,
+              "text": "            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "method not found in `jiff::Timestamp`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope",
+      "rendered": "error[E0599]: no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/key-management/src/../tests/unit/database.rs:670:51\n    |\n670 |     due.prepublish_window = jiff::SignedDuration::zero();\n    |                                                   ^^^^ associated function or constant not found in `jiff::SignedDuration`\n    |\nnote: if you're trying to build a new `jiff::SignedDuration` consider using one of the following associated functions:\n      jiff::SignedDuration::new\n      jiff::SignedDuration::from_secs\n      jiff::SignedDuration::from_millis\n      jiff::SignedDuration::from_millis_i128\n      and 16 others\n   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/signed_duration.rs:405:5\n    |\n405 |     pub const fn new(mut secs: i64, mut nanos: i32) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n494 |     pub const fn from_secs(secs: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n520 |     pub const fn from_millis(millis: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n562 |     pub const fn from_millis_i128(millis: i128) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nhelp: there is a method `is_zero` with a similar name\n    |\n670 |     due.prepublish_window = jiff::SignedDuration::is_zero();\n    |                                                   +++\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/database.rs",
+          "line": 670,
+          "text": [
+            {
+              "highlight_end": 55,
+              "highlight_start": 51,
+              "text": "    due.prepublish_window = jiff::SignedDuration::zero();"
+            }
+          ],
+          "label": "associated function or constant not found in `jiff::SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "rendered": "error[E0308]: mismatched types\n   --> crates/key-management/src/../tests/unit/database.rs:997:9\n    |\n997 |         jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)\n    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `SpanFieldwise`, found `SignedDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/database.rs",
+          "line": 997,
+          "text": [
+            {
+              "highlight_end": 98,
+              "highlight_start": 9,
+              "text": "        jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)"
+            }
+          ],
+          "label": "expected `SpanFieldwise`, found `SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "rendered": "error[E0308]: mismatched types\n    --> crates/key-management/src/../tests/unit/database.rs:1018:9\n     |\n1018 |         jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)\n     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `SpanFieldwise`, found `SignedDuration`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/database.rs",
+          "line": 1018,
+          "text": [
+            {
+              "highlight_end": 98,
+              "highlight_start": 9,
+              "text": "        jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)"
+            }
+          ],
+          "label": "expected `SpanFieldwise`, found `SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope",
+      "rendered": "error[E0599]: no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/key-management/src/../tests/unit/model.rs:590:31\n    |\n590 |         jiff::SignedDuration::zero(),\n    |                               ^^^^ associated function or constant not found in `jiff::SignedDuration`\n    |\nnote: if you're trying to build a new `jiff::SignedDuration` consider using one of the following associated functions:\n      jiff::SignedDuration::new\n      jiff::SignedDuration::from_secs\n      jiff::SignedDuration::from_millis\n      jiff::SignedDuration::from_millis_i128\n      and 16 others\n   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/signed_duration.rs:405:5\n    |\n405 |     pub const fn new(mut secs: i64, mut nanos: i32) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n494 |     pub const fn from_secs(secs: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n520 |     pub const fn from_millis(millis: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n562 |     pub const fn from_millis_i128(millis: i128) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nhelp: there is a method `is_zero` with a similar name\n    |\n590 |         jiff::SignedDuration::is_zero(),\n    |                               +++\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/model.rs",
+          "line": 590,
+          "text": [
+            {
+              "highlight_end": 35,
+              "highlight_start": 31,
+              "text": "        jiff::SignedDuration::zero(),"
+            }
+          ],
+          "label": "associated function or constant not found in `jiff::SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `ok_or` found for enum `Result<T, E>` in the current scope",
+      "rendered": "error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope\n  --> crates/key-management/src/mtls_trust.rs:90:10\n   |\n89 |     let not_before = Timestamp::new(certificate.validity().not_before.timestamp(), 0)\n90 |         .ok_or(MtlsTrustAnchorError::InvalidPem)?;\n   |          ^^^^^ method not found in `Result<jiff::Timestamp, jiff::Error>`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/mtls_trust.rs",
+          "line": 90,
+          "text": [
+            {
+              "highlight_end": 15,
+              "highlight_start": 10,
+              "text": "        .ok_or(MtlsTrustAnchorError::InvalidPem)?;"
+            }
+          ],
+          "label": "method not found in `Result<jiff::Timestamp, jiff::Error>`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `ok_or` found for enum `Result<T, E>` in the current scope",
+      "rendered": "error[E0599]: no method named `ok_or` found for enum `Result<T, E>` in the current scope\n  --> crates/key-management/src/mtls_trust.rs:92:10\n   |\n91 |     let not_after = Timestamp::new(certificate.validity().not_after.timestamp(), 0)\n92 |         .ok_or(MtlsTrustAnchorError::InvalidPem)?;\n   |          ^^^^^ method not found in `Result<jiff::Timestamp, jiff::Error>`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/mtls_trust.rs",
+          "line": 92,
+          "text": [
+            {
+              "highlight_end": 15,
+              "highlight_start": 10,
+              "text": "        .ok_or(MtlsTrustAnchorError::InvalidPem)?;"
+            }
+          ],
+          "label": "method not found in `Result<jiff::Timestamp, jiff::Error>`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope\n   --> crates/key-management/src/../tests/unit/key_repository.rs:466:14\n    |\n465 |         (jiff::Timestamp::now() - jiff::SignedDuration::from_hours((91) * 24))\n466 |             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n    |              ^^^^^^^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/key_repository.rs",
+          "line": 466,
+          "text": [
+            {
+              "highlight_end": 29,
+              "highlight_start": 14,
+              "text": "            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "method not found in `jiff::Timestamp`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope",
+      "rendered": "error[E0599]: no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/key-management/src/../tests/unit/key_repository.rs:495:50\n    |\n495 |         prepublish_window: jiff::SignedDuration::zero(),\n    |                                                  ^^^^ associated function or constant not found in `jiff::SignedDuration`\n    |\nnote: if you're trying to build a new `jiff::SignedDuration` consider using one of the following associated functions:\n      jiff::SignedDuration::new\n      jiff::SignedDuration::from_secs\n      jiff::SignedDuration::from_millis\n      jiff::SignedDuration::from_millis_i128\n      and 16 others\n   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/signed_duration.rs:405:5\n    |\n405 |     pub const fn new(mut secs: i64, mut nanos: i32) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n494 |     pub const fn from_secs(secs: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n520 |     pub const fn from_millis(millis: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n562 |     pub const fn from_millis_i128(millis: i128) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nhelp: there is a method `is_zero` with a similar name\n    |\n495 |         prepublish_window: jiff::SignedDuration::is_zero(),\n    |                                                  +++\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/key_repository.rs",
+          "line": 495,
+          "text": [
+            {
+              "highlight_end": 54,
+              "highlight_start": 50,
+              "text": "        prepublish_window: jiff::SignedDuration::zero(),"
+            }
+          ],
+          "label": "associated function or constant not found in `jiff::SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope",
+      "rendered": "error[E0599]: no method named `to_rfc3339_opts` found for struct `jiff::Timestamp` in the current scope\n   --> crates/key-management/src/../tests/unit/key_repository.rs:520:14\n    |\n519 |         (jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1))\n520 |             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)\n    |              ^^^^^^^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/key_repository.rs",
+          "line": 520,
+          "text": [
+            {
+              "highlight_end": 29,
+              "highlight_start": 14,
+              "text": "            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)"
+            }
+          ],
+          "label": "method not found in `jiff::Timestamp`"
+        }
+      ]
+    },
+    {
+      "code": "E0599",
+      "message": "no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope",
+      "rendered": "error[E0599]: no associated function or constant named `zero` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/key-management/src/../tests/unit/purpose_scoped_keys.rs:9:50\n    |\n  9 |         prepublish_window: jiff::SignedDuration::zero(),\n    |                                                  ^^^^ associated function or constant not found in `jiff::SignedDuration`\n    |\nnote: if you're trying to build a new `jiff::SignedDuration` consider using one of the following associated functions:\n      jiff::SignedDuration::new\n      jiff::SignedDuration::from_secs\n      jiff::SignedDuration::from_millis\n      jiff::SignedDuration::from_millis_i128\n      and 16 others\n   --> /home/runner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jiff-0.2.42/src/signed_duration.rs:405:5\n    |\n405 |     pub const fn new(mut secs: i64, mut nanos: i32) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n494 |     pub const fn from_secs(secs: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n520 |     pub const fn from_millis(millis: i64) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n...\n562 |     pub const fn from_millis_i128(millis: i128) -> SignedDuration {\n    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nhelp: there is a method `is_zero` with a similar name\n    |\n  9 |         prepublish_window: jiff::SignedDuration::is_zero(),\n    |                                                  +++\n\n",
+      "sites": [
+        {
+          "file": "crates/key-management/src/../tests/unit/purpose_scoped_keys.rs",
+          "line": 9,
+          "text": [
+            {
+              "highlight_end": 54,
+              "highlight_start": 50,
+              "text": "        prepublish_window: jiff::SignedDuration::zero(),"
+            }
+          ],
+          "label": "associated function or constant not found in `jiff::SignedDuration`"
+        }
+      ]
+    },
+    {
+      "code": "E0425",
+      "message": "cannot find value `Utc` in this scope",
+      "rendered": "error[E0425]: cannot find value `Utc` in this scope\n  --> crates/identity/tests/scim_core.rs:22:21\n   |\n22 |     let timestamp = Utc\n   |                     ^^^ not found in this scope\n\n",
+      "sites": [
+        {
+          "file": "crates/identity/tests/scim_core.rs",
+          "line": 22,
+          "text": [
+            {
+              "highlight_end": 24,
+              "highlight_start": 21,
+              "text": "    let timestamp = Utc"
+            }
+          ],
+          "label": "not found in this scope"
+        }
+      ]
+    },
+    {
+      "code": "E0425",
+      "message": "cannot find value `Utc` in this scope",
+      "rendered": "error[E0425]: cannot find value `Utc` in this scope\n   --> crates/identity/tests/scim_core.rs:275:15\n    |\n275 |     let now = Utc\n    |               ^^^ not found in this scope\n\n",
+      "sites": [
+        {
+          "file": "crates/identity/tests/scim_core.rs",
+          "line": 275,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc"
+            }
+          ],
+          "label": "not found in this scope"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/identity/src/../tests/unit/federation.rs:178:15\n    |\n178 |     let now = Utc::now();\n    |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/identity/src/../tests/unit/federation.rs",
+          "line": 178,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n --> crates/identity/src/../tests/unit/passkey.rs:5:15\n  |\n5 |     let now = Utc::now();\n  |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/identity/src/../tests/unit/passkey.rs",
+          "line": 5,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n  --> crates/resource-server/src/../tests/unit/lib/access_token_profile.rs:29:15\n   |\n29 |     let now = Utc::now().timestamp();\n   |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/access_token_profile.rs",
+          "line": 29,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now().timestamp();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n  --> crates/resource-server/src/../tests/unit/lib/access_token_profile.rs:39:15\n   |\n39 |     let now = Utc::now().timestamp();\n   |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/access_token_profile.rs",
+          "line": 39,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now().timestamp();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n  --> crates/resource-server/src/../tests/unit/lib/access_token_profile.rs:74:15\n   |\n74 |     let now = Utc::now().timestamp();\n   |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/access_token_profile.rs",
+          "line": 74,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now().timestamp();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/resource-server/src/../tests/unit/lib/dpop.rs:420:23\n    |\n420 |         json!({\"iat\": Utc::now().timestamp() - 10, \"jti\": \"expired-jti\"}),\n    |                       ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/dpop.rs",
+          "line": 420,
+          "text": [
+            {
+              "highlight_end": 26,
+              "highlight_start": 23,
+              "text": "        json!({\"iat\": Utc::now().timestamp() - 10, \"jti\": \"expired-jti\"}),"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/resource-server/src/../tests/unit/lib/dpop.rs:426:23\n    |\n426 |         json!({\"iat\": Utc::now().timestamp() + 10, \"jti\": \"future-jti\"}),\n    |                       ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/dpop.rs",
+          "line": 426,
+          "text": [
+            {
+              "highlight_end": 26,
+              "highlight_start": 23,
+              "text": "        json!({\"iat\": Utc::now().timestamp() + 10, \"jti\": \"future-jti\"}),"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/resource-server/src/../tests/unit/lib/dpop.rs:801:16\n    |\n801 |         \"iat\": Utc::now().timestamp(),\n    |                ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/dpop.rs",
+          "line": 801,
+          "text": [
+            {
+              "highlight_end": 19,
+              "highlight_start": 16,
+              "text": "        \"iat\": Utc::now().timestamp(),"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/resource-server/src/../tests/unit/lib/dpop.rs:828:16\n    |\n828 |         \"iat\": Utc::now().timestamp(),\n    |                ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/dpop.rs",
+          "line": 828,
+          "text": [
+            {
+              "highlight_end": 19,
+              "highlight_start": 16,
+              "text": "        \"iat\": Utc::now().timestamp(),"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n  --> crates/resource-server/src/../tests/unit/lib/fixtures.rs:76:15\n   |\n76 |     let now = Utc::now().timestamp();\n   |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/fixtures.rs",
+          "line": 76,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now().timestamp();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/resource-server/src/../tests/unit/lib/fixtures.rs:116:16\n    |\n116 |         \"iat\": Utc::now().timestamp(),\n    |                ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/fixtures.rs",
+          "line": 116,
+          "text": [
+            {
+              "highlight_end": 19,
+              "highlight_start": 16,
+              "text": "        \"iat\": Utc::now().timestamp(),"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n  --> crates/resource-server/src/../tests/unit/lib/verifier.rs:17:15\n   |\n17 |     let now = Utc::now().timestamp();\n   |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/verifier.rs",
+          "line": 17,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now().timestamp();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
+    },
+    {
+      "code": "E0433",
+      "message": "cannot find type `Utc` in this scope",
+      "rendered": "error[E0433]: cannot find type `Utc` in this scope\n   --> crates/resource-server/src/../tests/unit/lib/verifier.rs:198:15\n    |\n198 |     let now = Utc::now().timestamp();\n    |               ^^^ use of undeclared type `Utc`\n\n",
+      "sites": [
+        {
+          "file": "crates/resource-server/src/../tests/unit/lib/verifier.rs",
+          "line": 198,
+          "text": [
+            {
+              "highlight_end": 18,
+              "highlight_start": 15,
+              "text": "    let now = Utc::now().timestamp();"
+            }
+          ],
+          "label": "use of undeclared type `Utc`"
+        }
+      ]
     }
   ],
-  "stderr_tail": "    Checking diesel v2.3.14\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking core_detect v1.0.0\n   Compiling rustix v1.1.6\n    Checking linux-raw-sys v0.12.1\n    Checking tokio-rustls v0.26.6\n    Checking rustls-platform-verifier v0.7.1\n    Checking lettre v0.11.23\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking tokio-postgres-rustls v0.14.0\n    Checking tempfile v3.27.0\n    Checking wait-timeout v0.2.1\n    Checking quick-error v1.2.3\n   Compiling ref-cast v1.0.27\n    Checking bit-vec v0.10.1\n    Checking bit-set v0.11.1\n    Checking rusty-fork v0.3.1\n   Compiling ref-cast-impl v1.0.27\n    Checking rand_xorshift v0.5.0\n    Checking unarray v0.1.4\n    Checking bytes-utils v0.1.4\n    Checking proptest v1.12.0\n    Checking sfv v0.15.0\n    Checking ed25519-compact v2.6.0\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking rustc-hash v2.1.3\n    Checking httpsig v0.0.26\n    Checking sfv v0.16.1\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n   Compiling httparse v1.10.1\n    Checking ryu v1.0.23\n    Checking ppv-lite86 v0.2.21\n    Checking http-body v1.1.0\n    Checking tokio-stream v0.1.19\n    Checking getrandom v0.2.17\n   Compiling crc16 v0.4.0\n    Checking rand_core v0.6.4\n    Checking rand_chacha v0.3.1\n    Checking serde_urlencoded v0.7.1\n    Checking futures v0.3.34\n    Checking cookie-factory v0.3.2\n    Checking rand v0.8.8\n    Checking redis-protocol v6.0.0\n    Checking float-cmp v0.10.0\n   Compiling fred-macros v0.1.0\n    Checking socket2 v0.5.10\n    Checking http-body-util v0.1.5\nerror: could not compile `nazo-auth` (lib) due to 2 previous errors\nwarning: build failed, waiting for other jobs to finish..."
+  "stderr_tail": "    Checking thread_local v1.1.10\n    Checking nu-ansi-term v0.50.3\n   Compiling rustix v0.38.44\n    Checking tracing-subscriber v0.3.23\n    Checking prost v0.14.4\n    Checking opentelemetry_sdk v0.33.1\n    Checking sigstore-merkle v0.16.0\n    Checking cms v0.2.3\n    Checking linux-raw-sys v0.4.15\n    Checking v_escape-base v0.1.0\n    Checking ryu-js v1.0.3\n    Checking v_htmlescape v0.17.0\n    Checking serde_json_canonicalizer v0.4.1\n    Checking sigstore-tsa v0.16.0\n    Checking sigstore-rekor v0.16.0\n    Checking opentelemetry-proto v0.33.1\n    Checking sigstore-trust-root v0.16.0\n    Checking opentelemetry-http v0.33.1\n    Checking sigstore-bundle v0.16.0\n    Checking xattr v1.6.1\n    Checking filetime v0.2.29\n    Checking http-range v0.1.6\n    Checking libyaml-rs v0.3.0\n    Checking tar v0.4.46\n    Checking actix-files v0.7.4\n    Checking yaml_serde v0.10.7\n    Checking process-wrap v10.0.1\n    Checking opentelemetry-otlp v0.33.1\n    Checking sigstore-verify v0.16.0\n    Checking atomicwrites v0.4.4\n    Checking tracing-opentelemetry v0.34.0\n    Checking opentelemetry-appender-tracing v0.33.1\n    Checking lru v0.19.0\n    Checking fs2 v0.4.3\n    Checking keccak v0.2.2\n    Checking sponge-cursor v0.1.0\n    Checking crypto-primes v0.7.2\n    Checking pkcs1 v0.8.0\n    Checking shake v0.1.0\n    Checking module-lattice v0.2.4\n    Checking ml-dsa v0.1.2\nerror: could not compile `nazo-auth` (test \"logout_service\") due to 1 previous error\n    Checking rsa v0.10.0\nerror: could not compile `nazo-key-management` (lib test) due to 17 previous errors\nerror: could not compile `nazo-identity` (test \"scim_core\") due to 2 previous errors\nerror: could not compile `nazo-identity` (lib test) due to 2 previous errors\nerror: could not compile `nazo-resource-server` (lib test) due to 11 previous errors\n    Checking diesel_migrations v2.3.2\n    Checking jiff-diesel v0.1.4\n    Checking diesel-async v0.9.2"
 }
