@@ -108,7 +108,8 @@ async fn mdoc_publication_is_durable_across_reload_material_commit_and_reseal() 
     );
 
     let new_ring =
-        SigningKeyWrappingKeyRing::new("publication-rotated", [0x71_u8; 32], None).unwrap();
+        SigningKeyWrappingKeyRing::new("publication-rotated", rand::random::<[u8; 32]>(), None)
+            .unwrap();
     let payload = decrypt_payload(
         binding.tenant_id,
         &binding.wrapping_keys,
