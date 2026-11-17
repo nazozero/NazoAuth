@@ -38,11 +38,13 @@ jobs:
           cp candidate/docs/evidence/baseline-Cargo.lock baseline/Cargo.lock
           cp candidate/docs/evidence/baseline-perf-Cargo.toml baseline/perf/Cargo.toml
           cp candidate/docs/evidence/baseline-perf-Cargo.lock baseline/perf/Cargo.lock
-          cp candidate/benches/ceremony.rs baseline/benches/ceremony.rs
-          # Dalek 2 and P-256 0.14 expose different versions of the Signer trait.
-          # This import is the only baseline harness source adaptation.
-          printf '\nuse p256::ecdsa::signature::Signer as _;\n' >> baseline/benches/ceremony.rs
-          cp candidate/benches/ceremony.rs checkpoint/benches/ceremony.rs
+          for label in baseline checkpoint; do
+            cp candidate/benches/ceremony.rs "$label/benches/ceremony.rs"
+            # These two revisions use Dalek 2 and P-256 0.14, whose Signer
+            # traits come from different signature-crate versions.
+            # No benchmark logic or production source is changed.
+            printf '\nuse p256::ecdsa::signature::Signer as _;\n' >> "$label/benches/ceremony.rs"
+          done
           git -C candidate rev-parse HEAD HEAD^{tree} > evidence/candidate.identity.txt
           git -C candidate rev-parse 8260480634fac09e1151ca2b1a9eaa1c02af6f67 8260480634fac09e1151ca2b1a9eaa1c02af6f67^{tree} > evidence/checkpoint.identity.txt
           git -C candidate rev-parse d59b317998e56f4a16a69133d7a854c5c34f795b d59b317998e56f4a16a69133d7a854c5c34f795b^{tree} > evidence/baseline.identity.txt
@@ -98,7 +100,7 @@ jobs:
           python3 - <<'PY'
           import json, os
           from pathlib import Path
-          lines = ['# Passkey continuation: same-host three-way comparison', '', 'Workflow run: ' + os.environ['GITHUB_RUN_ID'], '', 'Six balanced rounds per mode, 5,000 operations per case and round, concurrency one. Values are medians of per-round quantiles, not pooled percentiles. All binaries were compiled before timing; allocation tracing was separate. Hosted-runner observations are not a production SLO or cross-machine comparison.', '', 'Baseline: d59b317998e56f4a16a69133d7a854c5c34f795b. Checkpoint: 8260480634fac09e1151ca2b1a9eaa1c02af6f67. Candidate: 6b05844a0cc5f7443e0bec378f904b2c3d39f387 (runtime 84938674306a2ca0b84319e8ee499b61b8f32e84). Baseline uses the archived dependency locks and the common harness plus one Signer-trait compatibility import.', '']
+          lines = ['# Passkey continuation: same-host three-way comparison', '', 'Workflow run: ' + os.environ['GITHUB_RUN_ID'], '', 'Six balanced rounds per mode, 5,000 operations per case and round, concurrency one. Values are medians of per-round quantiles, not pooled percentiles. All binaries were compiled before timing; allocation tracing was separate. Hosted-runner observations are not a production SLO or cross-machine comparison.', '', 'Baseline: d59b317998e56f4a16a69133d7a854c5c34f795b. Checkpoint: 8260480634fac09e1151ca2b1a9eaa1c02af6f67. Candidate: 6b05844a0cc5f7443e0bec378f904b2c3d39f387 (runtime 84938674306a2ca0b84319e8ee499b61b8f32e84). Baseline uses the archived dependency locks. The baseline and checkpoint use the common harness plus a Signer-trait compatibility import; production source and measurement logic are unchanged.', '']
           for name in ('native-rustcrypto', 'native-aws-lc', 'wasi'):
               data = json.loads(Path('evidence/' + name + '.json').read_text())
               values = data['median_by_case']
