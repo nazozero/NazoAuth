@@ -74,9 +74,8 @@ fn check_profile(
         {
             return Err(INVALID);
         }
-        let not_before =
-            Timestamp::from_second(certificate.validity().not_before.timestamp())
-                .map_err(|_| INVALID)?;
+        let not_before = Timestamp::from_second(certificate.validity().not_before.timestamp())
+            .map_err(|_| INVALID)?;
         // Calendar years, including February month-end clamping; not a fixed
         // 7305-day approximation that changes at Gregorian century boundaries.
         let latest = Offset::UTC
