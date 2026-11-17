@@ -20,8 +20,8 @@ use crate::ports::audit::{SecurityAudit, audit_fields};
 use crate::rate_limit::TokenManagementRequestLimiter;
 use crate::services::{ServerAuthorizationService, ServerDeviceGrantService};
 use crate::sessions::CurrentSession;
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_auth::{
     CapabilityAdmission, ClientAuthenticationContext, DeviceAuthorizationApproval,
     DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy,
@@ -198,7 +198,7 @@ impl DeviceDecisionHandles {
         } else {
             match self
                 .device_service
-                .pending_request_for_user_code(&normalized_user_code, Utc::now)
+                .pending_request_for_user_code(&normalized_user_code, Timestamp::now)
                 .await
             {
                 Ok(payload) => payload,
@@ -233,7 +233,7 @@ impl DeviceDecisionHandles {
             ));
         }
         let prepared = match device_service
-            .prepare_decision(&normalized_user_code, Utc::now)
+            .prepare_decision(&normalized_user_code, Timestamp::now)
             .await
         {
             Ok(Some(prepared)) => prepared,
@@ -301,7 +301,7 @@ impl DeviceDecisionHandles {
             ));
         }
         let result = match decision {
-            "deny" => device_service.deny(&prepared, Utc::now).await,
+            "deny" => device_service.deny(&prepared, Timestamp::now).await,
             "approve" => {
                 let client = match authorization_service.client_by_id(&payload.client_id).await {
                     Ok(Some(client)) if client.is_active => client,
@@ -345,7 +345,7 @@ impl DeviceDecisionHandles {
                         },
                         &client,
                         grant_repository,
-                        Utc::now,
+                        Timestamp::now,
                     )
                     .await
             }
@@ -427,7 +427,7 @@ pub fn device_authorization_request_payload(
         default_resource: &config.default_audience,
         interval_seconds: config.poll_interval_seconds,
         ttl_seconds: config.ttl_seconds,
-        now: Utc::now(),
+        now: Timestamp::now(),
     })
 }
 

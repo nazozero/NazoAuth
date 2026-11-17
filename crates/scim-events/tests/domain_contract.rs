@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::DateTime;
+use jiff::Timestamp;
 use nazo_scim_events::*;
 use serde_json::json;
 use uuid::Uuid;
@@ -49,7 +49,7 @@ fn notice_claims_use_sub_id_and_exactly_one_payload_mode() {
         tenant_id,
         user_id,
         txn,
-        DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+        Timestamp::new(1_700_000_000, 0).unwrap(),
         &[
             "emails".to_owned(),
             "active".to_owned(),
@@ -148,7 +148,7 @@ async fn publisher_binds_each_set_to_issuer_receiver_and_event_id() {
         Uuid::now_v7(),
         Uuid::now_v7(),
         Uuid::now_v7(),
-        DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+        Timestamp::new(1_700_000_000, 0).unwrap(),
     );
     let event_id = event.id;
     let signer = RecordingSigner::default();

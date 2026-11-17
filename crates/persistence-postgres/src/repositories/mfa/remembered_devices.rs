@@ -14,7 +14,7 @@ impl MfaRepository {
         user_id: UserId,
         token_hash: &str,
         user_agent_hash: Option<&str>,
-        at: chrono::DateTime<chrono::Utc>,
+        at: jiff::Timestamp,
     ) -> Result<bool, RepositoryError> {
         let mut connection = get_conn(&self.pool)
             .await
@@ -24,7 +24,7 @@ impl MfaRepository {
                 .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()))
                 .filter(user_mfa_remembered_devices::token_hash.eq(token_hash))
-                .filter(user_mfa_remembered_devices::expires_at.gt(at))
+                .filter(user_mfa_remembered_devices::expires_at.gt((at).to_diesel()))
                 .filter(
                     user_mfa_remembered_devices::user_agent_hash
                         .is_not_distinct_from(user_agent_hash),
@@ -41,7 +41,7 @@ impl MfaRepository {
         credential_id: uuid::Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
-        expires_at: chrono::DateTime<chrono::Utc>,
+        expires_at: jiff::Timestamp,
     ) -> Result<bool, RepositoryError> {
         let connection = get_conn(&self.pool)
             .await
@@ -70,7 +70,7 @@ impl MfaRepository {
                         user_mfa_remembered_devices::table
                             .filter(user_mfa_remembered_devices::tenant_id.eq(tenant_id.as_uuid()))
                             .filter(user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()))
-                            .filter(user_mfa_remembered_devices::expires_at.le(now)),
+                            .filter(user_mfa_remembered_devices::expires_at.le((now).to_diesel())),
                     )
                     .execute(connection)
                     .await?;
@@ -80,7 +80,7 @@ impl MfaRepository {
                             user_mfa_remembered_devices::user_id.eq(user_id.as_uuid()),
                             user_mfa_remembered_devices::token_hash.eq(token_hash),
                             user_mfa_remembered_devices::user_agent_hash.eq(user_agent_hash),
-                            user_mfa_remembered_devices::expires_at.eq(expires_at),
+                            user_mfa_remembered_devices::expires_at.eq((expires_at).to_diesel()),
                         ))
                         .execute(connection)
                         .await?;
@@ -101,7 +101,7 @@ impl nazo_identity::ports::RememberedMfaDevicePort for MfaRepository {
         user_id: UserId,
         token_hash: &'a str,
         user_agent_hash: Option<&'a str>,
-        at: chrono::DateTime<chrono::Utc>,
+        at: jiff::Timestamp,
     ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
         Box::pin(async move {
             self.remembered_device_valid(tenant_id, user_id, token_hash, user_agent_hash, at)
@@ -109,3 +109,5 @@ impl nazo_identity::ports::RememberedMfaDevicePort for MfaRepository {
         })
     }
 }
+
+use jiff_diesel::ToDiesel as _;

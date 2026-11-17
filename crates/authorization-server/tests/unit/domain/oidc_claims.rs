@@ -1,5 +1,5 @@
 use super::*;
-use chrono::Utc;
+use jiff::Timestamp;
 use uuid::Uuid;
 
 #[test]
@@ -60,7 +60,7 @@ fn user() -> nazo_identity::SubjectClaims {
         phone_number: Some("+15555550000".to_owned()),
         phone_number_verified: true,
         email_verified: true,
-        updated_at: Utc::now().timestamp(),
+        updated_at: Timestamp::now().as_second(),
     }
 }
 

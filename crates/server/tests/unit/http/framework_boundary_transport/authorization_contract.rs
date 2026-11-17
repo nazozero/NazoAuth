@@ -72,7 +72,7 @@ async fn authorized_response(
 ) -> actix_web::HttpResponse {
     let user_id = uuid::Uuid::now_v7();
     let sid = format!("t00-auth-{user_id}");
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut connection = nazo_postgres::get_conn(&state.diesel_db)
         .await
         .expect("authorization fixture DB connection");
@@ -167,7 +167,7 @@ async fn t00_par_repeated_resources_ignore_repeated_extensions_and_persist_exact
             ("unknown_extension", "second"),
         ])
         .finish();
-    let before = chrono::Utc::now();
+    let before = jiff::Timestamp::now();
     let response = crate::http::authorization::par::par(
         endpoint,
         TestRequest::post()
@@ -198,12 +198,13 @@ async fn t00_par_repeated_resources_ignore_repeated_extensions_and_persist_exact
     let key = nazo_valkey::test_support::par_storage_key(uri);
     let raw: String = state.valkey.get(&key).await.expect("persisted raw PAR");
     let stored: Value = serde_json::from_str(&raw).unwrap();
-    let issued: chrono::DateTime<chrono::Utc> =
-        serde_json::from_value(stored["issued_at"].clone()).unwrap();
-    let expires: chrono::DateTime<chrono::Utc> =
-        serde_json::from_value(stored["expires_at"].clone()).unwrap();
-    assert!(issued >= before && issued <= chrono::Utc::now());
-    assert_eq!(expires - issued, chrono::Duration::seconds(ttl as i64));
+    let issued: jiff::Timestamp = serde_json::from_value(stored["issued_at"].clone()).unwrap();
+    let expires: jiff::Timestamp = serde_json::from_value(stored["expires_at"].clone()).unwrap();
+    assert!(issued >= before && issued <= jiff::Timestamp::now());
+    assert_eq!(
+        expires - issued,
+        jiff::SignedDuration::from_secs(ttl as i64)
+    );
     assert_eq!(
         stored,
         json!({"client_id": client.client_id, "params": {
@@ -255,7 +256,7 @@ async fn t00_jar_invalid_unsigned_and_tampered_objects_never_redirect_to_attacke
     )
     .await;
     let endpoint = endpoint(&state);
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let claims = json!({"iss": client.client_id, "client_id": client.client_id, "aud": "https://issuer.example",
         "iat": now, "exp": now + 90, "jti": uuid::Uuid::now_v7(), "response_type": "code",
         "redirect_uri": "https://attacker.example/steal", "scope": "openid"});
@@ -305,7 +306,7 @@ async fn t00_jar_invalid_unsigned_and_tampered_objects_never_redirect_to_attacke
 async fn t00_jarm_signature_and_all_claims_are_bound_to_database_client() {
     let state = live_transport_state().await;
     let (client, _) = client(&state, None).await;
-    let before = chrono::Utc::now().timestamp();
+    let before = jiff::Timestamp::now().as_second();
     let response = authorized_response(&state, &client, "jwt", "golden-state").await;
     assert_eq!(response.status(), StatusCode::FOUND);
     let location = url::Url::parse(
@@ -349,7 +350,7 @@ async fn t00_jarm_signature_and_all_claims_are_bound_to_database_client() {
     let code = claims["code"].as_str().expect("real authorization code");
     assert!(!code.is_empty());
     let issued = claims["iat"].as_i64().unwrap();
-    assert!(issued >= before && issued <= chrono::Utc::now().timestamp());
+    assert!(issued >= before && issued <= jiff::Timestamp::now().as_second());
     let jti = claims["jti"].as_str().unwrap();
     assert_eq!(uuid::Uuid::parse_str(jti).unwrap().get_version_num(), 7);
     assert_eq!(

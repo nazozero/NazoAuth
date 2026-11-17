@@ -106,7 +106,7 @@ impl AvatarDirectUploadPort for DirectStorage {
         &'a self,
         _staging_object_id: &'a str,
         _content_length: usize,
-        _expires_at: chrono::DateTime<chrono::Utc>,
+        _expires_at: jiff::Timestamp,
     ) -> AvatarStorageFuture<'a, AvatarUploadTarget> {
         self.authorization_calls.fetch_add(1, Ordering::Relaxed);
         Box::pin(async {
@@ -188,7 +188,7 @@ impl AvatarUploadStatePort for DirectState {
         &'a self,
         _user_id: UserId,
         _upload_id: &'a str,
-        _lease_until: chrono::DateTime<chrono::Utc>,
+        _lease_until: jiff::Timestamp,
     ) -> RepositoryFuture<'a, AvatarUploadClaim> {
         let authorization = self.authorization.lock().unwrap().clone();
         let completed = self.completed.lock().unwrap().clone();
@@ -333,7 +333,7 @@ impl AvatarDirectUploadPort for ScriptedDirectStorage {
         &'a self,
         _staging_object_id: &'a str,
         _content_length: usize,
-        _expires_at: chrono::DateTime<chrono::Utc>,
+        _expires_at: jiff::Timestamp,
     ) -> AvatarStorageFuture<'a, AvatarUploadTarget> {
         let result = self.authorize.clone();
         Box::pin(async move { result })
@@ -428,7 +428,7 @@ impl AvatarUploadStatePort for ScriptedDirectState {
         &'a self,
         _user_id: UserId,
         _upload_id: &'a str,
-        _lease_until: chrono::DateTime<chrono::Utc>,
+        _lease_until: jiff::Timestamp,
     ) -> RepositoryFuture<'a, AvatarUploadClaim> {
         let claim = self.claim.lock().unwrap().clone();
         let error = self.claim_error.clone();
@@ -538,7 +538,7 @@ impl GrantSummaryRepositoryPort for ScriptedGrants {
 }
 
 fn direct_account() -> PublicAccount {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,
@@ -561,7 +561,7 @@ fn direct_account() -> PublicAccount {
 
 fn upload_authorization(
     account: &PublicAccount,
-    expires_at: chrono::DateTime<chrono::Utc>,
+    expires_at: jiff::Timestamp,
 ) -> AvatarUploadAuthorization {
     AvatarUploadAuthorization {
         upload_id: "upload-scripted".to_owned(),
@@ -810,7 +810,7 @@ async fn direct_upload_begin_rejects_invalid_references_and_provider_failures() 
         ScriptedDirectStorage::default(),
         ScriptedDirectState::pending(upload_authorization(
             &invalid_reference,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Ok(0),
         AvatarRepositoryResult::Update,
@@ -829,7 +829,7 @@ async fn direct_upload_begin_rejects_invalid_references_and_provider_failures() 
         storage_failure,
         ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Ok(0),
         AvatarRepositoryResult::Update,
@@ -843,7 +843,7 @@ async fn direct_upload_begin_rejects_invalid_references_and_provider_failures() 
 
     let mut state_failure = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state_failure.create = Err(RepositoryError::Unavailable);
     let service = scripted_direct_service(
@@ -860,7 +860,7 @@ async fn direct_upload_begin_rejects_invalid_references_and_provider_failures() 
 
     let mut overflow_ttl_state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     overflow_ttl_state.create = Ok(());
     let service = AvatarDirectUploadService::from_ports(
@@ -887,7 +887,7 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
     for claim in [AvatarUploadClaim::Busy, AvatarUploadClaim::Missing] {
         let mut state = ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         ));
         state.claim = Arc::new(Mutex::new(claim.clone()));
         let service = scripted_direct_service(
@@ -910,8 +910,10 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
         );
     }
 
-    let mut wrong_account =
-        upload_authorization(&account, chrono::Utc::now() + chrono::Duration::minutes(5));
+    let mut wrong_account = upload_authorization(
+        &account,
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
+    );
     wrong_account.user_id = UserId::new(Uuid::now_v7()).unwrap();
     let state = ScriptedDirectState::pending(wrong_account);
     let releases = Arc::clone(&state.releases);
@@ -930,7 +932,10 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
     );
     assert_eq!(releases.load(Ordering::Relaxed), 1);
 
-    let expired = upload_authorization(&account, chrono::Utc::now() - chrono::Duration::seconds(1));
+    let expired = upload_authorization(
+        &account,
+        jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1),
+    );
     let state = ScriptedDirectState::pending(expired);
     let releases = Arc::clone(&state.releases);
     let service = scripted_direct_service(
@@ -950,7 +955,7 @@ async fn direct_upload_claim_states_fail_closed_and_release_invalid_pending_clai
 
     let mut state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state.claim_error = Some(RepositoryError::Unavailable);
     let service = scripted_direct_service(
@@ -977,7 +982,7 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
     };
     let state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     let releases = Arc::clone(&state.releases);
     let service = scripted_direct_service(
@@ -999,7 +1004,7 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
 
     let mut state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state.record_candidate = Ok(false);
     let service = scripted_direct_service(
@@ -1017,8 +1022,10 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
     );
 
     let bytes = valid_png();
-    let authorization =
-        upload_authorization(&account, chrono::Utc::now() + chrono::Duration::minutes(5));
+    let authorization = upload_authorization(
+        &account,
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
+    );
     let mut publishing_state = ScriptedDirectState::pending(authorization.clone());
     publishing_state.claim = Arc::new(Mutex::new(AvatarUploadClaim::Publishing {
         authorization: authorization.clone(),
@@ -1107,8 +1114,10 @@ async fn direct_upload_validates_staged_snapshots_and_storage_transitions() {
 #[tokio::test]
 async fn direct_upload_handles_retries_repository_failures_and_overview_failures() {
     let account = direct_account();
-    let authorization =
-        upload_authorization(&account, chrono::Utc::now() + chrono::Duration::minutes(5));
+    let authorization = upload_authorization(
+        &account,
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
+    );
     let mut state = ScriptedDirectState::pending(authorization.clone());
     state.claim = Arc::new(Mutex::new(AvatarUploadClaim::Publishing {
         authorization,
@@ -1142,7 +1151,7 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
     ] {
         let state = ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         ));
         let service = scripted_direct_service(
             &account,
@@ -1169,7 +1178,7 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
 
     let mut state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state.complete = Err(RepositoryError::Unavailable);
     let service = scripted_direct_service(
@@ -1191,7 +1200,7 @@ async fn direct_upload_handles_retries_repository_failures_and_overview_failures
         ScriptedDirectStorage::default(),
         ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Err(RepositoryError::Unavailable),
         AvatarRepositoryResult::Update,
@@ -1214,7 +1223,7 @@ async fn direct_upload_recognizes_completed_and_already_recorded_candidates() {
     account.profile.avatar_url = Some(avatar_url(&candidate));
     let mut state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state.complete = Ok(false);
     let service = scripted_direct_service(
@@ -1233,7 +1242,7 @@ async fn direct_upload_recognizes_completed_and_already_recorded_candidates() {
 
     let mut state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state.claim = Arc::new(Mutex::new(AvatarUploadClaim::Completed {
         final_object_id: candidate.clone(),
@@ -1256,7 +1265,7 @@ async fn direct_upload_recognizes_completed_and_already_recorded_candidates() {
     mismatched_account.profile.avatar_url = Some(avatar_url("different"));
     let mut state = ScriptedDirectState::pending(upload_authorization(
         &mismatched_account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     state.claim = Arc::new(Mutex::new(AvatarUploadClaim::Completed {
         final_object_id: candidate,
@@ -1284,7 +1293,7 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
         ScriptedDirectStorage::default(),
         ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Ok(0),
         AvatarRepositoryResult::Update,
@@ -1315,7 +1324,7 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
         storage_failure,
         ScriptedDirectState::pending(upload_authorization(
             &with_avatar,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Ok(0),
         AvatarRepositoryResult::Update,
@@ -1334,7 +1343,7 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
             ScriptedDirectStorage::default(),
             ScriptedDirectState::pending(upload_authorization(
                 &with_avatar,
-                chrono::Utc::now() + chrono::Duration::minutes(5),
+                jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
             )),
             Ok(0),
             repository_result.clone(),
@@ -1362,7 +1371,7 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
         ScriptedDirectStorage::default(),
         ScriptedDirectState::pending(upload_authorization(
             &invalid_delete,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Ok(0),
         AvatarRepositoryResult::Update,
@@ -1381,7 +1390,7 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
         storage_failure,
         ScriptedDirectState::pending(upload_authorization(
             &with_avatar,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Ok(0),
         AvatarRepositoryResult::Update,
@@ -1393,7 +1402,7 @@ async fn direct_avatar_read_and_delete_preserve_repository_and_storage_boundarie
         ScriptedDirectStorage::default(),
         ScriptedDirectState::pending(upload_authorization(
             &with_avatar,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )),
         Err(RepositoryError::Unavailable),
         AvatarRepositoryResult::Update,
@@ -1444,7 +1453,7 @@ async fn pending_reads_once_and_keeps_validated_mime_while_candidate_failures_ne
         let mimes = Arc::clone(&storage.published_content_types);
         let mut state = ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         ));
         state.record_candidate = recorded.clone();
         let service = scripted_direct_service(
@@ -1488,7 +1497,7 @@ async fn direct_candidates_are_deleted_only_after_revision_fenced_miss() {
         let published = Arc::clone(&storage.publish_calls);
         let state = ScriptedDirectState::pending(upload_authorization(
             &account,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         ));
         let expected_deletions = usize::from(matches!(outcome, AvatarRepositoryResult::Conflict));
         let service = scripted_direct_service(&account, storage, state, Ok(0), outcome);
@@ -1512,7 +1521,7 @@ async fn direct_replacement_retires_previous_final_before_completing_upload() {
     let deletes = storage.delete_final_calls.clone();
     let state = ScriptedDirectState::pending(upload_authorization(
         &account,
-        chrono::Utc::now() + chrono::Duration::minutes(5),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
     ));
     let service = scripted_direct_service(
         &account,

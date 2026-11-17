@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
     SelectableHelper,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
     CasOutcome, DesiredMode, DesiredRevisionGuard, DesiredStateChange, DesiredStateRecord,
@@ -170,7 +170,7 @@ pub(super) async fn compare_and_set_desired(
                         ));
                     }
                     let actor_id = parse_optional_uuid(change.next.actor_id.as_deref(), "actor")?;
-                    let updated_at = DateTime::<Utc>::from(change.next.updated_at);
+                    let updated_at = Timestamp::from(change.next.updated_at);
                     diesel::update(
                         runtime_module_desired_states::table
                             .find((repository.tenant_id(), module_id(change.next.module_id))),
@@ -182,7 +182,7 @@ pub(super) async fn compare_and_set_desired(
                             .map_err(RuntimeTransactionError::Repository)?),
                         runtime_module_desired_states::actor_id.eq(actor_id),
                         runtime_module_desired_states::reason.eq(change.next.reason.as_deref()),
-                        runtime_module_desired_states::updated_at.eq(updated_at),
+                        runtime_module_desired_states::updated_at.eq((updated_at).to_diesel()),
                     ))
                     .execute(connection)
                     .await?;
@@ -236,3 +236,5 @@ pub(super) fn next_desired_revision(
         }),
     }
 }
+
+use jiff_diesel::ToDiesel as _;

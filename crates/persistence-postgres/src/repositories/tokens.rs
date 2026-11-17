@@ -1,9 +1,9 @@
-use chrono::{DateTime, Duration, Utc};
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, QueryableByName, SelectableHelper, sql_query,
     sql_types,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, PreparedTokenSubject, RefreshContract, RefreshToken,
     RefreshTokenCommit, RefreshTokenPersistResult, refresh_spent_proof_limit,
@@ -84,8 +84,8 @@ impl TokenRepository {
         operation_id: Uuid,
         request_hash: &str,
         state_epoch: Uuid,
-        not_before: DateTime<Utc>,
-        completed_at: DateTime<Utc>,
+        not_before: Timestamp,
+        completed_at: Timestamp,
     ) -> Result<RecoveryInvalidation, RepositoryError> {
         if state_epoch.is_nil() {
             return Err(RepositoryError::Consistency(
@@ -124,7 +124,7 @@ impl TokenRepository {
                         recovery_invalidations::revoked_refresh_tokens,
                         recovery_invalidations::coverage_version,
                     ))
-                    .first::<(String, Uuid, Uuid, DateTime<Utc>, i64, i16)>(connection)
+                    .first::<(String, Uuid, Uuid, Timestamp, i64, i16)>(connection)
                     .await
                     .optional()?
                 {
@@ -157,7 +157,7 @@ impl TokenRepository {
                 let revoked = diesel::update(
                     oauth_refresh_families::table.filter(oauth_refresh_families::revoked_at.is_null()),
                 )
-                .set(oauth_refresh_families::revoked_at.eq(completed_at))
+                .set(oauth_refresh_families::revoked_at.eq((completed_at).to_diesel()))
                 .execute(connection)
                 .await?;
                 diesel::insert_into(recovery_invalidations::table)
@@ -166,9 +166,9 @@ impl TokenRepository {
                         recovery_invalidations::request_hash.eq(request_hash),
                         recovery_invalidations::tenant_id.eq(tenant_id),
                         recovery_invalidations::state_epoch.eq(state_epoch),
-                        recovery_invalidations::not_before.eq(not_before),
+                        recovery_invalidations::not_before.eq((not_before).to_diesel()),
                         recovery_invalidations::revoked_refresh_tokens.eq(revoked as i64),
-                        recovery_invalidations::completed_at.eq(completed_at),
+                        recovery_invalidations::completed_at.eq((completed_at).to_diesel()),
                         recovery_invalidations::coverage_version.eq(1_i16),
                     ))
                     .execute(connection)
@@ -218,7 +218,7 @@ impl TokenRepository {
         tenant_id: Uuid,
         raw_token: &str,
         client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
+        retry_started_at: Timestamp,
         prepare_oidc_subject: bool,
     ) -> Result<Option<RefreshPresentation>, RepositoryError> {
         let digest = blake3::hash(raw_token.as_bytes());
@@ -277,7 +277,9 @@ impl TokenRepository {
                 .filter(oauth_refresh_families::user_id.eq(user_id))
                 .filter(oauth_refresh_families::revoked_at.is_null())
                 .filter(oauth_refresh_families::reuse_detected_at.is_null())
-                .filter(oauth_refresh_families::current_expires_at.gt(Utc::now())),
+                .filter(
+                    oauth_refresh_families::current_expires_at.gt((Timestamp::now()).to_diesel()),
+                ),
         ))
         .get_result::<bool>(&mut connection)
         .await
@@ -375,7 +377,7 @@ impl TokenRepository {
                     access_token_jti_blake3: blake3_hex(&access_token.jti),
                     client_id,
                     tenant_id,
-                    revoked_at: Utc::now(),
+                    revoked_at: Timestamp::now(),
                     expires_at: deadline,
                 });
         let mut guard = crate::pool::DiscardOnDrop::new(self.connection().await?);
@@ -425,7 +427,7 @@ impl TokenRepository {
                         "token_hash": raw_token_blake3.to_hex().to_string(),
                         "updated": updated, "source_ip_hash": source_ip_hash,
                     }),
-                    occurred_at: Utc::now(),
+                    occurred_at: Timestamp::now(),
                 };
                 append_fresh_security_audit_on_connection(connection, &event).await?;
                 Ok(updated)
@@ -449,8 +451,8 @@ impl nazo_persistence::RecoveryInvalidationStore for TokenRepository {
         operation_id: Uuid,
         request_hash: &'a str,
         state_epoch: Uuid,
-        not_before: DateTime<Utc>,
-        completed_at: DateTime<Utc>,
+        not_before: Timestamp,
+        completed_at: Timestamp,
     ) -> nazo_persistence::OperatorPersistenceFuture<'a, RecoveryInvalidation> {
         Box::pin(async move {
             TokenRepository::invalidate_after_restore(
@@ -566,7 +568,7 @@ fn validate_refresh_commit(refresh: &RefreshTokenCommit) -> Result<(), Repositor
                 .as_deref()
                 .is_some_and(|sid| sid.trim().is_empty())
             || !valid_audiences(&token.audiences)
-            || contract.authentication_context.auth_time > token.issued_at.timestamp()
+            || contract.authentication_context.auth_time > token.issued_at.as_second()
             || token.expires_at <= token.issued_at)
     {
         return Err(RepositoryError::Consistency(
@@ -849,9 +851,11 @@ struct RefreshPresentationRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
     spent_member_id: Option<Uuid>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    spent_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    spent_at: Option<Timestamp>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    spent_expires_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    spent_expires_at: Option<Timestamp>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Uuid>)]
     successor_member_id: Option<Uuid>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Jsonb>)]
@@ -867,7 +871,7 @@ pub(super) struct RefreshPresentation {
 impl RefreshPresentationRow {
     fn into_presentation(
         self,
-        retry: Option<(Uuid, DateTime<Utc>)>,
+        retry: Option<(Uuid, Timestamp)>,
     ) -> diesel::QueryResult<RefreshPresentation> {
         let prepared_subject = self.prepared_subject;
         let contract = require_contract(
@@ -893,15 +897,15 @@ impl RefreshPresentationRow {
                 Some(successor_member_id),
             ) => {
                 let eligible = retry.is_some_and(|(client_id, now)| {
-                    let elapsed = now.signed_duration_since(spent_at);
+                    let elapsed = now.duration_since(spent_at);
                     self.family.client_id == client_id
                         && (self.family.dpop_jkt.is_some() || self.family.mtls_x5t_s256.is_some())
                         && self.family.current_member_id == successor_member_id
                         && self.family.revoked_at.is_none()
                         && self.family.reuse_detected_at.is_none()
                         && self.family.current_expires_at > now
-                        && elapsed >= Duration::zero()
-                        && elapsed <= Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
+                        && elapsed >= SignedDuration::zero()
+                        && elapsed <= SignedDuration::from_secs(LOST_REFRESH_TOKEN_RETRY_SECONDS)
                 });
                 // Preserve dependency-error ordering: candidate projection errors
                 // are returned only after the application authenticates the holder.
@@ -1078,7 +1082,7 @@ async fn persist_refresh_token_inner(
         };
         let family = locked.family;
         // Read the clock only after all source locks have been acquired.
-        let transition_at = Utc::now();
+        let transition_at = Timestamp::now();
         if family.revoked_at.is_some()
             || family.reuse_detected_at.is_some()
             || family.current_expires_at <= transition_at
@@ -1128,11 +1132,10 @@ async fn persist_refresh_token_inner(
                     oauth_refresh_spent_tokens::successor_member_id,
                     oauth_refresh_spent_tokens::spent_at,
                 ))
-                .first::<(Uuid, DateTime<Utc>)>(connection)
+                .first::<(Uuid, Timestamp)>(connection)
                 .await
                 .optional()?;
-            let elapsed =
-                edge.map(|(_, spent_at)| retry.retry_started_at.signed_duration_since(spent_at));
+            let elapsed = edge.map(|(_, spent_at)| retry.retry_started_at.duration_since(spent_at));
             let edge_valid = matches!(
                 edge,
                 Some((successor_member_id, _))
@@ -1140,8 +1143,8 @@ async fn persist_refresh_token_inner(
             ) && matches!(
                 elapsed,
                 Some(elapsed)
-                    if elapsed >= Duration::zero()
-                        && elapsed <= Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS)
+                    if elapsed >= SignedDuration::zero()
+                        && elapsed <= SignedDuration::from_secs(LOST_REFRESH_TOKEN_RETRY_SECONDS)
             );
             if !edge_valid {
                 compromise_family(connection, token.tenant_id, token.family_id).await?;
@@ -1159,8 +1162,8 @@ async fn persist_refresh_token_inner(
                 oauth_refresh_spent_tokens::token_family_id.eq(token.family_id),
                 oauth_refresh_spent_tokens::member_id.eq(family.current_member_id),
                 oauth_refresh_spent_tokens::successor_member_id.eq(token.member_id),
-                oauth_refresh_spent_tokens::spent_at.eq(transition_at),
-                oauth_refresh_spent_tokens::expires_at.eq(family.current_expires_at),
+                oauth_refresh_spent_tokens::spent_at.eq((transition_at).to_diesel()),
+                oauth_refresh_spent_tokens::expires_at.eq((family.current_expires_at).to_diesel()),
             ))
             .execute(connection)
             .await?;
@@ -1198,8 +1201,8 @@ async fn persist_refresh_token_inner(
             oauth_refresh_families::current_member_id.eq(token.member_id),
             oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().as_slice()),
             oauth_refresh_families::current_audience.eq(serde_json::json!(token.audiences)),
-            oauth_refresh_families::current_issued_at.eq(token.issued_at),
-            oauth_refresh_families::current_expires_at.eq(token.expires_at),
+            oauth_refresh_families::current_issued_at.eq((token.issued_at).to_diesel()),
+            oauth_refresh_families::current_expires_at.eq((token.expires_at).to_diesel()),
             oauth_refresh_families::current_id_token_sid.eq(token.id_token_sid.as_deref()),
         ))
         .execute(connection)
@@ -1222,7 +1225,8 @@ pub(super) struct RetiredNativeSsoSource {
     #[diesel(sql_type = sql_types::Text)]
     pub source_client_id: String,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub expires_at: Timestamp,
 }
 
 /// Resolve a presented digest to its family: current member first, then the
@@ -1341,9 +1345,12 @@ async fn compromise_family(
     )
     .set((
         oauth_refresh_families::reuse_detected_at.eq(diesel::dsl::now),
-        oauth_refresh_families::revoked_at.eq(diesel::dsl::sql::<
+        oauth_refresh_families::revoked_at.eq((diesel::dsl::sql::<
             diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>,
-        >("COALESCE(revoked_at, CURRENT_TIMESTAMP)")),
+        >(
+            "COALESCE(revoked_at, CURRENT_TIMESTAMP)"
+        ))
+        .to_diesel()),
     ))
     .execute(connection)
     .await?;
@@ -1361,3 +1368,5 @@ fn map_error(error: diesel::result::Error) -> RepositoryError {
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/tokens.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

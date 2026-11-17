@@ -1,5 +1,5 @@
 use crate::{Error, ValkeyConnection, command, keys};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{DpopStateFuture, DpopStateStoreError, DpopStateStorePort};
 use nazo_identity::TenantId;
 use nazo_resource_server::{
@@ -103,7 +103,9 @@ impl DpopNonceStorage for ReplayStore {
         expires_at: i64,
     ) -> ResourceServerPortFuture<'a, Result<(), ProtectedResourceDependencyError>> {
         Box::pin(async move {
-            let ttl_seconds = expires_at.saturating_sub(Utc::now().timestamp()).max(1) as u64;
+            let ttl_seconds = expires_at
+                .saturating_sub(Timestamp::now().as_second())
+                .max(1) as u64;
             self.issue_dpop_nonce(nonce, ttl_seconds)
                 .await
                 .map_err(|_| ProtectedResourceDependencyError::DpopNonceStoreUnavailable)

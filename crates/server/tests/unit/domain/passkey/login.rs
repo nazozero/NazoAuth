@@ -14,7 +14,6 @@ use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
-use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
@@ -24,6 +23,7 @@ use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use jiff::Timestamp;
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
@@ -62,7 +62,7 @@ async fn verified_totp_factor(
     sql_query("UPDATE user_totp_credentials SET confirmed_at=CURRENT_TIMESTAMP WHERE tenant_id=$1 AND user_id=$2")
         .bind::<SqlUuid,_>(user.tenant().tenant_id.as_uuid()).bind::<SqlUuid,_>(user.user_id().as_uuid()).execute(&mut connection).await?;
     drop(connection);
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let secret = nazo_identity::mfa::base32_decode(&enrollment.secret_base32).unwrap();
     let code = nazo_identity::mfa::totp_for_step(
         &secret,
@@ -95,8 +95,10 @@ async fn remember_mfa_device(
             user,
             &proof,
             user_agent_hash,
-            Utc::now()
-                + chrono::Duration::seconds(i64::try_from(MFA_REMEMBERED_TTL_SECONDS).unwrap()),
+            Timestamp::now()
+                + jiff::SignedDuration::from_secs(
+                    i64::try_from(MFA_REMEMBERED_TTL_SECONDS).unwrap(),
+                ),
         )
         .await
         .map_err(|error| anyhow::anyhow!("failed to remember MFA device: {error:?}"))?
@@ -663,7 +665,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
     let previous_session = nazo_identity::session::SessionRecord::new(
         nazo_identity::UserId::new(user.id).expect("fixture user id is valid"),
         0,
-        Utc::now().timestamp(),
+        Timestamp::now().as_second(),
         vec!["pwd".to_owned()],
         false,
         Some(Uuid::now_v7().to_string()),
@@ -841,7 +843,7 @@ async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
             assert!(nazo_identity::session::recent_interactive_mfa(
                 session.auth_time,
                 &session.amr,
-                Utc::now().timestamp()
+                Timestamp::now().as_second()
             ));
             continue;
         }
@@ -934,7 +936,7 @@ async fn legacy_or_uninitialized_uv_needs_independent_mfa_before_future_eligibil
         let independent_session = nazo_identity::session::SessionRecord::new(
             identity.user_id(),
             identity.principal.authorization_epoch,
-            Utc::now().timestamp(),
+            Timestamp::now().as_second(),
             vec!["passkey".into(), proof.amr().into(), "mfa".into()],
             false,
             Some(Uuid::now_v7().to_string()),

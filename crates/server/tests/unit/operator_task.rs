@@ -777,9 +777,9 @@ mod tenant_resources;
 
 #[test]
 fn recovery_deadline_covers_historical_maximum_including_acceptance_skew_boundary() {
-    let restored_at = chrono::DateTime::from_timestamp(2_000_000_000, 0).unwrap();
+    let restored_at = jiff::Timestamp::new(2_000_000_000, 0).unwrap();
     let deadline = execution::recovery_not_before(restored_at);
-    assert_eq!((deadline - restored_at).num_seconds(), 3661);
+    assert_eq!((deadline - restored_at).as_secs(), 3661);
     for historical_ttl in [
         1,
         60,
@@ -787,7 +787,7 @@ fn recovery_deadline_covers_historical_maximum_including_acceptance_skew_boundar
         crate::settings::MAX_ID_TOKEN_TTL_SECONDS,
     ] {
         let last_accepted = restored_at
-            + chrono::Duration::seconds(
+            + jiff::SignedDuration::from_secs(
                 historical_ttl + crate::settings::RECOVERY_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
             );
         assert!(deadline > last_accepted);

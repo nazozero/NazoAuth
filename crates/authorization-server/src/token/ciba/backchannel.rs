@@ -31,8 +31,8 @@ use crate::{
         consume_token_client_assertion_with_authorization_service,
     },
 };
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_auth::{
     CibaPingNotification, CibaPingNotificationStatus, CibaRequestState, CibaStatus,
     ClientAuthenticationContext, PresentedClientCredentials, ciba_retention_deadline,
@@ -344,7 +344,7 @@ impl CibaApplication {
                 }
             }
         }
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
         let state_payload = CibaRequestState {
             client_id: client.registration.client_id,

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::{PasswordHash, TenantId, UserId};
 
@@ -107,7 +107,7 @@ pub trait RememberedMfaDevicePort: Send + Sync {
         user_id: UserId,
         token_hash: &'a str,
         user_agent_hash: Option<&'a str>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> RepositoryFuture<'a, bool>;
 }
 

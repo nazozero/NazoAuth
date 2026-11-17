@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{TenantContext, TenantId, UserId};
@@ -12,7 +12,7 @@ use super::{
 pub struct ScimListQuery {
     pub tenant_id: TenantId,
     pub email: Option<String>,
-    pub after: Option<(DateTime<Utc>, Uuid)>,
+    pub after: Option<(Timestamp, Uuid)>,
     pub limit: i64,
     pub offset: i64,
 }

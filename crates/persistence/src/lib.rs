@@ -66,7 +66,7 @@ pub struct SecurityAuditEvent {
     pub event_type: String,
     pub event_category: String,
     pub payload: serde_json::Value,
-    pub occurred_at: chrono::DateTime<chrono::Utc>,
+    pub occurred_at: jiff::Timestamp,
 }
 
 /// Append-only security-ledger capability used by the application audit
@@ -104,13 +104,13 @@ pub struct SecurityAuditAnchorHealth {
     /// protocol could leave behind. They can never be claimed again, so a
     /// required deployment must treat their presence as an inconsistency.
     pub pending_orphan_exists: bool,
-    pub oldest_pending_occurred_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub oldest_pending_occurred_at: Option<jiff::Timestamp>,
     pub last_exported_sequence: Option<i64>,
     pub last_exported_hash: Option<Vec<u8>>,
-    pub last_exported_occurred_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub last_exported_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_exported_occurred_at: Option<jiff::Timestamp>,
+    pub last_exported_at: Option<jiff::Timestamp>,
     pub deployment_id: Option<String>,
-    pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub observed_at: Option<jiff::Timestamp>,
     /// None: no committed batch. Some(false): active/retryable. Some(true): permanently blocked.
     /// Lease ownership and retry metadata stay in the exporter claim boundary.
     pub batch_blocked: Option<bool>,
@@ -127,7 +127,7 @@ pub struct SecurityAuditPendingDelivery {
     /// parse and reserialize it; retained PostgreSQL events keep their original
     /// `jsonb::text` bytes, including whitespace and key order.
     pub payload_canonical: String,
-    pub occurred_at: chrono::DateTime<chrono::Utc>,
+    pub occurred_at: jiff::Timestamp,
     pub previous_hash: Vec<u8>,
     pub event_hash: Vec<u8>,
 }
@@ -218,7 +218,7 @@ pub trait SecurityAuditExporter: Send + Sync {
     fn fail_batch<'a>(
         &'a self,
         generation: i64,
-        available_at: chrono::DateTime<chrono::Utc>,
+        available_at: jiff::Timestamp,
         last_error: &'a str,
         blocked: bool,
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
@@ -276,7 +276,7 @@ where
     fn fail_batch<'a>(
         &'a self,
         generation: i64,
-        available_at: chrono::DateTime<chrono::Utc>,
+        available_at: jiff::Timestamp,
         last_error: &'a str,
         blocked: bool,
     ) -> BoxFuture<'a, Result<(), RepositoryError>> {
@@ -579,7 +579,7 @@ pub trait BackchannelLogoutDeliveryStore: Send + Sync {
         &'a self,
         delivery_id: uuid::Uuid,
         expected_attempts: i32,
-        next_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
+        next_attempt_at: Option<jiff::Timestamp>,
         last_error: &'a str,
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
 }

@@ -1,10 +1,10 @@
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use nazo_auth::*;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-type AccessRevocationCall = (Uuid, Uuid, String, Option<DateTime<Utc>>, Option<Uuid>);
+type AccessRevocationCall = (Uuid, Uuid, String, Option<Timestamp>, Option<Uuid>);
 
 #[derive(Default)]
 struct Calls {
@@ -67,7 +67,7 @@ impl TokenRepositoryPort for Ports {
         _tenant_id: Uuid,
         _raw_token: &'a str,
         _client_id: Uuid,
-        _retry_started_at: chrono::DateTime<chrono::Utc>,
+        _retry_started_at: jiff::Timestamp,
         _prepare_oidc_subject: bool,
     ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         panic!("unexpected refresh snapshot lookup")
@@ -102,7 +102,7 @@ impl TokenRepositoryPort for Ports {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &'a str,
-        access_token_expires_at: Option<DateTime<Utc>>,
+        access_token_expires_at: Option<Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()> {
         panic!("management revocation must use the atomic audited port")
@@ -171,7 +171,7 @@ impl TokenStateStorePort for Ports {
     fn begin_authorization_code<'a>(
         &'a self,
         code_hash: &'a str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> TokenFuture<'a, AuthorizationCodeBeginResult> {
         panic!("unexpected begin_authorization_code call")
     }
@@ -354,7 +354,7 @@ fn verified_owned_access_revokes_directly_and_retains_audit_count_and_expiry() {
             client.tenant_id,
             client.id,
             "verified-jti".into(),
-            Some(Utc.timestamp_opt(expiry, 0).unwrap()),
+            Some(Timestamp::new(expiry, 0).unwrap()),
             None
         )]
     );
@@ -408,7 +408,7 @@ fn expired_introspection_avoids_storage_but_live_token_fails_closed_on_storage_e
             "https://issuer.example",
             "jwt",
             &client,
-            Utc.timestamp_opt(expiry, 0).unwrap(),
+            Timestamp::new(expiry, 0).unwrap(),
         )),
         Ok(TokenInspection::Inactive)
     ));
@@ -418,7 +418,7 @@ fn expired_introspection_avoids_storage_but_live_token_fails_closed_on_storage_e
             "https://issuer.example",
             "jwt",
             &client,
-            Utc.timestamp_opt(expiry - 1, 0).unwrap(),
+            Timestamp::new(expiry - 1, 0).unwrap(),
         )),
         Err(TokenPortError::Unavailable)
     ));
@@ -463,7 +463,7 @@ fn ownership_introspection_audience_shapes_keep_membership_and_tenant_boundaries
                     "https://issuer.example",
                     "jwt",
                     &resource,
-                    Utc.timestamp_opt(expiry - 1, 0).unwrap(),
+                    Timestamp::new(expiry - 1, 0).unwrap(),
                 ))
                 .unwrap();
                 let allowed = same_tenant && (same_client || member);
@@ -484,7 +484,7 @@ fn ownership_introspection_audience_shapes_keep_membership_and_tenant_boundaries
 #[test]
 fn refresh_introspection_preserves_scope_and_requires_current_subject_eligibility() {
     let client = client(Uuid::from_u128(101));
-    let now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    let now = Timestamp::new(1_700_000_000, 0).unwrap();
     for (scopes, expected) in [
         (serde_json::json!(null), ""),
         (serde_json::json!("openid"), ""),
@@ -522,8 +522,8 @@ fn refresh_introspection_preserves_scope_and_requires_current_subject_eligibilit
             user_id: None,
             contract_key: [2; 32],
             audience: serde_json::from_value(serde_json::json!(["resource"])).unwrap(),
-            issued_at: now - chrono::Duration::minutes(1),
-            expires_at: now + chrono::Duration::hours(1),
+            issued_at: now - jiff::SignedDuration::from_mins(1),
+            expires_at: now + jiff::SignedDuration::from_hours(1),
             revoked_at: None,
             dpop_jkt: None,
             mtls_x5t_s256: None,
@@ -538,7 +538,7 @@ fn refresh_introspection_preserves_scope_and_requires_current_subject_eligibilit
                     version: 1,
                     issuer: "https://issuer.example".into(),
                     audience: client.client_id.clone(),
-                    auth_time: now.timestamp(),
+                    auth_time: now.as_second(),
                     amr: vec!["pwd".into()],
                     oidc_sid: None,
 
@@ -603,7 +603,7 @@ fn introspection_requires_explicit_resource_authority_and_preserves_tenant_isola
             "https://issuer.example",
             "jwt",
             client,
-            Utc.timestamp_opt(1_799_999_999, 0).unwrap(),
+            Timestamp::new(1_799_999_999, 0).unwrap(),
         ))
     };
     assert!(matches!(inspect(&resource), Ok(TokenInspection::Inactive)));

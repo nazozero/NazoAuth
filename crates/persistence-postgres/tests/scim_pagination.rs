@@ -1,9 +1,9 @@
-use chrono::{DateTime, Duration, Utc};
 use diesel::{
     sql_query,
     sql_types::{Array, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::{TenantId, ports::ScimListQuery};
 use nazo_postgres::{ScimRepository, create_pool, get_conn, run_pending_migrations};
 use uuid::Uuid;
@@ -28,8 +28,8 @@ async fn tenant_pages_preserve_timestamp_ties_exact_totals_and_count_zero() {
     ids.sort();
     let later_id = Uuid::now_v7();
     let foreign_id = Uuid::now_v7();
-    let created_at = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
-    let later_created_at = created_at + Duration::seconds(1);
+    let created_at = Timestamp::new(1_700_000_000, 0).unwrap();
+    let later_created_at = created_at + SignedDuration::from_secs(1);
     let mut connection = get_conn(&pool).await.unwrap();
     for (index, tenant_id) in [tenant, foreign_tenant].into_iter().enumerate() {
         sql_query("INSERT INTO tenants (id, slug, display_name) VALUES ($1, $1::text, 'SCIM pagination test')")
@@ -50,7 +50,7 @@ async fn tenant_pages_preserve_timestamp_ties_exact_totals_and_count_zero() {
         sql_query("INSERT INTO users (id, tenant_id, realm_id, organization_id, username, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $1::text, $1::text || '@example.com', 'unused-test-hash', $5)")
             .bind::<SqlUuid, _>(id).bind::<SqlUuid, _>([tenant, foreign_tenant][owner])
             .bind::<SqlUuid, _>(realms[owner]).bind::<SqlUuid, _>(organizations[owner])
-            .bind::<Timestamptz, _>(timestamp).execute(&mut connection).await.unwrap();
+            .bind::<Timestamptz, _>((timestamp).to_diesel()).execute(&mut connection).await.unwrap();
     }
     drop(connection);
 
@@ -161,3 +161,5 @@ async fn tenant_pages_preserve_timestamp_ties_exact_totals_and_count_zero() {
         .await
         .unwrap();
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -17,7 +17,7 @@ fn committed_execution(operation_key: &str) -> nazo_auth::LogoutExecution {
 
 #[test]
 fn id_token_hint_expires_at_the_exact_exp_boundary() {
-    let now = Utc.timestamp_opt(2_000_000_000, 0).unwrap();
+    let now = Timestamp::new(2_000_000_000, 0).unwrap();
     assert!(!id_token_hint_expired(2_000_000_001, now));
     assert!(id_token_hint_expired(2_000_000_000, now));
     assert!(id_token_hint_expired(1_999_999_999, now));
@@ -89,7 +89,7 @@ impl nazo_identity::ports::SessionStorePort for LogoutPorts {
     ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::session::SessionSnapshot>>
     {
         Box::pin(async move {
-            let now = Utc::now().timestamp();
+            let now = Timestamp::now().as_second();
             let mut record = nazo_identity::session::SessionRecord::new(
                 nazo_identity::UserId::new(uuid::Uuid::from_u128(2)).unwrap(),
                 0,

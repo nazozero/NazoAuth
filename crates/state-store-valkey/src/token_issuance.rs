@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
     TokenFuture, TokenPortError, TokenStateStorePort,
@@ -44,7 +44,7 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
     fn begin_authorization_code<'a>(
         &'a self,
         code_hash: &'a str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> TokenFuture<'a, AuthorizationCodeBeginResult> {
         Box::pin(async move {
             self.authorization

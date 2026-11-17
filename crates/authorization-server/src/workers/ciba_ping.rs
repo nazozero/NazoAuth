@@ -2,8 +2,8 @@ use crate::ports::transient_state::{
     CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
 };
 use anyhow::Context as _;
-use chrono::Utc;
 use futures_util::{StreamExt as _, stream};
+use jiff::Timestamp;
 use nazo_auth::{
     CibaPingResponseAction, classify_ciba_ping_status, next_ciba_ping_retry_at,
     validate_ciba_notification_endpoint,
@@ -34,7 +34,7 @@ impl CibaPingDeliveryWorker {
     }
     /// Returns the number of queue entries scanned, including stale entries.
     pub async fn process_due_batch(&self) -> anyhow::Result<usize> {
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         let batch = self
             .store
             .claim_due(
@@ -76,7 +76,7 @@ impl CibaPingDeliveryWorker {
                 );
                 next_ciba_ping_retry_at(
                     delivery.attempts,
-                    Utc::now().timestamp(),
+                    Timestamp::now().as_second(),
                     delivery.expires_at,
                 )
                 .map_or(

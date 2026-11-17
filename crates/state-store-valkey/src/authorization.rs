@@ -1,4 +1,4 @@
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
     AuthorizationStateSnapshot, CodePayload, ConsentPayload, DecisionMaterialDiscardError,
@@ -116,11 +116,11 @@ enum AuthorizationCodeWire {
     Consuming {
         #[serde(with = "opaque_payload")]
         payload: CodePayload,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     },
     Consumed,
     Failed {
-        failed_at: DateTime<Utc>,
+        failed_at: Timestamp,
         error: String,
     },
 }
@@ -289,7 +289,7 @@ impl AuthorizationStore {
     pub async fn begin_authorization_code(
         &self,
         code_hash: &str,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     ) -> Result<AuthorizationCodeBeginResult, Error> {
         let reply = command::eval_string(
             &self.connection,

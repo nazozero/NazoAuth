@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -54,7 +54,7 @@ pub struct ConsentPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authorization_code_ttl_seconds: Option<u64>,
 
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -65,8 +65,8 @@ pub struct PushedAuthorizationRequest {
     pub dpop_jkt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtls_x5t_s256: Option<String>,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 /// Payloads before this contract cannot be mapped to a stable durable fence.
@@ -107,7 +107,7 @@ pub struct CodePayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtls_x5t_s256: Option<String>,
 
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -118,11 +118,11 @@ pub enum AuthorizationCodeState {
     },
     Consuming {
         payload: CodePayload,
-        consuming_at: DateTime<Utc>,
+        consuming_at: Timestamp,
     },
     Consumed,
     Failed {
-        failed_at: DateTime<Utc>,
+        failed_at: Timestamp,
         error: String,
     },
 }

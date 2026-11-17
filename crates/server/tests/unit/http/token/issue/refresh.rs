@@ -265,7 +265,7 @@ async fn native_sso_single_use_retry_is_rejected_with_live_refresh() {
         .insert(nazo_runtime_modules::ModuleId::NativeSso);
     let mode = TokenIssuanceMode::SingleUse {
         grant_key: grant_key.clone(),
-        grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+        grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
     };
     let first = issue_token_response_with_mode_and_modules_for_test(
         &state,
@@ -706,7 +706,7 @@ async fn protocol_native_sso_dispatch_preserves_verified_instance_binding() {
             &header,
             &json!({
                 "iss":"https://attester.example", "sub":target.client_id,
-                "exp":Utc::now().timestamp()+600, "cnf":{"jwk":key.public_jwk("instance")},
+                "exp":Timestamp::now().as_second()+600, "cnf":{"jwk":key.public_jwk("instance")},
             }),
         )
     };
@@ -717,7 +717,7 @@ async fn protocol_native_sso_dispatch_preserves_verified_instance_binding() {
             &header,
             &json!({
                 "iss":target.client_id, "aud":config.issuer(),
-                "iat":Utc::now().timestamp(), "jti":Uuid::now_v7().to_string(),
+                "iat":Timestamp::now().as_second(), "jti":Uuid::now_v7().to_string(),
             }),
         )
     };
@@ -794,7 +794,7 @@ async fn protocol_native_sso_dispatch_preserves_verified_instance_binding() {
             target.tenant_id,
             refresh_token,
             target.id,
-            Utc::now(),
+            Timestamp::now(),
             false,
         )
         .await

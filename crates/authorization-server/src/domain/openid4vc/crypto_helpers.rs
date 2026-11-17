@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use coset::{CoseKeyBuilder, iana};
+use jiff::Timestamp;
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use nazo_digital_credentials::CredentialTrustError;
 use rustls_pki_types::{CertificateDer, pem::PemObject as _};
@@ -30,8 +30,8 @@ pub(super) fn decoding_key_trust(
     }
 }
 
-pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<chrono::DateTime<Utc>> {
-    chrono::DateTime::from_timestamp(value.get(name)?.as_i64()?, 0)
+pub(super) fn timestamp_claim(value: &Value, name: &str) -> Option<jiff::Timestamp> {
+    jiff::Timestamp::new(value.get(name)?.as_i64()?, 0)
 }
 
 pub(crate) fn jwk_to_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> {
@@ -195,7 +195,7 @@ pub(super) fn verify_openid4vc_chain_with_scoped<'a>(
         .filter(|(index, der)| *index == 0 || (!anchors.contains(der) && !scoped.contains(der)))
         .map(|(_, der)| CertificateDer::from(der.as_slice()))
         .collect::<Vec<_>>();
-    let now = u64::try_from(chrono::Utc::now().timestamp())?;
+    let now = u64::try_from(jiff::Timestamp::now().as_second())?;
     let anchored = scoped
         .iter()
         .chain(anchors.iter().filter(|anchor| !scoped.contains(anchor)))

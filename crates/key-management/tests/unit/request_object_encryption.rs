@@ -5,9 +5,9 @@ use crate::KeySettings;
 
 fn settings() -> KeySettings {
     KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
@@ -218,8 +218,10 @@ async fn protocol_and_encryption_rotation_prepublishes_switches_and_retires_in_o
     let mut record = repository.load().await.unwrap().unwrap();
     let mut payload: serde_json::Value =
         serde_json::from_slice(wrapping.open_generation(tenant, &mut record).unwrap()).unwrap();
-    let aged = (chrono::Utc::now() - settings().rotation_interval - chrono::Duration::seconds(1))
-        .to_rfc3339();
+    let aged = (jiff::Timestamp::now()
+        - settings().rotation_interval
+        - jiff::SignedDuration::from_secs(1))
+    .to_string();
     payload["request_object_created_at"] = json!(aged);
     for key in payload["keys"].as_array_mut().unwrap() {
         if key["kid"] == old_ps {
@@ -282,8 +284,10 @@ async fn protocol_and_encryption_rotation_prepublishes_switches_and_retires_in_o
             .unwrap()
             .can_sign(nazo_auth::SigningPurpose::AccessToken)
     );
-    let ready = (chrono::Utc::now() - settings().prepublish_window - chrono::Duration::seconds(1))
-        .to_rfc3339();
+    let ready = (jiff::Timestamp::now()
+        - settings().prepublish_window
+        - jiff::SignedDuration::from_secs(1))
+    .to_string();
     payload["request_object_retained_keys"][0]["created_at"] = json!(ready);
     for key in payload["keys"].as_array_mut().unwrap() {
         if key["kid"] == next_ps {
@@ -324,7 +328,7 @@ async fn protocol_and_encryption_rotation_prepublishes_switches_and_retires_in_o
     let mut record = repository.load().await.unwrap().unwrap();
     let mut payload: serde_json::Value =
         serde_json::from_slice(wrapping.open_generation(tenant, &mut record).unwrap()).unwrap();
-    let expired = (chrono::Utc::now() - chrono::Duration::seconds(1)).to_rfc3339();
+    let expired = (jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1)).to_string();
     payload["request_object_retained_keys"][0]["retire_at"] = json!(expired);
     for key in payload["keys"].as_array_mut().unwrap() {
         if key["kid"] == old_ps {

@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{PresentationResult, PresentationTransaction};
@@ -38,7 +38,7 @@ pub trait PresentationStorePort: Send + Sync {
     fn request<'a>(
         &'a self,
         transaction_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
 
     /// Update only the nonce on an active transaction already read by the caller.
@@ -47,7 +47,7 @@ pub trait PresentationStorePort: Send + Sync {
         &'a self,
         transaction_id: Uuid,
         wallet_nonce: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>>;
 
     /// Accept exactly one completion under the current tenant, state and trust
@@ -61,13 +61,13 @@ pub trait PresentationStorePort: Send + Sync {
         transaction_id: Uuid,
         state_hash: &'a str,
         result: &'a PresentationResult,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>>;
 
     fn result<'a>(
         &'a self,
         transaction_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>;
 }
 

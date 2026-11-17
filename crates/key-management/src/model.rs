@@ -13,7 +13,7 @@ use web_time::Instant;
 use crate::ExternalKeySigner;
 use arc_swap::ArcSwap;
 use base64::{Engine, encoded_len, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -151,7 +151,7 @@ pub(crate) enum ActiveSigningKey {
 pub(crate) struct StoredVerificationKey {
     pub(crate) public_jwk: Value,
     pub(crate) managed: ManagedKey,
-    pub(crate) retire_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) retire_at: Option<jiff::Timestamp>,
 }
 
 #[derive(Clone)]
@@ -186,7 +186,7 @@ pub struct VerificationKey {
     pub public_jwk: Value,
     pub(crate) prepared: PreparedVerification,
     pub(crate) signing_purposes: BTreeSet<SigningPurpose>,
-    pub(crate) retire_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(crate) retire_at: Option<jiff::Timestamp>,
 }
 
 impl VerificationKey {
@@ -197,10 +197,10 @@ impl VerificationKey {
 
     #[must_use]
     pub fn can_verify(&self) -> bool {
-        self.can_verify_at(Utc::now())
+        self.can_verify_at(Timestamp::now())
     }
 
-    pub(crate) fn can_verify_at(&self, now: chrono::DateTime<Utc>) -> bool {
+    pub(crate) fn can_verify_at(&self, now: jiff::Timestamp) -> bool {
         self.retire_at.is_none_or(|retire_at| retire_at > now)
     }
 }
@@ -259,12 +259,12 @@ impl KeySnapshot {
 
     #[must_use]
     pub fn jwks(&self) -> Value {
-        self.jwks_at(Utc::now())
+        self.jwks_at(Timestamp::now())
     }
 
     /// Builds the public projection and its cache deadline from one captured time.
     #[must_use]
-    pub fn jwks_at(&self, now: chrono::DateTime<Utc>) -> Value {
+    pub fn jwks_at(&self, now: jiff::Timestamp) -> Value {
         crate::jwks::public_jwks(
             &self.verification_keys,
             &self.request_object_encryption_jwk,
@@ -274,10 +274,7 @@ impl KeySnapshot {
 
     /// Earliest future change to verification eligibility in this generation.
     #[must_use]
-    pub fn next_verification_retirement(
-        &self,
-        now: chrono::DateTime<Utc>,
-    ) -> Option<chrono::DateTime<Utc>> {
+    pub fn next_verification_retirement(&self, now: jiff::Timestamp) -> Option<jiff::Timestamp> {
         self.verification_keys
             .iter()
             .filter_map(|key| key.retire_at)
@@ -288,9 +285,9 @@ impl KeySnapshot {
 
 #[derive(Clone, Debug)]
 pub struct KeySettings {
-    pub rotation_interval: chrono::Duration,
-    pub prepublish_window: chrono::Duration,
-    pub verification_grace: chrono::Duration,
+    pub rotation_interval: jiff::SignedDuration,
+    pub prepublish_window: jiff::SignedDuration,
+    pub verification_grace: jiff::SignedDuration,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -958,9 +955,9 @@ impl KeyManager {
             inner: Arc::new(KeyManagerInner {
                 generation: ArcSwap::from_pointee(generation),
                 settings: KeySettings {
-                    rotation_interval: chrono::Duration::days(90),
-                    prepublish_window: chrono::Duration::days(1),
-                    verification_grace: chrono::Duration::minutes(10),
+                    rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+                    prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+                    verification_grace: jiff::SignedDuration::from_mins(10),
                 },
                 health: Arc::new(LifecycleHealth::new()),
                 database: crate::database::DatabaseKeysetBinding {
@@ -1331,10 +1328,10 @@ impl KeyGeneration {
             .and_then(|material| material.public.revocation_snapshot.as_mut())
         {
             // Only the observation window is local. Revocation facts remain unchanged.
-            let now = Utc::now();
+            let now = Timestamp::now();
             snapshot.this_update = now;
             snapshot.next_update = now
-                + chrono::Duration::seconds(
+                + jiff::SignedDuration::from_secs(
                     crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS,
                 );
         }

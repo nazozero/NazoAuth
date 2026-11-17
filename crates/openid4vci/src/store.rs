@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_digital_credentials::{CredentialFormat, HolderBinding};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -16,14 +16,14 @@ pub trait AuthorizationOfferPort: Send + Sync {
         issuer_state_hash: &'a str,
         subject_id: Uuid,
         client_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NonceRecord {
     pub nonce_hash: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,7 +33,7 @@ pub struct CredentialAuthorization {
     pub client_id: String,
     pub configuration_ids: Vec<String>,
     pub credential_identifiers: Vec<CredentialIdentifier>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 /// Read-only authorization preparation. The adapter owns the opaque commit token;
@@ -59,7 +59,7 @@ pub struct StoredCredentialOffer {
     pub subject_id: Option<Uuid>,
     pub credential_configuration_ids: Vec<String>,
     pub grants: CredentialOfferGrants,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 /// Provenance retained by the credential authorization owner, never inferred
@@ -103,7 +103,7 @@ pub struct CredentialAccess {
     pub configuration_ids: Vec<String>,
     pub credential_identifiers: Vec<CredentialIdentifier>,
     pub dpop_jkt: Option<String>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl CredentialAccess {
@@ -113,7 +113,7 @@ impl CredentialAccess {
         &self,
         original: &Self,
         selection: Option<&CredentialSelection>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> bool {
         let same_token = self.token_id == original.token_id;
         let same_authorization =
@@ -140,7 +140,7 @@ impl CredentialAccess {
             }
     }
 
-    pub fn continuation_expires_at(&self, intent_expires_at: DateTime<Utc>) -> DateTime<Utc> {
+    pub fn continuation_expires_at(&self, intent_expires_at: Timestamp) -> Timestamp {
         if self.authorization_id.is_some() {
             intent_expires_at
         } else {
@@ -159,8 +159,8 @@ pub struct DeferredCredential {
     pub format: CredentialFormat,
     pub holder_bindings: Vec<Option<HolderBinding>>,
     pub payload: crate::DeferredPayload,
-    pub ready_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub ready_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 /// A single owner-classified deferred claim attempt. Pending and Busy retain
@@ -173,8 +173,8 @@ pub struct DeferredCredential {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeferredClaimOutcome {
     Claimed(Box<DeferredCredential>),
-    Pending { retry_at: DateTime<Utc> },
-    Busy { retry_at: DateTime<Utc> },
+    Pending { retry_at: Timestamp },
+    Busy { retry_at: Timestamp },
     Invalid,
 }
 
@@ -184,7 +184,7 @@ pub struct IssuanceNotification {
     pub token_id: Uuid,
     pub event: NotificationEvent,
     pub description: Option<String>,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,7 +192,7 @@ pub struct NotificationHandle {
     pub selection: Option<CredentialSelection>,
     pub notification_id: String,
     pub token_id: Uuid,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,7 +215,7 @@ pub struct StoredCredentialResponse {
     pub encoding: CredentialResponseEncoding,
     pub status: u16,
     pub dpop_nonce: Option<String>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 pub trait CredentialStorePort: Send + Sync {
@@ -244,7 +244,7 @@ pub trait CredentialStorePort: Send + Sync {
         &'a self,
         tenant_id: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>;
 
     fn prepare_pre_authorized_offer<'a>(
@@ -253,7 +253,7 @@ pub trait CredentialStorePort: Send + Sync {
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>;
 
     fn issue_nonce<'a>(
@@ -268,14 +268,14 @@ pub trait CredentialStorePort: Send + Sync {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
     fn release_nonce<'a>(
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
     fn find_response<'a>(
@@ -283,7 +283,7 @@ pub trait CredentialStorePort: Send + Sync {
         issuance_id: Uuid,
         token_id: Uuid,
         request_digest: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>;
 
     /// Atomically persist the response and notification handle and finalize the nonce.
@@ -293,20 +293,20 @@ pub trait CredentialStorePort: Send + Sync {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
     fn store_response_with_notification<'a>(
         &'a self,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 
     fn resolve_access<'a>(
         &'a self,
         token_hash: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>>;
 
     /// Atomically persist the deferred transaction and response and finalize its proof nonce.
@@ -316,14 +316,14 @@ pub trait CredentialStorePort: Send + Sync {
         nonce_hash: &'a str,
         claim_id: &'a str,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 
     fn store_deferred_with_response<'a>(
         &'a self,
         credential: &'a DeferredCredential,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 
     fn claim_ready_deferred<'a>(
@@ -331,7 +331,7 @@ pub trait CredentialStorePort: Send + Sync {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<DeferredClaimOutcome, CredentialStoreError>>;
 
     fn release_deferred<'a>(
@@ -339,7 +339,7 @@ pub trait CredentialStorePort: Send + Sync {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
     /// Atomically persist the response and notification handle and finalize the deferred transaction.
@@ -350,7 +350,7 @@ pub trait CredentialStorePort: Send + Sync {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>>;
 
     /// Accept one retained terminal event. An identical event/description retry

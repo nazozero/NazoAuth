@@ -2,9 +2,9 @@
 //! The migration case replays the actual SQL lineage in its own database;
 //! no fixture manufactures a legacy contract key or substitutes a fake store.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshContract, RefreshToken,
     RefreshTokenAuthenticationContext, RefreshTokenCommit, TokenIssuanceMode,
@@ -108,7 +108,7 @@ fn contract(fixture: &Fixture) -> RefreshContract {
     }
 }
 
-fn new_token(fixture: &Fixture, issued_at: DateTime<Utc>) -> NewRefreshToken {
+fn new_token(fixture: &Fixture, issued_at: Timestamp) -> NewRefreshToken {
     NewRefreshToken {
         raw_token: format!("refresh-authority-{}", Uuid::now_v7()),
         member_id: Uuid::now_v7(),
@@ -120,7 +120,7 @@ fn new_token(fixture: &Fixture, issued_at: DateTime<Utc>) -> NewRefreshToken {
         user_id: Some(fixture.user_id),
         audiences: vec![A.to_owned(), B.to_owned()],
         issued_at,
-        expires_at: issued_at + Duration::hours(1),
+        expires_at: issued_at + SignedDuration::from_hours(1),
         id_token_sid: Some(format!("id-session-{}", Uuid::now_v7())),
         dpop_jkt: None,
         mtls_x5t_s256: None,
@@ -145,7 +145,7 @@ fn issuance(fixture: &Fixture, refresh_token: RefreshTokenCommit) -> CommitToken
         user_id: Some(fixture.user_id),
         mode: TokenIssuanceMode::Fresh,
         access_token_jti: issuance_id.to_string(),
-        access_token_expires_at: (Utc::now() + Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (Timestamp::now() + SignedDuration::from_mins(5)).as_second(),
         refresh_token: Some(refresh_token),
         audit_fields: TokenIssuedAuditFields {
             client_id: fixture.client_public_id.clone(),
@@ -173,7 +173,7 @@ fn rotation(
     source: &RefreshToken,
     audiences: &[&str],
 ) -> (CommitTokenIssuance, String) {
-    let mut token = new_token(fixture, Utc::now());
+    let mut token = new_token(fixture, Timestamp::now());
     token.family_id = source.token_family_id;
     token.rotated_from_id = Some(source.id);
     token.audiences = audiences.iter().map(|value| (*value).to_owned()).collect();
@@ -203,11 +203,7 @@ async fn lookup(url: &str, raw: &str) -> RefreshToken {
         .expect("source refresh token should resolve")
 }
 
-async fn issue_at(
-    url: &str,
-    fixture: &Fixture,
-    issued_at: DateTime<Utc>,
-) -> (String, RefreshToken) {
+async fn issue_at(url: &str, fixture: &Fixture, issued_at: Timestamp) -> (String, RefreshToken) {
     let token = new_token(fixture, issued_at);
     let raw = token.raw_token.clone();
     let result = TokenIssuanceRepository::new(create_pool(url, 1).unwrap())
@@ -292,8 +288,8 @@ async fn public_deadline_cutover_revokes_only_public_families_and_keeps_audit_on
         .execute(&mut connection)
         .await
         .unwrap();
-    let (_, public_source) = issue_at(&database.url, &public, Utc::now()).await;
-    let (_, confidential_source) = issue_at(&database.url, &confidential, Utc::now()).await;
+    let (_, public_source) = issue_at(&database.url, &public, Timestamp::now()).await;
+    let (_, confidential_source) = issue_at(&database.url, &confidential, Timestamp::now()).await;
     let up = include_str!("../../../migrations/20261111000100_public_refresh_deadline/up.sql");
     for _ in 0..2 {
         connection
@@ -353,7 +349,7 @@ async fn public_deadline_cutover_revokes_only_public_families_and_keeps_audit_on
 async fn changed_refresh_deadline_invalidates_a_prepared_source() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, source) = issue_at(&url, &fixture, Timestamp::now()).await;
     let input = preserve(&fixture, &source);
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     sql_query(
@@ -378,7 +374,7 @@ async fn rotation_narrows_and_reorders_current_audience_without_replacing_origin
     let fixture = fixture(&url).await;
     let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
-    let (_, mut source) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, mut source) = issue_at(&url, &fixture, Timestamp::now()).await;
     let original = state(&mut connection, source.token_family_id).await;
     let original_key = source.contract_key;
     // Reordering is set-equivalent; narrowing is generation state. After A+B
@@ -420,7 +416,7 @@ async fn rotation_rejects_audience_expansion_without_compromising_the_family() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
     let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, source) = issue_at(&url, &fixture, Timestamp::now()).await;
     let (input, raw) = rotation(&fixture, &source, &[A]);
     assert_eq!(
         repository.commit_token_issuance(input).await.unwrap(),
@@ -445,12 +441,17 @@ async fn rotation_rejects_audience_expansion_without_compromising_the_family() {
 
 async fn fill_capacity(url: &str, fixture: &Fixture) {
     for ordinal in 1..nazo_auth::MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE {
-        issue_at(url, fixture, Utc::now() - Duration::seconds(300 - ordinal)).await;
+        issue_at(
+            url,
+            fixture,
+            Timestamp::now() - SignedDuration::from_secs(300 - ordinal),
+        )
+        .await;
     }
 }
 
 async fn retire_oldest(url: &str, fixture: &Fixture, family_id: Uuid) {
-    issue_at(url, fixture, Utc::now()).await;
+    issue_at(url, fixture, Timestamp::now()).await;
     let mut connection = AsyncPgConnection::establish(url).await.unwrap();
     let retired = sql_query(
         "SELECT count(*) AS count FROM security_audit_events \
@@ -479,7 +480,12 @@ async fn source_snapshot_cannot_commit_after_real_revocation_or_capacity_retirem
     for capacity in [false, true] {
         let fixture = fixture(&url).await;
         let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
-        let (raw, source) = issue_at(&url, &fixture, Utc::now() - Duration::minutes(10)).await;
+        let (raw, source) = issue_at(
+            &url,
+            &fixture,
+            Timestamp::now() - SignedDuration::from_mins(10),
+        )
+        .await;
         if capacity {
             fill_capacity(&url, &fixture).await;
         }
@@ -539,7 +545,7 @@ async fn preserve_rechecks_source_expiry_contract_and_sender_binding() {
     let Some(url) = database_url() else { return };
     for mutation in ["expiry", "contract", "dpop", "mtls", "attestation"] {
         let fixture = fixture(&url).await;
-        let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+        let (_, source) = issue_at(&url, &fixture, Timestamp::now()).await;
         let input = preserve(&fixture, &source);
         let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
         match mutation {
@@ -595,7 +601,7 @@ async fn preserve_rechecks_source_expiry_contract_and_sender_binding() {
 async fn two_legal_preserves_overlap_while_revocation_waits_for_both() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (raw, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let (raw, source) = issue_at(&url, &fixture, Timestamp::now()).await;
     let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
     let before = state(&mut coordinator, source.token_family_id).await;
     let left = preserve(&fixture, &source);
@@ -779,7 +785,12 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
     let Some(url) = database_url() else { return };
     for capacity in [false, true] {
         let fixture = fixture(&url).await;
-        let (raw, source) = issue_at(&url, &fixture, Utc::now() - Duration::minutes(10)).await;
+        let (raw, source) = issue_at(
+            &url,
+            &fixture,
+            Timestamp::now() - SignedDuration::from_mins(10),
+        )
+        .await;
         if capacity {
             fill_capacity(&url, &fixture).await;
         }
@@ -787,7 +798,7 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
         let replacement = issuance(
             &fixture,
             RefreshTokenCommit::IssueNew {
-                token: new_token(&fixture, Utc::now()),
+                token: new_token(&fixture, Timestamp::now()),
                 contract: contract(&fixture),
             },
         );
@@ -880,8 +891,8 @@ async fn preserve_commit_serializes_before_real_revocation_and_capacity_retireme
 async fn family_contract_lookup_preserves_per_family_lock_scope() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, first) = issue_at(&url, &fixture, Utc::now()).await;
-    let (_, second) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, first) = issue_at(&url, &fixture, Timestamp::now()).await;
+    let (_, second) = issue_at(&url, &fixture, Timestamp::now()).await;
     assert_ne!(first.token_family_id, second.token_family_id);
     assert_eq!(first.contract_key, second.contract_key);
 
@@ -983,7 +994,7 @@ async fn new_families_deduplicate_equal_contracts_and_keep_distinct_numeric_cont
     for value in [json!(1), json!(1.0), json!(1)] {
         let mut contract = contract(&fixture);
         contract.authorization_details = json!([{ "type": "numeric", "value": value }]);
-        let token = new_token(&fixture, Utc::now());
+        let token = new_token(&fixture, Timestamp::now());
         let raw = token.raw_token.clone();
         let expected = contract.clone();
         assert_eq!(
@@ -1020,7 +1031,7 @@ async fn issue_with_binding(
     fixture: &Fixture,
     binding: Option<&str>,
 ) -> (String, RefreshToken) {
-    let mut token = new_token(fixture, Utc::now());
+    let mut token = new_token(fixture, Timestamp::now());
     match binding {
         Some("dpop") => token.dpop_jkt = Some("A".repeat(43)),
         Some("mtls") => token.mtls_x5t_s256 = Some("B".repeat(43)),
@@ -1052,8 +1063,8 @@ async fn public_unbound_replay_after_65_rotations_revokes_only_its_family() {
     let fixture = fixture(&url).await;
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     make_public(&mut connection, fixture.client_id).await;
-    let (original_raw, mut current) = issue_at(&url, &fixture, Utc::now()).await;
-    let (_, unrelated) = issue_at(&url, &fixture, Utc::now()).await;
+    let (original_raw, mut current) = issue_at(&url, &fixture, Timestamp::now()).await;
+    let (_, unrelated) = issue_at(&url, &fixture, Timestamp::now()).await;
     let unrelated_before = state(&mut connection, unrelated.token_family_id).await;
     let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
     for _ in 0..65 {
@@ -1079,7 +1090,7 @@ async fn public_unbound_replay_after_65_rotations_revokes_only_its_family() {
         before
     );
     let original = lookup(&url, &original_raw).await;
-    assert!(original.expires_at > Utc::now());
+    assert!(original.expires_at > Timestamp::now());
     assert!(original.revoked_at.is_some());
     assert!(
         repository
@@ -1087,7 +1098,7 @@ async fn public_unbound_replay_after_65_rotations_revokes_only_its_family() {
                 tenant(),
                 &original_raw,
                 fixture.client_id,
-                Utc::now(),
+                Timestamp::now(),
                 false
             )
             .await
@@ -1166,7 +1177,7 @@ async fn confidential_and_public_sender_bound_families_keep_64_proofs() {
                 tenant(),
                 &predecessor_raw,
                 fixture.client_id,
-                Utc::now(),
+                Timestamp::now(),
                 false,
             )
             .await
@@ -1195,7 +1206,7 @@ async fn public_proof_cleanup_respects_original_expiry_without_ending_live_famil
     let fixture = fixture(&url).await;
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     make_public(&mut connection, fixture.client_id).await;
-    let (first_raw, mut current) = issue_at(&url, &fixture, Utc::now()).await;
+    let (first_raw, mut current) = issue_at(&url, &fixture, Timestamp::now()).await;
     let repository = TokenIssuanceRepository::new(create_pool(&url, 1).unwrap());
     let mut recent_raw = String::new();
     for _ in 0..2 {
@@ -1251,7 +1262,7 @@ async fn authentication_class_downgrade_serializes_with_rotation_in_both_orders(
     let Some(url) = database_url() else { return };
     for downgrade_first in [true, false] {
         let fixture = fixture(&url).await;
-        let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+        let (_, source) = issue_at(&url, &fixture, Timestamp::now()).await;
         let (input, successor_raw) = rotation(&fixture, &source, &[A]);
         let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
         let suffix = Uuid::now_v7().simple().to_string();
@@ -1340,7 +1351,7 @@ async fn authentication_class_downgrade_serializes_with_rotation_in_both_orders(
 async fn authentication_class_downgrade_rolls_back_when_required_audit_fails() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, source) = issue_at(&url, &fixture, Timestamp::now()).await;
     let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
     let before = state(&mut connection, source.token_family_id).await;
     let gate = format!("test_downgrade_audit_{}", Uuid::now_v7().simple());
@@ -1392,7 +1403,7 @@ async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
                 tenant(),
                 &original_raw,
                 fixture.client_id,
-                Utc::now(),
+                Timestamp::now(),
                 false,
             )
             .await
@@ -1414,7 +1425,7 @@ async fn r05_snapshot_candidate_rechecks_terminal_state_and_member_at_commit() {
             token.lost_response_retry = Some(nazo_auth::LostResponseRetry {
                 original_id: original.id,
                 original_blake3: original.token_blake3,
-                retry_started_at: Utc::now(),
+                retry_started_at: Timestamp::now(),
             });
         } else {
             panic!("rotation carries its existing authority");
@@ -1486,11 +1497,11 @@ async fn bound_delayed_rotation_uses_transition_clock_without_false_reuse() {
             let repository = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
             let (mut first, child_raw) = rotation(&fixture, &original, &[A]);
             // Simulate signing/pool delay with explicit timestamps, without sleeping.
-            let signed_at = DateTime::<Utc>::from_timestamp_micros(
-                (Utc::now() - Duration::seconds(20)).timestamp_micros(),
+            let signed_at = Timestamp::from_microsecond(
+                (Timestamp::now() - SignedDuration::from_secs(20)).as_microsecond(),
             )
             .unwrap();
-            let signed_expiry = signed_at + Duration::hours(1);
+            let signed_expiry = signed_at + SignedDuration::from_hours(1);
             if let Some(RefreshTokenCommit::UseExisting {
                 rotation: Some(token),
                 ..
@@ -1501,19 +1512,19 @@ async fn bound_delayed_rotation_uses_transition_clock_without_false_reuse() {
             } else {
                 panic!("rotation carries its existing authority");
             }
-            let before_commit = Utc::now();
+            let before_commit = Timestamp::now();
             assert_eq!(
                 repository.commit_token_issuance(first).await.unwrap(),
                 CommitTokenIssuanceResult::Committed
             );
-            let operation_completed_at = Utc::now();
+            let operation_completed_at = Timestamp::now();
             let child = lookup(&url, &child_raw).await;
             assert_eq!(child.issued_at, signed_at);
             assert_eq!(child.expires_at, signed_expiry);
             let spent = lookup(&url, &original_raw).await;
             // Admission is exactly 45s after the durable transition, independent
             // of repository-return or fixture-read scheduling delays.
-            let retry_started_at = spent.revoked_at.unwrap() + Duration::seconds(45);
+            let retry_started_at = spent.revoked_at.unwrap() + SignedDuration::from_secs(45);
             assert_eq!(spent.expires_at, original.expires_at);
             let mut connection = AsyncPgConnection::establish(&url).await.unwrap();
             if old_anchor {
@@ -1524,7 +1535,7 @@ async fn bound_delayed_rotation_uses_transition_clock_without_false_reuse() {
                 )
                 .bind::<sql_types::Uuid, _>(tenant())
                 .bind::<sql_types::Binary, _>(original.token_blake3.as_slice())
-                .bind::<sql_types::Timestamptz, _>(signed_at)
+                .bind::<sql_types::Timestamptz, _>((signed_at).to_diesel())
                 .execute(&mut connection)
                 .await
                 .unwrap();
@@ -1623,10 +1634,10 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
     let Some(url) = database_url() else { return };
     for binding in ["dpop", "mtls"] {
         for elapsed in [
-            Duration::zero(),
-            Duration::seconds(60),
-            Duration::microseconds(-1),
-            Duration::seconds(60) + Duration::microseconds(1),
+            SignedDuration::zero(),
+            SignedDuration::from_secs(60),
+            SignedDuration::from_micros(-1),
+            SignedDuration::from_secs(60) + SignedDuration::from_micros(1),
         ] {
             let fixture = fixture(&url).await;
             let (original_raw, original) = issue_with_binding(&url, &fixture, Some(binding)).await;
@@ -1639,7 +1650,8 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
             let spent = lookup(&url, &original_raw).await;
             assert_eq!(spent.expires_at, original.expires_at);
             let retry_started_at = spent.revoked_at.unwrap() + elapsed;
-            let within = elapsed >= Duration::zero() && elapsed <= Duration::seconds(60);
+            let within =
+                elapsed >= SignedDuration::zero() && elapsed <= SignedDuration::from_secs(60);
             let snapshot = repository
                 .refresh_token_snapshot(
                     tenant(),
@@ -1688,7 +1700,7 @@ async fn bound_retry_rechecks_exact_transition_window_at_commit() {
 async fn rotation_rechecks_expiry_after_acquiring_the_source_row_lock() {
     let Some(url) = database_url() else { return };
     let fixture = fixture(&url).await;
-    let (_, source) = issue_at(&url, &fixture, Utc::now()).await;
+    let (_, source) = issue_at(&url, &fixture, Timestamp::now()).await;
     let (input, _) = rotation(&fixture, &source, &[A]);
     let mut coordinator = AsyncPgConnection::establish(&url).await.unwrap();
     coordinator.batch_execute("BEGIN").await.unwrap();
@@ -1715,7 +1727,9 @@ async fn rotation_rechecks_expiry_after_acquiring_the_source_row_lock() {
     .bind::<sql_types::Uuid, _>(tenant())
     .bind::<sql_types::Uuid, _>(source.token_family_id)
     // Use the same Rust clock as the repository, not a separate DB clock.
-    .bind::<sql_types::Timestamptz, _>(Utc::now() - Duration::milliseconds(1))
+    .bind::<sql_types::Timestamptz, _>(
+        (Timestamp::now() - SignedDuration::from_millis(1)).to_diesel(),
+    )
     .execute(&mut coordinator)
     .await
     .unwrap();
@@ -1731,3 +1745,5 @@ async fn rotation_rechecks_expiry_after_acquiring_the_source_row_lock() {
     );
     assert_issuance_writes(&mut coordinator, input.issuance_id, false).await;
 }
+
+use jiff_diesel::ToDiesel as _;

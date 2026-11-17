@@ -20,8 +20,8 @@ use crate::{
         consume_token_client_assertion_with_authorization_service,
     },
 };
-use chrono::{Duration, Utc};
 use http::StatusCode;
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     DpopError, ExpandedParAdmissionPolicy, ParAdmissionError, PresentedClientCredentials,
     RawParAdmissionPolicy, unverified_client_assertion_client_id, validate_expanded_par_admission,
@@ -294,7 +294,7 @@ impl PreparedParClient<'_> {
                     attestation,
                     proof,
                     &context.config.issuer,
-                    Utc::now().timestamp(),
+                    Timestamp::now().as_second(),
                 )
                 .await
             {
@@ -524,7 +524,7 @@ impl PreparedParClient<'_> {
                 .await
                 .map_err(super::jar::request_object_policy_error)?;
         }
-        let now = Utc::now();
+        let now = Timestamp::now();
         let request_token = random_urlsafe_token();
         let request_uri = format!("{PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX}{request_token}");
         let payload = PushedAuthorizationRequest {
@@ -533,7 +533,7 @@ impl PreparedParClient<'_> {
             dpop_jkt,
             mtls_x5t_s256,
             issued_at: now,
-            expires_at: now + Duration::seconds(par_ttl_seconds as i64),
+            expires_at: now + SignedDuration::from_secs(par_ttl_seconds as i64),
         };
         if let Err(error) = context
             .service

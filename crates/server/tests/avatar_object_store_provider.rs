@@ -24,7 +24,7 @@ async fn provider_derives_disjoint_opaque_tenant_object_namespaces() {
     let ServerAvatarStorageCapability::Direct(second_store) = provider.for_tenant(second) else {
         panic!("S3 provider supports direct upload");
     };
-    let expiry = chrono::Utc::now() + chrono::Duration::minutes(5);
+    let expiry = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5);
     let first_key = first_store
         .authorize_upload("upload-a", 1024, expiry)
         .await

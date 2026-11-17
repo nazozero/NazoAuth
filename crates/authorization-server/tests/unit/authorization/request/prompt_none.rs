@@ -1,5 +1,5 @@
 use super::ConsentPayload;
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::parse_scope;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -148,7 +148,7 @@ fn stored_grant_never_silently_reuses_high_risk_authorization_details() {
 }
 
 fn prompt_none_payload() -> ConsentPayload {
-    let now = Utc::now();
+    let now = Timestamp::now();
     ConsentPayload {
         request_id: format!("request-{}", Uuid::now_v7()),
         user_id: crate::test_support::authorization::account().id(),
@@ -162,7 +162,7 @@ fn prompt_none_payload() -> ConsentPayload {
         state: Some("opaque-state".to_owned()),
         response_mode: None,
         nonce: Some("nonce-1".to_owned()),
-        auth_time: now.timestamp(),
+        auth_time: now.as_second(),
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("oidc-session".to_owned()),
         acr: None,
@@ -188,7 +188,7 @@ fn prompt_none_payload() -> ConsentPayload {
         session_management_allowed: Some(false),
         authorization_code_ttl_seconds: Some(60),
 
-        expires_at: now + Duration::seconds(60),
+        expires_at: now + SignedDuration::from_secs(60),
     }
 }
 
@@ -215,7 +215,7 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
         session_id: Some(&session_id),
         user_agent: None,
     };
-    let before_issue = Utc::now();
+    let before_issue = Timestamp::now();
     let result =
         futures_executor::block_on(issue_authorization_code_without_interaction_with_context(
             &application.context(),
@@ -258,8 +258,8 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
         stored.userinfo_claim_requests.names(),
         payload.userinfo_claim_requests.names()
     );
-    assert!(stored.expires_at >= before_issue + Duration::seconds(60));
-    assert!(stored.expires_at <= Utc::now() + Duration::seconds(60));
+    assert!(stored.expires_at >= before_issue + SignedDuration::from_secs(60));
+    assert!(stored.expires_at <= Timestamp::now() + SignedDuration::from_secs(60));
     assert_eq!(
         fixture.ports.calls(),
         [
@@ -280,7 +280,7 @@ fn pushed_prompt_none_fixture() -> (
     crate::test_support::authorization::Fixture,
     ConsentPayload,
     String,
-    chrono::DateTime<Utc>,
+    jiff::Timestamp,
 ) {
     let fixture = crate::test_support::authorization::Fixture::new(
         Err(nazo_auth::AuthorizationPortError::Unavailable),
@@ -294,13 +294,13 @@ fn pushed_prompt_none_fixture() -> (
         Some(Ok(nazo_auth::AuthorizationDecisionCommitResult::Committed));
     let mut payload = prompt_none_payload();
     let uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
-    let par_expires_at = payload.expires_at + Duration::minutes(5);
+    let par_expires_at = payload.expires_at + SignedDuration::from_mins(5);
     let pushed = nazo_auth::PushedAuthorizationRequest {
         client_id: payload.client_id.clone(),
         params: std::collections::HashMap::from([("state".into(), "original-state".into())]),
         dpop_jkt: None,
         mtls_x5t_s256: None,
-        issued_at: Utc::now(),
+        issued_at: Timestamp::now(),
         expires_at: par_expires_at,
     };
     payload.pushed_request_uri = Some(uri.clone());
@@ -835,7 +835,7 @@ async fn issue_authorization_code_without_interaction_with_context(
     context: &crate::authorization::AuthorizationRequestContext<'_>,
     facts: &crate::authorization::AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
-    pushed_request_expires_at: Option<chrono::DateTime<Utc>>,
+    pushed_request_expires_at: Option<jiff::Timestamp>,
     pushed_request_version: Option<&str>,
 ) -> Result<
     crate::authorization::AuthorizationOutcome,

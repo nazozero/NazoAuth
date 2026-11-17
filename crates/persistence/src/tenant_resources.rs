@@ -6,8 +6,8 @@
 use std::{collections::BTreeMap, fmt};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
+use jiff::Timestamp;
 use nazo_auth::{CreateClientRequest, OAuthClient};
 use nazo_identity::TenantContext;
 use nazo_operator_protocol::{
@@ -416,8 +416,8 @@ pub struct PreparedMtlsTrustAnchor {
     pub certificate_pem: String,
     pub certificate_sha256: String,
     pub subject_dn: String,
-    pub not_before: DateTime<Utc>,
-    pub not_after: DateTime<Utc>,
+    pub not_before: Timestamp,
+    pub not_after: Timestamp,
 }
 
 impl fmt::Debug for PreparedOAuthClient {

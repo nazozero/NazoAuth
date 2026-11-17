@@ -13,7 +13,7 @@ use super::app::{
     services::ServerAuthorizationService,
     sessions::SessionResolver,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
     AuthorizationDecisionKind, AuthorizationFuture, AuthorizationPortError,
@@ -153,7 +153,7 @@ impl AuthorizationRepositoryPort for Ports {
             }) {
                 return Ok(AuthorizationDecisionCommitResult::Conflict);
             }
-            if input.valid_until <= Utc::now() {
+            if input.valid_until <= Timestamp::now() {
                 return Ok(AuthorizationDecisionCommitResult::Expired);
             }
             assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
@@ -667,7 +667,7 @@ pub fn client(active: bool) -> OAuthClient {
     }
 }
 pub fn account() -> PublicAccount {
-    let now = Utc::now();
+    let now = Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,
@@ -688,11 +688,11 @@ pub fn account() -> PublicAccount {
     }
 }
 pub fn session() -> SessionSnapshot {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut record = SessionRecord::new(
         account().user_id(),
         0,
-        now.timestamp(),
+        now.as_second(),
         vec!["pwd".into()],
         false,
         Some("oidc-session".into()),

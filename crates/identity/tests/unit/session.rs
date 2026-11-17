@@ -167,7 +167,7 @@ fn add_amr_deduplicates_methods_and_preserves_claim_order() {
 
 #[test]
 fn current_session_exposes_exact_logged_in_clients() {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let session = CurrentSession {
         pending_mfa: false,
         user: PublicAccount {
@@ -334,7 +334,7 @@ async fn step_up_builds_a_fresh_session_and_csrf_pair_for_atomic_rotation() {
             "totp",
             3_600,
             true,
-            chrono::DateTime::from_timestamp(1_000, 0).unwrap(),
+            jiff::Timestamp::new(1_000, 0).unwrap(),
         )
         .await
         .unwrap()
@@ -401,7 +401,7 @@ impl SessionAccountPort for CountingSessionAccounts {
             if self.unavailable {
                 return Err(RepositoryError::Unavailable);
             }
-            let now = chrono::Utc::now();
+            let now = jiff::Timestamp::now();
             Ok(Some(PublicAccount {
                 principal: Principal {
                     authorization_epoch: self.authorization_epoch,
@@ -511,7 +511,7 @@ async fn mfa_resolution_invalidates_inactive_or_corrupt_sessions_but_keeps_depen
 fn authentication_precision_is_owned_by_the_record_and_legacy_updates_clear_it() {
     let mut session = record(false);
     assert_eq!(session.auth_time_micros(), None);
-    let now = chrono::DateTime::from_timestamp_micros(1_000_123_456).unwrap();
+    let now = jiff::Timestamp::from_microsecond(1_000_123_456).unwrap();
     session.record_authentication_at(now);
     assert_eq!(session.auth_time(), 1_000);
     assert_eq!(session.auth_time_micros(), Some(1_000_123_456));

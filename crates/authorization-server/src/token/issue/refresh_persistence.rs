@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::domain::client_policy::client_supports_grant;
@@ -12,9 +12,9 @@ pub(super) struct PendingRefreshToken {
     pub(super) rotated_from: Option<Uuid>,
     /// `(original member id, original token digest, retry start)` — the digest
     /// is what a persisted retry must prove against the spent-proof edge.
-    pub(super) lost_response_retry: Option<(Uuid, [u8; 32], DateTime<Utc>)>,
-    pub(super) issued_at: DateTime<Utc>,
-    pub(super) expires_at: DateTime<Utc>,
+    pub(super) lost_response_retry: Option<(Uuid, [u8; 32], Timestamp)>,
+    pub(super) issued_at: Timestamp,
+    pub(super) expires_at: Timestamp,
 }
 
 pub(super) fn refresh_authentication_context(

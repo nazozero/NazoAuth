@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use passkey_auth::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
 
@@ -13,9 +13,9 @@ pub struct PasskeyCredential {
     pub user_id: UserId,
     pub credential: WebauthnCredential,
     pub label: String,
-    pub last_used_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub last_used_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 /// Display metadata scoped to one tenant and user; contains no credential payload.
@@ -27,9 +27,9 @@ pub struct PasskeyCredentialSummary {
     pub credential_id: String,
     pub label: String,
     pub sign_count: i64,
-    pub last_used_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub last_used_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 /// Signed authentication facts committed before the replacement session is issued.

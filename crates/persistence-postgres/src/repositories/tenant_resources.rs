@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyRecord, Openid4vcTrustPolicyStore};
 use serde_json::Value;
@@ -14,7 +14,7 @@ pub struct TenantResourceState {
     pub tenant_id: Uuid,
     pub revision: u64,
     pub resource_manifest_sha256: String,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,8 +26,8 @@ pub struct TenantResourceBinding {
     pub resource_digest: String,
     pub active: bool,
     pub locator: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 /// Public OpenID4VC trust policy installed through the ordinary tenant
@@ -42,9 +42,9 @@ pub struct StoredOpenid4vcTrustPolicy {
     pub public_material: Value,
     pub wallet_origins: Vec<String>,
     pub active: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub revoked_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,7 +89,8 @@ struct StateRow {
     #[diesel(sql_type = sql_types::Varchar)]
     resource_manifest_sha256: String,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    updated_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
@@ -109,9 +110,11 @@ struct BindingRow {
     #[diesel(sql_type = sql_types::Text)]
     locator: String,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    updated_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
@@ -145,11 +148,14 @@ struct Openid4vcTrustPolicyRow {
     #[diesel(sql_type = sql_types::Bool)]
     active: bool,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    updated_at: Timestamp,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    revoked_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    revoked_at: Option<Timestamp>,
 }
 
 #[derive(QueryableByName)]

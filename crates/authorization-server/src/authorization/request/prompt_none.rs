@@ -9,8 +9,8 @@ use crate::crypto::random_urlsafe_token;
 use crate::domain::oauth::ConsentPayload;
 use crate::domain::rows::ClientRow;
 use crate::ports::audit::audit_fields;
-use chrono::{DateTime, Utc};
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationApprovalInput, AuthorizationDecisionCommit, AuthorizationDecisionCommitResult,
     AuthorizationDecisionKind, prepare_authorization_code,
@@ -23,7 +23,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     client: &mut ClientRow,
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
-    pushed_request_expires_at: Option<DateTime<Utc>>,
+    pushed_request_expires_at: Option<Timestamp>,
     pushed_request_version: Option<&str>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
     let ttl_seconds = payload
@@ -66,7 +66,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
             ));
         }
     };
-    let now = Utc::now();
+    let now = Timestamp::now();
     let event_id = Uuid::now_v7();
     let code = random_urlsafe_token();
     let requests_openid = payload.scopes.iter().any(|scope| scope == "openid");

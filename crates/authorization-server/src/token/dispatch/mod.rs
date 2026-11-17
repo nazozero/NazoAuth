@@ -286,7 +286,7 @@ impl TokenEndpointHandles {
                     attestation,
                     proof,
                     issuance_config.issuer(),
-                    chrono::Utc::now().timestamp(),
+                    jiff::Timestamp::now().as_second(),
                 )
                 .await
             {

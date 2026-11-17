@@ -34,7 +34,7 @@ struct Event<'a> {
     event_hash: &'a [u8],
     event_type: &'a str,
     event_category: &'a str,
-    occurred_at: chrono::DateTime<chrono::Utc>,
+    occurred_at: jiff::Timestamp,
     payload_canonical: &'a str,
 }
 impl<'a> From<&'a SecurityAuditPendingDelivery> for Event<'a> {

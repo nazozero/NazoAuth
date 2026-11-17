@@ -203,7 +203,7 @@ impl CibaPingDeliveryPort for Store {
                     endpoint: "https://client.example/ping".to_owned(),
                     client_notification_token: "test-notification-token".to_owned(),
                     attempts: 1,
-                    expires_at: chrono::Utc::now().timestamp() + 60,
+                    expires_at: jiff::Timestamp::now().as_second() + 60,
                 }),
             })
         })

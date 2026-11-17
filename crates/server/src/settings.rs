@@ -224,11 +224,13 @@ impl Settings {
 
     pub(crate) fn key_settings(&self) -> nazo_key_management::KeySettings {
         nazo_key_management::KeySettings {
-            rotation_interval: chrono::Duration::seconds(
+            rotation_interval: jiff::SignedDuration::from_secs(
                 self.keys.signing_key_rotation_interval_seconds,
             ),
-            prepublish_window: chrono::Duration::seconds(self.keys.signing_key_prepublish_seconds),
-            verification_grace: chrono::Duration::seconds(
+            prepublish_window: jiff::SignedDuration::from_secs(
+                self.keys.signing_key_prepublish_seconds,
+            ),
+            verification_grace: jiff::SignedDuration::from_secs(
                 self.protocol
                     .access_token_ttl_seconds
                     .max(self.protocol.id_token_ttl_seconds),
@@ -376,9 +378,9 @@ pub(crate) fn key_settings_from_config(
     let id_token_ttl_seconds = config.parse("ID_TOKEN_TTL_SECONDS", 600)?;
     nazoauth::config::validate_token_lifetimes(access_token_ttl_seconds, id_token_ttl_seconds)?;
     Ok(nazo_key_management::KeySettings {
-        rotation_interval: chrono::Duration::seconds(rotation_interval_seconds),
-        prepublish_window: chrono::Duration::seconds(prepublish_seconds),
-        verification_grace: chrono::Duration::seconds(
+        rotation_interval: jiff::SignedDuration::from_secs(rotation_interval_seconds),
+        prepublish_window: jiff::SignedDuration::from_secs(prepublish_seconds),
+        verification_grace: jiff::SignedDuration::from_secs(
             access_token_ttl_seconds.max(id_token_ttl_seconds),
         ),
     })

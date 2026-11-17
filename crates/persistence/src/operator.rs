@@ -3,7 +3,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
@@ -30,7 +30,7 @@ pub type OperatorPersistenceFuture<'a, T> =
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RecoveryInvalidation {
     pub state_epoch: Uuid,
-    pub not_before: DateTime<Utc>,
+    pub not_before: Timestamp,
     pub revoked_refresh_tokens: u64,
 }
 
@@ -45,7 +45,7 @@ pub trait RecoveryInvalidationStore: Send + Sync {
         operation_id: Uuid,
         request_hash: &'a str,
         state_epoch: Uuid,
-        not_before: DateTime<Utc>,
-        completed_at: DateTime<Utc>,
+        not_before: Timestamp,
+        completed_at: Timestamp,
     ) -> OperatorPersistenceFuture<'a, RecoveryInvalidation>;
 }

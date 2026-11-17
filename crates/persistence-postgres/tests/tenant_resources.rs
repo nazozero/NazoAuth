@@ -1,6 +1,6 @@
-use chrono::{Duration, Utc};
 use diesel::{QueryResult, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::{TenantId, ports::RepositoryError};
 use nazo_postgres::{
     NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, Openid4vcTrustPolicyClientBind,
@@ -241,7 +241,7 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
 
     let certificate_pem = "-----BEGIN CERTIFICATE-----\ncHVibGlj\n-----END CERTIFICATE-----\n";
     let certificate_sha256 = "a".repeat(64);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let request_id = insert_operator_managed_trust_anchor_on_connection(
         &mut connection,
         OperatorManagedTrustAnchor {
@@ -250,8 +250,8 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
             certificate_pem,
             certificate_sha256: &certificate_sha256,
             subject_dn: "CN=operator-managed",
-            not_before: now - Duration::minutes(1),
-            not_after: now + Duration::hours(1),
+            not_before: now - SignedDuration::from_mins(1),
+            not_after: now + SignedDuration::from_hours(1),
         },
     )
     .await
@@ -265,8 +265,8 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
                 certificate_pem,
                 certificate_sha256: &certificate_sha256,
                 subject_dn: "CN=operator-managed",
-                not_before: now - Duration::minutes(1),
-                not_after: now + Duration::hours(1),
+                not_before: now - SignedDuration::from_mins(1),
+                not_after: now + SignedDuration::from_hours(1),
             },
         )
         .await
@@ -283,7 +283,7 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
                 certificate_sha256: &certificate_sha256,
                 subject_dn: "CN=invalid",
                 not_before: now,
-                not_after: now + Duration::hours(1),
+                not_after: now + SignedDuration::from_hours(1),
             },
         )
         .await
@@ -318,7 +318,7 @@ async fn operator_managed_mtls_and_dataset_helpers_preserve_provenance_and_idemp
             configuration_id,
             protected,
             Some(now),
-            Some(now + Duration::hours(1)),
+            Some(now + SignedDuration::from_hours(1)),
         )
         .await
         .expect("operator dataset should insert"),

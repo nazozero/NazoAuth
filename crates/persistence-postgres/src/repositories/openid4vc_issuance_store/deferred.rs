@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_openid4vci::{
     CredentialStoreError, CredentialStoreFuture, DeferredCredential, StoredCredentialResponse,
 };
@@ -19,7 +19,7 @@ impl Openid4vciRepository {
         &'a self,
         credential: &'a DeferredCredential,
         response: &'a StoredCredentialResponse,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             let protected_payload = protect_payload(
@@ -70,8 +70,8 @@ impl Openid4vciRepository {
                     .bind::<sql_types::Text, _>(format)
                     .bind::<sql_types::Jsonb, _>(holder_bindings)
                     .bind::<sql_types::Binary, _>(protected_payload)
-                    .bind::<sql_types::Timestamptz, _>(ready_at)
-                    .bind::<sql_types::Timestamptz, _>(expires_at)
+                    .bind::<sql_types::Timestamptz, _>((ready_at).to_diesel())
+                    .bind::<sql_types::Timestamptz, _>((expires_at).to_diesel())
                     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(authorization_id)
                     .bind::<sql_types::Jsonb, _>(selection)
                     .execute(connection)
@@ -107,7 +107,7 @@ impl Openid4vciRepository {
         nonce_hash: &'a str,
         claim_id: &'a str,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             let protected_payload = protect_payload(
@@ -158,8 +158,8 @@ impl Openid4vciRepository {
                     .bind::<sql_types::Text, _>(format)
                     .bind::<sql_types::Jsonb, _>(holder_bindings)
                     .bind::<sql_types::Binary, _>(protected_payload)
-                    .bind::<sql_types::Timestamptz, _>(ready_at)
-                    .bind::<sql_types::Timestamptz, _>(expires_at)
+                    .bind::<sql_types::Timestamptz, _>((ready_at).to_diesel())
+                    .bind::<sql_types::Timestamptz, _>((expires_at).to_diesel())
                     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(authorization_id)
                     .bind::<sql_types::Jsonb, _>(selection)
                     .execute(connection)
@@ -185,7 +185,7 @@ impl Openid4vciRepository {
                     )
                     .bind::<sql_types::Text, _>(nonce_hash)
                     .bind::<sql_types::Text, _>(claim_id)
-                    .bind::<sql_types::Timestamptz, _>(now)
+                    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
                     .execute(connection)
                     .await?;
                     if changed != 1 {
@@ -206,7 +206,7 @@ impl Openid4vciRepository {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
@@ -331,7 +331,7 @@ impl Openid4vciRepository {
                         .bind::<sql_types::Uuid, _>(token_id)
                         .bind::<sql_types::Text, _>(claim_id)
                         .bind::<sql_types::Uuid, _>(original_token_id)
-                        .bind::<sql_types::Timestamptz, _>(current_expires_at)
+                        .bind::<sql_types::Timestamptz, _>((current_expires_at).to_diesel())
                         .execute(connection)
                         .await?;
                         if changed == 0 {
@@ -351,7 +351,7 @@ impl Openid4vciRepository {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
@@ -373,3 +373,5 @@ impl Openid4vciRepository {
         })
     }
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -200,7 +200,7 @@ impl PresentationOperations for Verifier {
             Ok(PresentationResult {
                 transaction_id,
                 credentials: Vec::new(),
-                completed_at: chrono::Utc::now(),
+                completed_at: jiff::Timestamp::now(),
             })
         })
     }

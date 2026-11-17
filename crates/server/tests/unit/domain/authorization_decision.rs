@@ -13,7 +13,7 @@ async fn authorization_decision_fails_closed_when_jarm_encryption_keys_cannot_re
     let session_id = format!("jarm-refresh-session-{suffix}");
     fixture.insert_client(&client_id, true).await;
     fixture
-        .store_session(&user, &session_id, Utc::now().timestamp())
+        .store_session(&user, &session_id, Timestamp::now().as_second())
         .await;
     let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
     sql_query("UPDATE oauth_clients SET jwks_uri = 'https://invalid.example/jwks.json', jwks = '{\"keys\":[]}'::jsonb, authorization_encrypted_response_alg = 'RSA-OAEP-256', authorization_encrypted_response_enc = 'A256GCM' WHERE tenant_id = $1 AND client_id = $2")
@@ -61,7 +61,7 @@ use crate::config::ConfigSource;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
 use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
@@ -163,7 +163,7 @@ fn decision_state() -> TestInfrastructure {
 }
 
 fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
-    let now = Utc::now();
+    let now = Timestamp::now();
     ConsentPayload {
         request_id: format!("request-{}", Uuid::now_v7()),
         user_id,
@@ -177,7 +177,7 @@ fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
         state: Some("test-state".to_owned()),
         response_mode: None,
         nonce: Some("nonce-1".to_owned()),
-        auth_time: now.timestamp(),
+        auth_time: now.as_second(),
         amr: vec!["pwd".to_owned()],
         oidc_sid: Some("session-oidc".to_owned()),
         acr: None,
@@ -192,7 +192,7 @@ fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
 
-        expires_at: now + Duration::seconds(60),
+        expires_at: now + SignedDuration::from_secs(60),
     }
 }
 
@@ -577,7 +577,7 @@ async fn authorization_decision_rejects_invalid_decision_after_auth() {
     };
     let user = fixture.create_user("invalid-decision", "user", 0).await;
     fixture
-        .store_session(&user, "sid-invalid-decision", Utc::now().timestamp())
+        .store_session(&user, "sid-invalid-decision", Timestamp::now().as_second())
         .await;
     let req = fixture.auth_request("sid-invalid-decision", Some("csrf-session-token"));
     let form = AuthorizationDecisionForm {
@@ -600,7 +600,7 @@ async fn authorization_decision_rejects_missing_consent_payload_with_valid_sessi
     };
     let user = fixture.create_user("missing-payload", "user", 0).await;
     fixture
-        .store_session(&user, "sid-missing-payload", Utc::now().timestamp())
+        .store_session(&user, "sid-missing-payload", Timestamp::now().as_second())
         .await;
     let req = fixture.auth_request("sid-missing-payload", Some("csrf-session-token"));
     let form = AuthorizationDecisionForm {
@@ -623,7 +623,7 @@ async fn authorization_decision_rejects_request_if_user_not_match() {
     let owner = fixture.create_user("mismatch-owner", "user", 0).await;
     let other = fixture.create_user("mismatch-other", "user", 0).await;
     fixture
-        .store_session(&owner, "sid-user-mismatch", Utc::now().timestamp())
+        .store_session(&owner, "sid-user-mismatch", Timestamp::now().as_second())
         .await;
     let payload = consent_payload_for_user("client-1", other.id);
     fixture.store_consent_payload(&payload).await;
@@ -651,7 +651,7 @@ async fn authorization_decision_rejects_consent_from_another_browser_session() {
         .await;
     let session_id = "sid-browser-session-mismatch";
     fixture
-        .store_session(&user, session_id, Utc::now().timestamp())
+        .store_session(&user, session_id, Timestamp::now().as_second())
         .await;
     let payload = ConsentPayload {
         oidc_sid: Some("another-browser-session".to_owned()),
@@ -687,7 +687,7 @@ async fn authorization_decision_fails_closed_when_consent_state_read_fails() {
     let user = fixture.create_user("consent-read-failure", "user", 0).await;
     let sid = format!("sid-consent-read-failure-{}", Uuid::now_v7());
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, Timestamp::now().as_second())
         .await;
     let payload = consent_payload_for_user("client-1", user.id);
     fixture.store_consent_payload(&payload).await;
@@ -740,7 +740,7 @@ async fn authorization_decision_fails_closed_when_consent_state_consume_fails() 
         .await;
     let sid = format!("sid-consent-consume-failure-{}", Uuid::now_v7());
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, Timestamp::now().as_second())
         .await;
     let client_id = format!("client-consent-consume-failure-{}", Uuid::now_v7());
     fixture.insert_client(&client_id, true).await;
@@ -794,7 +794,7 @@ async fn authorization_decision_rejects_malformed_consent_payload() {
     let user = fixture.create_user("bad-consent-json", "user", 0).await;
     let sid = format!("sid-bad-consent-{}", Uuid::now_v7());
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, Timestamp::now().as_second())
         .await;
     valkey_set_ex(
         &fixture.state.valkey,
@@ -824,7 +824,7 @@ async fn authorization_decision_rejects_request_with_invalid_pushed_request_uri(
     };
     let user = fixture.create_user("pushed-missing", "user", 0).await;
     fixture
-        .store_session(&user, "sid-pushed-missing", Utc::now().timestamp())
+        .store_session(&user, "sid-pushed-missing", Timestamp::now().as_second())
         .await;
 
     let payload = ConsentPayload {
@@ -858,7 +858,7 @@ async fn authorization_decision_rejects_malformed_consumed_par_without_issuing_c
     };
     let user = fixture.create_user("pushed-malformed", "user", 0).await;
     fixture
-        .store_session(&user, "sid-pushed-malformed", Utc::now().timestamp())
+        .store_session(&user, "sid-pushed-malformed", Timestamp::now().as_second())
         .await;
 
     let request_uri = format!(
@@ -903,7 +903,7 @@ async fn authorization_decision_accepts_deny_with_user_match() {
     let client_id = format!("client-decision-deny-{}", Uuid::now_v7());
     fixture.insert_client(&client_id, true).await;
     fixture
-        .store_session(&user, "sid-decision-deny", Utc::now().timestamp())
+        .store_session(&user, "sid-decision-deny", Timestamp::now().as_second())
         .await;
     let payload = consent_payload_for_user(&client_id, user.id);
     fixture.store_consent_payload(&payload).await;
@@ -983,7 +983,7 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     fixture.insert_client(&client_id, true).await;
     let session_id = "sid-decision-approve";
     fixture
-        .store_session(&user, session_id, Utc::now().timestamp())
+        .store_session(&user, session_id, Timestamp::now().as_second())
         .await;
     let mut payload = consent_payload_for_user(&client_id, user.id);
     payload.resource_indicators = vec!["resource://default".to_owned()];
@@ -1055,7 +1055,7 @@ async fn authorization_decision_fails_closed_when_authorization_code_store_fails
     fixture.insert_client(&client_id, true).await;
     let sid = format!("sid-code-store-failure-{}", Uuid::now_v7());
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, Timestamp::now().as_second())
         .await;
     let payload = consent_payload_for_user(&client_id, user.id);
     fixture.store_consent_payload(&payload).await;
@@ -1116,7 +1116,7 @@ async fn authorization_decision_fails_closed_when_grant_persistence_fails() {
         )
         .await;
     fixture
-        .store_session(&user, "sid-grant-failure", Utc::now().timestamp())
+        .store_session(&user, "sid-grant-failure", Timestamp::now().as_second())
         .await;
     let payload = consent_payload_for_user(client_id, user.id);
     fixture.store_consent_payload(&payload).await;

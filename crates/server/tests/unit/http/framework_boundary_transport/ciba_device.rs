@@ -9,12 +9,12 @@ mod ciba_device_contract {
         test::TestRequest,
         web::{Data, Form},
     };
-    use chrono::Utc;
     use diesel::{
         sql_query,
         sql_types::{Bool, Text, Uuid as SqlUuid},
     };
     use diesel_async::RunQueryDsl;
+    use jiff::Timestamp;
     use nazo_auth::{CibaAuthenticationContext, CibaRequestState, CibaStatus};
     use nazo_identity::DEFAULT_ORGANIZATION_ID;
     use nazo_identity::DEFAULT_REALM_ID;
@@ -74,7 +74,7 @@ mod ciba_device_contract {
         user_id: Uuid,
         status: CibaStatus,
     ) {
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         let authentication_context = match status {
             CibaStatus::Approved => Some(CibaAuthenticationContext {
                 auth_time: now,
@@ -238,7 +238,7 @@ mod ciba_device_contract {
         let payload = crate::test_support::SessionPayload {
             authorization_epoch: 0,
             user_id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("device-oidc-{session_id}")),
@@ -383,7 +383,7 @@ mod ciba_device_contract {
             .expect("issued JWT signature and claims")
             .claims;
         assert_eq!(claims["sub"], subject);
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         let iat = claims["iat"].as_i64().expect("iat integer");
         let exp = claims["exp"].as_i64().expect("exp integer");
         assert!(iat <= now && now - iat <= 60);
@@ -480,7 +480,7 @@ mod ciba_device_contract {
         insert_ciba_user(&state, user).await;
         let sid = format!("golden-session-{}", Uuid::now_v7());
         store_device_session(&state, &sid, user).await;
-        let now = Utc::now();
+        let now = Timestamp::now();
         let payload = nazo_auth::DeviceAuthorizationPayload {
             client_id: format!("golden-device-{}", Uuid::now_v7()),
             client_name: "Golden Device".into(),
@@ -489,7 +489,7 @@ mod ciba_device_contract {
             authorization_details: json!([]),
             interval_seconds: 5,
             issued_at: now,
-            expires_at: now + chrono::Duration::minutes(10),
+            expires_at: now + jiff::SignedDuration::from_mins(10),
         };
         let service = ServerDeviceGrantService::new(Arc::new(nazo_valkey::DeviceStore::new(
             &state.valkey_connection(),
@@ -544,7 +544,7 @@ mod ciba_device_contract {
         )));
         let before = serde_json::to_value(
             check_state
-                .pending_request_for_user_code(&code, Utc::now)
+                .pending_request_for_user_code(&code, Timestamp::now)
                 .await
                 .expect("read pending"),
         )
@@ -633,7 +633,7 @@ mod ciba_device_contract {
                             .expires_datetime()
                             .expect("removal expiry")
                             .unix_timestamp()
-                            < Utc::now().timestamp()
+                            < Timestamp::now().as_second()
                     );
                 }
             } else {
@@ -642,7 +642,7 @@ mod ciba_device_contract {
             }
             let after = serde_json::to_value(
                 check_state
-                    .pending_request_for_user_code(&code, Utc::now)
+                    .pending_request_for_user_code(&code, Timestamp::now)
                     .await
                     .expect("read after decision"),
             )
@@ -686,7 +686,7 @@ mod ciba_device_contract {
             remote_client_documents: crate::test_support::test_remote_client_documents(),
         };
         let grant = format!("golden-idempotent-{}", Uuid::now_v7());
-        let auth_time = Utc::now().timestamp();
+        let auth_time = Timestamp::now().as_second();
         let issue = || nazo_oauth_server::domain::oauth::TokenIssue {
             native_sso_source: None,
             user_id: Some(user),
@@ -724,7 +724,7 @@ mod ciba_device_contract {
                 &client,
                 TokenIssuanceMode::SingleUse {
                     grant_key: grant.clone(),
-                    grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                    grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
                 },
                 issue(),
             )
@@ -740,7 +740,7 @@ mod ciba_device_contract {
                 &client,
                 TokenIssuanceMode::SingleUse {
                     grant_key: grant,
-                    grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                    grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
                 },
                 issue(),
             )

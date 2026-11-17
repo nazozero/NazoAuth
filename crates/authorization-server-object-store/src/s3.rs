@@ -8,8 +8,8 @@ use aws_sigv4::{
     },
     sign::v4,
 };
-use chrono::{DateTime, Utc};
 use futures_util::StreamExt as _;
+use jiff::Timestamp;
 use nazo_identity::{
     AvatarContentType, AvatarObject, TenantId,
     ports::{
@@ -327,7 +327,7 @@ impl AvatarDirectUploadPort for S3AvatarObjectStore {
         &'a self,
         staging_object_id: &'a str,
         content_length: usize,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     ) -> AvatarStorageFuture<'a, AvatarUploadTarget> {
         Box::pin(async move {
             let object_key = self.staging_key(staging_object_id)?;
@@ -494,9 +494,9 @@ fn tenant_namespace(tenant_id: TenantId) -> String {
     hex::encode(Sha256::digest(tenant_id.as_uuid().as_bytes()))
 }
 
-fn expiry_seconds(expires_at: DateTime<Utc>) -> Result<u32, AvatarStorageError> {
-    let remaining = expires_at.signed_duration_since(Utc::now());
-    let seconds = remaining.num_seconds();
+fn expiry_seconds(expires_at: Timestamp) -> Result<u32, AvatarStorageError> {
+    let remaining = expires_at.duration_since(Timestamp::now());
+    let seconds = remaining.as_secs();
     if seconds <= 0 || seconds > 604_800 {
         return Err(AvatarStorageError::InvalidState);
     }

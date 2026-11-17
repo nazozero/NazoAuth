@@ -59,7 +59,7 @@ async fn unchanged_database_generation_reuses_prepared_keys_but_checks_source_an
         &renewed.loaded.request_object_decryption_key,
     ));
     let mut prepared = renewed.loaded.database_source.clone().unwrap();
-    prepared.next_lifecycle_check = Some(Utc::now() - chrono::Duration::seconds(1));
+    prepared.next_lifecycle_check = Some(Timestamp::now() - jiff::SignedDuration::from_secs(1));
     assert!(
         refresh(
             &manager.inner.settings,
@@ -292,7 +292,7 @@ struct Openid4vcFixture {
 fn openid4vc_fixture(status: Option<CertificateRevocationStatus>, stale: bool) -> Openid4vcFixture {
     let signing_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-    let now = time::OffsetDateTime::now_utc();
+    let now = time::OffsetTimestamp::now_utc();
 
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
@@ -311,21 +311,21 @@ fn openid4vc_fixture(status: Option<CertificateRevocationStatus>, stale: bool) -
     let leaf_der = leaf.der().to_vec();
     let snapshot = status.map(|status| CertificateRevocationSnapshot {
         version: CertificateRevocationSnapshot::VERSION,
-        this_update: chrono::Utc::now() - chrono::Duration::hours(1),
-        next_update: chrono::Utc::now() + chrono::Duration::hours(1),
+        this_update: jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1),
+        next_update: jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
         entries: vec![CertificateRevocationEntry {
             issuer: "https://issuer.test".to_owned(),
             certificate: certificate_identity(&leaf_der),
             status,
             revoked_at: (status == CertificateRevocationStatus::Revoked)
-                .then_some(chrono::Utc::now()),
+                .then_some(jiff::Timestamp::now()),
         }],
     });
     let snapshot = if stale {
         Some(CertificateRevocationSnapshot {
             version: CertificateRevocationSnapshot::VERSION,
-            this_update: chrono::Utc::now() - chrono::Duration::hours(2),
-            next_update: chrono::Utc::now() - chrono::Duration::minutes(1),
+            this_update: jiff::Timestamp::now() - jiff::SignedDuration::from_hours(2),
+            next_update: jiff::Timestamp::now() - jiff::SignedDuration::from_mins(1),
             entries: Vec::new(),
         })
     } else {
@@ -362,9 +362,9 @@ fn hex_sha256(bytes: &[u8]) -> String {
 
 fn settings() -> KeySettings {
     KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
@@ -508,7 +508,7 @@ fn load_payload_rejects_tampered_local_and_generation_metadata() {
 
     let mut active_retired = base.clone();
     active_entry_mut(&mut active_retired)["retire_at"] = json!(
-        (chrono::Utc::now() + chrono::Duration::hours(1))
+        (jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1))
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
     );
     assert!(load_payload(None, &active_retired).is_err());
@@ -658,8 +658,8 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     let mut candidate = valid_payload();
     let due = settings();
     let mut due = KeySettings {
-        rotation_interval: chrono::Duration::seconds(-1),
-        prepublish_window: chrono::Duration::days(1),
+        rotation_interval: jiff::SignedDuration::from_secs(-1),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
         ..due
     };
     assert!(maintain_payload(&mut candidate, &due).unwrap());
@@ -667,7 +667,7 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
 
     let mut activate_now = valid_payload();
     let original_kid = activate_now["active_kid"].clone();
-    due.prepublish_window = chrono::Duration::zero();
+    due.prepublish_window = jiff::SignedDuration::zero();
     assert!(maintain_payload(&mut activate_now, &due).unwrap());
     let candidate_kid = activate_now["keys"]
         .as_array()
@@ -711,21 +711,21 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
 #[test]
 fn database_rotation_selects_registered_external_successor_over_automatic_local_candidates() {
     let mut payload = valid_payload();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     active_entry_mut(&mut payload)["created_at"] =
-        json!(timestamp(now - chrono::Duration::seconds(11)));
+        json!(timestamp(now - jiff::SignedDuration::from_secs(11)));
     let mut external = external_entry_from_active(&payload, "external-earliest");
-    external["created_at"] = json!(timestamp(now - chrono::Duration::seconds(6)));
+    external["created_at"] = json!(timestamp(now - jiff::SignedDuration::from_secs(6)));
     let oldest_local = local_entry(
         jsonwebtoken::Algorithm::RS256,
-        timestamp(now - chrono::Duration::seconds(5)),
+        timestamp(now - jiff::SignedDuration::from_secs(5)),
         None::<Vec<SigningPurpose>>,
     )
     .expect("oldest local candidate should generate");
 
     let newer_local = local_entry(
         jsonwebtoken::Algorithm::RS256,
-        timestamp(now - chrono::Duration::seconds(4)),
+        timestamp(now - jiff::SignedDuration::from_secs(4)),
         None::<Vec<SigningPurpose>>,
     )
     .expect("newer local candidate should generate");
@@ -735,8 +735,8 @@ fn database_rotation_selects_registered_external_successor_over_automatic_local_
         .extend([external, oldest_local, newer_local]);
 
     let rotation_settings = KeySettings {
-        rotation_interval: chrono::Duration::seconds(10),
-        prepublish_window: chrono::Duration::seconds(3),
+        rotation_interval: jiff::SignedDuration::from_secs(10),
+        prepublish_window: jiff::SignedDuration::from_secs(3),
         ..settings()
     };
     assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
@@ -744,10 +744,10 @@ fn database_rotation_selects_registered_external_successor_over_automatic_local_
     assert!(!maintain_payload(&mut payload, &rotation_settings).unwrap());
     let mut successor = external_entry_from_active(&payload, "external-next");
     successor["retire_at"] = Value::Null;
-    successor["created_at"] = json!(timestamp(now - chrono::Duration::seconds(4)));
+    successor["created_at"] = json!(timestamp(now - jiff::SignedDuration::from_secs(4)));
     payload["keys"].as_array_mut().unwrap().push(successor);
     active_entry_mut(&mut payload)["created_at"] =
-        json!(timestamp(now - chrono::Duration::seconds(11)));
+        json!(timestamp(now - jiff::SignedDuration::from_secs(11)));
     assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
     assert_eq!(payload["active_kid"], "external-next");
 }
@@ -755,26 +755,26 @@ fn database_rotation_selects_registered_external_successor_over_automatic_local_
 #[test]
 fn records_report_each_persisted_key_lifecycle_state() {
     let mut payload = valid_payload();
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let keys = payload["keys"].as_array_mut().unwrap();
     keys.extend([
         json!({
             "kid":"future-grace", "alg":"RS256", "backend":"local-db",
-            "created_at":now.to_rfc3339(),
-            "retire_at":(now + chrono::Duration::hours(1)).to_rfc3339()
+            "created_at":now.to_string(),
+            "retire_at":(now + jiff::SignedDuration::from_hours(1)).to_string()
         }),
         json!({
             "kid":"expired", "alg":"RS256", "backend":"local-db",
-            "created_at":now.to_rfc3339(),
-            "retire_at":(now - chrono::Duration::hours(1)).to_rfc3339()
+            "created_at":now.to_string(),
+            "retire_at":(now - jiff::SignedDuration::from_hours(1)).to_string()
         }),
         json!({
             "kid":"purpose", "alg":"ES256", "backend":"local-db",
-            "purposes":["credential"], "created_at":now.to_rfc3339(), "retire_at":null
+            "purposes":["credential"], "created_at":now.to_string(), "retire_at":null
         }),
         json!({
             "kid":"next", "alg":"RS256", "backend":"local-db",
-            "created_at":now.to_rfc3339(), "retire_at":null
+            "created_at":now.to_string(), "retire_at":null
         }),
     ]);
     let records = records(&payload).unwrap();
@@ -983,18 +983,18 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         .as_ref()
         .unwrap()
         .next_update;
-    assert!(persisted_next_update < chrono::Utc::now());
+    assert!(persisted_next_update < jiff::Timestamp::now());
     let loaded_snapshot = manager
         .openid4vc_public_material()
         .unwrap()
         .revocation_snapshot
         .clone()
         .unwrap();
-    assert!(loaded_snapshot.this_update <= chrono::Utc::now());
-    assert!(loaded_snapshot.next_update > chrono::Utc::now());
+    assert!(loaded_snapshot.this_update <= jiff::Timestamp::now());
+    assert!(loaded_snapshot.next_update > jiff::Timestamp::now());
     assert_eq!(
         loaded_snapshot.next_update - loaded_snapshot.this_update,
-        chrono::Duration::seconds(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
+        jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
     );
 
     let reloaded = KeyManager::load_or_create_database(
@@ -1012,10 +1012,10 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
         .revocation_snapshot
         .clone()
         .unwrap();
-    assert!(reloaded_snapshot.next_update > chrono::Utc::now());
+    assert!(reloaded_snapshot.next_update > jiff::Timestamp::now());
     assert_eq!(
         reloaded_snapshot.next_update - reloaded_snapshot.this_update,
-        chrono::Duration::seconds(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
+        jiff::SignedDuration::from_secs(crate::lifecycle::OPENID4VC_REVOCATION_MAX_STALE_SECONDS)
     );
 }
 
@@ -1040,7 +1040,7 @@ async fn openid4vc_revoked_active_leaf_cannot_prepare_signing() {
     revoked.public.revocation_snapshot.as_mut().unwrap().entries[0].status =
         CertificateRevocationStatus::Revoked;
     revoked.public.revocation_snapshot.as_mut().unwrap().entries[0].revoked_at =
-        Some(chrono::Utc::now());
+        Some(jiff::Timestamp::now());
     manager
         .database_commit_openid4vc(expected.revision, revoked, None)
         .await
@@ -1206,7 +1206,9 @@ fn purpose_scoped_grace_and_retirement_do_not_retain_signing_capability() {
         .find(|key| key.get("purposes").is_some())
         .unwrap();
     let kid = entry["kid"].as_str().unwrap().to_owned();
-    entry["retire_at"] = json!(timestamp(Utc::now() + chrono::Duration::minutes(10)));
+    entry["retire_at"] = json!(timestamp(
+        Timestamp::now() + jiff::SignedDuration::from_mins(10)
+    ));
     let loaded = load_payload(None, &payload).unwrap();
     let key = loaded
         .verification_keys
@@ -1220,7 +1222,9 @@ fn purpose_scoped_grace_and_retirement_do_not_retain_signing_capability() {
         .iter_mut()
         .find(|key| key["kid"] == kid)
         .unwrap();
-    entry["retire_at"] = json!(timestamp(Utc::now() - chrono::Duration::seconds(1)));
+    entry["retire_at"] = json!(timestamp(
+        Timestamp::now() - jiff::SignedDuration::from_secs(1)
+    ));
     entry["private_pkcs8_der"] = json!("not-decoded-after-retirement");
     assert!(
         load_payload(None, &payload)

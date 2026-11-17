@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{TenantId, UserId};
@@ -38,8 +38,8 @@ pub struct NewMtlsTrustAnchorRequest {
     pub certificate_pem: String,
     pub certificate_sha256: String,
     pub subject_dn: String,
-    pub not_before: DateTime<Utc>,
-    pub not_after: DateTime<Utc>,
+    pub not_before: Timestamp,
+    pub not_after: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -53,13 +53,13 @@ pub struct MtlsTrustAnchorRequest {
     pub certificate_pem: String,
     pub certificate_sha256: String,
     pub subject_dn: String,
-    pub not_before: DateTime<Utc>,
-    pub not_after: DateTime<Utc>,
+    pub not_before: Timestamp,
+    pub not_after: Timestamp,
     pub status: i16,
     pub admin_note: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub resolved_at: Option<DateTime<Utc>>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub resolved_at: Option<Timestamp>,
+    pub revoked_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

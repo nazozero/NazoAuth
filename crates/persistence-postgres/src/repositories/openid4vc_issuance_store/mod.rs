@@ -1,9 +1,9 @@
 use nazo_openid4vci::PreparedPreAuthorizedOffer;
 use std::str::FromStr;
 
-use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
     CredentialAccess, CredentialResponseEncoding, CredentialStoreError, CredentialStoreFuture,
@@ -51,7 +51,7 @@ impl CredentialStorePort for Openid4vciRepository {
         issuance_id: Uuid,
         token_id: Uuid,
         request_digest: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         self.notification_find_response(issuance_id, token_id, request_digest, now)
@@ -61,7 +61,7 @@ impl CredentialStorePort for Openid4vciRepository {
         &'a self,
         tenant_id: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
     {
         self.offer_lookup(tenant_id, id, now)
@@ -73,7 +73,7 @@ impl CredentialStorePort for Openid4vciRepository {
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>
     {
         self.offer_prepare_pre_authorized(tenant_id, code_hash, tx_code, client_id, now)
@@ -90,7 +90,7 @@ impl CredentialStorePort for Openid4vciRepository {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.nonce_claim(nonce_hash, claim_id, now)
     }
@@ -99,7 +99,7 @@ impl CredentialStorePort for Openid4vciRepository {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.nonce_release(nonce_hash, claim_id, now)
     }
@@ -110,7 +110,7 @@ impl CredentialStorePort for Openid4vciRepository {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.notification_finalize_nonce_with_response(nonce_hash, claim_id, handle, response, now)
     }
@@ -119,7 +119,7 @@ impl CredentialStorePort for Openid4vciRepository {
         &'a self,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.notification_store_response(handle, response, now)
     }
@@ -127,7 +127,7 @@ impl CredentialStorePort for Openid4vciRepository {
     fn resolve_access<'a>(
         &'a self,
         token_hash: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         self.access_resolve(token_hash, now)
     }
@@ -136,7 +136,7 @@ impl CredentialStorePort for Openid4vciRepository {
         &'a self,
         credential: &'a DeferredCredential,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.deferred_store_with_response(credential, response, now)
     }
@@ -147,7 +147,7 @@ impl CredentialStorePort for Openid4vciRepository {
         nonce_hash: &'a str,
         claim_id: &'a str,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.deferred_store_and_finalize_nonce_with_response(
             credential, nonce_hash, claim_id, response, now,
@@ -159,7 +159,7 @@ impl CredentialStorePort for Openid4vciRepository {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
@@ -172,7 +172,7 @@ impl CredentialStorePort for Openid4vciRepository {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.deferred_release(transaction_hash, token_id, claim_id, now)
     }
@@ -184,7 +184,7 @@ impl CredentialStorePort for Openid4vciRepository {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.notification_finalize_deferred_with_response(
             transaction_hash,
@@ -227,7 +227,8 @@ pub(super) struct AccessRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
     pub(super) dpop_jkt: Option<String>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) expires_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
@@ -251,9 +252,11 @@ pub(super) struct DeferredRow {
     #[diesel(sql_type = sql_types::Binary)]
     pub(super) payload_ciphertext: Vec<u8>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) ready_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) ready_at: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) expires_at: Timestamp,
 }
 
 /// Complete read-only projection from ordered grant locks followed by the
@@ -265,18 +268,20 @@ pub(super) struct DeferredLockedProjectionRow {
     #[diesel(sql_type = sql_types::Jsonb)]
     pub(super) grants: serde_json::Value,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) owner_now: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) owner_now: Timestamp,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
     pub(super) observed_claim_id: Option<String>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    pub(super) observed_claim_expires_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    pub(super) observed_claim_expires_at: Option<Timestamp>,
 }
 
 #[derive(serde::Deserialize)]
 pub(super) struct LockedContinuationGrant {
     #[serde(flatten)]
     pub(super) access: AccessRow,
-    pub(super) revoked_at: Option<DateTime<Utc>>,
+    pub(super) revoked_at: Option<Timestamp>,
 }
 
 #[derive(QueryableByName)]
@@ -298,7 +303,8 @@ pub(super) struct IssuanceResponseRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
     pub(super) dpop_nonce: Option<String>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) expires_at: Timestamp,
 }
 
 pub(super) struct NewIssuanceResponse<'a> {
@@ -310,7 +316,7 @@ pub(super) struct NewIssuanceResponse<'a> {
     pub(super) encoding: &'a str,
     pub(super) status: i16,
     pub(super) dpop_nonce: Option<&'a str>,
-    pub(super) expires_at: DateTime<Utc>,
+    pub(super) expires_at: Timestamp,
 }
 
 pub(super) async fn insert_issuance_response(
@@ -329,7 +335,7 @@ pub(super) async fn insert_issuance_response(
     .bind::<sql_types::Text, _>(response.encoding)
     .bind::<sql_types::SmallInt, _>(response.status)
     .bind::<sql_types::Nullable<sql_types::Text>, _>(response.dpop_nonce)
-    .bind::<sql_types::Timestamptz, _>(response.expires_at)
+    .bind::<sql_types::Timestamptz, _>((response.expires_at).to_diesel())
     .bind::<sql_types::Jsonb, _>(response.selection)
     .execute(connection)
     .await
@@ -415,3 +421,5 @@ pub(super) fn decode_selection(
 #[cfg(test)]
 #[path = "../../../tests/unit/repositories/deferred_payload.rs"]
 mod payload_tests;
+
+use jiff_diesel::ToDiesel as _;

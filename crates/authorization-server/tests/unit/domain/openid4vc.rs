@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, Utc};
 use coset::{CoseKeyBuilder, iana};
+use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use nazo_digital_credentials::CredentialTrustError;
 use nazo_openid4vci::{ProofError, Proofs};
@@ -79,7 +79,7 @@ fn validate_key_attestation(
     encoded: &str,
     expected_nonce: &str,
     metadata: &nazo_openid4vci::ProofTypeMetadata,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
     context: KeyAttestationContext,
 ) -> Result<Vec<Value>, ProofError> {
     validator.validate_key_attestation_with(
@@ -144,10 +144,10 @@ async fn validate_jwt_proof(
 
 #[test]
 fn key_attestation_rejects_missing_issued_at() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
         "nonce": "expected-nonce",
-        "exp": now.timestamp() + 300,
+        "exp": now.as_second() + 300,
         "attested_keys": [es256_test_key(17).0],
     }));
 
@@ -166,15 +166,15 @@ fn key_attestation_rejects_missing_issued_at() {
 
 #[test]
 fn key_attestation_rejects_out_of_window_issued_at() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     for issued_at in [
-        (now - Duration::minutes(5) - Duration::seconds(1)).timestamp(),
-        (now + Duration::minutes(5)).timestamp(),
+        (now - SignedDuration::from_mins(5) - SignedDuration::from_secs(1)).as_second(),
+        (now + SignedDuration::from_mins(5)).as_second(),
     ] {
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
             "iat": issued_at,
             "nonce": "expected-nonce",
-            "exp": now.timestamp() + 300,
+            "exp": now.as_second() + 300,
             "attested_keys": [es256_test_key(18).0],
         }));
 
@@ -194,10 +194,10 @@ fn key_attestation_rejects_out_of_window_issued_at() {
 
 #[test]
 fn attestation_proof_rejects_missing_nonce() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
+        "iat": now.as_second(),
+        "exp": now.as_second() + 300,
         "attested_keys": [es256_test_key(19).0],
     }));
 
@@ -216,9 +216,9 @@ fn attestation_proof_rejects_missing_nonce() {
 
 #[test]
 fn attestation_proof_accepts_missing_expiration() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
+        "iat": now.as_second(),
         "nonce": "expected-nonce",
         "attested_keys": [es256_test_key(21).0],
     }));
@@ -237,13 +237,13 @@ fn attestation_proof_accepts_missing_expiration() {
 #[test]
 fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let first_key = es256_test_key(27).0;
         let second_key = es256_test_key(29).0;
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "nonce": "expected-nonce",
-            "exp": now.timestamp() + 300,
+            "exp": now.as_second() + 300,
             "attested_keys": [first_key.clone(), second_key.clone()],
         }));
         let proofs = Proofs(std::collections::BTreeMap::from([(
@@ -281,9 +281,9 @@ fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
         let keys = (1..=11)
             .map(|seed| es256_test_key(seed).0)
             .collect::<Vec<_>>();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (validator, encoded, metadata) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "nonce": "expected-nonce",
             "attested_keys": keys,
         }));
@@ -314,11 +314,11 @@ fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
 
 #[test]
 fn key_attestation_rejects_expired_optional_expiration() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
+        "iat": now.as_second(),
         "nonce": "expected-nonce",
-        "exp": now.timestamp(),
+        "exp": now.as_second(),
         "attested_keys": [es256_test_key(31).0],
     }));
 
@@ -338,16 +338,16 @@ fn key_attestation_rejects_expired_optional_expiration() {
 #[test]
 fn jwt_proof_key_attestation_requires_expiration() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (jwk, key) = es256_test_key(23);
         let (validator, attestation, metadata) = key_attestation_fixture(json!({
-            "iat":now.timestamp(), "nonce":"expected-nonce", "attested_keys":[jwk.clone()],
+            "iat":now.as_second(), "nonce":"expected-nonce", "attested_keys":[jwk.clone()],
         }));
         let proof = signed_jwt_proof(
             Some(&jwk),
             &key,
             &json!({
-                "aud":"https://issuer.example", "iat":now.timestamp(), "nonce":"expected-nonce",
+                "aud":"https://issuer.example", "iat":now.as_second(), "nonce":"expected-nonce",
             }),
             Some("openid4vci-proof+jwt"),
             Algorithm::ES256,
@@ -362,10 +362,10 @@ fn jwt_proof_key_attestation_requires_expiration() {
 
 #[test]
 fn jwt_proof_key_attestation_rejects_missing_nonce() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
+        "iat": now.as_second(),
+        "exp": now.as_second() + 300,
         "attested_keys": [es256_test_key(25).0],
     }));
 
@@ -488,11 +488,11 @@ fn crypto_helpers_cover_jwk_key_and_algorithm_boundaries() {
     assert_eq!(algorithm_name(Algorithm::EdDSA), Some("EdDSA"));
     assert_eq!(algorithm_name(Algorithm::HS256), None);
 
-    let timestamp = Utc::now().timestamp();
+    let timestamp = Timestamp::now().as_second();
     assert_eq!(
         timestamp_claim(&json!({"iat": timestamp}), "iat")
             .expect("valid timestamp")
-            .timestamp(),
+            .as_second(),
         timestamp
     );
     assert!(timestamp_claim(&json!({}), "iat").is_none());
@@ -658,9 +658,9 @@ fn crypto_helpers_verify_openid4vc_certificate_chain_and_anchor_policy() {
 #[test]
 fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (validator, attestation, metadata) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "nonce": "expected-nonce",
             "attested_keys": [es256_test_key(47).0],
         }));
@@ -748,14 +748,14 @@ fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
 #[test]
 fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (wallet_jwk, wallet_key) = es256_test_key(53);
         let validator = Openid4vcProofValidator::new(json!({"keys": []}))
             .expect("empty trust set is structurally valid");
         let metadata = proof_metadata(None);
         let claims = json!({
             "nonce": "expected-nonce",
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "aud": "https://issuer.example",
         });
 
@@ -832,8 +832,8 @@ fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
         );
 
         for iat in [
-            (now - Duration::minutes(5) - Duration::seconds(1)).timestamp(),
-            (now + Duration::minutes(5)).timestamp(),
+            (now - SignedDuration::from_mins(5) - SignedDuration::from_secs(1)).as_second(),
+            (now + SignedDuration::from_mins(5)).as_second(),
         ] {
             let stale = json!({
                 "nonce": "expected-nonce",
@@ -880,11 +880,11 @@ fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
 #[test]
 fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
     futures_executor::block_on(async {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (wallet_jwk, wallet_key) = es256_test_key(59);
         let (validator, attestation, _) = key_attestation_fixture(json!({
-            "iat": now.timestamp(),
-            "exp": now.timestamp() + 300,
+            "iat": now.as_second(),
+            "exp": now.as_second() + 300,
             "attested_keys": [wallet_jwk.clone()],
             "nonce": "expected-nonce",
             "key_storage": ["iso_18045_moderate"],
@@ -897,7 +897,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
         let metadata = proof_metadata(Some(required));
         let claims = json!({
             "nonce": "expected-nonce",
-            "iat": now.timestamp(),
+            "iat": now.as_second(),
             "aud": "https://issuer.example",
         });
         let proof = signed_jwt_proof(
@@ -988,7 +988,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
 
 #[test]
 fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (attester_jwk, attester_key) = es256_test_key(67);
     let mut trust_jwk = attester_jwk.clone();
     trust_jwk["kid"] = json!("attester-key");
@@ -997,8 +997,8 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
         .expect("key attestation validator");
     let attested_key = es256_test_key(71).0;
     let base_claims = json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
+        "iat": now.as_second(),
+        "exp": now.as_second() + 300,
         "nonce": "expected-nonce",
         "attested_keys": [attested_key],
         "key_storage": ["iso_18045_moderate"],
@@ -1058,10 +1058,10 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
     }
 
     for claims in [
-        json!({"iat": now.timestamp(), "nonce": "expected-nonce", "attested_keys": []}),
-        json!({"iat": now.timestamp(), "nonce": "wrong", "attested_keys": [es256_test_key(73).0]}),
-        json!({"iat": now.timestamp(), "nonce": "expected-nonce", "attested_keys": [es256_test_key(75).0], "key_storage": ["low"]}),
-        json!({"iat": now.timestamp(), "exp": "not-a-time", "attested_keys": [es256_test_key(77).0]}),
+        json!({"iat": now.as_second(), "nonce": "expected-nonce", "attested_keys": []}),
+        json!({"iat": now.as_second(), "nonce": "wrong", "attested_keys": [es256_test_key(73).0]}),
+        json!({"iat": now.as_second(), "nonce": "expected-nonce", "attested_keys": [es256_test_key(75).0], "key_storage": ["low"]}),
+        json!({"iat": now.as_second(), "exp": "not-a-time", "attested_keys": [es256_test_key(77).0]}),
     ] {
         assert!(matches!(
             validate_key_attestation(

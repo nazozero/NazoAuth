@@ -250,13 +250,13 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
     {
         let head = repository.anchor_health().await.unwrap();
         let event_id = Uuid::now_v7();
-        let occurred_at = chrono::DateTime::from_timestamp(1700000000, 0).unwrap();
+        let occurred_at = jiff::Timestamp::new(1700000000, 0).unwrap();
         sql_query(
             "SELECT public.nazo_persist_security_audit_event(\
                 $1, 'token_issued', 'token_lifecycle', '{}'::jsonb, $2)",
         )
         .bind::<diesel::sql_types::Uuid, _>(event_id)
-        .bind::<diesel::sql_types::Timestamptz, _>(occurred_at)
+        .bind::<diesel::sql_types::Timestamptz, _>((occurred_at).to_diesel())
         .execute(&mut owner)
         .await
         .unwrap();
@@ -708,3 +708,5 @@ async fn strict_preflight_checks_real_login_reachable_roles_and_columns() {
         .await
         .unwrap();
 }
+
+use jiff_diesel::ToDiesel as _;

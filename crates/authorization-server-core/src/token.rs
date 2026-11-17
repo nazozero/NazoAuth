@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -110,9 +110,9 @@ pub struct RefreshToken {
     /// Immutable grant facts, distinct from this presented generation.
     pub contract: RefreshContract,
     pub audience: Vec<String>,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
+    pub revoked_at: Option<Timestamp>,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
     pub client_attestation_jkt: Option<String>,
@@ -133,7 +133,7 @@ pub struct RefreshTokenAuthority {
     pub contract: RefreshContract,
     pub current_audiences: Vec<String>,
     /// The current generation's expiry, which bounds public-client rotation.
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
     pub id_token_sid: Option<String>,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
@@ -168,7 +168,7 @@ pub struct LostResponseRetry {
     /// BLAKE3 digest of the spent token originally presented, so the retry can
     /// prove the direct-predecessor edge without carrying the raw token again.
     pub original_blake3: [u8; 32],
-    pub retry_started_at: DateTime<Utc>,
+    pub retry_started_at: Timestamp,
 }
 
 #[derive(Clone, PartialEq)]
@@ -184,8 +184,8 @@ pub struct NewRefreshToken {
     pub client_id: Uuid,
     pub user_id: Option<Uuid>,
     pub audiences: Vec<String>,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
     pub id_token_sid: Option<String>,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
@@ -255,7 +255,7 @@ pub struct BackchannelLogoutDelivery {
     pub logout_uri: String,
     pub logout_token: String,
     pub attempts: i32,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for BackchannelLogoutDelivery {

@@ -92,7 +92,8 @@ fn fresh_issuance(fixture: &FixtureIds, tenant_id: Uuid) -> CommitTokenIssuance 
         user_id: None,
         mode: TokenIssuanceMode::Fresh,
         access_token_jti: issuance_id.to_string(),
-        access_token_expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5))
+            .as_second(),
         refresh_token: None,
         audit_fields: TokenIssuedAuditFields {
             client_id: fixture.client_public_id.clone(),
@@ -200,7 +201,7 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
             tenant,
             fixture.client_id,
             &current.access_token_jti,
-            chrono::DateTime::from_timestamp(current.access_token_expires_at, 0),
+            jiff::Timestamp::new(current.access_token_expires_at, 0),
             None,
         )
         .await

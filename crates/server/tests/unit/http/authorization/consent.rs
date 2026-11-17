@@ -10,7 +10,7 @@ use crate::settings::Settings;
 
 use crate::test_support::valkey::valkey_set_ex;
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 
 use serde_json::{Value, json};
 
@@ -97,7 +97,7 @@ fn consent_payload(user_id: Uuid) -> ConsentPayload {
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
 
-        expires_at: Utc::now() + Duration::minutes(5),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(5),
     }
 }
 
@@ -537,7 +537,11 @@ async fn authorize_consent_fails_closed_when_session_principal_lookup_fails() {
     };
     let user = fixture.create_user("lookup-failure", "user", 0).await;
     fixture
-        .store_session(&user, "sid-user-lookup-failure", Utc::now().timestamp())
+        .store_session(
+            &user,
+            "sid-user-lookup-failure",
+            Timestamp::now().as_second(),
+        )
         .await;
     fixture
         .rename_column("users", "is_active", "is_active_broken")
@@ -567,7 +571,7 @@ async fn authorize_consent_fails_closed_when_consent_state_read_fails() {
     let user = fixture.create_user("consent-read-failure", "user", 0).await;
     let sid = format!("sid-consent-read-failure-{}", Uuid::now_v7());
     fixture
-        .store_session(&user, &sid, Utc::now().timestamp())
+        .store_session(&user, &sid, Timestamp::now().as_second())
         .await;
     let mut payload = consent_payload(user.id);
     payload.request_id = format!("request-consent-read-failure-{}", Uuid::now_v7());
@@ -615,7 +619,7 @@ async fn authorize_consent_rejects_requests_without_request_id() {
     };
     let user = fixture.create_user("missing-id", "user", 0).await;
     fixture
-        .store_session(&user, "sid-no-request-id", Utc::now().timestamp())
+        .store_session(&user, "sid-no-request-id", Timestamp::now().as_second())
         .await;
     let req = fixture
         .consent_request("sid-no-request-id", None)
@@ -635,7 +639,7 @@ async fn authorize_consent_rejects_missing_consent_payload() {
     };
     let user = fixture.create_user("missing-payload", "user", 0).await;
     fixture
-        .store_session(&user, "sid-missing-payload", Utc::now().timestamp())
+        .store_session(&user, "sid-missing-payload", Timestamp::now().as_second())
         .await;
     let req = fixture
         .consent_request("sid-missing-payload", Some("request-missing"))
@@ -659,7 +663,7 @@ async fn authorize_consent_rejects_malformed_consent_payload() {
     };
     let user = fixture.create_user("malformed-payload", "user", 0).await;
     fixture
-        .store_session(&user, "sid-malformed-payload", Utc::now().timestamp())
+        .store_session(&user, "sid-malformed-payload", Timestamp::now().as_second())
         .await;
     fixture
         .store_raw_consent_payload("request-malformed", "not-json")
@@ -687,7 +691,7 @@ async fn authorize_consent_rejects_payload_owned_by_other_user() {
     let owner = fixture.create_user("payload-owner", "user", 0).await;
     let viewer = fixture.create_user("payload-viewer", "user", 0).await;
     fixture
-        .store_session(&viewer, "sid-wrong-user", Utc::now().timestamp())
+        .store_session(&viewer, "sid-wrong-user", Timestamp::now().as_second())
         .await;
     let mut payload = consent_payload(owner.id);
     payload.request_id = "request-other-user".to_owned();
@@ -715,7 +719,7 @@ async fn authorize_consent_returns_payload_for_current_user() {
     };
     let user = fixture.create_user("valid-owner", "user", 0).await;
     fixture
-        .store_session(&user, "sid-valid-owner", Utc::now().timestamp())
+        .store_session(&user, "sid-valid-owner", Timestamp::now().as_second())
         .await;
     let payload = consent_payload(user.id);
     fixture.store_consent_payload(&payload).await;

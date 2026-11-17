@@ -11,7 +11,7 @@ test-support = []
 
 [dependencies]
 blake3.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 fred = { workspace = true, features = ["i-scripts"] }
 nazo-auth.workspace = true
 nazo-identity.workspace = true

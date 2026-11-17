@@ -27,7 +27,7 @@ pub async fn seed_actor(url: &str) {
 }
 
 // Shared fixture setup for lifecycle and process tests, through the real audited commands.
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_persistence::control_plane::{self as contract, ControllerRegistryPort as _};
 use nazo_postgres::ControllerRegistryRepository;
 
@@ -37,18 +37,18 @@ pub(crate) trait SlotFixture {
     async fn create_slot(
         &self,
         slot: contract::NewControllerSlot,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<contract::StoredControllerSlot, contract::ControllerRegistryError>;
     async fn rotate_slot(
         &self,
         rotation: contract::RotateControllerKey,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<contract::StoredControllerSlot, contract::ControllerRegistryError>;
     async fn revoke_slot(
         &self,
         deployment_id: &str,
         controller_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<contract::StoredControllerSlot, contract::ControllerRegistryError>;
 }
 
@@ -56,7 +56,7 @@ async fn approval(
     repository: &ControllerRegistryRepository,
     deployment_id: &str,
     action: contract::ControllerIdentityAction,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> String {
     repository
         .issue_identity_approval_with_required_audit(
@@ -89,7 +89,7 @@ impl SlotFixture for ControllerRegistryRepository {
     async fn create_slot(
         &self,
         slot: contract::NewControllerSlot,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<contract::StoredControllerSlot, contract::ControllerRegistryError> {
         let action = contract::ControllerIdentityAction::Add;
         let approval_token = approval(self, &slot.deployment_id, action, now).await;
@@ -111,7 +111,7 @@ impl SlotFixture for ControllerRegistryRepository {
     async fn rotate_slot(
         &self,
         rotation: contract::RotateControllerKey,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<contract::StoredControllerSlot, contract::ControllerRegistryError> {
         let approval_token = approval(
             self,
@@ -137,7 +137,7 @@ impl SlotFixture for ControllerRegistryRepository {
         &self,
         deployment_id: &str,
         controller_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<contract::StoredControllerSlot, contract::ControllerRegistryError> {
         let approval_token = approval(
             self,

@@ -105,7 +105,7 @@ async fn live_http_attestation_holder_limit_precedes_nonce_claim_for_immediate_a
             let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
             header.typ = Some("key-attestation+jwt".to_owned());
             header.kid = Some("batch-attester".to_owned());
-            json!(attester.encode_jwt(&header, &json!({"iat": chrono::Utc::now().timestamp(), "nonce": nonce, "attested_keys": keys})))
+            json!(attester.encode_jwt(&header, &json!({"iat": jiff::Timestamp::now().as_second(), "nonce": nonce, "attested_keys": keys})))
         };
         let mut request = jwt_credential_request(&configuration_id, &fixture.issuer.issuer, &nonce);
         let operations: Arc<dyn CredentialIssuerOperations> = fixture.issuer.operations.clone();

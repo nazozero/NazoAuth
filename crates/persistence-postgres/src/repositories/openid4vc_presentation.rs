@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_openid4vp::{
     PresentationCreateIdempotency, PresentationCreateOutcome, PresentationResult,
     PresentationStoreError, PresentationStoreFuture, PresentationStorePort,
@@ -40,7 +40,7 @@ impl Openid4vpRepository {
             &mut connection,
             self.tenant_id,
             idempotency.request_jti,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -93,11 +93,11 @@ impl Openid4vpRepository {
             transaction.openid4vc_trust_policy_digest.as_deref(),
         )
         .bind::<sql_types::Nullable<sql_types::Binary>, _>(protected_private_key)
-        .bind::<sql_types::Timestamptz, _>(transaction.expires_at)
+        .bind::<sql_types::Timestamptz, _>((transaction.expires_at).to_diesel())
         .bind::<sql_types::Text, _>(idempotency.request_jti)
         .bind::<sql_types::Text, _>(idempotency.request_sha256)
         .bind::<sql_types::Text, _>(idempotency.canonical_request)
-        .bind::<sql_types::Timestamptz, _>(transaction.created_at)
+        .bind::<sql_types::Timestamptz, _>((transaction.created_at).to_diesel())
         .execute(&mut connection)
         .await
         .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -120,7 +120,7 @@ impl Openid4vpRepository {
             connection,
             self.tenant_id,
             idempotency.request_jti,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -163,7 +163,7 @@ impl PresentationStorePort for Openid4vpRepository {
     fn request<'a>(
         &'a self,
         transaction_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
     {
         Box::pin(async move {
@@ -183,7 +183,7 @@ impl PresentationStorePort for Openid4vpRepository {
         &'a self,
         transaction_id: Uuid,
         wallet_nonce: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
@@ -198,7 +198,7 @@ impl PresentationStorePort for Openid4vpRepository {
             )
             .bind::<sql_types::Uuid, _>(transaction_id)
             .bind::<sql_types::Uuid, _>(self.tenant_id)
-            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Timestamptz, _>((now).to_diesel())
             .bind::<sql_types::Text, _>(wallet_nonce)
             .execute(&mut connection)
             .await
@@ -212,7 +212,7 @@ impl PresentationStorePort for Openid4vpRepository {
         transaction_id: Uuid,
         state_hash: &'a str,
         result: &'a PresentationResult,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
             let encoded = serde_json::to_vec(result)
@@ -261,7 +261,7 @@ impl PresentationStorePort for Openid4vpRepository {
                     .bind::<sql_types::Uuid, _>(transaction_id)
                     .bind::<sql_types::Uuid, _>(self.tenant_id)
                     .bind::<sql_types::Text, _>(state_hash)
-                    .bind::<sql_types::Timestamptz, _>(now)
+                    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
                     .bind::<sql_types::Binary, _>(&encoded)
                     .execute(connection)
                     .await?;
@@ -277,7 +277,7 @@ impl PresentationStorePort for Openid4vpRepository {
     fn result<'a>(
         &'a self,
         transaction_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationResult>, PresentationStoreError>>
     {
         Box::pin(async move {
@@ -293,7 +293,7 @@ impl PresentationStorePort for Openid4vpRepository {
             )
             .bind::<sql_types::Uuid, _>(transaction_id)
             .bind::<sql_types::Uuid, _>(self.tenant_id)
-            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Timestamptz, _>((now).to_diesel())
             .get_result::<PresentationResultRow>(&mut connection)
             .await
             .optional()
@@ -333,9 +333,11 @@ struct PresentationRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
     ephemeral_private_key_ciphertext: Option<Vec<u8>>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
@@ -353,14 +355,15 @@ struct PresentationResultRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
     result_ciphertext: Option<Vec<u8>>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    completed_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    completed_at: Option<Timestamp>,
 }
 
 async fn clear_expired_create_request(
     connection: &mut diesel_async::AsyncPgConnection,
     tenant_id: Uuid,
     request_jti: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), diesel::result::Error> {
     sql_query(
         "DELETE FROM openid4vp_transactions \
@@ -369,7 +372,7 @@ async fn clear_expired_create_request(
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Text, _>(request_jti)
-    .bind::<sql_types::Timestamptz, _>(now)
+    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
     .execute(connection)
     .await?;
     Ok(())
@@ -453,10 +456,10 @@ impl PresentationResultRow {
             .map_err(|_| PresentationStoreError::InvalidTransition)?;
         if completed
             .as_ref()
-            .map(|result: &PresentationResult| result.completed_at.timestamp_micros())
+            .map(|result: &PresentationResult| result.completed_at.as_microsecond())
             != self
                 .completed_at
-                .map(|completed_at| completed_at.timestamp_micros())
+                .map(|completed_at| completed_at.as_microsecond())
         {
             return Err(PresentationStoreError::InvalidTransition);
         }
@@ -468,7 +471,7 @@ async fn load_presentation(
     connection: &mut diesel_async::AsyncPgConnection,
     tenant_id: Uuid,
     id: Uuid,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
         "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
@@ -482,7 +485,7 @@ async fn load_presentation(
     )
     .bind::<sql_types::Uuid, _>(id)
     .bind::<sql_types::Uuid, _>(tenant_id)
-    .bind::<sql_types::Timestamptz, _>(now)
+    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
     .get_result(connection)
     .await
     .optional()
@@ -492,7 +495,7 @@ async fn load_presentation_by_create_request(
     connection: &mut diesel_async::AsyncPgConnection,
     tenant_id: Uuid,
     request_jti: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Option<PresentationCreateRow>, diesel::result::Error> {
     sql_query(
         "SELECT id, client_id_prefix, request_method, wallet_authorization_endpoint, \
@@ -505,7 +508,7 @@ async fn load_presentation_by_create_request(
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Text, _>(request_jti)
-    .bind::<sql_types::Timestamptz, _>(now)
+    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
     .get_result(connection)
     .await
     .optional()
@@ -549,3 +552,5 @@ fn unprotect_payload<'a>(
     nazo_crypto::aead::decrypt_nonce_prefixed(key, &aad, protected)
         .map_err(|_| PresentationStoreError::InvalidTransition)
 }
+
+use jiff_diesel::ToDiesel as _;

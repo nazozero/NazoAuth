@@ -1,9 +1,9 @@
 use super::super::Openid4vciRepository;
 use super::AccessRow;
 use crate::get_conn;
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_openid4vci::{
     CredentialAccess, CredentialSelection, CredentialStoreError, CredentialStoreFuture,
 };
@@ -58,7 +58,7 @@ pub(super) async fn access_upsert_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.configuration_ids))
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
-    .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Timestamptz, _>((access.expires_at).to_diesel())
     .bind::<sql_types::Text, _>(access.proof_origin.as_str())
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(access.authorization_id)
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
@@ -165,7 +165,7 @@ async fn access_persist_registered_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.configuration_ids))
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
-    .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Timestamptz, _>((access.expires_at).to_diesel())
     .bind::<sql_types::Text, _>(access.proof_origin.as_str())
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(access.authorization_id)
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
@@ -207,7 +207,7 @@ async fn access_verify_on_connection(
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.configuration_ids))
     .bind::<sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.dpop_jkt.as_deref())
-    .bind::<sql_types::Timestamptz, _>(access.expires_at)
+    .bind::<sql_types::Timestamptz, _>((access.expires_at).to_diesel())
     .bind::<sql_types::Text, _>(access.proof_origin.as_str())
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(access.authorization_id)
     .bind::<sql_types::Nullable<sql_types::Text>, _>(access.mtls_x5t_s256.as_deref())
@@ -286,7 +286,7 @@ impl Openid4vciRepository {
     pub(super) fn access_resolve<'a>(
         &'a self,
         token_hash: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
@@ -298,7 +298,7 @@ impl Openid4vciRepository {
                  WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $2",
             )
             .bind::<sql_types::Text, _>(token_hash)
-            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Timestamptz, _>((now).to_diesel())
             .get_result::<AccessRow>(&mut connection)
             .await
             .optional()
@@ -325,7 +325,7 @@ pub(super) async fn access_authorizes_continuation(
     original_token_id: Uuid,
     current_token_id: Uuid,
     selection: Option<&CredentialSelection>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<bool, diesel::result::Error> {
     let rows = sql_query(
         "SELECT token_id, tenant_id, subject_id, client_id, proof_origin, \
@@ -338,7 +338,7 @@ pub(super) async fn access_authorizes_continuation(
     )
     .bind::<sql_types::Uuid, _>(original_token_id)
     .bind::<sql_types::Uuid, _>(current_token_id)
-    .bind::<sql_types::Timestamptz, _>(now)
+    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
     .get_results::<AccessRow>(connection)
     .await?;
     let accesses: Vec<CredentialAccess> = rows
@@ -359,3 +359,5 @@ pub(super) async fn access_authorizes_continuation(
     };
     Ok(current.continues_access(original, selection, now))
 }
+
+use jiff_diesel::ToDiesel as _;

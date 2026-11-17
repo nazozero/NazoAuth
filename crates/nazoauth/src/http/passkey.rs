@@ -10,7 +10,7 @@ use nazo_oauth_server::contracts::passkey::{
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     LoginSuccess, PasskeyError, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
@@ -191,7 +191,7 @@ pub async fn passkey_login_finish(
         remembered_mfa: remembered_mfa_proof(request, &endpoint.config),
         previous_session_id,
         csrf_verified,
-        now: Utc::now(),
+        now: Timestamp::now(),
     };
     match endpoint.operations.login_finish(command).await {
         Ok(success) => passkey_session_response(&endpoint.config, success),
@@ -301,7 +301,7 @@ fn profile_context(
     };
     Ok(PasskeyProfileContext {
         session_id,
-        now: Utc::now().timestamp(),
+        now: Timestamp::now().as_second(),
     })
 }
 
@@ -551,9 +551,9 @@ struct PublicPasskey<'a> {
     label: &'a str,
     credential_id: &'a str,
     sign_count: i64,
-    last_used_at: Option<DateTime<Utc>>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    last_used_at: Option<Timestamp>,
+    created_at: Timestamp,
+    updated_at: Timestamp,
 }
 
 impl<'a> From<&'a PasskeyCredentialSummary> for PublicPasskey<'a> {

@@ -1,4 +1,4 @@
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::{
     AccountIdentity, FederationAuditEvent, FederationService, FederationServiceConfig,
     OidcFederationState, Principal, PublicAccount, SocialFederationState, TenantContext, TenantId,
@@ -118,8 +118,8 @@ async fn linked_federation_obeys_local_mfa_and_uses_pending_session_lifetime() {
                             mfa_enabled: enabled,
                         },
                         profile: UserProfile::default(),
-                        created_at: Utc::now(),
-                        updated_at: Utc::now(),
+                        created_at: Timestamp::now(),
+                        updated_at: Timestamp::now(),
                     },
                     sessions: Arc::new(Mutex::new(Vec::new())),
                 };

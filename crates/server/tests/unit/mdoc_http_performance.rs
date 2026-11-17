@@ -25,10 +25,10 @@
 
 use actix_web::{App, HttpServer, web};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
 use ciborium::Value as Cbor;
 use diesel::{sql_query, sql_types};
 use diesel_async::RunQueryDsl as _;
+use jiff::Timestamp;
 use nazo_digital_credentials::{
     CertificateRevocationEntry, CertificateRevocationSnapshot, CertificateRevocationStatus,
     CredentialFormat, CredentialQuery, DcqlQuery, certificate_identity,
@@ -135,10 +135,10 @@ fn prepare_cases(fixture: &Value, digest: &[u8], count: usize) -> Vec<Case> {
         serde_json::from_value(fixture["holder_private_key"].clone()).unwrap();
     assert_eq!(holder_private_key.len(), 32);
     let holder = SigningKey::from_slice(&holder_private_key).unwrap();
-    let created_at: DateTime<Utc> = serde_json::from_value(fixture["issued_at"].clone()).unwrap();
-    let expires_at: DateTime<Utc> = serde_json::from_value(fixture["expires_at"].clone()).unwrap();
+    let created_at: Timestamp = serde_json::from_value(fixture["issued_at"].clone()).unwrap();
+    let expires_at: Timestamp = serde_json::from_value(fixture["expires_at"].clone()).unwrap();
     assert!(
-        expires_at > Utc::now() + chrono::Duration::minutes(1),
+        expires_at > Timestamp::now() + jiff::SignedDuration::from_mins(1),
         "regenerate an expired fixture and repeat both revisions"
     );
 
@@ -235,9 +235,9 @@ pub(crate) async fn load_keys(fixture: &Value) -> KeyManager {
     let wrapping_key: [u8; 32] = serde_json::from_value(fixture["wrapping_key"].clone()).unwrap();
     let keys = KeyManager::load_or_create_database(
         KeySettings {
-            rotation_interval: chrono::Duration::days(1),
-            prepublish_window: chrono::Duration::hours(1),
-            verification_grace: chrono::Duration::hours(1),
+            rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+            prepublish_window: jiff::SignedDuration::from_hours(1),
+            verification_grace: jiff::SignedDuration::from_hours(1),
         },
         None,
         serde_json::from_value(fixture["tenant_id"].clone()).unwrap(),
@@ -262,7 +262,7 @@ pub(crate) async fn load_keys(fixture: &Value) -> KeyManager {
             })
             .collect(),
     };
-    snapshot.validate_freshness_at(Utc::now()).unwrap();
+    snapshot.validate_freshness_at(Timestamp::now()).unwrap();
     keys.set_openid4vc_material_for_test(Openid4vcMaterial {
         public: Openid4vcPublicMaterial {
             signing_kid: fixture["kid"].as_str().unwrap().into(),
@@ -515,7 +515,7 @@ pub(crate) async fn run() {
         .timeout(Duration::from_secs(10))
         .build()
         .unwrap();
-    let started_at = Utc::now();
+    let started_at = Timestamp::now();
     let mut successful = Vec::with_capacity(sample_count);
     let mut samples = Vec::with_capacity(cases.len());
     let mut failures = 0usize;
@@ -618,7 +618,7 @@ pub(crate) async fn run() {
     } else {
         false
     };
-    let completed_at = Utc::now();
+    let completed_at = Timestamp::now();
     handle.stop(true).await;
     server_task.await.unwrap().unwrap();
     let output = json!({

@@ -5,7 +5,7 @@
 
 use anyhow::{anyhow, bail, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ pub struct EnvelopeEvent {
     pub event_hash: String,
     pub event_type: String,
     pub event_category: String,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     pub payload_canonical: String,
 }
 
@@ -55,7 +55,7 @@ pub struct GenesisEnvelope {
     pub sequence: i64,
     pub previous_hash: String,
     pub event_hash: String,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -69,7 +69,7 @@ pub struct AnchorReceipt {
     pub event_count: i64,
     pub last_hash: String,
     pub batch_digest: String,
-    pub received_at: DateTime<Utc>,
+    pub received_at: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reject_reason: Option<String>,
     #[serde(default)]
@@ -90,7 +90,7 @@ struct ReceiptSigningView<'a> {
     event_count: i64,
     last_hash: &'a str,
     batch_digest: &'a str,
-    received_at: DateTime<Utc>,
+    received_at: Timestamp,
     reject_reason: Option<&'a str>,
     permanent: bool,
 }
@@ -115,7 +115,7 @@ pub fn event_hash(
     event_id: Uuid,
     event_type: &str,
     event_category: &str,
-    occurred_at: DateTime<Utc>,
+    occurred_at: Timestamp,
     payload_canonical: &[u8],
 ) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
@@ -125,7 +125,7 @@ pub fn event_hash(
     hasher.update(event_id.as_bytes());
     len_prefixed(&mut hasher, event_type.as_bytes());
     len_prefixed(&mut hasher, event_category.as_bytes());
-    hasher.update(&occurred_at.timestamp_micros().to_be_bytes());
+    hasher.update(&occurred_at.as_microsecond().to_be_bytes());
     len_prefixed(&mut hasher, payload_canonical);
     *hasher.finalize().as_bytes()
 }
@@ -270,7 +270,7 @@ pub fn receipt_for(
         event_count,
         last_hash: last_hash.to_owned(),
         batch_digest: batch_digest.to_owned(),
-        received_at: Utc::now(),
+        received_at: Timestamp::now(),
         reject_reason,
         permanent,
         signature: String::new(),

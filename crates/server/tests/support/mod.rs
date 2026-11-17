@@ -83,7 +83,7 @@ pub(crate) fn rfc9440_certificate_fixture(common_name: &str) -> Rfc9440Certifica
     params
         .distinguished_name
         .push(DnType::CommonName, common_name);
-    let now = time::OffsetDateTime::now_utc();
+    let now = time::OffsetTimestamp::now_utc();
     params.not_before = now - time::Duration::minutes(1);
     params.not_after = now + time::Duration::hours(1);
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test P-256 key");
@@ -490,7 +490,7 @@ pub(crate) fn dpop_token_request(
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
     header.typ = Some("dpop+jwt".to_owned());
     header.jwk = Some(serde_json::from_value(key.public_jwk("dpop-test")).unwrap());
-    let claims = json!({"jti":uuid::Uuid::now_v7().to_string(),"htm":"POST","htu":format!("{}/token",settings.endpoint.issuer.trim_end_matches('/')),"iat":chrono::Utc::now().timestamp()});
+    let claims = json!({"jti":uuid::Uuid::now_v7().to_string(),"htm":"POST","htu":format!("{}/token",settings.endpoint.issuer.trim_end_matches('/')),"iat":jiff::Timestamp::now().as_second()});
     actix_web::test::TestRequest::post()
         .uri("/token")
         .insert_header((
@@ -521,7 +521,7 @@ fn dpop_token_fixture_has_valid_signature_and_target() {
             expected_jkt: None,
             access_token: None,
         },
-        chrono::Utc::now().timestamp(),
+        jiff::Timestamp::now().as_second(),
     );
     assert!(
         result.is_ok(),

@@ -966,7 +966,7 @@ fn request_object_jwks_failure_is_server_error_without_using_persisted_fallback(
 #[test]
 fn attested_clients_enforce_their_pushed_request_policy_before_login() {
     use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
-    use chrono::{Duration, Utc};
+    use jiff::{SignedDuration, Timestamp};
     use nazo_auth::PushedAuthorizationRequest;
 
     futures_executor::block_on(async {
@@ -1006,8 +1006,8 @@ fn attested_clients_enforce_their_pushed_request_policy_before_login() {
                         params: parameters.clone(),
                         dpop_jkt: None,
                         mtls_x5t_s256: None,
-                        issued_at: Utc::now(),
-                        expires_at: Utc::now() + Duration::seconds(60),
+                        issued_at: Timestamp::now(),
+                        expires_at: Timestamp::now() + SignedDuration::from_secs(60),
                     },
                     60,
                 ));
@@ -1053,7 +1053,7 @@ fn attested_clients_enforce_their_pushed_request_policy_before_login() {
 #[test]
 fn login_redirect_preserves_original_par_reference_and_plain_request_parameters() {
     use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
-    use chrono::{Duration, Utc};
+    use jiff::{SignedDuration, Timestamp};
 
     futures_executor::block_on(async {
         for pushed in [false, true] {
@@ -1082,8 +1082,8 @@ fn login_redirect_preserves_original_par_reference_and_plain_request_parameters(
                         params: parameters,
                         dpop_jkt: None,
                         mtls_x5t_s256: None,
-                        issued_at: Utc::now(),
-                        expires_at: Utc::now() + Duration::seconds(60),
+                        issued_at: Timestamp::now(),
+                        expires_at: Timestamp::now() + SignedDuration::from_secs(60),
                     },
                     60,
                 ));
@@ -1285,8 +1285,8 @@ fn protocol_same_second_old_session_cannot_complete_reauthentication() {
             ]);
             let mut same_second = None;
             for _ in 0..4 {
-                let authenticated_at = chrono::Utc::now();
-                let auth_time = authenticated_at.timestamp();
+                let authenticated_at = jiff::Timestamp::now();
+                let auth_time = authenticated_at.as_second();
                 let mut old_record = SessionRecord::new(
                     authorization_fixture::account().user_id(),
                     0,

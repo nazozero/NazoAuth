@@ -31,10 +31,9 @@ fn read_fixture() -> (PathBuf, Value, String) {
     let path = PathBuf::from(path);
     let bytes = std::fs::read(&path).unwrap();
     let fixture: Value = serde_json::from_slice(&bytes).unwrap();
-    let expiry: chrono::DateTime<chrono::Utc> =
-        serde_json::from_value(fixture["expires_at"].clone()).unwrap();
+    let expiry: jiff::Timestamp = serde_json::from_value(fixture["expires_at"].clone()).unwrap();
     assert!(
-        expiry > chrono::Utc::now(),
+        expiry > jiff::Timestamp::now(),
         "regenerate the expired shared fixture"
     );
     (path, fixture, hex::encode(Sha256::digest(bytes)))
@@ -400,7 +399,7 @@ pub(crate) async fn measure() {
         black_box(crypto.sign(&input).await.unwrap());
         check_verified(&crypto.verify(&presentation).await.unwrap());
     }
-    let started_at = chrono::Utc::now();
+    let started_at = jiff::Timestamp::now();
     let mut signing = Vec::with_capacity(count);
     let mut verification = Vec::with_capacity(count);
     for _ in 0..count {
@@ -421,7 +420,7 @@ pub(crate) async fn measure() {
             "inputs":{"sign":"three claims: given_name, age, issuing_country", "verify":"shared two-claim DeviceResponse: given_name, age"},
             "output_drop_timing":{"sign":"returned String dropped inside timed interval", "verify":"verified result assertions and drop outside timed interval"},
             "clock":"std::time::Instant elapsed wall time", "concurrency":1, "warmup_per_operation":100,
-            "fixture_sha256":fixture_hash, "started_at":started_at, "completed_at":chrono::Utc::now(),
+            "fixture_sha256":fixture_hash, "started_at":started_at, "completed_at":jiff::Timestamp::now(),
             "variant":std::env::var("NAZO_MDOC_HTTP_VARIANT").unwrap_or_default(),
             "revision":std::env::var("NAZO_MDOC_HTTP_REVISION").unwrap_or_default(),
         "panic_strategy":if cfg!(panic = "unwind") { "unwind" } else { "abort" },

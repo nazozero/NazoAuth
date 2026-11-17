@@ -73,7 +73,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::bail;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_operator_protocol::{
     CONTROL_RESULT_SCHEMA, ControlErrorCode, ControlOperation, ControlOutcome, ControlResult,
     ControlResultData, encode_control_result, validate_control_result,
@@ -839,7 +839,7 @@ where
         outcome,
         error,
         accepted_at: record.accepted_at,
-        completed_at: Some(Utc::now().timestamp()),
+        completed_at: Some(Timestamp::now().as_second()),
         result: data,
     };
     let result = PreparedJournalResult::new(result)?;

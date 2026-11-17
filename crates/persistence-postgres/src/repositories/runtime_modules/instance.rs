@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
     CasOutcome, InstanceStateMutation, InstanceStateRecord, ModuleEventState, ModuleEventType,
@@ -128,8 +128,8 @@ pub(super) async fn compare_and_set_instance(
                         .map(revision)
                         .transpose()
                         .map_err(RuntimeTransactionError::Repository)?;
-                    let updated_at = DateTime::<Utc>::from(change.next.updated_at);
-                    let drain_deadline = change.next.drain_deadline.map(DateTime::<Utc>::from);
+                    let updated_at = Timestamp::from(change.next.updated_at);
+                    let drain_deadline = change.next.drain_deadline.map(Timestamp::from);
                     if change.expected_revision.is_some() {
                         diesel::update(runtime_module_instance_states::table.find((
                             repository.tenant_id(),
@@ -142,10 +142,11 @@ pub(super) async fn compare_and_set_instance(
                             runtime_module_instance_states::transition_revision
                                 .eq(transition_revision),
                             runtime_module_instance_states::applied_revision.eq(applied_revision),
-                            runtime_module_instance_states::drain_deadline.eq(drain_deadline),
+                            runtime_module_instance_states::drain_deadline
+                                .eq((drain_deadline).to_diesel()),
                             runtime_module_instance_states::error_code
                                 .eq(change.next.error_code.as_deref()),
-                            runtime_module_instance_states::updated_at.eq(updated_at),
+                            runtime_module_instance_states::updated_at.eq((updated_at).to_diesel()),
                         ))
                         .execute(connection)
                         .await?;
@@ -164,10 +165,12 @@ pub(super) async fn compare_and_set_instance(
                                     .eq(transition_revision),
                                 runtime_module_instance_states::applied_revision
                                     .eq(applied_revision),
-                                runtime_module_instance_states::drain_deadline.eq(drain_deadline),
+                                runtime_module_instance_states::drain_deadline
+                                    .eq((drain_deadline).to_diesel()),
                                 runtime_module_instance_states::error_code
                                     .eq(change.next.error_code.as_deref()),
-                                runtime_module_instance_states::updated_at.eq(updated_at),
+                                runtime_module_instance_states::updated_at
+                                    .eq((updated_at).to_diesel()),
                             ))
                             .execute(connection)
                             .await?;
@@ -255,3 +258,5 @@ async fn load_instance(
         .transpose()
         .map_err(RuntimeTransactionError::Repository)
 }
+
+use jiff_diesel::ToDiesel as _;

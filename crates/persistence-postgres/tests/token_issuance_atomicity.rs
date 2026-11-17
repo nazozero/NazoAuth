@@ -90,9 +90,9 @@ fn refresh_token_fixture(
     raw_token: String,
     rotated_from_id: Option<Uuid>,
 ) -> RefreshFixture {
-    let issued_at = chrono::Utc::now();
-    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0)
-        .expect("fixed authentication time should be valid");
+    let issued_at = jiff::Timestamp::now();
+    let authentication_time =
+        jiff::Timestamp::new(1_700_000_000, 0).expect("fixed authentication time should be valid");
     RefreshFixture::new(
         nazo_auth::NewRefreshToken {
             raw_token,
@@ -105,7 +105,7 @@ fn refresh_token_fixture(
             user_id: Some(fixture.user_id),
             audiences: vec!["resource://default".to_owned()],
             issued_at,
-            expires_at: issued_at + chrono::Duration::hours(1),
+            expires_at: issued_at + jiff::SignedDuration::from_hours(1),
             dpop_jkt: None,
             mtls_x5t_s256: None,
             client_attestation_jkt: None,
@@ -120,7 +120,7 @@ fn refresh_token_fixture(
                 version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
                 issuer: "https://issuer.example".to_owned(),
                 audience: fixture.client_public_id.clone(),
-                auth_time: authentication_time.timestamp(),
+                auth_time: authentication_time.as_second(),
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: None,
 
@@ -156,7 +156,8 @@ async fn issuance(
         user_id: Some(fixture.user_id),
         mode,
         access_token_jti: issuance_id.to_string(),
-        access_token_expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5))
+            .as_second(),
         refresh_token: match refresh_token {
             Some(token) => Some(token.into_commit().await),
             None => None,
@@ -192,7 +193,7 @@ async fn expired_single_use_grant_rolls_back_everything() {
         TokenIssuanceMode::SingleUse {
             grant_key: format!("expired-{}", Uuid::now_v7()),
             // The verified grant deadline already elapsed before the commit.
-            grant_expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+            grant_expires_at: jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1),
         },
         Some(token),
     )
@@ -279,7 +280,8 @@ async fn concurrent_single_use_commits_commit_exactly_once() {
                         tenant_id,
                         TokenIssuanceMode::SingleUse {
                             grant_key,
-                            grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+                            grant_expires_at: jiff::Timestamp::now()
+                                + jiff::SignedDuration::from_mins(5),
                         },
                         None,
                     )
@@ -471,7 +473,7 @@ async fn cancelled_issuance_on_pool_runtime_discards_the_blocked_connection() {
         tenant_id,
         TokenIssuanceMode::SingleUse {
             grant_key: format!("cancelled-{}", Uuid::now_v7()),
-            grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(1),
+            grant_expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(1),
         },
         None,
     )
@@ -532,7 +534,7 @@ async fn native_source_fixture(url: &str) -> (FixtureIds, RefreshFixture, TokenI
         format!("native-source-{}", Uuid::now_v7()),
         None,
     );
-    source.issued_at -= chrono::Duration::minutes(20);
+    source.issued_at -= jiff::SignedDuration::from_mins(20);
     let repo = TokenIssuanceRepository::new(create_pool(url, 8).unwrap());
     assert_eq!(
         repo.commit_token_issuance(
@@ -578,7 +580,7 @@ async fn native_destination(
         user_id: source.user_id,
         source_client_id: source.client_public_id.clone(),
         family_id: token.family_id,
-        device_secret_expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        device_secret_expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
     });
     input
 }
@@ -628,7 +630,7 @@ async fn fill_native_capacity(
             format!("native-sibling-{index}-{}", Uuid::now_v7()),
             None,
         );
-        sibling.issued_at -= chrono::Duration::minutes(10 - index as i64);
+        sibling.issued_at -= jiff::SignedDuration::from_mins(10 - index as i64);
         assert_eq!(
             repo.commit_token_issuance(
                 issuance(owner, tenant, TokenIssuanceMode::Fresh, Some(sibling)).await
@@ -781,7 +783,7 @@ async fn native_source_same_client_capacity_transfer_requires_own_live_retiremen
                 format!("native-cap-{index}-{}", Uuid::now_v7()),
                 None,
             );
-            sibling.issued_at -= chrono::Duration::minutes(10 - index);
+            sibling.issued_at -= jiff::SignedDuration::from_mins(10 - index);
             assert_eq!(
                 repo.commit_token_issuance(
                     issuance(
@@ -853,13 +855,13 @@ async fn native_source_and_device_secret_expiry_are_rechecked_after_destination_
         let mut target = fixture(&url).await;
         target.user_id = source.user_id;
         let mut input = native_destination(&source, &token, &target).await;
-        let deadline = chrono::Utc::now() + chrono::Duration::milliseconds(300);
+        let deadline = jiff::Timestamp::now() + jiff::SignedDuration::from_millis(300);
         let mut locker = AsyncPgConnection::establish(&url).await.unwrap();
         if source_expires {
             sql_query(
                 "UPDATE oauth_refresh_families SET current_expires_at=$1 WHERE token_family_id=$2",
             )
-            .bind::<sql_types::Timestamptz, _>(deadline)
+            .bind::<sql_types::Timestamptz, _>((deadline).to_diesel())
             .bind::<sql_types::Uuid, _>(token.family_id)
             .execute(&mut locker)
             .await
@@ -888,8 +890,8 @@ async fn native_source_and_device_secret_expiry_are_rechecked_after_destination_
         let mut observer = AsyncPgConnection::establish(&url).await.unwrap();
         wait_for_fixture_blocker(&mut observer, backend).await;
         let remaining = deadline
-            .signed_duration_since(chrono::Utc::now())
-            .num_milliseconds()
+            .duration_since(jiff::Timestamp::now())
+            .as_millis()
             .max(0) as u64;
         tokio::time::sleep(std::time::Duration::from_millis(remaining + 20)).await;
         sql_query("ROLLBACK").execute(&mut locker).await.unwrap();
@@ -996,7 +998,7 @@ async fn native_source_cross_client_capacity_and_maintenance_complete_without_de
         format!("native-opposing-source-{}", Uuid::now_v7()),
         None,
     );
-    token_two.issued_at -= chrono::Duration::minutes(20);
+    token_two.issued_at -= jiff::SignedDuration::from_mins(20);
     assert_eq!(
         repo.commit_token_issuance(
             issuance(
@@ -1087,7 +1089,7 @@ async fn authorization_code_identity_fences_concurrent_holders_and_refresh_famil
                 tenant_id,
                 TokenIssuanceMode::AuthorizationCode {
                     code_identity,
-                    grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+                    grant_expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
                     holder: holder.clone(),
                 },
                 Some(refresh),
@@ -1185,7 +1187,7 @@ async fn expired_redemption_receipt_is_invisible_before_physical_reclamation() {
         tenant_id,
         TokenIssuanceMode::SingleUse {
             grant_key: grant_key.clone(),
-            grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(1),
+            grant_expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(1),
         },
         None,
     )
@@ -1236,3 +1238,5 @@ async fn expired_redemption_receipt_is_invisible_before_physical_reclamation() {
         "reading expiry must not delete persistent rows"
     );
 }
+
+use jiff_diesel::ToDiesel as _;

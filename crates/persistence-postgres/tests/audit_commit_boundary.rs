@@ -2,13 +2,13 @@
 //! The configured audit fixture must be an isolated database with CREATEDB.
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Integer, Text},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use futures_util::TryStreamExt;
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim};
 use nazo_postgres::{
@@ -149,7 +149,7 @@ fn event() -> SecurityAuditEvent {
         event_type: "mtls_trust_bundle_exported".into(),
         event_category: "trust_lifecycle".into(),
         payload: json!({"test":"commit-boundary"}),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     }
 }
 fn ack(batch: &SecurityAuditBatch) -> SecurityAuditBatchAck {
@@ -188,8 +188,13 @@ async fn invoke(
         Operation::Batch => repo.append_batch(events).await,
         Operation::Ack => repo.ack_batch(ack(batch.unwrap())).await,
         Operation::Fail => {
-            repo.fail_batch(batch.unwrap().generation, Utc::now(), "fixture", false)
-                .await
+            repo.fail_batch(
+                batch.unwrap().generation,
+                Timestamp::now(),
+                "fixture",
+                false,
+            )
+            .await
         }
     }
 }

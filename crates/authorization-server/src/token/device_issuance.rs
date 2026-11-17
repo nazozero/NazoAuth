@@ -13,8 +13,8 @@ use crate::contracts::{
 use crate::crypto::blake3_hex;
 use crate::domain::oauth::{RefreshTokenPolicy, TokenIssue};
 use crate::domain::rows::ClientRow;
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_auth::ValidatedClientAssertion;
 use nazo_auth::{DevicePollCommit, DevicePollFailure, TokenIssuanceMode};
 
@@ -94,7 +94,7 @@ pub async fn token_device_code_with_service(
     }
 
     match device_service
-        .poll(device_code, &client.client_id, Utc::now)
+        .poll(device_code, &client.client_id, Timestamp::now)
         .await
     {
         Ok(DevicePollCommit::AuthorizationPending) => Err(OAuthEndpointError::token(

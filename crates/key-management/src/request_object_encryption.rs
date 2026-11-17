@@ -26,7 +26,7 @@ pub(crate) fn request_object_encryption_jwk(private_key_der: &[u8]) -> anyhow::R
 pub(crate) struct RetainedEncryptionKey {
     kid: String,
     key: std::sync::Arc<nazo_crypto::key_wrap::RsaOaep256PrivateKey>,
-    retire_at: Option<chrono::DateTime<chrono::Utc>>,
+    retire_at: Option<jiff::Timestamp>,
 }
 
 fn private_key(pem: &Value) -> anyhow::Result<Vec<u8>> {
@@ -50,7 +50,7 @@ pub(crate) fn load_retained_keys(payload: &Value) -> anyhow::Result<Vec<Retained
     let Some(entries) = payload.get("request_object_retained_keys") else {
         return Ok(Vec::new());
     };
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let mut loaded = Vec::new();
     for entry in entries
         .as_array()
@@ -84,29 +84,26 @@ pub(crate) fn load_retained_keys(payload: &Value) -> anyhow::Result<Vec<Retained
 pub(crate) fn next_encryption_check(
     payload: &Value,
     settings: &crate::KeySettings,
-) -> anyhow::Result<Option<chrono::DateTime<chrono::Utc>>> {
+) -> anyhow::Result<Option<jiff::Timestamp>> {
     let Some(created) = payload.get("request_object_created_at") else {
-        return Ok(Some(chrono::Utc::now()));
+        return Ok(Some(jiff::Timestamp::now()));
     };
     let due = created
         .as_str()
         .ok_or_else(|| anyhow!("invalid request object creation time"))?
-        .parse::<chrono::DateTime<chrono::Utc>>()?
+        .parse::<jiff::Timestamp>()?
         + settings.rotation_interval;
     let entries = payload["request_object_retained_keys"]
         .as_array()
         .ok_or_else(|| anyhow!("invalid request object key ring"))?;
     let mut candidate = None;
     let mut retirement = None;
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     for entry in entries {
         match crate::serialization::key_entry_retire_at(entry)? {
             Some(time) if time > now => {
-                retirement = Some(
-                    retirement.map_or(time, |existing: chrono::DateTime<chrono::Utc>| {
-                        existing.min(time)
-                    }),
-                )
+                retirement =
+                    Some(retirement.map_or(time, |existing: jiff::Timestamp| existing.min(time)))
             }
             Some(_) => {}
             None => {
@@ -130,21 +127,21 @@ pub(crate) fn maintain_encryption_keys(
     settings: &crate::KeySettings,
 ) -> anyhow::Result<bool> {
     use crate::serialization::{key_entry_created_at, key_entry_retire_at};
-    use chrono::Utc;
+    use jiff::Timestamp;
     use serde_json::json;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut changed = false;
     if payload.get("request_object_created_at").is_none() {
         // The old format has no creation time. Start its rotation schedule at
         // this durable migration boundary rather than inventing a historical age.
-        payload["request_object_created_at"] = json!(now.to_rfc3339());
+        payload["request_object_created_at"] = json!(now.to_string());
         payload["request_object_retained_keys"] = json!([]);
         changed = true;
     }
     let due = payload["request_object_created_at"]
         .as_str()
         .ok_or_else(|| anyhow!("invalid request object creation time"))?
-        .parse::<chrono::DateTime<Utc>>()?
+        .parse::<jiff::Timestamp>()?
         + settings.rotation_interval;
     let entries = payload["request_object_retained_keys"]
         .as_array()
@@ -161,7 +158,7 @@ pub(crate) fn maintain_encryption_keys(
                 json!(
                     (now + settings.verification_grace
                         + crate::lifecycle::MAX_DATABASE_SNAPSHOT_STALENESS)
-                        .to_rfc3339()
+                        .to_string()
                 ),
             )?;
             let mut candidate = payload["request_object_retained_keys"]
@@ -179,7 +176,7 @@ pub(crate) fn maintain_encryption_keys(
     } else if now >= due - settings.prepublish_window {
         let candidate = retained_entry(
             json!(URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?)),
-            json!(now.to_rfc3339()),
+            json!(now.to_string()),
             Value::Null,
         )?;
         payload["request_object_retained_keys"]
@@ -278,7 +275,7 @@ impl KeyManager {
                         key.kid == kid
                             && key
                                 .retire_at
-                                .is_none_or(|deadline| deadline > chrono::Utc::now())
+                                .is_none_or(|deadline| deadline > jiff::Timestamp::now())
                     })
                     .ok_or_else(|| anyhow!("unsupported request object JWE recipient"))?
                     .key

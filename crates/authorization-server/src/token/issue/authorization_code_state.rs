@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 pub(super) fn failed_authorization_code_transition_result(
@@ -58,7 +58,7 @@ pub async fn revoke_issued_authorization_code_tokens(
             client.tenant_id,
             client.id,
             access_token_jti,
-            DateTime::<Utc>::from_timestamp(access_token_expires_at, 0),
+            Timestamp::new(access_token_expires_at, 0),
             refresh_token_family_id,
         )
         .await

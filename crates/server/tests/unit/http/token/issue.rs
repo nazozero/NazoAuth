@@ -32,7 +32,7 @@ use nazo_oauth_server::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -156,7 +156,7 @@ async fn issue_token_response_with_grant_for_test(
         client,
         TokenIssuanceMode::SingleUse {
             grant_key: grant_key.to_owned(),
-            grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+            grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
         },
         issue,
     )
@@ -303,10 +303,11 @@ pub(crate) async fn persist_consumed_single_use_grant_for_test(
             user_id: None,
             mode: TokenIssuanceMode::SingleUse {
                 grant_key: grant_key.to_owned(),
-                grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
             },
             access_token_jti: format!("consumed-grant-{issuance_id}"),
-            access_token_expires_at: (Utc::now() + chrono::Duration::minutes(5)).timestamp(),
+            access_token_expires_at: (Timestamp::now() + jiff::SignedDuration::from_mins(5))
+                .as_second(),
             refresh_token: None,
             audit_fields: TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
@@ -683,7 +684,7 @@ fn set_refresh_authority_for_issue(
         token_blake3: [0; 32],
         contract_key: (*blake3::hash(&serde_json::to_vec(&contract).unwrap()).as_bytes()),
         current_audiences: issue.audiences.clone(),
-        expires_at: Utc::now() + chrono::Duration::hours(1),
+        expires_at: Timestamp::now() + jiff::SignedDuration::from_hours(1),
         id_token_sid: issue
             .refresh_authority
             .as_ref()
@@ -703,7 +704,7 @@ async fn persist_refresh_authority_for_issue(
     set_refresh_authority_for_issue(state, client, issue);
     let source = issue.refresh_authority.take().unwrap();
     let raw = format!("issue-source-{}", Uuid::now_v7());
-    let issued_at = Utc::now();
+    let issued_at = Timestamp::now();
     let token = nazo_auth::NewRefreshToken {
         raw_token: raw.clone(),
         member_id: source.member_id,
@@ -715,7 +716,7 @@ async fn persist_refresh_authority_for_issue(
         user_id: source.user_id,
         audiences: source.current_audiences,
         issued_at,
-        expires_at: issued_at + chrono::Duration::hours(1),
+        expires_at: issued_at + jiff::SignedDuration::from_hours(1),
         id_token_sid: source.id_token_sid,
         dpop_jkt: source.dpop_jkt,
         mtls_x5t_s256: source.mtls_x5t_s256,
@@ -737,7 +738,7 @@ async fn persist_refresh_authority_for_issue(
             user_id: issue.user_id,
             mode: TokenIssuanceMode::Fresh,
             access_token_jti: Uuid::now_v7().to_string(),
-            access_token_expires_at: (issued_at + chrono::Duration::minutes(5)).timestamp(),
+            access_token_expires_at: (issued_at + jiff::SignedDuration::from_mins(5)).as_second(),
             refresh_token: Some(nazo_auth::RefreshTokenCommit::IssueNew {
                 token,
                 contract: source.contract,

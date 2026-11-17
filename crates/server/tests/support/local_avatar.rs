@@ -23,7 +23,7 @@ pub(crate) struct LocalFixture {
 impl LocalFixture {
     pub(crate) fn new() -> Self {
         let root = std::env::temp_dir().join(format!("nazo-avatar-versions-{}", Uuid::now_v7()));
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         Self {
             storage: LocalAvatarStorage::new(root.clone()),
             root,

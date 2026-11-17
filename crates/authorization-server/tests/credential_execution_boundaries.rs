@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::Algorithm;
 use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
@@ -28,7 +28,7 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
             .clone();
         let leaf_key =
             KeyPair::from_pem(&keyset.database_local_private_key_pem(&kid).unwrap()).unwrap();
-        let now = time::OffsetDateTime::now_utc();
+        let now = time::OffsetTimestamp::now_utc();
         let mut ca_params = CertificateParams::default();
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
@@ -58,7 +58,7 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
         .unwrap();
         let holder = p256::ecdsa::SigningKey::from_slice(&[41; 32]).unwrap();
         let point = holder.verifying_key().to_sec1_point(false);
-        let issued_at = Utc::now();
+        let issued_at = Timestamp::now();
         let request = CredentialSignInput {
             payload: CredentialPayload {
                 format: CredentialFormat::MsoMdoc,
@@ -71,7 +71,7 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
                 }),
             },
             issued_at,
-            expires_at: issued_at + Duration::minutes(10),
+            expires_at: issued_at + SignedDuration::from_mins(10),
             status: None,
         };
         let encoded = crypto.sign(&request).await.unwrap();
@@ -98,15 +98,15 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
             point.y().unwrap().to_vec(),
         )
         .build();
-        let protocol_time = |value: chrono::DateTime<Utc>| {
-            nazo_mdoc::Timestamp::parse_rfc3339(&value.to_rfc3339()).unwrap()
+        let protocol_time = |value: jiff::Timestamp| {
+            nazo_mdoc::Timestamp::parse_rfc3339(&value.to_string()).unwrap()
         };
         let prepared = nazo_mdoc::builder::DocumentBuilder::new("org.example.credential")
             .device_key(device_key)
             .validity(nazo_mdoc::model::types::ValidityInfo {
                 signed: protocol_time(issued_at),
                 valid_from: protocol_time(issued_at),
-                valid_until: protocol_time(issued_at + Duration::minutes(10)),
+                valid_until: protocol_time(issued_at + SignedDuration::from_mins(10)),
                 expected_update: None,
             })
             .add_namespace(
@@ -145,7 +145,7 @@ fn credential_execution_uses_completed_builder_and_pinned_lease_without_native_r
         let authenticated = nazo_mdoc::verifier::verify_issued(
             &pinned.to_issuer_signed_cbor().unwrap(),
             "org.example.credential",
-            protocol_time(Utc::now()),
+            protocol_time(Timestamp::now()),
         )
         .unwrap();
         assert_eq!(authenticated.document().doc_type, "org.example.credential");

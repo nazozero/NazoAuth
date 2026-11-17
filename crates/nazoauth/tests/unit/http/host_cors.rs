@@ -4,7 +4,7 @@ use crate::http::{
     profile_applications, profile_me, profile_update,
 };
 use bytes::Bytes;
-use chrono::{TimeZone, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     AccountProfileView, AuthorizedApplicationView, AuthorizedApplicationsView, ProfilePatch,
     SessionId,
@@ -39,7 +39,7 @@ impl ProfileAccountOperations for ContractProfileOperations {
                     client_id: "contract-client".to_owned(),
                     client_name: "Contract Client".to_owned(),
                     last_scopes: vec!["openid".to_owned()],
-                    last_authorized_at: Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
+                    last_authorized_at: Timestamp::new(1_700_000_000, 0).unwrap(),
                     authorization_count: 1,
                 }],
             })

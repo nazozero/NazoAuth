@@ -11,7 +11,7 @@ pub struct KeyLifecycleTask {
 
 impl KeyLifecycleTask {
     #[must_use]
-    pub fn start(keyset: KeyManager, prepublish_window: chrono::Duration) -> Self {
+    pub fn start(keyset: KeyManager, prepublish_window: jiff::SignedDuration) -> Self {
         let (shutdown, mut receiver) = watch::channel(false);
         let task = tokio::spawn(async move {
             let mut retry_interval = managed_refresh_interval(
@@ -66,13 +66,13 @@ fn next_failure_backoff(current: Duration) -> Duration {
     (current * 2).min(MAX_FAILURE_BACKOFF)
 }
 
-fn refresh_interval(prepublish_window: chrono::Duration) -> Duration {
-    let seconds = (prepublish_window.num_seconds() / 2).clamp(1, 3_600);
+fn refresh_interval(prepublish_window: jiff::SignedDuration) -> Duration {
+    let seconds = (prepublish_window.as_secs() / 2).clamp(1, 3_600);
     Duration::from_secs(seconds as u64)
 }
 
 fn managed_refresh_interval(
-    prepublish_window: chrono::Duration,
+    prepublish_window: jiff::SignedDuration,
     has_openid4vc_material: bool,
 ) -> Duration {
     let interval = refresh_interval(prepublish_window);

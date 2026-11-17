@@ -29,9 +29,9 @@ use refresh_fixture::RefreshFixture;
 #[allow(dead_code)]
 mod pre_authorized;
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     AccessTokenRevocation, ClientSecurityPolicy, CommitTokenIssuance, CommitTokenIssuanceResult,
     OAuthClient, RefreshTokenAuthenticationContext, TokenIssuanceMode, TokenIssuedAuditFields,
@@ -323,10 +323,10 @@ async fn seed_refresh_token_row(
     family_id: Uuid,
     raw_token: &str,
     rotated_from_id: Option<Uuid>,
-    revoked_at: Option<DateTime<Utc>>,
+    revoked_at: Option<Timestamp>,
     dpop_jkt: Option<&str>,
 ) {
-    let issued_at = Utc::now();
+    let issued_at = Timestamp::now();
     let contract = nazo_auth::RefreshContract {
         subject: seed.user_id.to_string(),
         scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
@@ -393,9 +393,9 @@ async fn seed_refresh_token_row(
     .bind::<sql_types::Uuid, _>(seed.client.id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(Some(seed.user_id))
     .bind::<sql_types::Binary, _>(blake3::hash(raw_token.as_bytes()).as_bytes().to_vec())
-    .bind::<sql_types::Timestamptz, _>(issued_at)
-    .bind::<sql_types::Timestamptz, _>(issued_at + Duration::hours(1))
-    .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(revoked_at)
+    .bind::<sql_types::Timestamptz, _>((issued_at).to_diesel())
+    .bind::<sql_types::Timestamptz, _>((issued_at + SignedDuration::from_hours(1)).to_diesel())
+    .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>((revoked_at).to_diesel())
     .bind::<sql_types::Nullable<sql_types::Text>, _>(dpop_jkt.map(str::to_owned))
     .execute(connection)
     .await
@@ -410,7 +410,7 @@ fn new_refresh_token(
     rotated_from_id: Option<Uuid>,
     dpop_jkt: Option<String>,
 ) -> RefreshFixture {
-    let issued_at = Utc::now();
+    let issued_at = Timestamp::now();
     RefreshFixture::new(
         nazo_auth::NewRefreshToken {
             raw_token,
@@ -423,7 +423,7 @@ fn new_refresh_token(
             user_id: Some(seed.user_id),
             audiences: vec!["resource://default".to_owned()],
             issued_at,
-            expires_at: issued_at + Duration::hours(1),
+            expires_at: issued_at + SignedDuration::from_hours(1),
             dpop_jkt,
             mtls_x5t_s256: None,
             client_attestation_jkt: None,
@@ -459,7 +459,7 @@ async fn refresh_issuance(token: RefreshFixture) -> CommitTokenIssuance {
         user_id: token.user_id,
         mode: TokenIssuanceMode::Fresh,
         access_token_jti: issuance_id.to_string(),
-        access_token_expires_at: (token.issued_at + Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (token.issued_at + SignedDuration::from_mins(5)).as_second(),
         audit_fields: TokenIssuedAuditFields {
             client_id: token.contract.authentication_context.audience.clone(),
             subject_hash: blake3::hash(token.contract.subject.as_bytes())
@@ -515,8 +515,12 @@ async fn seed_token_issuance(
     .bind::<sql_types::Uuid, _>(seed.client.id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(Some(seed.user_id))
     .bind::<sql_types::Text, _>(jti)
-    .bind::<sql_types::Timestamptz, _>(Utc::now() + Duration::hours(1))
-    .bind::<sql_types::Timestamptz, _>(Utc::now() + Duration::hours(2))
+    .bind::<sql_types::Timestamptz, _>(
+        (Timestamp::now() + SignedDuration::from_hours(1)).to_diesel(),
+    )
+    .bind::<sql_types::Timestamptz, _>(
+        (Timestamp::now() + SignedDuration::from_hours(2)).to_diesel(),
+    )
     .execute(connection)
     .await
     .expect("the token-issuance fixture should insert");
@@ -606,7 +610,7 @@ async fn rv09_access_revocation_skips_refresh_probes_and_appends_audit() {
         raw_token: &unknown_refresh,
         access_token: Some(AccessTokenRevocation {
             jti: format!("qc-jti-{}", Uuid::now_v7()),
-            expires_at: Utc::now() + Duration::minutes(5),
+            expires_at: Timestamp::now() + SignedDuration::from_mins(5),
         }),
     };
     let (result, delta) = measure(
@@ -720,7 +724,7 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update_with_audit(
             raw_token: &raw_token,
             access_token: Some(AccessTokenRevocation {
                 jti: format!("qc-associated-jti-{}", Uuid::now_v7()),
-                expires_at: Utc::now() + Duration::minutes(5),
+                expires_at: Timestamp::now() + SignedDuration::from_mins(5),
             }),
         };
         let (result, access_delta) = measure(
@@ -816,7 +820,7 @@ async fn rv09_revoke_issued_tokens_short_circuits_without_a_family() {
             tenant.tenant_id.as_uuid(),
             seed.client.id,
             &format!("qc-access-only-jti-{}", Uuid::now_v7()),
-            Some(Utc::now() + Duration::minutes(5)),
+            Some(Timestamp::now() + SignedDuration::from_mins(5)),
             None,
         ),
     )
@@ -1099,7 +1103,7 @@ async fn rf06_lost_response_successor_is_single_read() {
     let parent_id = Uuid::now_v7();
     let child_id = Uuid::now_v7();
     let dpop_jkt = "qc-dpop-jkt".to_owned();
-    let revoked_at = Utc::now() - Duration::seconds(2);
+    let revoked_at = Timestamp::now() - SignedDuration::from_secs(2);
     let parent_raw = format!("qc-parent-{}", Uuid::now_v7());
     let child_raw = format!("qc-child-{}", Uuid::now_v7());
 
@@ -1133,7 +1137,7 @@ async fn rf06_lost_response_successor_is_single_read() {
 
     let (pool, counter) = instrumented_pool(&database_url).await;
     let snapshots = TokenIssuanceRepository::new(pool.clone());
-    let retry_started_at = Utc::now();
+    let retry_started_at = Timestamp::now();
     for (raw, expected_member, expected_successor) in [
         (&child_raw, child_id, None),
         (&parent_raw, parent_id, Some(child_id)),
@@ -1165,8 +1169,8 @@ async fn rf06_lost_response_successor_is_single_read() {
     }
     for (client_id, at) in [
         (Uuid::now_v7(), retry_started_at),
-        (seed.client.id, revoked_at - Duration::seconds(1)),
-        (seed.client.id, revoked_at + Duration::seconds(61)),
+        (seed.client.id, revoked_at - SignedDuration::from_secs(1)),
+        (seed.client.id, revoked_at + SignedDuration::from_secs(61)),
     ] {
         let (result, delta) = measure(
             &counter,
@@ -1189,7 +1193,8 @@ async fn rf06_lost_response_successor_is_single_read() {
         #[derive(diesel::QueryableByName)]
         struct SpentTimestamp {
             #[diesel(sql_type = sql_types::Timestamptz)]
-            spent_at: DateTime<Utc>,
+            #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+            spent_at: Timestamp,
         }
 
         let mut connection = connect(&database_url).await;
@@ -1205,14 +1210,14 @@ async fn rf06_lost_response_successor_is_single_read() {
         .spent_at
     };
     for (case, elapsed, expect_successor) in [
-        ("0s", Duration::zero(), true),
-        ("60s", Duration::seconds(60), true),
+        ("0s", SignedDuration::zero(), true),
+        ("60s", SignedDuration::from_secs(60), true),
         (
             "60s + 1ms",
-            Duration::seconds(60) + Duration::milliseconds(1),
+            SignedDuration::from_secs(60) + SignedDuration::from_millis(1),
             false,
         ),
-        ("-1ms", Duration::milliseconds(-1), false),
+        ("-1ms", SignedDuration::from_millis(-1), false),
     ] {
         let (result, delta) = measure(
             &counter,
@@ -1594,13 +1599,13 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
         configuration_ids: vec!["qc-config".to_owned()],
         credential_identifiers: Vec::new(),
         dpop_jkt: None,
-        expires_at: Utc::now() + Duration::minutes(10),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(10),
     };
     issuer
         .upsert_access(&format!("qc-access-hash-{}", Uuid::now_v7()), &access)
         .await
         .expect("access grant should persist");
-    let ready_at = Utc::now() + Duration::seconds(1);
+    let ready_at = Timestamp::now() + SignedDuration::from_secs(1);
     let transaction_hash = format!("qc-deferred-{}", Uuid::now_v7());
     let deferred = DeferredCredential {
         selection: None,
@@ -1614,7 +1619,7 @@ async fn df01_deferred_claim_ready_uses_locked_projection_then_lease_update() {
         })],
         payload: deferred_payload("deferred-payload"),
         ready_at,
-        expires_at: ready_at + Duration::minutes(5),
+        expires_at: ready_at + SignedDuration::from_mins(5),
     };
     credential_response::persist_deferred(&issuer, &deferred)
         .await
@@ -1781,7 +1786,7 @@ async fn up06_upsert_access_verifies_no_write_retries() {
         configuration_ids: vec!["qc-config".to_owned()],
         credential_identifiers: Vec::new(),
         dpop_jkt: None,
-        expires_at: Utc::now() + Duration::minutes(10),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(10),
     };
 
     for round in 1..=2 {
@@ -1834,7 +1839,7 @@ async fn pre_authorized_access_commits_offer_and_grant_in_one_transaction() {
         configuration_ids: vec!["qc-config".to_owned()],
         credential_identifiers: Vec::new(),
         dpop_jkt: None,
-        expires_at: Utc::now() + Duration::minutes(10),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(10),
     };
 
     for registered in [true, false] {
@@ -2138,7 +2143,13 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
         }
         let (result, delta) = measure(
             &counter,
-            repository.refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now(), true),
+            repository.refresh_token_snapshot(
+                tenant_id,
+                &raw,
+                seed.client.id,
+                Timestamp::now(),
+                true,
+            ),
         )
         .await;
         let snapshot = result.unwrap().unwrap();
@@ -2153,7 +2164,7 @@ async fn oidc_refresh_snapshot_prepares_public_and_pairwise_in_one_runtime_role_
         assert_clean(delta);
         let (_, baseline) = measure(&counter, async {
             let original = repository
-                .refresh_token_snapshot(tenant_id, &raw, seed.client.id, Utc::now(), false)
+                .refresh_token_snapshot(tenant_id, &raw, seed.client.id, Timestamp::now(), false)
                 .await
                 .unwrap()
                 .unwrap();
@@ -2216,7 +2227,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     ] {
         let (r, q) = measure(
             &counter,
-            repo.refresh_token_snapshot(lookup_tenant, &raw, lookup_client, Utc::now(), hint),
+            repo.refresh_token_snapshot(lookup_tenant, &raw, lookup_client, Timestamp::now(), hint),
         )
         .await;
         assert!(r.unwrap().is_none_or(|s| s.prepared_subject.is_none()));
@@ -2230,7 +2241,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         .unwrap();
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2255,7 +2266,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     }
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2272,7 +2283,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
     .await;
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2312,7 +2323,7 @@ async fn oidc_refresh_snapshot_fallback_and_non_oidc_keep_original_reads() {
         .unwrap();
     let (r, q) = measure(
         &counter,
-        repo.refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true),
+        repo.refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true),
     )
     .await;
     assert!(r.unwrap().unwrap().prepared_subject.is_none());
@@ -2367,7 +2378,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
         .unwrap();
     let repo = TokenIssuanceRepository::new(create_pool(&url, 2).unwrap());
     let early = repo
-        .refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true)
+        .refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true)
         .await
         .unwrap()
         .unwrap();
@@ -2394,7 +2405,7 @@ async fn oidc_refresh_early_profile_is_coherent_and_final_fences_reject_changes(
             .unwrap()
             .2;
         let source = repo
-            .refresh_token_snapshot(id, &raw, seed.client.id, Utc::now(), true)
+            .refresh_token_snapshot(id, &raw, seed.client.id, Timestamp::now(), true)
             .await
             .unwrap()
             .unwrap();
@@ -2543,7 +2554,13 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
         for (member, raw) in &fixtures {
             for prepared in [false, true] {
                 let result = repository
-                    .refresh_token_snapshot(tenant_id, raw, seed.client.id, Utc::now(), prepared)
+                    .refresh_token_snapshot(
+                        tenant_id,
+                        raw,
+                        seed.client.id,
+                        Timestamp::now(),
+                        prepared,
+                    )
                     .await;
                 let snapshot = result.unwrap().unwrap();
                 assert_eq!(snapshot.presented.id, *member);
@@ -2559,13 +2576,25 @@ async fn refresh_lookup_prepared_cache_reuses_two_shapes_and_isolates_binds() {
             (tenant_id, unknown.as_str()),
         ] {
             let result = repository
-                .refresh_token_snapshot(lookup_tenant, raw, seed.client.id, Utc::now(), prepared)
+                .refresh_token_snapshot(
+                    lookup_tenant,
+                    raw,
+                    seed.client.id,
+                    Timestamp::now(),
+                    prepared,
+                )
                 .await;
             assert!(result.unwrap().is_none());
         }
     }
     let result = repository
-        .refresh_token_snapshot(tenant_id, &fixtures[0].1, Uuid::now_v7(), Utc::now(), true)
+        .refresh_token_snapshot(
+            tenant_id,
+            &fixtures[0].1,
+            Uuid::now_v7(),
+            Timestamp::now(),
+            true,
+        )
         .await;
     let foreign_client = result.unwrap().unwrap();
     assert_eq!(foreign_client.presented.id, fixtures[0].0);
@@ -2759,8 +2788,8 @@ fn deferred_payload(label: &str) -> nazo_openid4vci::DeferredPayload {
     nazo_openid4vci::DeferredPayload {
         dataset: serde_json::json!({"test_payload": label}),
         status: None,
-        issued_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
-        expires_at: chrono::DateTime::from_timestamp(1_700_003_600, 0).unwrap(),
+        issued_at: jiff::Timestamp::new(1_700_000_000, 0).unwrap(),
+        expires_at: jiff::Timestamp::new(1_700_003_600, 0).unwrap(),
     }
 }
 
@@ -2932,3 +2961,5 @@ async fn access_request_creation_uses_the_foreign_key_without_a_preflight_read()
     assert_eq!(delta.data_queries + delta.failed_queries, 1);
     assert_no_transaction(delta);
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -1,8 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use chrono::{Duration as ChronoDuration, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::{
     UserId,
     ports::{
@@ -44,7 +44,7 @@ fn key(user: UserId, token: &str) -> String {
 }
 
 fn candidate(user: UserId, secret: &str, seconds: i64) -> DeliveryStage {
-    let expiry = Utc::now() + ChronoDuration::seconds(seconds);
+    let expiry = Timestamp::now() + SignedDuration::from_secs(seconds);
     DeliveryStage {
         attempt_id: Uuid::now_v7(),
         expires_at: expiry,
@@ -91,7 +91,7 @@ async fn client_delivery_preserves_payload_and_exact_original_deadline() {
         .custom(fred::cmd!("PEXPIRETIME"), vec![key(user, &token)])
         .await
         .unwrap();
-    assert_eq!(deadline, staged.expires_at.timestamp_millis());
+    assert_eq!(deadline, staged.expires_at.as_millisecond());
     let client = Uuid::now_v7();
     assert_eq!(
         store.publish(user, &token, &staged, client).await.unwrap(),

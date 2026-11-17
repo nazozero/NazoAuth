@@ -1,4 +1,4 @@
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationFuture, AuthorizationPortError, AuthorizationResponseClaimsInput,
     AuthorizationResponseSignInput, AuthorizationResponseSignerPort, SigningPurpose,
@@ -23,7 +23,7 @@ impl AuthorizationResponseSignerPort for KeyManager {
                     state: input.state,
                     ttl: input.ttl,
                 },
-                Utc::now().timestamp(),
+                Timestamp::now().as_second(),
             );
             let algorithm = match input.signing_algorithm {
                 Some(name) => Some(

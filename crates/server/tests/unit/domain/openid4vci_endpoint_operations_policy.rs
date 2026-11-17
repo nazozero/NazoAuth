@@ -125,7 +125,7 @@ async fn signed_policy_access_token(
                 credential_identifiers,
                 dpop_jkt: dpop_jkt.map(str::to_owned),
                 mtls_x5t_s256: mtls_x5t_s256.map(str::to_owned),
-                expires_at: chrono::DateTime::from_timestamp(issued.expires_at, 0).unwrap(),
+                expires_at: jiff::Timestamp::new(issued.expires_at, 0).unwrap(),
                 proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
             },
         )
@@ -474,7 +474,9 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
     .bind::<SqlUuid, _>(client_row)
     .bind::<SqlUuid, _>(fixture.subject_id)
     .bind::<Text, _>(issued.jti.as_str())
-    .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now() + chrono::Duration::minutes(5))
+    .bind::<diesel::sql_types::Timestamptz, _>(
+        (jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5)).to_diesel(),
+    )
     .execute(&mut connection)
     .await
     .expect("pairwise issuance ownership insert");
@@ -493,7 +495,7 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
             credential_identifiers: Vec::new(),
             dpop_jkt: None,
             mtls_x5t_s256: None,
-            expires_at: chrono::DateTime::from_timestamp(issued.expires_at, 0).unwrap(),
+            expires_at: jiff::Timestamp::new(issued.expires_at, 0).unwrap(),
             proof_origin: nazo_openid4vci::CredentialProofOrigin::RegisteredClient,
         },
     )
@@ -882,3 +884,5 @@ async fn live_access_fails_closed_when_subject_state_is_unavailable() {
     );
     fixture.cleanup().await;
 }
+
+use jiff_diesel::ToDiesel as _;

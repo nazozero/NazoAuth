@@ -378,7 +378,7 @@ impl SessionService {
         method: &str,
         ttl_seconds: u64,
         require_pending_mfa: bool,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> Result<Option<SessionRotation>, RepositoryError> {
         let Some(snapshot) = self.load_fail_closed(session_id).await? else {
             return Ok(None);
@@ -391,7 +391,7 @@ impl SessionService {
             replacement.auth_time(),
             replacement.amr(),
             replacement.oidc_sid(),
-            now.timestamp(),
+            now.as_second(),
         ) || (require_pending_mfa && !replacement.pending_mfa())
         {
             return Ok(None);
@@ -556,9 +556,9 @@ impl SessionRecord {
     }
 
     /// Record an authentication event without losing ordering within an OIDC second.
-    pub fn record_authentication_at(&mut self, now: chrono::DateTime<chrono::Utc>) {
-        self.auth_time = now.timestamp();
-        self.auth_time_micros = Some(now.timestamp_micros());
+    pub fn record_authentication_at(&mut self, now: jiff::Timestamp) {
+        self.auth_time = now.as_second();
+        self.auth_time_micros = Some(now.as_microsecond());
     }
 
     /// Restore optional precision from persistence; legacy seconds are not fresh-login proof.

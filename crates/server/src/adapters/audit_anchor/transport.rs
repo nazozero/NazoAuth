@@ -1,4 +1,4 @@
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_persistence::SecurityAuditBatch;
 
 use super::{
@@ -52,7 +52,7 @@ pub(super) async fn send_batch(
     let deployment_id = &config.preflight.deployment_id;
     let body = batch_body(deployment_id, batch).map_err(|_| AnchorPushError::Serialize)?;
     let signature = sign_body(&config.auth_secret, &body);
-    let sent_at = Utc::now().to_rfc3339();
+    let sent_at = Timestamp::now().to_string();
     let response = client
         .post(config.endpoint.clone())
         .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -91,7 +91,7 @@ pub(super) async fn send_genesis_checkpoint(
     let deployment_id = &config.preflight.deployment_id;
     let body = genesis_body(deployment_id, head_hash).map_err(|_| AnchorPushError::Serialize)?;
     let signature = sign_body(&config.auth_secret, &body);
-    let sent_at = Utc::now().to_rfc3339();
+    let sent_at = Timestamp::now().to_string();
     let response = client
         .post(config.endpoint.clone())
         .header(reqwest::header::CONTENT_TYPE, "application/json")

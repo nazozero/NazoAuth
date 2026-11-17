@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 
 use crate::{
     DpopProofVerifier, DpopProofVerifierError, ResourceServerVerifier, ResourceServerVerifierError,
@@ -257,7 +257,7 @@ where
         request: ProtectedResourceAuthorizationRequest<'_>,
         context: ProtectedResourceAuthorizationContext<'_>,
     ) -> Result<ProtectedResourceAuthorizationResult, ProtectedResourceAuthorizationError> {
-        self.authorize_at(request, context, Utc::now().timestamp())
+        self.authorize_at(request, context, Timestamp::now().as_second())
             .await
     }
 

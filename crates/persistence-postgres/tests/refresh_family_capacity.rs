@@ -101,7 +101,7 @@ fn new_refresh(
     family_id: Uuid,
     raw_token: String,
     rotated_from_id: Option<Uuid>,
-    issued_at: chrono::DateTime<chrono::Utc>,
+    issued_at: jiff::Timestamp,
 ) -> RefreshFixture {
     RefreshFixture::new(
         nazo_auth::NewRefreshToken {
@@ -115,7 +115,7 @@ fn new_refresh(
             user_id: Some(fixture.user_id),
             audiences: vec!["resource://default".to_owned()],
             issued_at,
-            expires_at: issued_at + chrono::Duration::hours(1),
+            expires_at: issued_at + jiff::SignedDuration::from_hours(1),
             dpop_jkt: None,
             mtls_x5t_s256: None,
             client_attestation_jkt: None,
@@ -165,7 +165,7 @@ async fn issuance(token: RefreshFixture) -> CommitTokenIssuance {
         user_id: token.user_id,
         mode: TokenIssuanceMode::Fresh,
         access_token_jti: issuance_id.to_string(),
-        access_token_expires_at: (token.issued_at + chrono::Duration::minutes(5)).timestamp(),
+        access_token_expires_at: (token.issued_at + jiff::SignedDuration::from_mins(5)).as_second(),
         audit_fields: TokenIssuedAuditFields {
             client_id: token.contract.authentication_context.audience.clone(),
             subject_hash: blake3::hash(token.contract.subject.as_bytes())
@@ -190,7 +190,7 @@ async fn issue_family(
     // Stagger `issued_at` by whole seconds in the recent past so the
     // oldest-first ordering never depends on a same-millisecond UUID
     // tie-break while every issued token stays well inside its TTL.
-    let issued_at = chrono::Utc::now() - chrono::Duration::seconds(300 - ordinal);
+    let issued_at = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(300 - ordinal);
     let token = new_refresh(
         fixture,
         tenant_id,
@@ -414,7 +414,7 @@ async fn public_family_retains_more_than_sixty_four_unexpired_rotation_proofs() 
         family_id,
         root_raw,
         None,
-        chrono::Utc::now() - chrono::Duration::seconds(1),
+        jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1),
     );
     let mut previous_member = root.member_id;
     assert_eq!(
@@ -432,7 +432,7 @@ async fn public_family_retains_more_than_sixty_four_unexpired_rotation_proofs() 
             family_id,
             format!("public-proof-{generation}-{}", Uuid::now_v7()),
             Some(previous_member),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         previous_member = token.member_id;
         assert_eq!(
@@ -481,7 +481,7 @@ async fn required_capacity_audit_failure_rolls_back_retirement_and_issuance() {
         pending_family_id,
         format!("cap-audit-failure-{}", Uuid::now_v7()),
         None,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     ))
     .await;
     let issuance_id = pending.issuance_id;
@@ -687,7 +687,7 @@ async fn rotation_never_consumes_a_family_slot() {
         rows.token_family_id
     };
     for generation in 0..2 {
-        let issued_at = chrono::Utc::now() + chrono::Duration::seconds(generation);
+        let issued_at = jiff::Timestamp::now() + jiff::SignedDuration::from_secs(generation);
         let child = new_refresh(
             &fixture,
             tenant_id,
@@ -729,7 +729,7 @@ async fn capacity_retired_family_tokens_remain_revoked_tombstones() {
     let mut created = Vec::new();
     for ordinal in 0..CAP {
         let family_id = Uuid::now_v7();
-        let issued_at = chrono::Utc::now() - chrono::Duration::seconds(300 - ordinal);
+        let issued_at = jiff::Timestamp::now() - jiff::SignedDuration::from_secs(300 - ordinal);
         let raw = format!("cap-retire-{ordinal}-{}", Uuid::now_v7());
         let token = new_refresh(&fixture, tenant_id, family_id, raw.clone(), None, issued_at);
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
@@ -762,7 +762,7 @@ async fn capacity_retired_family_tokens_remain_revoked_tombstones() {
                 .unwrap()
                 .token_family_id,
             ),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
             .commit_token_issuance(issuance(child).await)
@@ -888,7 +888,7 @@ async fn machine_issuance_without_user_skips_the_cap() {
         Uuid::now_v7(),
         format!("cap-machine-{}", Uuid::now_v7()),
         None,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     machine.user_id = None;
     machine.contract.subject = "client".to_owned();
@@ -946,7 +946,7 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
     // Rotate well past the proof bound; the family stays one live row and the
     // proof count must converge on the cap, never exceed it.
     let mut raw_tokens = Vec::new();
-    let rotation_start = chrono::Utc::now();
+    let rotation_start = jiff::Timestamp::now();
     for generation in 0..(PROOF_CAP + 8) {
         let raw = format!("cap-proof-g{generation}-{}", Uuid::now_v7());
         let child = new_refresh(
@@ -955,7 +955,7 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
             family_id,
             raw.clone(),
             Some(member),
-            rotation_start + chrono::Duration::milliseconds(generation),
+            rotation_start + jiff::SignedDuration::from_millis(generation),
         );
         member = child.member_id;
         let result = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap())
@@ -1036,7 +1036,7 @@ async fn fresh_retired_contract_is_reclaimed_without_touching_live_references() 
         retired_family,
         format!("cap-contract-gc-{}", Uuid::now_v7()),
         None,
-        chrono::Utc::now() - chrono::Duration::minutes(10),
+        jiff::Timestamp::now() - jiff::SignedDuration::from_mins(10),
     );
     // Give the oldest family an earlier authentication time, which is part
     // of the persisted contract. Nonce/id_token_sid are cleared by persisted()

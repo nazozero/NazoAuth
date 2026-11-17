@@ -2,7 +2,7 @@ use super::*;
 
 use std::collections::BTreeMap;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use nazo_digital_credentials::CredentialFormat;
 use nazo_openid4vci::{
@@ -42,7 +42,7 @@ fn access(configuration_ids: &[&str], credential_identifiers: &[&str]) -> Creden
             .map(|id| nazo_openid4vci::CredentialIdentifier((*id).to_owned()))
             .collect(),
         dpop_jkt: None,
-        expires_at: Utc::now(),
+        expires_at: Timestamp::now(),
     }
 }
 
@@ -279,7 +279,7 @@ fn proof_nonce_and_request_digest_are_stable_and_fail_closed() {
 
 #[test]
 fn stored_and_recovered_responses_preserve_encoding_status_and_nonce() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let final_body = CredentialResponseBody::Json(
         serde_json::to_vec_pretty(&CredentialResponse {
             credentials: Some(vec![nazo_openid4vci::IssuedCredential {

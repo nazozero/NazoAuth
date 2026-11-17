@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{TenantId, UserId};
@@ -176,6 +176,6 @@ pub trait MfaRepositoryPort: Send + Sync {
         credential_id: Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     ) -> RepositoryFuture<'_, bool>;
 }

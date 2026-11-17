@@ -3,7 +3,6 @@
 //! (or `DATABASE_URL`) they skip so the suite stays hermetic.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, TimeZone, Utc};
 use diesel::{
     QueryableByName,
     connection::InstrumentationEvent,
@@ -14,6 +13,7 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 use ed25519_dalek::{Signer as _, SigningKey};
+use jiff::{SignedDuration, Timestamp};
 use nazo_operator_protocol::{
     RECOVERY_KDF_ID, RecoveryProposal, RecoveryRootRotation, derive_recovery_seed,
     format_recovery_secret, parse_recovery_secret, recovery_kid, validate_controller_id,
@@ -88,8 +88,8 @@ async fn attempt_state(url: &str, challenge_id: Uuid) -> AttemptState {
     .expect("fixture challenge state")
 }
 
-fn at(seconds: i64) -> DateTime<Utc> {
-    Utc.timestamp_opt(1_800_000_000 + seconds, 0)
+fn at(seconds: i64) -> Timestamp {
+    Timestamp::new(1_800_000_000 + seconds, 0)
         .single()
         .expect("valid timestamp")
 }
@@ -209,7 +209,7 @@ async fn enroll_root(
     repository: &RecoveryRootRepository,
     deployment: &str,
     material: &RecoveryMaterial,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> IssuedIdentityApproval {
     let rotation = material.rotation(deployment);
     let issued = repository
@@ -430,7 +430,7 @@ async fn rotation_needs_unconsumed_fresh_approval_and_bumps_exactly_one_generati
                 approval_token: stale.token.to_owned(),
                 action_sha256: (stale_rotation.action_sha256()).to_owned(),
                 root: first.root_input(deployment),
-                now: at(7) + Duration::seconds(RECOVERY_CHALLENGE_TTL_SECONDS + 60),
+                now: at(7) + SignedDuration::from_secs(RECOVERY_CHALLENGE_TTL_SECONDS + 60),
             },
             identity_audit::audit(),
         )
@@ -656,7 +656,7 @@ async fn challenges_are_refused_while_any_controller_is_admitted_and_single_pend
         .await
         .expect("challenge should issue without admitting keys");
     assert_eq!(
-        (issued.expires_at - at(4)).num_seconds(),
+        (issued.expires_at - at(4)).as_secs(),
         RECOVERY_CHALLENGE_TTL_SECONDS
     );
     let idempotent = repository
@@ -829,7 +829,7 @@ async fn accepted_recovery_revokes_everything_installs_one_slot_and_rotates_the_
     assert_eq!(commit.slot.kid, kid_of(&controller_key_for_slot(9)));
     assert_eq!(commit.slot.issued_at, at(12));
     assert_eq!(
-        (commit.slot.expires_at - commit.slot.issued_at).num_seconds(),
+        (commit.slot.expires_at - commit.slot.issued_at).as_secs(),
         CONTROLLER_KEY_TTL_SECONDS,
         "the recovered slot obeys the fixed 30-day expiry"
     );

@@ -1,6 +1,5 @@
 //! Real PostgreSQL regression fixtures for the six administrative identity owners.
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Bool, Integer, Jsonb, Text, Timestamptz, Uuid as SqlUuid},
@@ -8,6 +7,7 @@ use diesel::{
 use diesel_async::{RunQueryDsl, SimpleAsyncConnection};
 use futures_util::FutureExt as _;
 use futures_util::future::BoxFuture;
+use jiff::Timestamp;
 use nazo_identity::{
     TenantContext,
     ports::{NewUser, PasswordHashInput},
@@ -78,14 +78,14 @@ impl Fixture {
             deployment_id: self.deployment.clone(),
             action,
             action_sha256: digest(),
-            now: Utc::now(),
+            now: Timestamp::now(),
         }
     }
     fn recovery_approval(&self) -> RecoveryApprovalCommand {
         RecoveryApprovalCommand {
             deployment_id: self.deployment.clone(),
             action_sha256: digest(),
-            now: Utc::now(),
+            now: Timestamp::now(),
         }
     }
     fn creation(&self, token: &str, bind: bool) -> SlotCreationCommand {
@@ -108,7 +108,7 @@ impl Fixture {
                 kid: kid(11),
                 public_key: key(11),
             }),
-            now: Utc::now(),
+            now: Timestamp::now(),
         }
     }
     fn rotation(&self, token: &str, controller: &str) -> SlotRotationCommand {
@@ -122,7 +122,7 @@ impl Fixture {
                 kid: kid(2),
                 public_key: key(2),
             },
-            now: Utc::now(),
+            now: Timestamp::now(),
         }
     }
     fn revocation(&self, token: &str, controller: &str) -> SlotRevocationCommand {
@@ -131,7 +131,7 @@ impl Fixture {
             deployment_id: self.deployment.clone(),
             action_sha256: digest(),
             controller_id: controller.to_owned(),
-            now: Utc::now(),
+            now: Timestamp::now(),
         }
     }
     fn root_rotation(&self, token: &str) -> RecoveryRotationCommand {
@@ -143,7 +143,7 @@ impl Fixture {
                 kid: kid(12),
                 public_key: key(12),
             },
-            now: Utc::now(),
+            now: Timestamp::now(),
         }
     }
 }
@@ -208,15 +208,17 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
     #[derive(QueryableByName)]
     struct ApprovalTimes {
         #[diesel(sql_type = Timestamptz)]
-        created_at: DateTime<Utc>,
+        #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+        created_at: Timestamp,
         #[diesel(sql_type = Timestamptz)]
-        expires_at: DateTime<Utc>,
+        #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+        expires_at: Timestamp,
     }
     for nanos in [1, 999, 123_456_789, 999_999_999] {
-        let now = DateTime::<Utc>::from_timestamp(1_800_000_000, nanos).unwrap();
-        let stored_now =
-            DateTime::<Utc>::from_timestamp(1_800_000_000, nanos / 1_000 * 1_000).unwrap();
-        let expected_expiry = stored_now + chrono::Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
+        let now = Timestamp::new(1_800_000_000, nanos).unwrap();
+        let stored_now = Timestamp::new(1_800_000_000, nanos / 1_000 * 1_000).unwrap();
+        let expected_expiry =
+            stored_now + jiff::SignedDuration::from_secs(IDENTITY_APPROVAL_TTL_SECONDS);
         for action in [
             ControllerIdentityAction::Bind,
             ControllerIdentityAction::Add,
@@ -248,14 +250,14 @@ async fn required_control_plane_approvals_accept_submicrosecond_clocks_with_exac
             assert_eq!(stored.expires_at, expected_expiry);
             assert_eq!(approval.expires_at, stored.expires_at);
             assert_eq!(
-                (stored.expires_at - stored.created_at).num_seconds(),
+                (stored.expires_at - stored.created_at).as_secs(),
                 IDENTITY_APPROVAL_TTL_SECONDS
             );
             let evidence = snapshot(&f).await;
             let event = evidence["canonical"].as_array().unwrap().last().unwrap();
             assert_eq!(
                 event["payload"]["expires_at"],
-                approval.expires_at.to_rfc3339()
+                approval.expires_at.to_string()
             );
             assert_eq!(
                 event["payload"]["approval_id"],
@@ -585,7 +587,7 @@ impl ControllerRegistryPort for HiddenAck {
         controller_id: String,
         previous_kid: String,
         public_key: [u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> BoxFuture<'_, Result<Option<String>, ControllerRegistryError>> {
         self.registry.renew_controller_key(
             deployment_id,
@@ -604,7 +606,7 @@ impl ControllerRegistryPort for HiddenAck {
     fn admitted_controllers<'a>(
         &'a self,
         _deployment_id: &'a str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> BoxFuture<'a, Result<Vec<AdmittedController>, ControllerRegistryError>> {
         panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
@@ -612,7 +614,7 @@ impl ControllerRegistryPort for HiddenAck {
         &'a self,
         _deployment_id: &'a str,
         _kid: &'a str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> BoxFuture<'a, Result<Option<AdmittedController>, ControllerRegistryError>> {
         panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
@@ -697,14 +699,14 @@ impl RecoveryRootPort for HiddenAck {
     fn issue_recovery_challenge(
         &self,
         _challenge: NewRecoveryChallenge,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> BoxFuture<'_, Result<IssuedRecoveryChallenge, RecoveryRootError>> {
         panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }
     fn submit_recovery_challenge(
         &self,
         _submission: RecoverySubmission,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> BoxFuture<'_, Result<RecoveredSlotCommit, RecoveryRootError>> {
         panic!("this commit-ACK fixture does not serve reads or recovery challenges")
     }

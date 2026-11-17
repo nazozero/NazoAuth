@@ -108,9 +108,9 @@ fn invalid_pool() -> nazo_postgres::DbPool {
 
 async fn fixture_crypto() -> Openid4vcCredentialCrypto {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(30),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((30) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let keyset = nazo_key_management::test_support::key_manager(settings)
         .await
@@ -134,7 +134,7 @@ async fn fixture_crypto() -> Openid4vcCredentialCrypto {
     )
     .expect("database endpoint P-256 signing key");
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("endpoint CA key");
-    let now = time::OffsetDateTime::now_utc();
+    let now = time::OffsetTimestamp::now_utc();
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
@@ -396,7 +396,7 @@ impl TokenRepositoryPort for SubjectStateOutage {
         tenant_id: Uuid,
         raw_token: &'a str,
         client_id: Uuid,
-        retry_started_at: chrono::DateTime<chrono::Utc>,
+        retry_started_at: jiff::Timestamp,
         prepare_oidc_subject: bool,
     ) -> nazo_auth::TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         self.inner.refresh_token_snapshot(
@@ -440,7 +440,7 @@ impl TokenRepositoryPort for SubjectStateOutage {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &'a str,
-        access_token_expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        access_token_expires_at: Option<jiff::Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> nazo_auth::TokenFuture<'a, ()> {
         self.inner.revoke_issued_tokens(
@@ -743,7 +743,7 @@ fn jwt_credential_request(configuration_id: &str, issuer: &str, nonce: &str) -> 
         &json!({
             "aud": issuer,
             "nonce": nonce,
-            "iat": chrono::Utc::now().timestamp(),
+            "iat": jiff::Timestamp::now().as_second(),
         }),
     );
     CredentialRequest {

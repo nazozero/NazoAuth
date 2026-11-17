@@ -284,8 +284,8 @@ async fn framework_boundary_transport_rfc9440_same_resolver_observes_tenant_ca_r
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>(),
             subject_dn: "CN=T00 tenant CA",
-            not_before: chrono::Utc::now() - chrono::Duration::minutes(1),
-            not_after: chrono::Utc::now() + chrono::Duration::hours(1),
+            not_before: jiff::Timestamp::now() - jiff::SignedDuration::from_mins(1),
+            not_after: jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
         },
     )
     .await

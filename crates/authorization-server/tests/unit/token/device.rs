@@ -13,8 +13,8 @@ use crate::test_support::token_ports;
 use crate::token::{
     DEVICE_CODE_GRANT_TYPE, client_auth::ClientAuthRequestFacts, device_config::DeviceConfig,
 };
-use chrono::{Duration, Utc};
 use http::StatusCode;
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationState,
     DevicePollTransition, PresentedClientCredentials as ClientCredentials, evaluate_device_poll,
@@ -226,13 +226,13 @@ fn device_authorization_request_binds_scope_audience_ttl_and_poll_interval() {
     assert_eq!(payload.interval_seconds, 5);
     assert_eq!(
         payload.expires_at,
-        payload.issued_at + Duration::seconds(600)
+        payload.issued_at + SignedDuration::from_secs(600)
     );
 }
 
 #[test]
 fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let payload = DeviceAuthorizationPayload {
         client_id: "device-client".to_owned(),
         client_name: "Device Client".to_owned(),
@@ -241,7 +241,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         authorization_details: json!([]),
         interval_seconds: 5,
         issued_at: now,
-        expires_at: now + Duration::seconds(600),
+        expires_at: now + SignedDuration::from_secs(600),
     };
 
     let pending = DeviceAuthorizationState::Pending {
@@ -256,7 +256,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
 
     let too_soon = DeviceAuthorizationState::Pending {
         payload: payload.clone(),
-        last_poll_at: Some(now - Duration::seconds(1)),
+        last_poll_at: Some(now - SignedDuration::from_secs(1)),
         slow_down_count: 0,
     };
     assert!(matches!(
@@ -275,7 +275,7 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
 
     let expired = DeviceAuthorizationState::Pending {
         payload: DeviceAuthorizationPayload {
-            expires_at: now - Duration::seconds(1),
+            expires_at: now - SignedDuration::from_secs(1),
             ..payload
         },
         last_poll_at: None,

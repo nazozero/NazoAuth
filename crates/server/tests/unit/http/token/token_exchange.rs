@@ -1,7 +1,7 @@
 use crate::test_support::token_response_body as response_body;
 use response_body::oauth_error_code;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::Claims;
 use nazo_auth::TokenExchangeError;
 use nazo_auth::TokenExchangePolicy;
@@ -128,7 +128,7 @@ fn claims(client_id: &str, audience: Value, scope: &str) -> Claims {
         jti: Uuid::now_v7().to_string(),
         iat: 1_000,
         nbf: 1_000,
-        exp: Utc::now().timestamp() + 300,
+        exp: Timestamp::now().as_second() + 300,
         cnf: None,
         act: None,
         userinfo_claim_requests: (Vec::new()).into(),
@@ -171,7 +171,7 @@ fn policy(client: &ClientRow) -> TokenExchangePolicy<'_> {
         allowed_audiences: &client.allowed_audiences,
         require_dpop_bound_tokens: client.require_dpop_bound_tokens,
         require_mtls_bound_tokens: client.require_mtls_bound_tokens,
-        now: Utc::now().timestamp(),
+        now: Timestamp::now().as_second(),
     }
 }
 

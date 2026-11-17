@@ -8,7 +8,7 @@ use nazo_identity::DEFAULT_TENANT_ID;
 
 use crate::settings::Settings;
 
-use chrono::Utc;
+use jiff::Timestamp;
 
 use serde_json::json;
 
@@ -295,7 +295,7 @@ fn signed_client_assertion_with_alg(
     jti: &str,
     alg: jsonwebtoken::Algorithm,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let claims = json!({
         "iss": client_id,
         "sub": client_id,
@@ -571,7 +571,7 @@ async fn private_key_jwt_without_kid_uses_the_registered_key_source() {
         };
         let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
         header.kid = kid.map(str::to_owned);
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now().as_second();
         let assertion = key.encode_jwt(
             &header,
             &json!({

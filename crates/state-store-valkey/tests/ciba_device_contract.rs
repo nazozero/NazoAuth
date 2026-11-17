@@ -1,8 +1,8 @@
 use std::time::Duration;
 
-use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config, Expiration};
+use jiff::Timestamp;
 use nazo_auth::{
     CibaAtomicResult, CibaAuthenticationContext, CibaDecision, CibaPingFinishOutcome,
     CibaPingFinishResult, CibaPingNotification, CibaPingNotificationStatus, CibaPollCommit,
@@ -529,7 +529,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
     assert!(notification.client_notification_token.is_none());
 }
 
-fn pending_device(now: chrono::DateTime<Utc>) -> DeviceAuthorizationState {
+fn pending_device(now: jiff::Timestamp) -> DeviceAuthorizationState {
     DeviceAuthorizationState::Pending {
         payload: DeviceAuthorizationPayload {
             client_id: "client-a".to_owned(),
@@ -539,7 +539,7 @@ fn pending_device(now: chrono::DateTime<Utc>) -> DeviceAuthorizationState {
             authorization_details: json!([]),
             interval_seconds: 5,
             issued_at: now,
-            expires_at: now + chrono::Duration::seconds(60),
+            expires_at: now + jiff::SignedDuration::from_secs(60),
         },
         last_poll_at: None,
         slow_down_count: 0,
@@ -565,7 +565,7 @@ async fn device_snapshot_preserves_raw_cas_value_and_rejects_missing_expiry_or_c
             .unwrap()
             .is_none()
     );
-    let state = pending_device(Utc::now());
+    let state = pending_device(Timestamp::now());
     let raw = serde_json::to_string_pretty(&state).unwrap();
     inspector
         .set::<(), _, _>(&key, &raw, Some(Expiration::PX(60_000)), None, false)
@@ -645,7 +645,7 @@ async fn device_creation_is_atomic_and_collision_leaves_no_orphan() {
     ));
     let device_key =
         nazo_valkey::test_support::state_storage_key(format!("oauth:device:code:{device_hash}"));
-    let state = pending_device(Utc.timestamp_opt(1_000, 0).unwrap());
+    let state = pending_device(Timestamp::new(1_000, 0).unwrap());
     inspector
         .set::<(), _, _>(&user_key, "occupied", None, None, false)
         .await
@@ -693,7 +693,7 @@ async fn concurrent_device_polls_atomically_accumulate_slow_down() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
-    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let now = Timestamp::new(server_time(&inspector).await, 0).unwrap();
     let device_code = format!("device-poll-{}", uuid::Uuid::now_v7());
     let user_code = format!("POLL-{}", uuid::Uuid::now_v7());
     let mut state = pending_device(now);
@@ -707,7 +707,7 @@ async fn concurrent_device_polls_atomically_accumulate_slow_down() {
         .await
         .unwrap();
     let service = DeviceGrantService::new(store);
-    let poll_time = now + chrono::Duration::seconds(1);
+    let poll_time = now + jiff::SignedDuration::from_secs(1);
 
     assert!(matches!(
         service
@@ -742,7 +742,7 @@ async fn approved_device_code_remains_retryable_for_owner_claim() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
-    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let now = Timestamp::new(server_time(&inspector).await, 0).unwrap();
     let device_code = format!("device-consume-{}", uuid::Uuid::now_v7());
     let user_code = format!("CONSUME-{}", uuid::Uuid::now_v7());
     let payload = match pending_device(now) {
@@ -754,7 +754,7 @@ async fn approved_device_code_remains_retryable_for_owner_claim() {
         approval: DeviceAuthorizationApproval {
             user_id: uuid::Uuid::from_u128(42),
             subject: "subject".to_owned(),
-            auth_time: now.timestamp(),
+            auth_time: now.as_second(),
             amr: vec!["pwd".to_owned()],
             oidc_sid: None,
         },
@@ -791,7 +791,7 @@ async fn concurrent_device_denials_commit_one_terminal_result() {
     let Some((connection, inspector)) = setup().await else {
         return;
     };
-    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let now = Timestamp::new(server_time(&inspector).await, 0).unwrap();
     let device_code = format!("device-decision-{}", uuid::Uuid::now_v7());
     let user_code = format!("DECISION-{}", uuid::Uuid::now_v7());
     let state = pending_device(now);
@@ -836,7 +836,7 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
     let Some((connection, inspector)) = setup().await else {
         return;
     };
-    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let now = Timestamp::new(server_time(&inspector).await, 0).unwrap();
     let device_code = format!("prepared-{}", uuid::Uuid::now_v7());
     let user_code = format!("PREPARED-{}", uuid::Uuid::now_v7());
     let device_key = nazo_valkey::test_support::device_code_storage_key(&device_code);
@@ -871,7 +871,7 @@ async fn device_claim_checks_live_mapping_and_recorded_snapshot_preserves_exact_
     let approval = DeviceAuthorizationApproval {
         user_id: uuid::Uuid::from_u128(42),
         subject: "subject".into(),
-        auth_time: now.timestamp(),
+        auth_time: now.as_second(),
         amr: vec!["pwd".into()],
         oidc_sid: Some("sid".into()),
     };

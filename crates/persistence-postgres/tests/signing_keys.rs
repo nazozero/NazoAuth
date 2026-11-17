@@ -1,9 +1,9 @@
 //! Real-database proof of the tenant-bound signing-key repository contract.
 use std::collections::BTreeMap;
 
-use chrono::{Duration, Utc};
 use diesel::{sql_query, sql_types::Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CertificateRevocationEntry, CertificateRevocationSnapshot, CertificateRevocationStatus,
@@ -62,8 +62,8 @@ fn mdoc_fixture(signing_kid: &str) -> MdocFixture {
     let iaca_id = sha256_hex(ca.der());
     let snapshot = CertificateRevocationSnapshot {
         version: CertificateRevocationSnapshot::VERSION,
-        this_update: Utc::now() - Duration::minutes(1),
-        next_update: Utc::now() + Duration::hours(1),
+        this_update: Timestamp::now() - SignedDuration::from_mins(1),
+        next_update: Timestamp::now() + SignedDuration::from_hours(1),
         entries: vec![CertificateRevocationEntry {
             issuer: MDOC_ISSUER.to_owned(),
             certificate: certificate_identity(leaf.der()),
@@ -134,9 +134,9 @@ fn assert_same_runtime_public_material(
 
 fn database_key_settings() -> KeySettings {
     KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
@@ -168,9 +168,9 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     .execute(&mut pool.get().await?)
     .await?;
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository: Arc<dyn SigningKeyRepository> =
         Arc::new(SigningKeysetRepository::for_tenant(pool.clone(), tenant));

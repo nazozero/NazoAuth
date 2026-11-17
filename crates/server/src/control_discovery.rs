@@ -2,7 +2,7 @@ use crate::{config::read_or_create_instance_identity_key, operator_task::release
 use anyhow::{Context as _, bail};
 use atomicwrites::{AllowOverwrite, AtomicFile, DisallowOverwrite};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use nazo_operator_protocol::{
     CONTROL_DISCOVERY_PRODUCT, CONTROL_DISCOVERY_SCHEMA, DeploymentStatement, PROTOCOL_VERSION,
@@ -74,7 +74,7 @@ pub(crate) fn initialize(
         control_protocol_versions: vec![CONTROL_DISCOVERY_SCHEMA],
         operator_protocol_versions: vec![PROTOCOL_VERSION],
         instance_key_id: key_id,
-        issued_at: Utc::now().timestamp(),
+        issued_at: Timestamp::now().as_second(),
     };
     publish_deployment_statement(
         &identity_dir.join(DEPLOYMENT_STATEMENT_FILE),

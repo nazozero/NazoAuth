@@ -3,7 +3,7 @@ use crate::crypto::decoding_key;
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
 use nazo_digital_credentials::HolderBinding;
 use nazo_openid4vci::{
@@ -95,7 +95,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
             if proofs.0.len() != 1 {
                 return Err(ProofError::UnsupportedType);
             }
-            let now = Utc::now();
+            let now = Timestamp::now();
             if let Some(attestations) = proofs.0.get("attestation") {
                 let [encoded] = attestations.as_slice() else {
                     return Err(ProofError::InvalidKeyAttestation);
@@ -149,8 +149,8 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     return Err(ProofError::InvalidSignature);
                 }
                 if decoded.claims.nonce != expected_nonce
-                    || decoded.claims.iat < (now - Duration::minutes(5)).timestamp()
-                    || decoded.claims.iat > (now + Duration::seconds(60)).timestamp()
+                    || decoded.claims.iat < (now - SignedDuration::from_mins(5)).as_second()
+                    || decoded.claims.iat > (now + SignedDuration::from_secs(60)).as_second()
                 {
                     return Err(ProofError::InvalidNonce);
                 }
@@ -200,7 +200,7 @@ impl Openid4vcProofValidator {
         encoded: &str,
         expected_nonce: &str,
         metadata: &nazo_openid4vci::ProofTypeMetadata,
-        now: chrono::DateTime<Utc>,
+        now: jiff::Timestamp,
         context: KeyAttestationContext,
     ) -> Result<Vec<Value>, ProofError> {
         let header = decode_header(encoded).map_err(|_| ProofError::InvalidKeyAttestation)?;
@@ -239,8 +239,8 @@ impl Openid4vcProofValidator {
             .get("iat")
             .and_then(Value::as_i64)
             .ok_or(ProofError::InvalidKeyAttestation)?;
-        if issued_at < (now - Duration::minutes(5)).timestamp()
-            || issued_at > (now + Duration::seconds(60)).timestamp()
+        if issued_at < (now - SignedDuration::from_mins(5)).as_second()
+            || issued_at > (now + SignedDuration::from_secs(60)).as_second()
         {
             return Err(ProofError::InvalidKeyAttestation);
         }
@@ -248,7 +248,7 @@ impl Openid4vcProofValidator {
             .get("exp")
             .map(|value| value.as_i64().ok_or(ProofError::InvalidKeyAttestation))
             .transpose()?;
-        if expires_at.is_some_and(|exp| exp <= now.timestamp()) {
+        if expires_at.is_some_and(|exp| exp <= now.as_second()) {
             return Err(ProofError::InvalidKeyAttestation);
         }
         let nonce = claims

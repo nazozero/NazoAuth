@@ -1,6 +1,6 @@
 use crate::domain::rows::ClientRow;
 
-use chrono::Utc;
+use jiff::Timestamp;
 
 use nazo_identity::{DEFAULT_TENANT_ID, PublicAccount, TenantContext};
 
@@ -31,8 +31,8 @@ fn user_in_context(context: TenantContext) -> PublicAccount {
             mfa_enabled: false,
         },
         profile: nazo_identity::UserProfile::default(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Timestamp::now(),
+        updated_at: Timestamp::now(),
     }
 }
 

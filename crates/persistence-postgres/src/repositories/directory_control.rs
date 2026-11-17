@@ -5,9 +5,9 @@
 //! in a single PostgreSQL transaction. The revision fence lives inside the
 //! directory mutation, so a stale expected revision never moves the directory.
 
-use chrono::Utc;
 use diesel::{OptionalExtension as _, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::{TenantRuntimeStatus, ports::RepositoryError};
 use nazo_persistence::directory_control::{
     DirectoryControlAction, DirectoryControlFrame, DirectoryControlOutcome,
@@ -451,7 +451,7 @@ fn directory_audit_event(
         event_type: format!("tenant_directory_{}", directory_operation_name(action)),
         event_category: "tenant_directory".to_owned(),
         payload,
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     }
 }
 

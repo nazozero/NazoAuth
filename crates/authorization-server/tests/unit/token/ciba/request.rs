@@ -5,8 +5,8 @@ use crate::domain::rows::ClientRow;
 use crate::token::ciba::{policy::*, state::*};
 use crate::token::dispatch::validate_token_request_profile;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_auth::{CibaRequestState, CibaStatus};
 use nazo_identity::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use serde_json::{Value, json};
@@ -180,7 +180,7 @@ fn signed_ciba_request_object_for_client_with_alg(
     fixture: &ClientSigningFixture,
     extra_claims: Value,
 ) -> String {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let mut claims = json!({
         "iss": client_id,
         "aud": "https://issuer.example",
@@ -237,7 +237,7 @@ fn ciba_status_serializes_as_protocol_state() {
 
 #[test]
 fn ciba_start_audit_fields_are_redacted() {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let state = CibaRequestState {
         client_id: "client-1".to_owned(),
         user_id: Uuid::now_v7(),
@@ -273,7 +273,7 @@ fn ciba_start_audit_fields_are_redacted() {
 
 #[test]
 fn ciba_request_object_helpers_cover_protocol_boundaries() {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let claims =
         |aud: Option<Value>, exp: i64, nbf: i64, iat: i64| CibaAuthenticationRequestClaims {
             iss: Some("client-1".to_owned()),
@@ -597,9 +597,9 @@ fn ciba_request_object_rejects_invalid_compact_jwt_metadata() {
     let claims = json!({
         "iss": "client-1",
         "aud": "https://issuer.example",
-        "iat": Utc::now().timestamp(),
-        "nbf": Utc::now().timestamp(),
-        "exp": Utc::now().timestamp() + 120,
+        "iat": Timestamp::now().as_second(),
+        "nbf": Timestamp::now().as_second(),
+        "exp": Timestamp::now().as_second() + 120,
         "jti": format!("missing-kid-{}", Uuid::now_v7()),
         "login_hint": "subject@example.test"
     });

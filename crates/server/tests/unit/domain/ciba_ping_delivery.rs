@@ -218,7 +218,7 @@ fn ciba_delivery(endpoint: String) -> CibaPingDelivery {
         endpoint,
         client_notification_token: uuid::Uuid::now_v7().to_string(),
         attempts: 0,
-        expires_at: chrono::Utc::now().timestamp() + 60,
+        expires_at: jiff::Timestamp::now().as_second() + 60,
     }
 }
 

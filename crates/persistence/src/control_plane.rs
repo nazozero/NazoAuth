@@ -4,8 +4,8 @@
 //! adapter may use transactions, locks and durable receipts internally, but
 //! none of those backend mechanisms cross this boundary.
 
-use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
+use jiff::Timestamp;
 use uuid::Uuid;
 
 pub const CONTROLLER_KEY_TTL_SECONDS: i64 = 2_592_000;
@@ -28,12 +28,12 @@ pub struct StoredControllerSlot {
     pub kid: String,
     pub public_key: Vec<u8>,
     pub slot_index: i16,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
     pub status: ControllerSlotStatus,
-    pub revoked_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub revoked_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 impl StoredControllerSlot {
@@ -57,8 +57,8 @@ pub struct ControllerSlotSummary {
     pub label: String,
     pub kid: String,
     pub slot_index: i16,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
     pub status: ControllerSlotStatus,
 }
 
@@ -67,7 +67,7 @@ pub struct AdmittedController {
     pub controller_id: String,
     pub kid: String,
     pub public_key: Vec<u8>,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Debug)]
@@ -194,7 +194,7 @@ pub struct IssuedIdentityApproval {
     pub action: ControllerIdentityAction,
     pub action_sha256: String,
     pub token: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for IssuedIdentityApproval {
@@ -210,8 +210,8 @@ pub struct StoredRecoveryRoot {
     pub recovery_public_key: Vec<u8>,
     pub kdf: String,
     pub generation: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -220,8 +220,8 @@ pub struct RecoveryRootSummary {
     pub recovery_kid: String,
     pub kdf: String,
     pub generation: i32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 impl StoredRecoveryRoot {
@@ -242,7 +242,7 @@ impl StoredRecoveryRoot {
 pub struct AdmittedControllerSummary {
     pub controller_id: String,
     pub kid: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Debug)]
@@ -269,7 +269,7 @@ pub struct IssuedRecoveryChallenge {
     pub challenge_id: Uuid,
     pub deployment_id: String,
     pub nonce: [u8; 32],
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone)]
@@ -361,7 +361,7 @@ pub struct IdentityApprovalCommand {
     pub deployment_id: String,
     pub action: ControllerIdentityAction,
     pub action_sha256: String,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone)]
@@ -371,7 +371,7 @@ pub struct SlotCreationCommand {
     pub action_sha256: String,
     pub slot: NewControllerSlot,
     pub initial_root: Option<NewRecoveryRoot>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone)]
@@ -379,7 +379,7 @@ pub struct SlotRotationCommand {
     pub approval_token: String,
     pub action_sha256: String,
     pub rotation: RotateControllerKey,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone)]
@@ -388,14 +388,14 @@ pub struct SlotRevocationCommand {
     pub deployment_id: String,
     pub action_sha256: String,
     pub controller_id: String,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone, Debug)]
 pub struct RecoveryApprovalCommand {
     pub deployment_id: String,
     pub action_sha256: String,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone)]
@@ -403,7 +403,7 @@ pub struct RecoveryRotationCommand {
     pub approval_token: String,
     pub action_sha256: String,
     pub root: NewRecoveryRoot,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 /// Stores identity commands validated by the application service. The adapter
@@ -417,7 +417,7 @@ pub trait ControllerRegistryPort: Send + Sync {
         controller_id: String,
         previous_kid: String,
         public_key: [u8; 32],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> BoxFuture<'_, Result<Option<String>, ControllerRegistryError>>;
     fn issue_identity_approval_with_required_audit(
         &self,
@@ -447,13 +447,13 @@ pub trait ControllerRegistryPort: Send + Sync {
     fn admitted_controllers<'a>(
         &'a self,
         deployment_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> BoxFuture<'a, Result<Vec<AdmittedController>, ControllerRegistryError>>;
     fn admitted_controller_by_kid<'a>(
         &'a self,
         deployment_id: &'a str,
         kid: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> BoxFuture<'a, Result<Option<AdmittedController>, ControllerRegistryError>>;
 }
 
@@ -478,11 +478,11 @@ pub trait RecoveryRootPort: Send + Sync {
     fn issue_recovery_challenge(
         &self,
         challenge: NewRecoveryChallenge,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> BoxFuture<'_, Result<IssuedRecoveryChallenge, RecoveryRootError>>;
     fn submit_recovery_challenge(
         &self,
         submission: RecoverySubmission,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> BoxFuture<'_, Result<RecoveredSlotCommit, RecoveryRootError>>;
 }

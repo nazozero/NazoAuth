@@ -17,7 +17,6 @@ use actix_web::{
     http::{header, header::HeaderMap},
     web::{Bytes, Data, Json, Path},
 };
-use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
@@ -27,6 +26,7 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
 use futures_util::stream;
+use jiff::Timestamp;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -346,7 +346,7 @@ impl LiveAvatarFixture {
         let payload = SessionPayload {
             authorization_epoch: 0,
             user_id: user.id,
-            auth_time: Utc::now().timestamp(),
+            auth_time: Timestamp::now().as_second(),
             amr: vec!["pwd".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
@@ -444,7 +444,7 @@ impl AvatarDirectUploadPort for HttpDirectStorage {
         &'a self,
         _staging_object_id: &'a str,
         _content_length: usize,
-        _expires_at: DateTime<Utc>,
+        _expires_at: Timestamp,
     ) -> AvatarStorageFuture<'a, AvatarUploadTarget> {
         let result = self.authorize.clone();
         Box::pin(async move { result })
@@ -533,7 +533,7 @@ impl AvatarUploadStatePort for HttpDirectState {
         &'a self,
         _user_id: nazo_identity::UserId,
         _upload_id: &'a str,
-        _lease_until: DateTime<Utc>,
+        _lease_until: Timestamp,
     ) -> RepositoryFuture<'a, AvatarUploadClaim> {
         let result = self.claim.clone();
         Box::pin(async move { result })
@@ -597,7 +597,7 @@ fn direct_avatar_profiles_for_http(
 fn pending_direct_claim(
     user: &DatabaseUserFixture,
     upload_id: &str,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) -> AvatarUploadClaim {
     AvatarUploadClaim::Pending {
         authorization: AvatarUploadAuthorization {
@@ -1196,8 +1196,11 @@ async fn complete_direct_avatar_upload_maps_validation_storage_and_success() {
         "Avatar upload is being completed."
     );
 
-    let expired_claim =
-        pending_direct_claim(&user, &upload_id, Utc::now() - chrono::Duration::seconds(1));
+    let expired_claim = pending_direct_claim(
+        &user,
+        &upload_id,
+        Timestamp::now() - jiff::SignedDuration::from_secs(1),
+    );
     let (status, body, _) = response_json(
         complete_direct_avatar_upload_with_profiles(
             fixture.state.clone(),
@@ -1217,8 +1220,11 @@ async fn complete_direct_avatar_upload_maps_validation_storage_and_success() {
     assert_eq!(body["error"], "invalid_request");
     assert_eq!(body["error_description"], "Avatar upload has expired.");
 
-    let pending_claim =
-        pending_direct_claim(&user, &upload_id, Utc::now() + chrono::Duration::minutes(5));
+    let pending_claim = pending_direct_claim(
+        &user,
+        &upload_id,
+        Timestamp::now() + jiff::SignedDuration::from_mins(5),
+    );
     let invalid_storage = HttpDirectStorage {
         staged: Ok(AvatarStagedObject {
             bytes: b"not-an-image".to_vec(),
@@ -1530,7 +1536,7 @@ async fn upload_avatar_reports_session_lookup_failure_after_valid_csrf_before_re
     let payload = SessionPayload {
         authorization_epoch: 0,
         user_id: Uuid::now_v7(),
-        auth_time: Utc::now().timestamp(),
+        auth_time: Timestamp::now().as_second(),
         amr: vec!["pwd".to_owned()],
         pending_mfa: false,
         oidc_sid: Some(format!("oidc-{sid}")),
@@ -1583,7 +1589,7 @@ async fn delete_avatar_reports_session_lookup_failure_after_valid_csrf_before_pr
     let payload = SessionPayload {
         authorization_epoch: 0,
         user_id: Uuid::now_v7(),
-        auth_time: Utc::now().timestamp(),
+        auth_time: Timestamp::now().as_second(),
         amr: vec!["pwd".to_owned()],
         pending_mfa: false,
         oidc_sid: Some(format!("oidc-{sid}")),

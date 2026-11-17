@@ -7,12 +7,12 @@ use actix_web::{
     http::{StatusCode, header},
     test, web,
 };
-use chrono::{DateTime, Utc};
 use diesel::{
     sql_query,
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
+use jiff::Timestamp;
 use nazo_identity::{
     MfaService, SessionId, SessionRotationOutcome, SessionService, SessionSnapshot,
     SessionUpdateOutcome, SessionVersion, TenantContext, TenantId, UserId,
@@ -301,7 +301,7 @@ impl MfaRepositoryPort for UnknownMfaCommitAck {
         credential_id: Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     ) -> RepositoryFuture<'_, bool> {
         MfaRepositoryPort::remember_device(
             &self.inner,
@@ -476,7 +476,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
             .unwrap(),
         ),
     );
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let step = now / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let totp_secret: [u8; 20] = rand::random();
     let totp_secret_base32 = nazo_identity::mfa::base32_encode(&totp_secret);
@@ -565,7 +565,7 @@ async fn unknown_ack_http_boundary(regenerate: bool) {
     };
     let code = nazo_identity::mfa::totp_for_step(
         &totp_secret,
-        Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
+        Timestamp::now().as_second() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS,
     )
     .unwrap();
     let response = test::call_service(

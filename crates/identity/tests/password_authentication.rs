@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::{
     AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationIdentity,
     AuthenticationService, AuthenticationServiceConfig, PasswordHash, TenantContext, TenantId,
@@ -94,7 +94,7 @@ impl RememberedMfaDevicePort for RememberedMfa {
         _user_id: UserId,
         _token_hash: &'a str,
         _user_agent_hash: Option<&'a str>,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> RepositoryFuture<'a, bool> {
         Box::pin(async { Ok(false) })
     }
@@ -244,7 +244,7 @@ async fn missing_and_inactive_accounts_share_dummy_verification_and_failure_beha
                 source_ip: "192.0.2.1".to_owned(),
                 remembered_mfa: None,
                 previous_session_id: Some("old-session".to_owned()),
-                now: Utc::now(),
+                now: Timestamp::now(),
             })
             .await;
 
@@ -298,7 +298,7 @@ async fn login_uses_current_account_state_after_password_verification() {
                 source_ip: "192.0.2.1".to_owned(),
                 remembered_mfa: None,
                 previous_session_id: None,
-                now: Utc::now(),
+                now: Timestamp::now(),
             })
             .await;
 
@@ -317,7 +317,7 @@ async fn login_uses_current_account_state_after_password_verification() {
 
 #[tokio::test]
 async fn password_login_can_manage_credentials_with_recent_authentication() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let service = AuthenticationService::new(
         ActiveAccounts {
             authentication: active_identity(),
@@ -356,7 +356,7 @@ async fn password_login_can_manage_credentials_with_recent_authentication() {
         result.session.auth_time(),
         result.session.amr(),
         false,
-        now.timestamp(),
+        now.as_second(),
     );
     assert_eq!(result.session.amr(), &["pwd".to_owned()]);
     assert!(accepted);

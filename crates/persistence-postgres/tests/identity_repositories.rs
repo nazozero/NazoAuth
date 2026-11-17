@@ -943,7 +943,7 @@ async fn concurrent_totp_enrollment_confirmation_has_one_audited_winner() {
         .begin_totp_enrollment(tenant.tenant_id, user_id, SECRET)
         .await
         .unwrap();
-    let step = chrono::Utc::now().timestamp() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
+    let step = jiff::Timestamp::now().as_second() / nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let timestamp = step * nazo_identity::mfa::MFA_TOTP_PERIOD_SECONDS;
     let code = nazo_identity::mfa::totp_for_step(b"12345678901234567890", step).unwrap();
     let hashes = |prefix: &str| {
@@ -1320,7 +1320,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
         .await
         .unwrap();
 
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let token_hash = "a".repeat(64);
     let user_agent_hash = "b".repeat(64);
     trait_repository
@@ -1330,7 +1330,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             token_hash.clone(),
             Some(user_agent_hash.clone()),
-            now + chrono::Duration::minutes(10),
+            now + jiff::SignedDuration::from_mins(10),
         )
         .await
         .unwrap();
@@ -1341,7 +1341,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             "c".repeat(64),
             None,
-            now - chrono::Duration::minutes(1),
+            now - jiff::SignedDuration::from_mins(1),
         )
         .await
         .unwrap();
@@ -1383,7 +1383,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
             fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await,
             unbound_token_hash.clone(),
             None,
-            now + chrono::Duration::minutes(10),
+            now + jiff::SignedDuration::from_mins(10),
         )
         .await
         .unwrap();
@@ -1425,7 +1425,7 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
                 user_id,
                 &token_hash,
                 Some(&user_agent_hash),
-                now + chrono::Duration::hours(1),
+                now + jiff::SignedDuration::from_hours(1),
             )
             .await
             .unwrap()
@@ -3522,7 +3522,7 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
     };
     let repository = mfa_repository(pool.clone());
     let old = fixture_mfa_generation(&pool, tenant.tenant_id, user_id).await;
-    let expires = chrono::Utc::now() + chrono::Duration::hours(1);
+    let expires = jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1);
     assert!(
         repository
             .remember_device(
@@ -3621,7 +3621,7 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
                 user_id,
                 &"e".repeat(64),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()
@@ -3633,7 +3633,7 @@ async fn mfa_generation_fences_late_remember_and_regeneration_after_clear_and_re
                 user_id,
                 &"d".repeat(64),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()
@@ -3724,7 +3724,7 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
                 generation,
                 "a".repeat(64),
                 None,
-                chrono::Utc::now() + chrono::Duration::hours(1),
+                jiff::Timestamp::now() + jiff::SignedDuration::from_hours(1),
             )
             .await
     });
@@ -3774,7 +3774,7 @@ async fn mfa_clear_waits_for_actual_remember_key_share_then_removes_committed_de
                 user_id,
                 &"a".repeat(64),
                 None,
-                chrono::Utc::now()
+                jiff::Timestamp::now()
             )
             .await
             .unwrap()

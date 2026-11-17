@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_openid4vci::PreparedPreAuthorizedOffer;
 use nazo_openid4vci::{
     CredentialAccess, CredentialAuthorization, CredentialStoreError, CredentialStoreFuture,
@@ -18,7 +18,7 @@ impl Openid4vciRepository {
         &'a self,
         tenant_id: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
     {
         Box::pin(async move {
@@ -32,7 +32,7 @@ impl Openid4vciRepository {
             )
             .bind::<sql_types::Uuid, _>(tenant_id)
             .bind::<sql_types::Uuid, _>(id)
-            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Timestamptz, _>((now).to_diesel())
             .get_result::<OfferRow>(&mut connection)
             .await
             .optional()
@@ -48,7 +48,7 @@ impl Openid4vciRepository {
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>
     {
         Box::pin(async move {
@@ -66,7 +66,7 @@ impl Openid4vciRepository {
                 )
                 .bind::<sql_types::Uuid, _>(tenant_id)
                 .bind::<sql_types::Text, _>(code_hash)
-                .bind::<sql_types::Timestamptz, _>(now)
+                .bind::<sql_types::Timestamptz, _>((now).to_diesel())
                 .get_result::<PreAuthorizedOfferRow>(&mut connection)
                 .await
                 .optional()
@@ -108,7 +108,7 @@ impl Openid4vciRepository {
                     client_id: client_id.to_owned(),
                     configuration_ids,
                     credential_identifiers: Vec::new(),
-                    expires_at: (now + chrono::Duration::minutes(10)).min(row.expires_at),
+                    expires_at: (now + jiff::SignedDuration::from_mins(10)).min(row.expires_at),
                 },
             }))
         })
@@ -129,7 +129,7 @@ impl Openid4vciRepository {
                 || row.credential_configuration_ids != serde_json::json!(access.configuration_ids)
                 || !access.credential_identifiers.is_empty()
                 || access.expires_at > row.expires_at
-                || access.expires_at <= Utc::now()
+                || access.expires_at <= Timestamp::now()
             {
                 return Err(CredentialStoreError::InvalidTransition);
             }
@@ -163,7 +163,7 @@ impl Openid4vciRepository {
                     .bind::<sql_types::Nullable<sql_types::Text>, _>(row.tx_code_hash.as_deref())
                     .bind::<sql_types::Uuid, _>(access.subject_id)
                     .bind::<sql_types::Jsonb, _>(&row.credential_configuration_ids)
-                    .bind::<sql_types::Timestamptz, _>(row.expires_at)
+                    .bind::<sql_types::Timestamptz, _>((row.expires_at).to_diesel())
                     .execute(connection).await?;
                 if consumed != 1 {
                     return Err(CredentialStoreError::InvalidTransition.into());
@@ -203,3 +203,5 @@ impl From<diesel::result::Error> for OfferCommitError {
         Self::Database
     }
 }
+
+use jiff_diesel::ToDiesel as _;

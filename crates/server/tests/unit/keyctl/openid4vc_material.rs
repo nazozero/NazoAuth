@@ -50,9 +50,9 @@ fn mdoc_database_config(data_dir: &Path) -> ConfigSource {
 
 fn database_key_settings() -> KeySettings {
     KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     }
 }
 
@@ -625,7 +625,7 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
         .revocation_snapshot
         .clone()
         .expect("active snapshot");
-    imported_snapshot.this_update -= chrono::Duration::hours(1);
+    imported_snapshot.this_update -= jiff::SignedDuration::from_hours(1);
     let mut revoked_historical_entry = historical_entry;
     revoked_historical_entry.status =
         nazo_digital_credentials::CertificateRevocationStatus::Revoked;
@@ -700,14 +700,14 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
             .is_ok()
     );
     assert_eq!(parsed_historical_crl.iter_revoked_certificates().count(), 1);
-    let expected_revocation_time = imported_snapshot.this_update.timestamp();
+    let expected_revocation_time = imported_snapshot.this_update.as_second();
     assert_eq!(
         parsed_historical_crl
             .iter_revoked_certificates()
             .next()
             .unwrap()
             .revocation_date
-            .timestamp(),
+            .as_second(),
         expected_revocation_time
     );
     rotate_managed_material(&manager, &profile)
@@ -724,7 +724,7 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
             .next()
             .unwrap()
             .revocation_date
-            .timestamp(),
+            .as_second(),
         expected_revocation_time
     );
 
@@ -1272,7 +1272,7 @@ async fn mdoc_crl_pins_captured_revocation_and_next_read_observes_concurrent_rev
 fn managed_mdoc_certificate_validity_uses_shared_utc_days() {
     // Two unrelated key generations on the same day must not expose their
     // creation second through the MSO's certificate lower bound.
-    let day = time::OffsetDateTime::from_unix_timestamp(1_791_590_400).unwrap();
+    let day = time::OffsetTimestamp::from_unix_timestamp(1_791_590_400).unwrap();
     assert_eq!(day.unix_timestamp().rem_euclid(86_400), 0);
     for offset in [0, 1, 43_217, 86_399, 86_400] {
         let now = day + time::Duration::seconds(offset);

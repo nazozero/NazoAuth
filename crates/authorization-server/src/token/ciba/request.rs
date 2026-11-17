@@ -17,8 +17,8 @@ use crate::{
     domain::rows::ClientRow,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use serde_json::Value;
 pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
     config: &CibaConfig,
@@ -34,7 +34,7 @@ pub(crate) fn validate_and_apply_ciba_request_object_claims_with_config(
         ));
     }
     let claims = signed_ciba_request_object_claims(request_object, client)?;
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     if claims.iss.as_deref() != Some(client.client_id.as_str())
         || !ciba_request_object_audience_valid(&claims, &config.issuer)
         || !ciba_request_object_times_valid(&claims, now)

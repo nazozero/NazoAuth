@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use chrono::Utc;
+use jiff::Timestamp;
 use uuid::Uuid;
 
 use crate::{
@@ -117,7 +117,7 @@ impl AuthorizedApplicationRepositoryPort for RecordingApplications {
 }
 
 fn account() -> PublicAccount {
-    let now = Utc::now();
+    let now = Timestamp::now();
     PublicAccount {
         principal: Principal {
             authorization_epoch: 0,
@@ -193,7 +193,7 @@ fn profile_normalization_reuses_owned_text_and_scope_strings() {
             serde_json::Value::String(scope),
             serde_json::Value::Null,
         ]),
-        last_authorized_at: Utc::now(),
+        last_authorized_at: Timestamp::now(),
         authorization_count: 1,
     });
     assert_eq!(view.last_scopes, ["openid"]);

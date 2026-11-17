@@ -1,6 +1,6 @@
 use nazo_oauth_server::crypto::jwt_decoding_key_from_jwk;
 
-use chrono::Utc;
+use jiff::Timestamp;
 
 use nazo_auth::Claims;
 
@@ -48,7 +48,7 @@ pub(crate) async fn make_jwt(
     input: AccessTokenJwtInput<'_>,
 ) -> nazo_crypto::Result<IssuedAccessToken> {
     validate_access_token_sender_constraint(input.dpop_jkt, input.mtls_x5t_s256)?;
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let jti = Uuid::now_v7().to_string();
     let claims = nazo_auth::access_token_claims(
         issuer,

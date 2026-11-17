@@ -8,8 +8,8 @@ use crate::{
     services::{ServerAuthorizationService, ServerCibaService},
     sessions::CurrentSession,
 };
-use chrono::{DateTime, Utc};
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_auth::{
     CibaAuthenticationContext, CibaCommittedDecision, CibaDecision, CibaDecisionFailure,
     CibaRequestState, CibaStatePortError, CibaStateVersion, CibaStatus, PreparedCibaDecision,
@@ -49,7 +49,7 @@ impl CibaApplication {
             ));
         }
         if state_payload.status == CibaStatus::Pending
-            && state_payload.expires_at > Utc::now().timestamp()
+            && state_payload.expires_at > Timestamp::now().as_second()
         {
             ciba_authorization_request_view(&self.authorization, state_payload).await
         } else {
@@ -196,7 +196,7 @@ async fn set_ciba_request_decision(
     } = command;
     let result = ciba_service
         .decide_prepared(prepared, decision, expected_user_id, || {
-            Utc::now().timestamp()
+            Timestamp::now().as_second()
         })
         .await;
     complete_ciba_decision(
@@ -297,8 +297,8 @@ async fn ciba_authorization_request_view(
         audiences: payload.audiences,
         binding_message: payload.binding_message,
         interval_seconds: payload.interval_seconds,
-        issued_at: DateTime::<Utc>::from_timestamp(payload.issued_at, 0).unwrap_or_else(Utc::now),
-        expires_at: DateTime::<Utc>::from_timestamp(payload.expires_at, 0).unwrap_or_else(Utc::now),
+        issued_at: Timestamp::new(payload.issued_at, 0).unwrap_or_else(Timestamp::now),
+        expires_at: Timestamp::new(payload.expires_at, 0).unwrap_or_else(Timestamp::now),
     }))
 }
 

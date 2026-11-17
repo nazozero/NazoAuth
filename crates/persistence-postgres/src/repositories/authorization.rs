@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{ExpressionMethods, QueryDsl};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
@@ -29,7 +29,7 @@ impl AuthorizationRepository {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &str,
-        access_token_expires_at: Option<DateTime<Utc>>,
+        access_token_expires_at: Option<Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> Result<(), RepositoryError> {
         // `access_token_expires_at` is the token's verified exp; the stored
@@ -41,7 +41,7 @@ impl AuthorizationRepository {
             access_token_jti_blake3: blake3_hex(access_token_jti),
             client_id,
             tenant_id,
-            revoked_at: Utc::now(),
+            revoked_at: Timestamp::now(),
             expires_at: deadline,
         });
         let Some(family_id) = refresh_token_family_id else {

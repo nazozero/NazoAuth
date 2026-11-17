@@ -4,8 +4,8 @@ use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use chrono::{Duration, Utc};
 use coset::{CborSerializable, CoseKeyBuilder, iana};
+use jiff::{SignedDuration, Timestamp};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, decode_header, encode};
 use nazo_digital_credentials::{
     CertificateRevocationSnapshot, CredentialFormat, CredentialSignInput, CredentialSignerPort,
@@ -125,7 +125,7 @@ fn certificate_fixture_with_key_and_aki(
     leaf_key: KeyPair,
     include_aki: bool,
 ) -> CertificateFixture {
-    let now = time::OffsetDateTime::now_utc();
+    let now = time::OffsetTimestamp::now_utc();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("CA key");
     let mut ca_params = CertificateParams::default();
     ca_params.distinguished_name = DistinguishedName::new();
@@ -167,9 +167,9 @@ fn certificate_fixture_with_key_and_aki(
 pub(super) async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture, String)
 {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(1),
-        prepublish_window: chrono::Duration::hours(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(1),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let keyset = nazo_key_management::test_support::key_manager(settings)
         .await
@@ -232,7 +232,7 @@ fn crypto_with_certificate(
 
 pub(super) fn valid_mdoc_presentation(
     certs: &CertificateFixture,
-    signed_at: chrono::DateTime<Utc>,
+    signed_at: jiff::Timestamp,
     status: Option<ciborium::Value>,
 ) -> (String, Vec<u8>) {
     use p256::elliptic_curve::Generate as _;
@@ -243,7 +243,7 @@ pub(super) fn valid_mdoc_presentation(
 
 fn valid_mdoc_presentation_with_holder(
     certs: &CertificateFixture,
-    signed_at: chrono::DateTime<Utc>,
+    signed_at: jiff::Timestamp,
     status: Option<ciborium::Value>,
     device_signing_key: &SigningKey,
 ) -> (String, Vec<u8>) {
@@ -258,13 +258,14 @@ fn valid_mdoc_presentation_with_holder(
         device_point.y().expect("device y").to_vec(),
     )
     .build();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let builder = DocumentBuilder::new("org.iso.18013.5.1.mDL")
         .device_key(device_key)
         .validity(ValidityInfo {
             signed: to_protocol_time(signed_at).unwrap(),
-            valid_from: to_protocol_time(signed_at.max(now - Duration::minutes(1))).unwrap(),
-            valid_until: to_protocol_time(now + Duration::hours(1)).unwrap(),
+            valid_from: to_protocol_time(signed_at.max(now - SignedDuration::from_mins(1)))
+                .unwrap(),
+            valid_until: to_protocol_time(now + SignedDuration::from_hours(1)).unwrap(),
             expected_update: None,
         })
         .add_namespace(
@@ -334,9 +335,7 @@ fn mdoc_time_conversion_preserves_nanoseconds_and_whole_leap_seconds() {
         "2026-11-17T12:00:00.123456789Z",
         "2016-12-31T23:59:60Z",
     ] {
-        let original = chrono::DateTime::parse_from_rfc3339(text)
-            .unwrap()
-            .with_timezone(&Utc);
+        let original = (text).parse::<jiff::Timestamp>().unwrap();
         let protocol = to_protocol_time(original).unwrap();
         assert_eq!(from_protocol_time(protocol).unwrap(), original);
         if text.contains(":60Z") {
@@ -344,9 +343,9 @@ fn mdoc_time_conversion_preserves_nanoseconds_and_whole_leap_seconds() {
             assert!(protocol.unix_seconds().is_none());
         }
     }
-    let fractional_leap = chrono::DateTime::parse_from_rfc3339("2016-12-31T23:59:60.5Z")
-        .unwrap()
-        .with_timezone(&Utc);
+    let fractional_leap = ("2016-12-31T23:59:60.5Z")
+        .parse::<jiff::Timestamp>()
+        .unwrap();
     assert_eq!(
         to_protocol_time(fractional_leap),
         Err(CredentialTrustError::InvalidValidity)
@@ -358,7 +357,7 @@ fn sd_input(
     subject_claims: Value,
     status: Option<Value>,
 ) -> CredentialSignInput {
-    let issued_at = Utc::now() - Duration::minutes(1);
+    let issued_at = Timestamp::now() - SignedDuration::from_mins(1);
     CredentialSignInput {
         payload: nazo_digital_credentials::CredentialPayload {
             format: CredentialFormat::SdJwtVc,
@@ -369,13 +368,13 @@ fn sd_input(
             holder_binding,
         },
         issued_at,
-        expires_at: issued_at + Duration::hours(1),
+        expires_at: issued_at + SignedDuration::from_hours(1),
         status,
     }
 }
 
 fn mdoc_input(holder_binding: Option<HolderBinding>, subject_claims: Value) -> CredentialSignInput {
-    let issued_at = Utc::now() - Duration::minutes(1);
+    let issued_at = Timestamp::now() - SignedDuration::from_mins(1);
     CredentialSignInput {
         payload: nazo_digital_credentials::CredentialPayload {
             format: CredentialFormat::MsoMdoc,
@@ -386,7 +385,7 @@ fn mdoc_input(holder_binding: Option<HolderBinding>, subject_claims: Value) -> C
             holder_binding,
         },
         issued_at,
-        expires_at: issued_at + Duration::hours(1),
+        expires_at: issued_at + SignedDuration::from_hours(1),
         status: None,
     }
 }
@@ -430,12 +429,12 @@ fn sd_presentation_fixture_with_aki(
     let issuer_key = EncodingKey::from_ec_der(&certs.leaf_key.serialize_der());
     let disclosure = URL_SAFE_NO_PAD
         .encode(serde_json::to_vec(&json!(["salt", "given_name", "Ada"])).expect("disclosure"));
-    let issued_at = Utc::now() - Duration::minutes(1);
+    let issued_at = Timestamp::now() - SignedDuration::from_mins(1);
     let credential_claims = json!({
         "iss": "https://issuer.example",
-        "iat": issued_at.timestamp(),
-        "nbf": issued_at.timestamp(),
-        "exp": (issued_at + Duration::hours(1)).timestamp(),
+        "iat": issued_at.as_second(),
+        "nbf": issued_at.as_second(),
+        "exp": (issued_at + SignedDuration::from_hours(1)).as_second(),
         "vct": "ExampleCredential",
         "_sd_alg": "sha-256",
         "_sd": [URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(disclosure.as_bytes()))],
@@ -456,7 +455,7 @@ fn sd_presentation_fixture_with_aki(
         &json!({
             "nonce": expected_nonce,
             "aud": expected_audience,
-            "iat": Utc::now().timestamp(),
+            "iat": Timestamp::now().as_second(),
             "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes())),
         }),
         &holder_key,
@@ -776,19 +775,17 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
         let (crypto, certs, _) = real_crypto_fixture().await;
         let (_, certificate) = x509_parser::parse_x509_certificate(&certs.leaf_der).unwrap();
         let not_before =
-            chrono::DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
-                .unwrap();
+            jiff::Timestamp::new(certificate.validity().not_before.timestamp(), 0).unwrap();
         let not_after =
-            chrono::DateTime::from_timestamp(certificate.validity().not_after.timestamp(), 0)
-                .unwrap();
+            jiff::Timestamp::new(certificate.validity().not_after.timestamp(), 0).unwrap();
         let (holder_jwk, _) = es256_jwk(37);
         let mut input = mdoc_input(
             Some(HolderBinding::Jwk { jwk: holder_jwk }),
             json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
         );
-        input.issued_at = not_before - Duration::days(1);
-        input.expires_at = not_before + Duration::days(7);
-        for issued_at in [input.issued_at, not_before + Duration::seconds(10)] {
+        input.issued_at = not_before - SignedDuration::from_hours((1) * 24);
+        input.expires_at = not_before + SignedDuration::from_hours((7) * 24);
+        for issued_at in [input.issued_at, not_before + SignedDuration::from_secs(10)] {
             input.issued_at = issued_at;
             let encoded = crypto
                 .sign(&input)
@@ -827,14 +824,14 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
                 "certificate alignment must not extend credential expiry"
             );
         }
-        input.issued_at = not_before - Duration::days(1);
+        input.issued_at = not_before - SignedDuration::from_hours((1) * 24);
         input.expires_at = not_before;
         assert_eq!(
             crypto.sign(&input).await,
             Err(CredentialTrustError::InvalidEncoding)
         );
-        input.issued_at = not_after + Duration::seconds(1);
-        input.expires_at = not_after + Duration::days(1);
+        input.issued_at = not_after + SignedDuration::from_secs(1);
+        input.expires_at = not_after + SignedDuration::from_hours((1) * 24);
         assert_eq!(
             crypto.sign(&input).await,
             Err(CredentialTrustError::InvalidEncoding)
@@ -977,7 +974,7 @@ fn mdoc_issuance_authenticates_explicit_date_tags_and_preserves_custom_values() 
         let pending = nazo_mdoc::verifier::verify_issued(
             &issued,
             "org.iso.18013.5.1.mDL",
-            to_protocol_time(Utc::now()).unwrap(),
+            to_protocol_time(Timestamp::now()).unwrap(),
         )
         .unwrap();
         let namespaces = &pending.document().issuer_signed.name_spaces;
@@ -1083,8 +1080,8 @@ fn sd_jwt_chain_and_combined_anchor_validation_fail_closed() {
 fn current_revocation_policy_preserves_optional_and_required_snapshots() {
     let snapshot = CertificateRevocationSnapshot {
         version: CertificateRevocationSnapshot::VERSION,
-        this_update: Utc::now() - Duration::minutes(1),
-        next_update: Utc::now() + Duration::minutes(1),
+        this_update: Timestamp::now() - SignedDuration::from_mins(1),
+        next_update: Timestamp::now() + SignedDuration::from_mins(1),
         entries: Vec::new(),
     };
     for (mode, required) in [
@@ -1145,7 +1142,8 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
         let mut header = decode_header(parts[0]).expect("header");
         header.typ = Some("JWT".to_owned());
         let (_, issuer_key) = es256_jwk(99);
-        let claims = json!({"iss": "https://issuer.example", "exp": Utc::now().timestamp() + 300});
+        let claims =
+            json!({"iss": "https://issuer.example", "exp": Timestamp::now().as_second() + 300});
         let jwt = encode(&header, &claims, &issuer_key).expect("JWT");
         wrong_typ.encoded = format!("{jwt}~{}~{}", parts[1], parts[2]).into();
         assert_eq!(
@@ -1164,7 +1162,7 @@ fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
                 &json!({
                     "nonce": &presentation.expected_nonce,
                     "aud": &presentation.expected_audience,
-                    "iat": Utc::now().timestamp(),
+                    "iat": Timestamp::now().as_second(),
                     "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes())),
                 }),
                 &holder_key,
@@ -1268,7 +1266,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
         &json!({
             "nonce": presentation.expected_nonce,
             "aud": presentation.expected_audience,
-            "iat": Utc::now().timestamp(),
+            "iat": Timestamp::now().as_second(),
             "sd_hash": "unused",
         }),
         &holder_key,
@@ -1284,7 +1282,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
     );
 
     let issuer_key = EncodingKey::from_ec_der(&certs.leaf_key.serialize_der());
-    let issued_at = Utc::now() - Duration::minutes(1);
+    let issued_at = Timestamp::now() - SignedDuration::from_mins(1);
     let mut credential_header = Header::new(Algorithm::ES256);
     credential_header.typ = Some("dc+sd-jwt".to_owned());
     credential_header.x5c = Some(vec![STANDARD.encode(&certs.leaf_der)]);
@@ -1292,9 +1290,9 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
         &credential_header,
         &json!({
             "iss": "https://issuer.example",
-            "iat": issued_at.timestamp(),
-            "nbf": issued_at.timestamp(),
-            "exp": (issued_at + Duration::hours(1)).timestamp(),
+            "iat": issued_at.as_second(),
+            "nbf": issued_at.as_second(),
+            "exp": (issued_at + SignedDuration::from_hours(1)).as_second(),
             "vct": "ExampleCredential",
             "_sd_alg": "sha-256",
             "_sd": [],
@@ -1311,7 +1309,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
         &json!({
             "nonce": presentation.expected_nonce,
             "aud": presentation.expected_audience,
-            "iat": Utc::now().timestamp(),
+            "iat": Timestamp::now().as_second(),
             "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(no_disclosure_input.as_bytes())),
         }),
         &holder_key,
@@ -1338,7 +1336,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
             &json!({
                 "nonce": presentation.expected_nonce,
                 "aud": audience,
-                "iat": Utc::now().timestamp(),
+                "iat": Timestamp::now().as_second(),
                 "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(no_disclosure_input.as_bytes())),
             }),
             &holder_key,
@@ -1359,7 +1357,7 @@ fn sd_jwt_key_binding_requires_type_and_matches_disclosure_hash() {
         &json!({
             "nonce": presentation.expected_nonce,
             "aud": presentation.expected_audience,
-            "iat": Utc::now().timestamp(),
+            "iat": Timestamp::now().as_second(),
             "sd_hash": "not-the-presentation-hash",
         }),
         &holder_key,
@@ -1391,7 +1389,7 @@ fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
     let mut header = decode_header(parts[0]).expect("header");
     let claims = json!({
         "iss": "https://issuer.example",
-        "exp": Utc::now().timestamp() + 300,
+        "exp": Timestamp::now().as_second() + 300,
         "_sd_alg": "sha-256",
         "_sd": [],
         "vct": "ExampleCredential",
@@ -1476,7 +1474,7 @@ fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
 fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
@@ -1517,14 +1515,14 @@ fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
 fn mdoc_verification_rejects_signing_before_certificate_validity() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let now = Utc::now();
+        let now = Timestamp::now();
         let (encoded, transcript) = valid_mdoc_presentation(&certs, now, None);
         let encoded = resign_mdoc_validity(
             &encoded,
             &certs,
-            now - Duration::hours(1),
+            now - SignedDuration::from_hours(1),
             now,
-            now + Duration::minutes(10),
+            now + SignedDuration::from_mins(10),
         );
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
@@ -1538,7 +1536,7 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
             verify_certificate_chain_at(
                 std::slice::from_ref(&certs.leaf_der),
                 std::slice::from_ref(&certs.ca_der),
-                Utc::now().timestamp(),
+                Timestamp::now().as_second(),
             )
             .expect("certificate is valid at presentation time")
             .is_some()
@@ -1553,7 +1551,7 @@ fn mdoc_verification_rejects_signing_before_certificate_validity() {
 #[test]
 fn certificate_chain_at_checks_leaf_intermediates_anchor_and_time() {
     let certs = certificate_fixture("issuer.example");
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     assert!(
         verify_certificate_chain_at(
             std::slice::from_ref(&certs.leaf_der),
@@ -1594,7 +1592,7 @@ fn certificate_chain_at_checks_leaf_intermediates_anchor_and_time() {
 #[test]
 fn mdoc_direct_scoped_trust_anchor_is_exact_self_signed_and_lease_scoped() {
     let certs = certificate_fixture("issuer.example");
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
 
     assert!(
         verify_direct_scoped_trust_anchor(
@@ -1659,8 +1657,8 @@ fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
     };
     let fresh = CertificateRevocationSnapshot {
         version: CertificateRevocationSnapshot::VERSION,
-        this_update: Utc::now() - Duration::minutes(1),
-        next_update: Utc::now() + Duration::minutes(5),
+        this_update: Timestamp::now() - SignedDuration::from_mins(1),
+        next_update: Timestamp::now() + SignedDuration::from_mins(5),
         entries: vec![],
     };
     install_revocation_snapshot(&strict, &certs, fresh.clone());
@@ -1695,7 +1693,7 @@ fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
             issuer: "https://issuer.example".into(),
             certificate: nazo_digital_credentials::certificate_identity(&certs.leaf_der),
             status: nazo_digital_credentials::CertificateRevocationStatus::Revoked,
-            revoked_at: Some(Utc::now()),
+            revoked_at: Some(Timestamp::now()),
         });
     install_revocation_snapshot(&strict, &certs, revoked);
     assert_eq!(
@@ -1703,7 +1701,7 @@ fn sd_jwt_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
         Err(CredentialTrustError::RevokedCertificate)
     );
     let mut stale = fresh;
-    stale.next_update = Utc::now() - Duration::seconds(1);
+    stale.next_update = Timestamp::now() - SignedDuration::from_secs(1);
     install_revocation_snapshot(&strict, &certs, stale);
     assert_eq!(
         strict.verify_sd_jwt(&presentation),
@@ -1721,12 +1719,12 @@ fn mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
         };
         let fresh = CertificateRevocationSnapshot {
             version: CertificateRevocationSnapshot::VERSION,
-            this_update: Utc::now() - Duration::minutes(1),
-            next_update: Utc::now() + Duration::minutes(5),
+            this_update: Timestamp::now() - SignedDuration::from_mins(1),
+            next_update: Timestamp::now() + SignedDuration::from_mins(5),
             entries: vec![],
         };
         install_revocation_snapshot(&strict, &certs, fresh.clone());
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
         let unrelated = certificate_fixture("unrelated.example");
         let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
@@ -1749,7 +1747,7 @@ fn mdoc_required_unknown_status_uses_authenticated_anchor_not_loaded_scope() {
                 issuer: "https://issuer.example".into(),
                 certificate: nazo_digital_credentials::certificate_identity(&certs.leaf_der),
                 status: nazo_digital_credentials::CertificateRevocationStatus::Revoked,
-                revoked_at: Some(Utc::now()),
+                revoked_at: Some(Timestamp::now()),
             });
         install_revocation_snapshot(&strict, &certs, revoked);
         assert_eq!(
@@ -1796,7 +1794,7 @@ fn shared_signing_key_anchor_selection_prefers_actual_scoped_der_without_second_
             &certificates,
             &global_der,
             &scoped_der,
-            Utc::now().timestamp()
+            Timestamp::now().as_second()
         )
         .unwrap(),
         Some(scoped_der[0].as_slice())
@@ -1815,16 +1813,16 @@ fn expired_scoped_anchor_with_valid_global_path_cannot_exempt_required_unknown_s
         &certs,
         CertificateRevocationSnapshot {
             version: CertificateRevocationSnapshot::VERSION,
-            this_update: Utc::now() - Duration::minutes(1),
-            next_update: Utc::now() + Duration::minutes(5),
+            this_update: Timestamp::now() - SignedDuration::from_mins(1),
+            next_update: Timestamp::now() + SignedDuration::from_mins(5),
             entries: vec![],
         },
     );
     let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
-    params.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(2);
-    params.not_after = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::days(2);
+    params.not_after = time::OffsetTimestamp::now_utc() - time::Duration::days(1);
     let expired = CertifiedIssuer::self_signed(
         params,
         KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
@@ -1915,7 +1913,7 @@ fn signed_holder_nonce_failure_is_distinct_from_other_holder_failures() {
         );
     }
     let (_, attacker_key) = es256_jwk(72);
-    let kb = encode(&header, &json!({"nonce": "other-transaction", "aud": presentation.expected_audience, "iat": Utc::now().timestamp(), "sd_hash": "bad"}), &attacker_key).unwrap();
+    let kb = encode(&header, &json!({"nonce": "other-transaction", "aud": presentation.expected_audience, "iat": Timestamp::now().as_second(), "sd_hash": "bad"}), &attacker_key).unwrap();
     let untrusted = PresentedCredential {
         encoded: format!("{}~{}~{kb}", parts[0], parts[1]).into(),
         ..presentation
@@ -1955,7 +1953,7 @@ impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
     fn request<'a>(
         &'a self,
         _transaction_id: uuid::Uuid,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> nazo_openid4vp::PresentationStoreFuture<
         'a,
         Result<
@@ -1969,7 +1967,7 @@ impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
         &'a self,
         _transaction_id: uuid::Uuid,
         _wallet_nonce: &'a str,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> nazo_openid4vp::PresentationStoreFuture<
         'a,
         Result<bool, nazo_openid4vp::PresentationStoreError>,
@@ -1981,7 +1979,7 @@ impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
         _transaction_id: uuid::Uuid,
         _state_hash: &'a str,
         _result: &'a nazo_openid4vp::PresentationResult,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> nazo_openid4vp::PresentationStoreFuture<
         'a,
         Result<bool, nazo_openid4vp::PresentationStoreError>,
@@ -1994,7 +1992,7 @@ impl nazo_openid4vp::PresentationStorePort for PresentationCompletionSink {
     fn result<'a>(
         &'a self,
         _transaction_id: uuid::Uuid,
-        _now: chrono::DateTime<Utc>,
+        _now: jiff::Timestamp,
     ) -> nazo_openid4vp::PresentationStoreFuture<
         'a,
         Result<Option<nazo_openid4vp::PresentationResult>, nazo_openid4vp::PresentationStoreError>,
@@ -2032,7 +2030,7 @@ fn signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service() {
                         error_description: None,
                     },
                     &[],
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await;
             assert_eq!(result.is_ok(), accepted);
@@ -2051,7 +2049,7 @@ fn signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service() {
         header.typ = Some("kb+jwt".to_owned());
         let kb = encode(&header, &json!({
             "nonce": "another-transaction", "aud": presentation.expected_audience,
-            "iat": Utc::now().timestamp(),
+            "iat": Timestamp::now().as_second(),
             "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(format!("{}~{}~", parts[0], parts[1]).as_bytes()))
         }), &holder_key).unwrap();
         let replay = format!("{}~{}~{kb}", parts[0], parts[1]);
@@ -2066,7 +2064,7 @@ fn signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service() {
                     error_description: None,
                 },
                 &[],
-                Utc::now(),
+                Timestamp::now(),
             )
             .await;
         assert_eq!(
@@ -2083,7 +2081,7 @@ fn signed_sd_jwt_aki_and_nonce_flow_through_real_presentation_service() {
 fn signed_mdoc_rejects_an_unmatched_current_session_without_nonce_claim_guessing() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, _) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let (encoded, _) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
         let different_transcript = SessionTranscript::redirect(RedirectHandover {
             client_id: "https://verifier.example",
             response_uri: "https://verifier.example/response",
@@ -2153,8 +2151,8 @@ fn signed_sd_transaction(
         openid4vc_trust_policy_resource_id: None,
         openid4vc_trust_policy_digest: None,
         response_encryption_private_key: None,
-        created_at: Utc::now(),
-        expires_at: Utc::now() + Duration::minutes(5),
+        created_at: Timestamp::now(),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(5),
     }
 }
 
@@ -2199,7 +2197,7 @@ pub(super) fn resign_sd_fixture_with_claims(
         &kb_header,
         &json!({
             "nonce": nonce, "aud": presentation.expected_audience,
-            "iat": Utc::now().timestamp(),
+            "iat": Timestamp::now().as_second(),
             "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes()))
         }),
         &holder_key,
@@ -2248,7 +2246,7 @@ fn signed_unused_configured_anchor_cannot_supply_a_dcql_aki() {
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         params.use_authority_key_identifier_extension = true;
-        let now = time::OffsetDateTime::now_utc();
+        let now = time::OffsetTimestamp::now_utc();
         params.not_before = now - time::Duration::minutes(1);
         params.not_after = now + time::Duration::days(365);
         let unused = params
@@ -2307,7 +2305,7 @@ fn signed_unused_configured_anchor_cannot_supply_a_dcql_aki() {
                     error_description: None,
                 },
                 &[],
-                Utc::now(),
+                Timestamp::now(),
             )
             .await
             .unwrap_err();
@@ -2323,7 +2321,7 @@ fn signed_unused_configured_anchor_cannot_supply_a_dcql_aki() {
                 &[certs.leaf_der.clone(), unused_der.clone()],
                 &[certs.ca_der, unused_der],
                 &[],
-                Utc::now().timestamp(),
+                Timestamp::now().as_second(),
             )
             .unwrap()
             .is_none()
@@ -2340,11 +2338,11 @@ fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
             revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
             ..crypto
         };
-        let now = Utc::now();
+        let now = Timestamp::now();
         let snapshot = CertificateRevocationSnapshot {
             version: CertificateRevocationSnapshot::VERSION,
-            this_update: now - Duration::minutes(1),
-            next_update: now + Duration::minutes(5),
+            this_update: now - SignedDuration::from_mins(1),
+            next_update: now + SignedDuration::from_mins(5),
             entries: vec![
                 nazo_digital_credentials::CertificateRevocationEntry {
                     issuer: "https://issuer.example".to_owned(),
@@ -2358,7 +2356,7 @@ fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
                         &revoked_certs.leaf_der,
                     ),
                     status: nazo_digital_credentials::CertificateRevocationStatus::Revoked,
-                    revoked_at: Some(now - Duration::seconds(1)),
+                    revoked_at: Some(now - SignedDuration::from_secs(1)),
                 },
             ],
         };
@@ -2393,7 +2391,7 @@ fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
                         error_description: None,
                     },
                     &[],
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await;
             if let Some(error) = expected_error {
@@ -2411,7 +2409,7 @@ fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
         for (snapshot, expected) in [
             (
                 Some(CertificateRevocationSnapshot {
-                    next_update: now - Duration::seconds(1),
+                    next_update: now - SignedDuration::from_secs(1),
                     ..snapshot
                 }),
                 CredentialTrustError::RevocationSnapshotStale,
@@ -2430,7 +2428,7 @@ fn signed_revoked_optional_nonce_is_fatal_and_stale_snapshot_is_unavailable() {
                         error_description: None,
                     },
                     &[],
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await
                 .unwrap_err();
@@ -2460,7 +2458,9 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
             serde_json::from_slice(&URL_SAFE_NO_PAD.decode(encoded_claims).unwrap()).unwrap();
         let transaction = signed_sd_transaction(&accepted);
         for expiration in [
-            Some(json!((Utc::now() - Duration::seconds(120)).timestamp())),
+            Some(json!(
+                (Timestamp::now() - SignedDuration::from_secs(120)).as_second()
+            )),
             None,
             Some(json!("invalid-time")),
         ] {
@@ -2499,7 +2499,7 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
                         &nazo_openid4vp::AuthorizationResponse {
                             vp_token: Some(json!({"first": [accepted.encoded], "optional": [optional.encoded]})),
                             state: Some("state".to_owned()), error: None, error_description: None,
-                        }, &[], Utc::now(),
+                        }, &[], Timestamp::now(),
                     ).await;
                 if fatal {
                     assert_eq!(
@@ -2526,7 +2526,7 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
                 let sd_input = format!("{}~{}~", parts[0], parts[1]);
                 let kb = encode(&header, &json!({
                     "nonce": "another-transaction", "aud": accepted.expected_audience,
-                    "iat": Utc::now().timestamp(),
+                    "iat": Timestamp::now().as_second(),
                     "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(sd_input.as_bytes())),
                 }), &attacker_key).unwrap();
                 let untrusted = PresentedCredential {
@@ -2540,7 +2540,7 @@ fn signed_issuer_time_policy_cannot_hide_optional_holder_nonce() {
             }
         }
         let mut fractional = original;
-        fractional["exp"] = json!(Utc::now().timestamp() as f64 + 300.25);
+        fractional["exp"] = json!(Timestamp::now().as_second() as f64 + 300.25);
         let fractional = resign_sd_fixture_with_claims(
             &accepted,
             &certs,
@@ -2568,14 +2568,29 @@ fn sd_jwt_checks_validity_after_disclosures_with_valid_issuer_and_holder_signatu
     let mut kb_header = Header::new(Algorithm::ES256);
     kb_header.typ = Some("kb+jwt".into());
     for (name, value, accepted, selective) in [
-        ("nbf", json!(Utc::now().timestamp() + 300), false, false),
+        (
+            "nbf",
+            json!(Timestamp::now().as_second() + 300),
+            false,
+            false,
+        ),
         ("nbf", json!("tomorrow"), false, false),
-        ("nbf", json!(Utc::now().timestamp() - 1), true, false),
-        ("exp", json!(Utc::now().timestamp() - 120), false, false),
+        ("nbf", json!(Timestamp::now().as_second() - 1), true, false),
+        (
+            "exp",
+            json!(Timestamp::now().as_second() - 120),
+            false,
+            false,
+        ),
         ("name", json!("Permanently disclosed"), true, false),
-        ("nbf", json!(Utc::now().timestamp() - 1), false, true),
-        ("exp", json!(Utc::now().timestamp() + 300), false, true),
-        ("iat", json!(Utc::now().timestamp()), true, true),
+        ("nbf", json!(Timestamp::now().as_second() - 1), false, true),
+        (
+            "exp",
+            json!(Timestamp::now().as_second() + 300),
+            false,
+            true,
+        ),
+        ("iat", json!(Timestamp::now().as_second()), true, true),
     ] {
         let mut claims = original_claims.clone();
         let extra = if selective {
@@ -2596,7 +2611,7 @@ fn sd_jwt_checks_validity_after_disclosures_with_valid_issuer_and_holder_signatu
             &kb_header,
             &json!({
                 "nonce": original.expected_nonce, "aud": original.expected_audience,
-                "iat": Utc::now().timestamp(),
+                "iat": Timestamp::now().as_second(),
                 "sd_hash": URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input.as_bytes())),
             }),
             &holder_key,
@@ -2671,7 +2686,7 @@ fn verifier_requires_status_resolver_for_mdoc() {
                 ),
             ]),
         )]);
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), Some(status));
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), Some(status));
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
@@ -2701,7 +2716,7 @@ fn authenticated_unknown_mdoc_status_cannot_become_absent() {
         ] {
             let (encoded, transcript) = valid_mdoc_presentation(
                 &certs,
-                Utc::now(),
+                Timestamp::now(),
                 Some(super::super::crypto_helpers::json_to_cbor(&status).unwrap()),
             );
             let presentation = PresentedCredential {
@@ -2744,7 +2759,8 @@ fn mdoc_status_tampering_or_removal_fails_before_status_resolution() {
             "status_list": {"idx":0, "uri":"https://issuer.example/status"}
         }))
         .unwrap();
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), Some(reference));
+        let (encoded, transcript) =
+            valid_mdoc_presentation(&certs, Timestamp::now(), Some(reference));
         for remove in [false, true] {
             let mut response =
                 nazo_mdoc::parser::parse(&URL_SAFE_NO_PAD.decode(&encoded).unwrap()).unwrap();
@@ -2794,7 +2810,7 @@ fn mdoc_status_tampering_or_removal_fails_before_status_resolution() {
                 Err(CredentialTrustError::InvalidSignature)
             );
         }
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded: encoded.into(),
@@ -2853,9 +2869,9 @@ fn resign_mdoc(
 fn resign_mdoc_validity(
     encoded: &str,
     certs: &CertificateFixture,
-    signed: chrono::DateTime<Utc>,
-    valid_from: chrono::DateTime<Utc>,
-    valid_until: chrono::DateTime<Utc>,
+    signed: jiff::Timestamp,
+    valid_from: jiff::Timestamp,
+    valid_until: jiff::Timestamp,
 ) -> String {
     resign_mdoc(encoded, certs, |_, mso| {
         let validity = mso
@@ -2889,7 +2905,7 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
     use ciborium::Value as Cbor;
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
         for claim in [
             Cbor::Tag(42, Box::new(Cbor::Text("Ada".into()))),
             Cbor::Tag(2, Box::new(Cbor::Bytes(vec![1]))),
@@ -2959,7 +2975,7 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
                     &bytes,
                     &SessionTranscript::from_cbor(&transcript).unwrap(),
                     &nazo_mdoc::verifier::VerificationOptions {
-                        now: to_protocol_time(Utc::now()).unwrap(),
+                        now: to_protocol_time(Timestamp::now()).unwrap(),
                         max_documents: 1
                     },
                 )
@@ -2985,14 +3001,14 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
 fn mdoc_current_session_failure_precedes_expiration_policy() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
-        let now = Utc::now();
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Timestamp::now(), None);
+        let now = Timestamp::now();
         let encoded = resign_mdoc_validity(
             &encoded,
             &certs,
-            now - Duration::seconds(45),
-            now - Duration::seconds(45),
-            now - Duration::seconds(30),
+            now - SignedDuration::from_secs(45),
+            now - SignedDuration::from_secs(45),
+            now - SignedDuration::from_secs(30),
         );
         let mut presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,

@@ -8,7 +8,7 @@ use nazo_oauth_server::sessions::{
 };
 
 use crate::http::oauth_error;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::{Principal, PublicAccount};
 use std::sync::Arc;
 
@@ -214,7 +214,8 @@ pub async fn require_admin_with_recent_mfa_or_forbidden_with_handles(
     req: &HttpRequest,
 ) -> Result<Principal, HttpResponse> {
     let session = current_admin_session_or_forbidden(handles, req).await?;
-    require_recent_mfa(&session, Utc::now().timestamp()).map_err(admin_session_error_response)?;
+    require_recent_mfa(&session, Timestamp::now().as_second())
+        .map_err(admin_session_error_response)?;
     Ok(session.user)
 }
 

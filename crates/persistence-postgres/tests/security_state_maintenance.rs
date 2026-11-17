@@ -10,12 +10,12 @@
 //! in another tenant. OpenID4VP reads are pure selects; the global
 //! presentation sweep belongs exclusively to this worker.
 
-use chrono::{DateTime, Duration, Utc};
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{self, BigInt, Text, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::RefreshTokenAuthenticationContext;
 use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
 use nazo_openid4vp::{
@@ -134,7 +134,7 @@ async fn insert_refresh_leaf(
     fixture: &FixtureIds,
     family_id: Uuid,
     rotated_from_id: Option<Uuid>,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) -> Uuid {
     insert_refresh_leaf_in_tenant(
         connection,
@@ -162,15 +162,15 @@ async fn insert_refresh_leaf_in_tenant(
     user_id: Uuid,
     family_id: Uuid,
     rotated_from_id: Option<Uuid>,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) -> Uuid {
     let id = Uuid::now_v7();
-    let issued_at = (expires_at - Duration::hours(1)).min(Utc::now());
+    let issued_at = (expires_at - SignedDuration::from_hours(1)).min(Timestamp::now());
     let context = RefreshTokenAuthenticationContext {
         version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
         issuer: "https://issuer.example".to_owned(),
         audience: fixture.client_public_id.clone(),
-        auth_time: issued_at.timestamp() - 1,
+        auth_time: issued_at.as_second() - 1,
         amr: vec!["pwd".to_owned()],
         oidc_sid: None,
 
@@ -244,8 +244,8 @@ async fn insert_refresh_leaf_in_tenant(
     .bind::<SqlUuid, _>(client_id)
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(user_id))
     .bind::<sql_types::Binary, _>(blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec())
-    .bind::<Timestamptz, _>(issued_at)
-    .bind::<Timestamptz, _>(expires_at)
+    .bind::<Timestamptz, _>((issued_at).to_diesel())
+    .bind::<Timestamptz, _>((expires_at).to_diesel())
     .execute(connection)
     .await
     .expect("refresh leaf fixture should insert");
@@ -424,7 +424,7 @@ async fn natural_expiry_refresh_leaf_reclaimed_without_revocation() {
         &fixture,
         family_id,
         None,
-        Utc::now() - Duration::hours(2),
+        Timestamp::now() - SignedDuration::from_hours(2),
     )
     .await;
     let maintenance =
@@ -456,7 +456,7 @@ async fn active_successor_blocks_ancestor_reclaim() {
         &fixture,
         family_id,
         None,
-        Utc::now() - Duration::hours(2),
+        Timestamp::now() - SignedDuration::from_hours(2),
     )
     .await;
     // The successor is still valid, so the family is not fully expired; the
@@ -466,7 +466,7 @@ async fn active_successor_blocks_ancestor_reclaim() {
         &fixture,
         family_id,
         Some(parent),
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
     let maintenance =
@@ -496,7 +496,7 @@ async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
     // placement is deterministic.
     clear_expired_tokens(&mut connection).await;
     let family_id = Uuid::now_v7();
-    let expired = Utc::now() - Duration::hours(2);
+    let expired = Timestamp::now() - SignedDuration::from_hours(2);
     let grandparent =
         insert_refresh_leaf(&mut connection, &fixture, family_id, None, expired).await;
     let parent = insert_refresh_leaf(
@@ -548,7 +548,7 @@ async fn terminal_refresh_proofs_drain_with_one_global_budget_before_parent_dele
             &fixture,
             family_id,
             None,
-            Utc::now() + Duration::hours(1),
+            Timestamp::now() + SignedDuration::from_hours(1),
         )
         .await;
         sql_query(
@@ -567,7 +567,7 @@ async fn terminal_refresh_proofs_drain_with_one_global_budget_before_parent_dele
         .bind::<SqlUuid, _>(SYSTEM_TENANT)
         .bind::<SqlUuid, _>(family_id)
         .bind::<SqlUuid, _>(head)
-        .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+        .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_hours(1)).to_diesel())
         .execute(&mut connection)
         .await
         .expect("mixed expired and unexpired terminal proofs should insert");
@@ -637,7 +637,7 @@ async fn live_public_family_keeps_more_than_sixty_four_unexpired_proofs() {
         &fixture,
         family_id,
         None,
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
     sql_query(
@@ -652,7 +652,7 @@ async fn live_public_family_keeps_more_than_sixty_four_unexpired_proofs() {
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
     .bind::<SqlUuid, _>(family_id)
     .bind::<SqlUuid, _>(head)
-    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_hours(1)).to_diesel())
     .execute(&mut connection)
     .await
     .expect("public proof history should insert");
@@ -687,7 +687,7 @@ async fn preserve_shared_family_lock_skips_terminal_cleanup() {
         &fixture,
         family_id,
         None,
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
     sql_query(
@@ -701,7 +701,7 @@ async fn preserve_shared_family_lock_skips_terminal_cleanup() {
     .bind::<SqlUuid, _>(family_id)
     .bind::<SqlUuid, _>(Uuid::now_v7())
     .bind::<SqlUuid, _>(head)
-    .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
+    .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_hours(1)).to_diesel())
     .execute(&mut connection)
     .await
     .expect("terminal proof should insert");
@@ -754,7 +754,7 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
     let (fixture, mut connection) = fixture(&database_url).await;
     clear_expired_tokens(&mut connection).await;
     let family_id = Uuid::now_v7();
-    let expired = Utc::now() - Duration::hours(2);
+    let expired = Timestamp::now() - SignedDuration::from_hours(2);
     // 300 expired generations under a still-live head: the spent sweep must
     // drain the proofs across bounded batches while the family row stays.
     let mut previous = None;
@@ -768,7 +768,7 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
         &fixture,
         family_id,
         previous,
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
 
@@ -819,7 +819,7 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
     let (fixture, mut connection) = fixture(&database_url).await;
     let locked_family = Uuid::now_v7();
     let free_family = Uuid::now_v7();
-    let expired = Utc::now() - Duration::hours(2);
+    let expired = Timestamp::now() - SignedDuration::from_hours(2);
     let locked_leaf =
         insert_refresh_leaf(&mut connection, &fixture, locked_family, None, expired).await;
     insert_refresh_leaf(&mut connection, &fixture, free_family, None, expired).await;
@@ -864,7 +864,7 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
         &fixture,
         locked_family,
         Some(locked_leaf),
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
     writer
@@ -897,7 +897,7 @@ async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate
         &fixture,
         locked_family,
         None,
-        Utc::now() - Duration::days(730),
+        Timestamp::now() - SignedDuration::from_hours((730) * 24),
     )
     .await;
     // Put the held key first in a 300-family backlog. The candidate budget
@@ -962,7 +962,7 @@ async fn concurrent_batches_do_not_deadlock_or_double_count() {
         .await
         .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
-    let expired = Utc::now() - Duration::hours(2);
+    let expired = Timestamp::now() - SignedDuration::from_hours(2);
     let mut families = Vec::new();
     for _ in 0..6 {
         let family_id = Uuid::now_v7();
@@ -996,7 +996,7 @@ async fn cancelled_batch_leaves_no_open_transaction_on_pooled_connection() {
         .await
         .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
-    let expired = Utc::now() - Duration::hours(2);
+    let expired = Timestamp::now() - SignedDuration::from_hours(2);
     let gated_family = Uuid::now_v7();
     insert_refresh_leaf(&mut connection, &fixture, gated_family, None, expired).await;
 
@@ -1120,9 +1120,9 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
         .expect("migrations should apply");
     let pool = create_pool(&database_url, 4).unwrap();
     let verifier = Openid4vpRepository::new(pool.clone(), SYSTEM_TENANT, [0x77; 32]);
-    let now = Utc::now();
+    let now = Timestamp::now();
 
-    let base_transaction = |id: Uuid, expires_at: DateTime<Utc>| PresentationTransaction {
+    let base_transaction = |id: Uuid, expires_at: Timestamp| PresentationTransaction {
         id,
         client_id_prefix: ClientIdPrefix::RedirectUri,
         request_method: RequestMethod::UrlQuery,
@@ -1159,7 +1159,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
         openid4vc_trust_policy_resource_id: None,
         openid4vc_trust_policy_digest: None,
         response_encryption_private_key: Some([7_u8; 32]),
-        created_at: now - Duration::hours(2),
+        created_at: now - SignedDuration::from_hours(2),
         expires_at,
     };
 
@@ -1194,8 +1194,8 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
             .expect("stale expired transactions should clear");
     }
 
-    let expired_first = base_transaction(Uuid::now_v7(), now - Duration::hours(1));
-    let expired_other = base_transaction(Uuid::now_v7(), now - Duration::hours(1));
+    let expired_first = base_transaction(Uuid::now_v7(), now - SignedDuration::from_hours(1));
+    let expired_other = base_transaction(Uuid::now_v7(), now - SignedDuration::from_hours(1));
     let jti_first = Uuid::now_v7().to_string();
     let jti_other = Uuid::now_v7().to_string();
     for (transaction, jti) in [(&expired_first, &jti_first), (&expired_other, &jti_other)] {
@@ -1237,7 +1237,7 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
     );
 
     // create may clear only the conflicting same-key expired row.
-    let fresh = base_transaction(Uuid::now_v7(), now + Duration::minutes(5));
+    let fresh = base_transaction(Uuid::now_v7(), now + SignedDuration::from_mins(5));
     assert_eq!(
         verifier
             .create(
@@ -1295,10 +1295,10 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
             .await
             .expect("stale expired rows should clear");
     }
-    let past = Utc::now() - Duration::hours(1);
-    let older = Utc::now() - Duration::hours(2);
-    let future = Utc::now() + Duration::hours(1);
-    let old = Utc::now() - Duration::days(181);
+    let past = Timestamp::now() - SignedDuration::from_hours(1);
+    let older = Timestamp::now() - SignedDuration::from_hours(2);
+    let future = Timestamp::now() + SignedDuration::from_hours(1);
+    let old = Timestamp::now() - SignedDuration::from_hours((181) * 24);
 
     // One expired and one retained row per maintained category; every row is
     // tracked by its primary key so assertions never depend on a shared
@@ -1313,10 +1313,10 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     .bind::<SqlUuid, _>(expired_revocation)
     .bind::<SqlUuid, _>(fixture.client_id)
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
-    .bind::<Timestamptz, _>(past)
-    .bind::<Timestamptz, _>(past)
+    .bind::<Timestamptz, _>((past).to_diesel())
+    .bind::<Timestamptz, _>((past).to_diesel())
     .bind::<SqlUuid, _>(kept_revocation)
-    .bind::<Timestamptz, _>(future)
+    .bind::<Timestamptz, _>((future).to_diesel())
     .execute(&mut connection)
     .await
     .expect("revocation fixture should insert");
@@ -1333,11 +1333,11 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
     .bind::<Text, _>(format!("/Users/{}", Uuid::now_v7()))
     .bind::<sql_types::Jsonb, _>(serde_json::json!({"test": true}))
-    .bind::<Timestamptz, _>(older)
-    .bind::<Timestamptz, _>(past)
+    .bind::<Timestamptz, _>((older).to_diesel())
+    .bind::<Timestamptz, _>((past).to_diesel())
     .bind::<SqlUuid, _>(kept_security_event)
     .bind::<Text, _>(format!("/Users/{}", Uuid::now_v7()))
-    .bind::<Timestamptz, _>(future)
+    .bind::<Timestamptz, _>((future).to_diesel())
     .execute(&mut connection)
     .await
     .expect("scim security-event fixture should insert");
@@ -1357,10 +1357,10 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
     .bind::<SqlUuid, _>(fixture.client_id)
     .bind::<Text, _>(fixture.client_public_id.clone())
-    .bind::<Timestamptz, _>(past)
-    .bind::<Timestamptz, _>(past)
+    .bind::<Timestamptz, _>((past).to_diesel())
+    .bind::<Timestamptz, _>((past).to_diesel())
     .bind::<SqlUuid, _>(kept_delivery)
-    .bind::<Timestamptz, _>(future)
+    .bind::<Timestamptz, _>((future).to_diesel())
     .execute(&mut connection)
     .await
     .expect("logout-delivery fixture should insert");
@@ -1375,7 +1375,7 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     )
     .bind::<SqlUuid, _>(expired_audit)
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
-    .bind::<Timestamptz, _>(old)
+    .bind::<Timestamptz, _>((old).to_diesel())
     .bind::<SqlUuid, _>(kept_audit)
     .execute(&mut connection)
     .await
@@ -1608,8 +1608,8 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     let (fixture, mut connection) = fixture(&database_url).await;
     clear_expired_tokens(&mut connection).await;
     let family_id = Uuid::now_v7();
-    let past = Utc::now() - Duration::hours(1);
-    let future = Utc::now() + Duration::hours(1);
+    let past = Timestamp::now() - SignedDuration::from_hours(1);
+    let future = Timestamp::now() + SignedDuration::from_hours(1);
 
     // Tenant B gets a real tenant/user/client triple: tenant_id on the
     // refresh tables is a hard foreign key, not a label.
@@ -1760,7 +1760,7 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
     clear_expired_tokens(&mut connection).await;
     let live_family = Uuid::now_v7();
     let dead_family = Uuid::now_v7();
-    let past = Utc::now() - Duration::hours(2);
+    let past = Timestamp::now() - SignedDuration::from_hours(2);
 
     // A live family with 10,000 expired spent proofs: the sweep must peel 256
     // per batch while the family row stays.
@@ -1772,7 +1772,7 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
         fixture.user_id,
         live_family,
         None,
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
     sql_query(
@@ -1786,8 +1786,8 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
     .bind::<SqlUuid, _>(live_family)
     .bind::<SqlUuid, _>(live_head)
-    .bind::<Timestamptz, _>(past)
-    .bind::<Timestamptz, _>(past + Duration::hours(1))
+    .bind::<Timestamptz, _>((past).to_diesel())
+    .bind::<Timestamptz, _>((past + SignedDuration::from_hours(1)).to_diesel())
     .execute(&mut connection)
     .await
     .expect("large spent fixture should insert");
@@ -1816,8 +1816,8 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
     .bind::<SqlUuid, _>(dead_family)
     .bind::<SqlUuid, _>(dead_head)
-    .bind::<Timestamptz, _>(past)
-    .bind::<Timestamptz, _>(past + Duration::hours(1))
+    .bind::<Timestamptz, _>((past).to_diesel())
+    .bind::<Timestamptz, _>((past + SignedDuration::from_hours(1)).to_diesel())
     .execute(&mut connection)
     .await
     .expect("dead-family spent fixture should insert");
@@ -1896,22 +1896,22 @@ async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive
     clear_expired_tokens(&mut connection).await;
 
     let family_id = Uuid::now_v7();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let live = insert_refresh_leaf(
         &mut connection,
         &fixture,
         family_id,
         None,
-        now + Duration::hours(1),
+        now + SignedDuration::from_hours(1),
     )
     .await;
 
     // Two proofs already past their own expiry; one still inside it.
     let raw_alive = format!("spent-alive-{}", Uuid::now_v7());
     for (seed, expires_at) in [
-        ("dead-a", now - Duration::minutes(5)),
-        ("dead-b", now - Duration::minutes(1)),
-        (&*raw_alive, now + Duration::hours(1)),
+        ("dead-a", now - SignedDuration::from_mins(5)),
+        ("dead-b", now - SignedDuration::from_mins(1)),
+        (&*raw_alive, now + SignedDuration::from_hours(1)),
     ] {
         sql_query(
             "INSERT INTO oauth_refresh_spent_tokens (\
@@ -1924,8 +1924,8 @@ async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive
         .bind::<SqlUuid, _>(family_id)
         .bind::<SqlUuid, _>(Uuid::now_v7())
         .bind::<SqlUuid, _>(live)
-        .bind::<Timestamptz, _>(now - Duration::minutes(30))
-        .bind::<Timestamptz, _>(expires_at)
+        .bind::<Timestamptz, _>((now - SignedDuration::from_mins(30)).to_diesel())
+        .bind::<Timestamptz, _>((expires_at).to_diesel())
         .execute(&mut connection)
         .await
         .expect("spent proof fixture should insert");
@@ -2130,7 +2130,12 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         other => panic!("expected a claimed batch, got {other:?}"),
     };
     repository
-        .fail_batch(pending_batch.generation, Utc::now(), "test-hold", false)
+        .fail_batch(
+            pending_batch.generation,
+            Timestamp::now(),
+            "test-hold",
+            false,
+        )
         .await
         .expect("batch should return to pending");
     assert_eq!(event_row_count(&mut connection, unacked).await, 1);
@@ -2465,7 +2470,7 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() 
     let mut families = Vec::new();
     // Distinct persisted auth_time values give these live families distinct
     // contracts. Every referenced contract sorts before the orphan below.
-    let future = Utc::now() + Duration::minutes(20);
+    let future = Timestamp::now() + SignedDuration::from_mins(20);
     for offset in 0..300 {
         let family = Uuid::now_v7();
         insert_refresh_leaf(
@@ -2473,7 +2478,7 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() 
             &fixture,
             family,
             None,
-            future + Duration::seconds(offset),
+            future + SignedDuration::from_secs(offset),
         )
         .await;
         families.push(family);
@@ -2494,7 +2499,7 @@ async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() 
         &fixture,
         orphan,
         None,
-        Utc::now() + Duration::minutes(30),
+        Timestamp::now() + SignedDuration::from_mins(30),
     )
     .await;
     #[derive(QueryableByName)]
@@ -2763,7 +2768,7 @@ async fn contract_race_seed(
         fixture,
         id,
         None,
-        Utc::now() + Duration::hours(1),
+        Timestamp::now() + SignedDuration::from_hours(1),
     )
     .await;
     let row=sql_query("SELECT c.contract_blake3 AS digest,c.contract,to_jsonb(f) AS family FROM oauth_refresh_families f JOIN oauth_refresh_contracts c USING (tenant_id,contract_blake3) WHERE f.token_family_id=$1")
@@ -3295,3 +3300,5 @@ async fn expired_identity_approvals_are_reclaimed_but_live_single_use_fences_rem
         .bind::<Text,_>(&deployment).get_result::<CountRow>(&mut connection).await.unwrap().count;
     assert_eq!(retained, 2);
 }
+
+use jiff_diesel::ToDiesel as _;

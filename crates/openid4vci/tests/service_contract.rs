@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialFuture, CredentialSignInput, CredentialSignerPort,
     CredentialTrustError,
@@ -90,7 +90,7 @@ impl CredentialStorePort for RecordingStore {
         &'a self,
         _: Uuid,
         _: Uuid,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
     {
         Box::pin(async { Ok(None) })
@@ -101,7 +101,7 @@ impl CredentialStorePort for RecordingStore {
         _: &'a str,
         _: Option<&'a str>,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<Option<nazo_openid4vci::PreparedPreAuthorizedOffer>, CredentialStoreError>,
@@ -118,7 +118,7 @@ impl CredentialStorePort for RecordingStore {
         &'a self,
         _: &'a str,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut claimed = self.nonce_claimed.lock().unwrap();
@@ -136,7 +136,7 @@ impl CredentialStorePort for RecordingStore {
         _: Uuid,
         _: Uuid,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         Box::pin(async { Ok(None) })
@@ -145,7 +145,7 @@ impl CredentialStorePort for RecordingStore {
         &'a self,
         _: &'a str,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             *self.nonce_claimed.lock().unwrap() = false;
@@ -160,7 +160,7 @@ impl CredentialStorePort for RecordingStore {
         _: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             if !self.commit_is_allowed()
@@ -180,7 +180,7 @@ impl CredentialStorePort for RecordingStore {
         &'a self,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             if !self.commit_is_allowed()
@@ -197,7 +197,7 @@ impl CredentialStorePort for RecordingStore {
     fn resolve_access<'a>(
         &'a self,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async { Ok(None) })
     }
@@ -208,7 +208,7 @@ impl CredentialStorePort for RecordingStore {
         _: &'a str,
         _: &'a str,
         response: &'a StoredCredentialResponse,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             if !self.commit_is_allowed()
@@ -228,7 +228,7 @@ impl CredentialStorePort for RecordingStore {
         &'a self,
         credential: &'a DeferredCredential,
         response: &'a StoredCredentialResponse,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
             if !self.commit_is_allowed()
@@ -247,7 +247,7 @@ impl CredentialStorePort for RecordingStore {
         _: &'a str,
         _: Uuid,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
@@ -260,7 +260,7 @@ impl CredentialStorePort for RecordingStore {
         _: &'a str,
         _: Uuid,
         _: &'a str,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async { Ok(true) })
     }
@@ -272,7 +272,7 @@ impl CredentialStorePort for RecordingStore {
         _: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        _: chrono::DateTime<Utc>,
+        _: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             if !self.commit_is_allowed()
@@ -410,7 +410,7 @@ impl CredentialSignerPort for ErrorSigner {
 }
 
 fn fixture(
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> (
     CredentialAccess,
     CredentialConfiguration,
@@ -445,14 +445,14 @@ fn fixture(
             configuration_ids: vec!["pid".to_owned()],
             credential_identifiers: Vec::new(),
             dpop_jkt: None,
-            expires_at: now + Duration::minutes(5),
+            expires_at: now + SignedDuration::from_mins(5),
         },
         configuration,
         CredentialIssuance {
             configuration_id: "pid".to_owned(),
             disposition: IssuanceDisposition::Immediate,
             status: None,
-            expires_at: now + Duration::days(30),
+            expires_at: now + SignedDuration::from_hours((30) * 24),
         },
         CredentialRequest {
             credential_identifier: None,
@@ -468,7 +468,7 @@ fn fixture(
 }
 
 fn non_bound_fixture(
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> (
     CredentialAccess,
     CredentialConfiguration,
@@ -486,7 +486,7 @@ fn non_bound_fixture(
 
 fn response_for_pending(
     pending: &nazo_openid4vci::PendingCredentialIssuance,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> StoredCredentialResponse {
     let token_id = match &pending.commit {
         IssuanceCommit::Immediate {
@@ -505,7 +505,7 @@ fn response_for_pending(
         encoding: nazo_openid4vci::CredentialResponseEncoding::Json,
         status: 200,
         dpop_nonce: None,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     }
 }
 
@@ -536,7 +536,7 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
             })
         }
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = RecordingStore::default();
     let signer = RecordingSigner::default();
     let dataset = MovingDataset(Arc::default());
@@ -592,8 +592,8 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
             signed[0].payload.holder_binding,
             signed[1].payload.holder_binding
         );
-        assert_eq!(signed[0].issued_at.timestamp() % 86_400, 0);
-        assert_eq!(signed[0].expires_at.timestamp() % 86_400, 0);
+        assert_eq!(signed[0].issued_at.as_second() % 86_400, 0);
+        assert_eq!(signed[0].expires_at.as_second() % 86_400, 0);
         assert_eq!(signed[0].issued_at, signed[1].issued_at);
         assert_eq!(signed[0].expires_at, signed[1].expires_at);
     }
@@ -621,7 +621,7 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_failure() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let store = RecordingStore::default();
     let service = CredentialIssuerService::new(
         store.clone(),
@@ -660,7 +660,7 @@ async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_f
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![]),
@@ -690,7 +690,7 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
     );
 
     let mut expired_access = access.clone();
-    expired_access.expires_at = now - Duration::seconds(1);
+    expired_access.expires_at = now - SignedDuration::from_secs(1);
     assert_eq!(
         service
             .issue_pending(
@@ -827,7 +827,7 @@ async fn request_and_access_validation_rejects_ambiguous_or_unsupported_inputs()
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn unbound_issuance_requires_a_proof_free_configuration() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![]),
@@ -899,7 +899,7 @@ async fn unbound_issuance_requires_a_proof_free_configuration() {
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (access, configuration, issuance, request) = fixture(now);
 
     let proof_error_service = CredentialIssuerService::new(
@@ -1069,7 +1069,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     );
 
     let mut late_access = access;
-    late_access.expires_at = Utc::now() - Duration::seconds(1);
+    late_access.expires_at = Timestamp::now() - SignedDuration::from_secs(1);
     let late_service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![ValidatedProof {
@@ -1090,7 +1090,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
                 issuance.clone(),
                 &configuration,
                 "nonce",
-                Utc::now() - Duration::minutes(10),
+                Timestamp::now() - SignedDuration::from_mins(10),
             )
             .await,
         Err(CredentialIssuanceError::Unauthorized)
@@ -1103,7 +1103,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollback() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (access, configuration, issuance, request) = fixture(now);
 
     let immediate_store = RecordingStore::default();
@@ -1212,7 +1212,7 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
 
     let mut deferred_issuance = issuance.clone();
     deferred_issuance.disposition = IssuanceDisposition::Deferred {
-        ready_at: now + Duration::minutes(2),
+        ready_at: now + SignedDuration::from_mins(2),
     };
     let deferred_store = RecordingStore::default();
     let deferred_service = CredentialIssuerService::new(
@@ -1250,14 +1250,14 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     {
         let records = deferred_store.deferred.lock().unwrap();
         assert_eq!(
-            records[0].payload.issued_at.timestamp().rem_euclid(86_400),
+            records[0].payload.issued_at.as_second().rem_euclid(86_400),
             0
         );
         assert_eq!(
-            records[0].payload.expires_at.timestamp().rem_euclid(86_400),
+            records[0].payload.expires_at.as_second().rem_euclid(86_400),
             0
         );
-        assert_eq!(records[0].ready_at, now + Duration::minutes(2));
+        assert_eq!(records[0].ready_at, now + SignedDuration::from_mins(2));
     }
     assert_eq!(
         deferred_store.deferred.lock().unwrap()[0]
@@ -1312,7 +1312,7 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
         unbound_deferred_request,
     ) = non_bound_fixture(now);
     unbound_deferred_issuance.disposition = IssuanceDisposition::Deferred {
-        ready_at: now + Duration::minutes(2),
+        ready_at: now + SignedDuration::from_mins(2),
     };
     let unbound_deferred_store = RecordingStore::default();
     let unbound_deferred_service = CredentialIssuerService::new(
@@ -1501,7 +1501,7 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
     );
     let mut deferred_failure_issuance = issuance.clone();
     deferred_failure_issuance.disposition = IssuanceDisposition::Deferred {
-        ready_at: now + Duration::minutes(2),
+        ready_at: now + SignedDuration::from_mins(2),
     };
     let deferred_failure_pending = deferred_failure_service
         .issue_pending(
@@ -1547,7 +1547,7 @@ async fn immediate_and_deferred_commits_persist_wire_response_and_preserve_rollb
 )]
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), tokio::test)]
 async fn doctype_is_used_when_vct_is_absent() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let (access, mut configuration, issuance, request) = fixture(now);
     configuration.vct = None;
     configuration.doctype = Some("org.example.pid".to_owned());
@@ -1598,7 +1598,7 @@ async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
         configuration_ids: vec!["pid".to_owned()],
         credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
         dpop_jkt: Some("dpop-thumbprint".to_owned()),
-        expires_at: Utc::now() + Duration::minutes(10),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(10),
     };
 
     // Call through Arc<RecordingStore> so the blanket

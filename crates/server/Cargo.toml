@@ -30,7 +30,7 @@ arc-swap = { workspace = true }
 atomicwrites = { workspace = true }
 base64 = { workspace = true }
 blake3 = { workspace = true }
-chrono = { workspace = true, features = ["serde"] }
+jiff.workspace = true
 flate2 = { workspace = true }
 fs2 = { workspace = true }
 futures-channel = { workspace = true }
@@ -87,6 +87,7 @@ yasna = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+jiff-diesel.workspace = true
 nazo-mdoc = { workspace = true, features = ["issue"] }
 nazoauth = { workspace = true, features = ["conformance", "test-support"] }
 ciborium = { workspace = true }
@@ -102,8 +103,8 @@ jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
 rcgen = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-chrono = { workspace = true }
-diesel = { workspace = true, features = ["64-column-tables", "chrono", "postgres_backend", "serde_json", "uuid"] }
+jiff.workspace = true
+diesel = { workspace = true, features = ["64-column-tables", "postgres_backend", "serde_json", "uuid"] }
 diesel-async = { workspace = true, features = ["deadpool", "postgres"] }
 fred = { workspace = true, features = ["i-scripts"] }
 nazo-key-management = { workspace = true, features = ["test-support"] }

@@ -2,8 +2,8 @@
 
 use super::{RecoveryRootError, RecoveryRootRepository};
 use crate::repositories::query_counter;
-use chrono::Utc;
 use diesel_async::{AsyncConnection, AsyncPgConnection, TransactionManager as _};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -33,7 +33,7 @@ async fn failed_attempt_counter_refuses_open_and_broken_transaction_states() {
         &mut connection,
         "deployment-uncertain",
         Uuid::now_v7(),
-        Utc::now(),
+        Timestamp::now(),
     )
     .await
     .expect_err("an open transaction is not a confirmed rollback");
@@ -54,7 +54,7 @@ async fn failed_attempt_counter_refuses_open_and_broken_transaction_states() {
         &mut connection,
         "deployment-uncertain",
         Uuid::now_v7(),
-        Utc::now(),
+        Timestamp::now(),
     )
     .await
     .expect_err("an unknown rollback must not reuse the connection");

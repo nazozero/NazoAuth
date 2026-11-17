@@ -1,5 +1,5 @@
 use super::TokenForm;
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::CodePayload;
 use serde_json::json;
 use uuid::Uuid;
@@ -8,7 +8,7 @@ pub(super) const VALID_CODE_VERIFIER: &str =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
 
 pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
-    let now = Utc::now();
+    let now = Timestamp::now();
     CodePayload {
         redemption_contract_version: nazo_auth::AUTHORIZATION_CODE_REDEMPTION_VERSION,
         code_id: "code-1".to_owned(),
@@ -20,7 +20,7 @@ pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
         resource_indicators: Vec::new(),
         authorization_details: json!([]),
         nonce: None,
-        auth_time: now.timestamp(),
+        auth_time: now.as_second(),
         amr: vec!["password".to_owned()],
         oidc_sid: Some("sid-1".to_owned()),
         acr: None,
@@ -30,7 +30,7 @@ pub(super) fn code_payload(redirect_uri_was_supplied: bool) -> CodePayload {
         dpop_jkt: None,
         mtls_x5t_s256: None,
 
-        expires_at: now + Duration::seconds(300),
+        expires_at: now + SignedDuration::from_secs(300),
     }
 }
 

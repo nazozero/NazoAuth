@@ -8,7 +8,7 @@ use http::StatusCode;
 use crate::http::csrf_error;
 use crate::http::{json_response_no_store, json_response_status, oauth_error};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 // 只处理用户侧申请列表和新建申请。
@@ -57,8 +57,8 @@ pub struct UserAccessRequest {
     pub status: i16,
     pub admin_note: Option<String>,
     pub approved_client_id: Option<Uuid>,
-    pub created_at: DateTime<Utc>,
-    pub resolved_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub resolved_at: Option<Timestamp>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_available: Option<bool>,
 }

@@ -308,15 +308,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "android_system_properties"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -802,20 +793,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "chrono"
-version = "0.4.45"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
-dependencies = [
- "iana-time-zone",
- "js-sys",
- "num-traits",
- "serde",
- "wasm-bindgen",
- "windows-link",
-]
-
-[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1277,7 +1254,6 @@ checksum = "ebe9f7eaef33febd60290c5a9f3b0571d03c4c04a24739cd64808ce30e65a5d3"
 dependencies = [
  "bitflags",
  "byteorder",
- "chrono",
  "diesel_derives",
  "downcast-rs",
  "itoa",
@@ -2103,30 +2079,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iana-time-zone"
-version = "0.1.65"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
-dependencies = [
- "android_system_properties",
- "core-foundation-sys",
- "iana-time-zone-haiku",
- "js-sys",
- "log",
- "wasm-bindgen",
- "windows-core",
-]
-
-[[package]]
-name = "iana-time-zone-haiku"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2323,10 +2275,12 @@ dependencies = [
  "jiff-core",
  "jiff-static",
  "jiff-tzdb-platform",
+ "js-sys",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -2337,6 +2291,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77a24020db0ee88d1c681d677681bd31f9f4ea189a455425223d52ce4f1508aa"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "jiff-diesel"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "450f5c44b6bc83e0e0fce91b22bd4ead6e371951e4e6e07c934d1c5d97f6661a"
+dependencies = [
+ "diesel",
+ "jiff",
 ]
 
 [[package]]
@@ -2782,11 +2746,11 @@ dependencies = [
  "anyhow",
  "base64 0.23.1",
  "blake3",
- "chrono",
  "ed25519-dalek 3.0.0",
  "futures-executor",
  "futures-util",
  "hmac 0.13.0",
+ "jiff",
  "jsonwebtoken",
  "nazo-crypto",
  "nazo-identity",
@@ -2843,8 +2807,8 @@ name = "nazo-digital-credentials"
 version = "0.3.9"
 dependencies = [
  "base64 0.23.1",
- "chrono",
  "flate2",
+ "jiff",
  "nazo-crypto",
  "rand 0.10.3",
  "rcgen",
@@ -2893,10 +2857,10 @@ dependencies = [
  "argon2",
  "base64 0.23.1",
  "blake3",
- "chrono",
  "hex",
  "hmac 0.13.0",
  "image",
+ "jiff",
  "jiff-tzdb",
  "language-tags",
  "lettre",
@@ -2924,11 +2888,11 @@ dependencies = [
  "arc-swap",
  "aws-lc-rs",
  "base64 0.23.1",
- "chrono",
  "der 0.8.3",
  "futures-executor",
  "hex",
  "hmac 0.13.0",
+ "jiff",
  "jsonwebtoken",
  "nazo-auth",
  "nazo-crypto",
@@ -2983,7 +2947,6 @@ dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
  "blake3",
- "chrono",
  "ciborium",
  "coset",
  "flate2",
@@ -2991,6 +2954,7 @@ dependencies = [
  "futures-util",
  "hmac 0.13.0",
  "http 1.5.0",
+ "jiff",
  "jsonwebtoken",
  "nazo-auth",
  "nazo-crypto",
@@ -3030,10 +2994,10 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "base64 0.23.1",
- "chrono",
  "futures-util",
  "hex",
  "http 1.5.0",
+ "jiff",
  "nazo-identity",
  "rcgen",
  "reqwest",
@@ -3078,7 +3042,7 @@ version = "0.3.9"
 dependencies = [
  "blake3",
  "bytes",
- "chrono",
+ "jiff",
  "nazo-digital-credentials",
  "serde",
  "serde_json",
@@ -3094,8 +3058,8 @@ name = "nazo-openid4vp"
 version = "0.3.9"
 dependencies = [
  "blake3",
- "chrono",
  "ciborium",
+ "jiff",
  "nazo-digital-credentials",
  "nazo-mdoc",
  "nazo-operator-protocol",
@@ -3130,9 +3094,9 @@ dependencies = [
  "anyhow",
  "base64 0.23.1",
  "blake3",
- "chrono",
  "futures-util",
  "hex",
+ "jiff",
  "nazo-auth",
  "nazo-identity",
  "nazo-openid4vci",
@@ -3155,12 +3119,13 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "bytes",
- "chrono",
  "diesel",
  "diesel-async",
  "diesel_migrations",
  "ed25519-dalek 3.0.0",
  "futures-util",
+ "jiff",
+ "jiff-diesel",
  "jsonwebtoken",
  "nazo-auth",
  "nazo-crypto",
@@ -3198,9 +3163,9 @@ version = "0.3.9"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
- "chrono",
  "ed25519-dalek 3.0.0",
  "http 1.5.0",
+ "jiff",
  "jsonwebtoken",
  "nazo-crypto",
  "p256",
@@ -3229,7 +3194,7 @@ dependencies = [
 name = "nazo-scim-events"
 version = "0.3.9"
 dependencies = [
- "chrono",
+ "jiff",
  "serde",
  "serde_json",
  "thiserror",
@@ -3252,7 +3217,6 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "bytes",
- "chrono",
  "ciborium",
  "coset",
  "diesel",
@@ -3266,6 +3230,8 @@ dependencies = [
  "hex",
  "hmac 0.13.0",
  "http 1.5.0",
+ "jiff",
+ "jiff-diesel",
  "jsonwebtoken",
  "lettre",
  "lru",
@@ -3332,9 +3298,9 @@ name = "nazo-valkey"
 version = "0.3.9"
 dependencies = [
  "blake3",
- "chrono",
  "fred",
  "futures-util",
+ "jiff",
  "nazo-auth",
  "nazo-identity",
  "nazo-resource-server",
@@ -3355,7 +3321,6 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "bytes",
- "chrono",
  "cookie",
  "encoding_rs",
  "futures-executor",
@@ -3363,6 +3328,7 @@ dependencies = [
  "hex",
  "hmac 0.13.0",
  "http 1.5.0",
+ "jiff",
  "matchit",
  "mime",
  "multer",
@@ -3676,17 +3642,17 @@ dependencies = [
 [[package]]
 name = "passkey-auth"
 version = "0.2.0"
-source = "git+https://github.com/nazozero/passkey-auth-rs?rev=b3ecfa40c8f626903f36d6065640236ac87fe472#b3ecfa40c8f626903f36d6065640236ac87fe472"
+source = "git+https://github.com/nazozero/passkey-auth-rs?rev=84938674306a2ca0b84319e8ee499b61b8f32e84#84938674306a2ca0b84319e8ee499b61b8f32e84"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
  "const-oid 0.9.6",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
  "p256",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "thiserror",
  "url",
  "web-time",

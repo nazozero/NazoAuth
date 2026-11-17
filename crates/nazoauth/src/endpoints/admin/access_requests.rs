@@ -15,7 +15,7 @@ use http::header::HeaderValue;
 use crate::http::{ClientIpConfig, client_ip_with_config};
 use crate::http::{csrf_error, has_valid_csrf_token_for_cookies};
 use crate::http::{json_response_no_store, oauth_error};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{AdminClientError, CreateClientRequest};
 use nazo_identity::ports::{
     DeliveryPublish, DeliveryStage, DeliveryStageResult, DeliveryStorePort,
@@ -217,8 +217,8 @@ pub async fn admin_approve_access_request(
     let token = access_delivery_token(&config.client_secret_pepper, request_user_id, request_id);
     let Some(expires_at) = i64::try_from(config.delivery_ttl_seconds)
         .ok()
-        .and_then(Duration::try_seconds)
-        .and_then(|ttl| Utc::now().checked_add_signed(ttl))
+        .and_then(SignedDuration::try_seconds)
+        .and_then(|ttl| Timestamp::now().checked_add(ttl))
     else {
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -240,7 +240,7 @@ pub async fn admin_approve_access_request(
         "grant_types": &prepared.grant_types,
         "token_endpoint_auth_method": &prepared.token_endpoint_auth_method,
         "site_name": site_name,
-        "created_at": Utc::now(),
+        "created_at": Timestamp::now(),
         "expires_at": expires_at
     });
     let staged = match delivery_store
@@ -399,7 +399,7 @@ pub fn resume_pending_approval(
     user_id: Uuid,
 ) -> bool {
     let payload = &stored.value;
-    if stored.expires_at <= Utc::now()
+    if stored.expires_at <= Timestamp::now()
         || payload["delivery_state"] != "staged"
         || payload["request_id"] != json!(request_id)
         || payload["user_id"] != json!(user_id)
@@ -451,7 +451,7 @@ pub async fn resume_staged_client_delivery(
         return Ok(false);
     };
     let payload = &stored.value;
-    if stored.expires_at <= Utc::now()
+    if stored.expires_at <= Timestamp::now()
         || payload["delivery_state"] != "staged"
         || payload["request_id"] != json!(request.id)
         || payload["user_id"] != json!(user_id)

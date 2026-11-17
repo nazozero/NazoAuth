@@ -44,8 +44,8 @@ mod production {
 
     struct CachedResourceAuthorizationService {
         keys: Arc<KeySnapshot>,
-        captured_at: chrono::DateTime<chrono::Utc>,
-        valid_until: Option<chrono::DateTime<chrono::Utc>>,
+        captured_at: jiff::Timestamp,
+        valid_until: Option<jiff::Timestamp>,
         service: Arc<ServerResourceAuthorizationService>,
     }
 
@@ -59,9 +59,9 @@ mod production {
     }
 
     pub(super) fn within_verification_cache_window(
-        captured_at: chrono::DateTime<chrono::Utc>,
-        valid_until: Option<chrono::DateTime<chrono::Utc>>,
-        now: chrono::DateTime<chrono::Utc>,
+        captured_at: jiff::Timestamp,
+        valid_until: Option<jiff::Timestamp>,
+        now: jiff::Timestamp,
     ) -> bool {
         // A rollback can make an already retired key eligible again. Rebuild
         // rather than retaining a projection made on the other side of it.
@@ -104,7 +104,7 @@ mod production {
                     ),
                 )
             })?;
-            let now = chrono::Utc::now();
+            let now = jiff::Timestamp::now();
             if let Some(cached) = cache.as_ref()
                 && same_key_generation(&cached.keys, &keys)
                 && within_verification_cache_window(cached.captured_at, cached.valid_until, now)

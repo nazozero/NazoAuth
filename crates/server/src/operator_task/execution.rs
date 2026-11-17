@@ -28,7 +28,7 @@ use std::{
 };
 
 use anyhow::{Context as _, bail};
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
@@ -453,7 +453,7 @@ async fn run_recovery_invalidation(
         )
         .into());
     }
-    let completed_at = Utc::now();
+    let completed_at = Timestamp::now();
     let not_before = recovery_not_before(completed_at);
     let outcome = persistence
         .recovery_invalidations()
@@ -473,9 +473,9 @@ async fn run_recovery_invalidation(
     })
 }
 
-pub(super) fn recovery_not_before(completed_at: chrono::DateTime<Utc>) -> chrono::DateTime<Utc> {
+pub(super) fn recovery_not_before(completed_at: jiff::Timestamp) -> jiff::Timestamp {
     completed_at
-        + Duration::seconds(
+        + SignedDuration::from_secs(
             // The restored configuration may predate a TTL increase. Only the
             // issuer's enforced maximum bounds tokens issued after the backup.
             crate::settings::MAX_ACCESS_TOKEN_TTL_SECONDS

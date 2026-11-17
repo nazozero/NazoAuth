@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_digital_credentials::{
     CredentialFormat, CredentialTrustError, CredentialVerifierPort, PresentedCredential,
     VerifiedCredential,
@@ -41,7 +41,7 @@ where
     fn request<'a>(
         &'a self,
         transaction_id: uuid::Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<
         'a,
         Result<Option<PresentationTransaction>, PresentationStoreError>,
@@ -53,7 +53,7 @@ where
         &'a self,
         transaction_id: uuid::Uuid,
         wallet_nonce: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         self.as_ref()
             .bind_wallet_nonce(transaction_id, wallet_nonce, now)
@@ -64,7 +64,7 @@ where
         transaction_id: uuid::Uuid,
         state_hash: &'a str,
         result: &'a PresentationResult,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         self.as_ref()
             .complete(transaction_id, state_hash, result, now)
@@ -73,7 +73,7 @@ where
     fn result<'a>(
         &'a self,
         transaction_id: uuid::Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> crate::PresentationStoreFuture<
         'a,
         Result<Option<PresentationResult>, PresentationStoreError>,
@@ -101,7 +101,7 @@ where
         transaction: &PresentationTransaction,
         response: &AuthorizationResponse,
         additional_trust_anchors: &[Vec<u8>],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<PresentationResult, PresentationServiceError> {
         if now >= transaction.expires_at
             || response.state.as_deref() != Some(transaction.request.state.as_str())

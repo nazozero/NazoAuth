@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     LoginSuccess, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, RememberedMfaProof,
     ports::{PasskeyCredential, PasskeyCredentialSummary},
@@ -34,7 +34,7 @@ pub struct PasskeyLoginFinishCommand {
     /// Transport verified the existing session's CSRF token. This permits
     /// checking that session for independent UV-initialization evidence.
     pub csrf_verified: bool,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 pub trait PasskeyLoginOperations: Send + Sync {

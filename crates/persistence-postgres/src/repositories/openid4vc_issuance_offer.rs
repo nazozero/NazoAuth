@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::RunQueryDsl;
+use jiff::Timestamp;
 use nazo_openid4vci::{
     AuthorizationOfferPort, CredentialAuthorization, CredentialStoreError, CredentialStoreFuture,
     StoredCredentialOffer,
@@ -39,7 +39,7 @@ impl Openid4vciRepository {
         .bind::<sql_types::Nullable<sql_types::Text>, _>(issuer_state_hash)
         .bind::<sql_types::Nullable<sql_types::Text>, _>(pre_authorized_code_hash)
         .bind::<sql_types::Nullable<sql_types::Text>, _>(tx_code_hash)
-        .bind::<sql_types::Timestamptz, _>(offer.expires_at)
+        .bind::<sql_types::Timestamptz, _>((offer.expires_at).to_diesel())
         .execute(&mut connection)
         .await
         .map_err(|_| CredentialStoreError::Unavailable)?;
@@ -75,7 +75,7 @@ impl AuthorizationOfferPort for Openid4vciRepository {
         issuer_state_hash: &'a str,
         subject_id: Uuid,
         client_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>
     {
         Box::pin(async move {
@@ -90,7 +90,7 @@ impl AuthorizationOfferPort for Openid4vciRepository {
             .bind::<sql_types::Uuid, _>(tenant_id)
             .bind::<sql_types::Text, _>(issuer_state_hash)
             .bind::<sql_types::Uuid, _>(subject_id)
-            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Timestamptz, _>((now).to_diesel())
             .get_result::<AuthorizationOfferRow>(&mut connection)
             .await
             .optional()
@@ -104,7 +104,7 @@ impl AuthorizationOfferPort for Openid4vciRepository {
                 client_id: client_id.to_owned(),
                 configuration_ids,
                 credential_identifiers: Vec::new(),
-                expires_at: (now + chrono::Duration::minutes(10)).min(row.expires_at),
+                expires_at: (now + jiff::SignedDuration::from_mins(10)).min(row.expires_at),
             }))
         })
     }
@@ -122,7 +122,8 @@ pub(super) struct OfferRow {
     #[diesel(sql_type = sql_types::Binary)]
     pub(super) grants_ciphertext: Vec<u8>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) expires_at: Timestamp,
 }
 
 impl OfferRow {
@@ -158,7 +159,8 @@ pub(super) struct PreAuthorizedOfferRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
     pub(super) tx_code_hash: Option<String>,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    pub(super) expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(super) expires_at: Timestamp,
 }
 
 #[derive(QueryableByName)]
@@ -168,5 +170,8 @@ struct AuthorizationOfferRow {
     #[diesel(sql_type = sql_types::Jsonb)]
     credential_configuration_ids: serde_json::Value,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
 }
+
+use jiff_diesel::ToDiesel as _;

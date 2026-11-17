@@ -59,7 +59,7 @@ fn public_unbound_refresh_proofs_are_retained_until_token_expiry() {
 #[test]
 fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() {
     use super::{RefreshContract, RefreshToken};
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let token = RefreshToken {
         id_token_sid: Some("current-id-token-sid".to_owned()),
         id: uuid::Uuid::now_v7(),
@@ -71,7 +71,7 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
         contract_key: [2; 32],
         audience: serde_json::from_value(serde_json::json!(["narrowed-resource"])).unwrap(),
         issued_at: now,
-        expires_at: now + chrono::Duration::minutes(5),
+        expires_at: now + jiff::SignedDuration::from_mins(5),
         revoked_at: None,
         dpop_jkt: Some("source-jkt".to_owned()),
         mtls_x5t_s256: None,
@@ -87,7 +87,7 @@ fn refresh_authority_keeps_the_immutable_contract_and_generation_sid_separate() 
                 version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
                 issuer: "https://issuer.example".to_owned(),
                 audience: "client".to_owned(),
-                auth_time: now.timestamp(),
+                auth_time: now.as_second(),
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: Some("oidc-sid".to_owned()),
 

@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-chrono = { workspace = true, features = ["serde"] }
+jiff.workspace = true
 nazo-digital-credentials.workspace = true
 nazo-mdoc = { workspace = true, default-features = false }
 nazo-operator-protocol.workspace = true

@@ -304,7 +304,7 @@ async fn lost_response_rotation_uses_transactional_readiness() {
             original_id: Uuid::now_v7(),
             original_blake3: [0xAB; 32],
             successor_id: Uuid::now_v7(),
-            retry_started_at: Utc::now(),
+            retry_started_at: Timestamp::now(),
         };
         set_refresh_authority_for_issue(&state, &client, &mut issue);
         let audit = CountingSecurityAudit {
@@ -358,7 +358,7 @@ async fn single_use_issuance_keeps_the_full_storage_preflight() {
         &client,
         TokenIssuanceMode::SingleUse {
             grant_key: format!("grant-{}", Uuid::now_v7()),
-            grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+            grant_expires_at: Timestamp::now() + jiff::SignedDuration::from_mins(5),
         },
         issue,
         state.active_module_snapshot(),

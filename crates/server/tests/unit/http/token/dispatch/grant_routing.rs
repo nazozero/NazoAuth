@@ -544,7 +544,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         )
     };
     let insert_issuance =
-        |jti: &str, owner: Option<Uuid>, tenant: Uuid, expires: chrono::DateTime<Utc>| {
+        |jti: &str, owner: Option<Uuid>, tenant: Uuid, expires: jiff::Timestamp| {
             let diesel_db = state.diesel_db.clone();
             let jti = jti.to_owned();
             async move {
@@ -564,7 +564,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
                 .bind::<SqlUuid, _>(client_row_id)
                 .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(owner)
                 .bind::<Text, _>(jti)
-                .bind::<diesel::sql_types::Timestamptz, _>(expires)
+                .bind::<diesel::sql_types::Timestamptz, _>((expires).to_diesel())
                 .execute(&mut conn)
                 .await
                 .expect("issuance row should insert");
@@ -579,7 +579,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         &resolvable.jti,
         Some(user_id),
         DEFAULT_TENANT_ID,
-        Utc::now() + Duration::seconds(300),
+        Timestamp::now() + Duration::seconds(300),
     )
     .await;
     let (status, body) =
@@ -672,7 +672,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         &inactive_subject.jti,
         Some(inactive_user),
         DEFAULT_TENANT_ID,
-        Utc::now() + Duration::seconds(300),
+        Timestamp::now() + Duration::seconds(300),
     )
     .await;
     let (status, body) =
@@ -804,7 +804,9 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         .bind::<SqlUuid, _>(foreign_client_row_id)
         .bind::<SqlUuid, _>(foreign_user)
         .bind::<Text, _>(&foreign.jti)
-        .bind::<diesel::sql_types::Timestamptz, _>(Utc::now() + Duration::seconds(300))
+        .bind::<diesel::sql_types::Timestamptz, _>(
+            (Timestamp::now() + Duration::seconds(300)).to_diesel(),
+        )
         .execute(&mut conn)
         .await
         .expect("foreign issuance row should insert");
@@ -823,7 +825,7 @@ async fn token_exchange_pairwise_subject_resolves_owner_through_issuance_ownersh
         &expired.jti,
         Some(user_id),
         DEFAULT_TENANT_ID,
-        Utc::now() - Duration::seconds(120),
+        Timestamp::now() - Duration::seconds(120),
     )
     .await;
     let (status, body) =
@@ -937,3 +939,5 @@ struct TokenOwnerRow {
     #[diesel(sql_type = diesel::sql_types::Nullable<SqlUuid>)]
     user_id: Option<Uuid>,
 }
+
+use jiff_diesel::ToDiesel as _;

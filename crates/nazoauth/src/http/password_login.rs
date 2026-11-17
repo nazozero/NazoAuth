@@ -8,7 +8,7 @@ use nazo_oauth_server::contracts::password_login::PasswordLoginOperations;
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::{AuthenticatePasswordError, AuthenticatePasswordInput, RememberedMfaProof};
 use serde::Deserialize;
 use serde_json::json;
@@ -128,7 +128,7 @@ async fn login_inner(
             source_ip,
             remembered_mfa: remembered_mfa_proof(request, &endpoint.config),
             previous_session_id: cookie_value(request, &endpoint.config.session_cookie_name),
-            now: Utc::now(),
+            now: Timestamp::now(),
         })
         .await;
     let success = match result {

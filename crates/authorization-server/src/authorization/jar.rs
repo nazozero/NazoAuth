@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::contracts::oauth_error::OAuthEndpointError;
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     AuthorizationRequestError, RequestObjectJtiPolicy, RequestObjectPolicy,
     RequestObjectVerificationInput, verify_request_object,
@@ -129,7 +129,7 @@ pub(crate) async fn apply_request_object_with_context(
                         .config
                         .requires_signed_authorization_request(&client.security_policy),
                 ),
-            now: Utc::now().timestamp(),
+            now: Timestamp::now().as_second(),
         },
     )
     .map_err(request_object_policy_error)?;

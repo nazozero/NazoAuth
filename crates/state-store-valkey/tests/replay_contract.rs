@@ -202,14 +202,14 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
     assert!(
         store
-            .consume_jar(client_id, jti, chrono::Utc::now().timestamp() + 30)
+            .consume_jar(client_id, jti, jiff::Timestamp::now().as_second() + 30)
             .await
             .unwrap()
     );
     assert!(store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
     assert!(
         store
-            .consume_ciba_request_object(client_id, jti, chrono::Utc::now().timestamp() + 30)
+            .consume_ciba_request_object(client_id, jti, jiff::Timestamp::now().as_second() + 30)
             .await
             .unwrap()
     );
@@ -232,14 +232,14 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
     assert!(
         !store
-            .consume_jar(client_id, jti, chrono::Utc::now().timestamp() + 30)
+            .consume_jar(client_id, jti, jiff::Timestamp::now().as_second() + 30)
             .await
             .unwrap()
     );
     assert!(!store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
     assert!(
         !store
-            .consume_ciba_request_object(client_id, jti, chrono::Utc::now().timestamp() + 30)
+            .consume_ciba_request_object(client_id, jti, jiff::Timestamp::now().as_second() + 30)
             .await
             .unwrap()
     );
@@ -251,7 +251,7 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
             .consume_ciba_request_object(
                 client_id,
                 &adapter_jti,
-                chrono::Utc::now().timestamp() + 30
+                jiff::Timestamp::now().as_second() + 30
             )
             .await
             .unwrap()
@@ -261,7 +261,7 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
             .consume_ciba_request_object(
                 client_id,
                 &adapter_jti,
-                chrono::Utc::now().timestamp() + 30
+                jiff::Timestamp::now().as_second() + 30
             )
             .await
             .unwrap()
@@ -383,7 +383,7 @@ async fn authorization_and_resource_server_share_the_nonce_key_and_ttl_contract(
         "oauth:dpop:nonce:{}",
         blake3::hash(resource_nonce.as_bytes()).to_hex()
     ));
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     DpopNonceStorage::issue_nonce(&store, &resource_nonce, now + 30)
         .await
         .unwrap();
@@ -412,7 +412,7 @@ async fn concurrent_resource_server_nonce_validations_share_the_validity_window(
     DpopNonceStorage::issue_nonce(
         &store,
         &nonce,
-        chrono::Utc::now().timestamp().saturating_add(300),
+        jiff::Timestamp::now().as_second().saturating_add(300),
     )
     .await
     .unwrap();
@@ -595,7 +595,7 @@ async fn protocol_request_object_replay_keeps_absolute_expiry_and_refuses_expire
     for ciba in [false, true] {
         let client = uuid::Uuid::now_v7().to_string();
         let jti = "absolute-deadline";
-        let expiry = chrono::Utc::now().timestamp() + 2;
+        let expiry = jiff::Timestamp::now().as_second() + 2;
         let key = if ciba {
             nazo_valkey::test_support::ciba_request_object_replay_storage_key(&client, jti)
         } else {
@@ -638,7 +638,7 @@ async fn protocol_request_object_replay_keeps_absolute_expiry_and_refuses_expire
             "an elapsed request object must not reinsert its expired replay marker"
         );
         assert_eq!(inspector.exists::<i64, _>(&key).await.unwrap(), 0);
-        for expired in [-1, 0, chrono::Utc::now().timestamp()] {
+        for expired in [-1, 0, jiff::Timestamp::now().as_second()] {
             let delayed = if ciba {
                 store
                     .consume_ciba_request_object(&client, jti, expired)

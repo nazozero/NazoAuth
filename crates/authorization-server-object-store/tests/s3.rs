@@ -22,7 +22,7 @@ async fn s3_direct_target_fixes_the_staging_key_and_exact_length() {
         .authorize_upload(
             "staging-a",
             1234,
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )
         .await
         .expect("presigned PUT");

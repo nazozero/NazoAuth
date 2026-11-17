@@ -1,6 +1,6 @@
-use chrono::Utc;
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::RunQueryDsl;
+use jiff::Timestamp;
 use nazo_postgres::{
     AuditLedgerRepository, SecurityAuditEvent, create_pool, get_conn, run_pending_migrations,
 };
@@ -23,7 +23,7 @@ async fn audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds() {
             event_type: "token_issued".to_owned(),
             event_category: "token_lifecycle".to_owned(),
             payload: json!({"cache_probe":index}),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         };
         repository.append(event.clone()).await.unwrap();
         events.push(event);
@@ -33,7 +33,8 @@ async fn audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds() {
         #[diesel(sql_type=sql_types::Jsonb)]
         payload: serde_json::Value,
         #[diesel(sql_type=sql_types::Timestamptz)]
-        occurred_at: chrono::DateTime<Utc>,
+        #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+        occurred_at: jiff::Timestamp,
     }
     #[derive(QueryableByName)]
     struct Cache {
@@ -54,8 +55,8 @@ async fn audit_hotpath_reuses_prepared_shapes_without_reusing_event_binds() {
                 .unwrap();
         assert_eq!(row.payload, event.payload);
         assert_eq!(
-            row.occurred_at.timestamp_micros(),
-            event.occurred_at.timestamp_micros()
+            row.occurred_at.as_microsecond(),
+            event.occurred_at.as_microsecond()
         );
     }
     let cache=sql_query("SELECT count(*) FILTER(WHERE statement LIKE 'SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight(%')::bigint AS preflight, count(*) FILTER(WHERE statement LIKE 'SELECT public.nazo_persist_security_audit_event(%')::bigint AS append, coalesce(sum(generic_plans+custom_plans),0)::bigint AS executions FROM pg_prepared_statements WHERE statement LIKE 'SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight(%' OR statement LIKE 'SELECT public.nazo_persist_security_audit_event(%'")

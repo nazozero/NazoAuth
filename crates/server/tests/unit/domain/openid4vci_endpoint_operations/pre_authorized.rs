@@ -62,7 +62,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         &'a self,
         tenant_id: Uuid,
         id: Uuid,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
     {
         self.inner.offer(tenant_id, id, now)
@@ -74,7 +74,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         code_hash: &'a str,
         tx_code: Option<&'a str>,
         client_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<PreparedPreAuthorizedOffer>, CredentialStoreError>>
     {
         self.inner
@@ -92,7 +92,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.claim_nonce(nonce_hash, claim_id, now)
     }
@@ -101,7 +101,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.release_nonce(nonce_hash, claim_id, now)
     }
@@ -111,7 +111,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         issuance_id: Uuid,
         token_id: Uuid,
         request_digest: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         self.inner
@@ -124,7 +124,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.finalize_nonce_with_notification_and_response(
             nonce_hash, claim_id, handle, response, now,
@@ -135,7 +135,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         &'a self,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.inner
             .store_response_with_notification(handle, response, now)
@@ -144,7 +144,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
     fn resolve_access<'a>(
         &'a self,
         token_hash: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         self.inner.resolve_access(token_hash, now)
     }
@@ -155,7 +155,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         nonce_hash: &'a str,
         claim_id: &'a str,
         response: &'a StoredCredentialResponse,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.inner.store_deferred_and_finalize_nonce_with_response(
             credential, nonce_hash, claim_id, response, now,
@@ -166,7 +166,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         &'a self,
         credential: &'a DeferredCredential,
         response: &'a StoredCredentialResponse,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         self.inner
             .store_deferred_with_response(credential, response, now)
@@ -177,7 +177,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<
         'a,
         Result<nazo_openid4vci::DeferredClaimOutcome, CredentialStoreError>,
@@ -191,7 +191,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         transaction_hash: &'a str,
         token_id: Uuid,
         claim_id: &'a str,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner
             .release_deferred(transaction_hash, token_id, claim_id, now)
@@ -204,7 +204,7 @@ impl CredentialStorePort for ClientDeactivatingStore {
         claim_id: &'a str,
         handle: &'a NotificationHandle,
         response: &'a StoredCredentialResponse,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         self.inner.finalize_deferred_with_notification_and_response(
             transaction_hash,

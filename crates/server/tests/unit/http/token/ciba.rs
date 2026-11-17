@@ -15,7 +15,7 @@ use actix_web::{
     HttpRequest, HttpResponse,
     http::{StatusCode, header},
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     CibaAuthenticationContext, CibaRequestState, CibaStatePortError, CibaStatus,
     ValidatedClientAssertion,
@@ -182,7 +182,7 @@ async fn store_ciba_state_with_user(
     user_id: Uuid,
     status: CibaStatus,
 ) {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let authentication_context = match status {
         CibaStatus::Approved => Some(CibaAuthenticationContext {
             auth_time: now,

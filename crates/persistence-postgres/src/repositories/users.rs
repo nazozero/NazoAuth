@@ -712,7 +712,7 @@ impl UserRepository {
                         "reason": reason,
                         "source_ip_hash": source_ip_hash,
                     }),
-                    occurred_at: chrono::Utc::now(),
+                    occurred_at: jiff::Timestamp::now(),
                 }).await?;
                 Ok(outcome)
             },
@@ -1248,7 +1248,7 @@ async fn append_admin_user_audit(
             "admin_user_id": actor_id.as_uuid(), "user_id": account.id(),
             "role": role, "admin_level": account.principal.admin_level().unwrap_or(0),
             "is_active": account.principal.active, "outcome": "success", "source_ip_hash": source_ip_hash,
-        }), occurred_at: chrono::Utc::now(),
+        }), occurred_at: jiff::Timestamp::now(),
     }).await
 }
 

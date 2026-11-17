@@ -28,9 +28,9 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::{
     CleanupBatchResult, SecurityStateMaintenanceFuture, SecurityStateMaintenancePort,
@@ -52,8 +52,8 @@ pub struct SecurityStateMaintenanceRepository {
 // Cursors only schedule a bounded pass; PostgreSQL remains the authority for
 // expiry and references. Clones share progress, and restart simply rescans.
 struct ContractSweepCursor {
-    cutoff: DateTime<Utc>,
-    created_at: DateTime<Utc>,
+    cutoff: Timestamp,
+    created_at: Timestamp,
     tenant_id: uuid::Uuid,
     contract_blake3: Vec<u8>,
 }
@@ -61,9 +61,11 @@ struct ContractSweepCursor {
 #[derive(QueryableByName)]
 struct ContractSweepRow {
     #[diesel(sql_type = sql_types::Timestamptz)]
-    cutoff: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    cutoff: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    created_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    created_at: Timestamp,
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: uuid::Uuid,
     #[diesel(sql_type = sql_types::Binary)]
@@ -73,17 +75,19 @@ struct ContractSweepRow {
 }
 
 struct GrantSweepCursor {
-    cutoff: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    cutoff: Timestamp,
+    expires_at: Timestamp,
     token_id: uuid::Uuid,
 }
 
 #[derive(QueryableByName)]
 struct GrantSweepRow {
     #[diesel(sql_type = sql_types::Timestamptz)]
-    cutoff: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    cutoff: Timestamp,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
     #[diesel(sql_type = sql_types::Uuid)]
     token_id: uuid::Uuid,
     #[diesel(sql_type = sql_types::Bool)]
@@ -453,9 +457,11 @@ impl SecurityStateMaintenanceRepository {
                      ORDER BY scan.created_at, scan.tenant_id, scan.contract_blake3",
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.map(|row| row.cutoff))
                 .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
-                    after.map(|row| row.created_at),
+                    (after.map(|row| row.cutoff)).to_diesel(),
+                )
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
+                    (after.map(|row| row.created_at),).to_diesel(),
                 )
                 .bind::<sql_types::Uuid, _>(after.map_or(uuid::Uuid::nil(), |row| row.tenant_id))
                 .bind::<sql_types::Binary, _>(
@@ -616,8 +622,8 @@ impl SecurityStateMaintenanceRepository {
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
                 .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.map(|row| row.cutoff))
-                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.map(|row| row.expires_at))
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>((after.map(|row| row.cutoff)).to_diesel())
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>((after.map(|row| row.expires_at)).to_diesel())
                 .bind::<sql_types::Uuid, _>(after.map_or(uuid::Uuid::nil(), |row| row.token_id))
                 .load::<GrantSweepRow>(connection)
                 .await?;
@@ -766,3 +772,5 @@ fn single_cleanup_row<T>(mut rows: Vec<T>) -> T {
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -213,7 +213,7 @@ impl MfaRepositoryPort for MfaRepository {
         credential_id: uuid::Uuid,
         token_hash: String,
         user_agent_hash: Option<String>,
-        expires_at: chrono::DateTime<chrono::Utc>,
+        expires_at: jiff::Timestamp,
     ) -> RepositoryFuture<'_, bool> {
         Box::pin(async move {
             self.remember_device(

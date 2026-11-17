@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
     OptionalExtension, QueryDsl, QueryableByName, SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
     RefreshTokenCommit, RefreshTokenPersistResult, SingleUseRedemption, TokenFuture,
@@ -36,7 +36,8 @@ struct OwnedAccessTokenRow {
     #[diesel(sql_type = sql_types::Text)]
     access_token_jti: String,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    expires_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    expires_at: Timestamp,
 }
 
 pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
@@ -46,7 +47,7 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
     user_id: Option<Uuid>,
 ) -> Result<usize, diesel::result::Error> {
     debug_assert!(client_id.is_some() || user_id.is_some());
-    let now = Utc::now();
+    let now = Timestamp::now();
     // Both sources store the full retention deadline (exp + maximum verifier
     // clock skew) so the revocation fact outlives every still-acceptable
     // presentation of the revoked token.
@@ -71,7 +72,7 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(client_id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
-    .bind::<sql_types::Timestamptz, _>(now)
+    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
     .bind::<sql_types::Integer, _>(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as i32)
     .execute(connection)
     .await?;
@@ -135,7 +136,7 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(client_id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
-    .bind::<sql_types::Timestamptz, _>(now)
+    .bind::<sql_types::Timestamptz, _>((now).to_diesel())
     .execute(connection)
     .await?;
     Ok(affected)
@@ -220,8 +221,8 @@ impl TokenIssuanceRepository {
                 if bound.is_some() {
                     bound
                 } else {
-                    let horizon =
-                        Utc::now() - chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+                    let horizon = Timestamp::now()
+                        - jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
                     users::table
                         .inner_join(
                             oauth_token_issuances::table.on(users::id
@@ -232,7 +233,10 @@ impl TokenIssuanceRepository {
                         .left_join(client_join)
                         .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
                         .filter(oauth_token_issuances::access_token_jti.eq(jti))
-                        .filter(oauth_token_issuances::access_token_expires_at.gt(horizon))
+                        .filter(
+                            oauth_token_issuances::access_token_expires_at
+                                .gt((horizon).to_diesel()),
+                        )
                         .filter(users::is_active.eq(true))
                         .select((
                             SubjectClaimsRow::as_select(),
@@ -280,7 +284,8 @@ impl TokenIssuanceRepository {
         if bound.is_some() {
             return Ok(bound);
         }
-        let horizon = Utc::now() - chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+        let horizon =
+            Timestamp::now() - jiff::SignedDuration::from_secs(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
         users::table
             .inner_join(
                 oauth_token_issuances::table.on(users::id
@@ -290,7 +295,7 @@ impl TokenIssuanceRepository {
             )
             .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
             .filter(oauth_token_issuances::access_token_jti.eq(jti))
-            .filter(oauth_token_issuances::access_token_expires_at.gt(horizon))
+            .filter(oauth_token_issuances::access_token_expires_at.gt((horizon).to_diesel()))
             .filter(users::is_active.eq(true))
             .select(users::id)
             .get_result(&mut connection)
@@ -324,7 +329,7 @@ async fn fence_native_sso_source(
     retired: Option<&super::tokens::RetiredNativeSsoSource>,
 ) -> Result<(), CommitTransactionError> {
     if let Some(retired) = retired {
-        let now = Utc::now();
+        let now = Timestamp::now();
         if retired.tenant_id == source.tenant_id
             && retired.user_id == Some(source.user_id)
             && retired.token_family_id == source.family_id
@@ -339,11 +344,14 @@ async fn fence_native_sso_source(
     #[derive(QueryableByName)]
     struct SourceState {
         #[diesel(sql_type = sql_types::Timestamptz)]
-        expires_at: DateTime<Utc>,
+        #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+        expires_at: Timestamp,
         #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-        revoked_at: Option<DateTime<Utc>>,
+        #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+        revoked_at: Option<Timestamp>,
         #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-        reuse_detected_at: Option<DateTime<Utc>>,
+        #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+        reuse_detected_at: Option<Timestamp>,
     }
     let state = sql_query(
         "SELECT family.current_expires_at AS expires_at, family.revoked_at, family.reuse_detected_at \
@@ -357,7 +365,7 @@ async fn fence_native_sso_source(
         .bind::<sql_types::Uuid,_>(source.family_id)
         .get_result::<SourceState>(connection).await.optional()
         .map_err(|error| { tracing::warn!(%error, "Native SSO source row could not be fenced"); CommitTransactionError::NativeSsoDependencyUnavailable })?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     if state.is_some_and(|state| {
         state.revoked_at.is_none()
             && state.reuse_detected_at.is_none()
@@ -370,7 +378,7 @@ async fn fence_native_sso_source(
     }
 }
 
-fn validate_commit_input(input: &CommitTokenIssuance) -> Result<DateTime<Utc>, RepositoryError> {
+fn validate_commit_input(input: &CommitTokenIssuance) -> Result<Timestamp, RepositoryError> {
     if input.issuance_id.is_nil()
         || input.tenant_id.is_nil()
         || input.client_id.is_nil()
@@ -465,7 +473,7 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<DateTime<Utc>, R
             "Native SSO source fence does not match destination issuance".to_owned(),
         ));
     }
-    DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
+    Timestamp::new(input.access_token_expires_at, 0).ok_or_else(|| {
         RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
     })
 }
@@ -493,7 +501,7 @@ fn token_issued_audit_event(
             "refresh_token_family_id": refresh.map(RefreshTokenCommit::family_id),
             "rotated_from_id": refresh.and_then(RefreshTokenCommit::token).and_then(|token| token.rotated_from_id),
         }),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     }
 }
 fn refresh_reuse_audit_event(
@@ -510,7 +518,7 @@ fn refresh_reuse_audit_event(
             "client_id": input.audit_fields.client_id, "token_family_id": refresh.family_id, "rotated_from_id": refresh.rotated_from_id,
             "source_token_id": refresh.lost_response_retry.map(|retry| retry.original_id),
         }),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     }
 }
 
@@ -552,7 +560,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             let access_token_expires_at =
                 validate_commit_input(&input).map_err(map_repository_error)?;
             let ownership_horizon = access_token_expires_at
-                .checked_add_signed(chrono::Duration::seconds(
+                .checked_add(jiff::SignedDuration::from_secs(
                     MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
                 ))
                 .ok_or(TokenPortError::CorruptData)?;
@@ -639,15 +647,15 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(None::<Uuid>)
                                     .bind::<sql_types::Binary, _>(digest.as_slice())
                                     .bind::<sql_types::Varchar, _>(input.access_token_jti.as_str())
-                                    .bind::<sql_types::Timestamptz, _>(access_token_expires_at)
-                                    .bind::<sql_types::Timestamptz, _>(retain_until)
+                                    .bind::<sql_types::Timestamptz, _>((access_token_expires_at).to_diesel())
+                                    .bind::<sql_types::Timestamptz, _>((retain_until).to_diesel())
                                     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(
                                         input
                                             .refresh_token
                                             .as_ref()
                                             .map(RefreshTokenCommit::family_id),
                                     )
-                                    .bind::<sql_types::Timestamptz, _>(grant_expires_at)
+                                    .bind::<sql_types::Timestamptz, _>((grant_expires_at).to_diesel())
                                     .bind::<sql_types::Nullable<sql_types::Jsonb>, _>(
                                         authorization_code_holder.as_ref(),
                                     )
@@ -773,23 +781,18 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 // Expiry closes replay authority even while physical
                 // reclamation has not visited this receipt. Keep the complete
                 // safety horizon, not merely the access-token expiration.
-                .filter(oauth_token_issuances::retain_until.gt(diesel::dsl::sql::<
-                    sql_types::Timestamptz,
-                >(
-                    "CURRENT_TIMESTAMP"
-                )))
+                .filter(oauth_token_issuances::retain_until.gt(
+                    (diesel::dsl::sql::<sql_types::Timestamptz>("CURRENT_TIMESTAMP")).to_diesel(),
+                ))
                 .select((
                     oauth_token_issuances::access_token_jti,
                     oauth_token_issuances::access_token_expires_at,
                     oauth_token_issuances::refresh_token_family_id,
                     oauth_token_issuances::authorization_code_holder,
                 ))
-                .first::<(
-                    String,
-                    DateTime<Utc>,
-                    Option<Uuid>,
-                    Option<serde_json::Value>,
-                )>(&mut self.connection().await.map_err(map_repository_error)?)
+                .first::<(String, Timestamp, Option<Uuid>, Option<serde_json::Value>)>(
+                    &mut self.connection().await.map_err(map_repository_error)?,
+                )
                 .await
                 .optional()
                 .map_err(map_diesel_error)?;
@@ -842,7 +845,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         tenant_id: Uuid,
         raw_token: &'a str,
         client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
+        retry_started_at: Timestamp,
         prepare_oidc_subject: bool,
     ) -> TokenFuture<'a, Option<nazo_auth::RefreshTokenSnapshot>> {
         Box::pin(async move {
@@ -922,7 +925,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
         tenant_id: Uuid,
         client_id: Uuid,
         access_token_jti: &'a str,
-        access_token_expires_at: Option<DateTime<Utc>>,
+        access_token_expires_at: Option<Timestamp>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()> {
         Box::pin(async move {
@@ -1016,3 +1019,5 @@ fn map_diesel_error(error: diesel::result::Error) -> TokenPortError {
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/token_issuance.rs"]
 mod tests;
+
+use jiff_diesel::ToDiesel as _;

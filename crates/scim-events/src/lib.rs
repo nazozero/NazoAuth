@@ -5,7 +5,7 @@
 
 use std::{collections::BTreeMap, future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -73,7 +73,7 @@ pub struct StoredEvent {
     pub transaction_id: Uuid,
     pub subject_uri: String,
     pub events: BTreeMap<String, Value>,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
 }
 
 impl StoredEvent {
@@ -82,7 +82,7 @@ impl StoredEvent {
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
     ) -> Self {
         Self::notice(
             tenant_id,
@@ -100,7 +100,7 @@ impl StoredEvent {
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
         active_transition: Option<bool>,
     ) -> Self {
         Self::notice(
@@ -119,7 +119,7 @@ impl StoredEvent {
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
         attributes: &[String],
         active_transition: Option<bool>,
     ) -> Self {
@@ -139,7 +139,7 @@ impl StoredEvent {
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
     ) -> Self {
         let mut events = BTreeMap::new();
         events.insert(DELETE_EVENT.to_owned(), json!({}));
@@ -150,7 +150,7 @@ impl StoredEvent {
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
         event_uri: &str,
         attributes: &[impl AsRef<str>],
         active_transition: Option<bool>,
@@ -178,7 +178,7 @@ impl StoredEvent {
         tenant_id: Uuid,
         user_id: Uuid,
         transaction_id: Uuid,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
         events: BTreeMap<String, Value>,
     ) -> Self {
         Self {
@@ -214,7 +214,7 @@ impl SecurityEventClaims {
     pub fn from_stored(event: StoredEvent, issuer: &str, audience: &str) -> Self {
         Self {
             iss: issuer.to_owned(),
-            iat: event.occurred_at.timestamp(),
+            iat: event.occurred_at.as_second(),
             jti: event.id.to_string(),
             txn: event.transaction_id.to_string(),
             aud: vec![audience.to_owned()],

@@ -161,7 +161,7 @@ impl BackchannelLogoutDeliveryStore for Store {
                 logout_uri: "https://client.example/logout".to_owned(),
                 logout_token: "test-logout-token".to_owned(),
                 attempts: 1,
-                expires_at: chrono::Utc::now() + chrono::Duration::seconds(60),
+                expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_secs(60),
             }))
         })
     }
@@ -178,7 +178,7 @@ impl BackchannelLogoutDeliveryStore for Store {
         &'a self,
         _: uuid::Uuid,
         _: i32,
-        _: Option<chrono::DateTime<chrono::Utc>>,
+        _: Option<jiff::Timestamp>,
         _: &'a str,
     ) -> BoxFuture<'a, Result<(), RepositoryError>> {
         panic!("empty batch cannot fail a delivery")

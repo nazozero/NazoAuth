@@ -1088,9 +1088,9 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
 #[tokio::test]
 async fn tenant_shutdown_owns_and_stops_every_background_worker() {
     let key_settings = nazo_key_management::KeySettings {
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let prepublish_window = key_settings.prepublish_window;
     let keyset = nazo_key_management::test_support::key_manager(key_settings)

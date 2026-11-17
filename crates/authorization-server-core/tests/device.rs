@@ -1,4 +1,4 @@
-use chrono::{Duration, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationRequestError,
     DeviceAuthorizationRequestPolicy, DeviceAuthorizationState, DevicePollTransition,
@@ -7,7 +7,7 @@ use nazo_auth::{
 use serde_json::json;
 use uuid::Uuid;
 
-fn payload(now: chrono::DateTime<Utc>) -> DeviceAuthorizationPayload {
+fn payload(now: jiff::Timestamp) -> DeviceAuthorizationPayload {
     DeviceAuthorizationPayload {
         client_id: "device-client".to_owned(),
         client_name: "Device client".to_owned(),
@@ -16,7 +16,7 @@ fn payload(now: chrono::DateTime<Utc>) -> DeviceAuthorizationPayload {
         authorization_details: json!([]),
         interval_seconds: 10,
         issued_at: now,
-        expires_at: now + Duration::minutes(10),
+        expires_at: now + SignedDuration::from_mins(10),
     }
 }
 
@@ -31,7 +31,7 @@ fn approval() -> DeviceAuthorizationApproval {
 }
 
 fn request_policy<'a>(
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
     requested_scopes: Vec<String>,
     allowed_scopes: &'a [String],
     requested_resources: Vec<String>,
@@ -56,7 +56,7 @@ fn request_policy<'a>(
 
 #[test]
 fn device_authorization_policy_fails_closed_at_each_admission_boundary() {
-    let now = Utc.timestamp_opt(1_700_000_000, 0).single().unwrap();
+    let now = Timestamp::new(1_700_000_000, 0).unwrap();
     let scopes = vec!["openid".to_owned(), "read".to_owned()];
     let resources = vec!["resource://api".to_owned()];
 
@@ -126,7 +126,7 @@ fn device_authorization_policy_fails_closed_at_each_admission_boundary() {
 
 #[test]
 fn device_authorization_policy_defaults_resource_and_binds_expiry() {
-    let now = Utc.timestamp_opt(1_700_000_000, 0).single().unwrap();
+    let now = Timestamp::new(1_700_000_000, 0).unwrap();
     let scopes = vec!["openid".to_owned(), "read".to_owned()];
     let resources = vec!["resource://api".to_owned()];
     let result = device_authorization_request_payload(request_policy(
@@ -144,12 +144,12 @@ fn device_authorization_policy_defaults_resource_and_binds_expiry() {
     assert_eq!(result.authorization_details, json!([]));
     assert_eq!(result.interval_seconds, 10);
     assert_eq!(result.issued_at, now);
-    assert_eq!(result.expires_at, now + Duration::seconds(600));
+    assert_eq!(result.expires_at, now + SignedDuration::from_secs(600));
 }
 
 #[test]
 fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
-    let now = Utc.timestamp_opt(1_700_000_000, 0).single().unwrap();
+    let now = Timestamp::new(1_700_000_000, 0).unwrap();
     let payload = payload(now);
     let approval = approval();
 
@@ -170,7 +170,7 @@ fn device_poll_state_machine_preserves_terminal_and_slow_down_contracts() {
 
     let too_early = DeviceAuthorizationState::Pending {
         payload: payload.clone(),
-        last_poll_at: Some(now - Duration::seconds(1)),
+        last_poll_at: Some(now - SignedDuration::from_secs(1)),
         slow_down_count: 0,
     };
     let DevicePollTransition::SlowDown(next) = evaluate_device_poll(too_early, now) else {

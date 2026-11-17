@@ -1,9 +1,9 @@
-use chrono::{Duration, Utc};
 use diesel::{
     QueryableByName, sql_query,
     sql_types::{Jsonb, SmallInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::{
     MtlsTrustAnchorStatus, NewMtlsTrustAnchorRequest, TenantContext, UserId, ports::RepositoryError,
 };
@@ -43,8 +43,8 @@ fn request(
             .to_owned(),
         certificate_sha256: std::iter::repeat_n(digest_digit, 64).collect(),
         subject_dn: "CN=Trust Anchor Test".to_owned(),
-        not_before: Utc::now() - Duration::hours(2),
-        not_after: Utc::now() + Duration::hours(1),
+        not_before: Timestamp::now() - SignedDuration::from_hours(2),
+        not_after: Timestamp::now() + SignedDuration::from_hours(1),
     }
 }
 

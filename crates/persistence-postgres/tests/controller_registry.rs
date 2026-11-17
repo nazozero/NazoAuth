@@ -4,8 +4,8 @@
 //! hermetic.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, TimeZone, Utc};
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, SimpleAsyncConnection as _};
+use jiff::{SignedDuration, Timestamp};
 use nazo_postgres::{
     CONTROLLER_KEY_TTL_SECONDS, ControllerIdentityAction, ControllerRegistryRepository,
     ControllerSlotStatus, IDENTITY_APPROVAL_TTL_SECONDS, NewControllerSlot, RotateControllerKey,
@@ -65,7 +65,7 @@ async fn host_renewal_is_due_once_and_never_revives_revoked_or_superseded_keys()
             .unwrap(),
         None
     );
-    let due = slot.expires_at + Duration::days(5);
+    let due = slot.expires_at + SignedDuration::from_hours((5) * 24);
     assert_eq!(
         repository
             .renew_controller_key(
@@ -82,7 +82,7 @@ async fn host_renewal_is_due_once_and_never_revives_revoked_or_superseded_keys()
     let renewed = repository.list_slots(deployment).await.unwrap().remove(0);
     assert_eq!(
         renewed.expires_at,
-        due + Duration::seconds(CONTROLLER_KEY_TTL_SECONDS)
+        due + SignedDuration::from_secs(CONTROLLER_KEY_TTL_SECONDS)
     );
     assert_eq!(renewed.controller_id, slot.controller_id);
     assert_eq!(
@@ -92,7 +92,7 @@ async fn host_renewal_is_due_once_and_never_revives_revoked_or_superseded_keys()
                 slot.controller_id.clone(),
                 slot.kid.clone(),
                 next,
-                due + Duration::hours(1)
+                due + SignedDuration::from_hours(1)
             )
             .await
             .unwrap(),
@@ -129,7 +129,7 @@ async fn host_renewal_is_due_once_and_never_revives_revoked_or_superseded_keys()
                 slot.controller_id.clone(),
                 next_kid,
                 other,
-                due + Duration::days(40)
+                due + SignedDuration::from_hours((40) * 24)
             )
             .await
             .unwrap(),
@@ -174,8 +174,8 @@ async fn isolated_repository(_case: &str) -> Option<(String, ControllerRegistryR
     ))
 }
 
-fn at(seconds: i64) -> DateTime<Utc> {
-    Utc.timestamp_opt(1_800_000_000 + seconds, 0)
+fn at(seconds: i64) -> Timestamp {
+    Timestamp::new(1_800_000_000 + seconds, 0)
         .single()
         .expect("valid timestamp")
 }
@@ -194,7 +194,7 @@ async fn expiry_is_exactly_thirty_days_and_admission_fails_at_the_boundary() {
 
     // Fixed TTL is exact server-side math; no natural months, no drift.
     assert_eq!(
-        (slot.expires_at - slot.issued_at).num_seconds(),
+        (slot.expires_at - slot.issued_at).as_secs(),
         CONTROLLER_KEY_TTL_SECONDS
     );
     assert_eq!(slot.status, ControllerSlotStatus::Active);
@@ -204,7 +204,7 @@ async fn expiry_is_exactly_thirty_days_and_admission_fails_at_the_boundary() {
         .admitted_controller_by_kid(
             deployment,
             &slot.kid,
-            slot.expires_at - Duration::seconds(1),
+            slot.expires_at - SignedDuration::from_secs(1),
         )
         .await
         .expect("admission lookup should succeed");
@@ -408,7 +408,7 @@ async fn rotate_keeps_count_and_identity_while_replacing_material() {
     assert_eq!(rotated.kid, kid_of(&[9u8; 32]));
     assert_eq!(rotated.issued_at, at(100));
     assert_eq!(
-        (rotated.expires_at - rotated.issued_at).num_seconds(),
+        (rotated.expires_at - rotated.issued_at).as_secs(),
         CONTROLLER_KEY_TTL_SECONDS
     );
     assert_eq!(rotated.slot_index, first.slot_index);
@@ -503,7 +503,7 @@ async fn approvals_are_single_use_bound_to_action_hash_and_expire() {
         "base64url of 32 bytes is 43 characters"
     );
     assert_eq!(issued.action, ControllerIdentityAction::Bind);
-    let expected_expiry = at(0) + Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS);
+    let expected_expiry = at(0) + SignedDuration::from_secs(IDENTITY_APPROVAL_TTL_SECONDS);
     assert_eq!(issued.expires_at, expected_expiry);
 
     // Wrong action digest cannot consume.
@@ -1160,7 +1160,7 @@ async fn reclaimed_expired_approval_still_cannot_authorize_a_controller() {
     let (url, repository) = isolated_repository("reclaimed")
         .await
         .expect("isolated PostgreSQL required");
-    let now = Utc::now();
+    let now = Timestamp::now();
     let digest = "a".repeat(64);
     let issued = repository
         .issue_identity_approval_with_required_audit(
@@ -1168,7 +1168,7 @@ async fn reclaimed_expired_approval_still_cannot_authorize_a_controller() {
                 deployment_id: ("reclaimed").to_owned(),
                 action: ControllerIdentityAction::Bind,
                 action_sha256: digest.to_owned(),
-                now: now - Duration::seconds(IDENTITY_APPROVAL_TTL_SECONDS + 1),
+                now: now - SignedDuration::from_secs(IDENTITY_APPROVAL_TTL_SECONDS + 1),
             },
             identity_audit::audit(),
         )

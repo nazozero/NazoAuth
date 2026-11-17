@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context as _;
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_persistence::{
     SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter,
 };
@@ -108,7 +108,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
         let interval = std::cmp::min(config.poll_interval, config.preflight.freshness / 2);
         if (last_anchored.is_none()
             || snapshot.deployment_id.as_deref() != Some(config.preflight.deployment_id.as_str())
-            || observation_due(snapshot.observed_at, Utc::now(), interval))
+            || observation_due(snapshot.observed_at, Timestamp::now(), interval))
             && let Err(error) = repository
                 .observe_anchor(&config.preflight.deployment_id)
                 .await
@@ -272,11 +272,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
     }
 }
 
-fn observation_due(
-    observed_at: Option<DateTime<Utc>>,
-    now: DateTime<Utc>,
-    interval: Duration,
-) -> bool {
+fn observation_due(observed_at: Option<Timestamp>, now: Timestamp, interval: Duration) -> bool {
     observed_at
         .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))
 }
@@ -291,7 +287,7 @@ async fn release_lease<R: AuditAnchorRepository + ?Sized>(
     reason: &str,
     blocked: bool,
 ) {
-    let available_at = Utc::now() + ChronoDuration::seconds(delay.as_secs() as i64);
+    let available_at = Timestamp::now() + SignedDuration::from_secs(delay.as_secs() as i64);
     if let Err(error) = repository
         .fail_batch(batch.generation, available_at, reason, blocked)
         .await
@@ -317,7 +313,7 @@ pub(super) fn batch_lag_seconds(batch: &SecurityAuditBatch) -> i64 {
     batch
         .deliveries
         .first()
-        .map(|delivery| (Utc::now() - delivery.occurred_at).num_seconds().max(0))
+        .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))
         .unwrap_or(0)
 }
 

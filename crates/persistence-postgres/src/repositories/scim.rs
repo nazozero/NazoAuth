@@ -5,7 +5,6 @@ use crate::{
     rows::identity::PublicAccountRow,
     schema::{oauth_refresh_families, scim_security_events, user_client_grants, users},
 };
-use chrono::Utc;
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper,
     dsl::{count_star, now, sql},
@@ -13,6 +12,7 @@ use diesel::{
     sql_types::{Bool, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_identity::{
     PublicAccount, TenantContext, UserId,
     ports::{
@@ -27,14 +27,14 @@ const DEFAULT_SCIM_EVENT_RETENTION_SECONDS: i64 = 604_800;
 #[derive(Clone)]
 pub struct ScimRepository {
     pool: DbPool,
-    event_retention: chrono::Duration,
+    event_retention: jiff::SignedDuration,
 }
 impl ScimRepository {
     #[must_use]
     pub fn new(pool: DbPool) -> Self {
         Self {
             pool,
-            event_retention: chrono::Duration::seconds(DEFAULT_SCIM_EVENT_RETENTION_SECONDS),
+            event_retention: jiff::SignedDuration::from_secs(DEFAULT_SCIM_EVENT_RETENTION_SECONDS),
         }
     }
 
@@ -42,7 +42,7 @@ impl ScimRepository {
     pub fn with_event_retention_seconds(pool: DbPool, seconds: u64) -> Self {
         Self {
             pool,
-            event_retention: chrono::Duration::seconds(
+            event_retention: jiff::SignedDuration::from_secs(
                 i64::try_from(seconds).expect("validated retention seconds fit i64"),
             ),
         }
@@ -80,7 +80,7 @@ impl ScimRepository {
         if let Some((created_at, id)) = query.after {
             rows_query = rows_query.filter(
                 sql::<Bool>("(users.created_at, users.id) > (")
-                    .bind::<Timestamptz, _>(created_at)
+                    .bind::<Timestamptz, _>((created_at).to_diesel())
                     .sql(", ")
                     .bind::<SqlUuid, _>(id)
                     .sql(")"),
@@ -233,7 +233,7 @@ impl ScimRepository {
                         users::display_name.eq(replacement.display_name),
                         users::given_name.eq(replacement.given_name),
                         users::family_name.eq(replacement.family_name),
-                        users::updated_at.eq(now),
+                        users::updated_at.eq((now).to_diesel()),
                     ))
                     .returning(PublicAccountRow::as_returning())
                     .get_result(connection)
@@ -330,7 +330,7 @@ impl ScimRepository {
                             .map(|value| users::display_name.eq(value)),
                         patch.given_name.map(|value| users::given_name.eq(value)),
                         patch.family_name.map(|value| users::family_name.eq(value)),
-                        users::updated_at.eq(now),
+                        users::updated_at.eq((now).to_diesel()),
                     ))
                     .returning(PublicAccountRow::as_returning())
                     .get_result(connection)
@@ -398,11 +398,11 @@ impl ScimRepository {
                     )
                     .set((
                         users::is_active.eq(false),
-                        users::deleted_at.eq(now),
-                        users::updated_at.eq(now),
+                        users::deleted_at.eq((now).to_diesel()),
+                        users::updated_at.eq((now).to_diesel()),
                     ))
                     .returning(users::updated_at)
-                    .get_result::<chrono::DateTime<Utc>>(connection)
+                    .get_result::<jiff::Timestamp>(connection)
                     .await
                     .optional()?;
                     let Some(deactivated_at) = deactivated_at else {
@@ -486,7 +486,7 @@ impl ScimRepositoryPort for ScimRepository {
 async fn insert_event(
     connection: &mut diesel_async::AsyncPgConnection,
     event: StoredEvent,
-    retention: chrono::Duration,
+    retention: jiff::SignedDuration,
 ) -> Result<(), Error> {
     let expires_at = event.occurred_at + retention;
     diesel::insert_into(scim_security_events::table)
@@ -498,8 +498,8 @@ async fn insert_event(
             scim_security_events::events.eq(serde_json::Value::Object(
                 event.events.into_iter().collect(),
             )),
-            scim_security_events::occurred_at.eq(event.occurred_at),
-            scim_security_events::expires_at.eq(expires_at),
+            scim_security_events::occurred_at.eq((event.occurred_at).to_diesel()),
+            scim_security_events::expires_at.eq((expires_at).to_diesel()),
         ))
         .execute(connection)
         .await?;
@@ -517,7 +517,7 @@ async fn revoke(
             .filter(oauth_refresh_families::user_id.eq(user_id))
             .filter(oauth_refresh_families::revoked_at.is_null()),
     )
-    .set(oauth_refresh_families::revoked_at.eq(now))
+    .set(oauth_refresh_families::revoked_at.eq((now).to_diesel()))
     .execute(connection)
     .await?;
     diesel::delete(
@@ -537,3 +537,5 @@ fn map_error(error: Error) -> RepositoryError {
         other => RepositoryError::Unexpected(other.to_string()),
     }
 }
+
+use jiff_diesel::ToDiesel as _;

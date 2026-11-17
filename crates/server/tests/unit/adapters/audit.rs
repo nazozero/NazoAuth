@@ -762,12 +762,13 @@ mod queue_persistence {
                 let mut health = healthy_anchor();
                 match fault {
                     "stale" => {
-                        health.observed_at = Some(Utc::now() - chrono::Duration::seconds(3600))
+                        health.observed_at =
+                            Some(Timestamp::now() - jiff::SignedDuration::from_secs(3600))
                     }
                     "lag" => {
                         health.pending_exists = true;
                         health.oldest_pending_occurred_at =
-                            Some(Utc::now() - chrono::Duration::seconds(3600));
+                            Some(Timestamp::now() - jiff::SignedDuration::from_secs(3600));
                     }
                     "blocked" => health.batch_blocked = Some(true),
                     "deployment" => health.deployment_id = Some("foreign".into()),
@@ -1012,8 +1013,8 @@ fn audit_event_definitions_pin_required_and_telemetry_classes() {
 
 mod transactional_readiness {
     use super::*;
-    use chrono::Utc;
     use futures_util::future::BoxFuture;
+    use jiff::Timestamp;
     use nazo_identity::ports::RepositoryError;
     use nazo_oauth_server::ports::audit::SecurityAudit;
     use nazo_persistence::{SecurityAuditAnchorHealth, SecurityAuditLedger};
@@ -1100,10 +1101,10 @@ mod transactional_readiness {
             oldest_pending_occurred_at: None,
             last_exported_sequence: Some(7),
             last_exported_hash: Some(vec![0xAA; 32]),
-            last_exported_occurred_at: Some(Utc::now()),
-            last_exported_at: Some(Utc::now()),
+            last_exported_occurred_at: Some(Timestamp::now()),
+            last_exported_at: Some(Timestamp::now()),
             deployment_id: Some("test-deployment".to_owned()),
-            observed_at: Some(Utc::now()),
+            observed_at: Some(Timestamp::now()),
             batch_blocked: None,
         }
     }
@@ -1170,7 +1171,7 @@ mod transactional_readiness {
         let ledger = Arc::new(CountingLedger::new(healthy_anchor()));
         let required = required_repo(ledger.clone(), AuditAnchorMode::Required);
         ledger.health.lock().unwrap().observed_at =
-            Some(Utc::now() - chrono::Duration::seconds(3600));
+            Some(Timestamp::now() - jiff::SignedDuration::from_secs(3600));
         let error = ensure_transactional_audit_ready_via(&required)
             .await
             .expect_err("stale anchor observation must reject issuance");
@@ -1224,7 +1225,8 @@ mod transactional_readiness {
             health.pending_exists = true;
             // Pending exists and checkpoint equals head: allowed shape, but
             // the oldest pending event exceeds the lag budget.
-            health.oldest_pending_occurred_at = Some(Utc::now() - chrono::Duration::seconds(3600));
+            health.oldest_pending_occurred_at =
+                Some(Timestamp::now() - jiff::SignedDuration::from_secs(3600));
         }
         ensure_transactional_audit_ready_via(&required)
             .await

@@ -1,6 +1,6 @@
 use super::*;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use p256::ecdsa::SigningKey;
 use p256::pkcs8::EncodePrivateKey;
@@ -39,7 +39,7 @@ fn valid_client_attestation_fixture() -> (
     EncodingKey,
     i64,
 ) {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let (mut attester_jwk, attester_key) = es256_test_key(83);
     attester_jwk["kid"] = json!("attester-key");
     attester_jwk["alg"] = json!("ES256");
@@ -85,7 +85,7 @@ fn valid_client_attestation_fixture() -> (
 
 #[test]
 fn client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_key() {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let (mut attester_jwk, attester_key) = es256_test_key(5);
     let (instance_jwk, instance_key) = es256_test_key(7);
     let mut attestation_header = Header::new(Algorithm::ES256);

@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_openid4vci::{CredentialStoreError, CredentialStorePort, StoredCredentialOffer};
 use nazo_openid4vp::PresentationStorePort;
@@ -24,9 +24,9 @@ pub trait Openid4vciStore: CredentialStorePort {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ManagedCredentialDataset {
     pub claims: Value,
-    pub valid_from: Option<DateTime<Utc>>,
-    pub valid_until: Option<DateTime<Utc>>,
-    pub updated_at: DateTime<Utc>,
+    pub valid_from: Option<Timestamp>,
+    pub valid_until: Option<Timestamp>,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,8 +36,8 @@ pub struct ManagedCredentialDatasetWrite {
     pub subject_id: Uuid,
     pub credential_configuration_id: String,
     pub claims: Value,
-    pub valid_from: Option<DateTime<Utc>>,
-    pub valid_until: Option<DateTime<Utc>>,
+    pub valid_from: Option<Timestamp>,
+    pub valid_until: Option<Timestamp>,
 }
 
 /// Encrypted issuer dataset capability. Encryption, actor authorization and

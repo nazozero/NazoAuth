@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use anyhow::{Context, anyhow};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_auth::SigningPurpose;
 use nazo_crypto::jwt::Algorithm;
 use serde_json::{Value, json};
@@ -131,7 +131,7 @@ pub(crate) fn validate_external_public_jwk(
     Ok(())
 }
 
-pub(crate) fn key_entry_retire_at(entry: &Value) -> anyhow::Result<Option<DateTime<Utc>>> {
+pub(crate) fn key_entry_retire_at(entry: &Value) -> anyhow::Result<Option<Timestamp>> {
     let value = entry
         .get("retire_at")
         .ok_or_else(|| anyhow!("key entry missing retire_at"))?;
@@ -141,22 +141,22 @@ pub(crate) fn key_entry_retire_at(entry: &Value) -> anyhow::Result<Option<DateTi
     let raw = value
         .as_str()
         .ok_or_else(|| anyhow!("retire_at must be RFC3339 or null"))?;
-    let retire_at = DateTime::parse_from_rfc3339(raw)
-        .with_context(|| format!("retire_at is not RFC3339: {raw}"))?
-        .with_timezone(&Utc);
+    let retire_at = (raw)
+        .parse::<jiff::Timestamp>()
+        .with_context(|| format!("retire_at is not RFC3339: {raw}"))?;
     Ok(Some(retire_at))
 }
 
-pub(crate) fn key_entry_created_at(entry: &Value) -> anyhow::Result<DateTime<Utc>> {
+pub(crate) fn key_entry_created_at(entry: &Value) -> anyhow::Result<Timestamp> {
     let value = entry
         .get("created_at")
         .ok_or_else(|| anyhow!("key entry missing created_at"))?;
     let raw = value
         .as_str()
         .ok_or_else(|| anyhow!("created_at must be RFC3339"))?;
-    let created_at = DateTime::parse_from_rfc3339(raw)
-        .with_context(|| format!("created_at is not RFC3339: {raw}"))?
-        .with_timezone(&Utc);
+    let created_at = (raw)
+        .parse::<jiff::Timestamp>()
+        .with_context(|| format!("created_at is not RFC3339: {raw}"))?;
     Ok(created_at)
 }
 

@@ -1,13 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use diesel::{
     sql_query,
     sql_types::{Bool, Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
 use ed25519_dalek::{Signer, SigningKey};
+use jiff::Timestamp;
 use nazo_http_signatures::{
     RequestInput, RequestPolicy, VerificationPolicy, parse_request_for_verification,
     prepare_request,
@@ -174,7 +174,7 @@ async fn production_signature_verifier_binds_replay_to_the_scoped_client_tenant(
         60,
     );
 
-    let created = Utc::now().timestamp();
+    let created = Timestamp::now().as_second();
     let headers = [("authorization", "Bearer access-token")];
     let prepared = prepare_request(
         RequestInput {

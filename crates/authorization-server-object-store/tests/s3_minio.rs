@@ -33,7 +33,7 @@ async fn minio_presigned_put_publishes_an_immutable_candidate() {
         .authorize_upload(
             &upload_id,
             original.len(),
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )
         .await
         .expect("presigned PUT");
@@ -90,7 +90,7 @@ async fn minio_presigned_put_publishes_an_immutable_candidate() {
         .authorize_upload(
             &format!("mismatched-size-{upload_id}"),
             original.len(),
-            chrono::Utc::now() + chrono::Duration::minutes(5),
+            jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5),
         )
         .await
         .expect("exact-length target");

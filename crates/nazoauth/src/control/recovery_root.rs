@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -145,7 +145,7 @@ impl RecoveryRootService {
         &self,
         audit: nazo_persistence::control_plane::AdminIdentityAudit,
         request: RecoveryRootChangeRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IssuedIdentityApproval, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let rotation = validate_rotation_request(request)?;
@@ -168,7 +168,7 @@ impl RecoveryRootService {
         &self,
         approval_token: String,
         request: RecoveryRootChangeRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
         audit: nazo_persistence::control_plane::AdminIdentityAudit,
     ) -> Result<StoredRecoveryRoot, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
@@ -199,7 +199,7 @@ impl RecoveryRootService {
     pub async fn issue_challenge(
         &self,
         request: RecoveryChallengeRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<nazo_persistence::control_plane::IssuedRecoveryChallenge, RecoveryRootServiceError>
     {
         self.ensure_local_deployment(&request.deployment_id)?;
@@ -216,7 +216,7 @@ impl RecoveryRootService {
     pub async fn recover(
         &self,
         request: RecoveryAnswerRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<RecoveredSlotCommit, RecoveryRootServiceError> {
         self.ensure_local_deployment(&request.deployment_id)?;
         let submission = validate_answer_request(request)?;

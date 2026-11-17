@@ -137,7 +137,7 @@ impl PasskeyRepository {
                             "user_id": user_id.as_uuid(),
                             "credential_id": row.id,
                         }),
-                        occurred_at: chrono::Utc::now(),
+                        occurred_at: jiff::Timestamp::now(),
                     },
                 )
                 .await?;
@@ -192,8 +192,8 @@ impl PasskeyRepository {
             )
             .bind::<diesel::sql_types::Jsonb, _>(facts)),
             user_passkey_credentials::sign_count.eq(i64::from(new_sign_count)),
-            user_passkey_credentials::last_used_at.eq(now),
-            user_passkey_credentials::updated_at.eq(now),
+            user_passkey_credentials::last_used_at.eq((now).to_diesel()),
+            user_passkey_credentials::updated_at.eq((now).to_diesel()),
         ))
         .execute(&mut connection)
         .await
@@ -231,7 +231,7 @@ impl PasskeyRepository {
                     super::audit_ledger::append_fresh_security_audit_on_connection(connection,
                     &nazo_persistence::SecurityAuditEvent {
                         event_id: Uuid::now_v7(), event_type: "passkey_deleted".into(),
-                        event_category: "authentication".into(), occurred_at: chrono::Utc::now(),
+                        event_category: "authentication".into(), occurred_at: jiff::Timestamp::now(),
                         payload: serde_json::json!({
                             "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
                             "event_category": "authentication", "tenant_id": tenant_id.as_uuid(),
@@ -347,3 +347,5 @@ fn map_error(error: Error) -> RepositoryError {
         other => RepositoryError::Unexpected(other.to_string()),
     }
 }
+
+use jiff_diesel::ToDiesel as _;

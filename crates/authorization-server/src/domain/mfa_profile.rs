@@ -9,7 +9,7 @@ use crate::contracts::mfa_profile::{
 };
 use crate::crypto::blake3_hex;
 use crate::ports::audit::{SecurityAudit, audit_fields};
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_identity::{
     MfaService, MfaServiceError, MfaServiceErrorKind, PublicAccount, SessionId, SessionResolution,
     SessionRotation, SessionService, TotpConfirmationOutcome,
@@ -164,7 +164,7 @@ impl ServerMfaProfileOperations {
                 method.amr(),
                 self.session_ttl_seconds,
                 require_pending_mfa,
-                Utc::now(),
+                Timestamp::now(),
             )
             .await
             .map_err(|error| {
@@ -307,15 +307,14 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 }
             };
             let remembered_device_token = if command.remember_device {
-                let now = DateTime::<Utc>::from_timestamp(command.context.now, 0)
-                    .unwrap_or_else(Utc::now);
+                let now = Timestamp::new(command.context.now, 0).unwrap_or_else(Timestamp::now);
                 let ttl = i64::try_from(self.remembered_mfa_ttl_seconds).unwrap_or(i64::MAX);
                 self.mfa
                     .remember_device(
                         &account,
                         &method,
                         command.user_agent_hash,
-                        now + Duration::seconds(ttl),
+                        now + SignedDuration::from_secs(ttl),
                     )
                     .await
                     .map_err(|error| {

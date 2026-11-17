@@ -12,7 +12,7 @@ fn escaped_payload_counts_match_final_json_and_maximum_singleton_bound() {
             event_type: "event\"name".into(),
             event_category: "security".into(),
             payload_canonical: serde_json::json!({"value":payload}).to_string(),
-            occurred_at: chrono::Utc::now(),
+            occurred_at: jiff::Timestamp::now(),
             previous_hash: vec![1; 32],
             event_hash: vec![2; 32],
         };
@@ -52,7 +52,7 @@ fn escaped_payload_counts_match_final_json_and_maximum_singleton_bound() {
         event_type: "e".repeat(128),
         event_category: "c".repeat(64),
         payload_canonical: "\\".repeat(crate::MAX_SECURITY_AUDIT_PAYLOAD_BYTES),
-        occurred_at: chrono::Utc::now(),
+        occurred_at: jiff::Timestamp::now(),
         previous_hash: vec![1; 32],
         event_hash: vec![2; 32],
     };

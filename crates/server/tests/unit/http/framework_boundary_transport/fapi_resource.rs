@@ -254,7 +254,7 @@ mod fapi_signed_contract {
                     body: BODY,
                 },
                 RequestPolicy {
-                    created: chrono::Utc::now().timestamp(),
+                    created: jiff::Timestamp::now().as_second(),
                     keyid: "client-key",
                     algorithm: "ed25519",
                     covered_headers: &[],
@@ -405,7 +405,7 @@ mod fapi_signed_contract {
                 },
                 response_fields,
                 VerificationPolicy {
-                    now: chrono::Utc::now().timestamp(),
+                    now: jiff::Timestamp::now().as_second(),
                     max_age_seconds: 60,
                     future_skew_seconds: 5,
                 },

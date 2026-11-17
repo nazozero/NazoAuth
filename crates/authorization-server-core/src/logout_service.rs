@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 
 use crate::{
@@ -76,7 +76,7 @@ pub struct IdempotentBackchannelLogoutDelivery {
     pub client_public_id: String,
     pub logout_uri: String,
     pub logout_token: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl std::fmt::Debug for IdempotentBackchannelLogoutDelivery {
@@ -109,7 +109,7 @@ pub struct LogoutInput {
     pub csrf_authorized: bool,
     pub user_confirmed: bool,
     pub frontchannel_enabled: bool,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -150,7 +150,7 @@ pub trait LogoutTokenSignerPort: Send + Sync {
         client: &'a RegisteredLogoutClient,
         subject: Option<&'a str>,
         sid: &'a str,
-        issued_at: DateTime<Utc>,
+        issued_at: Timestamp,
         ttl_seconds: i64,
     ) -> LogoutFuture<'a, String>;
 }
@@ -388,7 +388,7 @@ impl LogoutService {
         session: &LogoutSession,
         active_clients: &[RegisteredLogoutClient],
         operation_key: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<IdempotentBackchannelLogoutDelivery>, LogoutServiceError> {
         let mut deliveries = Vec::new();
         for client in active_clients {
@@ -421,7 +421,7 @@ impl LogoutService {
                 client_public_id: client.client_id.clone(),
                 logout_uri,
                 logout_token,
-                expires_at: now + Duration::seconds(BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS),
+                expires_at: now + SignedDuration::from_secs(BACKCHANNEL_LOGOUT_TOKEN_TTL_SECONDS),
             });
         }
         Ok(deliveries)

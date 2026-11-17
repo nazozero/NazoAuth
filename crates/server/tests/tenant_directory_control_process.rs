@@ -13,8 +13,8 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
-use chrono::Utc;
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, SimpleAsyncConnection as _};
+use jiff::Timestamp;
 use nazo_crypto::ed25519::SigningKey;
 use nazo_operator_protocol::{
     CONTROL_OPERATION_SCHEMA, ControlOperation, ControlOperationPayload, ControlOutcome,
@@ -104,7 +104,7 @@ async fn isolated_directory(
                 kid: kid.clone(),
                 public_key: controller.verifying_key().to_bytes(),
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
         .expect("controller slot should enroll");

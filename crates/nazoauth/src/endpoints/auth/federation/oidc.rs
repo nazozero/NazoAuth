@@ -1,4 +1,4 @@
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::jwt_decoding_key_from_jwks;
 use nazo_oauth_server::crypto::pkce_s256;
 use serde::Deserialize;
@@ -134,7 +134,7 @@ pub fn verify_oidc_id_token(
     let audience_count = claims.aud.as_array().map_or(1, Vec::len);
     if claims.nonce.as_deref() != Some(expected_nonce)
         || (audience_count > 1 && claims.azp.as_deref() != Some(&provider.client_id))
-        || claims.iat > Utc::now().timestamp() + 60
+        || claims.iat > Timestamp::now().as_second() + 60
     {
         anyhow::bail!("OIDC ID Token claims failed policy");
     }

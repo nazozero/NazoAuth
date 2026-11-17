@@ -43,8 +43,8 @@ use std::{
 };
 
 use anyhow::{Context as _, bail};
-use chrono::Utc;
 use fs2::FileExt as _;
+use jiff::Timestamp;
 use nazo_operator_protocol::{ControlOperation, ControlOperationPayload, MAX_COMPACT_JWS_BYTES};
 
 mod admission;
@@ -185,7 +185,7 @@ pub(crate) fn start_retention_worker(state_directories: Vec<PathBuf>) -> Retenti
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             interval.tick().await;
-            let cutoff = Utc::now().timestamp()
+            let cutoff = Timestamp::now().as_second()
                 - control_journal::CONTROL_JOURNAL_COMPLETED_RETENTION_SECONDS;
             let directories = state_directories.clone();
             let stop = worker_stop.clone();
@@ -265,7 +265,7 @@ async fn execute_compact(
         repository.as_ref(),
         &operation.deployment_id,
         &operation.kid,
-        Utc::now(),
+        Timestamp::now(),
         operation.renewal_public_key.is_some(),
     )
     .await
@@ -316,7 +316,7 @@ async fn execute_compact(
     let snapshot = control_journal::AuthorizationSnapshot {
         controller_id: admitted.controller_id,
         kid: admitted.kid,
-        accepted_at: Utc::now().timestamp(),
+        accepted_at: Timestamp::now().as_second(),
     };
     pause_control_journal("control-journal-before-accept");
     let record = control_journal::accept(state_directory, &verified, &request_hash, snapshot)
@@ -346,7 +346,7 @@ async fn journaled_execution(
                 record.controller_id.clone(),
                 record.kid.clone(),
                 public_key,
-                Utc::now(),
+                Timestamp::now(),
             )
             .await?;
     }

@@ -145,7 +145,7 @@ impl DpopProofVerifier {
         self,
         request: DpopProofRequest<'_>,
     ) -> Result<Option<VerifiedDpopProof>, DpopError> {
-        self.verify_at(request, chrono::Utc::now().timestamp())
+        self.verify_at(request, jiff::Timestamp::now().as_second())
     }
 
     pub fn verify_at(
@@ -204,7 +204,7 @@ where
         store,
         request,
         nonce_policy,
-        chrono::Utc::now().timestamp(),
+        jiff::Timestamp::now().as_second(),
     )
     .await
 }

@@ -1,7 +1,7 @@
 //! Exercise the production single-batch workers without a scheduler or network.
-use chrono::{DateTime, Duration, Utc};
 use futures_executor::block_on;
 use http::StatusCode;
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::BackchannelLogoutDelivery;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_oauth_server::{
@@ -179,7 +179,7 @@ fn ping(id: usize) -> CibaPingDelivery {
         endpoint: "https://client.example/ping".into(),
         client_notification_token: format!("notification-{id}"),
         attempts: 1,
-        expires_at: Utc::now().timestamp() + 300,
+        expires_at: Timestamp::now().as_second() + 300,
     }
 }
 
@@ -286,9 +286,9 @@ fn ciba_sender_status_and_transport_errors_reach_retry_and_terminal_finishes() {
         let store = Arc::new(PingStore::new([delivery.clone()]));
         let sender = Arc::new(Sender::ready([(0, reply)]));
         let worker = CibaPingDeliveryWorker::new(store.clone(), sender);
-        let before = Utc::now().timestamp();
+        let before = Timestamp::now().as_second();
         assert_eq!(block_on(worker.process_due_batch()).unwrap(), 1);
-        let after = Utc::now().timestamp();
+        let after = Timestamp::now().as_second();
         let finished = store.finished.lock().unwrap();
         assert_eq!(finished[0].0, delivery);
         match (delay, finished[0].1) {
@@ -308,7 +308,7 @@ fn ciba_sender_status_and_transport_errors_reach_retry_and_terminal_finishes() {
         }
     }
     let mut delivery = ping(0);
-    delivery.expires_at = Utc::now().timestamp() + 1;
+    delivery.expires_at = Timestamp::now().as_second() + 1;
     let store = Arc::new(PingStore::new([delivery]));
     let worker = CibaPingDeliveryWorker::new(
         store.clone(),
@@ -325,7 +325,7 @@ fn ciba_sender_status_and_transport_errors_reach_retry_and_terminal_finishes() {
 #[derive(Debug)]
 enum LogoutFinish {
     Complete(Uuid, i32),
-    Fail(Uuid, i32, Option<DateTime<Utc>>, String),
+    Fail(Uuid, i32, Option<Timestamp>, String),
 }
 struct LogoutStore {
     pending: Mutex<VecDeque<BackchannelLogoutDelivery>>,
@@ -375,7 +375,7 @@ impl BackchannelLogoutDeliveryStore for LogoutStore {
         &'a self,
         delivery_id: Uuid,
         expected_attempts: i32,
-        next_attempt_at: Option<DateTime<Utc>>,
+        next_attempt_at: Option<Timestamp>,
         last_error: &'a str,
     ) -> RepositoryFuture<'a, ()> {
         Box::pin(async move {
@@ -395,7 +395,7 @@ fn logout(id: usize) -> BackchannelLogoutDelivery {
         logout_uri: "https://client.example/logout".into(),
         logout_token: format!("signed-logout-{id}"),
         attempts: 1,
-        expires_at: Utc::now() + Duration::seconds(300),
+        expires_at: Timestamp::now() + SignedDuration::from_secs(300),
     }
 }
 
@@ -480,9 +480,9 @@ fn logout_worker_routes_statuses_and_preserves_retry_fences_and_error_bounds() {
             store.clone(),
             Arc::new(Sender::ready([(0, reply)])),
         );
-        let before = Utc::now();
+        let before = Timestamp::now();
         assert_eq!(block_on(worker.process_due_batch()).unwrap(), 1);
-        let after = Utc::now();
+        let after = Timestamp::now();
         let finished = store.finished.lock().unwrap();
         assert_eq!(finished.len(), 1);
         match &finished[0] {
@@ -499,8 +499,8 @@ fn logout_worker_routes_statuses_and_preserves_retry_fences_and_error_bounds() {
                 }
                 match (delay, next) {
                     (Some(delay), Some(next)) => {
-                        assert!(*next >= before + Duration::seconds(delay));
-                        assert!(*next <= after + Duration::seconds(delay));
+                        assert!(*next >= before + SignedDuration::from_secs(delay));
+                        assert!(*next <= after + SignedDuration::from_secs(delay));
                         assert!(*next < delivery.expires_at);
                     }
                     (None, None) => {}
@@ -518,7 +518,7 @@ fn logout_worker_routes_statuses_and_preserves_retry_fences_and_error_bounds() {
 #[cfg_attr(not(all(target_arch = "wasm32", target_os = "unknown")), test)]
 fn logout_retry_cannot_be_scheduled_at_or_after_expiry() {
     let mut delivery = logout(0);
-    delivery.expires_at = Utc::now() + Duration::seconds(5);
+    delivery.expires_at = Timestamp::now() + SignedDuration::from_secs(5);
     let store = Arc::new(LogoutStore::new([delivery]));
     let worker = BackchannelLogoutWorker::from_port(
         store.clone(),

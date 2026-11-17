@@ -5,9 +5,9 @@ use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use chrono::Utc;
 use ciborium::Value as Cbor;
 use coset::AsCborValue;
+use jiff::Timestamp;
 use nazo_crypto::jwt::{Algorithm, Validation, VerificationKey, decode, decode_header};
 use nazo_digital_credentials::{CredentialFormat, CredentialTrustError};
 use serde_json::Value;
@@ -194,7 +194,7 @@ fn verify_jwt(
         optional_number(claims.get("exp"))?,
         optional_number(claims.get("nbf"))?,
         optional_number(claims.get("ttl"))?,
-        Utc::now().timestamp() as f64,
+        Timestamp::now().as_second() as f64,
     )?;
     // There is no audience for this public list retrieval operation.
     if claims.get("aud").is_some() {
@@ -320,7 +320,7 @@ fn verify_cwt(
                     .ok_or(INVALID)
             })
             .transpose()?,
-        Utc::now().timestamp() as f64,
+        Timestamp::now().as_second() as f64,
     )?;
     let list = unique_map(get(65533).ok_or(INVALID)?)?;
     let get = |name: &str| {
@@ -380,7 +380,7 @@ fn status_key(
             .check_chain_with_scoped_trust(
                 issuer,
                 chain,
-                Utc::now(),
+                Timestamp::now(),
                 additional_trust_anchors
                     .iter()
                     .any(|der| der.as_slice() == anchor),
@@ -421,7 +421,7 @@ fn status_key(
         nazo_crypto::certificate::verify_document_signing_chain_at(
             &path,
             &nazo_crypto::certificate::CertificateDer::from(issuer.as_slice()),
-            Utc::now().timestamp() as u64,
+            Timestamp::now().as_second() as u64,
         )
         .map_err(|_| INVALID)?;
         crypto
@@ -429,7 +429,7 @@ fn status_key(
             .check_chain_with_scoped_trust(
                 None,
                 chain,
-                Utc::now(),
+                Timestamp::now(),
                 additional_trust_anchors.contains(issuer),
             )?;
     }

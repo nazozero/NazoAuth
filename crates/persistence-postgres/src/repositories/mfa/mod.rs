@@ -109,7 +109,10 @@ impl MfaRepository {
                         .filter(users::tenant_id.eq(tenant_id.as_uuid()))
                         .filter(users::is_active.eq(true)),
                 )
-                .set((users::mfa_enabled.eq(false), users::updated_at.eq(now)))
+                .set((
+                    users::mfa_enabled.eq(false),
+                    users::updated_at.eq((now).to_diesel()),
+                ))
                 .execute(connection)
                 .await?;
                 if updated != 1 {
@@ -129,7 +132,7 @@ impl MfaRepository {
                                 "credential_id": credential_id, "outcome": "success",
                                 "source_ip_hash": source_ip_hash,
                             }),
-                            occurred_at: chrono::Utc::now(),
+                            occurred_at: jiff::Timestamp::now(),
                         },
                     )
                     .await?;
@@ -225,8 +228,10 @@ async fn append_required_mfa_outcome(
                 "target_user_id": user_id.as_uuid(), "credential_id": credential_id,
                 "outcome": "success", "source_ip_hash": source_ip_hash,
             }),
-            occurred_at: chrono::Utc::now(),
+            occurred_at: jiff::Timestamp::now(),
         },
     )
     .await
 }
+
+use jiff_diesel::ToDiesel as _;

@@ -3,7 +3,7 @@ use bytes::Bytes;
 use http::{StatusCode, header};
 use std::sync::{Arc, OnceLock};
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::{
     UserId,
     ports::RepositoryError,
@@ -579,7 +579,7 @@ fn encode_cursor(
     endpoint: &ScimEndpoint,
     context: ScimCursorContext<'_>,
 ) -> Result<String, ScimDependencyError> {
-    let plaintext = build_scim_cursor_plaintext(&context, Utc::now())
+    let plaintext = build_scim_cursor_plaintext(&context, Timestamp::now())
         .map_err(|_| ScimDependencyError::Unavailable)?;
     endpoint
         .cursors
@@ -599,7 +599,7 @@ fn decode_cursor(
         .cursors
         .unprotect(&mut protected)
         .map_err(|_| ScimCursorError::Invalid)?;
-    decode_scim_cursor_plaintext(plaintext, subject, filter, count, Utc::now())
+    decode_scim_cursor_plaintext(plaintext, subject, filter, count, Timestamp::now())
 }
 
 fn cursor_error(error: ScimCursorError) -> Response {

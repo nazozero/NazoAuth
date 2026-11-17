@@ -1,6 +1,6 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
+use jiff::Timestamp;
 use serde::Deserialize;
 use sha2::Sha256;
 use std::io::Write;
@@ -28,7 +28,7 @@ pub fn valid_saml_gateway_assertion(
     assertion: &SamlGatewayAssertion,
     normalized_email: &str,
 ) -> bool {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     if assertion.issuer != settings.issuer
         || assertion.audience != settings.audience
         || assertion.subject.trim().is_empty()

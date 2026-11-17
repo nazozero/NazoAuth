@@ -46,7 +46,7 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
         let key = nazo_digital_credentials::EphemeralEncryptionKey::generate().public_jwk();
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut input = CredentialSignInput {
             payload: CredentialPayload {
                 issuer: "https://issuer.example".into(),
@@ -57,7 +57,7 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
                 holder_binding: Some(HolderBinding::Jwk { jwk: key }),
             },
             issued_at: now,
-            expires_at: now + chrono::Duration::hours(1),
+            expires_at: now + jiff::SignedDuration::from_hours(1),
             status: Some(serde_json::json!({"status_list":{"idx":0,"uri":URI}})),
         };
         assert_eq!(
@@ -82,7 +82,7 @@ fn mdoc_issuance_requires_explicit_policy_and_an_authenticated_published_list() 
         let token = cwt(
             &certs,
             URI,
-            now.timestamp() + 300,
+            now.as_second() + 300,
             "application/statuslist+cwt",
         );
         let enabled = enabled.with_status_resolver(Arc::new(ListResolver {
@@ -236,7 +236,7 @@ fn credential_verifier_resolves_signed_status_after_authentication() {
             bytes: cwt(
                 &certs,
                 URI,
-                Utc::now().timestamp() + 300,
+                Timestamp::now().as_second() + 300,
                 "application/statuslist+cwt",
             ),
             format: CredentialFormat::MsoMdoc,
@@ -245,7 +245,7 @@ fn credential_verifier_resolves_signed_status_after_authentication() {
             let reference = serde_json::json!({"status_list":{"idx":index,"uri":URI}});
             let reference = super::super::super::crypto_helpers::json_to_cbor(&reference).unwrap();
             let (encoded, transcript) =
-                valid_mdoc_presentation(&certs, Utc::now(), Some(reference));
+                valid_mdoc_presentation(&certs, Timestamp::now(), Some(reference));
             let p = PresentedCredential {
                 encoded: encoded.into(),
                 expected_nonce: "verifier-nonce".into(),
@@ -305,7 +305,7 @@ fn mdoc_status_signer_must_belong_to_the_credential_iaca() {
         let token = cwt(
             &signer,
             URI,
-            Utc::now().timestamp() + 300,
+            Timestamp::now().as_second() + 300,
             "application/statuslist+cwt",
         );
         assert!(
@@ -340,7 +340,7 @@ fn compressed(bytes: &[u8]) -> Vec<u8> {
     encoder.finish().unwrap()
 }
 fn claims() -> Value {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     serde_json::json!({"sub":URI,"iat":now,"exp":now+300,"ttl":60,
         "status_list":{"bits":2,"lst":URL_SAFE_NO_PAD.encode(compressed(&[0b11100100]))}})
 }
@@ -454,9 +454,9 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
             .is_err()
         );
         for (key, value) in [
-            ("exp", serde_json::json!(Utc::now().timestamp() - 1)),
-            ("iat", serde_json::json!(Utc::now().timestamp() + 100)),
-            ("nbf", serde_json::json!(Utc::now().timestamp() + 100)),
+            ("exp", serde_json::json!(Timestamp::now().as_second() - 1)),
+            ("iat", serde_json::json!(Timestamp::now().as_second() + 100)),
+            ("nbf", serde_json::json!(Timestamp::now().as_second() + 100)),
             ("ttl", serde_json::json!(0)),
             ("aud", serde_json::json!("another verifier")),
             ("iat", Value::Null),
@@ -513,7 +513,7 @@ fn signed_jwt_lists_bind_issuer_uri_time_and_status() {
 }
 
 fn cwt(certs: &CertificateFixture, uri: &str, exp: i64, typ: &str) -> Vec<u8> {
-    let now = Utc::now().timestamp();
+    let now = Timestamp::now().as_second();
     let payload = Cbor::Map(vec![
         (Cbor::Integer(2.into()), Cbor::Text(uri.into())),
         (Cbor::Integer(6.into()), Cbor::Integer(now.into())),
@@ -556,7 +556,7 @@ fn signed_cwt_lists_validate_cose_and_fail_closed() {
         let token = cwt(
             &certs,
             URI,
-            Utc::now().timestamp() + 300,
+            Timestamp::now().as_second() + 300,
             "application/statuslist+cwt",
         );
         assert!(
@@ -595,15 +595,15 @@ fn signed_cwt_lists_validate_cose_and_fail_closed() {
         for (uri, exp, typ) in [
             (
                 "https://issuer.example/other",
-                Utc::now().timestamp() + 300,
+                Timestamp::now().as_second() + 300,
                 "application/statuslist+cwt",
             ),
             (
                 URI,
-                Utc::now().timestamp() - 1,
+                Timestamp::now().as_second() - 1,
                 "application/statuslist+cwt",
             ),
-            (URI, Utc::now().timestamp() + 300, "application/cwt"),
+            (URI, Timestamp::now().as_second() + 300, "application/cwt"),
         ] {
             assert!(
                 verify_cwt(
@@ -628,7 +628,7 @@ fn signed_cwt_lists_validate_cose_and_fail_closed() {
                 &cwt(
                     &rogue,
                     URI,
-                    Utc::now().timestamp() + 300,
+                    Timestamp::now().as_second() + 300,
                     "application/statuslist+cwt"
                 )
             )

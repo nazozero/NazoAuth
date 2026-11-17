@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_scim_events::{
     EventFuture, EventPage, EventReceiver, EventStoreError, EventStorePort, StoredEvent,
     ValidatedPollRequest,
@@ -152,7 +152,8 @@ struct EventRow {
     #[diesel(sql_type = sql_types::Jsonb)]
     events: serde_json::Value,
     #[diesel(sql_type = sql_types::Timestamptz)]
-    occurred_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    occurred_at: Timestamp,
 }
 
 impl TryFrom<EventRow> for StoredEvent {

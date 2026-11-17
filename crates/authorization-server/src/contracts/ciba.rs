@@ -1,5 +1,5 @@
 //! Framework-neutral CIBA creation and authorization views.
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::Value;
 #[derive(Default)]
@@ -73,8 +73,8 @@ pub struct CibaAuthorizationRequestView {
     pub audiences: Vec<String>,
     pub binding_message: Option<String>,
     pub interval_seconds: u64,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
 }
 
 pub struct PreparedCibaCreation {

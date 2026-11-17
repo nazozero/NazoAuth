@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use passkey_auth::{
     AuthenticationChallenge, AuthenticationResponse, AuthenticationState, RegistrationChallenge,
     RegistrationResponse, RegistrationState, Webauthn,
@@ -335,7 +335,7 @@ where
         remembered_mfa: Option<crate::RememberedMfaProof>,
         previous_session_id: Option<String>,
         initialization_session: Option<&CurrentSession>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<LoginSuccess, PasskeyError> {
         let ceremony_id =
             normalize_ceremony_id(ceremony_id).map_err(|_| PasskeyError::InvalidCeremonyId)?;
@@ -397,7 +397,7 @@ where
                     initialize_user_verification: outcome.user_verified
                         && credential.uv_initialized != Some(true)
                         && initialization_session.is_some_and(|session| {
-                            authorizes_uv_initialization(session, &account, now.timestamp())
+                            authorizes_uv_initialization(session, &account, now.as_second())
                         }),
                 },
             )
@@ -556,7 +556,7 @@ where
         user_verification_eligible: bool,
         remembered_mfa: Option<crate::RememberedMfaProof>,
         previous_session_id: Option<String>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<LoginSuccess, PasskeyError> {
         let remembered = if account.account.mfa_enabled && !user_verification_eligible {
             if let Some(proof) = remembered_mfa.as_ref() {
@@ -595,7 +595,7 @@ where
         let mut session = SessionRecord::new(
             account.user_id(),
             account.principal.authorization_epoch,
-            now.timestamp(),
+            now.as_second(),
             amr,
             pending_mfa,
             Some(random_urlsafe_token()),

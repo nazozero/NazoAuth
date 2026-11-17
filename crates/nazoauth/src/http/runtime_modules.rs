@@ -3,7 +3,7 @@ use http::StatusCode;
 use std::{borrow::Cow, sync::Arc};
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{CurrentSession, SessionResolution, SessionService};
 use nazo_oauth_server::contracts::runtime_modules::{
     RuntimeModuleAdminError, RuntimeModuleAdministration,
@@ -465,7 +465,7 @@ fn timestamp(value: SystemTime) -> String {
         Ok(duration) => std::time::UNIX_EPOCH + duration,
         Err(error) => std::time::UNIX_EPOCH - error.duration(),
     };
-    DateTime::<Utc>::from(value).to_rfc3339()
+    Timestamp::from(value).to_string()
 }
 
 fn unix_timestamp(value: SystemTime) -> i64 {

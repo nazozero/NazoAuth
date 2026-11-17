@@ -2,10 +2,10 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension as _, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl as _};
 use futures_util::future::BoxFuture;
+use jiff::Timestamp;
 use nazo_identity::ports::RepositoryError;
 use nazo_identity::{TenantContext, TenantId};
 use nazo_operator_protocol::{
@@ -441,8 +441,8 @@ struct PreparedMtls {
     certificate_pem: String,
     certificate_sha256: String,
     subject_dn: String,
-    not_before: DateTime<Utc>,
-    not_after: DateTime<Utc>,
+    not_before: Timestamp,
+    not_after: Timestamp,
 }
 
 struct PreparedDataset {
@@ -1676,7 +1676,7 @@ fn tenant_resource_audit_event(
             "resource_manifest_sha256": resource_manifest_sha256,
             "resources": resources,
         }),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::{crypto::blake3_hex, domain::rows::ClientRow};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     ClientAssertionVerificationInput, ValidatedClientAssertion, verify_private_key_jwt,
 };
@@ -25,7 +25,7 @@ pub fn verify_private_key_jwt_claims_for_issuer(
         endpoint_audience_aliases,
         client,
         assertion,
-        now: Utc::now().timestamp(),
+        now: Timestamp::now().as_second(),
         expected_signing_algorithm: client.token_endpoint_auth_signing_alg.as_deref(),
         require_fapi2,
     })
@@ -51,7 +51,7 @@ pub async fn consume_private_key_jwt_with_authorization_service(
     assertion: &nazo_auth::ValidatedClientAssertion,
     audit: &dyn crate::ports::audit::SecurityAudit,
 ) -> Result<(), ClientAssertionError> {
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let ttl_seconds = assertion.replay_ttl_seconds(now);
     match service
         .consume_private_key_jwt(&client.client_id, assertion.jti(), ttl_seconds)

@@ -1,5 +1,5 @@
 use super::*;
-use chrono::Utc;
+use jiff::Timestamp;
 use uuid::Uuid;
 
 fn user_row() -> PublicAccountRow {
@@ -14,8 +14,8 @@ fn user_row() -> PublicAccountRow {
         email: "user@example.test".into(),
         is_active: true,
         mfa_enabled: false,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Timestamp::now(),
+        updated_at: Timestamp::now(),
         email_verified: true,
         display_name: None,
         avatar_url: None,
@@ -113,7 +113,7 @@ fn persisted_blank_password_hash_is_rejected() {
 
 #[test]
 fn display_summaries_reject_corrupt_tenant_and_user_identifiers() {
-    let now = Utc::now();
+    let now = Timestamp::now();
     for corrupt_tenant in [true, false] {
         let tenant_id = if corrupt_tenant {
             Uuid::nil()
@@ -164,8 +164,8 @@ fn passkey_row() -> PasskeyCredentialRow {
         credential: serde_json::json!({"id": [1,2,3], "counter": 12,
           "public_key_cose": [164,1,1,3,39,32,6,33], "transports": ["internal"], "aaguid": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}),
         last_used_at: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Timestamp::now(),
+        updated_at: Timestamp::now(),
     }
 }
 

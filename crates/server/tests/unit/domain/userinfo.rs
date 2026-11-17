@@ -50,7 +50,6 @@ use crate::adapters::security::tokens::{AccessTokenJwtInput, IssuedAccessToken, 
 use crate::schema::oauth_clients;
 use crate::test_support::client_signing_fixture;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{Duration, Utc};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
@@ -59,6 +58,7 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::Claims;
 use nazo_oauth_server::crypto::{blake3_hex, jwt_decoding_key_from_jwk};
 use nazoauth::test_support::http::{IpCidr, UserinfoEndpoint};
@@ -507,7 +507,7 @@ async fn insert_issuance_row(
     .bind::<SqlUuid, _>(client_row_id)
     .bind::<SqlUuid, _>(user_id)
     .bind::<Text, _>(access_token_jti)
-    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_mins(5)).to_diesel())
     .execute(&mut conn)
     .await
     .expect("issuance ownership insert should succeed");
@@ -532,7 +532,7 @@ async fn revoke_access_token(
     .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
     .bind::<SqlUuid, _>(client_row_id)
     .bind::<Text, _>(blake3_hex(access_token_jti))
-    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_mins(5)).to_diesel())
     .execute(&mut conn)
     .await
     .expect("access token revocation insert should succeed");
@@ -715,9 +715,9 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         authorization_details: json!([]),
         token_use: "access".to_owned(),
         jti: Uuid::now_v7().to_string(),
-        iat: Utc::now().timestamp(),
-        nbf: Utc::now().timestamp(),
-        exp: Utc::now().timestamp() + 300,
+        iat: Timestamp::now().as_second(),
+        nbf: Timestamp::now().as_second(),
+        exp: Timestamp::now().as_second() + 300,
         cnf: None,
         act: None,
         userinfo_claim_requests: (Vec::new()).into(),
@@ -1088,7 +1088,7 @@ async fn userinfo_resolves_pairwise_subject_through_issuance_ownership() {
     .bind::<SqlUuid, _>(foreign_client)
     .bind::<SqlUuid, _>(foreign_user)
     .bind::<Text, _>(foreign_jti_token.jti.as_str())
-    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .bind::<Timestamptz, _>((Timestamp::now() + SignedDuration::from_mins(5)).to_diesel())
     .execute(&mut conn)
     .await
     .expect("foreign issuance ownership insert should succeed");
@@ -1809,3 +1809,5 @@ async fn userinfo_optional_nonce_policy_does_not_access_nonce_storage() {
             .is_err()
     );
 }
+
+use jiff_diesel::ToDiesel as _;

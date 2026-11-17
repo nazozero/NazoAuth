@@ -38,7 +38,7 @@ async fn begin_authorization_code_consumption_tracks_single_consumer_and_termina
         .store_code_state(
             &failed_code,
             &AuthorizationCodeState::Failed {
-                failed_at: Utc::now(),
+                failed_at: Timestamp::now(),
                 error: "pkce_failed".to_owned(),
             },
         )
@@ -81,7 +81,7 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
             None,
         )),
         access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
-        access_token_expires_at: Utc::now().timestamp() + 300,
+        access_token_expires_at: Timestamp::now().as_second() + 300,
         refresh_token_family_id: Some(family_id),
     };
     // A cached marker alone is no longer authority to revoke. Retain the
@@ -134,7 +134,7 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
                     client_id: Uuid::now_v7(),
                     redemption_binding: None,
                     access_token_jti: "access-jti-2".to_owned(),
-                    access_token_expires_at: Utc::now().timestamp() + 300,
+                    access_token_expires_at: Timestamp::now().as_second() + 300,
                     refresh_token_family_id: None,
                 },
             },
@@ -194,7 +194,7 @@ async fn token_authorization_code_replay_fails_closed_when_token_revocation_erro
                         None,
                     )),
                     access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
-                    access_token_expires_at: Utc::now().timestamp() + 300,
+                    access_token_expires_at: Timestamp::now().as_second() + 300,
                     refresh_token_family_id: Some(Uuid::now_v7()),
                 },
             },
@@ -227,7 +227,7 @@ async fn token_authorization_code_reports_busy_failed_and_missing_states() {
             &consuming_code,
             &AuthorizationCodeState::Consuming {
                 payload: payload_for_client(&client),
-                consuming_at: Utc::now(),
+                consuming_at: Timestamp::now(),
             },
         )
         .await;
@@ -244,7 +244,7 @@ async fn token_authorization_code_reports_busy_failed_and_missing_states() {
 
     let expired_code = format!("code-{}", Uuid::now_v7());
     let mut expired_payload = payload_for_client(&client);
-    expired_payload.expires_at = Utc::now() - Duration::seconds(1);
+    expired_payload.expires_at = Timestamp::now() - Duration::seconds(1);
     fixture
         .store_code_state(
             &expired_code,
@@ -273,7 +273,7 @@ async fn token_authorization_code_reports_busy_failed_and_missing_states() {
         .store_code_state(
             &failed_code,
             &AuthorizationCodeState::Failed {
-                failed_at: Utc::now(),
+                failed_at: Timestamp::now(),
                 error: "pkce_failed".to_owned(),
             },
         )
@@ -418,7 +418,7 @@ async fn committed_code_cleanup_success_failure_and_lost_ack_preserve_replay_rev
         let mut payload = payload_for_client(&client);
         payload.user_id = user.id;
         payload.scopes = vec!["accounts".to_owned()];
-        payload.expires_at = Utc::now() + Duration::minutes(5);
+        payload.expires_at = Timestamp::now() + Duration::minutes(5);
         fixture
             .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
             .await;
@@ -527,7 +527,7 @@ impl nazo_auth::TokenStateStorePort for CodeCleanupStore {
     fn begin_authorization_code<'a>(
         &'a self,
         hash: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> nazo_auth::TokenFuture<'a, nazo_auth::AuthorizationCodeBeginResult> {
         self.live.begin_authorization_code(hash, now)
     }

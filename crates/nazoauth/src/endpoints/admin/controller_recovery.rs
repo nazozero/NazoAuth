@@ -15,7 +15,7 @@ use http::StatusCode;
 
 use crate::http::{json_response, oauth_error};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_persistence::control_plane::RecoveryRootError;
 
 /// POST /controller-recovery/challenges
@@ -27,13 +27,13 @@ pub async fn controller_recovery_challenge(
     recovery: &RecoveryRootService,
     body: RecoveryChallengeRequest,
 ) -> HttpResponse {
-    match recovery.issue_challenge(body, Utc::now()).await {
+    match recovery.issue_challenge(body, Timestamp::now()).await {
         Ok(issued) => json_response(serde_json::json!({
             "challenge_id": issued.challenge_id.to_string(),
             "deployment_id": issued.deployment_id,
             // The nonce is a public value the control side must sign over.
             "nonce": URL_SAFE_NO_PAD.encode(issued.nonce),
-            "expires_at": issued.expires_at.to_rfc3339(),
+            "expires_at": issued.expires_at.to_string(),
             "algorithm": {
                 "type": "Ed25519",
             },
@@ -73,7 +73,7 @@ pub async fn controller_recovery_commit(
     recovery: &RecoveryRootService,
     body: RecoveryAnswerRequest,
 ) -> HttpResponse {
-    match recovery.recover(body, Utc::now()).await {
+    match recovery.recover(body, Timestamp::now()).await {
         Ok(commit) => json_response(serde_json::json!({
             "slot": {
                 "deployment_id": commit.slot.deployment_id,
@@ -81,8 +81,8 @@ pub async fn controller_recovery_commit(
                 "label": commit.slot.label,
                 "kid": commit.slot.kid,
                 "slot_index": commit.slot.slot_index,
-                "issued_at": commit.slot.issued_at.to_rfc3339(),
-                "expires_at": commit.slot.expires_at.to_rfc3339(),
+                "issued_at": commit.slot.issued_at.to_string(),
+                "expires_at": commit.slot.expires_at.to_string(),
                 "status": "active",
             },
             "recovery_generation": commit.recovery_generation,
@@ -119,7 +119,7 @@ pub fn root_error_response(error: RecoveryRootError) -> HttpResponse {
                     serde_json::json!({
                         "controller_id": controller.controller_id,
                         "kid": controller.kid,
-                        "expires_at": controller.expires_at.to_rfc3339(),
+                        "expires_at": controller.expires_at.to_string(),
                     })
                 })
                 .collect();

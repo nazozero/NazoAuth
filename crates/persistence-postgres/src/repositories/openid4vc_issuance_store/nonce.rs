@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::RunQueryDsl;
+use jiff::Timestamp;
 use nazo_openid4vci::{CredentialStoreError, CredentialStoreFuture, NonceRecord};
 
 use super::super::Openid4vciRepository;
@@ -20,7 +20,7 @@ impl Openid4vciRepository {
                  ON CONFLICT (nonce_hash) DO NOTHING",
             )
             .bind::<sql_types::Text, _>(&nonce.nonce_hash)
-            .bind::<sql_types::Timestamptz, _>(nonce.expires_at)
+            .bind::<sql_types::Timestamptz, _>((nonce.expires_at).to_diesel())
             .execute(&mut connection)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
@@ -32,13 +32,13 @@ impl Openid4vciRepository {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            let claim_expires_at = now + chrono::Duration::minutes(5);
+            let claim_expires_at = now + jiff::SignedDuration::from_mins(5);
             let changed = sql_query(
                 "UPDATE openid4vci_nonces SET claim_id = $2, claim_expires_at = $3 \
                  WHERE nonce_hash = $1 AND consumed_at IS NULL AND expires_at > $4 \
@@ -46,8 +46,8 @@ impl Openid4vciRepository {
             )
             .bind::<sql_types::Text, _>(nonce_hash)
             .bind::<sql_types::Text, _>(claim_id)
-            .bind::<sql_types::Timestamptz, _>(claim_expires_at)
-            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Timestamptz, _>((claim_expires_at).to_diesel())
+            .bind::<sql_types::Timestamptz, _>((now).to_diesel())
             .execute(&mut connection)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
@@ -59,7 +59,7 @@ impl Openid4vciRepository {
         &'a self,
         nonce_hash: &'a str,
         claim_id: &'a str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
             let mut connection = get_conn(&self.pool)
@@ -78,3 +78,5 @@ impl Openid4vciRepository {
         })
     }
 }
+
+use jiff_diesel::ToDiesel as _;

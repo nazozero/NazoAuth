@@ -40,10 +40,10 @@ use std::{
 };
 
 use base64::Engine as _;
-use chrono::Utc;
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection as _,
 };
+use jiff::Timestamp;
 use nazo_auth::{AuthorizationCodeState, CodePayload, empty_authorization_details};
 use nazo_identity::{OrganizationId, RealmId, TenantContext, TenantDirectoryBinding, TenantId};
 use nazo_key_management::{SigningKeyWrappingKeyRing, test_support::create_database_keyset};
@@ -852,7 +852,7 @@ async fn seed_codes(
     count: usize,
     oidc_sid: Option<&str>,
 ) -> Vec<String> {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut entries = Vec::with_capacity(count);
     let mut codes = Vec::with_capacity(count);
     for _ in 0..count {
@@ -869,7 +869,7 @@ async fn seed_codes(
                 resource_indicators: Vec::new(),
                 authorization_details: empty_authorization_details(),
                 nonce: None,
-                auth_time: now.timestamp(),
+                auth_time: now.as_second(),
                 amr: vec!["pwd".to_owned()],
                 oidc_sid: oidc_sid.map(str::to_owned),
                 acr: None,
@@ -879,7 +879,7 @@ async fn seed_codes(
                 dpop_jkt: None,
                 mtls_x5t_s256: None,
 
-                expires_at: now + chrono::Duration::seconds(CODE_TTL_SECONDS),
+                expires_at: now + jiff::SignedDuration::from_secs(CODE_TTL_SECONDS),
             },
         };
         entries.push((blake3_hex(&code), state));

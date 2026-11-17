@@ -1,5 +1,5 @@
 //! Prepared deployment identity and its signed control discovery response.
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_crypto::ed25519::SigningKey;
 use nazo_operator_protocol::{
     DeploymentStatement, DiscoveryRequest, DiscoveryResponse, DiscoveryStatement,
@@ -45,7 +45,7 @@ impl DeploymentIdentity {
 
     pub fn respond(&self, request: DiscoveryRequest) -> anyhow::Result<DiscoveryResponse> {
         validate_discovery_request(&request)?;
-        let issued_at = Utc::now().timestamp();
+        let issued_at = Timestamp::now().as_second();
         let deployment = &self.identity.deployment;
         let statement = DiscoveryStatement {
             schema: deployment.schema,

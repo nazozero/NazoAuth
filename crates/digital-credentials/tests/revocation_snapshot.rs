@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_digital_credentials::{
     CertificateRevocationEntry, CertificateRevocationPolicy, CertificateRevocationSnapshot,
     CertificateRevocationSnapshotError, CertificateRevocationStatus, CredentialTrustError,
@@ -24,11 +24,11 @@ fn snapshot(
     certificate: &[u8],
     status: CertificateRevocationStatus,
 ) -> CertificateRevocationSnapshot {
-    let now = Utc::now();
+    let now = Timestamp::now();
     CertificateRevocationSnapshot {
         version: CertificateRevocationSnapshot::VERSION,
-        this_update: now - Duration::minutes(1),
-        next_update: now + Duration::minutes(5),
+        this_update: now - SignedDuration::from_mins(1),
+        next_update: now + SignedDuration::from_mins(5),
         entries: vec![CertificateRevocationEntry {
             issuer: ISSUER.to_owned(),
             certificate: certificate_identity(certificate),
@@ -44,7 +44,7 @@ fn required_policy_accepts_an_explicit_good_status() {
     let initial_snapshot = Arc::new(snapshot(&certificate, CertificateRevocationStatus::Good));
 
     CertificateRevocationPolicy::required(initial_snapshot)
-        .check_chain(Some(ISSUER), &[certificate], Utc::now())
+        .check_chain(Some(ISSUER), &[certificate], Timestamp::now())
         .expect("fresh explicit good status is accepted");
 }
 
@@ -57,7 +57,7 @@ fn required_policy_rejects_a_revoked_certificate() {
         CertificateRevocationPolicy::required(snapshot).check_chain(
             Some(ISSUER),
             &[certificate],
-            Utc::now(),
+            Timestamp::now(),
         ),
         Err(CredentialTrustError::RevokedCertificate)
     );
@@ -73,7 +73,7 @@ fn required_policy_rejects_mdoc_certificate_revocation_by_global_identity() {
         CertificateRevocationPolicy::required(Arc::new(snapshot)).check_chain(
             None,
             &[certificate],
-            Utc::now(),
+            Timestamp::now(),
         ),
         Err(CredentialTrustError::RevokedCertificate)
     );
@@ -88,7 +88,7 @@ fn required_policy_rejects_an_unknown_issuer_or_certificate() {
         CertificateRevocationPolicy::required(initial_snapshot).check_chain(
             Some("https://other-issuer.example"),
             &[certificate],
-            Utc::now(),
+            Timestamp::now(),
         ),
         Err(CredentialTrustError::RevocationStatusUnknown)
     );
@@ -103,7 +103,7 @@ fn required_policy_accepts_unknown_certificate_only_for_explicit_scoped_trust() 
     ));
 
     CertificateRevocationPolicy::required(snapshot)
-        .check_chain_with_scoped_trust(Some(ISSUER), &[certificate], Utc::now(), true)
+        .check_chain_with_scoped_trust(Some(ISSUER), &[certificate], Timestamp::now(), true)
         .expect("an authenticated client-scoped chain may be absent from the operator snapshot");
 }
 
@@ -111,13 +111,13 @@ fn required_policy_accepts_unknown_certificate_only_for_explicit_scoped_trust() 
 fn stale_snapshot_fails_closed_even_when_status_is_good() {
     let certificate = certificate_der();
     let mut snapshot = snapshot(&certificate, CertificateRevocationStatus::Good);
-    snapshot.next_update = Utc::now() - Duration::seconds(1);
+    snapshot.next_update = Timestamp::now() - SignedDuration::from_secs(1);
 
     assert_eq!(
         CertificateRevocationPolicy::required(Arc::new(snapshot)).check_chain(
             Some(ISSUER),
             &[certificate],
-            Utc::now(),
+            Timestamp::now(),
         ),
         Err(CredentialTrustError::RevocationSnapshotStale)
     );
@@ -129,16 +129,16 @@ fn optional_policy_allows_unknown_status_but_not_stale_snapshot() {
     let initial_snapshot = Arc::new(snapshot(&certificate, CertificateRevocationStatus::Good));
     let other_certificate = certificate_der();
     CertificateRevocationPolicy::optional(initial_snapshot)
-        .check_chain(Some(ISSUER), &[other_certificate], Utc::now())
+        .check_chain(Some(ISSUER), &[other_certificate], Timestamp::now())
         .expect("optional policy permits an unknown certificate while fresh");
 
     let mut stale = snapshot(&certificate, CertificateRevocationStatus::Good);
-    stale.next_update = Utc::now() - Duration::seconds(1);
+    stale.next_update = Timestamp::now() - SignedDuration::from_secs(1);
     assert_eq!(
         CertificateRevocationPolicy::optional(Arc::new(stale)).check_chain(
             Some(ISSUER),
             &[certificate],
-            Utc::now(),
+            Timestamp::now(),
         ),
         Err(CredentialTrustError::RevocationSnapshotStale)
     );
@@ -151,8 +151,8 @@ fn reload_publishes_revocation_and_rejects_a_failed_reload_without_overwriting_o
     let policy = CertificateRevocationPolicy::required(old);
 
     let mut failed_reload = snapshot(&certificate, CertificateRevocationStatus::Revoked);
-    let now = Utc::now();
-    failed_reload.next_update = now - Duration::seconds(1);
+    let now = Timestamp::now();
+    failed_reload.next_update = now - SignedDuration::from_secs(1);
     assert_eq!(
         policy.replace_snapshot(Arc::new(failed_reload), now),
         Err(CertificateRevocationSnapshotError::Expired)
@@ -170,7 +170,7 @@ fn reload_publishes_revocation_and_rejects_a_failed_reload_without_overwriting_o
         .expect("malformed reload must leave the fresh old snapshot installed");
 
     let replacement = Arc::new(snapshot(&certificate, CertificateRevocationStatus::Revoked));
-    let replacement_now = Utc::now();
+    let replacement_now = Timestamp::now();
     policy
         .replace_snapshot(replacement, replacement_now)
         .expect("fresh replacement should publish atomically");
@@ -183,12 +183,12 @@ fn reload_publishes_revocation_and_rejects_a_failed_reload_without_overwriting_o
 #[test]
 fn json_snapshot_rejects_duplicate_issuer_certificate_entries() {
     let certificate = certificate_der();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let identity = certificate_identity(&certificate);
     let json = serde_json::json!({
         "version": 1,
-        "this_update": now - Duration::minutes(1),
-        "next_update": now + Duration::minutes(5),
+        "this_update": now - SignedDuration::from_mins(1),
+        "next_update": now + SignedDuration::from_mins(5),
         "entries": [
             {"issuer": ISSUER, "certificate": identity, "status": "good"},
             {"issuer": ISSUER, "certificate": identity, "status": "revoked"}
@@ -206,7 +206,7 @@ fn json_snapshot_rejects_duplicate_issuer_certificate_entries() {
 #[test]
 fn snapshot_validation_rejects_unsupported_versions_and_invalid_intervals() {
     let certificate = certificate_der();
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let mut unsupported = snapshot(&certificate, CertificateRevocationStatus::Good);
     unsupported.version = CertificateRevocationSnapshot::VERSION + 1;
@@ -260,10 +260,10 @@ fn snapshot_validation_rejects_invalid_entries_and_accepts_valid_json() {
 #[test]
 fn freshness_rejects_a_snapshot_that_is_not_yet_valid() {
     let certificate = certificate_der();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut future = snapshot(&certificate, CertificateRevocationStatus::Good);
-    future.this_update = now + Duration::minutes(1);
-    future.next_update = now + Duration::minutes(2);
+    future.this_update = now + SignedDuration::from_mins(1);
+    future.next_update = now + SignedDuration::from_mins(2);
 
     assert_eq!(
         future.validate_freshness_at(now),
@@ -274,7 +274,7 @@ fn freshness_rejects_a_snapshot_that_is_not_yet_valid() {
 #[test]
 fn policy_modes_expose_snapshot_state_and_disabled_policy_fails_open() {
     let certificate = certificate_der();
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let disabled = CertificateRevocationPolicy::default();
     assert!(!disabled.is_enabled());
@@ -305,11 +305,11 @@ fn policy_modes_expose_snapshot_state_and_disabled_policy_fails_open() {
 #[test]
 fn check_chain_maps_not_yet_valid_and_structurally_invalid_snapshots() {
     let certificate = certificate_der();
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let mut future = snapshot(&certificate, CertificateRevocationStatus::Good);
-    future.this_update = now + Duration::minutes(1);
-    future.next_update = now + Duration::minutes(2);
+    future.this_update = now + SignedDuration::from_mins(1);
+    future.next_update = now + SignedDuration::from_mins(2);
     assert_eq!(
         CertificateRevocationPolicy::required(Arc::new(future)).check_chain(
             Some(ISSUER),
@@ -344,7 +344,7 @@ fn global_certificate_status_requires_consistent_entries() {
         revoked_at: None,
     });
     CertificateRevocationPolicy::required(Arc::new(all_good))
-        .check_chain(None, std::slice::from_ref(&certificate), Utc::now())
+        .check_chain(None, std::slice::from_ref(&certificate), Timestamp::now())
         .expect("consistent global entries are good");
 
     let mut conflicting = snapshot(&certificate, CertificateRevocationStatus::Good);
@@ -358,7 +358,7 @@ fn global_certificate_status_requires_consistent_entries() {
         CertificateRevocationPolicy::required(Arc::new(conflicting)).check_chain(
             None,
             std::slice::from_ref(&certificate),
-            Utc::now(),
+            Timestamp::now(),
         ),
         Err(CredentialTrustError::RevocationStatusUnknown)
     );
@@ -378,12 +378,12 @@ fn prepared_snapshot_preserves_freshness_boundaries_and_clock_rollback() {
         &snapshot,
         &policy.snapshot().expect("shared raw snapshot")
     ));
-    for now in [start, deadline - Duration::nanoseconds(1), start] {
+    for now in [start, deadline - SignedDuration::from_nanos(1), start] {
         policy
             .check_chain(Some(ISSUER), std::slice::from_ref(&certificate), now)
             .expect("fresh snapshot");
     }
-    for now in [deadline, start - Duration::nanoseconds(1)] {
+    for now in [deadline, start - SignedDuration::from_nanos(1)] {
         assert_eq!(
             policy.check_chain(Some(ISSUER), std::slice::from_ref(&certificate), now),
             Err(CredentialTrustError::RevocationSnapshotStale)
@@ -403,7 +403,7 @@ fn prepared_snapshot_rejects_invalid_public_input() {
         CertificateRevocationPolicy::optional_prepared(prepared).check_chain(
             Some(ISSUER),
             &[certificate],
-            Utc::now()
+            Timestamp::now()
         ),
         Err(CredentialTrustError::RevocationSnapshotUnavailable)
     );

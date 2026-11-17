@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_identity::{
     AvatarUploadAuthorization, AvatarUploadClaim, TenantId, UserId,
     ports::{AvatarUploadStatePort, RepositoryError, RepositoryFuture},
@@ -163,7 +163,7 @@ impl<'a> From<&'a AvatarUploadAuthorization> for AvatarUploadWireState<'a> {
             expected_avatar_url: value.expected_avatar_url.as_deref(),
             expected_avatar_revision: value.expected_avatar_revision.to_string(),
             staging_object_id: &value.staging_object_id,
-            expires_at: value.expires_at.timestamp(),
+            expires_at: value.expires_at.as_second(),
             claim_generation: 0,
         }
     }
@@ -218,7 +218,7 @@ impl TryFrom<AvatarUploadAuthorizationWire> for AvatarUploadAuthorization {
                 .filter(|revision| *revision >= 0)
                 .ok_or_else(|| Error::corrupt_data("invalid avatar revision"))?,
             staging_object_id: value.staging_object_id,
-            expires_at: DateTime::from_timestamp(value.expires_at, 0)
+            expires_at: Timestamp::new(value.expires_at, 0)
                 .ok_or_else(|| Error::corrupt_data("invalid avatar upload expiry"))?,
         })
     }
@@ -244,7 +244,7 @@ impl AvatarUploadStateStore {
         &self,
         user_id: UserId,
         upload_id: &str,
-        lease_until: DateTime<Utc>,
+        lease_until: Timestamp,
     ) -> Result<AvatarUploadClaim, Error> {
         let reply = command::eval_string(
             &self.connection,
@@ -252,7 +252,7 @@ impl AvatarUploadStateStore {
             vec![Self::key(upload_id)],
             vec![
                 user_id.as_uuid().to_string(),
-                lease_until.timestamp().to_string(),
+                lease_until.as_second().to_string(),
             ],
         )
         .await?;
@@ -377,7 +377,7 @@ impl AvatarUploadStatePort for AvatarUploadStateStore {
         &'a self,
         user_id: UserId,
         upload_id: &'a str,
-        lease_until: DateTime<Utc>,
+        lease_until: Timestamp,
     ) -> RepositoryFuture<'a, AvatarUploadClaim> {
         Box::pin(async move {
             AvatarUploadStateStore::claim(self, user_id, upload_id, lease_until)

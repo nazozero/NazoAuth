@@ -68,9 +68,9 @@ pub(crate) async fn fixture_crypto_with_dns(
     include_dns: bool,
 ) -> (Openid4vcCredentialCrypto, KeyManager) {
     let settings = KeySettings {
-        rotation_interval: chrono::Duration::days(30),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::hours(1),
+        rotation_interval: jiff::SignedDuration::from_hours((30) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let key_manager = nazo_key_management::test_support::key_manager(settings)
         .await
@@ -97,8 +97,8 @@ pub(crate) async fn fixture_crypto_with_dns(
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
-    ca_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    ca_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
+    ca_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
     let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("fixture CA certificate");
 
     let mut leaf_params = if include_dns {
@@ -108,8 +108,8 @@ pub(crate) async fn fixture_crypto_with_dns(
     };
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
-    leaf_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    leaf_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
+    leaf_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
     let leaf = leaf_params
         .signed_by(&signing_key, &ca)
         .expect("fixture leaf certificate");
@@ -137,16 +137,16 @@ fn rotated_material(current: &Openid4vcPublicMaterial) -> Openid4vcMaterial {
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
-    ca_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    ca_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
+    ca_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
     let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("rotated CA certificate");
     let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("rotated leaf key");
     let mut leaf_params =
         CertificateParams::new(vec!["issuer.example".to_owned()]).expect("rotated leaf params");
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
-    leaf_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
-    leaf_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    leaf_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
+    leaf_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
     let leaf = leaf_params
         .signed_by(&leaf_key, &ca)
         .expect("rotated leaf certificate");
@@ -264,8 +264,8 @@ fn ordinary_trust_policy_material() -> serde_json::Value {
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-    ca_params.not_before = time::OffsetDateTime::now_utc() - time::Duration::minutes(1);
-    ca_params.not_after = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+    ca_params.not_before = time::OffsetTimestamp::now_utc() - time::Duration::minutes(1);
+    ca_params.not_after = time::OffsetTimestamp::now_utc() + time::Duration::hours(1);
     let anchor = CertifiedIssuer::self_signed(ca_params, ca_key)
         .expect("trust anchor certificate")
         .pem();
@@ -675,7 +675,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
         .expect("active ordinary trust policy should authorize its wallet");
     let frozen = operations
         .store
-        .request(dynamic.transaction_id, chrono::Utc::now())
+        .request(dynamic.transaction_id, jiff::Timestamp::now())
         .await
         .expect("frozen transaction lookup")
         .expect("frozen transaction should exist");
@@ -731,7 +731,7 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
     assert!(
         operations
             .store
-            .request(dynamic.transaction_id, chrono::Utc::now())
+            .request(dynamic.transaction_id, jiff::Timestamp::now())
             .await
             .expect("revoked transaction lookup")
             .is_none(),
@@ -790,7 +790,7 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     ));
     let stored = operations
         .store
-        .request(supported.transaction_id, chrono::Utc::now())
+        .request(supported.transaction_id, jiff::Timestamp::now())
         .await
         .unwrap()
         .unwrap();
@@ -829,8 +829,8 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     historical.request_uri = historical
         .request_uri
         .map(|uri| uri.replace(&original_id.to_string(), &historical.id.to_string()));
-    historical.created_at = chrono::Utc::now();
-    historical.expires_at = historical.created_at + chrono::Duration::seconds(300);
+    historical.created_at = jiff::Timestamp::now();
+    historical.expires_at = historical.created_at + jiff::SignedDuration::from_secs(300);
     let original_object = historical.request_object.as_ref().unwrap();
     let header = nazo_crypto::jwt::decode_header(original_object).unwrap();
     let mut claims =
@@ -840,8 +840,8 @@ async fn supported_create_publishes_but_new_and_historical_holder_waivers_are_re
     claims["dcql_query"] = serde_json::to_value(&historical.request.dcql_query).unwrap();
     claims["state"] = json!(historical.request.state);
     claims["jti"] = json!(Uuid::now_v7());
-    claims["iat"] = json!(historical.created_at.timestamp());
-    claims["exp"] = json!(historical.expires_at.timestamp());
+    claims["iat"] = json!(historical.created_at.as_second());
+    claims["exp"] = json!(historical.expires_at.as_second());
     let signed = keyset
         .prepare_openid4vc_signing()
         .unwrap()

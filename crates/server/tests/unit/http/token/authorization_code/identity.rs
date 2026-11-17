@@ -304,7 +304,7 @@ async fn authorization_code_legacy_payload_and_cache_only_marker_cannot_issue_or
                         None,
                     )),
                     access_token_jti: jti.clone(),
-                    access_token_expires_at: (Utc::now() + Duration::minutes(5)).timestamp(),
+                    access_token_expires_at: (Timestamp::now() + Duration::minutes(5)).as_second(),
                     refresh_token_family_id: None,
                 },
             },
@@ -395,9 +395,9 @@ async fn authorization_code_expired_pending_uses_live_receipt_without_reissuing_
         .await
         .unwrap()
         .unwrap();
-    assert!(receipt.access_token_expires_at > Utc::now());
+    assert!(receipt.access_token_expires_at > Timestamp::now());
     let family = receipt.refresh_token_family_id.unwrap();
-    payload.expires_at = Utc::now() - chrono::Duration::seconds(1);
+    payload.expires_at = Timestamp::now() - jiff::SignedDuration::from_secs(1);
     fixture
         .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
         .await;
@@ -463,7 +463,7 @@ async fn authorization_code_expired_pending_uses_live_receipt_without_reissuing_
     );
     assert_one_committed_result(&fixture, &client).await;
     assert!(
-        matches!(fixture.code_state(&code).await, AuthorizationCodeState::Pending { payload } if payload.expires_at <= Utc::now())
+        matches!(fixture.code_state(&code).await, AuthorizationCodeState::Pending { payload } if payload.expires_at <= Timestamp::now())
     );
 }
 
@@ -550,7 +550,7 @@ async fn authorization_code_original_mtls_holder_survives_disabled_current_bindi
             .await
             .unwrap()
             .unwrap();
-        assert!(receipt.access_token_expires_at > Utc::now());
+        assert!(receipt.access_token_expires_at > Timestamp::now());
         assert_eq!(
             receipt
                 .authorization_code_holder
@@ -590,7 +590,7 @@ async fn authorization_code_original_mtls_holder_survives_disabled_current_bindi
                 ));
             }
             _ => {
-                payload.expires_at = Utc::now() - chrono::Duration::seconds(1);
+                payload.expires_at = Timestamp::now() - jiff::SignedDuration::from_secs(1);
                 fixture
                     .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
                     .await;

@@ -5,7 +5,7 @@ use crate::VerificationKey;
 pub(crate) fn public_jwks(
     keys: &[VerificationKey],
     request_object_encryption_jwk: &Value,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> Value {
     let mut keys = keys
         .iter()

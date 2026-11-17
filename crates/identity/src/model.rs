@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::{TenantContext, UserId};
@@ -140,8 +140,8 @@ pub struct PublicAccount {
     pub principal: Principal,
     pub account: AccountIdentity,
     pub profile: UserProfile,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 /// A password verifier owned by the identity domain.

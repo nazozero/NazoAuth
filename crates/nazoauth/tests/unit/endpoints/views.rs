@@ -1,8 +1,8 @@
 use super::*;
 
-use chrono::Utc;
 use http::header;
 use http::header::HeaderValue;
+use jiff::Timestamp;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -160,7 +160,7 @@ fn domain_client_string_arrays_are_preserved_in_admin_views() {
 }
 
 fn user_row() -> PublicAccount {
-    let now = Utc::now();
+    let now = Timestamp::now();
     PublicAccount {
         principal: nazo_identity::Principal {
             authorization_epoch: 0,

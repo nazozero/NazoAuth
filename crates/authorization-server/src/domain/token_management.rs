@@ -7,7 +7,7 @@ use crate::contracts::token_management::{
     TokenManagementOperations, TokenManagementRateLimitError, TokenManagementRequestFacts,
     TokenManagementRequestGuard,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_auth::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext, IntrospectionSignInput,
     OAuthClient, unverified_client_assertion_client_id,
@@ -251,7 +251,7 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                 .await?;
             let inspection = self
                 .token_service
-                .inspect_token(&self.config.issuer, &form.token, &client, Utc::now())
+                .inspect_token(&self.config.issuer, &form.token, &client, Timestamp::now())
                 .await
                 .map_err(|error| {
                     tracing::warn!(%error, "failed to inspect token state");

@@ -14,8 +14,8 @@ use crate::contracts::{
 };
 use crate::domain::rows::ClientRow;
 use crate::token::ciba::CIBA_GRANT_TYPE;
-use chrono::{Duration, Utc};
 use http::StatusCode;
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::*;
 use nazo_identity::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use serde_json::json;
@@ -113,7 +113,7 @@ fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
         dpop_jkt: dpop_jkt.map(ToOwned::to_owned),
         mtls_x5t_s256: None,
 
-        expires_at: Utc::now() + Duration::minutes(5),
+        expires_at: Timestamp::now() + SignedDuration::from_mins(5),
     }
 }
 #[test]

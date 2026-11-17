@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
 use hmac::{Hmac, KeyInit, Mac};
+use jiff::Timestamp;
 use nazo_crypto::ed25519::VerifyingKey;
 use nazo_persistence::SecurityAuditBatch;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub(super) struct GenesisCheckpointEnvelope<'a> {
     pub(super) sequence: i64,
     pub(super) previous_hash: &'a str,
     pub(super) event_hash: &'a str,
-    pub(super) occurred_at: DateTime<Utc>,
+    pub(super) occurred_at: Timestamp,
 }
 
 /// Signed receiver acknowledgement. The exporter only accepts a receipt whose
@@ -40,7 +40,7 @@ pub(super) struct AnchorReceipt {
     pub(super) event_count: i64,
     pub(super) last_hash: String,
     pub(super) batch_digest: String,
-    pub(super) received_at: DateTime<Utc>,
+    pub(super) received_at: Timestamp,
     #[serde(default)]
     pub(super) reject_reason: Option<String>,
     #[serde(default)]
@@ -61,7 +61,7 @@ struct ReceiptSigningView<'a> {
     event_count: i64,
     last_hash: &'a str,
     batch_digest: &'a str,
-    received_at: DateTime<Utc>,
+    received_at: Timestamp,
     reject_reason: Option<&'a str>,
     permanent: bool,
 }
@@ -111,7 +111,7 @@ pub(super) fn genesis_body(
         sequence: 0,
         previous_hash: &hash,
         event_hash: &hash,
-        occurred_at: DateTime::<Utc>::UNIX_EPOCH,
+        occurred_at: Timestamp::UNIX_EPOCH,
     })
 }
 

@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -18,7 +18,7 @@ pub struct AdminGrantView {
     pub email: String,
     pub client_id: String,
     pub client_name: String,
-    pub last_authorized_at: DateTime<Utc>,
+    pub last_authorized_at: Timestamp,
     pub authorization_count: i32,
     pub last_scopes: Vec<String>,
     pub last_authorization_details: Value,

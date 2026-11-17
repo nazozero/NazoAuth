@@ -47,7 +47,7 @@ async fn seed_grant_and_family(database_url: &str) -> (FixtureIds, GrantReposito
         .await
         .unwrap();
     let mut connection = AsyncPgConnection::establish(database_url).await.unwrap();
-    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let context = refresh_context_json(&fixture.client_public_id, jiff::Timestamp::now());
     insert_refresh_row(
         &mut connection,
         &raw_refresh_row(

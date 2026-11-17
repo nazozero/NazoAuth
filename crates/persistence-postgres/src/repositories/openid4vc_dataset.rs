@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use jiff::Timestamp;
 use nazo_openid4vci::CredentialStoreError;
 use rand::Rng;
 use uuid::Uuid;
@@ -21,8 +21,8 @@ pub struct ManagedCredentialDatasetWrite<'a> {
     pub subject_id: Uuid,
     pub credential_configuration_id: &'a str,
     pub claims: &'a serde_json::Value,
-    pub valid_from: Option<DateTime<Utc>>,
-    pub valid_until: Option<DateTime<Utc>>,
+    pub valid_from: Option<Timestamp>,
+    pub valid_until: Option<Timestamp>,
 }
 
 struct DatasetWrite<'a> {
@@ -30,8 +30,8 @@ struct DatasetWrite<'a> {
     subject_id: Uuid,
     credential_configuration_id: &'a str,
     claims_ciphertext: Vec<u8>,
-    valid_from: Option<DateTime<Utc>>,
-    valid_until: Option<DateTime<Utc>>,
+    valid_from: Option<Timestamp>,
+    valid_until: Option<Timestamp>,
     source: &'static str,
     actor_user_id: Option<Uuid>,
     replace_existing: bool,
@@ -47,8 +47,8 @@ pub async fn upsert_operator_managed_dataset_on_connection(
     subject_id: Uuid,
     credential_configuration_id: &str,
     claims_ciphertext: Vec<u8>,
-    valid_from: Option<DateTime<Utc>>,
-    valid_until: Option<DateTime<Utc>>,
+    valid_from: Option<Timestamp>,
+    valid_until: Option<Timestamp>,
 ) -> Result<usize, diesel::result::Error> {
     write_dataset_on_connection(
         connection,
@@ -148,8 +148,8 @@ async fn write_dataset_on_connection(
         .bind::<sql_types::Text, _>(write.credential_configuration_id)
         .bind::<sql_types::Binary, _>(write.claims_ciphertext)
         .bind::<sql_types::Text, _>(write.source)
-        .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(write.valid_from)
-        .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(write.valid_until)
+        .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>((write.valid_from).to_diesel())
+        .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>((write.valid_until).to_diesel())
         .bind::<sql_types::Nullable<sql_types::Uuid>, _>(write.actor_user_id)
         .execute(connection)
         .await
@@ -214,11 +214,14 @@ impl Openid4vciDatasetRepository {
             #[diesel(sql_type = sql_types::Binary)]
             claims_ciphertext: Vec<u8>,
             #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-            valid_from: Option<DateTime<Utc>>,
+            #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+            valid_from: Option<Timestamp>,
             #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-            valid_until: Option<DateTime<Utc>>,
+            #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+            valid_until: Option<Timestamp>,
             #[diesel(sql_type = sql_types::Timestamptz)]
-            updated_at: DateTime<Utc>,
+            #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+            updated_at: Timestamp,
         }
         let mut connection = get_conn(&self.pool)
             .await
@@ -344,8 +347,12 @@ impl Openid4vciDatasetRepository {
                     .bind::<sql_types::Uuid, _>(subject_id)
                     .bind::<sql_types::Text, _>(credential_configuration_id)
                     .bind::<sql_types::Binary, _>(claims_ciphertext)
-                    .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(valid_from)
-                    .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(valid_until)
+                    .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
+                        (valid_from).to_diesel(),
+                    )
+                    .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(
+                        (valid_until).to_diesel(),
+                    )
                     .load::<ManagedDatasetMutationRow>(connection)
                     .await?;
                     let row = rows.pop().expect("singleton mutation result");
@@ -480,11 +487,14 @@ struct ManagedDatasetMutationRow {
     #[diesel(sql_type = sql_types::Nullable<sql_types::Binary>)]
     claims_ciphertext: Option<Vec<u8>>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    valid_from: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    valid_from: Option<Timestamp>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    valid_until: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    valid_until: Option<Timestamp>,
     #[diesel(sql_type = sql_types::Nullable<sql_types::Timestamptz>)]
-    updated_at: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    updated_at: Option<Timestamp>,
 }
 
 async fn append_managed_dataset_outcome(
@@ -508,7 +518,7 @@ async fn append_managed_dataset_outcome(
                 "credential_configuration_id": credential_configuration_id,
                 "outcome": "success",
             }),
-            occurred_at: Utc::now(),
+            occurred_at: Timestamp::now(),
         },
     )
     .await
@@ -687,3 +697,5 @@ pub fn unprotect_dataset_claims(
     .map_err(|_| CredentialStoreError::InvalidTransition)?;
     serde_json::from_slice(plaintext).map_err(|_| CredentialStoreError::InvalidTransition)
 }
+
+use jiff_diesel::ToDiesel as _;

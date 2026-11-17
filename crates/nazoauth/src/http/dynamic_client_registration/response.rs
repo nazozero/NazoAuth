@@ -3,8 +3,8 @@ use crate::http::{
     empty_response_no_store, json_response_no_store, json_response_status_no_store,
     oauth_endpoint_error_response,
 };
-use chrono::Utc;
 use http::StatusCode;
+use jiff::Timestamp;
 use nazo_oauth_server::{
     contracts::oauth_error::OAuthEndpointError,
     domain::dynamic_registration::{DynamicRegistrationResponse, DynamicRegistrationResult},
@@ -19,7 +19,7 @@ pub(super) fn dynamic_registration_result_response(
             StatusCode::CREATED,
             RegistrationDocument {
                 result: &result,
-                issued_at: Some(Utc::now().timestamp()),
+                issued_at: Some(Timestamp::now().as_second()),
             },
         ),
         Ok(

@@ -112,17 +112,17 @@ pub(crate) async fn signed_mdoc_crl(
     // sign_crl matches and signs with the same prepared private key. The CA's
     // public key supplies the identifier after the exact issuer binding above.
     let issuer_public_key = ca.public_key().subject_public_key.data.as_ref();
-    let this_update = time::OffsetDateTime::now_utc();
+    let this_update = time::OffsetTimestamp::now_utc();
     let next_update = this_update + time::Duration::hours(24);
     let revoked_certs = match entry.status {
         nazo_digital_credentials::CertificateRevocationStatus::Good => Vec::new(),
         nazo_digital_credentials::CertificateRevocationStatus::Revoked => vec![RevokedCertParams {
             serial_number: SerialNumber::from(leaf.raw_serial().to_vec()),
-            revocation_time: time::OffsetDateTime::from_unix_timestamp(
+            revocation_time: time::OffsetTimestamp::from_unix_timestamp(
                 entry
                     .revoked_at
                     .context("revoked DS has no recorded revocation time")?
-                    .timestamp(),
+                    .as_second(),
             )
             .context("DS revocation time is out of range")?,
             reason_code: None,
@@ -542,7 +542,7 @@ fn build_managed_material(
         signing_key_pem,
         &profile.hostname,
         profile.mdoc_profile.as_ref(),
-        time::OffsetDateTime::now_utc(),
+        time::OffsetTimestamp::now_utc(),
     )?;
     let (mut anchors, mut iacas, mut revocation_snapshot) = match previous {
         Some(previous) => (
@@ -555,17 +555,17 @@ fn build_managed_material(
     // Historical roots and IACA keys are needed by credentials already issued.
     // This root was just generated with a new private key.
     anchors.push_str(&bundle.ca_pem);
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let snapshot = revocation_snapshot.get_or_insert_with(|| {
         nazo_digital_credentials::CertificateRevocationSnapshot {
             version: nazo_digital_credentials::CertificateRevocationSnapshot::VERSION,
             this_update: now,
-            next_update: now + chrono::Duration::hours(24),
+            next_update: now + jiff::SignedDuration::from_hours(24),
             entries: Vec::new(),
         }
     });
     snapshot.this_update = now;
-    snapshot.next_update = now + chrono::Duration::hours(24);
+    snapshot.next_update = now + jiff::SignedDuration::from_hours(24);
     if let Some(material) = bundle.mdoc_material {
         iacas.insert(material.issuer_id, material.issuer_material_pem);
         snapshot
@@ -736,11 +736,11 @@ async fn import_mdoc_directory(
         }
         Some(snapshot)
     } else {
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         Some(nazo_digital_credentials::CertificateRevocationSnapshot {
             version: nazo_digital_credentials::CertificateRevocationSnapshot::VERSION,
             this_update: now,
-            next_update: now + chrono::Duration::hours(24),
+            next_update: now + jiff::SignedDuration::from_hours(24),
             entries: Vec::new(),
         })
     };
@@ -860,9 +860,9 @@ pub(crate) async fn operator_manage_mdoc(
                 return Ok(state.revision.to_string());
             }
             entry.status = nazo_digital_credentials::CertificateRevocationStatus::Revoked;
-            entry.revoked_at = Some(chrono::Utc::now());
-            snapshot.this_update = chrono::Utc::now();
-            snapshot.next_update = snapshot.this_update + chrono::Duration::hours(24);
+            entry.revoked_at = Some(jiff::Timestamp::now());
+            snapshot.this_update = jiff::Timestamp::now();
+            snapshot.next_update = snapshot.this_update + jiff::SignedDuration::from_hours(24);
             let committed = manager
                 .database_commit_openid4vc(state.revision, material, None)
                 .await?;

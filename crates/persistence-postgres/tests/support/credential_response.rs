@@ -1,11 +1,11 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_openid4vci::{CredentialResponseEncoding, CredentialSelection, StoredCredentialResponse};
 use uuid::Uuid;
 
 pub fn response(
     token_id: Uuid,
     selection: Option<CredentialSelection>,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
     status: u16,
 ) -> StoredCredentialResponse {
     let issuance_id = Uuid::now_v7();
@@ -36,7 +36,7 @@ pub async fn persist_deferred(
                 credential.expires_at,
                 202,
             ),
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
 }

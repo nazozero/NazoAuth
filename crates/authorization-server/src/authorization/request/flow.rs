@@ -5,8 +5,8 @@ use crate::domain::client_policy::{
     RedirectUriError, client_supports_grant, registered_redirect_uri,
 };
 use crate::domain::oauth::ConsentPayload;
-use chrono::{Duration, Utc};
 use http::StatusCode;
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{
     AuthorizationCapabilityPolicy, AuthorizationClientPolicy, AuthorizationProfilePolicy,
     AuthorizationSession, AuthorizationSessionDecision, is_valid_dpop_jkt,
@@ -383,7 +383,7 @@ pub(crate) async fn authorize_request_with_context(
         normalized.prompt,
         normalized.max_age,
         reauth_started_at,
-        Utc::now().timestamp(),
+        Timestamp::now().as_second(),
     ) {
         AuthorizationSessionDecision::LoginRequired => {
             return authorization_response_redirect_with_context(
@@ -459,7 +459,7 @@ pub(crate) async fn authorize_request_with_context(
                 &blake3_hex(issuer_state),
                 session.user.id(),
                 &client.client_id,
-                Utc::now(),
+                Timestamp::now(),
             )
             .await
         {
@@ -519,7 +519,7 @@ pub(crate) async fn authorize_request_with_context(
                 .collect(),
         );
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let request_id = Uuid::now_v7().to_string();
     let authorization_code_ttl_seconds = if fapi2_security {
         context.config.auth_code_ttl_seconds.min(60)
@@ -528,9 +528,9 @@ pub(crate) async fn authorize_request_with_context(
     };
     // Reading the consent page is part of the authorization transaction, not
     // the later code redemption window. A retained PAR still caps its lifetime.
-    let consent_expires_at = (now + Duration::minutes(10))
-        .min(pending_pushed_request_expires_at.unwrap_or(now + Duration::minutes(10)));
-    let consent_ttl_seconds = (consent_expires_at - now).num_seconds();
+    let consent_expires_at = (now + SignedDuration::from_mins(10))
+        .min(pending_pushed_request_expires_at.unwrap_or(now + SignedDuration::from_mins(10)));
+    let consent_ttl_seconds = (consent_expires_at - now).as_secs();
     if consent_ttl_seconds <= 0 {
         return authorization_oauth_error_redirect(
             context,

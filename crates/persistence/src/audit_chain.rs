@@ -13,7 +13,7 @@ pub fn security_audit_event_hash(
     event_id: uuid::Uuid,
     event_type: &str,
     event_category: &str,
-    occurred_at: chrono::DateTime<chrono::Utc>,
+    occurred_at: jiff::Timestamp,
     payload_canonical: &[u8],
 ) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
@@ -23,7 +23,7 @@ pub fn security_audit_event_hash(
     hasher.update(event_id.as_bytes());
     update_len_prefixed(&mut hasher, event_type.as_bytes());
     update_len_prefixed(&mut hasher, event_category.as_bytes());
-    hasher.update(&occurred_at.timestamp_micros().to_be_bytes());
+    hasher.update(&occurred_at.as_microsecond().to_be_bytes());
     update_len_prefixed(&mut hasher, payload_canonical);
     *hasher.finalize().as_bytes()
 }

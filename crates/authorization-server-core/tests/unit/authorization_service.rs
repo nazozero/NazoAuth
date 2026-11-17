@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use chrono::{Duration, TimeZone, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -97,7 +97,7 @@ impl AuthorizationRepositoryPort for FakeRepository {
                 }) {
                     return Ok(AuthorizationDecisionCommitResult::Conflict);
                 }
-                if input.valid_until <= Utc::now() {
+                if input.valid_until <= Timestamp::now() {
                     return Ok(AuthorizationDecisionCommitResult::Expired);
                 }
                 assert!(state.facts.len() < 16, "bounded decision fixture exhausted");
@@ -369,7 +369,7 @@ impl AuthorizationResponseSignerPort for FakeSigner {
 }
 
 fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
-    let issued_at = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    let issued_at = Timestamp::new(1_700_000_000, 0).unwrap();
     ConsentPayload {
         request_id: "request-1".to_owned(),
         user_id,
@@ -405,19 +405,19 @@ fn consent(user_id: Uuid, request_uri: Option<&str>) -> ConsentPayload {
         signed_authorization_response_required: None,
         session_management_allowed: None,
         authorization_code_ttl_seconds: None,
-        expires_at: issued_at + Duration::minutes(10),
+        expires_at: issued_at + SignedDuration::from_mins(10),
     }
 }
 
 fn pushed() -> PushedAuthorizationRequest {
-    let issued_at = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+    let issued_at = Timestamp::new(1_700_000_000, 0).unwrap();
     PushedAuthorizationRequest {
         client_id: "client-1".to_owned(),
         params: std::collections::HashMap::new(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
         issued_at,
-        expires_at: issued_at + Duration::minutes(10),
+        expires_at: issued_at + SignedDuration::from_mins(10),
     }
 }
 
@@ -798,11 +798,11 @@ fn decision_input(
     AuthorizationDecisionCommit,
     Option<PreparedAuthorizationCode>,
 ) {
-    let now = Utc::now();
+    let now = Timestamp::now();
     let tenant_id = Uuid::from_u128(1);
     let mut payload = consent(Uuid::from_u128(10), par);
     payload.request_id = request_id.into();
-    payload.expires_at = now + Duration::minutes(5);
+    payload.expires_at = now + SignedDuration::from_mins(5);
     let code = (kind != AuthorizationDecisionKind::Deny).then(|| {
         prepare_authorization_code(AuthorizationApprovalInput {
             consent: &payload,
@@ -1046,8 +1046,8 @@ fn preview_preserves_longest_material_retention_and_shortest_admission_expiry() 
         let owner = Uuid::from_u128(10);
         let mut payload = consent(owner, Some("par"));
         let mut par = pushed();
-        payload.expires_at = Utc::now() + Duration::seconds(30);
-        par.expires_at = payload.expires_at + Duration::minutes(5);
+        payload.expires_at = Timestamp::now() + SignedDuration::from_secs(30);
+        par.expires_at = payload.expires_at + SignedDuration::from_mins(5);
         let expected_valid_until = payload.expires_at;
         let expected_retain_until = par.expires_at;
         let store = FakeStore::default();
@@ -1099,7 +1099,7 @@ fn independent_request_fence_is_tenant_scoped_and_expired_input_cannot_commit() 
         );
         let (mut input, code) =
             decision_input(AuthorizationDecisionKind::Approve, "expired-request", None);
-        input.valid_until = Utc::now() - Duration::seconds(1);
+        input.valid_until = Timestamp::now() - SignedDuration::from_secs(1);
         assert_eq!(
             service.commit_decision(input, code).await.unwrap(),
             AuthorizationDecisionCommitResult::Expired
@@ -1190,7 +1190,7 @@ fn code_expiry_extends_retention_without_extending_admission_expiry() {
         let (input, code) = decision_input(AuthorizationDecisionKind::Approve, "request", None);
         let valid_until = input.valid_until;
         let mut prepared = code.unwrap();
-        prepared.payload.expires_at = valid_until + Duration::minutes(5);
+        prepared.payload.expires_at = valid_until + SignedDuration::from_mins(5);
         prepared.ttl_seconds = 600;
         let code_expiry = prepared.payload.expires_at;
         assert_eq!(

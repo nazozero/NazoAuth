@@ -7,7 +7,7 @@ use nazo_oauth_server::contracts::mfa_profile::{
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::mfa::{MFA_TOTP_DIGITS, MFA_TOTP_PERIOD_SECONDS};
 use serde::Deserialize;
 use serde_json::json;
@@ -291,7 +291,7 @@ fn request_context(
     Ok(MfaRequestContext {
         session_id,
         source_ip: client_ip_with_config(request, &endpoint.client_ip),
-        now: Utc::now().timestamp(),
+        now: Timestamp::now().as_second(),
     })
 }
 

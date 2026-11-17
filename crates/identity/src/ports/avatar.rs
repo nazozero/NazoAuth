@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::{AvatarContentType, AvatarObject, PublicAccount, TenantId, UserId};
 
@@ -75,7 +75,7 @@ pub struct AvatarUploadAuthorization {
     pub expected_avatar_url: Option<String>,
     pub expected_avatar_revision: i64,
     pub staging_object_id: String,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -112,7 +112,7 @@ pub trait AvatarUploadStatePort: Send + Sync {
         &'a self,
         user_id: UserId,
         upload_id: &'a str,
-        lease_until: DateTime<Utc>,
+        lease_until: Timestamp,
     ) -> RepositoryFuture<'a, AvatarUploadClaim>;
 
     /// Records the only candidate this upload may publish. The owner token
@@ -151,7 +151,7 @@ pub trait AvatarDirectUploadPort: Send + Sync {
         &'a self,
         staging_object_id: &'a str,
         content_length: usize,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
     ) -> AvatarStorageFuture<'a, AvatarUploadTarget>;
 
     fn read_staged<'a>(

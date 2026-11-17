@@ -8,8 +8,8 @@ use crate::domain::{
 };
 use crate::services::ServerTokenService;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, Utc};
 use http::StatusCode;
+use jiff::{SignedDuration, Timestamp};
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -27,7 +27,7 @@ pub struct NativeSsoDeviceSecretState<S = String> {
     pub sid: S,
     pub source_client_id: S,
     pub refresh_token_family_id: Uuid,
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 #[derive(Deserialize)]
@@ -190,7 +190,7 @@ pub async fn persist_native_sso_device_secret(
     let Some(user_id) = issue.user_id else {
         return Ok(());
     };
-    let expires_at = Utc::now() + Duration::seconds(refresh_token_ttl_seconds);
+    let expires_at = Timestamp::now() + SignedDuration::from_secs(refresh_token_ttl_seconds);
     let payload = NativeSsoDeviceSecretState {
         tenant_id: client.tenant_id,
         user_id,
@@ -344,7 +344,7 @@ pub async fn token_native_sso_exchange(
         Err(response) => return Err(response),
     };
     if secret.tenant_id != client.tenant_id
-        || secret.expires_at <= Utc::now()
+        || secret.expires_at <= Timestamp::now()
         || secret.subject != claims.sub
         || secret.sid != claims.sid
         || !native_sso_id_token_audience_contains(&claims, &secret.source_client_id)

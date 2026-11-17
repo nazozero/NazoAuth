@@ -222,7 +222,7 @@ impl MfaRepository {
                         .filter(user_totp_credentials::confirmed_at.is_null()),
                 )
                 .set((
-                    user_totp_credentials::confirmed_at.eq(now),
+                    user_totp_credentials::confirmed_at.eq((now).to_diesel()),
                     user_totp_credentials::last_used_step.eq(step),
                 ))
                 .execute(connection)
@@ -256,7 +256,10 @@ impl MfaRepository {
                         .filter(users::tenant_id.eq(tenant_id.as_uuid()))
                         .filter(users::is_active.eq(true)),
                 )
-                .set((users::mfa_enabled.eq(true), users::updated_at.eq(now)))
+                .set((
+                    users::mfa_enabled.eq(true),
+                    users::updated_at.eq((now).to_diesel()),
+                ))
                 .execute(connection)
                 .await?;
                 insert_identity_security_event(
@@ -484,3 +487,5 @@ pub(super) fn decode_totp_secret<'a>(
         .map_err(|_| RepositoryError::Consistency("TOTP secret is not valid UTF-8".to_owned()))?;
     Ok(secret)
 }
+
+use jiff_diesel::ToDiesel as _;

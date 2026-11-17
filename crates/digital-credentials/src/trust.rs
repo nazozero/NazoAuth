@@ -7,7 +7,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use url::Url;
@@ -20,8 +20,8 @@ pub type CredentialFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 #[derive(Clone, Debug, PartialEq)]
 pub struct CredentialSignInput {
     pub payload: CredentialPayload,
-    pub issued_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    pub issued_at: Timestamp,
+    pub expires_at: Timestamp,
     pub status: Option<Value>,
 }
 
@@ -74,7 +74,7 @@ pub struct CertificateRevocationEntry {
     pub status: CertificateRevocationStatus,
     /// Time the local authority recorded revocation, retained across CRL refreshes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -95,8 +95,8 @@ pub enum CertificateRevocationStatus {
 #[serde(deny_unknown_fields)]
 pub struct CertificateRevocationSnapshot {
     pub version: u32,
-    pub this_update: DateTime<Utc>,
-    pub next_update: DateTime<Utc>,
+    pub this_update: Timestamp,
+    pub next_update: Timestamp,
     pub entries: Vec<CertificateRevocationEntry>,
 }
 
@@ -152,7 +152,7 @@ impl CertificateRevocationSnapshot {
 
     pub fn validate_freshness_at(
         &self,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CertificateRevocationSnapshotError> {
         self.validate_structure()?;
         if now < self.this_update {
@@ -205,7 +205,7 @@ impl PreparedCertificateRevocationSnapshot {
 
     fn validate_freshness_at(
         &self,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CertificateRevocationSnapshotError> {
         self.statuses.as_ref().map_err(|error| *error)?;
         if now < self.snapshot.this_update {
@@ -332,7 +332,7 @@ impl CertificateRevocationPolicy {
     pub fn replace_snapshot(
         &self,
         snapshot: Arc<CertificateRevocationSnapshot>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CertificateRevocationSnapshotError> {
         let snapshot = Arc::new(PreparedCertificateRevocationSnapshot::new(snapshot));
         snapshot.validate_freshness_at(now)?;
@@ -351,7 +351,7 @@ impl CertificateRevocationPolicy {
     pub fn replace_snapshot_json(
         &self,
         bytes: &[u8],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CertificateRevocationSnapshotError> {
         let snapshot = serde_json::from_slice(bytes)
             .map_err(|_| CertificateRevocationSnapshotError::InvalidEntry)?;
@@ -374,7 +374,7 @@ impl CertificateRevocationPolicy {
         &self,
         issuer: Option<&str>,
         certificates: &[Vec<u8>],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), CredentialTrustError> {
         self.check_chain_inner(issuer, certificates, now, false)
     }
@@ -386,7 +386,7 @@ impl CertificateRevocationPolicy {
         &self,
         issuer: Option<&str>,
         certificates: &[Vec<u8>],
-        now: DateTime<Utc>,
+        now: Timestamp,
         scoped_anchor_authenticated: bool,
     ) -> Result<(), CredentialTrustError> {
         self.check_chain_inner(issuer, certificates, now, scoped_anchor_authenticated)
@@ -396,7 +396,7 @@ impl CertificateRevocationPolicy {
         &self,
         issuer: Option<&str>,
         certificates: &[Vec<u8>],
-        now: DateTime<Utc>,
+        now: Timestamp,
         scoped_anchor_authenticated: bool,
     ) -> Result<(), CredentialTrustError> {
         if matches!(self.state.mode, CertificateRevocationMode::Disabled) {
@@ -545,8 +545,8 @@ pub struct VerifiedCredential {
     pub credential_type: String,
     pub claims: Value,
     pub holder_key: Option<Value>,
-    pub issued_at: Option<DateTime<Utc>>,
-    pub expires_at: Option<DateTime<Utc>>,
+    pub issued_at: Option<Timestamp>,
+    pub expires_at: Option<Timestamp>,
     pub status: Option<Value>,
 }
 

@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use nazo_auth::SigningPurpose;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -75,7 +75,7 @@ pub(crate) async fn refresh(
         && prepared.fingerprint == record_fingerprint(&record)?
         && prepared
             .next_lifecycle_check
-            .is_none_or(|deadline| Utc::now() < deadline)
+            .is_none_or(|deadline| Timestamp::now() < deadline)
     {
         return Ok(None);
     }
@@ -89,7 +89,7 @@ pub(crate) async fn refresh(
 #[derive(Clone)]
 pub(crate) struct PreparedDatabaseSource {
     fingerprint: [u8; 32],
-    next_lifecycle_check: Option<DateTime<Utc>>,
+    next_lifecycle_check: Option<Timestamp>,
 }
 
 fn record_fingerprint(record: &PersistedSigningKeyset) -> anyhow::Result<[u8; 32]> {
@@ -112,7 +112,7 @@ fn prepared_source(
     let Some(settings) = settings else {
         return Ok(None);
     };
-    let now = Utc::now();
+    let now = Timestamp::now();
     let keys = payload["keys"]
         .as_array()
         .ok_or_else(|| anyhow!("keyset missing keys"))?;
@@ -234,7 +234,7 @@ pub(crate) async fn register_local(
         }
         let entry = local_entry(
             registration.algorithm,
-            timestamp(Utc::now()),
+            timestamp(Timestamp::now()),
             Some(registration.purposes.iter().copied()),
         )?;
         registered_kid = Some(
@@ -275,7 +275,7 @@ pub(crate) async fn register_external(
                 && existing.get("public_jwk") == Some(&registration.public_jwk) { return Ok(false); }
             anyhow::bail!("external key kid already exists with different material");
         }
-        keys.push(json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Utc::now()),"retire_at":null}));
+        keys.push(json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Timestamp::now()),"retire_at":null}));
         Ok(true)
     }).await.map(|(loaded, _)| loaded)
 }
@@ -377,7 +377,7 @@ pub(crate) async fn commit_openid4vc(
                 key.as_object_mut()
                     .expect("validated key object")
                     .remove("purposes");
-                key["retire_at"] = json!(timestamp(Utc::now() + settings.verification_grace));
+                key["retire_at"] = json!(timestamp(Timestamp::now() + settings.verification_grace));
             } else {
                 key["purposes"] = json!(
                     purposes
@@ -390,7 +390,7 @@ pub(crate) async fn commit_openid4vc(
         keys.push(json!({
             "kid":kid, "alg":"ES256", "backend":"local-db", "public_jwk":public,
             "private_pkcs8_der":URL_SAFE_NO_PAD.encode(private),
-            "created_at":timestamp(Utc::now()), "retire_at":null,
+            "created_at":timestamp(Timestamp::now()), "retire_at":null,
             "purposes":["credential", "presentation_request"],
         }));
     }
@@ -553,7 +553,7 @@ fn initial_payload() -> anyhow::Result<Value> {
 pub(crate) fn initial_payload_with_active(
     active_algorithm: nazo_crypto::jwt::Algorithm,
 ) -> anyhow::Result<Value> {
-    let now = timestamp(Utc::now());
+    let now = timestamp(Timestamp::now());
     let active = local_entry(active_algorithm, now.clone(), None::<Vec<SigningPurpose>>)?;
     let mut keys = vec![active];
     for algorithm in [
@@ -620,7 +620,7 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
         }
         let active_algorithm = key_entry_algorithm(active)?;
         let active_is_local = active.get("backend").and_then(Value::as_str) == Some("local-db");
-        let now = Utc::now();
+        let now = Timestamp::now();
         let rotation_due = key_entry_created_at(active)? + settings.rotation_interval;
         let candidate =
             prepublished_candidate(keys, &active_kid, active_algorithm, active_is_local)?;
@@ -735,7 +735,7 @@ fn protocol_rotation_check(
     keys: &[Value],
     algorithm: nazo_crypto::jwt::Algorithm,
     settings: &KeySettings,
-) -> anyhow::Result<Option<DateTime<Utc>>> {
+) -> anyhow::Result<Option<Timestamp>> {
     let (current, pending) = protocol_key_indices(keys, algorithm)?;
     let Some(current) = current else {
         return Ok(None);
@@ -754,7 +754,7 @@ fn maintain_protocol_keys(
     active_algorithm: nazo_crypto::jwt::Algorithm,
     active_is_local: bool,
     settings: &KeySettings,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> anyhow::Result<bool> {
     let mut changed = false;
     for algorithm in [
@@ -805,7 +805,7 @@ fn prepublished_candidate(
     algorithm: nazo_crypto::jwt::Algorithm,
     allow_local: bool,
 ) -> anyhow::Result<Option<usize>> {
-    let mut selected: Option<(usize, bool, DateTime<Utc>)> = None;
+    let mut selected: Option<(usize, bool, Timestamp)> = None;
     for (index, entry) in keys.iter().enumerate() {
         if entry.get("kid").and_then(Value::as_str) == Some(active_kid)
             || entry.get("purposes").is_some()
@@ -830,7 +830,7 @@ fn prepublished_candidate(
     Ok(selected.map(|(index, _, _)| index))
 }
 
-fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: DateTime<Utc>) {
+fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: Timestamp) {
     for entry in keys {
         if entry.get("kid").and_then(Value::as_str) == Some(old_kid) {
             entry["retire_at"] = json!(timestamp(retire_at));
@@ -1000,7 +1000,7 @@ fn load_payload(
             .get("backend")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow!("keyset key {kid} missing backend"))?;
-        if retired_at.is_some_and(|time| time <= Utc::now()) {
+        if retired_at.is_some_and(|time| time <= Timestamp::now()) {
             if kid == active_kid {
                 anyhow::bail!("active key {kid} is retired");
             }
@@ -1121,7 +1121,7 @@ fn records(payload: &Value) -> anyhow::Result<Vec<KeyRecord>> {
         .get("active_kid")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("keyset missing active_kid"))?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     payload["keys"]
         .as_array()
         .ok_or_else(|| anyhow!("keyset missing keys"))?
@@ -1205,7 +1205,7 @@ fn validate_external_registration(registration: &ExternalKeyRegistration) -> any
     Ok(())
 }
 
-fn timestamp(value: DateTime<Utc>) -> String {
+fn timestamp(value: Timestamp) -> String {
     value.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 

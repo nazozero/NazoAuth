@@ -299,7 +299,7 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
         client_public_id: format!("logout-client-{suffix}-active"),
         logout_uri: "https://client.example/backchannel-logout".to_owned(),
         logout_token: format!("logout-token-{suffix}"),
-        expires_at: chrono::Utc::now() + chrono::Duration::minutes(2),
+        expires_at: jiff::Timestamp::now() + jiff::SignedDuration::from_mins(2),
     };
     outbox
         .enqueue_idempotent_backchannel_logout_batch(std::slice::from_ref(&delivery))
@@ -321,7 +321,7 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
 
     let mut conflicting_retry = delivery.clone();
     conflicting_retry.logout_token = format!("different-logout-token-{suffix}");
-    conflicting_retry.expires_at += chrono::Duration::seconds(30);
+    conflicting_retry.expires_at += jiff::SignedDuration::from_secs(30);
     outbox
         .enqueue_idempotent_backchannel_logout_batch(std::slice::from_ref(&conflicting_retry))
         .await

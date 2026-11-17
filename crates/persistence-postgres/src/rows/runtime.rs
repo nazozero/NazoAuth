@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, diesel::Queryable, diesel::Selectable)]
@@ -9,7 +9,8 @@ pub(crate) struct DesiredStateRow {
     pub(crate) revision: i64,
     pub(crate) actor_id: Option<Uuid>,
     pub(crate) reason: Option<String>,
-    pub(crate) updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, diesel::Queryable, diesel::Selectable)]
@@ -20,9 +21,11 @@ pub(crate) struct InstanceStateRow {
     pub(crate) actual_state: String,
     pub(crate) transition_revision: i64,
     pub(crate) applied_revision: Option<i64>,
-    pub(crate) drain_deadline: Option<DateTime<Utc>>,
+    #[diesel(deserialize_as = jiff_diesel::NullableTimestamp)]
+    pub(crate) drain_deadline: Option<Timestamp>,
     pub(crate) error_code: Option<String>,
-    pub(crate) updated_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, diesel::Queryable, diesel::Selectable)]
@@ -38,5 +41,6 @@ pub(crate) struct ModuleEventRow {
     pub(crate) before_state: Option<String>,
     pub(crate) after_state: Option<String>,
     pub(crate) outcome_code: Option<String>,
-    pub(crate) occurred_at: DateTime<Utc>,
+    #[diesel(deserialize_as = jiff_diesel::Timestamp)]
+    pub(crate) occurred_at: Timestamp,
 }

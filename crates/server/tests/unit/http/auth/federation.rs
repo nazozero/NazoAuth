@@ -461,7 +461,7 @@ impl LiveFederationFixture {
                 external_identity_links::subject.eq(subject),
                 external_identity_links::email.eq(email),
                 external_identity_links::claims.eq(json!({"sub": subject})),
-                external_identity_links::last_login_at.eq(Utc::now()),
+                external_identity_links::last_login_at.eq((Utc::now()).to_diesel()),
             ))
             .returning(DatabaseExternalIdentityFixture::as_returning())
             .get_result::<DatabaseExternalIdentityFixture>(&mut conn)
@@ -2196,3 +2196,5 @@ async fn upstream_fixture_captures_the_complete_fragmented_request() {
     assert!(request.ends_with("\r\n\r\ncode=abc&v=1"));
     assert!(response.starts_with(b"HTTP/1.1 200 OK"));
 }
+
+use jiff_diesel::ToDiesel as _;

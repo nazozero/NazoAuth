@@ -5,7 +5,7 @@
 //! certificate boundary without exposing an OAuth protocol shortcut.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sha2::{Digest as _, Sha256};
 use x509_parser::{prelude::parse_x509_certificate, public_key::PublicKey};
 
@@ -18,8 +18,8 @@ pub struct ValidatedMtlsTrustAnchor {
     pub certificate_pem: String,
     pub certificate_sha256: String,
     pub subject_dn: String,
-    pub not_before: DateTime<Utc>,
-    pub not_after: DateTime<Utc>,
+    pub not_before: Timestamp,
+    pub not_after: Timestamp,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
@@ -86,9 +86,9 @@ pub fn validate_mtls_trust_anchor(
         _ => return Err(MtlsTrustAnchorError::WeakOrUnsupportedKey),
     }
 
-    let not_before = DateTime::from_timestamp(certificate.validity().not_before.timestamp(), 0)
+    let not_before = Timestamp::new(certificate.validity().not_before.timestamp(), 0)
         .ok_or(MtlsTrustAnchorError::InvalidPem)?;
-    let not_after = DateTime::from_timestamp(certificate.validity().not_after.timestamp(), 0)
+    let not_after = Timestamp::new(certificate.validity().not_after.timestamp(), 0)
         .ok_or(MtlsTrustAnchorError::InvalidPem)?;
     Ok(ValidatedMtlsTrustAnchor {
         certificate_pem: crate::serialization::der_to_pem(&der, "CERTIFICATE"),

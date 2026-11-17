@@ -2,7 +2,7 @@ use super::helpers::*;
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_identity::UserId;
 use nazo_openid4vci::CredentialConfiguration;
 use nazo_openid4vci::application::CredentialHttpError;
@@ -199,7 +199,7 @@ pub(crate) fn validate_managed_dataset(
     if request.valid_until.is_some_and(|valid_until| {
         request
             .valid_from
-            .map_or(valid_until <= Utc::now(), |valid_from| {
+            .map_or(valid_until <= Timestamp::now(), |valid_from| {
                 valid_until <= valid_from
             })
     }) {

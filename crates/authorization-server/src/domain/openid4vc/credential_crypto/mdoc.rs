@@ -1,13 +1,13 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Utc};
 use coset::CborSerializable;
+use jiff::Timestamp;
 use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
 };
 use nazo_mdoc::{
-    Timestamp,
+    Timestamp as MdocTimestamp,
     builder::DocumentBuilder,
     model::types::{CoseAlgorithm, ValidityInfo},
     session::SessionTranscript,
@@ -24,34 +24,34 @@ use super::{MdocStatusIssuancePolicy, Openid4vcCredentialCrypto, status};
 const MDL_DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const MDL_NAMESPACE: &str = "org.iso.18013.5.1";
 
-pub(super) fn to_protocol_time(value: DateTime<Utc>) -> Result<Timestamp, CredentialTrustError> {
-    if value.timestamp_subsec_nanos() >= 1_000_000_000 {
+pub(super) fn to_protocol_time(value: Timestamp) -> Result<MdocTimestamp, CredentialTrustError> {
+    if value.subsec_nanosecond() >= 1_000_000_000 {
         // Chrono uses excess nanoseconds for a leap second. Never interpret
         // those as an ordinary Unix instant in the following second.
-        Timestamp::parse_rfc3339(&value.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
+        MdocTimestamp::parse_rfc3339(&value.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
             .map_err(|_| CredentialTrustError::InvalidValidity)
     } else {
-        Timestamp::from_unix_nanos(
-            i128::from(value.timestamp()) * 1_000_000_000
-                + i128::from(value.timestamp_subsec_nanos()),
+        MdocTimestamp::from_unix_nanos(
+            i128::from(value.as_second()) * 1_000_000_000 + i128::from(value.subsec_nanosecond()),
         )
         .map_err(|_| CredentialTrustError::InvalidValidity)
     }
 }
 
-pub(super) fn from_protocol_time(value: Timestamp) -> Result<DateTime<Utc>, CredentialTrustError> {
+pub(super) fn from_protocol_time(value: MdocTimestamp) -> Result<Timestamp, CredentialTrustError> {
     if let Some(nanos) = value.unix_nanos() {
         let seconds = i64::try_from(nanos.div_euclid(1_000_000_000))
             .map_err(|_| CredentialTrustError::InvalidValidity)?;
         let nanoseconds = u32::try_from(nanos.rem_euclid(1_000_000_000))
             .map_err(|_| CredentialTrustError::InvalidValidity)?;
-        DateTime::from_timestamp(seconds, nanoseconds).ok_or(CredentialTrustError::InvalidValidity)
+        Timestamp::new(seconds, nanoseconds).ok_or(CredentialTrustError::InvalidValidity)
     } else {
         let text = value
             .format_rfc3339()
             .map_err(|_| CredentialTrustError::InvalidValidity)?;
-        DateTime::parse_from_rfc3339(&text)
-            .map(|value| value.with_timezone(&Utc))
+        (&text)
+            .parse::<jiff::Timestamp>()
+            .map(|value| value)
             .map_err(|_| CredentialTrustError::InvalidValidity)
     }
 }
@@ -91,9 +91,10 @@ pub(super) async fn sign(
         return Err(CredentialTrustError::InvalidEncoding);
     }
     validate_mdl_issuing_country(&certificate, &input.payload.credential_type, namespaces)?;
-    let not_before = Timestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
-        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-    let not_after = Timestamp::from_unix_seconds(certificate.validity().not_after.timestamp())
+    let not_before =
+        MdocTimestamp::from_unix_seconds(certificate.validity().not_before.timestamp())
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    let not_after = MdocTimestamp::from_unix_seconds(certificate.validity().not_after.timestamp())
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     // The public certificate cohort boundary preserves privacy rounding without
     // extending the credential deadline or predating the selected signing key.
@@ -291,7 +292,7 @@ pub(super) fn verify(
         &bytes,
         &transcript,
         &VerificationOptions {
-            now: to_protocol_time(Utc::now())?,
+            now: to_protocol_time(Timestamp::now())?,
             max_documents: 1,
         },
     )
@@ -390,7 +391,7 @@ fn verify_mdoc_issuer_certificate_chain(
     revocation_policy.check_chain_with_scoped_trust(
         None,
         certificates,
-        Utc::now(),
+        Timestamp::now(),
         scoped_anchor_authenticated,
     )
 }

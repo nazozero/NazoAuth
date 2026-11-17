@@ -12,7 +12,7 @@ fn access() -> CredentialAccess {
         configuration_ids: vec!["pid".into()],
         credential_identifiers: vec![],
         dpop_jkt: None,
-        expires_at: Utc::now() + chrono::Duration::hours(1),
+        expires_at: Timestamp::now() + jiff::SignedDuration::from_hours(1),
     }
 }
 
@@ -27,7 +27,7 @@ fn row(access: &CredentialAccess, id: Uuid, ciphertext: Vec<u8>) -> DeferredRow 
         credential_format: "dc+sd-jwt".into(),
         holder_bindings: serde_json::json!([]),
         payload_ciphertext: ciphertext,
-        ready_at: Utc::now(),
+        ready_at: Timestamp::now(),
         expires_at: access.expires_at,
     }
 }

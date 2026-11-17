@@ -1,6 +1,6 @@
 use super::VerifiedSenderConstraintProof;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde::Deserialize;
 use serde_json::Value;
@@ -104,7 +104,13 @@ impl DpopProofVerifier {
         htu: &str,
         access_token: &str,
     ) -> Result<VerifiedSenderConstraintProof, DpopProofVerifierError> {
-        self.verify_at(proof_jwt, method, htu, access_token, Utc::now().timestamp())
+        self.verify_at(
+            proof_jwt,
+            method,
+            htu,
+            access_token,
+            Timestamp::now().as_second(),
+        )
     }
 
     fn verify_at(

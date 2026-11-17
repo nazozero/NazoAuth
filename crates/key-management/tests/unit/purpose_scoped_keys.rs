@@ -3,11 +3,11 @@ use std::collections::BTreeSet;
 use crate::{KeyRecordStatus, KeySettings, LocalKeyRegistration, test_support::key_manager};
 use nazo_auth::{SignError, SignRequest, Signer, SigningPurpose};
 
-fn settings(rotation_interval: chrono::Duration) -> KeySettings {
+fn settings(rotation_interval: jiff::SignedDuration) -> KeySettings {
     KeySettings {
         rotation_interval,
-        prepublish_window: chrono::Duration::zero(),
-        verification_grace: chrono::Duration::minutes(10),
+        prepublish_window: jiff::SignedDuration::zero(),
+        verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
 
@@ -22,7 +22,7 @@ fn openid4vc_purposes() -> BTreeSet<SigningPurpose> {
 
 #[tokio::test]
 async fn purpose_scoped_key_signs_only_declared_openid4vc_purposes() {
-    let manager = key_manager(settings(chrono::Duration::seconds(-1)))
+    let manager = key_manager(settings(jiff::SignedDuration::from_secs(-1)))
         .await
         .unwrap();
     let scoped_kid = manager
@@ -94,7 +94,7 @@ async fn purpose_scoped_key_signs_only_declared_openid4vc_purposes() {
 
 #[tokio::test]
 async fn overlapping_purpose_scoped_keys_are_rejected() {
-    let manager = key_manager(settings(chrono::Duration::days(90)))
+    let manager = key_manager(settings(jiff::SignedDuration::from_hours((90) * 24)))
         .await
         .unwrap();
     manager
@@ -117,7 +117,7 @@ async fn overlapping_purpose_scoped_keys_are_rejected() {
 
 #[tokio::test]
 async fn purpose_scoped_registration_rejects_oidc_signing_purposes() {
-    let manager = key_manager(settings(chrono::Duration::days(90)))
+    let manager = key_manager(settings(jiff::SignedDuration::from_hours((90) * 24)))
         .await
         .unwrap();
     let error = manager

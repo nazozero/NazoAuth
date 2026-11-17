@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use nazo_auth::{CommitTokenIssuanceResult, GrantType, TokenIssuanceMode};
 use uuid::Uuid;
 
@@ -310,7 +310,7 @@ pub async fn issue_token_response(
             false,
         ));
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     if client.client_type == "public"
         && issue
             .refresh_authority
@@ -579,7 +579,7 @@ pub async fn issue_token_response(
     let mut refresh_token_to_commit = None;
     if will_issue_refresh && let Some((family, rotated_from, lost_response_retry)) = refresh_family
     {
-        let expires_at = now + Duration::seconds(context.config.refresh_token_ttl_seconds);
+        let expires_at = now + SignedDuration::from_secs(context.config.refresh_token_ttl_seconds);
         let expires_at = match issue.refresh_authority.as_ref() {
             Some(source) if client.client_type == "public" => expires_at.min(source.expires_at),
             _ => expires_at,
@@ -740,7 +740,7 @@ pub async fn issue_token_response(
                             token_service,
                             client,
                             &redemption.access_token_jti,
-                            redemption.access_token_expires_at.timestamp(),
+                            redemption.access_token_expires_at.as_second(),
                             redemption.refresh_token_family_id,
                         )
                         .await

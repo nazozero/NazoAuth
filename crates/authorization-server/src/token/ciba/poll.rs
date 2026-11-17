@@ -25,8 +25,8 @@ use crate::{
         validate_token_sender_constraints,
     },
 };
-use chrono::Utc;
 use http::StatusCode as ProtocolStatusCode;
+use jiff::Timestamp;
 use nazo_auth::{
     CibaAuthenticationContext, CibaPollCommit, CibaPollFailure, CibaRequestState,
     TokenIssuanceMode, ValidatedClientAssertion,
@@ -160,7 +160,7 @@ async fn poll_and_issue_ciba(
     }
     let mut ciba = match ciba_service
         .poll(auth_req_id, &client.client_id, initial, || {
-            Utc::now().timestamp()
+            Timestamp::now().as_second()
         })
         .await
     {
@@ -208,7 +208,7 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
-    let Some(grant_expires_at) = chrono::DateTime::from_timestamp(ciba.expires_at, 0) else {
+    let Some(grant_expires_at) = jiff::Timestamp::new(ciba.expires_at, 0) else {
         tracing::error!("approved CIBA state has an unrepresentable expiry");
         return Err(OAuthEndpointError::token(
             ProtocolStatusCode::SERVICE_UNAVAILABLE,

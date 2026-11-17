@@ -21,7 +21,7 @@ use crate::http::{ClientIpConfig, client_ip_with_config};
 use crate::http::{
     csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store, oauth_error,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 use nazo_oauth_server::crypto::blake3_hex;
 use nazo_persistence::control_plane::AdminIdentityAudit;
 use nazo_persistence::control_plane::{
@@ -239,7 +239,7 @@ pub async fn admin_controller_approval(
                 source_ip_hash: blake3_hex(&client_ip_with_config(req, client_ip_config)),
             },
             &change,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await
     {
@@ -252,7 +252,7 @@ pub async fn admin_controller_approval(
                 "approval_token": issued.token,
                 "action": issued.action.as_str(),
                 "action_sha256": issued.action_sha256,
-                "expires_at": issued.expires_at.to_rfc3339(),
+                "expires_at": issued.expires_at.to_string(),
                 "single_use": true,
             }))
         }
@@ -335,7 +335,7 @@ pub async fn admin_controller_slot_commit(
         .commit_with_required_audit(
             approval_token,
             change,
-            Utc::now(),
+            Timestamp::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
                 actor_user_id: admin.id(),
@@ -400,7 +400,7 @@ pub async fn admin_controller_slot_rotate(
         .commit_with_required_audit(
             approval_token,
             change,
-            Utc::now(),
+            Timestamp::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
                 actor_user_id: admin.id(),
@@ -459,7 +459,7 @@ pub async fn admin_controller_slot_revoke(
         .commit_with_required_audit(
             approval_token,
             change,
-            Utc::now(),
+            Timestamp::now(),
             AdminIdentityAudit {
                 tenant: admin.tenant,
                 actor_user_id: admin.id(),
@@ -487,10 +487,10 @@ pub fn slot_view(slot: &StoredControllerSlot) -> serde_json::Value {
         "label": slot.label,
         "kid": slot.kid,
         "slot_index": slot.slot_index,
-        "issued_at": slot.issued_at.to_rfc3339(),
-        "expires_at": slot.expires_at.to_rfc3339(),
+        "issued_at": slot.issued_at.to_string(),
+        "expires_at": slot.expires_at.to_string(),
         "status": status_str(slot.status),
-        "warning": expiry_warning(Utc::now(), slot.expires_at).map(|warning| match warning {
+        "warning": expiry_warning(Timestamp::now(), slot.expires_at).map(|warning| match warning {
             ControllerKeyWarning::Urgent => "urgent_24h",
             ControllerKeyWarning::Expiring => "expiring_7d",
         }),
@@ -528,7 +528,7 @@ pub fn service_error_response(error: ControllerRegistryServiceError) -> HttpResp
                         "label": summary.label,
                         "kid": summary.kid,
                         "slot_index": summary.slot_index,
-                        "expires_at": summary.expires_at.to_rfc3339(),
+                        "expires_at": summary.expires_at.to_string(),
                     })
                 })
                 .collect();

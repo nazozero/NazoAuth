@@ -226,7 +226,7 @@ async fn session_authentication_precision_roundtrips_and_malformed_precision_is_
     let sid = uuid::Uuid::now_v7().to_string();
     let key = nazo_valkey::test_support::state_storage_key(format!("oauth:session:v2:{sid}"));
     let mut value = payload();
-    value.record_authentication_at(chrono::DateTime::from_timestamp_micros(1_000_500_001).unwrap());
+    value.record_authentication_at(jiff::Timestamp::from_microsecond(1_000_500_001).unwrap());
     store.store(&sid, &value, 30).await.unwrap();
     let loaded = store.load(&sid).await.unwrap().unwrap();
     assert_eq!(loaded.value(), &value);
