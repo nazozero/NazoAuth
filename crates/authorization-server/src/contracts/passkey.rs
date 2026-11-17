@@ -31,6 +31,9 @@ pub struct PasskeyLoginFinishCommand {
     pub source_ip: String,
     pub remembered_mfa: Option<RememberedMfaProof>,
     pub previous_session_id: Option<String>,
+    /// Transport verified the existing session's CSRF token. This permits
+    /// checking that session for independent UV-initialization evidence.
+    pub csrf_verified: bool,
     pub now: DateTime<Utc>,
 }
 

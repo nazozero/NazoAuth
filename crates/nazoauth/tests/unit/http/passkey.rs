@@ -17,6 +17,7 @@ struct CapturedLoginFinish {
     ceremony_id: String,
     source_ip: String,
     previous_session_id: Option<String>,
+    csrf_verified: bool,
     remembered_mfa: Option<RememberedMfaProof>,
 }
 
@@ -35,6 +36,7 @@ impl PasskeyLoginOperations for LoginOperations {
             ceremony_id: command.ceremony_id,
             source_ip: command.source_ip,
             previous_session_id: command.previous_session_id,
+            csrf_verified: command.csrf_verified,
             remembered_mfa: command.remembered_mfa,
         });
         let result = self.result.lock().unwrap().take().unwrap();
@@ -238,12 +240,63 @@ fn login_finish_extracts_security_context_and_sets_only_bound_session_material()
                 ceremony_id: "ceremony".to_owned(),
                 source_ip: "203.0.113.9".to_owned(),
                 previous_session_id: Some("old-session".to_owned()),
+                csrf_verified: false,
                 remembered_mfa: Some(RememberedMfaProof {
                     token_hash: blake3_hex("remembered-secret"),
                     user_agent_hash: Some(blake3_hex("passkey-test-agent")),
                 }),
             }]
         );
+    });
+}
+
+#[test]
+fn login_only_allows_uv_initialization_with_the_existing_session_csrf_proof() {
+    futures_executor::block_on(async {
+        for (cookies, token, expected_session, expected_verified) in [
+            (None, None, None, false),
+            (Some("csrf=proof"), Some("proof"), None, false),
+            (
+                Some("session=old-session; csrf=proof"),
+                None,
+                Some("old-session"),
+                false,
+            ),
+            (
+                Some("session=old-session; csrf=proof"),
+                Some("wrong"),
+                Some("old-session"),
+                false,
+            ),
+            (
+                Some("session=old-session; csrf=proof"),
+                Some("proof"),
+                Some("old-session"),
+                true,
+            ),
+        ] {
+            let (endpoint, operations, _) = login_endpoint(Ok(login_success()), Ok(()));
+            let mut request = http::Request::builder().method("POST");
+            if let Some(cookies) = cookies {
+                request = request.header(header::COOKIE, cookies);
+            }
+            if let Some(token) = token {
+                request = request.header("x-csrf-token", token);
+            }
+            let response = passkey_login_finish(
+                &endpoint,
+                &request.body(Bytes::new()).unwrap(),
+                Ok(PasskeyLoginFinishRequest {
+                    ceremony_id: "ceremony".to_owned(),
+                    response: authentication_response(),
+                }),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let finishes = operations.finishes.lock().unwrap();
+            assert_eq!(finishes[0].csrf_verified, expected_verified);
+            assert_eq!(finishes[0].previous_session_id.as_deref(), expected_session);
+        }
     });
 }
 

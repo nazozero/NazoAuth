@@ -384,7 +384,7 @@ impl Settings {
         }
         let email_code_dev_response_enabled =
             config.bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?;
-        let passkey = passkey::from_config(config, &issuer, &issuer_url)?;
+        let passkey = passkey::from_config(config, &issuer_url)?;
         let email = EmailSettings::from_config(config, issuer_is_loopback_http)?;
         let federation = federation::from_config(config)?;
         let task_key_settings = key_settings_from_config(config)?;

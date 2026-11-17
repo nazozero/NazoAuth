@@ -32,6 +32,19 @@ pub struct PasskeyCredentialSummary {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Signed authentication facts committed before the replacement session is issued.
+/// The counter and the previously observed backup eligibility are compare-and-set
+/// guards. UV initialization is monotonic and needs independent authentication.
+#[derive(Clone, Copy, Debug)]
+pub struct PasskeyAuthenticationUpdate {
+    pub expected_counter: u32,
+    pub new_counter: u32,
+    pub expected_backup_eligible: Option<bool>,
+    pub backup_eligible: bool,
+    pub backup_state: bool,
+    pub initialize_user_verification: bool,
+}
+
 impl From<PasskeyCredential> for PasskeyCredentialSummary {
     fn from(row: PasskeyCredential) -> Self {
         Self {
@@ -98,13 +111,12 @@ pub trait PasskeyRepositoryPort: Send + Sync {
         label: String,
     ) -> RepositoryFuture<'_, PasskeyCredential>;
 
-    fn update_counter<'a>(
+    fn update_authentication<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-        expected_sign_count: u32,
-        new_sign_count: u32,
+        update: PasskeyAuthenticationUpdate,
     ) -> RepositoryFuture<'a, ()>;
 
     /// Delete the credential and append its required lifecycle audit atomically.

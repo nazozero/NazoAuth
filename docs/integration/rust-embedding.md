@@ -29,7 +29,8 @@ must retain the documented connection-fact and certificate trust boundaries.
 Outbound clients may still use patched HTTP/2 dependencies.
 
 An Actix embedder should use `default-features = false` and explicitly enable its
-needed TLS, macros, compression and cookie features without `http2`. Cargo
+needed TLS, macros, compression and cookie features without `http2`. Resolve
+`actix-http` 3.21.3 or later for the chunked-body and keep-alive timeout fixes. Cargo
 features are additive; another dependency can re-enable Actix HTTP/2. Run
 `python3 scripts/check_native_transport.py` to check the actual workspace graph,
 and verify negotiated ALPN in the deployment. Removing `.auto_h2c(false)` alone
@@ -53,6 +54,8 @@ contracts; it is not guaranteed to be a drop-in operation.
 
 No mutable upstream branch is used as a release dependency. Prefer official
 stable registry releases, with the resulting versions recorded in `Cargo.lock`.
+
+### mdoc adapter contract
 
 `nazo-mdoc` is the maintained protocol core in the existing `nazozero/mdoc-rs`
 repository. The old `mdoc-rs` package is not aliased or wrapped. Embedders migrate
@@ -79,6 +82,30 @@ Wallet-supplied transcript bytes cannot serve as the expected transcript;
 `expected_nonce` and `expected_audience` alone cannot validate an opaque
 handover hash. The core checks the supplied CBOR and verifies the holder's
 signature against those exact bytes.
+
+### Passkey adapter contract
+
+The integration uses the pinned `passkey-auth` 0.2 API. Existing credential JSONB
+remains readable without a schema migration or re-registration. Optional UV and
+backup history missing from an older record must remain unknown; adapters must
+not replace missing history with trusted values. The relational credential ID
+and sign counter remain authoritative.
+
+Custom `PasskeyRepositoryPort` implementations use `update_authentication` to
+commit the counter and signed backup facts together. Compare both the expected
+counter and prior backup eligibility before writing, and return `Conflict` when
+either changed. An authorized `initialize_user_verification` update only promotes
+UV history to true; concurrent updates must never revert it. Session creation
+follows this successful update. Zero-only counters remain supported, with
+one-time ceremony consumption providing replay protection.
+
+`PasskeyLoginFinishCommand::csrf_verified` is a trusted transport fact. Set it
+only after validating the existing session cookie's CSRF proof; false preserves
+ordinary login without authorizing UV initialization. Do not accept it from the
+client JSON. The application separately resolves the session and checks fresh,
+independent OTP or recovery-code evidence for the same tenant and user. The
+public HTTP request format is unchanged. See the [passkey guide](../features/passkeys.md)
+for the current-assertion and subsequent-assertion MFA behavior.
 
 ## Build one tenant
 
