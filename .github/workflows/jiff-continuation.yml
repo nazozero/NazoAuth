@@ -3,7 +3,7 @@ name: Jiff continuation candidate
 on:
   push:
     branches: [audit/passkey-resume-20261118]
-    paths: [.audit/continue-jiff.py, .audit/jiff-fixes.py, .github/workflows/jiff-continuation.yml]
+    paths: [.audit/continue-jiff.py, .audit/jiff-fixes.py, '.audit/jiff-corrections/**', .github/workflows/jiff-continuation.yml]
 
 concurrency:
   group: jiff-continuation-candidate
@@ -49,13 +49,18 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
         with:
           workspaces: nazo -> target
-          key: jiff-continuation-v1
+          key: jiff-continuation-v2
           cache-on-failure: true
-      - name: Apply the reviewed migration and targeted corrections
+          cache-workspace-crates: true
+      - name: Apply the migration and reviewed semantic corrections
         run: |
           set -euo pipefail
           python3 audit/.audit/continue-jiff.py nazo independent
           if test -f audit/.audit/jiff-fixes.py; then python3 audit/.audit/jiff-fixes.py nazo; fi
+          for correction in audit/.audit/jiff-corrections/*.py; do
+            test -f "$correction" || continue
+            python3 "$correction" nazo
+          done
           cd nazo
           cargo fmt --all
       - name: Compile all workspace targets and retain diagnostics
@@ -66,15 +71,14 @@ jobs:
           set +e
           mkdir -p ../evidence
           rustc -Vv > ../evidence/compiler.txt
-          cargo check --workspace --all-targets --all-features --message-format=json > ../evidence/check.jsonl 2> ../evidence/check.stderr
+          cargo check --workspace --all-targets --all-features --keep-going --message-format=json > ../evidence/check.jsonl 2> ../evidence/check.stderr
           result=$?
           echo "$result" > ../evidence/check.exit
           echo "exit=$result" >> "$GITHUB_OUTPUT"
           python3 - <<'PY'
           import json
           from pathlib import Path
-          errors = []
-          warnings = []
+          errors, warnings = [], []
           for line in Path('../evidence/check.jsonl').read_text().splitlines():
               try:
                   item = json.loads(line)
@@ -83,11 +87,22 @@ jobs:
               if item.get('reason') != 'compiler-message':
                   continue
               message = item['message']
-              (errors if message['level'] == 'error' else warnings).append(message)
+              summary = {
+                  'code': (message.get('code') or {}).get('code'),
+                  'message': message['message'],
+                  'rendered': message.get('rendered'),
+                  'sites': [
+                      {'file': s['file_name'], 'line': s['line_start'], 'text': s['text'], 'label': s['label']}
+                      for s in message.get('spans', []) if s['is_primary']
+                  ],
+              }
+              (errors if message['level'] == 'error' else warnings).append(summary)
           Path('../evidence/errors.json').write_text(json.dumps(errors, indent=2) + '\n')
+          Path('../evidence/warnings.json').write_text(json.dumps(warnings, indent=2) + '\n')
+          rendered = '\n'.join(e.get('rendered') or e['message'] for e in errors)
+          Path('../evidence/errors.txt').write_text(rendered)
           print(f'COMPILER DIAGNOSTICS: {len(errors)} errors; {len(warnings)} other messages')
-          for error in errors[:30]:
-              print(error.get('rendered') or error['message'])
+          print(rendered[:30000])
           if not errors:
               print('\n'.join(Path('../evidence/check.stderr').read_text().splitlines()[-35:]))
           PY
@@ -102,11 +117,11 @@ jobs:
           git add -A -- ':!.verification'
           source_tree=$(git write-tree)
           SOURCE_TREE="$source_tree" python3 - <<'PY'
-          import json, os, subprocess
+          import json, os, shutil, subprocess
           from pathlib import Path
           result = {
               'status': 'PASS' if Path('../evidence/check.exit').read_text().strip() == '0' else 'FAIL',
-              'command': 'cargo check --workspace --all-targets --all-features --message-format=json',
+              'command': 'cargo check --workspace --all-targets --all-features --keep-going --message-format=json',
               'parent': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'source_tree_before_evidence': os.environ['SOURCE_TREE'],
               'workflow_run': os.environ['GITHUB_RUN_ID'],
@@ -114,6 +129,8 @@ jobs:
               'stderr_tail': '\n'.join(Path('../evidence/check.stderr').read_text().splitlines()[-50:]),
           }
           Path('.verification/jiff-check.json').write_text(json.dumps(result, indent=2) + '\n')
+          shutil.copyfile('../evidence/errors.txt', '.verification/jiff-check.txt')
+          shutil.copyfile('../evidence/warnings.json', '.verification/jiff-warnings.json')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
