@@ -676,7 +676,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
             let prepared = service
-                .prepare_decision("ABCD", Utc::now)
+                .prepare_decision("ABCD", jiff::Timestamp::now)
                 .await
                 .unwrap()
                 .unwrap();
@@ -688,7 +688,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
                         device_approval(),
                         &ports.client,
                         ports.as_ref(),
-                        Utc::now
+                        jiff::Timestamp::now
                     )
                     .await,
                 Err(nazo_auth::DeviceDecisionFailure::Contended)
@@ -703,7 +703,7 @@ fn prepared_device_approval_rechecks_commit_time_and_live_mapping_before_grant()
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();
@@ -733,7 +733,7 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
             pending(&ports);
             let service = ServerDeviceGrantService::new(ports.clone());
             let prepared = service
-                .prepare_decision("ABCD", Utc::now)
+                .prepare_decision("ABCD", jiff::Timestamp::now)
                 .await
                 .unwrap()
                 .unwrap();
@@ -755,11 +755,11 @@ fn prepared_device_conflict_reloads_poll_state_but_never_retargets_payload() {
                         device_approval(),
                         &ports.client,
                         ports.as_ref(),
-                        Utc::now,
+                        jiff::Timestamp::now,
                     )
                     .await
             } else {
-                service.deny(&prepared, Utc::now).await
+                service.deny(&prepared, jiff::Timestamp::now).await
             };
             if retarget {
                 assert!(matches!(
@@ -796,7 +796,7 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();
@@ -813,7 +813,7 @@ fn device_claim_success_still_reloads_before_any_durable_grant_write() {
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
-                    Utc::now
+                    jiff::Timestamp::now
                 )
                 .await,
             Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
@@ -851,7 +851,7 @@ fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance(
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();
@@ -867,7 +867,7 @@ fn device_recorded_snapshot_is_version_fenced_and_unknown_writes_do_not_advance(
                     device_approval(),
                     &ports.client,
                     ports.as_ref(),
-                    Utc::now
+                    jiff::Timestamp::now
                 )
                 .await,
             Err(nazo_auth::DeviceDecisionFailure::AlreadyHandled)
@@ -888,7 +888,7 @@ fn device_recorded_snapshot_rechecks_expiry_before_final_cas() {
         pending(&ports);
         let service = ServerDeviceGrantService::new(ports.clone());
         let prepared = service
-            .prepare_decision("ABCD", Utc::now)
+            .prepare_decision("ABCD", jiff::Timestamp::now)
             .await
             .unwrap()
             .unwrap();

@@ -48,7 +48,7 @@ pub fn validate_mtls_trust_anchor(
     let body = trimmed
         .strip_prefix(BEGIN_CERTIFICATE)
         .and_then(|value| value.strip_suffix(END_CERTIFICATE))
-        .map_err(|_| MtlsTrustAnchorError::InvalidPem)?;
+        .ok_or(MtlsTrustAnchorError::InvalidPem)?;
     let encoded = body
         .chars()
         .filter(|character| !character.is_ascii_whitespace())

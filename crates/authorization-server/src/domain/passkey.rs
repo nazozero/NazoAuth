@@ -97,7 +97,7 @@ impl PasskeyLoginOperations for PasskeyOperationsProvider {
             {
                 match self
                     .sessions
-                    .current(&SessionId::new(id), command.now.timestamp())
+                    .current(&SessionId::new(id), command.now.as_second())
                     .await
                 {
                     Ok(SessionResolution::Present(session)) => Some(session),

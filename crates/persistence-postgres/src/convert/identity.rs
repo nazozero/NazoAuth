@@ -176,7 +176,7 @@ pub(crate) fn active_subject_claims(
         address: (address != PostalAddress::default()).then_some(address),
         phone_number: row.phone_number,
         phone_number_verified: row.phone_number_verified,
-        updated_at: row.updated_at.timestamp(),
+        updated_at: row.updated_at.as_second(),
     })
 }
 

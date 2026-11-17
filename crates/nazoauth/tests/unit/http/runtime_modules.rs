@@ -152,8 +152,8 @@ fn account(admin_level: u32) -> PublicAccount {
             mfa_enabled: true,
         },
         profile: UserProfile::default(),
-        created_at: DateTime::<Utc>::from(UNIX_EPOCH),
-        updated_at: DateTime::<Utc>::from(UNIX_EPOCH),
+        created_at: jiff::Timestamp::UNIX_EPOCH,
+        updated_at: jiff::Timestamp::UNIX_EPOCH,
     }
 }
 

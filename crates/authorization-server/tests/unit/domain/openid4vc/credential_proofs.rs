@@ -69,11 +69,11 @@ fn credential_proof_binds_optional_attestation_and_requires_its_nonce() {
         let (jwk, key) = es256_test_key(73);
         let (other_jwk, other_key) = es256_test_key(79);
         let proof_claims = json!({"aud":"https://issuer.example",
-            "nonce":"expected-nonce", "iat":now.timestamp()});
+            "nonce":"expected-nonce", "iat":now.as_second()});
         for required in [None, Some(std::collections::BTreeMap::new())] {
             let metadata = proof_metadata(required);
             for nonce in [None, Some("wrong-nonce"), Some("expected-nonce")] {
-                let mut claims = json!({"iat":now.timestamp(), "exp":now.timestamp()+300,
+                let mut claims = json!({"iat":now.as_second(), "exp":now.as_second()+300,
                     "attested_keys":[jwk.clone()]});
                 if let Some(nonce) = nonce {
                     claims["nonce"] = json!(nonce);
@@ -117,7 +117,7 @@ fn credential_proof_binds_optional_attestation_and_requires_its_nonce() {
 fn credential_attestation_algorithm_obeys_selected_configuration_for_both_contexts() {
     let now = jiff::Timestamp::now();
     let (validator, encoded, allowed) = key_attestation_fixture(json!({
-        "iat":now.timestamp(), "exp":now.timestamp()+300,
+        "iat":now.as_second(), "exp":now.as_second()+300,
         "nonce":"expected-nonce", "attested_keys":[es256_test_key(83).0],
     }));
     let unsupported = nazo_openid4vci::ProofTypeMetadata {
@@ -379,10 +379,10 @@ fn credential_embedded_attestation_algorithm_is_checked_after_valid_eddsa_outer_
         let key = EncodingKey::from_ed_der(document.as_ref());
         let now = jiff::Timestamp::now();
         let (validator, attestation, _) = key_attestation_fixture(json!({
-            "iat":now.timestamp(),"exp":now.timestamp()+300,"nonce":"expected-nonce","attested_keys":[jwk.clone()],
+            "iat":now.as_second(),"exp":now.as_second()+300,"nonce":"expected-nonce","attested_keys":[jwk.clone()],
         }));
         let claims =
-            json!({"aud":"https://issuer.example","iat":now.timestamp(),"nonce":"expected-nonce"});
+            json!({"aud":"https://issuer.example","iat":now.as_second(),"nonce":"expected-nonce"});
         let allowed = nazo_openid4vci::ProofTypeMetadata {
             proof_signing_alg_values_supported: vec!["EdDSA".to_owned(), "ES256".to_owned()],
             key_attestations_required: None,

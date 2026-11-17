@@ -83,7 +83,7 @@ pub async fn begin_direct_avatar_upload(
     {
         Ok(start) => json_response(AvatarUploadStartResponse {
             upload_id: start.upload_id,
-            expires_at: start.expires_at.to_rfc3339(),
+            expires_at: start.expires_at.to_string(),
             upload: AvatarUploadTargetResponse {
                 url: start.target.url,
                 method: start.target.method,

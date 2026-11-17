@@ -1,14 +1,240 @@
 [
   {
+    "code": "unused_imports",
+    "message": "unused import: `jiff::Timestamp`",
+    "rendered": "warning: unused import: `jiff::Timestamp`\n --> crates/authorization-server/src/domain/openid4vc/crypto_helpers.rs:3:5\n  |\n3 | use jiff::Timestamp;\n  |     ^^^^^^^^^^^^^^^\n  |\n  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/authorization-server/src/domain/openid4vc/crypto_helpers.rs",
+        "line": 3,
+        "text": [
+          {
+            "highlight_end": 20,
+            "highlight_start": 5,
+            "text": "use jiff::Timestamp;"
+          }
+        ],
+        "label": null
+      }
+    ]
+  },
+  {
+    "code": "unused_imports",
+    "message": "unused import: `jiff::Timestamp`",
+    "rendered": "warning: unused import: `jiff::Timestamp`\n  --> crates/persistence-postgres/src/repositories/scim.rs:15:5\n   |\n15 | use jiff::Timestamp;\n   |     ^^^^^^^^^^^^^^^\n   |\n   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/scim.rs",
+        "line": 15,
+        "text": [
+          {
+            "highlight_end": 20,
+            "highlight_start": 5,
+            "text": "use jiff::Timestamp;"
+          }
+        ],
+        "label": null
+      }
+    ]
+  },
+  {
+    "code": "unused_imports",
+    "message": "unused import: `jiff::Timestamp`",
+    "rendered": "warning: unused import: `jiff::Timestamp`\n --> crates/authorization-server/src/domain/openid4vc/crypto_helpers.rs:3:5\n  |\n3 | use jiff::Timestamp;\n  |     ^^^^^^^^^^^^^^^\n  |\n  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/authorization-server/src/domain/openid4vc/crypto_helpers.rs",
+        "line": 3,
+        "text": [
+          {
+            "highlight_end": 20,
+            "highlight_start": 5,
+            "text": "use jiff::Timestamp;"
+          }
+        ],
+        "label": null
+      }
+    ]
+  },
+  {
     "code": null,
-    "message": "For more information about this error, try `rustc --explain E0599`.",
-    "rendered": "For more information about this error, try `rustc --explain E0599`.\n",
+    "message": "Some errors have detailed explanations: E0308, E0433, E0593, E0599.",
+    "rendered": "Some errors have detailed explanations: E0308, E0433, E0593, E0599.\n",
     "sites": []
   },
   {
     "code": null,
-    "message": "For more information about this error, try `rustc --explain E0599`.",
-    "rendered": "For more information about this error, try `rustc --explain E0599`.\n",
+    "message": "For more information about an error, try `rustc --explain E0308`.",
+    "rendered": "For more information about an error, try `rustc --explain E0308`.\n",
+    "sites": []
+  },
+  {
+    "code": "unused_imports",
+    "message": "unused import: `jiff::Timestamp`",
+    "rendered": "warning: unused import: `jiff::Timestamp`\n  --> crates/persistence-postgres/src/repositories/scim.rs:15:5\n   |\n15 | use jiff::Timestamp;\n   |     ^^^^^^^^^^^^^^^\n   |\n   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/scim.rs",
+        "line": 15,
+        "text": [
+          {
+            "highlight_end": 20,
+            "highlight_start": 5,
+            "text": "use jiff::Timestamp;"
+          }
+        ],
+        "label": null
+      }
+    ]
+  },
+  {
+    "code": null,
+    "message": "Some errors have detailed explanations: E0308, E0433, E0593, E0599.",
+    "rendered": "Some errors have detailed explanations: E0308, E0433, E0593, E0599.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "For more information about an error, try `rustc --explain E0308`.",
+    "rendered": "For more information about an error, try `rustc --explain E0308`.\n",
+    "sites": []
+  },
+  {
+    "code": "method_call_on_diverging_infer_var",
+    "message": "method call on a diverging inference variable",
+    "rendered": "warning: method call on a diverging inference variable\n   --> crates/persistence-postgres/src/repositories/security_state.rs:472:38\n    |\n472 |                 let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;\n    |                                      ^^^\n    |\n    = help: consider providing a type annotation\n    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!\n    = note: for more information, see issue #156047 <https://github.com/rust-lang/rust/issues/156047>\n    = note: `#[warn(method_call_on_diverging_infer_var)]` (part of `#[warn(future_incompatible)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/security_state.rs",
+        "line": 472,
+        "text": [
+          {
+            "highlight_end": 41,
+            "highlight_start": 38,
+            "text": "                let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;"
+          }
+        ],
+        "label": null
+      }
+    ]
+  },
+  {
+    "code": "unreachable_code",
+    "message": "unreachable call",
+    "rendered": "warning: unreachable call\n   --> crates/persistence-postgres/src/repositories/security_state.rs:477:22\n    |\n476 |                 let (tenant_ids, digests): (Vec<_>, Vec<_>) = page\n    |                                                               ---- any code following this expression is unreachable\n477 |                     .iter()\n    |                      ^^^^ unreachable call\n    |\n    = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/security_state.rs",
+        "line": 477,
+        "text": [
+          {
+            "highlight_end": 26,
+            "highlight_start": 22,
+            "text": "                    .iter()"
+          }
+        ],
+        "label": "unreachable call"
+      }
+    ]
+  },
+  {
+    "code": "unreachable_code",
+    "message": "unreachable call",
+    "rendered": "warning: unreachable call\n   --> crates/persistence-postgres/src/repositories/security_state.rs:503:26\n    |\n503 |                     page.pop().map(|row| ContractSweepCursor {\n    |                     ---- ^^^ unreachable call\n    |                     |\n    |                     any code following this expression is unreachable\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/security_state.rs",
+        "line": 503,
+        "text": [
+          {
+            "highlight_end": 29,
+            "highlight_start": 26,
+            "text": "                    page.pop().map(|row| ContractSweepCursor {"
+          }
+        ],
+        "label": "unreachable call"
+      }
+    ]
+  },
+  {
+    "code": "method_call_on_diverging_infer_var",
+    "message": "method call on a diverging inference variable",
+    "rendered": "warning: method call on a diverging inference variable\n   --> crates/persistence-postgres/src/repositories/security_state.rs:472:38\n    |\n472 |                 let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;\n    |                                      ^^^\n    |\n    = help: consider providing a type annotation\n    = warning: this was previously accepted by the compiler but is being phased out; it will become a hard error in a future release!\n    = note: for more information, see issue #156047 <https://github.com/rust-lang/rust/issues/156047>\n    = note: `#[warn(method_call_on_diverging_infer_var)]` (part of `#[warn(future_incompatible)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/security_state.rs",
+        "line": 472,
+        "text": [
+          {
+            "highlight_end": 41,
+            "highlight_start": 38,
+            "text": "                let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;"
+          }
+        ],
+        "label": null
+      }
+    ]
+  },
+  {
+    "code": "unreachable_code",
+    "message": "unreachable call",
+    "rendered": "warning: unreachable call\n   --> crates/persistence-postgres/src/repositories/security_state.rs:477:22\n    |\n476 |                 let (tenant_ids, digests): (Vec<_>, Vec<_>) = page\n    |                                                               ---- any code following this expression is unreachable\n477 |                     .iter()\n    |                      ^^^^ unreachable call\n    |\n    = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/security_state.rs",
+        "line": 477,
+        "text": [
+          {
+            "highlight_end": 26,
+            "highlight_start": 22,
+            "text": "                    .iter()"
+          }
+        ],
+        "label": "unreachable call"
+      }
+    ]
+  },
+  {
+    "code": "unreachable_code",
+    "message": "unreachable call",
+    "rendered": "warning: unreachable call\n   --> crates/persistence-postgres/src/repositories/security_state.rs:503:26\n    |\n503 |                     page.pop().map(|row| ContractSweepCursor {\n    |                     ---- ^^^ unreachable call\n    |                     |\n    |                     any code following this expression is unreachable\n\n",
+    "sites": [
+      {
+        "file": "crates/persistence-postgres/src/repositories/security_state.rs",
+        "line": 503,
+        "text": [
+          {
+            "highlight_end": 29,
+            "highlight_start": 26,
+            "text": "                    page.pop().map(|row| ContractSweepCursor {"
+          }
+        ],
+        "label": "unreachable call"
+      }
+    ]
+  },
+  {
+    "code": null,
+    "message": "Some errors have detailed explanations: E0277, E0599.",
+    "rendered": "Some errors have detailed explanations: E0277, E0599.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "For more information about an error, try `rustc --explain E0277`.",
+    "rendered": "For more information about an error, try `rustc --explain E0277`.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "Some errors have detailed explanations: E0277, E0433, E0599.",
+    "rendered": "Some errors have detailed explanations: E0277, E0433, E0599.\n",
+    "sites": []
+  },
+  {
+    "code": null,
+    "message": "For more information about an error, try `rustc --explain E0277`.",
+    "rendered": "For more information about an error, try `rustc --explain E0277`.\n",
     "sites": []
   }
 ]

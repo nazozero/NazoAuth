@@ -43,7 +43,7 @@ fn valid_refresh_token() -> nazo_auth::RefreshTokenCommit {
             audiences: vec!["resource".to_owned()],
             authorization_details: serde_json::json!([]),
             subject: "subject".to_owned(),
-            authentication_context: valid_context(issued_at.timestamp()),
+            authentication_context: valid_context(issued_at.as_second()),
         }
         .clone(),
     }
@@ -75,7 +75,7 @@ fn refresh_token_validation_rejects_malformed_context_and_audiences() {
     assert!(validate_refresh_commit(&blank_audience).is_err());
 
     let mut future_authentication = valid_refresh_token();
-    let future_time = token_mut(&mut future_authentication).issued_at.timestamp() + 1;
+    let future_time = token_mut(&mut future_authentication).issued_at.as_second() + 1;
     contract_mut(&mut future_authentication)
         .authentication_context
         .auth_time = future_time;
