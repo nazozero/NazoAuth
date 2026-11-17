@@ -1,0 +1,38 @@
+name: PR284 upstream Actix preparation
+on:
+  push:
+    branches: [maintenance/pr284-upstream-actix-prep]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd10551d79b2ea688a54309dda32a0055f4f938f
+          persist-credentials: false
+      - name: Inspect affected contracts and dependency owners
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse HEAD
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for p in sorted(Path('.').rglob('AGENTS.md')):
+              if '.git' not in p.parts:
+                  print(f'=== {p} ===\n{p.read_text()}')
+          pattern = re.compile(r'auto_h2c|http2_prior_knowledge|Version::HTTP_2|peer_certificates|actix-web|actix-http|actix-router|nazozero/actix|b"h2"')
+          for root in ('crates/server', 'crates/http-actix', 'scripts', 'tests/unit', 'docs', '.github/workflows'):
+              for p in sorted(Path(root).rglob('*')):
+                  if p.suffix not in ('.rs', '.py', '.md', '.toml', '.yml'):
+                      continue
+                  for n, line in enumerate(p.read_text().splitlines(), 1):
+                      if pattern.search(line):
+                          print(f'{p}:{n}: {line}')
+          for name in ('crates/server/tests/unit/facade_conformance.rs', 'crates/server/src/adapters/transport_facts.rs'):
+              p = Path(name)
+              print(f'=== {name} ===\n{p.read_text()}')
+          PY
