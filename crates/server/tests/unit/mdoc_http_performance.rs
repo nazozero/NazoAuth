@@ -288,7 +288,7 @@ async fn infrastructure(
     nazo_postgres::run_pending_migrations(database_url)
         .await
         .unwrap();
-    let pool = nazo_postgres::create_pool(database_url.into(), 4).unwrap();
+    let pool = nazo_postgres::create_pool(database_url, 4).unwrap();
     let tenant_id =
         TenantId::new(serde_json::from_value(fixture["tenant_id"].clone()).unwrap()).unwrap();
     let tenant = TenantContext {
@@ -529,7 +529,7 @@ async fn mdoc_oid4vp_http_latency() {
             .build()
             .unwrap();
         let start = Instant::now();
-        let observed = match client.execute(request).await {
+        let observed = match reqwest::Client::execute(&client, request).await {
             Ok(response) => {
                 let status = response.status().as_u16();
                 response
