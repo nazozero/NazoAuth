@@ -69,7 +69,7 @@ pub(crate) async fn fixture_crypto_with_dns(
 ) -> (Openid4vcCredentialCrypto, KeyManager) {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((30) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let key_manager = nazo_key_management::test_support::key_manager(settings)

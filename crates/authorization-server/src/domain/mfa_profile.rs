@@ -9,7 +9,7 @@ use crate::contracts::mfa_profile::{
 };
 use crate::crypto::blake3_hex;
 use crate::ports::audit::{SecurityAudit, audit_fields};
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 use nazo_identity::{
     MfaService, MfaServiceError, MfaServiceErrorKind, PublicAccount, SessionId, SessionResolution,
     SessionRotation, SessionService, TotpConfirmationOutcome,

@@ -1,6 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use coset::{CoseKeyBuilder, iana};
-use jiff::Timestamp;
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use nazo_digital_credentials::CredentialTrustError;
 use rustls_pki_types::{CertificateDer, pem::PemObject as _};

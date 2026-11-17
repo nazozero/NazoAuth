@@ -956,7 +956,7 @@ impl KeyManager {
                 generation: ArcSwap::from_pointee(generation),
                 settings: KeySettings {
                     rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-                    prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+                    prepublish_window: jiff::SignedDuration::from_hours(24),
                     verification_grace: jiff::SignedDuration::from_mins(10),
                 },
                 health: Arc::new(LifecycleHealth::new()),

@@ -230,5 +230,3 @@ async fn append_required_mfa_outcome(
     )
     .await
 }
-
-use jiff_diesel::ToDiesel as _;

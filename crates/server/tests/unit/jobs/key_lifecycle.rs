@@ -42,7 +42,7 @@ fn refresh_interval_is_bounded_by_prepublish_window() {
 #[test]
 fn managed_openid4vc_refresh_is_capped_at_thirty_seconds() {
     assert_eq!(
-        managed_refresh_interval(jiff::SignedDuration::from_hours((1) * 24), true),
+        managed_refresh_interval(jiff::SignedDuration::from_hours(24), true),
         Duration::from_secs(30)
     );
     assert_eq!(
@@ -50,7 +50,7 @@ fn managed_openid4vc_refresh_is_capped_at_thirty_seconds() {
         Duration::from_secs(10)
     );
     assert_eq!(
-        managed_refresh_interval(jiff::SignedDuration::from_hours((1) * 24), false),
+        managed_refresh_interval(jiff::SignedDuration::from_hours(24), false),
         Duration::from_secs(3_600)
     );
 }

@@ -48,7 +48,7 @@ impl SecurityAuditLedger for RecoveryLedger {
         Box::pin(async move {
             self.health_calls.fetch_add(1, Ordering::SeqCst);
             if self.delay_health_once.swap(false, Ordering::SeqCst) {
-                // Tokio's paused clock does not advance Utc. These two ageing
+                // Tokio's paused clock does not advance the Jiff wall clock. These two ageing
                 // regressions deliberately use a short real wall-clock wait.
                 tokio::time::sleep(Duration::from_millis(2100)).await;
             }

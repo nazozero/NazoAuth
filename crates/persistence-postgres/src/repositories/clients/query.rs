@@ -1,6 +1,5 @@
 use diesel::{ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
-use jiff::Timestamp;
 use nazo_auth::{ClientPresentation, OAuthClient};
 use nazo_identity::ports::RepositoryError;
 use serde_json::Value;

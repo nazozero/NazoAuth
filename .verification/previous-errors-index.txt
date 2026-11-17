@@ -1,14 +1,4 @@
-crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:76: the name `Timestamp` is defined multiple times
-crates/server/src/operator_task/execution.rs:471: no method named `timestamp` found for struct `jiff::Timestamp` in the current scope
-crates/server/src/adapters/audit_anchor/worker.rs:277: no method named `to_std` found for struct `jiff::Span` in the current scope
-crates/server/src/adapters/audit_anchor/worker.rs:316: no method named `as_secs` found for struct `jiff::Span` in the current scope
-crates/server/src/settings/config_loader.rs:542: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope
-crates/server/src/settings/config_loader.rs:543: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope
-crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:9: cannot find type `ChronoDuration` in this scope
-crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:21: cannot find type `ChronoDuration` in this scope
-crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:22: cannot find type `ChronoDuration` in this scope
-crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:23: cannot find type `ChronoDuration` in this scope
-crates/persistence-postgres/tests/controller_recovery.rs:657: no method named `as_secs` found for struct `Span` in the current scope
-crates/persistence-postgres/tests/scim_security_events.rs:428: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope
-crates/persistence-postgres/tests/scim_security_events.rs:431: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope
-crates/persistence-postgres/tests/token_issuance_fresh.rs:204: mismatched types
+crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:552: cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`
+crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:710: no method named `as_second` found for struct `ASN1Time` in the current scope
+crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:727: no method named `as_second` found for struct `ASN1Time` in the current scope
+crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs:206: mismatched types

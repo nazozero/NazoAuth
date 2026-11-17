@@ -536,7 +536,7 @@ async fn expired_database_generation_fails_closed_while_lifecycle_flag_is_still_
     let manager = database_manager(database_settings(
         "expired-generation",
         jiff::SignedDuration::from_hours((90) * 24),
-        jiff::SignedDuration::from_hours((1) * 24),
+        jiff::SignedDuration::from_hours(24),
     ))
     .await;
     let mut expired =
@@ -568,7 +568,7 @@ async fn expired_http_lease_cannot_use_old_generation_after_newer_generation_is_
     let manager = database_manager(database_settings(
         "expired-lease",
         jiff::SignedDuration::from_hours((90) * 24),
-        jiff::SignedDuration::from_hours((1) * 24),
+        jiff::SignedDuration::from_hours(24),
     ))
     .await;
     let mut lease = manager.prepare_http_signing().unwrap();

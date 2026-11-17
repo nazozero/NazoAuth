@@ -12,7 +12,6 @@ use diesel::{
     sql_types::{Bool, Timestamptz, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use jiff::Timestamp;
 use nazo_identity::{
     PublicAccount, TenantContext, UserId,
     ports::{

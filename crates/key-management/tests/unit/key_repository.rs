@@ -148,7 +148,7 @@ async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
     KeyManager::load_or_create_database(
         KeySettings {
             rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-            prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+            prepublish_window: jiff::SignedDuration::from_hours(24),
             verification_grace: jiff::SignedDuration::from_mins(10),
         },
         None,
@@ -203,7 +203,7 @@ async fn database_diagnostics_reject_invalid_creation_times_without_writing() {
 async fn database_diagnostics_leave_due_old_wrapping_generation_unchanged_and_reject_tampering() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let inner = Arc::new(MemorySigningKeyRepository::default());
@@ -349,7 +349,7 @@ fn replace_payload(
 async fn two_managers_share_database_keyset_without_writing_key_files() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
@@ -375,7 +375,7 @@ async fn two_managers_share_database_keyset_without_writing_key_files() {
 async fn database_registration_converges_and_survives_restart_without_files() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
@@ -438,7 +438,7 @@ async fn database_registration_converges_and_survives_restart_without_files() {
 async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
@@ -576,7 +576,7 @@ async fn expired_database_key_discards_private_material_but_preserves_public_pro
 async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_removed() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(MemorySigningKeyRepository::default());
@@ -617,7 +617,7 @@ async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_remov
 async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(ConflictRepository::with_conflicts(2));
@@ -648,7 +648,7 @@ async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
 async fn database_update_stops_after_the_cas_conflict_budget() {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository = Arc::new(ConflictRepository::with_conflicts(8));

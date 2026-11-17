@@ -363,7 +363,7 @@ fn hex_sha256(bytes: &[u8]) -> String {
 fn settings() -> KeySettings {
     KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
@@ -659,7 +659,7 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     let due = settings();
     let mut due = KeySettings {
         rotation_interval: jiff::SignedDuration::from_secs(-1),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         ..due
     };
     assert!(maintain_payload(&mut candidate, &due).unwrap());

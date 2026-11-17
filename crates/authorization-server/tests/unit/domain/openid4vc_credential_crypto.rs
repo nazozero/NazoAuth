@@ -167,7 +167,7 @@ fn certificate_fixture_with_key_and_aki(
 pub(super) async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture, String)
 {
     let settings = KeySettings {
-        rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+        rotation_interval: jiff::SignedDuration::from_hours(24),
         prepublish_window: jiff::SignedDuration::from_hours(1),
         verification_grace: jiff::SignedDuration::from_hours(1),
     };
@@ -783,7 +783,7 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
             Some(HolderBinding::Jwk { jwk: holder_jwk }),
             json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
         );
-        input.issued_at = not_before - SignedDuration::from_hours((1) * 24);
+        input.issued_at = not_before - SignedDuration::from_hours(24);
         input.expires_at = not_before + SignedDuration::from_hours((7) * 24);
         for issued_at in [input.issued_at, not_before + SignedDuration::from_secs(10)] {
             input.issued_at = issued_at;
@@ -824,14 +824,14 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
                 "certificate alignment must not extend credential expiry"
             );
         }
-        input.issued_at = not_before - SignedDuration::from_hours((1) * 24);
+        input.issued_at = not_before - SignedDuration::from_hours(24);
         input.expires_at = not_before;
         assert_eq!(
             crypto.sign(&input).await,
             Err(CredentialTrustError::InvalidEncoding)
         );
         input.issued_at = not_after + SignedDuration::from_secs(1);
-        input.expires_at = not_after + SignedDuration::from_hours((1) * 24);
+        input.expires_at = not_after + SignedDuration::from_hours(24);
         assert_eq!(
             crypto.sign(&input).await,
             Err(CredentialTrustError::InvalidEncoding)

@@ -73,8 +73,6 @@ use actix_web::web::Data;
 
 use base64::Engine;
 
-use jiff::SignedDuration;
-
 use nazo_auth::OidcClaimRequest;
 
 use serde_json::{Value, json};
@@ -549,9 +547,10 @@ impl LiveAuthorizationCodeFixture {
             .filter(oauth_refresh_families::client_id.eq(client.id))
             .filter(oauth_refresh_families::token_family_id.eq(family_id))
             .select(oauth_refresh_families::revoked_at)
-            .first::<Option<Timestamp>>(&mut conn)
+            .first::<Option<jiff_diesel::Timestamp>>(&mut conn)
             .await
             .expect("refresh token row should load")
+            .map(Into::into)
     }
 }
 

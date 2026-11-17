@@ -102,9 +102,7 @@ crates/runtime-capabilities/tests/unit/management.rs:1581: SystemTime::UNIX_EPOC
 crates/runtime-capabilities/tests/unit/management.rs:1604: SystemTime::UNIX_EPOCH
 crates/runtime-capabilities/tests/unit/management.rs:1654: SystemTime::UNIX_EPOCH
 crates/server/src/adapters/audit.rs:20: /// deployment-wide asynchronous ledger worker.
-crates/server/src/adapters/audit_anchor/worker.rs:277: .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))
 crates/server/src/keyctl/openid4vc_material.rs:261: leaf.validity().not_after.timestamp() - leaf.validity().not_before.timestamp();
-crates/server/src/operator_task/execution.rs:471: not_before: outcome.not_before.timestamp(),
 crates/server/tests/support/facade.rs:328: updated_at: std::time::SystemTime::UNIX_EPOCH,
 crates/server/tests/token_hotpath_perf.rs:355: /// Raw synchronous HTTP/1.1 exchange for readiness probes — safe to call from
 crates/server/tests/token_issuance_simplification.rs:230: /// Raw synchronous HTTP/1.1 exchange against the real dispatcher. Returns

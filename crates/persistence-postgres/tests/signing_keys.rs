@@ -135,7 +135,7 @@ fn assert_same_runtime_public_material(
 fn database_key_settings() -> KeySettings {
     KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }
@@ -169,7 +169,7 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     .await?;
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     };
     let repository: Arc<dyn SigningKeyRepository> =

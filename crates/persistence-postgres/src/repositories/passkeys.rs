@@ -347,5 +347,3 @@ fn map_error(error: Error) -> RepositoryError {
         other => RepositoryError::Unexpected(other.to_string()),
     }
 }
-
-use jiff_diesel::ToDiesel as _;

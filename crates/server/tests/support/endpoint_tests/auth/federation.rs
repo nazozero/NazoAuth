@@ -11,7 +11,6 @@ use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Path, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use jiff::Timestamp;
 use nazo_identity::{LoginSuccess, VerifiedExternalIdentity};
 use nazo_oauth_server::rate_limit::AuthRequestLimiter;
 use nazo_oauth_server::services::LocalFederationService;

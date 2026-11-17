@@ -109,7 +109,7 @@ fn invalid_pool() -> nazo_postgres::DbPool {
 async fn fixture_crypto() -> Openid4vcCredentialCrypto {
     let settings = KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((30) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let keyset = nazo_key_management::test_support::key_manager(settings)

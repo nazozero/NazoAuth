@@ -1089,7 +1089,7 @@ async fn two_instances_converge_on_new_cache_revision_and_reject_stale_replay() 
 async fn tenant_shutdown_owns_and_stops_every_background_worker() {
     let key_settings = nazo_key_management::KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_hours(1),
     };
     let prepublish_window = key_settings.prepublish_window;

@@ -484,5 +484,3 @@ pub(super) fn decode_totp_secret<'a>(
         .map_err(|_| RepositoryError::Consistency("TOTP secret is not valid UTF-8".to_owned()))?;
     Ok(secret)
 }
-
-use jiff_diesel::ToDiesel as _;

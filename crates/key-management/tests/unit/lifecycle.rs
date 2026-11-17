@@ -13,7 +13,7 @@ use nazo_auth::{SignRequest, Signer, SigningPurpose};
 fn settings() -> KeySettings {
     KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_mins(10),
     }
 }

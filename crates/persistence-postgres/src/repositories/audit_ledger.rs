@@ -398,7 +398,7 @@ async fn append_on_connection(
     // Drain through statement completion so late database errors propagate.
     // Inside a business transaction, its owner still awaits the final COMMIT.
     AuditAppendQuery {
-        event: event,
+        event,
         occurred_at: (event).occurred_at.into(),
     }
     .load::<AuditMutationRow>(connection)

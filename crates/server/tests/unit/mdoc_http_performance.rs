@@ -235,7 +235,7 @@ pub(crate) async fn load_keys(fixture: &Value) -> KeyManager {
     let wrapping_key: [u8; 32] = serde_json::from_value(fixture["wrapping_key"].clone()).unwrap();
     let keys = KeyManager::load_or_create_database(
         KeySettings {
-            rotation_interval: jiff::SignedDuration::from_hours((1) * 24),
+            rotation_interval: jiff::SignedDuration::from_hours(24),
             prepublish_window: jiff::SignedDuration::from_hours(1),
             verification_grace: jiff::SignedDuration::from_hours(1),
         },
@@ -629,7 +629,7 @@ pub(crate) async fn run() {
         "valkey": "production binding connected; this response endpoint has no Valkey roundtrip",
         "issuer_signed_bytes": "complete original encoding spliced unchanged into each independently signed wallet response",
         "panic_strategy": if cfg!(panic = "unwind") { "unwind" } else { "abort" },
-        "clock": "std::time::Instant elapsed through complete HTTP response body; endpoint uses live Utc clock",
+        "clock": "std::time::Instant elapsed through complete HTTP response body; endpoint uses live Jiff wall clock",
         "fixture_validity_times": {"issued_at": fixture["issued_at"], "expires_at": fixture["expires_at"]},
         "started_at": started_at, "completed_at": completed_at,
         "variant": std::env::var("NAZO_MDOC_HTTP_VARIANT").unwrap_or_else(|_| "unspecified".into()),

@@ -51,7 +51,7 @@ fn mdoc_database_config(data_dir: &Path) -> ConfigSource {
 fn database_key_settings() -> KeySettings {
     KeySettings {
         rotation_interval: jiff::SignedDuration::from_hours((90) * 24),
-        prepublish_window: jiff::SignedDuration::from_hours((1) * 24),
+        prepublish_window: jiff::SignedDuration::from_hours(24),
         verification_grace: jiff::SignedDuration::from_hours(1),
     }
 }
@@ -707,7 +707,7 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
             .next()
             .unwrap()
             .revocation_date
-            .as_second(),
+            .timestamp(),
         expected_revocation_time
     );
     rotate_managed_material(&manager, &profile)
@@ -724,7 +724,7 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
             .next()
             .unwrap()
             .revocation_date
-            .as_second(),
+            .timestamp(),
         expected_revocation_time
     );
 

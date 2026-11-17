@@ -1,90 +1,16 @@
 {
-  "status": "FAIL",
-  "command": "cargo check --locked --workspace --all-targets --all-features --keep-going --message-format=json",
+  "status": "PASS",
+  "command": "cargo clippy --locked --workspace --all-targets --all-features --keep-going --message-format=json -- -D warnings",
   "phase_exits": {
-    "check": 101,
-    "compile": 101
+    "clippy": 0,
+    "compile": 0,
+    "format": 0,
+    "check": 0,
+    "clippy-fix": 0
   },
-  "parent": "ca629c62b6331b65f9cc6e3d78f6cac28c5590a4",
-  "source_tree_before_evidence": "484a2b68c2f2a1785348d6fc091bcbdaa7cb719e",
-  "workflow_run": "44141600654",
-  "errors": [
-    {
-      "code": "E0277",
-      "message": "cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`",
-      "rendered": "error[E0277]: cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`\n   --> crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:552:14\n    |\n552 |             .first::<Option<Timestamp>>(&mut conn)\n    |              ^^^^^ the trait `FromSql<diesel::sql_types::Timestamptz, _>` is not implemented for `jiff::Timestamp`\n    |\n    = note: double check your type mappings via the documentation of `diesel::sql_types::Timestamptz`\n    = help: the following other types implement trait `FromSql<A, DB>`:\n              `(T,)` implements `FromSql<diesel::sql_types::Record<(ST,)>, Pg>`\n              `(T, T1)` implements `FromSql<diesel::sql_types::Record<(ST, ST1)>, Pg>`\n              `(std::ops::Bound<T>, std::ops::Bound<T>)` implements `FromSql<diesel::sql_types::Range<ST>, Pg>`\n              `(T, T1, T2)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2)>, Pg>`\n              `(T, T1, T2, T3)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3)>, Pg>`\n              `(T, T1, T2, T3, T4)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3, ST4)>, Pg>`\n              `(T, T1, T2, T3, T4, T5)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3, ST4, ST5)>, Pg>`\n              `(T, T1, T2, T3, T4, T5, T6)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>, Pg>`\n            and 98 others\n    = note: required for `std::option::Option<jiff::Timestamp>` to implement `FromSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, _>`\n    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::Queryable<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, _>`\n    = note: required for `std::option::Option<jiff::Timestamp>` to implement `FromSqlRow<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, _>`\n    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, std::option::Option<jiff::Timestamp>>`\n    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-server/978a6ce19350d292/out/nazo_server-978a6ce19350d292.long-type-8245058984377761037.txt'\n    = note: consider using `--verbose` to print the full type name to the console\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs",
-          "line": 552,
-          "text": [
-            {
-              "highlight_end": 19,
-              "highlight_start": 14,
-              "text": "            .first::<Option<Timestamp>>(&mut conn)"
-            }
-          ],
-          "label": "the trait `FromSql<diesel::sql_types::Timestamptz, _>` is not implemented for `jiff::Timestamp`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `as_second` found for struct `ASN1Time` in the current scope",
-      "rendered": "error[E0599]: no method named `as_second` found for struct `ASN1Time` in the current scope\n   --> crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:710:14\n    |\n705 |         parsed_historical_crl\n706 |             .iter_revoked_certificates()\n707 |             .next()\n708 |             .unwrap()\n709 |             .revocation_date\n710 |             .as_second(),\n    |              ^^^^^^^^^ method not found in `ASN1Time`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs",
-          "line": 710,
-          "text": [
-            {
-              "highlight_end": 23,
-              "highlight_start": 14,
-              "text": "            .as_second(),"
-            }
-          ],
-          "label": "method not found in `ASN1Time`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `as_second` found for struct `ASN1Time` in the current scope",
-      "rendered": "error[E0599]: no method named `as_second` found for struct `ASN1Time` in the current scope\n   --> crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:727:14\n    |\n722 |         refreshed\n723 |             .iter_revoked_certificates()\n724 |             .next()\n725 |             .unwrap()\n726 |             .revocation_date\n727 |             .as_second(),\n    |              ^^^^^^^^^ method not found in `ASN1Time`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs",
-          "line": 727,
-          "text": [
-            {
-              "highlight_end": 23,
-              "highlight_start": 14,
-              "text": "            .as_second(),"
-            }
-          ],
-          "label": "method not found in `ASN1Time`"
-        }
-      ]
-    },
-    {
-      "code": "E0308",
-      "message": "mismatched types",
-      "rendered": "error[E0308]: mismatched types\n   --> crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs:206:9\n    |\n206 |         jiff::SignedDuration::from_secs(ttl as i64)\n    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `SpanFieldwise`, found `SignedDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs",
-          "line": 206,
-          "text": [
-            {
-              "highlight_end": 52,
-              "highlight_start": 9,
-              "text": "        jiff::SignedDuration::from_secs(ttl as i64)"
-            }
-          ],
-          "label": "expected `SpanFieldwise`, found `SignedDuration`"
-        }
-      ]
-    }
-  ],
-  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\nerror: could not compile `nazo-server` (lib test) due to 5 previous errors; 5 warnings emitted"
+  "parent": "4606433598b106a262e82864635c1c27c5e63ad3",
+  "source_tree_before_evidence": "f98f49ff27c0ff8a1402b63c3e3897ccd5b45e99",
+  "workflow_run": "44142164247",
+  "errors": [],
+  "stderr_tail": "    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\n    Finished `dev` profile [unoptimized] target(s) in 42.72s"
 }

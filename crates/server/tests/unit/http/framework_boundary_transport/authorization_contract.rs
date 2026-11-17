@@ -202,7 +202,7 @@ async fn t00_par_repeated_resources_ignore_repeated_extensions_and_persist_exact
     let expires: jiff::Timestamp = serde_json::from_value(stored["expires_at"].clone()).unwrap();
     assert!(issued >= before && issued <= jiff::Timestamp::now());
     assert_eq!(
-        expires - issued,
+        expires.duration_since(issued),
         jiff::SignedDuration::from_secs(ttl as i64)
     );
     assert_eq!(
