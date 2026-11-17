@@ -274,7 +274,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
 
 fn observation_due(observed_at: Option<Timestamp>, now: Timestamp, interval: Duration) -> bool {
     observed_at
-        .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))
+        .is_none_or(|observed| !matches!(Duration::try_from(now.duration_since(observed)), Ok(age) if age < interval))
 }
 
 /// Release the committed batch lease so the identical range is re-claimed
@@ -313,7 +313,12 @@ pub(super) fn batch_lag_seconds(batch: &SecurityAuditBatch) -> i64 {
     batch
         .deliveries
         .first()
-        .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))
+        .map(|delivery| {
+            Timestamp::now()
+                .duration_since(delivery.occurred_at)
+                .as_secs()
+                .max(0)
+        })
         .unwrap_or(0)
 }
 

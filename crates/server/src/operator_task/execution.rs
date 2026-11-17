@@ -468,7 +468,7 @@ async fn run_recovery_invalidation(
         .map_err(map_recovery_persistence_error)?;
     Ok(ControlResultData::RecoveryInvalidation {
         state_epoch: outcome.state_epoch.to_string(),
-        not_before: outcome.not_before.timestamp(),
+        not_before: outcome.not_before.as_second(),
         revoked_refresh_tokens: outcome.revoked_refresh_tokens,
     })
 }

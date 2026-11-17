@@ -1,55 +1,15 @@
-E0252: the name `Timestamp` is defined multiple times
-  crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:76: `Timestamp` reimported here
-    use jiff::{SignedDuration, Timestamp};
+E0277: cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`
+  crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:552: the trait `FromSql<diesel::sql_types::Timestamptz, _>` is not implemented for `jiff::Timestamp`
+                .first::<Option<Timestamp>>(&mut conn)
 
-E0599: no method named `timestamp` found for struct `jiff::Timestamp` in the current scope
-  crates/server/src/operator_task/execution.rs:471: method not found in `jiff::Timestamp`
-            not_before: outcome.not_before.timestamp(),
+E0599: no method named `as_second` found for struct `ASN1Time` in the current scope
+  crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:710: method not found in `ASN1Time`
+                .as_second(),
 
-E0599: no method named `to_std` found for struct `jiff::Span` in the current scope
-  crates/server/src/adapters/audit_anchor/worker.rs:277: method not found in `jiff::Span`
-            .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))
-
-E0599: no method named `as_secs` found for struct `jiff::Span` in the current scope
-  crates/server/src/adapters/audit_anchor/worker.rs:316: method not found in `jiff::Span`
-            .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))
-
-E0599: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope
-  crates/server/src/settings/config_loader.rs:542: method not found in `jiff::SignedDuration`
-                        .num_seconds(),
-
-E0599: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope
-  crates/server/src/settings/config_loader.rs:543: method not found in `jiff::SignedDuration`
-                    signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),
-
-E0433: cannot find type `ChronoDuration` in this scope
-  crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:9: use of undeclared type `ChronoDuration`
-            Some(now - ChronoDuration::milliseconds(4999)),
-
-E0433: cannot find type `ChronoDuration` in this scope
-  crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:21: use of undeclared type `ChronoDuration`
-            Some(now - ChronoDuration::seconds(5)),
-
-E0433: cannot find type `ChronoDuration` in this scope
-  crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:22: use of undeclared type `ChronoDuration`
-            Some(now - ChronoDuration::seconds(6)),
-
-E0433: cannot find type `ChronoDuration` in this scope
-  crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:23: use of undeclared type `ChronoDuration`
-            Some(now + ChronoDuration::seconds(1)),
-
-E0599: no method named `as_secs` found for struct `Span` in the current scope
-  crates/persistence-postgres/tests/controller_recovery.rs:657: method not found in `Span`
-            (issued.expires_at - at(4)).as_secs(),
-
-E0599: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope
-  crates/persistence-postgres/tests/scim_security_events.rs:428: method not found in `(jiff::Timestamp,)`
-                (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),
-
-E0599: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope
-  crates/persistence-postgres/tests/scim_security_events.rs:431: method not found in `(jiff::Timestamp,)`
-                (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).to_diesel(),
+E0599: no method named `as_second` found for struct `ASN1Time` in the current scope
+  crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:727: method not found in `ASN1Time`
+                .as_second(),
 
 E0308: mismatched types
-  crates/persistence-postgres/tests/token_issuance_fresh.rs:204: expected `Option<Timestamp>`, found `Result<Timestamp, Error>`
-                jiff::Timestamp::new(current.access_token_expires_at, 0),
+  crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs:206: expected `SpanFieldwise`, found `SignedDuration`
+            jiff::SignedDuration::from_secs(ttl as i64)

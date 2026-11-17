@@ -73,7 +73,7 @@ use actix_web::web::Data;
 
 use base64::Engine;
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::SignedDuration;
 
 use nazo_auth::OidcClaimRequest;
 

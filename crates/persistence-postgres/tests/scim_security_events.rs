@@ -425,10 +425,10 @@ async fn batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_iso
         .bind::<SqlUuid, _>(tenant)
         .bind::<Text, _>(format!("/Users/{id}"))
         .bind::<diesel::sql_types::Timestamptz, _>(
-            (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),
+            (now - jiff::SignedDuration::from_mins(occurred_minutes_ago)).to_diesel(),
         )
         .bind::<diesel::sql_types::Timestamptz, _>(
-            (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).to_diesel(),
+            (now + jiff::SignedDuration::from_mins(expires_minutes_from_now)).to_diesel(),
         )
         .execute(&mut connection)
         .await

@@ -201,7 +201,7 @@ async fn client_reactivation_does_not_revive_tokens_or_stale_issuance() {
             tenant,
             fixture.client_id,
             &current.access_token_jti,
-            jiff::Timestamp::new(current.access_token_expires_at, 0),
+            jiff::Timestamp::from_second(current.access_token_expires_at).ok(),
             None,
         )
         .await

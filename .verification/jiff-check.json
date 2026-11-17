@@ -2,279 +2,89 @@
   "status": "FAIL",
   "command": "cargo check --locked --workspace --all-targets --all-features --keep-going --message-format=json",
   "phase_exits": {
-    "compile": 101,
-    "check": 101
+    "check": 101,
+    "compile": 101
   },
-  "parent": "f4b77c80a1d3d77d01359ed18fc406fd6602ffbf",
-  "source_tree_before_evidence": "8a67317479de41fe7fa863d58f36fba9acb8ac02",
-  "workflow_run": "44141482983",
+  "parent": "ca629c62b6331b65f9cc6e3d78f6cac28c5590a4",
+  "source_tree_before_evidence": "484a2b68c2f2a1785348d6fc091bcbdaa7cb719e",
+  "workflow_run": "44141600654",
   "errors": [
     {
-      "code": "E0252",
-      "message": "the name `Timestamp` is defined multiple times",
-      "rendered": "error[E0252]: the name `Timestamp` is defined multiple times\n  --> crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:76:28\n   |\n12 | use jiff::Timestamp;\n   |     --------------- previous import of the type `Timestamp` here\n...\n76 | use jiff::{SignedDuration, Timestamp};\n   |                            ^^^^^^^^^ `Timestamp` reimported here\n   |\n   = note: `Timestamp` must be defined only once in the type namespace of this module\n\n",
+      "code": "E0277",
+      "message": "cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`",
+      "rendered": "error[E0277]: cannot deserialize a value of the database type `diesel::sql_types::Timestamptz` as `jiff::Timestamp`\n   --> crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs:552:14\n    |\n552 |             .first::<Option<Timestamp>>(&mut conn)\n    |              ^^^^^ the trait `FromSql<diesel::sql_types::Timestamptz, _>` is not implemented for `jiff::Timestamp`\n    |\n    = note: double check your type mappings via the documentation of `diesel::sql_types::Timestamptz`\n    = help: the following other types implement trait `FromSql<A, DB>`:\n              `(T,)` implements `FromSql<diesel::sql_types::Record<(ST,)>, Pg>`\n              `(T, T1)` implements `FromSql<diesel::sql_types::Record<(ST, ST1)>, Pg>`\n              `(std::ops::Bound<T>, std::ops::Bound<T>)` implements `FromSql<diesel::sql_types::Range<ST>, Pg>`\n              `(T, T1, T2)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2)>, Pg>`\n              `(T, T1, T2, T3)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3)>, Pg>`\n              `(T, T1, T2, T3, T4)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3, ST4)>, Pg>`\n              `(T, T1, T2, T3, T4, T5)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3, ST4, ST5)>, Pg>`\n              `(T, T1, T2, T3, T4, T5, T6)` implements `FromSql<diesel::sql_types::Record<(ST, ST1, ST2, ST3, ST4, ST5, ST6)>, Pg>`\n            and 98 others\n    = note: required for `std::option::Option<jiff::Timestamp>` to implement `FromSql<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, _>`\n    = note: required for `std::option::Option<jiff::Timestamp>` to implement `diesel::Queryable<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, _>`\n    = note: required for `std::option::Option<jiff::Timestamp>` to implement `FromSqlRow<diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>, _>`\n    = note: required for `SelectStatement<FromClause<table>, SelectClause<_>, _, _, _, _>` to implement `diesel_async::methods::LoadQuery<'_, _, std::option::Option<jiff::Timestamp>>`\n    = note: the full name for the type has been written to '/home/runner/work/NazoAuth/NazoAuth/nazo/target/debug/build/nazo-server/978a6ce19350d292/out/nazo_server-978a6ce19350d292.long-type-8245058984377761037.txt'\n    = note: consider using `--verbose` to print the full type name to the console\n\n",
       "sites": [
         {
           "file": "crates/server/src/../tests/support/endpoint_tests/../../unit/http/token/authorization_code.rs",
-          "line": 76,
+          "line": 552,
           "text": [
             {
-              "highlight_end": 37,
-              "highlight_start": 28,
-              "text": "use jiff::{SignedDuration, Timestamp};"
+              "highlight_end": 19,
+              "highlight_start": 14,
+              "text": "            .first::<Option<Timestamp>>(&mut conn)"
             }
           ],
-          "label": "`Timestamp` reimported here"
+          "label": "the trait `FromSql<diesel::sql_types::Timestamptz, _>` is not implemented for `jiff::Timestamp`"
         }
       ]
     },
     {
       "code": "E0599",
-      "message": "no method named `timestamp` found for struct `jiff::Timestamp` in the current scope",
-      "rendered": "error[E0599]: no method named `timestamp` found for struct `jiff::Timestamp` in the current scope\n   --> crates/server/src/operator_task/execution.rs:471:40\n    |\n471 |         not_before: outcome.not_before.timestamp(),\n    |                                        ^^^^^^^^^ method not found in `jiff::Timestamp`\n\n",
+      "message": "no method named `as_second` found for struct `ASN1Time` in the current scope",
+      "rendered": "error[E0599]: no method named `as_second` found for struct `ASN1Time` in the current scope\n   --> crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:710:14\n    |\n705 |         parsed_historical_crl\n706 |             .iter_revoked_certificates()\n707 |             .next()\n708 |             .unwrap()\n709 |             .revocation_date\n710 |             .as_second(),\n    |              ^^^^^^^^^ method not found in `ASN1Time`\n\n",
       "sites": [
         {
-          "file": "crates/server/src/operator_task/execution.rs",
-          "line": 471,
+          "file": "crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs",
+          "line": 710,
           "text": [
             {
-              "highlight_end": 49,
-              "highlight_start": 40,
-              "text": "        not_before: outcome.not_before.timestamp(),"
+              "highlight_end": 23,
+              "highlight_start": 14,
+              "text": "            .as_second(),"
             }
           ],
-          "label": "method not found in `jiff::Timestamp`"
+          "label": "method not found in `ASN1Time`"
         }
       ]
     },
     {
       "code": "E0599",
-      "message": "no method named `to_std` found for struct `jiff::Span` in the current scope",
-      "rendered": "error[E0599]: no method named `to_std` found for struct `jiff::Span` in the current scope\n   --> crates/server/src/adapters/audit_anchor/worker.rs:277:59\n    |\n277 |         .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))\n    |                                                           ^^^^^^ method not found in `jiff::Span`\n\n",
+      "message": "no method named `as_second` found for struct `ASN1Time` in the current scope",
+      "rendered": "error[E0599]: no method named `as_second` found for struct `ASN1Time` in the current scope\n   --> crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs:727:14\n    |\n722 |         refreshed\n723 |             .iter_revoked_certificates()\n724 |             .next()\n725 |             .unwrap()\n726 |             .revocation_date\n727 |             .as_second(),\n    |              ^^^^^^^^^ method not found in `ASN1Time`\n\n",
       "sites": [
         {
-          "file": "crates/server/src/adapters/audit_anchor/worker.rs",
-          "line": 277,
+          "file": "crates/server/src/keyctl/../../tests/unit/keyctl/openid4vc_material.rs",
+          "line": 727,
           "text": [
             {
-              "highlight_end": 65,
-              "highlight_start": 59,
-              "text": "        .is_none_or(|observed| !matches!((now - observed).to_std(), Ok(age) if age < interval))"
+              "highlight_end": 23,
+              "highlight_start": 14,
+              "text": "            .as_second(),"
             }
           ],
-          "label": "method not found in `jiff::Span`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `as_secs` found for struct `jiff::Span` in the current scope",
-      "rendered": "error[E0599]: no method named `as_secs` found for struct `jiff::Span` in the current scope\n   --> crates/server/src/adapters/audit_anchor/worker.rs:316:67\n    |\n316 |         .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))\n    |                                                                   ^^^^^^^ method not found in `jiff::Span`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/adapters/audit_anchor/worker.rs",
-          "line": 316,
-          "text": [
-            {
-              "highlight_end": 74,
-              "highlight_start": 67,
-              "text": "        .map(|delivery| (Timestamp::now() - delivery.occurred_at).as_secs().max(0))"
-            }
-          ],
-          "label": "method not found in `jiff::Span`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope",
-      "rendered": "error[E0599]: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/server/src/settings/config_loader.rs:542:22\n    |\n540 |                 signing_key_rotation_interval_seconds: task_key_settings\n541 |                     .rotation_interval\n542 |                     .num_seconds(),\n    |                      ^^^^^^^^^^^ method not found in `jiff::SignedDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/settings/config_loader.rs",
-          "line": 542,
-          "text": [
-            {
-              "highlight_end": 33,
-              "highlight_start": 22,
-              "text": "                    .num_seconds(),"
-            }
-          ],
-          "label": "method not found in `jiff::SignedDuration`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope",
-      "rendered": "error[E0599]: no method named `num_seconds` found for struct `jiff::SignedDuration` in the current scope\n   --> crates/server/src/settings/config_loader.rs:543:85\n    |\n543 |                 signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),\n    |                                                                                     ^^^^^^^^^^^ method not found in `jiff::SignedDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/settings/config_loader.rs",
-          "line": 543,
-          "text": [
-            {
-              "highlight_end": 96,
-              "highlight_start": 85,
-              "text": "                signing_key_prepublish_seconds: task_key_settings.prepublish_window.num_seconds(),"
-            }
-          ],
-          "label": "method not found in `jiff::SignedDuration`"
-        }
-      ]
-    },
-    {
-      "code": "E0433",
-      "message": "cannot find type `ChronoDuration` in this scope",
-      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:9:20\n  |\n9 |         Some(now - ChronoDuration::milliseconds(4999)),\n  |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
-          "line": 9,
-          "text": [
-            {
-              "highlight_end": 34,
-              "highlight_start": 20,
-              "text": "        Some(now - ChronoDuration::milliseconds(4999)),"
-            }
-          ],
-          "label": "use of undeclared type `ChronoDuration`"
-        }
-      ]
-    },
-    {
-      "code": "E0433",
-      "message": "cannot find type `ChronoDuration` in this scope",
-      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n  --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:21:20\n   |\n21 |         Some(now - ChronoDuration::seconds(5)),\n   |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
-          "line": 21,
-          "text": [
-            {
-              "highlight_end": 34,
-              "highlight_start": 20,
-              "text": "        Some(now - ChronoDuration::seconds(5)),"
-            }
-          ],
-          "label": "use of undeclared type `ChronoDuration`"
-        }
-      ]
-    },
-    {
-      "code": "E0433",
-      "message": "cannot find type `ChronoDuration` in this scope",
-      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n  --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:22:20\n   |\n22 |         Some(now - ChronoDuration::seconds(6)),\n   |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
-          "line": 22,
-          "text": [
-            {
-              "highlight_end": 34,
-              "highlight_start": 20,
-              "text": "        Some(now - ChronoDuration::seconds(6)),"
-            }
-          ],
-          "label": "use of undeclared type `ChronoDuration`"
-        }
-      ]
-    },
-    {
-      "code": "E0433",
-      "message": "cannot find type `ChronoDuration` in this scope",
-      "rendered": "error[E0433]: cannot find type `ChronoDuration` in this scope\n  --> crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs:23:20\n   |\n23 |         Some(now + ChronoDuration::seconds(1)),\n   |                    ^^^^^^^^^^^^^^ use of undeclared type `ChronoDuration`\n\n",
-      "sites": [
-        {
-          "file": "crates/server/src/adapters/audit_anchor/../../../tests/unit/adapters/audit_anchor/worker.rs",
-          "line": 23,
-          "text": [
-            {
-              "highlight_end": 34,
-              "highlight_start": 20,
-              "text": "        Some(now + ChronoDuration::seconds(1)),"
-            }
-          ],
-          "label": "use of undeclared type `ChronoDuration`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `as_secs` found for struct `Span` in the current scope",
-      "rendered": "error[E0599]: no method named `as_secs` found for struct `Span` in the current scope\n   --> crates/persistence-postgres/tests/controller_recovery.rs:657:37\n    |\n657 |         (issued.expires_at - at(4)).as_secs(),\n    |                                     ^^^^^^^ method not found in `Span`\n\n",
-      "sites": [
-        {
-          "file": "crates/persistence-postgres/tests/controller_recovery.rs",
-          "line": 657,
-          "text": [
-            {
-              "highlight_end": 44,
-              "highlight_start": 37,
-              "text": "        (issued.expires_at - at(4)).as_secs(),"
-            }
-          ],
-          "label": "method not found in `Span`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope",
-      "rendered": "error[E0599]: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope\n   --> crates/persistence-postgres/tests/scim_security_events.rs:428:76\n    |\n428 |             (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),\n    |                                                                            ^^^^^^^^^ method not found in `(jiff::Timestamp,)`\n    |\nhelp: one of the expressions' fields has a method of the same name\n    |\n428 |             (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).0.to_diesel(),\n    |                                                                            ++\n\n",
-      "sites": [
-        {
-          "file": "crates/persistence-postgres/tests/scim_security_events.rs",
-          "line": 428,
-          "text": [
-            {
-              "highlight_end": 85,
-              "highlight_start": 76,
-              "text": "            (now - jiff::SignedDuration::from_mins(occurred_minutes_ago),).to_diesel(),"
-            }
-          ],
-          "label": "method not found in `(jiff::Timestamp,)`"
-        }
-      ]
-    },
-    {
-      "code": "E0599",
-      "message": "no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope",
-      "rendered": "error[E0599]: no method named `to_diesel` found for tuple `(jiff::Timestamp,)` in the current scope\n   --> crates/persistence-postgres/tests/scim_security_events.rs:431:80\n    |\n431 |             (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).to_diesel(),\n    |                                                                                ^^^^^^^^^ method not found in `(jiff::Timestamp,)`\n    |\nhelp: one of the expressions' fields has a method of the same name\n    |\n431 |             (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).0.to_diesel(),\n    |                                                                                ++\n\n",
-      "sites": [
-        {
-          "file": "crates/persistence-postgres/tests/scim_security_events.rs",
-          "line": 431,
-          "text": [
-            {
-              "highlight_end": 89,
-              "highlight_start": 80,
-              "text": "            (now + jiff::SignedDuration::from_mins(expires_minutes_from_now),).to_diesel(),"
-            }
-          ],
-          "label": "method not found in `(jiff::Timestamp,)`"
+          "label": "method not found in `ASN1Time`"
         }
       ]
     },
     {
       "code": "E0308",
       "message": "mismatched types",
-      "rendered": "error[E0308]: mismatched types\n   --> crates/persistence-postgres/tests/token_issuance_fresh.rs:204:13\n    |\n200 |         .revoke_issued_tokens(\n    |          -------------------- arguments to this method are incorrect\n...\n204 |             jiff::Timestamp::new(current.access_token_expires_at, 0),\n    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<Timestamp>`, found `Result<Timestamp, Error>`\n    |\n    = note: expected enum `Option<jiff::Timestamp>`\n               found enum `Result<jiff::Timestamp, jiff::Error>`\nnote: method defined here\n   --> crates/authorization-server-core/src/token_service.rs:565:8\n    |\n565 |     fn revoke_issued_tokens<'a>(\n    |        ^^^^^^^^^^^^^^^^^^^^\n\n",
+      "rendered": "error[E0308]: mismatched types\n   --> crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs:206:9\n    |\n206 |         jiff::SignedDuration::from_secs(ttl as i64)\n    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `SpanFieldwise`, found `SignedDuration`\n\n",
       "sites": [
         {
-          "file": "crates/persistence-postgres/tests/token_issuance_fresh.rs",
-          "line": 204,
+          "file": "crates/server/src/../tests/support/endpoint_tests/../../unit/http/framework_boundary_transport/authorization_contract.rs",
+          "line": 206,
           "text": [
             {
-              "highlight_end": 69,
-              "highlight_start": 13,
-              "text": "            jiff::Timestamp::new(current.access_token_expires_at, 0),"
+              "highlight_end": 52,
+              "highlight_start": 9,
+              "text": "        jiff::SignedDuration::from_secs(ttl as i64)"
             }
           ],
-          "label": "expected `Option<Timestamp>`, found `Result<Timestamp, Error>`"
+          "label": "expected `SpanFieldwise`, found `SignedDuration`"
         }
       ]
     }
   ],
-  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\nerror: could not compile `nazo-server` (lib) due to 5 previous errors\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `nazo-server` (lib test) due to 5 previous errors\nerror: could not compile `nazo-postgres` (test \"controller_recovery\") due to 1 previous error\nerror: could not compile `nazo-postgres` (test \"scim_security_events\") due to 2 previous errors\nerror: could not compile `nazo-postgres` (test \"token_issuance_fresh\") due to 1 previous error"
+  "stderr_tail": "    Updating crates.io index\n    Checking nazo-crypto v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/crypto)\n    Checking nazo-scim-events v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/scim-events)\n    Checking nazo-runtime-modules v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/runtime-capabilities)\n    Checking nazo-identity v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/identity)\n    Checking nazo-digital-credentials v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/digital-credentials)\n    Checking nazo-resource-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/resource-server)\n    Checking nazo-operator-protocol v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/operator-protocol)\n    Checking nazo-http-signatures v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-signatures)\n    Checking nazo-openid4vci v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vci)\n    Checking nazo-openid4vp v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/openid4vp)\n    Checking nazo-auth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-core)\n    Checking nazo-oauth-server-object-store v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-object-store)\n    Checking nazo-key-management v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/key-management)\n    Checking nazo-persistence v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence)\n    Checking nazo-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/state-store-valkey)\n    Checking nazo-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/persistence-postgres)\n    Checking nazo-oauth-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server)\n    Checking nazoauth v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/nazoauth)\n    Checking nazo-oauth-server-valkey v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-valkey)\n    Checking nazo-http-actix v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/http-actix)\n    Checking nazo-oauth-server-postgres v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/authorization-server-postgres)\n    Checking nazo-server v0.3.9 (/home/runner/work/NazoAuth/NazoAuth/nazo/crates/server)\nerror: could not compile `nazo-server` (lib test) due to 5 previous errors; 5 warnings emitted"
 }

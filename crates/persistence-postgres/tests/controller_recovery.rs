@@ -654,7 +654,7 @@ async fn challenges_are_refused_while_any_controller_is_admitted_and_single_pend
         .await
         .expect("challenge should issue without admitting keys");
     assert_eq!(
-        (issued.expires_at - at(4)).as_secs(),
+        issued.expires_at.duration_since(at(4)).as_secs(),
         RECOVERY_CHALLENGE_TTL_SECONDS
     );
     let idempotent = repository
