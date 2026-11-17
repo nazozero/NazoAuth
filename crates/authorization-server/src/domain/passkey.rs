@@ -92,6 +92,21 @@ impl PasskeyLoginOperations for PasskeyOperationsProvider {
 
     fn login_finish(&self, command: PasskeyLoginFinishCommand) -> PasskeyFuture<'_, LoginSuccess> {
         Box::pin(async move {
+            let initialization_session = if command.csrf_verified
+                && let Some(id) = command.previous_session_id.as_deref()
+            {
+                match self
+                    .sessions
+                    .current(&SessionId::new(id), command.now.timestamp())
+                    .await
+                {
+                    Ok(SessionResolution::Present(session)) => Some(session),
+                    Ok(SessionResolution::Missing | SessionResolution::Invalidated) => None,
+                    Err(error) => return Err(Self::login_error(PasskeyError::Session(error))),
+                }
+            } else {
+                None
+            };
             self.passkeys
                 .login_finish(
                     &command.ceremony_id,
@@ -99,6 +114,7 @@ impl PasskeyLoginOperations for PasskeyOperationsProvider {
                     command.source_ip,
                     command.remembered_mfa,
                     command.previous_session_id,
+                    initialization_session.as_deref(),
                     command.now,
                 )
                 .await

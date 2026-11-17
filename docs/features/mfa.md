@@ -10,7 +10,7 @@ profile requirement.
 
 - `POST /auth/me/mfa/totp/begin` creates or refreshes an unconfirmed TOTP secret for the fully authenticated current user.
 - `POST /auth/me/mfa/totp/confirm` verifies the first TOTP code, marks the TOTP credential confirmed, enables `users.mfa_enabled`, steps up the current session with `otp` and `mfa`, and returns fresh backup codes once.
-- `POST /auth/mfa/verify` completes a pending MFA login challenge after password authentication. It accepts a current TOTP code or one unused backup code.
+- `POST /auth/mfa/verify` completes a pending MFA login challenge after password authentication or a passkey assertion without eligible UV. It accepts a current TOTP code or one unused backup code.
 - `POST /auth/me/mfa/backup-codes/regenerate` requires a valid MFA code and replaces all backup codes.
 - `POST /auth/me/mfa/disable` requires a valid MFA code, removes TOTP credentials, backup codes, remembered devices, and disables MFA for the user.
 

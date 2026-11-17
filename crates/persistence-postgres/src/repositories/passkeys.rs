@@ -13,7 +13,9 @@ use diesel::{
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
     TenantId, UserId,
-    ports::{PasskeyCredential, PasskeyCredentialSummary, RepositoryError},
+    ports::{
+        PasskeyAuthenticationUpdate, PasskeyCredential, PasskeyCredentialSummary, RepositoryError,
+    },
 };
 use passkey_auth::PasskeyCredential as WebauthnCredential;
 use uuid::Uuid;
@@ -146,17 +148,26 @@ impl PasskeyRepository {
         let row = result.map_err(map_error)?;
         identity::passkey(row).map_err(|error| RepositoryError::Consistency(error.0))
     }
-    pub async fn update_counter(
+    pub async fn update_authentication(
         &self,
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &str,
-        expected_sign_count: u32,
-        new_sign_count: u32,
+        update: PasskeyAuthenticationUpdate,
     ) -> Result<(), RepositoryError> {
+        let expected_sign_count = update.expected_counter;
+        let new_sign_count = update.new_counter;
         let zero_counter = expected_sign_count == 0 && new_sign_count == 0;
         if !zero_counter && new_sign_count <= expected_sign_count {
             return Err(RepositoryError::Conflict);
+        }
+        let mut facts = serde_json::json!({
+            "backup_eligible": update.backup_eligible,
+            "backup_state": update.backup_state,
+        });
+        if update.initialize_user_verification {
+            // A concurrent authentication must never revert an initialized UV.
+            facts["uv_initialized"] = serde_json::Value::Bool(true);
         }
         let mut connection = get_conn(&self.pool)
             .await
@@ -166,13 +177,20 @@ impl PasskeyRepository {
                 .filter(user_passkey_credentials::tenant_id.eq(tenant_id.as_uuid()))
                 .filter(user_passkey_credentials::user_id.eq(user_id.as_uuid()))
                 .filter(user_passkey_credentials::credential_id.eq(credential_id))
-                .filter(user_passkey_credentials::sign_count.eq(i64::from(expected_sign_count))),
+                .filter(user_passkey_credentials::sign_count.eq(i64::from(expected_sign_count)))
+                .filter(
+                    diesel::dsl::sql::<diesel::sql_types::Jsonb>(
+                        "COALESCE(credential -> 'backup_eligible', 'null'::jsonb)",
+                    )
+                    .eq(serde_json::json!(update.expected_backup_eligible)),
+                ),
         )
         .set((
             // Legacy copies are removed atomically with the authoritative CAS.
             user_passkey_credentials::credential.eq(diesel::dsl::sql::<diesel::sql_types::Jsonb>(
-                "credential - 'id' - 'counter'",
-            )),
+                "credential - 'id' - 'counter' || ",
+            )
+            .bind::<diesel::sql_types::Jsonb, _>(facts)),
             user_passkey_credentials::sign_count.eq(i64::from(new_sign_count)),
             user_passkey_credentials::last_used_at.eq(now),
             user_passkey_credentials::updated_at.eq(now),
@@ -295,22 +313,20 @@ impl nazo_identity::ports::PasskeyRepositoryPort for PasskeyRepository {
         })
     }
 
-    fn update_counter<'a>(
+    fn update_authentication<'a>(
         &'a self,
         tenant_id: TenantId,
         user_id: UserId,
         credential_id: &'a str,
-        expected_sign_count: u32,
-        new_sign_count: u32,
+        update: PasskeyAuthenticationUpdate,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            PasskeyRepository::update_counter(
+            PasskeyRepository::update_authentication(
                 self,
                 tenant_id,
                 user_id,
                 credential_id,
-                expected_sign_count,
-                new_sign_count,
+                update,
             )
             .await
         })

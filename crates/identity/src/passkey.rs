@@ -3,19 +3,18 @@ use std::{error::Error, fmt};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use passkey_auth::{
-    AuthenticationChallenge, AuthenticationResponse, AuthenticationState, CosePublicKey,
-    PasskeyCredential as WebauthnCredential, RegistrationChallenge, RegistrationResponse,
-    RegistrationState, Webauthn,
+    AuthenticationChallenge, AuthenticationResponse, AuthenticationState, RegistrationChallenge,
+    RegistrationResponse, RegistrationState, Webauthn,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    LoginSuccess, PublicAccount, TenantId, UserId,
+    CurrentSession, LoginSuccess, PublicAccount, TenantId, UserId,
     ports::{
         LoginSessionCreate, LoginSessionPort, PasskeyAccountRepositoryPort, PasskeyAuditPort,
-        PasskeyCeremonyPort, PasskeyCredential, PasskeyCredentialSummary, PasskeyRepositoryPort,
-        RememberedMfaDevicePort, RepositoryError,
+        PasskeyAuthenticationUpdate, PasskeyCeremonyPort, PasskeyCredential,
+        PasskeyCredentialSummary, PasskeyRepositoryPort, RememberedMfaDevicePort, RepositoryError,
     },
     session::SessionRecord,
 };
@@ -71,10 +70,17 @@ pub fn normalize_ceremony_id(value: &str) -> Result<String, PasskeyPolicyError> 
     Ok(value.to_owned())
 }
 
-pub fn credential_id_from_response(id: &str) -> Result<Vec<u8>, PasskeyPolicyError> {
+pub fn credential_id_from_response(id: &str) -> Result<&str, PasskeyPolicyError> {
+    if id.is_empty() || id.len() > 1364 {
+        return Err(PasskeyPolicyError::InvalidCredentialId);
+    }
+    // The database key already uses canonical base64url. Validate once before
+    // lookup, then borrow it instead of allocating decoded and re-encoded copies.
+    let mut decoded = [0; 1023];
     URL_SAFE_NO_PAD
-        .decode(id)
-        .map_err(|_| PasskeyPolicyError::InvalidCredentialId)
+        .decode_slice(id, &mut decoded)
+        .map_err(|_| PasskeyPolicyError::InvalidCredentialId)?;
+    Ok(id)
 }
 
 #[derive(Clone, Debug)]
@@ -290,15 +296,16 @@ where
             });
             return self.dummy_login_begin(account.user_id()).await;
         }
-        let credentials = rows
+        let credential_ids = rows
             .into_iter()
-            .map(|row| row.credential)
+            .map(|row| row.credential.id)
             .collect::<Vec<_>>();
         let user_handle = passkey_user_handle(account.tenant().tenant_id, account.user_id());
-        let (mut challenge, state) = self
+        // Username-first options intentionally omit account-specific transport
+        // hints. The ID-only builder avoids creating hints just to discard them.
+        let (challenge, state) = self
             .webauthn
-            .start_authentication_with_creds_for_user(&user_handle, &credentials);
-        remove_authentication_transport_hints(&mut challenge);
+            .start_authentication_for_user(&user_handle, &credential_ids);
         let ceremony_id = random_urlsafe_token();
         self.ceremonies
             .store_authentication(
@@ -319,6 +326,7 @@ where
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn login_finish(
         &self,
         ceremony_id: &str,
@@ -326,6 +334,7 @@ where
         source_ip: String,
         remembered_mfa: Option<crate::RememberedMfaProof>,
         previous_session_id: Option<String>,
+        initialization_session: Option<&CurrentSession>,
         now: DateTime<Utc>,
     ) -> Result<LoginSuccess, PasskeyError> {
         let ceremony_id =
@@ -336,7 +345,7 @@ where
             .await
             .map_err(ceremony_read_error)?
             .ok_or(PasskeyError::CeremonyExpired)?;
-        if stored.dummy {
+        if stored.dummy || stored.tenant_id != self.config.tenant_id {
             return Err(PasskeyError::LoginFailed);
         }
         let account = self
@@ -350,14 +359,11 @@ where
                     && account.user_id() == stored.user_id
             })
             .ok_or(PasskeyError::LoginFailed)?;
-        let credential_id = passkey_auth::CredentialId(
-            credential_id_from_response(&response.id)
-                .map_err(|_| PasskeyError::InvalidCredentialId)?,
-        )
-        .to_b64url();
+        let credential_id = credential_id_from_response(&response.id)
+            .map_err(|_| PasskeyError::InvalidCredentialId)?;
         let row = self
             .credentials
-            .by_credential_id(stored.tenant_id, stored.user_id, &credential_id)
+            .by_credential_id(stored.tenant_id, stored.user_id, credential_id)
             .await
             .map_err(PasskeyError::State)?
             .ok_or(PasskeyError::LoginFailed)?;
@@ -378,12 +384,22 @@ where
                 PasskeyError::LoginFailed
             })?;
         self.credentials
-            .update_counter(
+            .update_authentication(
                 stored.tenant_id,
                 stored.user_id,
-                &credential_id,
-                credential.counter,
-                outcome.new_counter,
+                credential_id,
+                PasskeyAuthenticationUpdate {
+                    expected_counter: credential.counter,
+                    new_counter: outcome.new_counter,
+                    expected_backup_eligible: credential.backup_eligible,
+                    backup_eligible: outcome.backup_eligible,
+                    backup_state: outcome.backup_state,
+                    initialize_user_verification: outcome.user_verified
+                        && credential.uv_initialized != Some(true)
+                        && initialization_session.is_some_and(|session| {
+                            authorizes_uv_initialization(session, &account, now.timestamp())
+                        }),
+                },
             )
             .await
             .map_err(|error| match error {
@@ -399,7 +415,7 @@ where
         self.create_session(
             account,
             source_ip,
-            outcome.user_verified,
+            outcome.user_verification_eligible,
             remembered_mfa,
             previous_session_id,
             now,
@@ -532,12 +548,12 @@ where
         &self,
         account: PublicAccount,
         source_ip: String,
-        user_verified: bool,
+        user_verification_eligible: bool,
         remembered_mfa: Option<crate::RememberedMfaProof>,
         previous_session_id: Option<String>,
         now: DateTime<Utc>,
     ) -> Result<LoginSuccess, PasskeyError> {
-        let remembered = if account.account.mfa_enabled && !user_verified {
+        let remembered = if account.account.mfa_enabled && !user_verification_eligible {
             if let Some(proof) = remembered_mfa.as_ref() {
                 self.remembered_mfa
                     .is_valid(
@@ -556,16 +572,16 @@ where
             false
         };
         let mut amr = vec!["passkey".to_owned()];
-        if user_verified {
-            // This is evidence from the verified authenticator data, never a
-            // claim inferred from the credential type or browser response alone.
+        if user_verification_eligible {
+            // This combines a verified assertion UV bit with recorded UV
+            // initialization; a previously unknown enrollment cannot grant MFA.
             amr.push("passkey_uv".to_owned());
             amr.push("mfa".to_owned());
         } else if remembered {
             amr.push("remembered_mfa".to_owned());
             amr.push("mfa".to_owned());
         }
-        let pending_mfa = account.account.mfa_enabled && !user_verified && !remembered;
+        let pending_mfa = account.account.mfa_enabled && !user_verification_eligible && !remembered;
         let ttl_seconds = if pending_mfa {
             self.config.pending_mfa_session_ttl_seconds
         } else {
@@ -612,18 +628,10 @@ where
         dummy_user_id: UserId,
     ) -> Result<PasskeyLoginBegin, PasskeyError> {
         let user_handle = passkey_user_handle(self.config.tenant_id, dummy_user_id);
-        let dummy_credential_id = rand::random::<[u8; 32]>().to_vec();
-        let dummy_credential = WebauthnCredential {
-            id: passkey_auth::CredentialId(dummy_credential_id),
-            public_key_cose: CosePublicKey(Vec::new()),
-            counter: 0,
-            transports: vec!["internal".to_owned()],
-            aaguid: [0; 16],
-        };
-        let (mut challenge, state) = self
+        let dummy_credential_id = passkey_auth::CredentialId(rand::random::<[u8; 32]>().to_vec());
+        let (challenge, state) = self
             .webauthn
-            .start_authentication_with_creds_for_user(&user_handle, &[dummy_credential]);
-        remove_authentication_transport_hints(&mut challenge);
+            .start_authentication_for_user(&user_handle, &[dummy_credential_id]);
 
         let ceremony_id = random_urlsafe_token();
         self.ceremonies
@@ -646,12 +654,22 @@ where
     }
 }
 
-fn remove_authentication_transport_hints(challenge: &mut AuthenticationChallenge) {
-    // Username-first responses are unauthenticated. Transport hints are optional
-    // and can otherwise disclose account-specific authenticator characteristics.
-    for descriptor in &mut challenge.allow_credentials {
-        descriptor.transports.clear();
-    }
+fn authorizes_uv_initialization(
+    session: &CurrentSession,
+    account: &PublicAccount,
+    now: i64,
+) -> bool {
+    !session.pending_mfa()
+        && session.user().tenant().tenant_id == account.tenant().tenant_id
+        && session.user().user_id() == account.user_id()
+        && session.user().principal.authorization_epoch == account.principal.authorization_epoch
+        && crate::session::recent_interactive_mfa(session.auth_time(), session.amr(), now)
+        // An old passkey session cannot establish its own previously unrecorded
+        // UV enrollment. Only an independently verified OTP/recovery factor can.
+        && session
+            .amr()
+            .iter()
+            .any(|method| matches!(method.as_str(), "otp" | "recovery_code"))
 }
 
 fn random_urlsafe_token() -> String {
@@ -668,3 +686,7 @@ fn ceremony_read_error(error: RepositoryError) -> PasskeyError {
         error => PasskeyError::CeremonyState(error),
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/passkey.rs"]
+mod tests;

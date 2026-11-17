@@ -56,6 +56,7 @@ opentelemetry-appender-tracing = "0.33.1"
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
 opentelemetry_sdk = { version = "0.33.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
 process-wrap = { workspace = true }
+passkey-auth = { workspace = true }
 rand = { workspace = true }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "json", "stream", "query", "form"] }
 rustix = { workspace = true }
@@ -88,7 +89,6 @@ coset = { workspace = true }
 nazo-http-signatures = { workspace = true }
 nazo-openid4vp = { workspace = true }
 nazo-resource-server = { workspace = true }
-passkey-auth = { workspace = true }
 nazo-valkey = { workspace = true, features = ["test-support"] }
 argon2 = { workspace = true }
 aws-lc-rs = { workspace = true }

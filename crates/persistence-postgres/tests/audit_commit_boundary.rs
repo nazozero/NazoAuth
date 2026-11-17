@@ -619,6 +619,11 @@ async fn identity_mutations_and_required_audit_share_the_commit_boundary() {
         public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
         transports: vec!["internal".into()],
         aaguid: [0; 16],
+        user_handle: None,
+        uv_initialized: None,
+        backup_eligible: None,
+        backup_state: None,
+        attestation: passkey_auth::AttestationEvidence::Unknown,
     };
     f.mode("raise").await;
     assert!(

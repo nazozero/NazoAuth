@@ -252,7 +252,7 @@ impl Configuration {
                 passkey: PasskeySettings {
                     rp_id,
                     rp_name: "Nazo OAuth".into(),
-                    origin: issuer.clone(),
+                    origin,
                     require_user_verification: true,
                     require_user_handle: true,
                     strict_base64: true,

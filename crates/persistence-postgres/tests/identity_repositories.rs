@@ -1704,8 +1704,18 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .unwrap();
 
     let (left, right) = tokio::join!(
-        repository.update_counter(tenant.tenant_id, user_id, "AQID", 0, 1),
-        repository.update_counter(tenant.tenant_id, user_id, "AQID", 0, 1)
+        repository.update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "AQID",
+            passkey_update(0, 1, None)
+        ),
+        repository.update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "AQID",
+            passkey_update(0, 1, None)
+        )
     );
     assert!(matches!(
         (&left, &right),
@@ -1713,14 +1723,24 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
     ));
     assert_eq!(
         repository
-            .update_counter(tenant.tenant_id, user_id, "AQID", 0, 2)
+            .update_authentication(
+                tenant.tenant_id,
+                user_id,
+                "AQID",
+                passkey_update(0, 2, None)
+            )
             .await
             .unwrap_err(),
         RepositoryError::Conflict
     );
     assert_eq!(
         repository
-            .update_counter(tenant.tenant_id, user_id, "AQID", 1, 1)
+            .update_authentication(
+                tenant.tenant_id,
+                user_id,
+                "AQID",
+                passkey_update(1, 1, Some(false))
+            )
             .await
             .unwrap_err(),
         RepositoryError::Conflict
@@ -1736,9 +1756,67 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
         .await
         .unwrap();
     repository
-        .update_counter(tenant.tenant_id, user_id, "BAUG", 0, 0)
+        .update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "BAUG",
+            passkey_update(0, 0, None),
+        )
         .await
         .unwrap();
+    let mut initialize = passkey_update(0, 0, Some(false));
+    initialize.initialize_user_verification = true;
+    repository
+        .update_authentication(tenant.tenant_id, user_id, "BAUG", initialize)
+        .await
+        .unwrap();
+    repository
+        .update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "BAUG",
+            passkey_update(0, 0, Some(false)),
+        )
+        .await
+        .unwrap();
+    let record = repository
+        .by_credential_id(tenant.tenant_id, user_id, "BAUG")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.credential.uv_initialized, Some(true));
+    assert_eq!(record.credential.backup_eligible, Some(false));
+    assert_eq!(record.credential.backup_state, Some(false));
+    assert_eq!(record.credential.counter, 0);
+
+    repository
+        .insert(
+            tenant.tenant_id,
+            user_id,
+            test_passkey(&[7, 8, 9], 0),
+            "legacy zero counter".into(),
+        )
+        .await
+        .unwrap();
+    let mut backed_up = passkey_update(0, 0, None);
+    backed_up.backup_eligible = true;
+    backed_up.backup_state = true;
+    let (left, right) = tokio::join!(
+        repository.update_authentication(tenant.tenant_id, user_id, "BwgJ", backed_up),
+        repository.update_authentication(
+            tenant.tenant_id,
+            user_id,
+            "BwgJ",
+            passkey_update(0, 0, None)
+        ),
+    );
+    assert!(
+        matches!(
+            (&left, &right),
+            (Ok(()), Err(RepositoryError::Conflict)) | (Err(RepositoryError::Conflict), Ok(()))
+        ),
+        "legacy backup eligibility must be initialized once even with zero counters"
+    );
     cleanup(&pool, user_id).await;
 }
 
@@ -3724,6 +3802,21 @@ mod mfa_generation;
 #[path = "support/admin_user_required.rs"]
 mod admin_user_required;
 
+fn passkey_update(
+    expected_counter: u32,
+    new_counter: u32,
+    expected_backup_eligible: Option<bool>,
+) -> nazo_identity::ports::PasskeyAuthenticationUpdate {
+    nazo_identity::ports::PasskeyAuthenticationUpdate {
+        expected_counter,
+        new_counter,
+        expected_backup_eligible,
+        backup_eligible: false,
+        backup_state: false,
+        initialize_user_verification: false,
+    }
+}
+
 fn test_passkey(id: &[u8], counter: u32) -> passkey_auth::PasskeyCredential {
     passkey_auth::PasskeyCredential {
         id: passkey_auth::CredentialId(id.to_vec()),
@@ -3731,6 +3824,11 @@ fn test_passkey(id: &[u8], counter: u32) -> passkey_auth::PasskeyCredential {
         public_key_cose: passkey_auth::CosePublicKey(vec![0xa4, 1, 1, 3, 0x27, 0x20, 6, 0x21]),
         transports: vec!["internal".into()],
         aaguid: [0; 16],
+        user_handle: None,
+        uv_initialized: None,
+        backup_eligible: None,
+        backup_state: None,
+        attestation: passkey_auth::AttestationEvidence::Unknown,
     }
 }
 

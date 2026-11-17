@@ -37,18 +37,13 @@ use uuid::Uuid;
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
 
-async fn remember_mfa_device(
+async fn verified_totp_factor(
     state: &TestInfrastructure,
-    request: &HttpRequest,
     user: &PublicAccount,
-) -> anyhow::Result<String> {
-    let user_agent_hash = request
-        .headers()
-        .get(header::USER_AGENT)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(nazo_oauth_server::crypto::blake3_hex);
+) -> anyhow::Result<(
+    nazo_identity::MfaService,
+    nazo_identity::MfaVerificationProof,
+)> {
     let key = nazo_postgres::MfaTotpKey::new("passkey-remember-fixture", rand::random()).unwrap();
     let repository = Arc::new(nazo_postgres::MfaRepository::with_totp_key_ring(
         state.diesel_db.clone(),
@@ -75,6 +70,22 @@ async fn remember_mfa_device(
         .await
         .map_err(|error| anyhow::anyhow!("MFA fixture verification: {error:?}"))?
         .expect("actual confirmed TOTP proof");
+    Ok((service, proof))
+}
+
+async fn remember_mfa_device(
+    state: &TestInfrastructure,
+    request: &HttpRequest,
+    user: &PublicAccount,
+) -> anyhow::Result<String> {
+    let user_agent_hash = request
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(nazo_oauth_server::crypto::blake3_hex);
+    let (service, proof) = verified_totp_factor(state, user).await?;
     service
         .remember_device(
             user,
@@ -101,7 +112,7 @@ fn passkey_login_transport_has_no_identity_or_storage_orchestration() {
         "PasskeyRepository",
         "AuthenticationStore",
         "passkey_webauthn",
-        "update_counter(",
+        "update_authentication(",
     ] {
         assert!(
             !source.contains(forbidden),
@@ -745,7 +756,7 @@ async fn passkey_login_finish_creates_session_updates_counter_and_consumes_cerem
 
 #[actix_web::test]
 async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
-    for (required, verified) in [(false, false), (false, true), (true, true)] {
+    for (required, verified) in [(false, false), (false, true), (true, true), (true, false)] {
         let Some(fixture) = LivePasskeyFixture::with_user_verification(required).await else {
             return;
         };
@@ -762,9 +773,10 @@ async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
             .expect("user should exist");
         let mut authenticator =
             FakeAuthenticator::new(format!("mfa-login-credential-{suffix}").as_bytes());
-        authenticator.flags = FLAG_UP | if verified { FLAG_UV } else { 0 };
+        authenticator.flags = FLAG_UP | if required || verified { FLAG_UV } else { 0 };
         let credential = fixture.register_credential(&user, &authenticator);
         fixture.insert_credential(&user, &credential).await;
+        authenticator.flags = FLAG_UP | if verified { FLAG_UV } else { 0 };
         let (ceremony_id, challenge) =
             begin_passkey_login(&fixture, &identity_user.account.email).await;
 
@@ -781,6 +793,17 @@ async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
             }),
         )
         .await;
+        if required && !verified {
+            assert!(!finish_response.headers().contains_key(header::SET_COOKIE));
+            let (status, body) = response_json(finish_response).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+            assert_eq!(body["error_description"], "passkey login failed.");
+            let stored = load_user_passkeys(&fixture.state, &identity_user)
+                .await
+                .unwrap();
+            assert_eq!(stored[0].credential.counter, 0);
+            continue;
+        }
         assert_eq!(finish_response.status(), StatusCode::OK);
         let session_id = session_cookie_value(
             &finish_response,
@@ -816,6 +839,159 @@ async fn passkey_login_reuses_verified_uv_and_preserves_mfa_without_it() {
             loaded.is_none(),
             "pending MFA session must expire at the configured short TTL"
         );
+    }
+}
+
+#[actix_web::test]
+async fn legacy_or_uninitialized_uv_needs_independent_mfa_before_future_eligibility() {
+    for legacy in [true, false] {
+        let Some(fixture) = LivePasskeyFixture::with_user_verification(false).await else {
+            return;
+        };
+        let suffix = Uuid::now_v7().simple().to_string();
+        let user = fixture.create_user(&format!("uv-init-{suffix}")).await;
+        let mut authenticator = FakeAuthenticator::new(format!("uv-init-key-{suffix}").as_bytes());
+        authenticator.flags = FLAG_UP;
+        let credential = fixture.register_credential(&user, &authenticator);
+        assert_eq!(credential.uv_initialized, Some(false));
+        let row = fixture.insert_credential(&user, &credential).await;
+        if legacy {
+            let mut json = serde_json::to_value(&credential).unwrap();
+            for key in [
+                "uv_initialized",
+                "backup_eligible",
+                "backup_state",
+                "user_handle",
+                "attestation",
+            ] {
+                json.as_object_mut().unwrap().remove(key);
+            }
+            fixture.overwrite_credential_json(row.id, json).await;
+        }
+        authenticator.flags = FLAG_UP | FLAG_UV;
+        fixture.set_user_mfa_enabled(user.id, true).await;
+        let identity = nazo_postgres::UserRepository::new(fixture.state.diesel_db.clone())
+            .public_account_by_id(
+                nazo_identity::TenantId::new(user.tenant_id).unwrap(),
+                nazo_identity::UserId::new(user.id).unwrap(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+        let first = passkey_login_finish(
+            fixture.state.clone(),
+            actix_web::test::TestRequest::default().to_http_request(),
+            Json(PasskeyLoginFinishRequest {
+                ceremony_id,
+                response: authenticator.authentication_response(
+                    &challenge,
+                    &fixture.state.settings.identity.passkey.origin,
+                    Some(&passkey_user_handle(&user)),
+                ),
+            }),
+        )
+        .await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_id =
+            session_cookie_value(&first, &fixture.state.settings.session.session_cookie_name);
+        let first_session = fixture.session_payload(&first_id).await;
+        assert!(first_session.pending_mfa);
+        assert_eq!(first_session.amr, ["passkey"]);
+        let stored = load_user_passkeys(&fixture.state, &identity).await.unwrap();
+        assert_eq!(
+            stored[0].credential.uv_initialized,
+            if legacy { None } else { Some(false) }
+        );
+
+        // Consume an actual independently generated TOTP before constructing
+        // the fixture session corresponding to that successful step-up.
+        let (_, proof) = verified_totp_factor(&fixture.state, &identity)
+            .await
+            .unwrap();
+        let independent_id = Uuid::now_v7().to_string();
+        let independent_session = nazo_identity::session::SessionRecord::new(
+            identity.user_id(),
+            identity.principal.authorization_epoch,
+            Utc::now().timestamp(),
+            vec!["passkey".into(), proof.amr().into(), "mfa".into()],
+            false,
+            Some(Uuid::now_v7().to_string()),
+        );
+        nazo_identity::ports::LoginSessionPort::create(
+            &nazo_valkey::SessionStore::new(&fixture.state.valkey_connection()),
+            &independent_id,
+            &independent_session,
+            900,
+        )
+        .await
+        .unwrap();
+        let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+        let initialized = passkey_login_finish(
+            fixture.state.clone(),
+            actix_web::test::TestRequest::default()
+                .insert_header((
+                    header::COOKIE,
+                    format!(
+                        "{}={independent_id}; {}=uv-proof",
+                        fixture.state.settings.session.session_cookie_name,
+                        fixture.state.settings.session.csrf_cookie_name
+                    ),
+                ))
+                .insert_header(("x-csrf-token", "uv-proof"))
+                .to_http_request(),
+            Json(PasskeyLoginFinishRequest {
+                ceremony_id,
+                response: authenticator.authentication_response(
+                    &challenge,
+                    &fixture.state.settings.identity.passkey.origin,
+                    Some(&passkey_user_handle(&user)),
+                ),
+            }),
+        )
+        .await;
+        assert_eq!(initialized.status(), StatusCode::OK);
+        let initializing_id = session_cookie_value(
+            &initialized,
+            &fixture.state.settings.session.session_cookie_name,
+        );
+        let initializing_session = fixture.session_payload(&initializing_id).await;
+        assert!(
+            initializing_session.pending_mfa,
+            "the current assertion cannot count the newly initialized UV"
+        );
+        assert_eq!(initializing_session.amr, ["passkey"]);
+        let stored = load_user_passkeys(&fixture.state, &identity).await.unwrap();
+        assert_eq!(stored[0].credential.uv_initialized, Some(true));
+        assert_eq!(
+            stored[0].credential.public_key_cose.0,
+            credential.public_key_cose.0
+        );
+        assert_eq!(stored[0].credential.counter, 2);
+
+        let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+        let subsequent = passkey_login_finish(
+            fixture.state.clone(),
+            actix_web::test::TestRequest::default().to_http_request(),
+            Json(PasskeyLoginFinishRequest {
+                ceremony_id,
+                response: authenticator.authentication_response(
+                    &challenge,
+                    &fixture.state.settings.identity.passkey.origin,
+                    Some(&passkey_user_handle(&user)),
+                ),
+            }),
+        )
+        .await;
+        assert_eq!(subsequent.status(), StatusCode::OK);
+        let subsequent_id = session_cookie_value(
+            &subsequent,
+            &fixture.state.settings.session.session_cookie_name,
+        );
+        let subsequent_session = fixture.session_payload(&subsequent_id).await;
+        assert!(!subsequent_session.pending_mfa);
+        assert_eq!(subsequent_session.amr, ["passkey", "passkey_uv", "mfa"]);
     }
 }
 
@@ -904,6 +1080,57 @@ async fn passkey_login_finish_skips_pending_mfa_for_remembered_device() {
     );
     assert!(!session.pending_mfa);
     assert!((28..=30).contains(&fixture.session_ttl(&session_id).await));
+}
+
+#[actix_web::test]
+async fn passkey_ceremony_cannot_finish_through_a_different_tenant_service() {
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&format!("tenant-finish-{suffix}"))
+        .await;
+    let mut authenticator = FakeAuthenticator::new(format!("tenant-key-{suffix}").as_bytes());
+    let credential = fixture.register_credential(&user, &authenticator);
+    fixture.insert_credential(&user, &credential).await;
+    let (ceremony_id, challenge) = begin_passkey_login(&fixture, &user.email).await;
+    let mut other_state = fixture.state.get_ref().clone();
+    let mut settings = (*other_state.settings).clone();
+    settings.tenant.context.tenant_id = nazo_identity::TenantId::new(Uuid::now_v7()).unwrap();
+    other_state.settings = Arc::new(settings);
+    let assertion = authenticator.authentication_response(
+        &challenge,
+        &fixture.state.settings.identity.passkey.origin,
+        Some(&passkey_user_handle(&user)),
+    );
+    let rejected = passkey_login_finish(
+        Data::new(other_state),
+        actix_web::test::TestRequest::default().to_http_request(),
+        Json(PasskeyLoginFinishRequest {
+            ceremony_id: ceremony_id.clone(),
+            response: assertion.clone(),
+        }),
+    )
+    .await;
+    let (status, body) = response_json(rejected).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(body["error_description"], "passkey login failed.");
+    let records = load_user_passkeys(&fixture.state, &user.identity())
+        .await
+        .unwrap();
+    assert_eq!(records[0].credential.counter, 0);
+    let replay = passkey_login_finish(
+        fixture.state.clone(),
+        actix_web::test::TestRequest::default().to_http_request(),
+        Json(PasskeyLoginFinishRequest {
+            ceremony_id,
+            response: assertion,
+        }),
+    )
+    .await;
+    let (_, body) = response_json(replay).await;
+    assert_eq!(body["error_description"], "passkey ceremony expired.");
 }
 
 #[actix_web::test]

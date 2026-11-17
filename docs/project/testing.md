@@ -107,8 +107,9 @@ cargo test -p nazoauth --lib
 cargo test -p nazo-server --lib facade_conformance
 ```
 
-The dependency check verifies official Actix sources and rejects feature
-unification that re-enables inbound HTTP/2 or an affected h2 version. The direct
+The dependency check verifies official Actix sources, requires `actix-http`
+3.21.3 or later for the chunked-body parsing and keep-alive timeout fixes, and
+rejects feature unification that re-enables inbound HTTP/2 or an affected h2 version. The direct
 TLS/mTLS test verifies HTTP/1.1 negotiation and rejection of an h2-only client.
 Metadata conversion tests preserve raw URI/header semantics; only body and replay
 bytes require pointer identity across the HTTP 0.2/1.x boundary.

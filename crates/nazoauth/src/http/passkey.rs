@@ -182,6 +182,12 @@ pub async fn passkey_login_finish(
         source_ip,
         remembered_mfa: remembered_mfa_proof(request, &endpoint.config),
         previous_session_id: cookie_value(request, &endpoint.config.session_cookie_name),
+        csrf_verified: has_valid_csrf_token_for_cookies(
+            request,
+            None,
+            &endpoint.config.session_cookie_name,
+            &endpoint.config.csrf_cookie_name,
+        ),
         now: Utc::now(),
     };
     match endpoint.operations.login_finish(command).await {
