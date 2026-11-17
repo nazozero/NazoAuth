@@ -159,7 +159,3 @@ mdoc-rs = { git = "https://github.com/nazozero/mdoc-rs", rev = "9dd3ef60fb98b427
 # TODO: replace this fork when a maintained release uses patched crypto-bigint
 # and passes the existing passkey and attestation tests.
 passkey-auth = { git = "https://github.com/nazozero/passkey-auth-rs", rev = "d59b317998e56f4a16a69133d7a854c5c34f795b" }
-
-# Direct mTLS shares the immutable peer chain across the TLS/HTTP boundary.
-# Retire when upstream provides shared ownership or a measured per-connection copy is acceptable.
-rustls = { git = "https://github.com/bymoye/rustls", rev = "f282759e6b6811537566a71b29f25b528735d966" }

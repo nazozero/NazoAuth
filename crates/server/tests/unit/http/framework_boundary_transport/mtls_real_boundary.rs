@@ -78,6 +78,10 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
         )
         .unwrap();
     let expected_chain = vec![material.leaf.der().clone(), material.ca.der().clone()];
+    let retained_chain = Arc::new(std::sync::Mutex::new(None));
+    let on_connect_chain = Arc::clone(&retained_chain);
+    let authenticated_connections = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connection_count = Arc::clone(&authenticated_connections);
     let server = HttpServer::new(|| {
         App::new()
             .app_data(Data::new(mtls::MtlsCertificateSourceMode::DirectTls))
@@ -85,7 +89,16 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
                 "/identity",
                 actix_web::web::get().to(|request: HttpRequest| async move {
                     let resolver = ServerMtlsThumbprintExtractor;
+                    let original = request
+                        .conn_data::<nazoauth::ConnectionFacts>()
+                        .and_then(|facts| facts.client_certificate.clone());
                     let request = crate::test_support::transport::request_with_policy(&request, &[], mtls::MtlsCertificateSourceMode::DirectTls);
+                    if let Some(original) = original {
+                        let forwarded = request.extensions().get::<nazoauth::ConnectionFacts>()
+                            .and_then(|facts| facts.client_certificate.as_ref()).unwrap();
+                        assert!(Arc::ptr_eq(&original, forwarded));
+                        assert!(Arc::ptr_eq(&original.certificate_chain_der, &forwarded.certificate_chain_der));
+                    }
                     HttpResponse::Ok().body(
                         resolver
                             .resolve(&request)
@@ -100,11 +113,10 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
         if let Some(certificate) = extensions.get::<nazoauth::ConnectionFacts>().and_then(|facts| facts.client_certificate.as_ref()) {
             assert_eq!(certificate.certificate_chain_der.as_ref(), &expected_chain);
             let stream = io.downcast_ref::<actix_tls::accept::rustls_0_23::TlsStream<actix_web::rt::net::TcpStream>>().unwrap();
-            let peer = stream.get_ref().1.peer_certificates_shared().unwrap();
-            assert!(Arc::ptr_eq(&peer, &certificate.certificate_chain_der));
-            for (original, retained) in peer.iter().zip(certificate.certificate_chain_der.iter()) {
-                assert_eq!(original.as_ptr(), retained.as_ptr());
-            }
+            let peer = stream.get_ref().1.peer_certificates().unwrap();
+            assert_eq!(peer, certificate.certificate_chain_der.as_slice());
+            connection_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            *on_connect_chain.lock().unwrap() = Some(Arc::clone(&certificate.certificate_chain_der));
 
         }
     })
@@ -162,9 +174,27 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
             .encode(Sha256::digest(material.leaf.der()))
             .as_bytes()
     );
+    // A second request reuses the TLS connection and the captured Arc facts.
+    let repeated = authenticated.get(&url).send().await.unwrap();
+    assert_eq!(repeated.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        repeated.bytes().await.unwrap().as_ref(),
+        URL_SAFE_NO_PAD
+            .encode(Sha256::digest(material.leaf.der()))
+            .as_bytes()
+    );
+    assert_eq!(
+        authenticated_connections.load(std::sync::atomic::Ordering::Relaxed),
+        1
+    );
     drop(authenticated);
     drop(anonymous);
     handle.stop(true).await;
+    // Captured facts remain valid after the TLS connection has been destroyed.
+    assert_eq!(
+        retained_chain.lock().unwrap().as_ref().unwrap().as_ref(),
+        &vec![material.leaf.der().clone(), material.ca.der().clone()]
+    );
 }
 
 #[actix_web::test]

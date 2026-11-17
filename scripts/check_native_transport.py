@@ -16,7 +16,7 @@ def main():
     for node in metadata["resolve"]["nodes"]:
         package = packages[node["id"]]
         name = package["name"]
-        if name in {"actix-web", "actix-http", "actix-router"}:
+        if name in {"actix-web", "actix-http", "actix-router", "rustls"}:
             if not (package.get("source") or "").startswith("registry+"):
                 errors.append(f"{name} must use an official registry release")
             if "http2" in node["features"]:
@@ -27,7 +27,7 @@ def main():
                 errors.append(f"h2 {package['version']} is affected by RUSTSEC-2026-0258")
     if errors:
         raise SystemExit("\n".join(errors))
-    print("Native transport: official Actix, inbound HTTP/2 disabled, no affected h2 version")
+    print("Native transport: official Actix and rustls, inbound HTTP/2 disabled, no affected h2 version")
 
 
 if __name__ == "__main__":

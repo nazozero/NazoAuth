@@ -13,8 +13,9 @@ Cargo does not inherit `[patch]` entries from dependencies. Copy the applicable
 for the NazoAuth revision being consumed into your own workspace-root
 `Cargo.toml`. The neutral facade requires the `mdoc-rs` and `passkey-auth`
 overrides. Actix uses official registry releases and requires no Git override.
-The `rustls` override applies only to the native host's shared-certificate TLS
-integration; it is not a dependency of the neutral facade.
+The native host also uses official rustls releases. Its connection callback
+owns the peer certificate chain once and shares immutable facts across requests;
+there is no per-request DER copy. rustls is not a dependency of the neutral facade.
 
 ### Native HTTP protocol support
 
@@ -41,11 +42,6 @@ select a fork or expose an alternative backend abstraction. Switching sources
 requires regenerating the lockfile, checking advisories and running the affected
 contracts; it is not guaranteed to be a drop-in operation.
 
-- `rustls`: the native connection-facts adapter uses `peer_certificates_shared`.
-  A stable release with this ownership API can replace the pin directly. With
-  the existing upstream borrowed `peer_certificates` API, own the chain once per
-  connection in this adapter and retain the same neutral certificate facts.
-  Re-run direct TLS/mTLS, certificate rotation and connection-boundary tests.
 - `mdoc-rs`: replace the pin only with a maintained, advisory-clean release that
   supports the current `coset` and borrowed-transcript contracts. Re-run mdoc
   issuance, presentation, signature and transcript tests, including WASM.
