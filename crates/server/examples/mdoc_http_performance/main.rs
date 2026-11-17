@@ -65,6 +65,7 @@ fn main() {
             .as_deref()
             .unwrap_or("http")
         {
+            "prepare-fixture" => api::prepare_fixture().await,
             "http" => measurement::run().await,
             "native-api" => api::measure().await,
             "interop-export" => api::export().await,

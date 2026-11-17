@@ -61,6 +61,18 @@ manifest and lockfile, and use `issue` only where credentials are constructed.
 The WASM issuer enables its `wasm-js` randomness backend. Upgrades require mdoc
 issuance, presentation, status, transcript and WASM regressions.
 
+Before deploying the new verifier, inventory credentials issued by the old
+`mdoc-rs` production revision `9dd3ef60fb98b427065d7ad940cfbdd9a400b2bc`.
+Its issuer sampled digest identifiers across the full `u32` range;
+[ISO/IEC 18013-5:2021 §9.1.2.4](https://law.resource.org/pub/us/cfr/ibr/inc/iec/iec.18013-5.2021.pdf)
+requires each value to be smaller than `2^31`. The maintained issuer generates
+identifiers within that range, and the verifier rejects larger identifiers in
+both IssuerSignedItem and MSO valueDigests. Unconditional acceptance of all old
+issuer outputs is therefore not a migration guarantee. Reissue affected
+credentials through the authorized issuance flow before relying on the new
+verifier. Identifiers participate in signed issuer data: editing or re-encoding
+stored credentials cannot repair them. Preserve the strict protocol check.
+
 Direct core callers use `nazo_mdoc::Timestamp` for validity and verification
 times. Unix constructors are fallible and preserve ordinary nanoseconds;
 RFC 3339 parsing retains whole leap seconds, whose Unix accessors return `None`.

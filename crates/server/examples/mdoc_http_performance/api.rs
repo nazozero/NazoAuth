@@ -8,15 +8,17 @@ use nazo_digital_credentials::{
     VerifiedCredential,
 };
 use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
+use rand::TryRng as _;
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 use std::{hint::black_box, path::PathBuf, time::Instant};
 
 const DOCTYPE: &str = "org.iso.18013.5.1.mDL";
 const NAMESPACE: &str = "org.iso.18013.5.1";
-const CLIENT: &str = "https://verifier.example/interop";
-const RESPONSE_URI: &str = "https://verifier.example/interop/response";
-const NONCE: &str = "synthetic-cross-version-mdoc-nonce";
+const API_CLIENT: &str = "https://verifier.example";
+const API_RESPONSE_URI: &str = "https://verifier.example/response";
+const INTEROP_CLIENT: &str = "https://verifier.example/interop";
+const INTEROP_RESPONSE_URI: &str = "https://verifier.example/interop/response";
 
 fn cbor(value: &Cbor) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -24,18 +26,101 @@ fn cbor(value: &Cbor) -> Vec<u8> {
     bytes
 }
 
-fn fixture() -> (Value, String) {
+fn read_fixture() -> (PathBuf, Value, String) {
     let path = std::env::var_os("NAZO_MDOC_PERF_FIXTURE").expect("shared fixture path");
-    let bytes = std::fs::read(path).unwrap();
+    let path = PathBuf::from(path);
+    let bytes = std::fs::read(&path).unwrap();
     let fixture: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(fixture["version"], 2);
     let expiry: chrono::DateTime<chrono::Utc> =
         serde_json::from_value(fixture["expires_at"].clone()).unwrap();
     assert!(
         expiry > chrono::Utc::now(),
         "regenerate the expired shared fixture"
     );
-    (fixture, hex::encode(Sha256::digest(bytes)))
+    (path, fixture, hex::encode(Sha256::digest(bytes)))
+}
+
+fn nonce<'a>(fixture: &'a Value, name: &str) -> &'a str {
+    let value = fixture[name].as_str().expect("prepared fixture nonce");
+    assert_eq!(URL_SAFE_NO_PAD.decode(value).unwrap().len(), 32);
+    value
+}
+
+fn fixture() -> (Value, String) {
+    let (_, fixture, hash) = read_fixture();
+    assert_eq!(
+        fixture["version"], 3,
+        "prepare the shared fixture once first"
+    );
+    assert_ne!(
+        nonce(&fixture, "api_nonce"),
+        nonce(&fixture, "interop_nonce")
+    );
+    let encoded = URL_SAFE_NO_PAD
+        .decode(fixture["encoded"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        fixture["issuer_signed_sha256"],
+        hex::encode(Sha256::digest(crate::measurement::issuer_signed_bytes(
+            &encoded
+        )))
+    );
+    (fixture, hash)
+}
+
+fn fresh_nonce() -> String {
+    // Read all 256 bits directly from the operating system CSPRNG. Keep nonce
+    // generation outside every timed operation and persist the shared result.
+    let mut entropy = rand::rngs::SysRng;
+    let bytes: Vec<u8> = (0..4)
+        .flat_map(|_| {
+            entropy
+                .try_next_u64()
+                .expect("OS nonce entropy")
+                .to_be_bytes()
+        })
+        .collect();
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
+pub(crate) async fn prepare_fixture() {
+    let (path, mut fixture, source_hash) = read_fixture();
+    assert_eq!(
+        fixture["version"], 2,
+        "prepare-fixture only upgrades version 2 once"
+    );
+    let original = URL_SAFE_NO_PAD
+        .decode(fixture["encoded"].as_str().unwrap())
+        .unwrap();
+    let issuer = crate::measurement::issuer_signed_bytes(&original);
+    let api_nonce = fresh_nonce();
+    let interop_nonce = fresh_nonce();
+    assert_ne!(api_nonce, interop_nonce);
+    let transcript = transcript(API_CLIENT, &api_nonce, API_RESPONSE_URI);
+    let (response, issuer_offset) = present(issuer, &holder(&fixture), &transcript);
+    assert_eq!(
+        &response[issuer_offset..issuer_offset + issuer.len()],
+        issuer
+    );
+    assert_eq!(crate::measurement::issuer_signed_bytes(&response), issuer);
+    let encoded = URL_SAFE_NO_PAD.encode(response);
+    let crypto = crate::native_crypto::create(crate::measurement::load_keys(&fixture).await);
+    let verified = crypto
+        .verify(&PresentedCredential {
+            expected_audience: API_CLIENT.into(),
+            ..presented(&encoded, &transcript, &api_nonce)
+        })
+        .await
+        .unwrap();
+    check_verified(&verified);
+    fixture["version"] = 3.into();
+    fixture["api_nonce"] = api_nonce.into();
+    fixture["interop_nonce"] = interop_nonce.into();
+    fixture["encoded"] = encoded.into();
+    fixture["transcript"] = serde_json::to_value(transcript).unwrap();
+    fixture["source_fixture_sha256"] = source_hash.into();
+    fixture["issuer_signed_sha256"] = hex::encode(Sha256::digest(issuer)).into();
+    std::fs::write(path, serde_json::to_vec_pretty(&fixture).unwrap()).unwrap();
 }
 
 fn holder(fixture: &Value) -> SigningKey {
@@ -65,12 +150,12 @@ fn input(fixture: &Value) -> CredentialSignInput {
     }
 }
 
-fn transcript(nonce: &str) -> Vec<u8> {
+fn transcript(client: &str, nonce: &str, response_uri: &str) -> Vec<u8> {
     let info = Cbor::Array(vec![
-        CLIENT.into(),
+        client.into(),
         nonce.into(),
         Cbor::Null,
-        RESPONSE_URI.into(),
+        response_uri.into(),
     ]);
     cbor(&Cbor::Array(vec![
         Cbor::Null,
@@ -151,7 +236,7 @@ fn presented<'a>(
         format: CredentialFormat::MsoMdoc,
         encoded: encoded.into(),
         expected_nonce: nonce.into(),
-        expected_audience: CLIENT.into(),
+        expected_audience: INTEROP_CLIENT.into(),
         mdoc_session_transcript: Some(transcript.into()),
         additional_trust_anchors: [].as_slice().into(),
     }
@@ -176,11 +261,12 @@ pub(crate) async fn export() {
     let crypto = crate::native_crypto::create(crate::measurement::load_keys(&fixture).await);
     let issued = crypto.sign(&input(&fixture)).await.unwrap();
     let issuer_bytes = URL_SAFE_NO_PAD.decode(&issued).unwrap();
-    let transcript = transcript(NONCE);
+    let nonce = nonce(&fixture, "interop_nonce");
+    let transcript = transcript(INTEROP_CLIENT, nonce, INTEROP_RESPONSE_URI);
     let (response, offset) = present(&issuer_bytes, &holder(&fixture), &transcript);
     let encoded = URL_SAFE_NO_PAD.encode(&response);
     let own = crypto
-        .verify(&presented(&encoded, &transcript, NONCE))
+        .verify(&presented(&encoded, &transcript, nonce))
         .await
         .unwrap();
     check_verified(&own);
@@ -194,7 +280,7 @@ pub(crate) async fn export() {
             "issuer_signed_sha256":hex::encode(Sha256::digest(&issuer_bytes)),
             "issuer_signed_offset":offset, "issuer_signed_bytes":issuer_bytes.len(),
             "presentation":encoded, "presentation_sha256":hex::encode(Sha256::digest(&response)),
-            "transcript":URL_SAFE_NO_PAD.encode(&transcript), "nonce":NONCE,
+            "transcript":URL_SAFE_NO_PAD.encode(&transcript), "nonce":nonce,
             "self_verified":true, "issuer_bytes_preserved":true,
             "certificate_revocation":"Required; synthetic Good operator snapshot",
             "third_party_wallet_tested":false
@@ -230,7 +316,9 @@ pub(crate) async fn verify_export() {
         interchange["issuer_signed_sha256"],
         hex::encode(Sha256::digest(&issuer))
     );
-    let expected_transcript = transcript(NONCE);
+    let nonce = nonce(&fixture, "interop_nonce");
+    assert_eq!(interchange["nonce"], nonce);
+    let expected_transcript = transcript(INTEROP_CLIENT, nonce, INTEROP_RESPONSE_URI);
     assert_eq!(
         URL_SAFE_NO_PAD
             .decode(interchange["transcript"].as_str().unwrap())
@@ -239,18 +327,18 @@ pub(crate) async fn verify_export() {
     );
     let crypto = crate::native_crypto::create(crate::measurement::load_keys(&fixture).await);
     let result = crypto
-        .verify(&presented(encoded, &expected_transcript, NONCE))
+        .verify(&presented(encoded, &expected_transcript, nonce))
         .await;
     if let Ok(ref verified) = result {
         check_verified(verified);
     }
-    let wrong_transcript = transcript("tampered-verifier-nonce");
+    let mut changed_nonce = URL_SAFE_NO_PAD.decode(nonce).unwrap();
+    changed_nonce[0] ^= 1;
+    let changed_nonce = URL_SAFE_NO_PAD.encode(changed_nonce);
+    assert_ne!(changed_nonce, nonce);
+    let wrong_transcript = transcript(INTEROP_CLIENT, &changed_nonce, INTEROP_RESPONSE_URI);
     let changed = crypto
-        .verify(&presented(
-            encoded,
-            &wrong_transcript,
-            "tampered-verifier-nonce",
-        ))
+        .verify(&presented(encoded, &wrong_transcript, &changed_nonce))
         .await;
     let wrong_session_rejected = changed == Err(CredentialTrustError::InvalidSessionBinding);
     write_result(
@@ -299,9 +387,14 @@ pub(crate) async fn measure() {
     let input = input(&fixture);
     let encoded = fixture["encoded"].as_str().unwrap();
     let transcript: Vec<u8> = serde_json::from_value(fixture["transcript"].clone()).unwrap();
+    let nonce = nonce(&fixture, "api_nonce");
+    assert_eq!(
+        transcript,
+        self::transcript(API_CLIENT, nonce, API_RESPONSE_URI)
+    );
     let presentation = PresentedCredential {
-        expected_audience: "https://verifier.example".into(),
-        ..presented(encoded, &transcript, "verifier-nonce")
+        expected_audience: API_CLIENT.into(),
+        ..presented(encoded, &transcript, nonce)
     };
     for _ in 0..100 {
         black_box(crypto.sign(&input).await.unwrap());
