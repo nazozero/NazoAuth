@@ -21,7 +21,7 @@ use chrono::Utc;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -213,6 +213,40 @@ impl FakeAuthenticator {
             id: B64URL.encode(&self.credential_id),
             transports: vec!["internal".to_owned()],
             attestation_object: B64URL.encode(self.attestation_object()),
+            client_data_json,
+        }
+    }
+
+    fn packed_registration_response(
+        &self,
+        challenge_b64: &str,
+        origin: &str,
+        corrupt_signature: bool,
+    ) -> RegistrationResponse {
+        let (client_data_raw, client_data_json) =
+            client_data("webauthn.create", challenge_b64, origin);
+        let auth_data = self.auth_data_register();
+        let mut message = auth_data.clone();
+        message.extend_from_slice(&Sha256::digest(&client_data_raw));
+        let mut signature = self.sk.sign(&message).to_bytes();
+        if corrupt_signature {
+            signature[0] ^= 1;
+        }
+        let attestation = cbor_map(vec![
+            (cbor_text("fmt"), cbor_text("packed")),
+            (
+                cbor_text("attStmt"),
+                cbor_map(vec![
+                    (cbor_text("alg"), cbor_nint(-8)),
+                    (cbor_text("sig"), cbor_bytes(&signature)),
+                ]),
+            ),
+            (cbor_text("authData"), cbor_bytes(&auth_data)),
+        ]);
+        RegistrationResponse {
+            id: B64URL.encode(&self.credential_id),
+            transports: vec!["internal".to_owned()],
+            attestation_object: B64URL.encode(attestation),
             client_data_json,
         }
     }
@@ -1117,6 +1151,106 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
             .len(),
         1
     );
+}
+
+#[actix_web::test]
+async fn excluded_credential_with_invalid_packed_signature_is_rejected_and_audited() {
+    #[derive(diesel::QueryableByName)]
+    struct AuditPayload {
+        #[diesel(sql_type = Jsonb)]
+        payload: Value,
+    }
+
+    let Some(fixture) = LivePasskeyFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture.create_user(&suffix).await;
+    let sid = format!("excluded-invalid-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    fixture.store_session(&user, &sid).await;
+    let authenticator = FakeAuthenticator::new(format!("credential-{suffix}").as_bytes());
+    let origin = &fixture.state.settings.identity.passkey.origin;
+
+    for (corrupt_signature, expected_status) in [
+        (false, StatusCode::CREATED),
+        (false, StatusCode::CONFLICT),
+        (true, StatusCode::BAD_REQUEST),
+    ] {
+        let (status, begin) = response_json(
+            passkey_registration_begin(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyBeginRequest { label: None }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        if expected_status != StatusCode::CREATED {
+            assert_eq!(
+                begin["publicKey"]["excludeCredentials"][0]["id"],
+                B64URL.encode(&authenticator.credential_id)
+            );
+        }
+        let ceremony_id = begin["ceremony_id"].as_str().unwrap();
+        let challenge = begin["publicKey"]["challenge"].as_str().unwrap();
+        let (status, body) = response_json(
+            passkey_registration_finish(
+                fixture.state.clone(),
+                fixture.request(&sid, &csrf),
+                Json(PasskeyFinishRequest {
+                    ceremony_id: ceremony_id.to_owned(),
+                    response: authenticator.packed_registration_response(
+                        challenge,
+                        origin,
+                        corrupt_signature,
+                    ),
+                }),
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(status, expected_status);
+        if corrupt_signature {
+            assert_eq!(body["error_description"], "passkey registration failed.");
+            let (status, body) = response_json(
+                passkey_registration_finish(
+                    fixture.state.clone(),
+                    fixture.request(&sid, &csrf),
+                    Json(PasskeyFinishRequest {
+                        ceremony_id: ceremony_id.to_owned(),
+                        response: authenticator
+                            .packed_registration_response(challenge, origin, true),
+                    }),
+                )
+                .await,
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert_eq!(body["error_description"], "passkey ceremony expired.");
+        }
+    }
+
+    assert_eq!(
+        load_user_passkeys(&fixture.state, &user.identity())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
+    let rejected = sql_query(
+        "SELECT payload FROM security_audit_events \
+         WHERE event_type='passkey_registration_rejected' AND payload->>'user_id'=$1",
+    )
+    .bind::<Text, _>(user.id.to_string())
+    .load::<AuditPayload>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(rejected.len(), 1, "required rejection evidence is durable");
+    assert_eq!(rejected[0].payload["reason"], "invalid_attestation");
+    assert_eq!(rejected[0].payload["tenant_id"], user.tenant_id.to_string());
 }
 
 #[actix_web::test]
