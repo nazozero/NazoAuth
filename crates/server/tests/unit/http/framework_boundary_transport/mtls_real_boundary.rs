@@ -184,7 +184,9 @@ async fn framework_boundary_transport_direct_tls_captures_real_peer_certificate(
             .as_bytes()
     );
     assert_eq!(
-        authenticated_connections.load(std::sync::atomic::Ordering::Relaxed),
+        authenticated_connections
+            .as_ref()
+            .load(std::sync::atomic::Ordering::Relaxed),
         1
     );
     drop(authenticated);
