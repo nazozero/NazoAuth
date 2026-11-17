@@ -1,0 +1,73 @@
+name: Passkey offline Rust inputs
+
+on:
+  push:
+    branches: [audit/passkey-resume-20261118]
+    paths: [.github/workflows/passkey-offline-rust.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inputs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 294baefd71b60b96d91fd0ae4574b51221f2a06e
+          path: nazo
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: nazozero/passkey-auth-rs
+          ref: 46bbafa6dbd2b0aa01e184b0928cec9210b04e6e
+          fetch-depth: 0
+          path: passkey
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30
+        with:
+          toolchain: '1.100.0'
+          components: rustfmt, clippy
+          target: wasm32-unknown-unknown, wasm32-wasip1
+          cache: false
+      - name: Fetch pinned dependency graphs, including the proposed Jiff adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence jiff-probe/src
+          printf '[package]\nname="jiff-migration-probe"\nversion="0.0.0"\nedition="2024"\n[dependencies]\njiff={version="=0.2.38",features=["serde"]}\njiff-diesel={version="=0.1.4",features=["postgres"]}\n' > jiff-probe/Cargo.toml
+          printf 'fn main() {}\n' > jiff-probe/src/main.rs
+          cargo fetch --manifest-path jiff-probe/Cargo.toml
+          cargo fetch --locked --manifest-path nazo/Cargo.toml
+          cargo fetch --locked --manifest-path passkey/Cargo.toml
+          cargo fetch --locked --manifest-path passkey/perf/Cargo.toml
+          for pair in baseline:d59b317998e56f4a16a69133d7a854c5c34f795b checkpoint:8260480634fac09e1151ca2b1a9eaa1c02af6f67; do
+            label=${pair%%:*}
+            revision=${pair#*:}
+            mkdir "$label"
+            git -C passkey archive "$revision" | tar -x -C "$label"
+            git -C passkey archive "$revision" | gzip -n > "evidence/$label.source.tar.gz"
+            cargo fetch --locked --manifest-path "$label/Cargo.toml"
+            if test -f "$label/perf/Cargo.toml"; then cargo fetch --locked --manifest-path "$label/perf/Cargo.toml"; fi
+          done
+          rustc -Vv > evidence/rustc.txt
+          cargo -V >> evidence/rustc.txt
+          cp jiff-probe/Cargo.lock evidence/jiff-probe.Cargo.lock
+          cp jiff-probe/Cargo.toml evidence/jiff-probe.Cargo.toml
+      - name: Archive toolchain and public dependency caches only
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C "$(rustc --print sysroot)" -czf evidence/rust-toolchain.tar.gz bin lib
+          tar -C "${CARGO_HOME:-$HOME/.cargo}" -czf evidence/cargo-public-cache.tar.gz registry git
+          sha256sum evidence/*.tar.gz > evidence/SHA256SUMS
+          cat evidence/rustc.txt evidence/SHA256SUMS
+          du -h evidence/*.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: passkey-offline-rust-inputs
+          path: evidence/
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
