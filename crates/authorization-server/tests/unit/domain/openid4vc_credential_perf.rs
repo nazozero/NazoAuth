@@ -123,10 +123,15 @@ fn summary(mut samples: Vec<u64>) -> Value {
     })
 }
 
+fn require_release_build() {
+    #[cfg(debug_assertions)]
+    panic!("measure with cargo test --release");
+}
+
 #[test]
 #[ignore = "requires a shared synthetic fixture and an explicit release benchmark run"]
 fn mdoc_embedded_api_latency() {
-    assert!(!cfg!(debug_assertions), "measure with cargo test --release");
+    require_release_build();
     let fixture_path =
         PathBuf::from(std::env::var_os("NAZO_MDOC_PERF_FIXTURE").expect("shared fixture path"));
     let samples = std::env::var("NAZO_MDOC_PERF_SAMPLES")
