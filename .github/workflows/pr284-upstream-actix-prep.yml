@@ -4,6 +4,9 @@ on:
     branches: [maintenance/pr284-upstream-actix-prep]
 permissions:
   contents: write
+concurrency:
+  group: pr284-upstream-preparation
+  cancel-in-progress: true
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -15,16 +18,17 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: "0"
       RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71
+      - uses: dtolnay/rust-toolchain@9522411a9bce8484da960823fc2f46e52f981f71 # 1.100.0
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: workspace-quality
+          cache-on-failure: true
       - name: Budget compilation and install existing native dependencies
         run: |
           python3 scripts/ci_build_jobs.py >> "$GITHUB_ENV"
@@ -33,6 +37,7 @@ jobs:
       - name: Apply reviewed transport changes
         run: |
           python3 .github/pr284-upstream-actix.py
+          python3 .github/pr284-upstream-fixups.py
           cargo update -p actix-http -p actix-router
           cargo fmt --all
           python3 scripts/verify_static_contracts.py --check
@@ -49,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          rm .github/pr284-upstream-actix.py .github/workflows/pr284-upstream-actix-prep.yml
+          rm .github/pr284-upstream-actix.py .github/pr284-upstream-fixups.py .github/workflows/pr284-upstream-actix-prep.yml
           git add -A
           git diff --cached --check "$BASE_SHA"
           git diff --cached --stat "$BASE_SHA"
@@ -65,7 +70,9 @@ jobs:
               'Cargo.toml', 'Cargo.lock', '.github/workflows/code-quality.yml',
               'crates/http-actix/src/lib.rs', 'crates/http-actix/tests/unit/transport.rs',
               'crates/server/src/bootstrap/startup/services/factory.rs',
-              'crates/server/tests/unit/bootstrap.rs', 'scripts/check_native_transport.py',
+              'crates/server/tests/unit/bootstrap.rs',
+              'crates/server/tests/unit/bootstrap/startup/services/factory.rs',
+              'scripts/check_native_transport.py',
               'docs/integration/rust-embedding.md', 'docs/operations/configuration.md',
               'docs/project/testing.md',
           }
