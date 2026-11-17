@@ -138,8 +138,9 @@ fn summary(mut samples: Vec<u64>) -> Value {
 }
 
 fn require_release_build() {
-    #[cfg(debug_assertions)]
-    panic!("measure with cargo test --release");
+    if cfg!(debug_assertions) {
+        std::panic::panic_any("measure with cargo test --release");
+    }
 }
 
 #[test]

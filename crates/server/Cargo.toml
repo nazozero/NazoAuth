@@ -12,6 +12,11 @@ name = "nazoauth"
 path = "src/main.rs"
 test = false
 
+[[example]]
+name = "mdoc_http_performance"
+path = "examples/mdoc_http_performance/main.rs"
+test = false
+
 [dependencies]
 bytes.workspace = true
 nazoauth.workspace = true
