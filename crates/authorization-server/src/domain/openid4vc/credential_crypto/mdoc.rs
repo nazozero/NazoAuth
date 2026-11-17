@@ -385,9 +385,8 @@ fn verify_mdoc_issuer_certificate_chain(
     // ISO 18013-5 §9.3.1 separately requires MSO.signed within the DS validity
     // interval (checked by the core). The RFC 5280 path and revocation checks
     // use this presentation's one current-time observation, never MSO.signed.
-    if now.timestamp_subsec_nanos() >= 1_000_000_000 {
-        return Err(CredentialTrustError::InvalidValidity);
-    }
+    // Jiff already guarantees a POSIX instant here; protocol leap seconds are
+    // rejected at the protocol/application boundary in from_protocol_time.
     let anchor = verify_certificate_chain_with_scoped_at(
         certificates,
         trust_anchors,
