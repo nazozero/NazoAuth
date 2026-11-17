@@ -30,11 +30,32 @@ PostgreSQL epoch (2000-01-01). Its truncation rule is distinct from audit-chain
 v1 floor rounding. Regression tests cover both sides of that epoch, both sides
 of the Unix epoch, optional values and arrays.
 
+### Certificate calendar bounds and CRL publication
+
+The IACA validity ceiling is twenty calendar years, not a fixed number of days.
+The profile first rejects certificate validity fields with fractional seconds,
+then adds `Span::new().years(20)` to the UTC civil representation of `notBefore`.
+Conversion and arithmetic failures retain the existing rejection boundary.
+Certificate profile, issuer-binding, signature/path and revocation ownership
+are unchanged.
+
+CRL publication uses floor-rounded whole-second POSIX instants. Its publication
+interval is exactly `SignedDuration::from_hours(24)`, not a calendar day.
+Persisted fractional publication times, a non-24-hour interval, invalid revision
+metadata and clock rollback remain errors. A CAS conflict reloads the winning
+revocation facts and observes time again; reusing a publication retains its
+persisted number and interval. The existing concurrency, reload, reseal,
+invalid-metadata and revision-exhaustion regression assertions are retained.
+
+### Protocol and application time
+
 The mdoc protocol timestamp retains its own representation. Application Jiff
 instants are POSIX values; converting an authenticated protocol leap second to
 the application domain rejects it instead of silently changing the signed
 instant. This is a documented application boundary, not a claim that ISO mdoc
-has no leap seconds.
+has no leap seconds. The shared Jiff verification instant needs no second,
+impossible Chrono-style leap-second check. Path and revocation verification
+continue to use that shared current instant, never the credential's signed time.
 
 ## Joint source identity
 
@@ -49,10 +70,18 @@ attributes, shared verification instant and CRL publication checks. Both
 independent integration PRs remain unchanged. No force-push, production merge,
 security-policy exception or deployment is part of this migration.
 
+The focused continuation through `ac870ad7784b3f8216be875f4b6e32fd3446879b`
+repairs residual Chrono APIs in the reconciled IACA, CRL publication and mdoc
+verification paths, plus the CRL test fixture. The audit-chain epoch regression
+was moved intact to `crates/persistence/tests/unit/audit_chain.rs`, restoring the
+repository's test-placement boundary rather than weakening that check.
+
 ## Validation status
 
-The reconciled source requires fresh compilation, warnings-denied lint,
-PostgreSQL/Valkey tests, documentation tests, WASM runtime checks and the existing
-supply-chain/real-HTTP security gates. Earlier results are not a substitute.
-This document will be updated with the actual completed exact-source outcomes;
-while those checks are pending, the migration remains a draft.
+Current-source acceptance is recorded in PR #289 with exact head commits and
+GitHub Actions run IDs. It requires fresh warnings-denied Clippy, the complete
+native PostgreSQL/Valkey test suite, documentation tests, WASM package checks
+and runtime execution, and the existing supply-chain/real-HTTP security gates.
+Earlier results are not a substitute. A successful preliminary step, an older
+commit's result, or a skipped check is not an end-to-end gate pass. Until those
+exact-source checks are complete, the migration remains a draft.
