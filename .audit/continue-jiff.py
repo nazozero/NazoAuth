@@ -125,6 +125,7 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
     for path in paths:
         if path.name == 'schema.rs':
             timestamp_columns.update(re.findall(r'^\s*(\w+)\s*->\s*(?:Nullable<)?Timestamptz', path.read_text(), re.M))
+    row_pattern = re.compile(r'(?P<attrs>(?:#\[[^\]]*\]\s*)+)(?P<declaration>(?:pub(?:\([^)]*\))?\s+)?struct\s+\w+[^\{]*\{)(?P<body>[^}]*)}', re.S)
     sql_crates = {}
     for path in paths:
         if path.suffix != '.rs':
@@ -134,7 +135,7 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
             continue
         old = text
         def rows(match):
-            attrs, declaration, body = match.group(1, 2, 3)
+            attrs, declaration, body = (match[name] for name in ('attrs', 'declaration', 'body'))
             if 'Queryable' not in attrs:
                 return match.group(0)
             def field(m):
@@ -142,7 +143,7 @@ if re.search(r'^chrono\s*=', manifest.read_text(), re.M):
                 return m.group(1) + '#[diesel(deserialize_as = jiff_diesel::' + wrapper + ')]\n' + m.group(0)
             body = re.sub(r'^([ \t]*)((?:pub(?:\([^)]*\))?\s+)?\w+:\s*)(Option<(?:jiff::)?Timestamp>|(?:jiff::)?Timestamp)(,)', field, body, flags=re.M)
             return attrs + declaration + body + '}'
-        text = re.sub(r'((?:#\[[^\]]*\]\s*)+)((?:pub(?:\([^)]*\))?\s+)?struct\s+\w+[^\{]*\{)([^}]*)(})', lambda m: rows(type('Match', (), {'group': lambda self, *ids: tuple(m.group({1:1, 2:2, 3:4}[i]) for i in ids) if len(ids)>1 else m.group(0)})()), text, flags=re.S)
+        text = row_pattern.sub(rows, text)
         def bind(match, arg):
             return match.group(0) + (('(' + arg + ').to_diesel()') if 'Timestamptz' in match.group(1) else arg) + ')'
         text = calls(text, r'\.bind::<([^()]*?)>\(', bind)
