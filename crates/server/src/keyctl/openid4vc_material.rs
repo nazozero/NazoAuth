@@ -13,6 +13,9 @@ use nazo_crypto::certificate::{
     CustomExtension, DistinguishedName, DnType, DnValue, IsCa, KeyIdMethod, KeyUsagePurpose,
     PrintableString, RevokedCertParams, SerialNumber,
 };
+use nazo_digital_credentials::mdoc_certificate::{
+    check_mdoc_document_signer_profile, check_mdoc_iaca_profile, check_mdoc_issuer_binding,
+};
 use nazo_key_management::{KeyManager, Openid4vcMaterial, Openid4vcPublicMaterial};
 use rustls::pki_types::{CertificateDer, pem::PemObject};
 use sha1::{Digest as _, Sha1};
@@ -45,6 +48,7 @@ struct Openid4vcCertificateBundle {
 
 struct MdocCertificateMaterial {
     leaf_der: Vec<u8>,
+    // CRL publication address, never an identity used to establish trust.
     issuer_id: String,
     issuer_material_pem: String,
 }
@@ -86,21 +90,25 @@ pub(crate) async fn signed_mdoc_crl(
         return Ok(None);
     };
     let issuer_material = &material.issuer_private_material;
-    let snapshot = material.revocation_snapshot;
-    let certificates = CertificateDer::pem_slice_iter(issuer_material.as_bytes())
-        .collect::<Result<Vec<_>, _>>()
-        .context("failed to parse OpenID4VC certificate bundle")?;
+    let snapshot = &material.revocation_snapshot;
+    let certificates = &material.certificate_chain_der;
     if certificates.len() != 2 {
         bail!("OpenID4VC certificate bundle must contain a DS and IACA");
     }
-    let (_, leaf) = x509_parser::parse_x509_certificate(certificates[0].as_ref())
+    let (leaf_remainder, leaf) = x509_parser::parse_x509_certificate(certificates[0].as_ref())
         .map_err(|error| anyhow::anyhow!("failed to parse OpenID4VC DS certificate: {error}"))?;
-    let (_, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
+    let (ca_remainder, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
         .map_err(|error| anyhow::anyhow!("failed to parse OpenID4VC IACA certificate: {error}"))?;
-    if sha256_hex(certificates[1].as_ref()) != issuer_id {
-        bail!("mdoc issuer material does not match requested IACA fingerprint");
+    if !leaf_remainder.is_empty() || !ca_remainder.is_empty() {
+        bail!("OpenID4VC certificate contains trailing data");
     }
-    if !is_mdoc_document_signing_certificate(&leaf) {
+    let crl_base = format!("{}/.well-known/mdoc", source.issuer_contact_uri);
+    if mdoc_crl_record_id(&leaf, &ca, &crl_base, true).as_deref() != Some(issuer_id) {
+        bail!("mdoc issuer material does not match its CRL publication address");
+    }
+    if check_mdoc_document_signer_profile(&leaf).is_err()
+        || check_mdoc_issuer_binding(&leaf, &ca).is_err()
+    {
         return Ok(None);
     }
     let identity = nazo_digital_credentials::certificate_identity(certificates[0].as_ref());
@@ -112,8 +120,15 @@ pub(crate) async fn signed_mdoc_crl(
     // sign_crl matches and signs with the same prepared private key. The CA's
     // public key supplies the identifier after the exact issuer binding above.
     let issuer_public_key = ca.public_key().subject_public_key.data.as_ref();
-    let this_update = time::OffsetDateTime::now_utc();
-    let next_update = this_update + time::Duration::hours(24);
+    let this_update = time::OffsetDateTime::from_unix_timestamp(material.this_update.timestamp())
+        .context("CRL publication this_update is out of range")?;
+    let next_update = time::OffsetDateTime::from_unix_timestamp(material.next_update.timestamp())
+        .context("CRL publication next_update is out of range")?;
+    let number_bytes = material.crl_number.to_be_bytes();
+    let number_start = number_bytes
+        .iter()
+        .position(|byte| *byte != 0)
+        .context("CRL publication number must be positive")?;
     let revoked_certs = match entry.status {
         nazo_digital_credentials::CertificateRevocationStatus::Good => Vec::new(),
         nazo_digital_credentials::CertificateRevocationStatus::Revoked => vec![RevokedCertParams {
@@ -132,10 +147,7 @@ pub(crate) async fn signed_mdoc_crl(
     let crl_params = CertificateRevocationListParams {
         this_update,
         next_update,
-        crl_number: SerialNumber::from(
-            u64::try_from(this_update.unix_timestamp_nanos() / 1_000)
-                .context("mdoc revocation snapshot this_update precedes the Unix epoch")?,
-        ),
+        crl_number: SerialNumber::from(number_bytes[number_start..].to_vec()),
         issuing_distribution_point: None,
         revoked_certs,
         key_identifier_method: KeyIdMethod::PreSpecified(subject_key_identifier_from_public_key(
@@ -146,22 +158,6 @@ pub(crate) async fn signed_mdoc_crl(
         nazo_crypto::certificate::sign_crl(crl_params, certificates[1].as_ref(), issuer_material)
             .context("failed to sign mdoc CRL")?;
     Ok(Some(crl))
-}
-
-fn is_mdoc_document_signing_certificate(
-    certificate: &x509_parser::certificate::X509Certificate<'_>,
-) -> bool {
-    certificate.extensions().iter().any(|extension| {
-        extension.critical
-            && matches!(
-                &extension.parsed_extension(),
-                x509_parser::extensions::ParsedExtension::ExtendedKeyUsage(usage)
-                    if usage.other.iter().any(|oid| matches!(
-                        oid.to_id_string().as_str(),
-                        "1.0.18013.5.1.2" | "2.23.136.1.1.1"
-                    ))
-            )
-    })
 }
 
 fn mdoc_certificate_profile(
@@ -203,74 +199,76 @@ fn mdoc_certificate_profile_matches(
             )
         })
     };
-    let crl_uri = format!(
-        "{}/{}.crl",
-        profile.crl_distribution_uri,
-        sha256_hex(ca.as_ref())
-    );
-    let has_crldp = leaf.extensions().iter().any(|extension| {
-        let x509_parser::extensions::ParsedExtension::CRLDistributionPoints(points) =
-            &extension.parsed_extension()
-        else {
-            return false;
-        };
-        points.points.iter().any(|point| {
-            let Some(x509_parser::extensions::DistributionPointName::FullName(names)) =
-                &point.distribution_point
-            else {
-                return false;
-            };
-            names.iter().any(|name| {
-                matches!(
-                    name,
-                    x509_parser::extensions::GeneralName::URI(uri)
-                        if *uri == crl_uri
-                )
-            })
-        })
-    });
-    let has_document_signing_eku = is_mdoc_document_signing_certificate(leaf);
-    let leaf_ski =
-        subject_key_identifier_from_public_key(leaf.public_key().subject_public_key.data.as_ref());
-    let ca_ski =
-        subject_key_identifier_from_public_key(ca.public_key().subject_public_key.data.as_ref());
-    let has_ski = |certificate: &x509_parser::certificate::X509Certificate<'_>, expected: &[u8]| {
-        certificate.extensions().iter().any(|extension| {
-            matches!(
-                &extension.parsed_extension(),
-                x509_parser::extensions::ParsedExtension::SubjectKeyIdentifier(identifier)
-                    if identifier.0 == expected
-            )
-        })
-    };
-    let has_aki = leaf.extensions().iter().any(|extension| {
-        matches!(
-            &extension.parsed_extension(),
-            x509_parser::extensions::ParsedExtension::AuthorityKeyIdentifier(identifier)
-                if identifier.key_identifier.as_ref().is_some_and(|value| value.0 == ca_ski)
-        )
-    });
-    let ca_path_len_is_zero = ca
-        .basic_constraints()
-        .ok()
-        .flatten()
-        .is_some_and(|constraint| {
-            constraint.value.ca && constraint.value.path_len_constraint == Some(0)
-        });
-    let validity_seconds =
-        leaf.validity().not_after.timestamp() - leaf.validity().not_before.timestamp();
-    country_matches(leaf)
-        && country_matches(ca)
+    check_mdoc_document_signer_profile(leaf).is_ok()
+        && check_mdoc_iaca_profile(ca).is_ok()
+        && check_mdoc_issuer_binding(leaf, ca).is_ok()
+        && country_matches(leaf)
         && has_ian(leaf)
         && has_ian(ca)
-        && has_crldp
-        && has_document_signing_eku
-        && has_ski(leaf, &leaf_ski)
-        && has_ski(ca, &ca_ski)
-        && has_aki
-        && ca_path_len_is_zero
-        && leaf.raw_serial().len() <= 20
-        && validity_seconds <= 457 * 24 * 60 * 60
+        && mdoc_crl_record_id(leaf, ca, &profile.crl_distribution_uri, false).is_some()
+}
+
+/// A stable address known before the root is signed. Certificate DER cannot be
+/// hashed into its own CRL URI without creating a circular dependency.
+fn mdoc_crl_publication_id(public_key: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"NazoAuth mdoc CRL publication v1\0");
+    digest.update(public_key);
+    hex::encode(digest.finalize())
+}
+
+fn has_crl_uri(certificate: &x509_parser::certificate::X509Certificate<'_>, uri: &str) -> bool {
+    use x509_parser::extensions::{DistributionPointName, GeneralName, ParsedExtension};
+
+    let Ok(Some(extension)) =
+        certificate.get_extension_unique(&x509_parser::der_parser::oid!(2.5.29.31))
+    else {
+        return false;
+    };
+    let ParsedExtension::CRLDistributionPoints(points) = extension.parsed_extension() else {
+        return false;
+    };
+    !extension.critical
+        && !points.points.is_empty()
+        && points.points.iter().all(|point| {
+            point.reasons.is_none()
+                && point.crl_issuer.is_none()
+                && matches!(&point.distribution_point, Some(DistributionPointName::FullName(names))
+                    if names.iter().any(|name| matches!(name, GeneralName::URI(_))))
+        })
+        && points.points.iter().any(|point| {
+            matches!(&point.distribution_point, Some(DistributionPointName::FullName(names))
+                if names.iter().any(|name| matches!(name, GeneralName::URI(value) if *value == uri)))
+        })
+}
+
+/// Bind the stored record and URL to the actual certificate pair. Historical
+/// DER-addressed records retain their published URLs, without private-key
+/// aliases. Only new records can be selected as the active issuing generation.
+fn mdoc_crl_record_id(
+    leaf: &x509_parser::certificate::X509Certificate<'_>,
+    ca: &x509_parser::certificate::X509Certificate<'_>,
+    crl_base: &str,
+    allow_legacy: bool,
+) -> Option<String> {
+    let id = mdoc_crl_publication_id(ca.public_key().subject_public_key.data.as_ref());
+    let uri = format!("{crl_base}/{id}.crl");
+    if has_crl_uri(leaf, &uri) && has_crl_uri(ca, &uri) {
+        return Some(id);
+    }
+    // Older roots omitted CRLDistributionPoints. Accept this shape only to
+    // retain the already published DS CRL, never to authorize new issuance.
+    if allow_legacy
+        && ca
+            .get_extension_unique(&x509_parser::der_parser::oid!(2.5.29.31))
+            .is_ok_and(|extension| extension.is_none())
+    {
+        let id = sha256_hex(ca.as_ref());
+        if has_crl_uri(leaf, &format!("{crl_base}/{id}.crl")) {
+            return Some(id);
+        }
+    }
+    None
 }
 
 fn subject_key_identifier_from_public_key(public_key: &[u8]) -> Vec<u8> {
@@ -294,6 +292,10 @@ fn build_openid4vc_certificate_bundle(
     };
     let ca_not_after = not_before + time::Duration::days(3650);
     let ca_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
+    let ca_public_key = mdoc_profile
+        .map(|_| nazo_crypto::certificate::public_key_from_pem(&ca_key_pem))
+        .transpose()?;
+    let issuer_id = ca_public_key.as_deref().map(mdoc_crl_publication_id);
     let mut ca_params = CertificateParams::default();
     ca_params.distinguished_name = DistinguishedName::new();
     ca_params
@@ -307,6 +309,19 @@ fn build_openid4vc_certificate_bundle(
         ca_params
             .custom_extensions
             .push(issuer_alternative_name(&profile.issuer_contact_uri));
+        ca_params.key_identifier_method =
+            KeyIdMethod::PreSpecified(subject_key_identifier_from_public_key(
+                ca_public_key.as_deref().expect("mdoc IACA public key"),
+            ));
+        ca_params
+            .crl_distribution_points
+            .push(CrlDistributionPoint {
+                uris: vec![format!(
+                    "{}/{}.crl",
+                    profile.crl_distribution_uri,
+                    issuer_id.as_ref().expect("mdoc CRL publication address")
+                )],
+            });
     }
     ca_params.is_ca = IsCa::Ca(if mdoc_profile.is_some() {
         BasicConstraints::Constrained(0)
@@ -317,14 +332,7 @@ fn build_openid4vc_certificate_bundle(
     ca_params.not_before = not_before;
     ca_params.not_after = ca_not_after;
     ca_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
-    if mdoc_profile.is_some() {
-        ca_params.key_identifier_method =
-            KeyIdMethod::PreSpecified(subject_key_identifier_from_public_key(
-                &nazo_crypto::certificate::public_key_from_pem(&ca_key_pem)?,
-            ));
-    }
     let ca_der = nazo_crypto::certificate::self_signed(ca_params, &ca_key_pem)?;
-    let issuer_id = mdoc_profile.map(|_| sha256_hex(&ca_der));
 
     let mut leaf_params = CertificateParams::new(vec![hostname.to_owned()])?;
     leaf_params.distinguished_name = DistinguishedName::new();
@@ -353,7 +361,7 @@ fn build_openid4vc_certificate_bundle(
                 uris: vec![format!(
                     "{}/{}.crl",
                     profile.crl_distribution_uri,
-                    issuer_id.as_ref().expect("mdoc issuer fingerprint")
+                    issuer_id.as_ref().expect("mdoc CRL publication address")
                 )],
             });
     }
@@ -567,6 +575,24 @@ fn build_managed_material(
     snapshot.this_update = now;
     snapshot.next_update = now + chrono::Duration::hours(24);
     if let Some(material) = bundle.mdoc_material {
+        if iacas.contains_key(&material.issuer_id) {
+            bail!("mdoc CRL publication address is already assigned");
+        }
+        for pem in iacas.values() {
+            let certificates =
+                CertificateDer::pem_slice_iter(pem.as_bytes()).collect::<Result<Vec<_>, _>>()?;
+            let issuer = certificates
+                .get(1)
+                .context("stored IACA record has no issuer")?;
+            let (remainder, ca) = x509_parser::parse_x509_certificate(issuer.as_ref())
+                .map_err(|error| anyhow::anyhow!("invalid stored IACA certificate: {error}"))?;
+            if !remainder.is_empty()
+                || mdoc_crl_publication_id(ca.public_key().subject_public_key.data.as_ref())
+                    == material.issuer_id
+            {
+                bail!("an IACA publication key cannot own multiple certificate records");
+            }
+        }
         iacas.insert(material.issuer_id, material.issuer_material_pem);
         snapshot
             .entries
@@ -615,24 +641,24 @@ fn validate_managed_profile(
     if certificates.len() != 2 {
         bail!("managed OpenID4VC chain must contain DS and CA");
     }
-    let (_, leaf) = x509_parser::parse_x509_certificate(certificates[0].as_ref())
+    let (leaf_remainder, leaf) = x509_parser::parse_x509_certificate(certificates[0].as_ref())
         .map_err(|e| anyhow::anyhow!("invalid signing certificate: {e}"))?;
-    let (_, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
+    let (ca_remainder, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
         .map_err(|e| anyhow::anyhow!("invalid CA certificate: {e}"))?;
     let dns_matches = leaf.subject_alternative_name()?.is_some_and(|san| san.value.general_names.iter().any(|name| matches!(name, x509_parser::extensions::GeneralName::DNSName(dns) if *dns == profile.hostname)));
-    if !dns_matches
-        || leaf.is_ca()
-        || !ca.is_ca()
-        || leaf.issuer() != ca.subject()
-        || ca.subject() != ca.issuer()
+    let profile_matches = match &profile.mdoc_profile {
+        Some(profile) => mdoc_certificate_profile_matches(&leaf, &ca, profile),
+        None => !leaf.is_ca() && ca.is_ca() && ca.subject().as_raw() == ca.issuer().as_raw(),
+    };
+    if !leaf_remainder.is_empty()
+        || !ca_remainder.is_empty()
+        || !dns_matches
+        || !profile_matches
+        || leaf.issuer().as_raw() != ca.subject().as_raw()
         || nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).is_err()
         || nazo_crypto::certificate::verify_signature(&leaf, ca.public_key()).is_err()
         || !leaf.validity().is_valid()
         || !ca.validity().is_valid()
-        || profile
-            .mdoc_profile
-            .as_ref()
-            .is_some_and(|p| !mdoc_certificate_profile_matches(&leaf, &ca, p))
     {
         bail!(
             "managed certificate no longer matches tenant profile; explicit mdoc rotation is required"
@@ -676,6 +702,7 @@ async fn import_mdoc_directory(
             bail!("imported revoked DS status is missing its revocation time");
         }
         let mut owned_certificates = BTreeSet::new();
+        let mut publication_keys = BTreeSet::new();
         let mut directory = tokio::fs::read_dir(source.join("iaca-keys"))
             .await
             .context("failed to read import iaca-keys directory")?;
@@ -693,24 +720,41 @@ async fn import_mdoc_directory(
             if certificates.len() != 2 {
                 bail!("imported IACA record must contain its DS and IACA certificates");
             }
-            let (_, leaf) = x509_parser::parse_x509_certificate(certificates[0].as_ref())
-                .map_err(|e| anyhow::anyhow!("invalid imported DS: {e}"))?;
-            let (_, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
+            let (leaf_remainder, leaf) =
+                x509_parser::parse_x509_certificate(certificates[0].as_ref())
+                    .map_err(|e| anyhow::anyhow!("invalid imported DS: {e}"))?;
+            let (ca_remainder, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
                 .map_err(|e| anyhow::anyhow!("invalid imported IACA: {e}"))?;
             let private_public_key = nazo_crypto::certificate::public_key_from_pem(&pem)?;
-            if !ca.is_ca()
-                || ca.subject() != ca.issuer()
-                || leaf.issuer() != ca.subject()
+            if !leaf_remainder.is_empty()
+                || !ca_remainder.is_empty()
+                || leaf.issuer().as_raw() != ca.subject().as_raw()
                 || private_public_key != ca.public_key().subject_public_key.data.as_ref()
                 || nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).is_err()
                 || nazo_crypto::certificate::verify_signature(&leaf, ca.public_key()).is_err()
-                || !is_mdoc_document_signing_certificate(&leaf)
+                || check_mdoc_document_signer_profile(&leaf).is_err()
+                || check_mdoc_issuer_binding(&leaf, &ca).is_err()
             {
                 bail!("imported IACA key and certificate chain do not match");
             }
-            let id = sha256_hex(certificates[1].as_ref());
+            let id = mdoc_crl_record_id(&leaf, &ca, &mdoc_profile.crl_distribution_uri, true)
+                .context("imported IACA record has no bound CRL publication address")?;
+            let publication_key =
+                mdoc_crl_publication_id(ca.public_key().subject_public_key.data.as_ref());
+            if id == publication_key {
+                check_mdoc_iaca_profile(&ca).context(
+                    "new imported IACA does not match the mdoc root certificate profile",
+                )?;
+            } else if !ca.is_ca() || ca.subject().as_raw() != ca.issuer().as_raw() {
+                // Legacy records retain their original root without a CRLDP.
+                // Their key, signatures and exact old DS URL remain checked.
+                bail!("historical imported IACA is not a self-issued CA");
+            }
             if entry.file_name().to_str() != Some(format!("{id}.pem").as_str()) {
-                bail!("imported IACA filename does not match its certificate fingerprint");
+                bail!("imported IACA filename does not match its CRL publication address");
+            }
+            if !publication_keys.insert(publication_key) {
+                bail!("an IACA publication key cannot own multiple certificate records");
             }
             let issuer = &mdoc_profile.issuer_contact_uri;
             let identity = nazo_digital_credentials::certificate_identity(certificates[0].as_ref());
@@ -750,14 +794,20 @@ async fn import_mdoc_directory(
         bail!("imported signing chain must contain DS and CA");
     }
     let active_ca = pem_certificate(certificates[1].as_ref());
-    if profile.mdoc_profile.is_some() {
+    if let Some(mdoc_profile) = &profile.mdoc_profile {
+        let (_, leaf) = x509_parser::parse_x509_certificate(certificates[0].as_ref())
+            .map_err(|error| anyhow::anyhow!("invalid active imported DS: {error}"))?;
+        let (_, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
+            .map_err(|error| anyhow::anyhow!("invalid active imported IACA: {error}"))?;
+        let id = mdoc_crl_record_id(&leaf, &ca, &mdoc_profile.crl_distribution_uri, false)
+            .context("active imported IACA requires a root CRL address; rotate legacy material before use")?;
         let iaca = iacas
-            .get(&sha256_hex(certificates[1].as_ref()))
+            .get(&id)
             .context("import is missing the active IACA private material")?;
         let owned_chain =
             CertificateDer::pem_slice_iter(iaca.as_bytes()).collect::<Result<Vec<_>, _>>()?;
-        if owned_chain[0] != certificates[0] {
-            bail!("active signing certificate does not match its IACA record's DS certificate");
+        if owned_chain != certificates {
+            bail!("active signing chain does not match its IACA publication record");
         }
     }
     if !anchors.contains(&active_ca) {
@@ -831,7 +881,7 @@ pub(crate) async fn operator_manage_mdoc(
             let pem = material
                 .iaca_private_materials
                 .get(&issuer_id)
-                .context("unknown IACA fingerprint")?;
+                .context("unknown IACA CRL publication address")?;
             let certificates =
                 CertificateDer::pem_slice_iter(pem.as_bytes()).collect::<Result<Vec<_>, _>>()?;
             let identity = nazo_digital_credentials::certificate_identity(

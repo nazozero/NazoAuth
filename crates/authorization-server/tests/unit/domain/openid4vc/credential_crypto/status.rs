@@ -548,6 +548,181 @@ fn cwt(certs: &CertificateFixture, uri: &str, exp: i64, typ: &str) -> Vec<u8> {
 }
 
 #[test]
+fn signed_cwt_lists_preserve_wire_types_and_header_presence() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let original = cwt(
+            &certs,
+            URI,
+            Utc::now().timestamp() + 300,
+            "application/statuslist+cwt",
+        );
+        let key =
+            PreparedSigningKey::new(Algorithm::ES256, &certs.leaf_key.serialize_der()).unwrap();
+        let (_, certificate) = x509_parser::parse_x509_certificate(&certs.leaf_der).unwrap();
+        let verification = VerificationKey::from_ec_sec1(
+            certificate.public_key().subject_public_key.data.as_ref(),
+        );
+        let encode = |value: &Cbor| {
+            let mut bytes = Vec::new();
+            // These are deliberately non-preferred tagged-integer wire inputs.
+            // Do not let a canonical encoder repair them before authentication.
+            ciborium::into_writer(value, &mut bytes).unwrap();
+            bytes
+        };
+        let mut unexpectedly_accepted = Vec::new();
+        for case in [
+            "valid",
+            "bits_tag2",
+            "ttl_tag2",
+            "subject_label_tag2",
+            "list_label_tag2",
+            "alg_label_tag2",
+            "alg_tag3",
+            "type_label_tag2",
+            "chain_label_tag2",
+            "empty_protected_crit",
+            "empty_unprotected_crit",
+            "duplicate_kid_buckets",
+        ] {
+            let mut outer: Cbor = ciborium::from_reader(original.as_slice()).unwrap();
+            let Cbor::Tag(18, body) = &mut outer else {
+                unreachable!()
+            };
+            let fields = body.as_array_mut().unwrap();
+            let mut protected: Cbor =
+                ciborium::from_reader(fields[0].as_bytes().unwrap().as_slice()).unwrap();
+            let mut claims: Cbor =
+                ciborium::from_reader(fields[2].as_bytes().unwrap().as_slice()).unwrap();
+            let tagged = |n: u16| {
+                let bytes = if n <= 255 {
+                    vec![n as u8]
+                } else {
+                    n.to_be_bytes().to_vec()
+                };
+                Cbor::Tag(2, Box::new(Cbor::Bytes(bytes)))
+            };
+            match case {
+                "valid" => {}
+                "bits_tag2" => {
+                    let (_, list) = claims
+                        .as_map_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|(key, _)| key.as_integer().map(i128::from) == Some(65533))
+                        .unwrap();
+                    list.as_map_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|(key, _)| key.as_text() == Some("bits"))
+                        .unwrap()
+                        .1 = tagged(2);
+                }
+                "ttl_tag2" => {
+                    claims
+                        .as_map_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|(key, _)| key.as_integer().map(i128::from) == Some(65534))
+                        .unwrap()
+                        .1 = tagged(60)
+                }
+                "subject_label_tag2" | "list_label_tag2" => {
+                    let label = if case == "subject_label_tag2" {
+                        2
+                    } else {
+                        65533
+                    };
+                    claims
+                        .as_map_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|(key, _)| key.as_integer().map(i128::from) == Some(label))
+                        .unwrap()
+                        .0 = tagged(label as u16);
+                }
+                "alg_label_tag2" | "type_label_tag2" | "chain_label_tag2" => {
+                    let label = match case {
+                        "alg_label_tag2" => 1,
+                        "type_label_tag2" => 16,
+                        _ => 33,
+                    };
+                    protected
+                        .as_map_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|(key, _)| key.as_integer().map(i128::from) == Some(label))
+                        .unwrap()
+                        .0 = tagged(label as u16);
+                }
+                "alg_tag3" => {
+                    protected
+                        .as_map_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|(key, _)| key.as_integer().map(i128::from) == Some(1))
+                        .unwrap()
+                        .1 = Cbor::Tag(3, Box::new(Cbor::Bytes(vec![6])))
+                }
+                "empty_protected_crit" => protected
+                    .as_map_mut()
+                    .unwrap()
+                    .push((Cbor::Integer(2.into()), Cbor::Array(vec![]))),
+                "empty_unprotected_crit" => fields[1]
+                    .as_map_mut()
+                    .unwrap()
+                    .push((Cbor::Integer(2.into()), Cbor::Array(vec![]))),
+                "duplicate_kid_buckets" => {
+                    protected
+                        .as_map_mut()
+                        .unwrap()
+                        .push((Cbor::Integer(4.into()), Cbor::Bytes(vec![1])));
+                    fields[1]
+                        .as_map_mut()
+                        .unwrap()
+                        .push((Cbor::Integer(4.into()), Cbor::Bytes(vec![2])));
+                }
+                _ => unreachable!(),
+            }
+            let protected = encode(&protected);
+            let payload = encode(&claims);
+            let signature_input = encode(&Cbor::Array(vec![
+                Cbor::Text("Signature1".into()),
+                Cbor::Bytes(protected.clone()),
+                Cbor::Bytes(vec![]),
+                Cbor::Bytes(payload.clone()),
+            ]));
+            let signature = key.sign(&signature_input).unwrap();
+            nazo_crypto::signature::verify(Algorithm::ES256, &verification, &signature_input, &signature)
+                .expect("every malformed field is covered by a real valid signature over its original bytes");
+            fields[0] = Cbor::Bytes(protected);
+            fields[2] = Cbor::Bytes(payload);
+            fields[3] = Cbor::Bytes(signature);
+            let token = encode(&outer);
+            let result = verify_cwt(
+                &crypto,
+                &[],
+                std::slice::from_ref(&certs.leaf_der),
+                URI,
+                0,
+                &token,
+            );
+            if case == "valid" {
+                result.expect("correctly signed, active status entry");
+            } else if result.is_ok() {
+                unexpectedly_accepted.push(case);
+            } else {
+                assert_eq!(result, Err(CredentialTrustError::InvalidStatus), "{case}");
+            }
+        }
+        assert!(
+            unexpectedly_accepted.is_empty(),
+            "accepted altered wire types/headers: {unexpectedly_accepted:?}"
+        );
+    });
+}
+
+#[test]
 fn signed_cwt_lists_validate_cose_and_fail_closed() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;

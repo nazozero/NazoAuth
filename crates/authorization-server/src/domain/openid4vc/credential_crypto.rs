@@ -43,7 +43,7 @@ impl CredentialVerifierPort for Openid4vcCredentialCrypto {
         Box::pin(async move {
             let (credential, issuer_chain) = match presentation.format {
                 CredentialFormat::SdJwtVc => sd_jwt::verify(self, presentation),
-                CredentialFormat::MsoMdoc => mdoc::verify(self, presentation),
+                CredentialFormat::MsoMdoc => mdoc::verify(self, presentation, chrono::Utc::now()),
             }?;
             if let Some(reference) = &credential.status {
                 status::resolve(self, presentation.format, reference)

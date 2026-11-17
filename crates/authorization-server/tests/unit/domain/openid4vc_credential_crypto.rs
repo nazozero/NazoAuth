@@ -33,7 +33,7 @@ use rcgen::{
 use serde_json::{Value, json};
 use sha2::Digest as _;
 
-use super::mdoc::{from_protocol_time, to_protocol_time, verify_direct_scoped_trust_anchor};
+use super::mdoc::{from_protocol_time, to_protocol_time};
 use super::*;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -99,7 +99,7 @@ impl CredentialCryptoTestExt for Openid4vcCredentialCrypto {
         nazo_digital_credentials::VerifiedCredential,
         nazo_digital_credentials::CredentialTrustError,
     > {
-        super::mdoc::verify(self, presentation).map(|(credential, _)| credential)
+        super::mdoc::verify(self, presentation, Utc::now()).map(|(credential, _)| credential)
     }
 }
 
@@ -125,6 +125,27 @@ fn certificate_fixture_with_key_and_aki(
     leaf_key: KeyPair,
     include_aki: bool,
 ) -> CertificateFixture {
+    certificate_fixture_with_parameters(host, leaf_key, include_aki, |_, _| {})
+}
+
+fn certificate_fixture_with_parameters(
+    host: &str,
+    leaf_key: KeyPair,
+    include_aki: bool,
+    edit: impl FnOnce(&mut CertificateParams, &mut CertificateParams),
+) -> CertificateFixture {
+    certificate_fixture_with_wire_edit(host, leaf_key, include_aki, edit, |der, _| der)
+}
+
+// A test can construct malformed but genuinely signed certificate fields that
+// the safe certificate generator intentionally refuses to create.
+fn certificate_fixture_with_wire_edit(
+    host: &str,
+    leaf_key: KeyPair,
+    include_aki: bool,
+    edit: impl FnOnce(&mut CertificateParams, &mut CertificateParams),
+    wire_edit: impl FnOnce(Vec<u8>, &KeyPair) -> Vec<u8>,
+) -> CertificateFixture {
     let now = time::OffsetDateTime::now_utc();
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("CA key");
     let mut ca_params = CertificateParams::default();
@@ -132,34 +153,83 @@ fn certificate_fixture_with_key_and_aki(
     ca_params
         .distinguished_name
         .push(DnType::CommonName, "OpenID4VC test root");
-    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params.distinguished_name.push(
+        DnType::CountryName,
+        rcgen::DnValue::PrintableString("US".try_into().unwrap()),
+    );
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
     ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+    ca_params.key_identifier_method =
+        rcgen::KeyIdMethod::PreSpecified(sha1::Sha1::digest(ca_key.public_key_raw()).to_vec());
     ca_params.not_before = now - time::Duration::minutes(1);
     ca_params.not_after = now + time::Duration::days(365);
-    let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("self-signed CA");
-
     let mut leaf_params = CertificateParams::new(vec![host.to_owned()]).expect("leaf SAN");
     leaf_params.distinguished_name = DistinguishedName::new();
     leaf_params
         .distinguished_name
         .push(DnType::CommonName, host);
-    leaf_params
-        .distinguished_name
-        .push(DnType::CountryName, "US");
+    leaf_params.distinguished_name.push(
+        DnType::CountryName,
+        rcgen::DnValue::PrintableString("US".try_into().unwrap()),
+    );
     leaf_params.is_ca = IsCa::NoCa;
     leaf_params.use_authority_key_identifier_extension = include_aki;
     leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     leaf_params.not_before = now - time::Duration::minutes(1);
     leaf_params.not_after = now + time::Duration::days(365);
+    // ISO 18013-5 Annex B.1.4: critical ExtendedKeyUsage with id-kp-mdlDS.
+    // DER SEQUENCE { OBJECT IDENTIFIER 1.0.18013.5.1.2 }.
+    let mut eku = rcgen::CustomExtension::from_oid_content(
+        &[2, 5, 29, 37],
+        vec![
+            0x30, 0x09, 0x06, 0x07, 0x28, 0x81, 0x8c, 0x5d, 0x05, 0x01, 0x02,
+        ],
+    );
+    eku.set_criticality(true);
+    leaf_params.custom_extensions.push(eku);
+    leaf_params
+        .custom_extensions
+        .push(rcgen::CustomExtension::from_oid_content(
+            &[2, 5, 29, 14],
+            yasna::construct_der(|writer| {
+                writer.write_bytes(&sha1::Sha1::digest(leaf_key.public_key_raw()))
+            }),
+        ));
+    leaf_params
+        .custom_extensions
+        .push(rcgen::CustomExtension::from_oid_content(
+            &[2, 5, 29, 18],
+            yasna::construct_der(|writer| {
+                writer.write_sequence(|writer| {
+                    writer
+                        .next()
+                        .write_tagged_implicit(yasna::Tag::context(6), |writer| {
+                            writer.write_ia5_string("https://issuer.example");
+                        });
+                });
+            }),
+        ));
+    leaf_params
+        .crl_distribution_points
+        .push(rcgen::CrlDistributionPoint {
+            uris: vec!["https://issuer.example/test-issuer.crl".to_owned()],
+        });
+    edit(&mut ca_params, &mut leaf_params);
+    let ca = CertifiedIssuer::self_signed(ca_params, ca_key).expect("self-signed CA");
     let leaf = leaf_params
         .signed_by(&leaf_key, &ca)
         .expect("leaf certificate");
+    let leaf_der = wire_edit(leaf.der().as_ref().to_vec(), ca.key());
+    let leaf_pem = format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+        STANDARD.encode(&leaf_der)
+    );
 
     CertificateFixture {
         ca_der: ca.der().as_ref().to_vec(),
         ca_pem: ca.pem(),
-        leaf_der: leaf.der().as_ref().to_vec(),
-        leaf_pem: leaf.pem(),
+        leaf_der,
+        leaf_pem,
         leaf_key,
     }
 }
@@ -808,9 +878,13 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
                 &nazo_mdoc::cbor::data_item::encode_cbor_canonical(&issuer_auth).unwrap(),
             )
             .unwrap();
-            let mso = nazo_mdoc::model::issuer_auth::IssuerAuth::new(cose)
-                .mso()
-                .unwrap();
+            let issuer_auth = nazo_mdoc::model::issuer_auth::IssuerAuth::new(cose);
+            assert_eq!(
+                issuer_auth.certificate_chain_der().unwrap(),
+                vec![certs.leaf_der.clone()],
+                "IssuerAuth carries the DS, never the configured IACA root"
+            );
+            let mso = issuer_auth.mso().unwrap();
             assert!(
                 mso.validity_info.signed >= to_protocol_time(not_before).unwrap(),
                 "published MSO signed time must not precede the pinned certificate"
@@ -839,6 +913,49 @@ fn mdoc_issuance_preserves_privacy_times_within_signing_certificate_validity() {
             crypto.sign(&input).await,
             Err(CredentialTrustError::InvalidEncoding)
         );
+    });
+}
+
+#[test]
+fn mdoc_issuance_rejects_invalid_ds_purpose_and_issuer_binding() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (holder, _) = es256_jwk(37);
+        let input = mdoc_input(
+            Some(HolderBinding::Jwk { jwk: holder }),
+            json!({"org.iso.18013.5.1":{"issuing_country":"US"}}),
+        );
+        for case in ["missing_eku", "excess_ku", "country", "state"] {
+            let certs = certificate_fixture_with_parameters(
+                "issuer.example",
+                KeyPair::from_pem(&certs.leaf_key.serialize_pem()).unwrap(),
+                true,
+                |ca, leaf| match case {
+                    "missing_eku" => {
+                        leaf.custom_extensions.remove(0);
+                    }
+                    "excess_ku" => leaf.key_usages.push(KeyUsagePurpose::KeyCertSign),
+                    "country" => ca.distinguished_name.push(
+                        DnType::CountryName,
+                        rcgen::DnValue::PrintableString("CA".try_into().unwrap()),
+                    ),
+                    "state" => ca
+                        .distinguished_name
+                        .push(DnType::StateOrProvinceName, "California"),
+                    _ => unreachable!(),
+                },
+            );
+            let candidate = crypto_with_certificate(
+                crypto.keyset.clone(),
+                &certs,
+                crate::policy::Openid4vcRevocationPolicy::Disabled,
+            );
+            assert_eq!(
+                candidate.sign(&input).await,
+                Err(CredentialTrustError::UntrustedIssuer),
+                "{case}"
+            );
+        }
     });
 }
 
@@ -1514,6 +1631,118 @@ fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
 }
 
 #[test]
+fn mdoc_verification_rejects_expired_ds_even_when_mso_is_current() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let now = Utc::now();
+        let certs = certificate_fixture_with_parameters(
+            "issuer.example",
+            KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+            true,
+            |ca, leaf| {
+                ca.not_before = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+                leaf.not_before = time::OffsetDateTime::now_utc() - time::Duration::hours(2);
+                leaf.not_after = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+            },
+        );
+        let signed = now - Duration::minutes(90);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, signed, None);
+        assert!(
+            verify_certificate_chain_at(
+                std::slice::from_ref(&certs.leaf_der),
+                std::slice::from_ref(&certs.ca_der),
+                signed.timestamp(),
+            )
+            .unwrap()
+            .is_some(),
+            "this is an authentic DS that was valid when the MSO was signed"
+        );
+        assert!(
+            verify_certificate_chain_at(
+                std::slice::from_ref(&certs.leaf_der),
+                std::slice::from_ref(&certs.ca_der),
+                now.timestamp(),
+            )
+            .unwrap()
+            .is_none(),
+            "the DS is expired at presentation time"
+        );
+        let bytes = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
+        let session = SessionTranscript::from_cbor(&transcript).unwrap();
+        let pending = nazo_mdoc::verifier::verify_presentation(
+            &bytes,
+            &session,
+            &nazo_mdoc::verifier::VerificationOptions {
+                now: to_protocol_time(now).unwrap(),
+                max_documents: 1,
+            },
+        )
+        .expect("issuer signature, holder proof and current MSO validity are correct");
+        assert_eq!(pending.len(), 1);
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![certs.ca_der].into(),
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::UntrustedIssuer),
+            "MSO.signed must not replace current-time certificate path validation"
+        );
+    });
+}
+
+#[test]
+fn mdoc_verification_preserves_historical_whole_leap_second_with_current_path_time() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let signed = chrono::DateTime::parse_from_rfc3339("2016-12-31T23:59:60Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let now = chrono::DateTime::parse_from_rfc3339("2017-01-01T00:01:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let certs = certificate_fixture_with_parameters(
+            "issuer.example",
+            KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+            true,
+            |ca, leaf| {
+                let start = time::OffsetDateTime::from_unix_timestamp(
+                    (now - Duration::days(1)).timestamp(),
+                )
+                .unwrap();
+                ca.not_before = start;
+                ca.not_after = start + time::Duration::days(365);
+                leaf.not_before = start;
+                leaf.not_after = start + time::Duration::days(30);
+            },
+        );
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, signed, None);
+        let encoded =
+            resign_mdoc_validity(&encoded, &certs, signed, signed, now + Duration::hours(1));
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![certs.ca_der].into(),
+        };
+        let (verified, _) = super::mdoc::verify(&crypto, &presentation, now).expect(
+            "the current path time is ordinary; the authenticated MSO leap second is preserved",
+        );
+        assert_eq!(verified.issued_at, Some(signed));
+        assert_eq!(
+            verified.issued_at.unwrap().timestamp_subsec_nanos(),
+            1_000_000_000
+        );
+    });
+}
+
+#[test]
 fn mdoc_verification_rejects_signing_before_certificate_validity() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
@@ -1592,38 +1821,492 @@ fn certificate_chain_at_checks_leaf_intermediates_anchor_and_time() {
 }
 
 #[test]
-fn mdoc_direct_scoped_trust_anchor_is_exact_self_signed_and_lease_scoped() {
-    let certs = certificate_fixture("issuer.example");
-    let now = Utc::now().timestamp();
+fn mdoc_verification_rejects_a_scoped_iaca_used_as_document_signer() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut params = CertificateParams::default();
+        params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+        params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+        params.not_before = time::OffsetDateTime::now_utc() - time::Duration::hours(1);
+        params.not_after = time::OffsetDateTime::now_utc() + time::Duration::days(1);
+        let ca = params.self_signed(&key).unwrap();
+        let certs = CertificateFixture {
+            ca_der: ca.der().to_vec(),
+            ca_pem: ca.pem(),
+            leaf_der: ca.der().to_vec(),
+            leaf_pem: ca.pem(),
+            leaf_key: key,
+        };
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: encoded.into(),
+            expected_nonce: "verifier-nonce".into(),
+            expected_audience: "https://verifier.example".into(),
+            mdoc_session_transcript: Some(transcript.into()),
+            additional_trust_anchors: vec![certs.ca_der].into(),
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::UntrustedIssuer),
+            "pinning an IACA does not authorize it to serve as a DS end entity"
+        );
+    });
+}
 
-    assert!(
-        verify_direct_scoped_trust_anchor(
-            std::slice::from_ref(&certs.ca_der),
-            std::slice::from_ref(&certs.ca_der),
-            now,
-        )
-        .expect("exact direct trust anchor")
-    );
-    assert!(
-        !verify_direct_scoped_trust_anchor(std::slice::from_ref(&certs.ca_der), &[], now)
-            .expect("no active trust anchor")
-    );
-    assert!(
-        !verify_direct_scoped_trust_anchor(
-            std::slice::from_ref(&certs.leaf_der),
-            std::slice::from_ref(&certs.leaf_der),
-            now,
-        )
-        .expect("non-CA signer cannot become a direct trust anchor")
-    );
-    assert!(
-        !verify_direct_scoped_trust_anchor(
-            &[certs.ca_der.clone(), certs.leaf_der],
-            std::slice::from_ref(&certs.ca_der),
-            now,
-        )
-        .expect("direct-anchor mode requires an exact one-certificate chain")
-    );
+#[test]
+fn mdoc_verification_requires_document_signer_profile() {
+    futures_executor::block_on(async {
+        let (crypto, template, _) = real_crypto_fixture().await;
+        let (_, parsed_template) = x509_parser::parse_x509_certificate(&template.leaf_der).unwrap();
+        let crldp_der = parsed_template
+            .get_extension_unique(&x509_parser::der_parser::oid!(2.5.29.31))
+            .unwrap()
+            .unwrap()
+            .value
+            .to_vec();
+        let mut unexpectedly_accepted = Vec::new();
+        for case in [
+            "valid",
+            "missing_eku",
+            "noncritical_eku",
+            "wrong_eku",
+            "missing_ku",
+            "noncritical_ku",
+            "excess_ku",
+            "long_validity",
+            "wrong_country",
+            "nonprintable_country",
+            "missing_country",
+            "wrong_state",
+            "missing_state",
+            "matching_state",
+            "zero_serial",
+            "oversized_serial",
+            "missing_cn",
+            "subject_serial_utf8",
+            "missing_ski",
+            "wrong_ski",
+            "critical_ski",
+            "missing_aki",
+            "wrong_aki",
+            "missing_ian",
+            "critical_ian",
+            "wrong_ian_kind",
+            "missing_crldp",
+            "critical_crldp",
+            "forbidden_policy_mappings",
+            "forbidden_name_constraints",
+            "forbidden_policy_constraints",
+            "forbidden_inhibit_any_policy",
+            "forbidden_freshest_crl",
+            "critical_extension",
+            "duplicate_extension",
+            "noncritical_extension",
+        ] {
+            let certs = certificate_fixture_with_parameters(
+                "issuer.example",
+                KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+                true,
+                |ca, leaf| match case {
+                    "valid" => {}
+                    "missing_eku" => {
+                        leaf.custom_extensions.remove(0);
+                    }
+                    "noncritical_eku" => leaf.custom_extensions[0].set_criticality(false),
+                    "wrong_eku" => {
+                        let mut eku = rcgen::CustomExtension::from_oid_content(
+                            &[2, 5, 29, 37],
+                            vec![
+                                0x30, 0x09, 0x06, 0x07, 0x28, 0x81, 0x8c, 0x5d, 0x05, 0x01, 0x03,
+                            ],
+                        );
+                        eku.set_criticality(true);
+                        leaf.custom_extensions[0] = eku;
+                    }
+                    "missing_ku" => leaf.key_usages.clear(),
+                    "noncritical_ku" => {
+                        leaf.key_usages.clear();
+                        leaf.custom_extensions
+                            .push(rcgen::CustomExtension::from_oid_content(
+                                &[2, 5, 29, 15],
+                                vec![0x03, 0x02, 0x07, 0x80],
+                            ));
+                    }
+                    "excess_ku" => leaf.key_usages.push(KeyUsagePurpose::KeyCertSign),
+                    "long_validity" => leaf.not_after = leaf.not_before + time::Duration::days(458),
+                    "wrong_country" => leaf.distinguished_name.push(
+                        DnType::CountryName,
+                        rcgen::DnValue::PrintableString("CA".try_into().unwrap()),
+                    ),
+                    "nonprintable_country" => {
+                        leaf.distinguished_name.push(DnType::CountryName, "US")
+                    }
+                    "missing_country" => {
+                        leaf.distinguished_name = DistinguishedName::new();
+                        leaf.distinguished_name
+                            .push(DnType::CommonName, "issuer.example");
+                    }
+                    "wrong_state" => {
+                        ca.distinguished_name
+                            .push(DnType::StateOrProvinceName, "California");
+                        leaf.distinguished_name
+                            .push(DnType::StateOrProvinceName, "New York");
+                    }
+                    "missing_state" => ca
+                        .distinguished_name
+                        .push(DnType::StateOrProvinceName, "California"),
+                    "matching_state" => {
+                        ca.distinguished_name
+                            .push(DnType::StateOrProvinceName, "California");
+                        leaf.distinguished_name
+                            .push(DnType::StateOrProvinceName, "California");
+                    }
+                    "zero_serial" => leaf.serial_number = Some(rcgen::SerialNumber::from(0_u64)),
+                    "oversized_serial" => {
+                        leaf.serial_number = Some(rcgen::SerialNumber::from(vec![1; 21]))
+                    }
+                    "missing_cn" => {
+                        leaf.distinguished_name = DistinguishedName::new();
+                        leaf.distinguished_name.push(
+                            DnType::CountryName,
+                            rcgen::DnValue::PrintableString("US".try_into().unwrap()),
+                        );
+                    }
+                    "subject_serial_utf8" => leaf
+                        .distinguished_name
+                        .push(DnType::CustomDnType(vec![2, 5, 4, 5]), "synthetic-serial"),
+                    "missing_ski" => {
+                        leaf.custom_extensions.remove(1);
+                    }
+                    "wrong_ski" => {
+                        leaf.custom_extensions[1] = rcgen::CustomExtension::from_oid_content(
+                            &[2, 5, 29, 14],
+                            yasna::construct_der(|writer| writer.write_bytes(&[0; 20])),
+                        )
+                    }
+                    "critical_ski" => leaf.custom_extensions[1].set_criticality(true),
+                    "missing_aki" => leaf.use_authority_key_identifier_extension = false,
+                    "wrong_aki" => {
+                        leaf.use_authority_key_identifier_extension = false;
+                        leaf.custom_extensions
+                            .push(rcgen::CustomExtension::from_oid_content(
+                                &[2, 5, 29, 35],
+                                yasna::construct_der(|writer| {
+                                    writer.write_sequence(|writer| {
+                                        writer.next().write_tagged_implicit(
+                                            yasna::Tag::context(0),
+                                            |writer| writer.write_bytes(&[0; 20]),
+                                        )
+                                    });
+                                }),
+                            ));
+                    }
+                    "missing_ian" => {
+                        leaf.custom_extensions.remove(2);
+                    }
+                    "critical_ian" => leaf.custom_extensions[2].set_criticality(true),
+                    "wrong_ian_kind" => {
+                        leaf.custom_extensions[2] = rcgen::CustomExtension::from_oid_content(
+                            &[2, 5, 29, 18],
+                            vec![0x30, 0x04, 0x82, 0x02, b'x', b'y'],
+                        )
+                    }
+                    "missing_crldp" => leaf.crl_distribution_points.clear(),
+                    "critical_crldp" => {
+                        leaf.crl_distribution_points.clear();
+                        let mut extension = rcgen::CustomExtension::from_oid_content(
+                            &[2, 5, 29, 31],
+                            crldp_der.clone(),
+                        );
+                        extension.set_criticality(true);
+                        leaf.custom_extensions.push(extension);
+                    }
+                    "forbidden_policy_mappings"
+                    | "forbidden_name_constraints"
+                    | "forbidden_policy_constraints"
+                    | "forbidden_inhibit_any_policy"
+                    | "forbidden_freshest_crl" => {
+                        let oid = match case {
+                            "forbidden_policy_mappings" => 33,
+                            "forbidden_name_constraints" => 30,
+                            "forbidden_policy_constraints" => 36,
+                            "forbidden_inhibit_any_policy" => 54,
+                            _ => 46,
+                        };
+                        let value = if oid == 54 {
+                            vec![2, 1, 0]
+                        } else {
+                            vec![0x30, 0]
+                        };
+                        leaf.custom_extensions
+                            .push(rcgen::CustomExtension::from_oid_content(
+                                &[2, 5, 29, oid],
+                                value,
+                            ));
+                    }
+                    "critical_extension" | "duplicate_extension" | "noncritical_extension" => {
+                        let mut extension =
+                            rcgen::CustomExtension::from_oid_content(&[1, 2, 3, 4, 5], vec![5, 0]);
+                        extension.set_criticality(case == "critical_extension");
+                        leaf.custom_extensions.push(extension.clone());
+                        if case == "duplicate_extension" {
+                            leaf.custom_extensions.push(extension);
+                        }
+                    }
+                    _ => unreachable!(),
+                },
+            );
+            let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+            let bytes = URL_SAFE_NO_PAD.decode(&encoded).unwrap();
+            assert!(
+                nazo_mdoc::verifier::verify_presentation(
+                    &bytes,
+                    &SessionTranscript::from_cbor(&transcript).unwrap(),
+                    &nazo_mdoc::verifier::VerificationOptions {
+                        now: to_protocol_time(Utc::now()).unwrap(),
+                        max_documents: 1,
+                    },
+                )
+                .is_ok(),
+                "{case}: reject the authenticated certificate profile, not a bad issuer or holder signature"
+            );
+            let presentation = PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: encoded.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.into()),
+                additional_trust_anchors: vec![certs.ca_der].into(),
+            };
+            let result = crypto.verify_mdoc(&presentation);
+            if matches!(case, "valid" | "matching_state" | "noncritical_extension") {
+                result.unwrap_or_else(|error| panic!("{case}: {error}"));
+            } else if result.is_ok() {
+                unexpectedly_accepted.push(case);
+            } else {
+                assert_eq!(result, Err(CredentialTrustError::UntrustedIssuer), "{case}");
+            }
+        }
+        assert!(
+            unexpectedly_accepted.is_empty(),
+            "accepted non-DS profiles: {unexpectedly_accepted:?}"
+        );
+    });
+}
+
+#[test]
+fn signed_mdoc_certificate_fields_retain_asn1_and_uri_syntax() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let mut unexpectedly_accepted = Vec::new();
+        for case in [
+            "valid",
+            "valid_uri_spelling",
+            "printable_cn_charset",
+            "utf8_cn_charset",
+            "context_cn_tag",
+            "constructed_cn_tag",
+            "printable_serial_charset",
+            "ian_uri_whitespace",
+            "ian_uri_unicode",
+            "ian_uri_mixed",
+            "crldp_uri_whitespace",
+            "crldp_uri_unicode",
+            "crldp_uri_mixed",
+        ] {
+            let certs = certificate_fixture_with_wire_edit(
+                "issuer.example",
+                KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap(),
+                true,
+                |_, leaf| {
+                    match case {
+                        "printable_cn_charset" => leaf.distinguished_name.push(
+                            DnType::CommonName,
+                            rcgen::DnValue::PrintableString("Printable CN".try_into().unwrap()),
+                        ),
+                        "utf8_cn_charset" => {
+                            leaf.distinguished_name.push(DnType::CommonName, "UTF8 CN")
+                        }
+                        "context_cn_tag" | "constructed_cn_tag" => leaf
+                            .distinguished_name
+                            .push(DnType::CommonName, "Tagged CN"),
+                        "printable_serial_charset" => leaf.distinguished_name.push(
+                            DnType::CustomDnType(vec![2, 5, 4, 5]),
+                            rcgen::DnValue::PrintableString("serial-sample".try_into().unwrap()),
+                        ),
+                        "valid_uri_spelling" => {
+                            leaf.crl_distribution_points[0].uris =
+                                vec!["HTTPS://ISSUER.EXAMPLE/%63rl".into()];
+                        }
+                        "crldp_uri_whitespace" => {
+                            leaf.crl_distribution_points[0].uris =
+                                vec!["https://issuer.example/te\nst.crl".into()];
+                        }
+                        "crldp_uri_mixed" => {
+                            leaf.crl_distribution_points[0]
+                                .uris
+                                .push("https://issuer.example/te\nst.crl".into());
+                        }
+                        _ => {}
+                    }
+                    if matches!(
+                        case,
+                        "ian_uri_whitespace"
+                            | "ian_uri_unicode"
+                            | "ian_uri_mixed"
+                            | "crldp_uri_unicode"
+                    ) {
+                        let uri = if case == "ian_uri_whitespace" {
+                            "https://issuer.example/con\ttact"
+                        } else {
+                            "https://éssuer.example/contact"
+                        };
+                        let der = yasna::construct_der(|writer| {
+                            writer.write_sequence(|writer| {
+                                if case == "crldp_uri_unicode" {
+                                    writer.next().write_sequence(|writer| {
+                                        writer.next().write_tagged(
+                                            yasna::Tag::context(0),
+                                            |writer| {
+                                                writer.write_tagged_implicit(
+                                                    yasna::Tag::context(0),
+                                                    |writer| {
+                                                        writer.write_sequence(|writer| {
+                                                            writer.next().write_tagged_implicit(
+                                                                yasna::Tag::context(6),
+                                                                |writer| {
+                                                                    writer
+                                                                        .write_bytes(uri.as_bytes())
+                                                                },
+                                                            );
+                                                        });
+                                                    },
+                                                );
+                                            },
+                                        );
+                                    });
+                                } else {
+                                    writer
+                                        .next()
+                                        .write_tagged_implicit(yasna::Tag::context(6), |writer| {
+                                            writer.write_bytes(uri.as_bytes())
+                                        });
+                                    if case == "ian_uri_mixed" {
+                                        writer.next().write_tagged_implicit(
+                                            yasna::Tag::context(6),
+                                            |writer| {
+                                                writer.write_ia5_string(
+                                                    "https://issuer.example/contact",
+                                                )
+                                            },
+                                        );
+                                    }
+                                }
+                            });
+                        });
+                        if case == "crldp_uri_unicode" {
+                            leaf.crl_distribution_points.clear();
+                            leaf.custom_extensions
+                                .push(rcgen::CustomExtension::from_oid_content(
+                                    &[2, 5, 29, 31],
+                                    der,
+                                ));
+                        } else {
+                            leaf.custom_extensions[2] =
+                                rcgen::CustomExtension::from_oid_content(&[2, 5, 29, 18], der);
+                        }
+                    }
+                },
+                |der, ca_key| {
+                    let (marker, byte): (&[u8], u8) = match case {
+                        "printable_cn_charset" => (b"Printable CN", b'*'),
+                        "utf8_cn_charset" => (b"UTF8 CN", 0xff),
+                        "context_cn_tag" | "constructed_cn_tag" => (b"Tagged CN", 0),
+                        "printable_serial_charset" => (b"serial-sample", b'*'),
+                        _ => return der,
+                    };
+                    let (_, certificate) = x509_parser::parse_x509_certificate(&der).unwrap();
+                    let mut tbs = certificate.tbs_certificate.as_ref().to_vec();
+                    let offsets: Vec<_> = tbs
+                        .windows(marker.len())
+                        .enumerate()
+                        .filter_map(|(index, value)| (value == marker).then_some(index))
+                        .collect();
+                    assert_eq!(offsets.len(), 1);
+                    if matches!(case, "context_cn_tag" | "constructed_cn_tag") {
+                        assert_eq!(tbs[offsets[0] - 1], marker.len() as u8);
+                        tbs[offsets[0] - 2] |= if case == "context_cn_tag" { 0x80 } else { 0x20 };
+                    } else {
+                        tbs[offsets[0]] = byte;
+                    }
+                    let secret = p256::SecretKey::from_pkcs8_der(&ca_key.serialize_der()).unwrap();
+                    let key = SigningKey::from_slice(&secret.to_bytes()).unwrap();
+                    let signature: p256::ecdsa::Signature = key.sign(&tbs);
+                    let signature = signature.to_der();
+                    yasna::construct_der(|writer| {
+                        writer.write_sequence(|writer| {
+                            writer.next().write_der(&tbs);
+                            writer.next().write_sequence(|writer| {
+                                writer.next().write_oid(
+                                    &yasna::models::ObjectIdentifier::from_slice(&[
+                                        1, 2, 840, 10045, 4, 3, 2,
+                                    ]),
+                                );
+                            });
+                            writer.next().write_bitvec_bytes(
+                                signature.as_bytes(),
+                                signature.as_bytes().len() * 8,
+                            );
+                        })
+                    })
+                },
+            );
+            let (_, leaf) = x509_parser::parse_x509_certificate(&certs.leaf_der).unwrap();
+            let (_, ca) = x509_parser::parse_x509_certificate(&certs.ca_der).unwrap();
+            nazo_crypto::certificate::verify_signature(&leaf, ca.public_key()).unwrap();
+            // The builder can already reject some malformed DER. Start with a
+            // benign certificate for this same signing key, then replace the
+            // received chain so every case reaches the verification boundary.
+            let benign = certificate_fixture_with_key(
+                "issuer.example",
+                KeyPair::from_pem(&certs.leaf_key.serialize_pem()).unwrap(),
+            );
+            let (encoded, transcript) = valid_mdoc_presentation(&benign, Utc::now(), None);
+            let encoded = resign_mdoc(&encoded, &certs, |document, _| {
+                document
+                    .issuer_signed
+                    .issuer_auth
+                    .cose_sign1
+                    .unprotected
+                    .rest
+                    .iter_mut()
+                    .find(|(label, _)| *label == coset::Label::Int(33))
+                    .unwrap()
+                    .1 = ciborium::Value::Bytes(certs.leaf_der.clone());
+            });
+            let result = crypto.verify_mdoc(&PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: encoded.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.into()),
+                additional_trust_anchors: vec![certs.ca_der].into(),
+            });
+            if matches!(case, "valid" | "valid_uri_spelling") {
+                result.unwrap_or_else(|error| panic!("{case}: {error}"));
+            } else if result.is_ok() {
+                unexpectedly_accepted.push(case);
+            } else {
+                assert_eq!(result, Err(CredentialTrustError::UntrustedIssuer), "{case}");
+            }
+        }
+        assert!(
+            unexpectedly_accepted.is_empty(),
+            "accepted malformed authenticated certificate fields: {unexpectedly_accepted:?}"
+        );
+    });
 }
 
 fn install_revocation_snapshot(
@@ -2884,6 +3567,128 @@ fn resign_mdoc_validity(
     })
 }
 
+fn replace_disclosed_mdoc_claim(
+    document: &mut nazo_mdoc::model::document::IssuerSignedDocument,
+    mso: &mut ciborium::Value,
+    original_name: &str,
+    name: &str,
+    value: ciborium::Value,
+) {
+    use ciborium::Value as Cbor;
+    let item = document
+        .issuer_signed
+        .name_spaces
+        .get_mut("org.iso.18013.5.1")
+        .unwrap()
+        .iter_mut()
+        .find(|item| item.element_identifier == original_name)
+        .unwrap();
+    item.element_identifier = name.into();
+    item.element_value = value.clone();
+    let value = Cbor::Map(vec![
+        ("digestID".into(), item.digest_id.into()),
+        ("random".into(), Cbor::Bytes(item.random.clone())),
+        ("elementIdentifier".into(), name.into()),
+        ("elementValue".into(), value),
+    ]);
+    // Independent wire construction can deliberately preserve unsupported or
+    // non-preferred tags that the production canonical encoder rejects.
+    let mut inner = Vec::new();
+    ciborium::into_writer(&value, &mut inner).unwrap();
+    item.encoded = nazo_mdoc::cbor::data_item::encode_cbor_canonical(&Cbor::Tag(
+        24,
+        Box::new(Cbor::Bytes(inner)),
+    ))
+    .unwrap();
+    let digests = &mut mso
+        .as_map_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| key.as_text() == Some("valueDigests"))
+        .unwrap()
+        .1;
+    let namespace = &mut digests
+        .as_map_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| key.as_text() == Some("org.iso.18013.5.1"))
+        .unwrap()
+        .1;
+    let digest = &mut namespace
+        .as_map_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|(key, _)| key.as_integer() == Some(item.digest_id.into()))
+        .unwrap()
+        .1;
+    *digest = Cbor::Bytes(sha2::Sha256::digest(&item.encoded).to_vec());
+}
+
+#[test]
+fn authenticated_mdl_disclosures_match_the_document_signer_country() {
+    use ciborium::Value as Cbor;
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+        let mut unexpectedly_accepted = Vec::new();
+        for (name, claim, accepted) in [
+            ("matching", Cbor::Text("US".into()), true),
+            ("wrong_country", Cbor::Text("CA".into()), false),
+            ("lowercase", Cbor::Text("us".into()), false),
+            ("wrong_type", Cbor::Integer(840.into()), false),
+        ] {
+            let changed = resign_mdoc(&encoded, &certs, |document, mso| {
+                replace_disclosed_mdoc_claim(document, mso, "given_name", "issuing_country", claim);
+            });
+            let bytes = URL_SAFE_NO_PAD.decode(&changed).unwrap();
+            assert!(
+                nazo_mdoc::verifier::verify_presentation(
+                    &bytes,
+                    &SessionTranscript::from_cbor(&transcript).unwrap(),
+                    &nazo_mdoc::verifier::VerificationOptions {
+                        now: to_protocol_time(Utc::now()).unwrap(),
+                        max_documents: 1,
+                    },
+                )
+                .is_ok(),
+                "{name}: issuer, holder and digest must authenticate before the country comparison"
+            );
+            let presentation = PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: changed.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.as_slice().into()),
+                additional_trust_anchors: vec![].into(),
+            };
+            let result = crypto.verify_mdoc(&presentation);
+            if accepted {
+                result.unwrap();
+            } else if result.is_ok() {
+                unexpectedly_accepted.push(name);
+            } else {
+                assert_eq!(result, Err(CredentialTrustError::UntrustedIssuer), "{name}");
+            }
+        }
+        assert!(
+            unexpectedly_accepted.is_empty(),
+            "accepted mismatched authenticated disclosures: {unexpectedly_accepted:?}"
+        );
+        // An undisclosed country is not an inconsistency: selective disclosure
+        // does not require revealing every mDL attribute.
+        crypto
+            .verify_mdoc(&PresentedCredential {
+                format: CredentialFormat::MsoMdoc,
+                encoded: encoded.into(),
+                expected_nonce: "verifier-nonce".into(),
+                expected_audience: "https://verifier.example".into(),
+                mdoc_session_transcript: Some(transcript.into()),
+                additional_trust_anchors: vec![].into(),
+            })
+            .unwrap();
+    });
+}
+
 #[test]
 fn authenticated_mdoc_claim_tags_are_not_erased() {
     use ciborium::Value as Cbor;
@@ -2900,56 +3705,13 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
             Cbor::Tag(1004, Box::new(Cbor::Text("2023-02-29".into()))),
         ] {
             let changed = resign_mdoc(&encoded, &certs, |document, mso| {
-                let item = document
-                    .issuer_signed
-                    .name_spaces
-                    .get_mut("org.iso.18013.5.1")
-                    .unwrap()
-                    .iter_mut()
-                    .find(|item| item.element_identifier == "given_name")
-                    .unwrap();
-                item.element_value = claim.clone();
-                let value = Cbor::Map(vec![
-                    ("digestID".into(), item.digest_id.into()),
-                    ("random".into(), Cbor::Bytes(item.random.clone())),
-                    (
-                        "elementIdentifier".into(),
-                        item.element_identifier.clone().into(),
-                    ),
-                    ("elementValue".into(), claim.clone()),
-                ]);
-                // Deliberately preserve non-preferred and unsupported tags on
-                // the authenticated wire. The production canonical encoder
-                // correctly refuses a small bignum represented with tag 2.
-                let mut inner = Vec::new();
-                ciborium::into_writer(&value, &mut inner).unwrap();
-                item.encoded = nazo_mdoc::cbor::data_item::encode_cbor_canonical(&Cbor::Tag(
-                    24,
-                    Box::new(Cbor::Bytes(inner)),
-                ))
-                .unwrap();
-                let digests = &mut mso
-                    .as_map_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|(key, _)| key.as_text() == Some("valueDigests"))
-                    .unwrap()
-                    .1;
-                let namespace = &mut digests
-                    .as_map_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|(key, _)| key.as_text() == Some("org.iso.18013.5.1"))
-                    .unwrap()
-                    .1;
-                let digest = &mut namespace
-                    .as_map_mut()
-                    .unwrap()
-                    .iter_mut()
-                    .find(|(key, _)| key.as_integer() == Some(item.digest_id.into()))
-                    .unwrap()
-                    .1;
-                *digest = Cbor::Bytes(sha2::Sha256::digest(&item.encoded).to_vec());
+                replace_disclosed_mdoc_claim(
+                    document,
+                    mso,
+                    "given_name",
+                    "given_name",
+                    claim.clone(),
+                );
             });
             let bytes = URL_SAFE_NO_PAD.decode(&changed).unwrap();
             // The error must come from the application's semantic projection,
@@ -2977,6 +3739,94 @@ fn authenticated_mdoc_claim_tags_are_not_erased() {
                 crypto.verify(&presentation).await,
                 Err(CredentialTrustError::InvalidEncoding)
             );
+        }
+    });
+}
+
+#[test]
+fn mdl_jurisdiction_binds_only_when_the_document_signer_has_a_state() {
+    use ciborium::Value as Cbor;
+    futures_executor::block_on(async {
+        let (crypto, template, _) = real_crypto_fixture().await;
+        let (holder, _) = es256_jwk(38);
+        for has_state in [false, true] {
+            let certs = certificate_fixture_with_parameters(
+                "issuer.example",
+                KeyPair::from_pem(&template.leaf_key.serialize_pem()).unwrap(),
+                true,
+                |ca, leaf| {
+                    if has_state {
+                        for params in [ca, leaf] {
+                            params
+                                .distinguished_name
+                                .push(DnType::StateOrProvinceName, "US-CA");
+                        }
+                    }
+                },
+            );
+            let candidate = crypto_with_certificate(
+                crypto.keyset.clone(),
+                &certs,
+                crate::policy::Openid4vcRevocationPolicy::Disabled,
+            );
+            let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now(), None);
+            for jurisdiction in [
+                None,
+                Some(json!("US-CA")),
+                Some(json!("US-NY")),
+                Some(json!(42)),
+            ] {
+                let accepted = jurisdiction.as_ref().is_none_or(|value| {
+                    value
+                        .as_str()
+                        .is_some_and(|value| !has_state || value == "US-CA")
+                });
+                let mut claims = json!({"org.iso.18013.5.1":{"issuing_country":"US"}});
+                if let Some(value) = jurisdiction.as_ref() {
+                    claims["org.iso.18013.5.1"]["issuing_jurisdiction"] = value.clone();
+                }
+                let result = candidate
+                    .sign(&mdoc_input(
+                        Some(HolderBinding::Jwk {
+                            jwk: holder.clone(),
+                        }),
+                        claims,
+                    ))
+                    .await;
+                if accepted {
+                    result.unwrap();
+                } else {
+                    assert_eq!(result, Err(CredentialTrustError::InvalidEncoding));
+                }
+                let changed = match jurisdiction.as_ref() {
+                    None => encoded.clone(),
+                    Some(jurisdiction) => resign_mdoc(&encoded, &certs, |document, mso| {
+                        replace_disclosed_mdoc_claim(
+                            document,
+                            mso,
+                            "given_name",
+                            "issuing_jurisdiction",
+                            jurisdiction.as_str().map_or_else(
+                                || Cbor::Integer(42.into()),
+                                |value| Cbor::Text(value.into()),
+                            ),
+                        );
+                    }),
+                };
+                let result = candidate.verify_mdoc(&PresentedCredential {
+                    format: CredentialFormat::MsoMdoc,
+                    encoded: changed.into(),
+                    expected_nonce: "verifier-nonce".into(),
+                    expected_audience: "https://verifier.example".into(),
+                    mdoc_session_transcript: Some(transcript.as_slice().into()),
+                    additional_trust_anchors: vec![].into(),
+                });
+                if accepted {
+                    result.unwrap();
+                } else {
+                    assert_eq!(result, Err(CredentialTrustError::UntrustedIssuer));
+                }
+            }
         }
     });
 }

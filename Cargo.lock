@@ -2845,11 +2845,13 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "flate2",
+ "iri-string",
  "nazo-crypto",
  "rand 0.10.3",
  "rcgen",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "thiserror",
  "url",
@@ -2953,7 +2955,7 @@ dependencies = [
 [[package]]
 name = "nazo-mdoc"
 version = "0.3.0"
-source = "git+https://github.com/nazozero/mdoc-rs?rev=2492f3610dbb2b0bf37c56abd88fade61753f017#2492f3610dbb2b0bf37c56abd88fade61753f017"
+source = "git+https://github.com/nazozero/mdoc-rs?rev=d2f653d262da4c783ca6c430ef1f056f40baa25f#d2f653d262da4c783ca6c430ef1f056f40baa25f"
 dependencies = [
  "ciborium",
  "const-oid 0.9.6",
@@ -3013,6 +3015,7 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "time",
  "tracing",
@@ -3021,6 +3024,7 @@ dependencies = [
  "uuid",
  "wasm-bindgen-test",
  "x509-parser",
+ "yasna",
 ]
 
 [[package]]
@@ -3676,17 +3680,17 @@ dependencies = [
 [[package]]
 name = "passkey-auth"
 version = "0.2.0"
-source = "git+https://github.com/nazozero/passkey-auth-rs?rev=b3ecfa40c8f626903f36d6065640236ac87fe472#b3ecfa40c8f626903f36d6065640236ac87fe472"
+source = "git+https://github.com/nazozero/passkey-auth-rs?rev=84938674306a2ca0b84319e8ee499b61b8f32e84#84938674306a2ca0b84319e8ee499b61b8f32e84"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
  "const-oid 0.9.6",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
  "p256",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "thiserror",
  "url",
  "web-time",

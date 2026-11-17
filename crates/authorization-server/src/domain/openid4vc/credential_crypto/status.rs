@@ -223,31 +223,14 @@ fn verify_cwt(
     index: u64,
     token: &[u8],
 ) -> Result<(), CredentialTrustError> {
-    let mut input = token;
-    let value: Cbor = ciborium::from_reader(&mut input).map_err(|_| INVALID)?;
-    if !input.is_empty() {
-        return Err(INVALID);
-    }
-    let sign1 = match value {
-        Cbor::Tag(18, inner) => coset::CoseSign1::from_cbor_value(*inner),
-        _ => return Err(INVALID),
-    }
-    .map_err(|_| INVALID)?;
+    let sign1 = parse_cwt_sign1(token)?;
     let protected = &sign1.protected.header;
     if !matches!(
         protected.alg,
         Some(coset::RegisteredLabelWithPrivate::Assigned(
             coset::iana::Algorithm::ES256 | coset::iana::Algorithm::ESP256
         ))
-    ) || !protected.crit.is_empty()
-        || !sign1.unprotected.crit.is_empty()
-        || sign1.unprotected.alg.is_some()
-        || sign1
-            .unprotected
-            .rest
-            .iter()
-            .any(|(key, _)| matches!(key, coset::Label::Int(16 | 33)))
-    {
+    ) {
         return Err(INVALID);
     }
     let typ = protected
@@ -289,12 +272,9 @@ fn verify_cwt(
         &sign1.signature,
     )
     .map_err(|_| INVALID)?;
-    let mut payload = sign1.payload.as_deref().ok_or(INVALID)?;
-    let claims: Cbor = ciborium::from_reader(&mut payload).map_err(|_| INVALID)?;
-    if !payload.is_empty() {
-        return Err(INVALID);
-    }
-    let claims = unique_map(&claims)?;
+    let claims = nazo_mdoc::cbor::data_item::decode_cbor(sign1.payload.as_deref().ok_or(INVALID)?)
+        .map_err(|_| INVALID)?;
+    let claims = bounded_map(&claims)?;
     let get = |n: i64| {
         claims
             .iter()
@@ -322,7 +302,7 @@ fn verify_cwt(
             .transpose()?,
         Utc::now().timestamp() as f64,
     )?;
-    let list = unique_map(get(65533).ok_or(INVALID)?)?;
+    let list = bounded_map(get(65533).ok_or(INVALID)?)?;
     let get = |name: &str| {
         list.iter()
             .find(|(key, _)| key.as_text() == Some(name))
@@ -340,6 +320,52 @@ fn verify_cwt(
         index,
         get("lst").and_then(Cbor::as_bytes).ok_or(INVALID)?,
     )
+}
+
+fn parse_cwt_sign1(token: &[u8]) -> Result<coset::CoseSign1, CredentialTrustError> {
+    use nazo_mdoc::cbor::data_item::decode_cbor;
+
+    let Cbor::Tag(18, tagged) = decode_cbor(token).map_err(|_| INVALID)? else {
+        return Err(INVALID);
+    };
+    let Cbor::Array(fields) = *tagged else {
+        return Err(INVALID);
+    };
+    let [protected, unprotected, payload, signature]: [Cbor; 4] =
+        fields.try_into().map_err(|_| INVALID)?;
+    let (Cbor::Bytes(protected_bytes), Cbor::Bytes(payload), Cbor::Bytes(signature)) =
+        (protected, payload, signature)
+    else {
+        return Err(INVALID);
+    };
+    // Decode protected headers separately without coset's generic bstr decoder:
+    // it otherwise normalizes small Tag 2/3 values into native integer labels.
+    let protected = decode_cbor(&protected_bytes).map_err(|_| INVALID)?;
+    // The bounded raw decoder has already rejected duplicate map keys.
+    let protected_fields = bounded_map(&protected)?;
+    let unprotected_fields = bounded_map(&unprotected)?;
+    if protected_fields
+        .iter()
+        .any(|(key, _)| !matches!(key.as_integer().map(i128::from), Some(1 | 4 | 16 | 33)))
+        || unprotected_fields.iter().any(|(key, _)| {
+            key.as_integer().map(i128::from) != Some(4)
+                || protected_fields
+                    .iter()
+                    .any(|(protected_key, _)| protected_key == key)
+        })
+    {
+        return Err(INVALID);
+    }
+    Ok(coset::CoseSign1 {
+        protected: coset::ProtectedHeader {
+            // Verification uses this exact received bstr, not a re-encoded map.
+            original_data: Some(protected_bytes),
+            header: coset::Header::from_cbor_value(protected).map_err(|_| INVALID)?,
+        },
+        unprotected: coset::Header::from_cbor_value(unprotected).map_err(|_| INVALID)?,
+        payload: Some(payload),
+        signature,
+    })
 }
 
 /// Lists are authorized by the credential's issuer, not by arbitrary keys found
@@ -477,13 +503,20 @@ fn validate_aggregation(value: Option<&Value>) -> Result<(), CredentialTrustErro
     Ok(())
 }
 fn unique_map(value: &Cbor) -> Result<&[(Cbor, Cbor)], CredentialTrustError> {
-    let map = value.as_map().ok_or(INVALID)?;
-    if map.len() > 64
-        || map
-            .iter()
-            .enumerate()
-            .any(|(i, (key, _))| map[..i].iter().any(|(previous, _)| previous == key))
+    let map = bounded_map(value)?;
+    if map
+        .iter()
+        .enumerate()
+        .any(|(i, (key, _))| map[..i].iter().any(|(previous, _)| previous == key))
     {
+        return Err(INVALID);
+    }
+    Ok(map)
+}
+
+fn bounded_map(value: &Cbor) -> Result<&[(Cbor, Cbor)], CredentialTrustError> {
+    let map = value.as_map().ok_or(INVALID)?;
+    if map.len() > 64 {
         return Err(INVALID);
     }
     Ok(map)

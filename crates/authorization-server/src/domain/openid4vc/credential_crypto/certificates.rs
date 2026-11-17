@@ -19,19 +19,26 @@ pub(super) fn issuer_authority_key_identifiers(
     for der in certificates {
         let (_, certificate) = parse_x509(der, "credential issuer certificate")
             .map_err(|_| CredentialTrustError::InvalidEncoding)?;
-        for extension in certificate.extensions() {
-            if let x509_parser::extensions::ParsedExtension::AuthorityKeyIdentifier(authority) =
-                extension.parsed_extension()
-                && let Some(identifier) = authority.key_identifier.as_ref()
-                && !identifiers
-                    .iter()
-                    .any(|existing| existing.as_slice() == identifier.0)
-            {
-                identifiers.push(identifier.0.to_vec());
-            }
-        }
+        append_authority_key_identifiers(&certificate, &mut identifiers);
     }
     Ok(identifiers)
+}
+
+pub(super) fn append_authority_key_identifiers(
+    certificate: &x509_parser::certificate::X509Certificate<'_>,
+    identifiers: &mut Vec<Vec<u8>>,
+) {
+    for extension in certificate.extensions() {
+        if let x509_parser::extensions::ParsedExtension::AuthorityKeyIdentifier(authority) =
+            extension.parsed_extension()
+            && let Some(identifier) = authority.key_identifier.as_ref()
+            && !identifiers
+                .iter()
+                .any(|existing| existing.as_slice() == identifier.0)
+        {
+            identifiers.push(identifier.0.to_vec());
+        }
+    }
 }
 
 pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Vec<u8>>> {
@@ -63,8 +70,8 @@ pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Ve
 /// Prepare after dependency I/O and consume at the signing boundary.
 pub(crate) struct Openid4vcSigningMaterial {
     pub(super) lease: Openid4vcSigningLease,
-    pub(super) x5c: Vec<String>,
     pub(super) certificate_chain_der: Vec<Vec<u8>>,
+    trust_anchor_der: Vec<u8>,
 }
 
 impl Openid4vcCredentialCrypto {
@@ -147,6 +154,19 @@ impl Openid4vcSigningMaterial {
         &self.certificate_chain_der[0]
     }
 
+    pub(super) fn issuer_der(&self) -> &[u8] {
+        self.certificate_chain_der
+            .get(1)
+            .map_or(self.trust_anchor_der.as_slice(), Vec::as_slice)
+    }
+
+    pub(super) fn x5c(&self) -> Vec<String> {
+        self.certificate_chain_der
+            .iter()
+            .map(|certificate| STANDARD.encode(certificate))
+            .collect()
+    }
+
     pub(crate) fn x509_hash_client_id(&self) -> String {
         format!(
             "x509_hash:{}",
@@ -177,17 +197,17 @@ fn signing_material(lease: Openid4vcSigningLease) -> anyhow::Result<Openid4vcSig
     if certificates.is_empty() {
         anyhow::bail!("OpenID4VC signing certificate chain is empty");
     }
-    let trust_anchors = parse_trust_anchors(lease.material())?;
-    verify_openid4vc_chain(&certificates, &trust_anchors)?;
-    certificates.retain(|certificate| !trust_anchors.contains(certificate));
-    let x5c = certificates
+    let mut trust_anchors = parse_trust_anchors(lease.material())?;
+    let authenticated = verify_openid4vc_chain(&certificates, &trust_anchors)?;
+    let anchor_index = trust_anchors
         .iter()
-        .map(|certificate| STANDARD.encode(certificate))
-        .collect::<Vec<_>>();
+        .position(|anchor| anchor.as_slice() == authenticated)
+        .expect("verified path returns an explicit loaded trust anchor");
+    certificates.retain(|certificate| !trust_anchors.contains(certificate));
     Ok(Openid4vcSigningMaterial {
         lease,
-        x5c,
         certificate_chain_der: certificates,
+        trust_anchor_der: trust_anchors.swap_remove(anchor_index),
     })
 }
 
