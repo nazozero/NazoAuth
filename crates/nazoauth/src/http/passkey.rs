@@ -176,18 +176,21 @@ pub async fn passkey_login_finish(
     if let Err(error) = endpoint.rate_limit.enforce(&source_ip).await {
         return rate_limit_error_response(error);
     }
+    let previous_session_id = cookie_value(request, &endpoint.config.session_cookie_name);
+    let csrf_verified = previous_session_id.is_some()
+        && has_valid_csrf_token_for_cookies(
+            request,
+            None,
+            &endpoint.config.session_cookie_name,
+            &endpoint.config.csrf_cookie_name,
+        );
     let command = PasskeyLoginFinishCommand {
         ceremony_id: payload.ceremony_id,
         response: payload.response,
         source_ip,
         remembered_mfa: remembered_mfa_proof(request, &endpoint.config),
-        previous_session_id: cookie_value(request, &endpoint.config.session_cookie_name),
-        csrf_verified: has_valid_csrf_token_for_cookies(
-            request,
-            None,
-            &endpoint.config.session_cookie_name,
-            &endpoint.config.csrf_cookie_name,
-        ),
+        previous_session_id,
+        csrf_verified,
         now: Utc::now(),
     };
     match endpoint.operations.login_finish(command).await {

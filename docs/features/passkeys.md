@@ -79,6 +79,18 @@ belong to the same tenant and user. Remembered-device evidence and a historical
 UV does not contribute `passkey_uv` or `mfa`; the existing remembered-device policy
 still applies. A subsequent assertion can use the recorded UV enrollment.
 
+For an MFA-enabled account, a user who can access only an older passkey and has
+no usable TOTP, recovery code or valid remembered-device proof receives a pending
+MFA session. The signature is valid, but that session cannot automatically
+complete step-up, enroll a new TOTP factor or disable MFA. Normal MFA enrollment
+confirms TOTP and returns recovery codes before enabling the account's MFA flag;
+this does not prove the user still possesses either factor. Recover an existing
+independent factor, or use a separately authorized account-recovery procedure,
+before relying on such an account after the upgrade. Missing UV history cannot
+be reconstructed from the credential key, current UV bit or historical AMR.
+Credential readability and the absence of a re-registration requirement do not
+mean every existing user retains the same MFA experience without this step-up.
+
 Upgrading the verifier preserves sessions that were already issued. The new
 credential history cannot retrospectively establish how an older session earned
 its `passkey_uv` or `mfa` methods. Those sessions retain their existing lifetime

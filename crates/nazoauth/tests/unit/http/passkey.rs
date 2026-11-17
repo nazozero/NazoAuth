@@ -253,11 +253,33 @@ fn login_finish_extracts_security_context_and_sets_only_bound_session_material()
 #[test]
 fn login_only_allows_uv_initialization_with_the_existing_session_csrf_proof() {
     futures_executor::block_on(async {
-        for token in [None, Some("wrong"), Some("proof")] {
+        for (cookies, token, expected_session, expected_verified) in [
+            (None, None, None, false),
+            (Some("csrf=proof"), Some("proof"), None, false),
+            (
+                Some("session=old-session; csrf=proof"),
+                None,
+                Some("old-session"),
+                false,
+            ),
+            (
+                Some("session=old-session; csrf=proof"),
+                Some("wrong"),
+                Some("old-session"),
+                false,
+            ),
+            (
+                Some("session=old-session; csrf=proof"),
+                Some("proof"),
+                Some("old-session"),
+                true,
+            ),
+        ] {
             let (endpoint, operations, _) = login_endpoint(Ok(login_success()), Ok(()));
-            let mut request = http::Request::builder()
-                .method("POST")
-                .header(header::COOKIE, "session=old-session; csrf=proof");
+            let mut request = http::Request::builder().method("POST");
+            if let Some(cookies) = cookies {
+                request = request.header(header::COOKIE, cookies);
+            }
             if let Some(token) = token {
                 request = request.header("x-csrf-token", token);
             }
@@ -272,11 +294,8 @@ fn login_only_allows_uv_initialization_with_the_existing_session_csrf_proof() {
             .await;
             assert_eq!(response.status(), StatusCode::OK);
             let finishes = operations.finishes.lock().unwrap();
-            assert_eq!(finishes[0].csrf_verified, token == Some("proof"));
-            assert_eq!(
-                finishes[0].previous_session_id.as_deref(),
-                Some("old-session")
-            );
+            assert_eq!(finishes[0].csrf_verified, expected_verified);
+            assert_eq!(finishes[0].previous_session_id.as_deref(), expected_session);
         }
     });
 }
